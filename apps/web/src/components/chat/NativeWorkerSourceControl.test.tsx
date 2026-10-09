@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ComponentProps } from "react";
 import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   WorkjetConnectionId,
   type WorkjetConnectionSummary,
 } from "@workjet/contracts";
+import { withWorkerSourceConnection } from "../../workjetWorkerSourceConnection";
 import { NativeWorkerSourceControl } from "./NativeWorkerSourceControl";
 
 const state = vi.hoisted(() => ({
@@ -28,13 +31,16 @@ const connection: WorkjetConnectionSummary = {
   status: "ready",
   reason: null,
 };
-const props = {
+const props: ComponentProps<typeof NativeWorkerSourceControl> = {
   environmentId: EnvironmentId.make("source-environment"),
   instanceId: `managed:${tenant}`,
+  config: DEFAULT_WORKJET_THREAD_CONFIG,
+  bindConnection: vi.fn(async () => true),
   unavailable: false,
 };
 const render = (overrides: Partial<typeof props> = {}) =>
   renderToStaticMarkup(<NativeWorkerSourceControl {...props} {...overrides} />);
+const boundConfig = withWorkerSourceConnection(props.config, props.instanceId, connection)!;
 
 beforeEach(() => {
   state.data = { connections: [] };
@@ -48,12 +54,13 @@ describe("worker connection in the native project supervisor", () => {
   it("offers Connect workers without a coding-chat tool configuration", () => {
     const html = render();
     expect(html).toContain('aria-label="Connect workers for this project"');
-    expect(html.match(/<button[^>]*>/)?.[0]).not.toContain("disabled");
+    expect(html.match(/<button[^>]*>/)?.[0]).not.toContain('disabled=""');
     expect(html).not.toContain("Workers connected");
   });
-  it("shows only the actual native pin and source connection when ready", () => {
+  it("shows the actual native pin only after the ready connection is saved on this supervisor", () => {
     state.data = { connections: [connection] };
-    const html = render();
+    expect(render()).not.toContain("Workers connected");
+    const html = render({ config: boundConfig });
     expect(html).toContain("Workers connected");
     expect(html).toContain(`data-workjet-worker-source-instance-id="${nativeInstance}"`);
     expect(html).toContain(`data-workjet-worker-source-connection-id="${connection.connectionId}"`);
@@ -61,36 +68,39 @@ describe("worker connection in the native project supervisor", () => {
     expect(html).not.toContain(`data-workjet-worker-source-instance-id="${tenant}"`);
   });
   it("does not report decision-hub grants or another tenant as connected workers", () => {
-    state.data = {
-      connections: [
-        { ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) },
-      ],
-    };
-    expect(render()).not.toContain("Workers connected");
+    state.data = { connections: [{ ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) }] };
+    expect(render({ config: boundConfig })).not.toContain("Workers connected");
     state.data = { connections: [connection] };
-    expect(render({ instanceId: "managed:foreign" })).not.toContain("Workers connected");
-    expect(render({ instanceId: "managed:foreign" })).not.toContain(nativeInstance);
+    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain("Workers connected");
+    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain(nativeInstance);
   });
-  it("lets an unavailable source be connected again without declaring it ready", () => {
-    state.data = { connections: [{ ...connection, status: "unavailable" }] };
-    const html = render();
+  it("lets an offline source be connected again instead of keeping a revoked grant ready", () => {
+    state.data = { connections: [{ ...connection, status: "offline" }] };
+    const html = render({ config: boundConfig });
     expect(html).not.toContain("Workers connected");
-    expect(html.match(/<button[^>]*>/)?.[0]).not.toContain("disabled");
+    expect(html.match(/<button[^>]*>/)?.[0]).not.toContain('disabled=""');
   });
   it("prevents provisioning when the environment or its connection list is unavailable", () => {
-    expect(render({ unavailable: true }).match(/<button[^>]*>/)?.[0]).toContain("disabled");
+    expect(render({ unavailable: true }).match(/<button[^>]*>/)?.[0]).toContain('disabled=""');
     state.isPending = true;
-    expect(render().match(/<button[^>]*>/)?.[0]).toContain("disabled");
+    expect(render().match(/<button[^>]*>/)?.[0]).toContain('disabled=""');
   });
-  it("explains that grant issuance is a desktop action when no bridge is present", () => {
+  it("explains that new grant issuance is a desktop action when no bridge is present", () => {
     vi.stubGlobal("window", {});
     const html = render();
     expect(html).toContain("Connect workers in the desktop app.");
-    expect(html.match(/<button[^>]*>/)?.[0]).toContain("disabled");
+    expect(html.match(/<button[^>]*>/)?.[0]).toContain('disabled=""');
   });
-  it("requires a real managed selection instead of deriving a tenant from a native instance", () => {
+  it("can save an existing ready grant without requiring a second desktop issuance", () => {
+    vi.stubGlobal("window", {});
+    state.data = { connections: [connection] };
+    const html = render();
+    expect(html.match(/<button[^>]*>/)?.[0]).not.toContain('disabled=""');
+    expect(html).not.toContain("Connect workers in the desktop app.");
+  });
+  it("requires a managed selection instead of deriving a tenant from a native instance", () => {
     const html = render({ instanceId: nativeInstance });
     expect(html).toContain("Select a managed Business OS to connect workers.");
-    expect(html.match(/<button[^>]*>/)?.[0]).toContain("disabled");
+    expect(html.match(/<button[^>]*>/)?.[0]).toContain('disabled=""');
   });
 });

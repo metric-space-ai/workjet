@@ -1,7 +1,10 @@
-import type { CapabilityManifest, WorkjetThreadRole } from "@workjet/contracts";
+import type { CapabilityManifest, WorkjetProjectTeamMember, WorkjetThreadRole } from "@workjet/contracts";
+
+import { compileWorkjetTeamRolePrompt } from "./teamRolePrompt.ts";
 
 export interface CompileCapabilityPromptInput {
   readonly role: WorkjetThreadRole;
+  readonly team?: WorkjetProjectTeamMember;
   readonly managedInstructions: string;
   readonly manifests: ReadonlyArray<CapabilityManifest>;
 }
@@ -37,11 +40,12 @@ const roleSection = (role: WorkjetThreadRole): string => {
 
 export const compileCapabilityPrompt = ({
   role,
+  team,
   managedInstructions,
   manifests,
 }: CompileCapabilityPromptInput): string => {
   const sections: Array<string> = [WORKJET_COLLECTIVE_SYSTEM_PROMPT];
-  const compiledRoleSection = roleSection(role);
+  const compiledRoleSection = team ? compileWorkjetTeamRolePrompt(team) : roleSection(role);
   const trimmedManagedInstructions = managedInstructions.trim();
 
   if (compiledRoleSection.length > 0) {

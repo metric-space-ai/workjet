@@ -92,6 +92,8 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { WorkjetModelsProviders } from "./WorkjetModelsProviders";
+import { useInstanceGrokAccount } from "./useInstanceGrokAccount";
+import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { WorkjetModelsUsage } from "./WorkjetModelsUsage";
 import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
@@ -364,12 +366,24 @@ function ScopedWorkjetGatewayAccountsSection({
   readonly environmentId: EnvironmentId;
 }) {
   const gateway = useWorkjetGatewaySection(environmentId);
+  const { selectedId } = useCtoxMode();
   return (
     <>
-      <WorkjetModelsProviders {...gateway} />
+      {selectedId ? <InstanceGatewayModels key={selectedId} instanceId={selectedId} gateway={gateway} /> : <WorkjetModelsProviders {...gateway} />}
       <WorkjetModelsUsage environmentId={environmentId} />
     </>
   );
+}
+
+function InstanceGatewayModels({ instanceId, gateway }: {
+  readonly instanceId: string;
+  readonly gateway: ReturnType<typeof useWorkjetGatewaySection>;
+}) {
+  const { discovery } = useCtoxMode();
+  const instance = discovery !== "loading" && discovery._tag === "ready" ? discovery.instances.find((item) => item.id === instanceId) : undefined;
+  const label = instance?.displayName ?? "CTOX instance";
+  const instanceGrok = useInstanceGrokAccount(instanceId, label);
+  return <WorkjetModelsProviders {...gateway} instanceGrok={instanceGrok} />;
 }
 
 function SelectedEnvironmentProviderSettings({

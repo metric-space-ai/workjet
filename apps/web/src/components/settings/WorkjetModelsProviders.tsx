@@ -6,7 +6,7 @@ import type {
   WorkjetGatewayModelCheck,
 } from "@workjet/contracts";
 import { CheckIcon, EllipsisIcon, PlusIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
 
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -56,7 +56,18 @@ export interface ModelsModelCheck {
   readonly httpStatus: number | null;
 }
 
+export interface InstanceGrokAccountPresentation {
+  readonly row: ReactNode;
+  readonly label: string;
+  readonly installed: boolean;
+  readonly hasModels: boolean;
+  readonly checking: boolean;
+  readonly start: () => void;
+  readonly checkAll: () => void;
+  readonly refresh: () => void;
+}
 export interface ModelsManagementState {
+  readonly instanceGrok?: InstanceGrokAccountPresentation;
   readonly modelChecks?: ReadonlyArray<ModelsModelCheck>;
   readonly pendingModelChecks?: ReadonlyArray<{
     readonly accountId: string;
@@ -884,7 +895,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           <span className="text-xs text-muted-foreground">
             {state.isInitialLoading
               ? "Loading…"
-              : `${accounts.filter((account) => account.enabled).length} active accounts`}
+              : `${accounts.filter((account) => account.enabled).length + (state.instanceGrok?.installed ? 1 : 0)} active accounts`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -892,22 +903,22 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             size="sm"
             variant="ghost"
             disabled={
-              state.checksBusy ||
-              !state.onCheckModels ||
-              accounts.every((account) => !account.enabled || account.modelIds.length === 0)
+              state.checksBusy || state.instanceGrok?.checking ||
+              (!state.onCheckModels && !state.instanceGrok?.hasModels) ||
+              (accounts.every((account) => !account.enabled || account.modelIds.length === 0) && !state.instanceGrok?.hasModels)
             }
             data-workjet-action="models.check-all"
-            onClick={() => state.onCheckModels?.()}
+            onClick={() => { state.onCheckModels?.(); state.instanceGrok?.checkAll(); }}
           >
             <CheckIcon className="size-3.5" />
-            {state.checksBusy ? "Checking…" : "Check all"}
+            {state.checksBusy || state.instanceGrok?.checking ? "Checking…" : "Check all"}
           </Button>
           <Button
             size="icon-xs"
             variant="ghost"
             aria-label="Refresh provider status"
             disabled={state.isRefreshing}
-            onClick={state.onRefresh}
+            onClick={() => { state.onRefresh(); state.instanceGrok?.refresh(); }}
           >
             <RefreshCwIcon className="size-3.5" />
           </Button>
@@ -966,7 +977,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           {!state.checksBusy && " Use Check all to continue."}
         </p>
       )}
-      {accounts.length === 0 && adding === null && !state.isInitialLoading && (
+      {accounts.length === 0 && !state.instanceGrok?.installed && adding === null && !state.isInitialLoading && (
         <p className="py-4 text-sm text-muted-foreground">
           Add a provider and connect through subscription sign-in or an API key.
         </p>
@@ -990,6 +1001,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
               Actions
             </span>
           </div>
+          {state.instanceGrok?.row}
           {providers.map((provider) => {
             const providerAccounts = accounts.filter((account) => account.provider === provider);
             const models = state.catalog?.providerModels?.find(
@@ -1040,8 +1052,11 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                   keyProvider === null &&
                   !loginHere && (
                     <div className="flex gap-2 py-2">
-                      <Button size="xs" variant="outline" onClick={() => state.onAddAccount("xai")}>
-                        Sign in with subscription
+                      <Button size="xs" variant="outline" onClick={() => {
+                        if (state.instanceGrok) { state.instanceGrok.start(); setAdding(null); }
+                        else state.onAddAccount("xai");
+                      }}>
+                        {state.instanceGrok ? `Grok Build OAuth on ${state.instanceGrok.label}` : "Sign in with subscription"}
                       </Button>
                       <Button size="xs" variant="outline" onClick={() => setKeyProvider("xai")}>
                         Add API key

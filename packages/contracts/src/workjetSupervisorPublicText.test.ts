@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import { WorkjetSupervisorExecutionPage, WorkjetSupervisorExecutionPageRequest,
   WorkjetSupervisorPublicAssistantText,
-  nextWorkjetSupervisorExecutionPageRequest } from "./workjetSupervisorExecution";
+  nextWorkjetSupervisorExecutionPageRequest } from "./workjetSupervisorExecution.ts";
 
 const chunk = { turn_id: "turn", item_id: "item", phase: "final_answer", offset: 0,
   text: "Public answer 🦊", completed: false, truncated: false } as const;

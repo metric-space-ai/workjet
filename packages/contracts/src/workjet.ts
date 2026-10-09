@@ -127,15 +127,26 @@ export const WorkjetGatewayAccountId = TrimmedNonEmptyString.pipe(
 );
 export type WorkjetGatewayAccountId = typeof WorkjetGatewayAccountId.Type;
 
+/** Public identity and revision issued by the authenticated native provider registry. */
+export const WorkjetNativeAccountReference = Schema.Struct({
+  accountId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  holderInstanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  accountRevision: PositiveInt.check(Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+});
+export type WorkjetNativeAccountReference = typeof WorkjetNativeAccountReference.Type;
+
 /**
- * A non-secret route to credentials protected by the provider-gateway account
- * authority. The reference is a Workjet gateway account id — never a Code
- * provider-driver instance id, and never a model or a credential.
+ * A non-secret route keeps its local gateway account id separately from the
+ * optional native CTOX reference. Decoding metadata does not grant authority:
+ * native execution re-resolves
+ * Owner, holder, account revision, live model and the actual Supervisor lease.
+ * Legacy gateway ids must never be promoted by matching provider/email labels.
  */
 export const WorkjetLlmRoute = Schema.Struct({
   id: WorkjetLlmRouteId,
   label: TrimmedNonEmptyString,
   gatewayAccountId: WorkjetGatewayAccountId,
+  nativeAccountReference: Schema.optionalKey(WorkjetNativeAccountReference),
 });
 export type WorkjetLlmRoute = typeof WorkjetLlmRoute.Type;
 
@@ -199,6 +210,9 @@ const WorkjetLlmRoutePersisted = Schema.Union([WorkjetLlmRoute, WorkjetLlmRouteV
           id: WorkjetLlmRouteId.make(route.id),
           label: route.label,
           gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId),
+          ...(route.nativeAccountReference === undefined
+            ? {}
+            : { nativeAccountReference: route.nativeAccountReference }),
         }),
     }),
   ),

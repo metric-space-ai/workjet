@@ -7,6 +7,7 @@ import {
   type CtoxWorkjetProjectControlResult,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
+import { Effect, Random } from "effect";
 import {
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
@@ -128,7 +129,7 @@ async function dispatchSavedSupervisorTurn(
   if (submission === "prepared" && intent.turnKind === "conversation") {
     const capability = await readWorkjetSupervisorTurnCapabilities(
       intent,
-      CommandId.make(`supervisor-kind-${crypto.randomUUID()}`),
+      CommandId.make(`supervisor-kind-${Effect.runSync(Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER))}`),
       port,
     );
     if (capability._tag !== "completed") {

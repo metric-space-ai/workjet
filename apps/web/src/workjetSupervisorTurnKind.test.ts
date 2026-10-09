@@ -214,22 +214,26 @@ describe("capability checked Supervisor conversations", () => {
       const result = await readWorkjetSupervisorTurnCapabilities(
         intent,
         CommandId.make("capability-1"),
-        async (_instance, request) => ({
-          _tag: "completed",
-          response: {
-            action: "project.supervisor.turn.capabilities",
-            commandId: wrong === "command" ? CommandId.make("foreign") : request.commandId,
-            projectId: intent.projectId,
-            contract: "ctox.workjet.supervisor_turn_capabilities.v1",
-            binding: {
-              ...binding,
-              threadId:
-                wrong === "thread" ? "6f688cca-f01b-4e08-ac6e-d91c9c512d5b" : binding.threadId,
+        async (_instance, request) => {
+          if (request.action !== "project.supervisor.turn.capabilities")
+            throw new Error("Expected the actual capability query");
+          return {
+            _tag: "completed",
+            response: {
+              action: request.action,
+              commandId: wrong === "command" ? CommandId.make("foreign") : request.commandId,
+              projectId: intent.projectId,
+              contract: "ctox.workjet.supervisor_turn_capabilities.v1",
+              binding: {
+                ...binding,
+                threadId:
+                  wrong === "thread" ? "6f688cca-f01b-4e08-ac6e-d91c9c512d5b" : binding.threadId,
+              },
+              turnKinds: ["work", "conversation"],
+              defaultTurnKind: "work",
             },
-            turnKinds: ["work", "conversation"],
-            defaultTurnKind: "work",
-          },
-        }),
+          };
+        },
       );
       expect(result).toEqual({ _tag: "failed", code: "guest_failed" });
     }

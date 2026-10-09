@@ -4,6 +4,7 @@ import type {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
   DesktopCtoxBridge,
+  CtoxWorkjetProjectKpis,
 } from "@workjet/contracts";
 
 export type WorkjetProjectControlPort = NonNullable<DesktopCtoxBridge["requestProjectControl"]>;
@@ -104,6 +105,28 @@ export function readWorkjetProjectKpis(
     { action: "project.kpis.read", commandId, projectId },
     port,
   );
+}
+
+/** Apply only the correlated native revision; never calculate or persist caller values. */
+export async function saveWorkjetProjectKpis(
+  instanceId: string,
+  request: Extract<CtoxWorkjetProjectControlRequest, { readonly action: "project.kpis.configure" }>,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectKpis | null> {
+  try {
+    const result = await requestWorkjetProjectControl(instanceId, request, port);
+    if (result._tag !== "completed" || result.response.action !== "project.kpis.configure")
+      return null;
+    const response = result.response;
+    return response.commandId === request.commandId &&
+      response.projectId === request.projectId &&
+      response.kpis.project_id === request.projectId &&
+      response.kpis.revision > request.expectedRevision
+      ? response.kpis
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function readWorkjetGalleryOrder(

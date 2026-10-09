@@ -32,6 +32,7 @@ import {
   configureWorkjetProject,
   readWorkjetGalleryOrder,
   readWorkjetProjectKpis,
+  saveWorkjetProjectKpis,
   saveWorkjetGalleryOrder,
 } from "../workjetProjectControl";
 import {
@@ -40,7 +41,7 @@ import {
   moveGalleryItem,
   orderGalleryProjects,
 } from "../projectGalleryOrder";
-import type { PromptedProjectKpis } from "../projectKpis";
+import type { PromptedProjectKpis, ProjectKpiPromptInput } from "../projectKpis";
 import { SortableProjectTile } from "../components/SortableProjectTile";
 import {
   closestCenter,
@@ -603,9 +604,14 @@ function ProjectGallery({
   const orderWriter = useRef<ReturnType<typeof createGalleryOrderWriter> | null>(null);
   const [orderLoaded, setOrderLoaded] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
-  const [kpisByProject, setKpisByProject] = useState<Readonly<Record<string, PromptedProjectKpis>>>(
-    {},
-  );
+  const [kpiProjection, setKpiProjection] = useState<{
+    readonly instanceId: string | null;
+    readonly records: Readonly<Record<string, PromptedProjectKpis>>;
+  }>({ instanceId: null, records: {} });
+  const kpiScope = useRef<{ instanceId: string | null; active: boolean }>({
+    instanceId: null,
+    active: false,
+  });
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -673,7 +679,8 @@ function ProjectGallery({
 
   useEffect(() => {
     if (instanceId === null) return;
-    let cancelled = false;
+    const scope = { instanceId, active: true };
+    kpiScope.current = scope;
     const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
     void Promise.all(
       projectIds.map(async (projectId) => {
@@ -687,13 +694,40 @@ function ProjectGallery({
           : null;
       }),
     ).then((entries) => {
-      if (cancelled) return;
-      setKpisByProject(Object.fromEntries(entries.filter((entry) => entry !== null)));
+      if (!scope.active) return;
+      setKpiProjection({
+        instanceId,
+        records: Object.fromEntries(entries.filter((entry) => entry !== null)),
+      });
     });
     return () => {
-      cancelled = true;
+      scope.active = false;
     };
   }, [instanceId, nativeProjectIds]);
+
+  const saveKpis = useCallback(
+    async (projectId: string, prompts: readonly ProjectKpiPromptInput[], expectedRevision: number) => {
+      const scope = kpiScope.current;
+      if (
+        instanceId === null || !scope.active || scope.instanceId !== instanceId ||
+        !nativeProjectIds.split("\n").includes(projectId)
+      ) return false;
+      const kpis = await saveWorkjetProjectKpis(instanceId, {
+        action: "project.kpis.configure",
+        commandId: newCommandId(),
+        operationId: newCommandId(),
+        projectId: ProjectId.make(projectId),
+        expectedRevision,
+        prompts,
+      });
+      if (!kpis || !scope.active || kpiScope.current !== scope) return false;
+      setKpiProjection((previous) => previous.instanceId === instanceId
+        ? { instanceId, records: { ...previous.records, [projectId]: kpis } }
+        : previous);
+      return true;
+    },
+    [instanceId, nativeProjectIds],
+  );
 
   const reorderProjects = useCallback(
     (event: DragEndEvent) => {
@@ -808,7 +842,12 @@ function ProjectGallery({
                           onSaveConfiguration={project.onSaveConfiguration}
                           canArchive={project.canArchive}
                           statistics={project.statistics}
-                          kpis={kpisByProject[project.id]}
+                          kpis={kpiProjection.instanceId === instanceId
+                            ? kpiProjection.records[project.id]
+                            : undefined}
+                          onSaveKpis={project.native && instanceId !== null
+                            ? (prompts, revision) => saveKpis(project.id, prompts, revision)
+                            : undefined}
                           reorderHandle={reorderHandle}
                         />
                       )}

@@ -20,7 +20,7 @@ export function appendSupervisorExecutionEvents(
   incoming: readonly WorkjetSupervisorExecutionEvent[],
 ): { events: readonly WorkjetSupervisorExecutionEvent[]; limited: boolean; conflicted: boolean } {
   const events = [...previous];
-  const fingerprints = new Map(previous.map(event => [event.id, JSON.stringify(event)]));
+  const fingerprints = new Map(previous.map((event) => [event.id, JSON.stringify(event)]));
   let conflicted = false;
   for (const event of incoming) {
     const fingerprint = JSON.stringify(event);
@@ -51,8 +51,14 @@ export function reconstructSupervisorPublicReplies(
       if (replies.size >= 256) break;
       entry = {
         reply: {
-          id, turnId: chunk.turn_id, itemId: chunk.item_id, phase: chunk.phase,
-          text: "", completed: false, truncated: false, incomplete: false,
+          id,
+          turnId: chunk.turn_id,
+          itemId: chunk.item_id,
+          phase: chunk.phase,
+          text: "",
+          completed: false,
+          truncated: false,
+          incomplete: false,
         },
         chars: [],
       };
@@ -69,9 +75,12 @@ export function reconstructSupervisorPublicReplies(
     const chars = Array.from(chunk.text);
     const overlap = entry.chars.length - chunk.offset;
     if (
-      chunk.phase !== entry.reply.phase || overlap < 0 ||
+      chunk.phase !== entry.reply.phase ||
+      overlap < 0 ||
       ((chunk.completed || chunk.truncated) && chunk.offset + chars.length < entry.chars.length) ||
-      chars.slice(0, Math.max(0, overlap)).some((char, index) => entry.chars[chunk.offset + index] !== char) ||
+      chars
+        .slice(0, Math.max(0, overlap))
+        .some((char, index) => entry.chars[chunk.offset + index] !== char) ||
       (entry.reply.completed && (chars.length > overlap || !chunk.completed))
     ) {
       entry.reply.incomplete = true;

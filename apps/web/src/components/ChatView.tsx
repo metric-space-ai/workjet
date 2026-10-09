@@ -1670,7 +1670,8 @@ function ChatViewContent(props: ChatViewProps) {
       : null;
   const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
   const nativeSupervisorThread = isNativeSupervisorThread(visibleWorkjetConfig);
-  const [nativeSupervisorConversationTarget, setNativeSupervisorConversationTarget] = useState<HTMLDivElement | null>(null);
+  const [nativeSupervisorConversationTarget, setNativeSupervisorConversationTarget] =
+    useState<HTMLDivElement | null>(null);
   const browserSurfaceEnabled = workjetBrowserSurfaceEnabled({
     isServerThread,
     serverConfig: visibleWorkjetConfig,
@@ -7162,58 +7163,62 @@ function ChatViewContent(props: ChatViewProps) {
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
-              {(!nativeSupervisorThread || timelineEntries.length > 0) && <MessagesTimeline
-                agentPanelModel={agentPanelModel}
-                onOpenAgents={addAgentsSurface}
-                onOpenThread={onOpenWorkjetPeerThread}
-                onWorkjetDelegationAction={onWorkjetDelegationAction}
-                onWorkjetCrossModeAction={onWorkjetCrossModeAction}
-                onOpenBusinessOsObject={onOpenBusinessOsObject}
-                workjetReassignThreads={workjetRecipientThreads}
-                key={activeThread.id}
-                isWorking={isWorking}
-                workingStepLabel={workingStepLabel}
-                activeTurnInProgress={isWorking || !latestTurnSettled}
-                activeTurnStartedAt={activeWorkStartedAt}
-                listRef={legendListRef}
-                timelineEntries={timelineEntries}
-                latestTurn={activeLatestTurn}
-                runningTurnId={
-                  activeThread.session?.status === "running"
-                    ? activeThread.session.activeTurnId
-                    : null
-                }
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-                activeThreadEnvironmentId={activeThread.environmentId}
-                routeThreadKey={routeThreadKey}
-                onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                onImageExpand={onExpandTimelineImage}
-                markdownCwd={gitCwd ?? undefined}
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                workspaceRoot={activeWorkspaceRoot}
-                skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
-                anchorMessageId={timelineAnchorMessageId}
-                onAnchorReady={onTimelineAnchorReady}
-                contentInsetEndAdjustment={composerOverlayHeight}
-                liveFollowEnabled={timelineLiveFollowEnabled}
-                onIsAtEndChange={onIsAtEndChange}
-                onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={
-                  isDraftHeroState || threadDetailLoading || nativeSupervisorThread
-                }
-                topFadeEnabled={!hasTimelineTopBanner}
-                loadEarlier={loadEarlierTurns}
-              />}
-              {nativeSupervisorThread && <div
-                key={`native-conversation:${activeThreadKey}:${presentationInstanceId}`}
-                ref={setNativeSupervisorConversationTarget}
-                className="min-h-0 flex-1 overflow-y-auto"
-                style={{ paddingBottom: composerOverlayHeight }}
-              />}
+              {(!nativeSupervisorThread || timelineEntries.length > 0) && (
+                <MessagesTimeline
+                  agentPanelModel={agentPanelModel}
+                  onOpenAgents={addAgentsSurface}
+                  onOpenThread={onOpenWorkjetPeerThread}
+                  onWorkjetDelegationAction={onWorkjetDelegationAction}
+                  onWorkjetCrossModeAction={onWorkjetCrossModeAction}
+                  onOpenBusinessOsObject={onOpenBusinessOsObject}
+                  workjetReassignThreads={workjetRecipientThreads}
+                  key={activeThread.id}
+                  isWorking={isWorking}
+                  workingStepLabel={workingStepLabel}
+                  activeTurnInProgress={isWorking || !latestTurnSettled}
+                  activeTurnStartedAt={activeWorkStartedAt}
+                  listRef={legendListRef}
+                  timelineEntries={timelineEntries}
+                  latestTurn={activeLatestTurn}
+                  runningTurnId={
+                    activeThread.session?.status === "running"
+                      ? activeThread.session.activeTurnId
+                      : null
+                  }
+                  turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                  activeThreadEnvironmentId={activeThread.environmentId}
+                  routeThreadKey={routeThreadKey}
+                  onOpenTurnDiff={onOpenTurnDiff}
+                  revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                  onRevertUserMessage={onRevertUserMessage}
+                  isRevertingCheckpoint={isRevertingCheckpoint}
+                  onImageExpand={onExpandTimelineImage}
+                  markdownCwd={gitCwd ?? undefined}
+                  resolvedTheme={resolvedTheme}
+                  timestampFormat={timestampFormat}
+                  workspaceRoot={activeWorkspaceRoot}
+                  skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
+                  anchorMessageId={timelineAnchorMessageId}
+                  onAnchorReady={onTimelineAnchorReady}
+                  contentInsetEndAdjustment={composerOverlayHeight}
+                  liveFollowEnabled={timelineLiveFollowEnabled}
+                  onIsAtEndChange={onIsAtEndChange}
+                  onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                  hideEmptyPlaceholder={
+                    isDraftHeroState || threadDetailLoading || nativeSupervisorThread
+                  }
+                  topFadeEnabled={!hasTimelineTopBanner}
+                  loadEarlier={loadEarlierTurns}
+                />
+              )}
+              {nativeSupervisorThread && (
+                <div
+                  key={`supervisor-conversation:${activeThreadKey}:${presentationInstanceId}`}
+                  ref={setNativeSupervisorConversationTarget}
+                  className="min-h-0 flex-1 overflow-y-auto"
+                  style={{ paddingBottom: composerOverlayHeight }}
+                />
+              )}
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (

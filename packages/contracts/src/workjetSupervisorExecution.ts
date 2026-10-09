@@ -45,9 +45,12 @@ export const WorkjetSupervisorPublicAssistantText = Schema.Struct({
   item_id: safeText(128),
   phase: Schema.Literals(["assistant", "commentary", "final_answer"]),
   offset: safeInteger(0).check(Schema.isLessThanOrEqualTo(65536)),
-  text: Schema.String.check(Schema.makeFilter(
-    (text) => Array.from(text).length <= 4096 || "A native text chunk exceeds 4096 Unicode characters.",
-  )),
+  text: Schema.String.check(
+    Schema.makeFilter(
+      (text) =>
+        Array.from(text).length <= 4096 || "A native text chunk exceeds 4096 Unicode characters.",
+    ),
+  ),
   completed: Schema.Boolean,
   truncated: Schema.Boolean,
 });
@@ -63,10 +66,15 @@ export const WorkjetSupervisorExecutionEvent = Schema.Struct({
   call_id: Schema.optionalKey(safeText(128)),
   success: Schema.optionalKey(Schema.Boolean),
   public_text: Schema.optionalKey(WorkjetSupervisorPublicAssistantText),
-}).check(Schema.makeFilter((event) =>
-  (event.kind === "worker.assistant_text" ? event.public_text !== undefined : event.public_text === undefined)
-  || "Public assistant text belongs only to an actual assistant-text event.",
-));
+}).check(
+  Schema.makeFilter(
+    (event) =>
+      (event.kind === "worker.assistant_text"
+        ? event.public_text !== undefined
+        : event.public_text === undefined) ||
+      "Public assistant text belongs only to an actual assistant-text event.",
+  ),
+);
 export type WorkjetSupervisorExecutionEvent = typeof WorkjetSupervisorExecutionEvent.Type;
 export const WorkjetSupervisorExecutionPage = Schema.Struct({
   command_id: safeText(256),

@@ -193,6 +193,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/harnesses",
   },
   {
+    id: "import-sessions",
+    title: "Import sessions",
+    to: "/settings/harnesses",
+    searchAliases: ["import", "history", "histories"],
+  },
+  {
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",

@@ -41,6 +41,7 @@ import { SessionImportBrowser, sessionImportFolderName } from "./SessionImportBr
 import { prepareSessionImportProject, type SessionImportProject } from "./sessionImportProject";
 import { selectAllSessionImportCandidates } from "./sessionImportSelection";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { searchableSetting } from "./settingsSearch";
 
 const PAGE_SIZE = 20;
 
@@ -421,7 +422,7 @@ export function SessionImportSection({
   };
 
   return (
-    <SettingsSection title="Import sessions">
+    <SettingsSection {...searchableSetting("import-sessions")}>
       <SettingsRow
         title="Bring conversations into a project"
         description="Browse Codex and Claude Code conversations, preview their content, and choose where they belong."

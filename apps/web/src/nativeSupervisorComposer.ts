@@ -121,7 +121,12 @@ export function canResumeSupervisorJournal(
   journal: WorkjetSupervisorJournal | null,
   failureCode: string | null,
 ): boolean {
-  if (journal === null || journal.submission === "not-submitted" || journal.turn?.terminal)
+  if (journal === null || journal.turn?.terminal) return false;
+  if (
+    journal.submission === "not-submitted" &&
+    journal.submissionError !== "not_active" &&
+    journal.submissionError !== "timeout"
+  )
     return false;
   return failureCode === null || failureCode === "timeout" || failureCode === "not_active";
 }

@@ -9,7 +9,12 @@ function supervisorObservationError(
   const b = next.intent;
   if (a.instanceId !== b.instanceId || a.projectId !== b.projectId || a.threadId !== b.threadId)
     return "This thread keeps its original native supervisor binding.";
-  if (a.commandId !== b.commandId || a.goal !== b.goal || a.createdAt !== b.createdAt)
+  if (
+    a.commandId !== b.commandId ||
+    a.goal !== b.goal ||
+    a.createdAt !== b.createdAt ||
+    (a.turnKind ?? "work") !== (b.turnKind ?? "work")
+  )
     return "A native supervisor retry must keep its saved command and payload.";
   if (
     (previous.submission === "awaiting-receipt" &&

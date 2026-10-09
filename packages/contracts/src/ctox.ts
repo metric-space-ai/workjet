@@ -51,6 +51,8 @@ import {
   WorkjetSupervisorGoal,
   WorkjetSupervisorThreadId,
   WorkjetSupervisorTurn,
+  WorkjetSupervisorTurnKind,
+  WorkjetSupervisorTurnCapabilitiesResponse,
 } from "./workjetSupervisor.ts";
 import {
   WorkjetSupervisorExecutionPageRequest,
@@ -697,6 +699,13 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     projectId: ProjectId,
     threadId: WorkjetSupervisorThreadId,
     goal: WorkjetSupervisorGoal,
+    turnKind: Schema.optionalKey(WorkjetSupervisorTurnKind),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.capabilities"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
   }),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.watch"),
@@ -797,6 +806,7 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 );
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
+  WorkjetSupervisorTurnCapabilitiesResponse,
   WorkjetJourFixeNarrationReadResponse,
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
@@ -939,6 +949,8 @@ export function isWorkjetSupervisorReceiptForRequest(
   )
     return false;
   if (request.action === "project.supervisor.bind") return response.action === request.action;
+  if (request.action === "project.supervisor.turn.capabilities")
+    return response.action === request.action;
   if (!("turn" in response) || response.turn.threadId !== request.threadId) return false;
   if (
     request.action === "project.supervisor.turn.watch" ||

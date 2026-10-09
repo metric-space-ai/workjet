@@ -1,5 +1,26 @@
 import type { PromptedProjectKpis } from "./projectKpis";
 
+export async function readGalleryProjectKpis(
+  projectIds: readonly string[],
+  read: (projectId: string) => Promise<unknown>,
+  isActive: () => boolean,
+): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (isActive() && next < projectIds.length) {
+      const projectId = projectIds[next++];
+      if (projectId === undefined) return;
+      try {
+        await read(projectId);
+      } catch {
+        // Keep other cards readable when one project's transport rejects.
+        continue;
+      }
+    }
+  };
+  await Promise.all([worker(), worker()]);
+}
+
 export interface ProjectKpiProjection {
   readonly instanceId: string | null;
   readonly records: Readonly<Record<string, PromptedProjectKpis>>;

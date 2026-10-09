@@ -121,7 +121,8 @@ function render(overrides: Partial<WorkjetGatewaySectionState> = {}) {
 describe("Workjet gateway account surface", () => {
   it("derives Kimi discovery errors only from the typed reason, never an echoed key", () => {
     const message = workjetGatewayFailureDescription({
-      _tag: "WorkjetGatewayOperationError", reason: "kimi-key-not-accepted",
+      _tag: "WorkjetGatewayOperationError",
+      reason: "kimi-key-not-accepted",
       message: "provider echoed private-fixture-key",
     });
     expect(message).toContain("GET /models");

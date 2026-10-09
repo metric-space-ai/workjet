@@ -4,7 +4,9 @@ import {
   type WorkjetGatewayKimiConnection,
 } from "@workjet/contracts";
 
-export const KIMI_BASE_URLS = WORKJET_GATEWAY_KIMI_ENDPOINTS.map((endpoint) => endpoint.upstreamBaseUrl);
+export const KIMI_BASE_URLS = WORKJET_GATEWAY_KIMI_ENDPOINTS.map(
+  (endpoint) => endpoint.upstreamBaseUrl,
+);
 
 export interface KimiConnection extends WorkjetGatewayKimiConnection {
   readonly models: ReadonlyArray<string>;
@@ -21,67 +23,70 @@ export const discoverKimiConnection = async (
     ...(signal === undefined ? [] : [signal]),
   ]);
   const results = await Promise.all(
-    WORKJET_GATEWAY_KIMI_ENDPOINTS.map(async ({ plan, upstreamBaseUrl }): Promise<KimiConnection | undefined> => {
-      let response: Response | undefined;
-      try {
-        response = await fetch(`${upstreamBaseUrl}/models`, {
-          redirect: "error",
-          headers: { authorization: `Bearer ${apiKey}`, "User-Agent": "Workjet" },
-          signal: deadline,
-        });
-        if (!response.ok || response.body === null) return undefined;
-        const declared = response.headers.get("content-length");
-        if (declared !== null && Number(declared) > 64 * 1024) return undefined;
-        const reader = response.body.getReader();
-        let size = 0;
-        const chunks: Array<Uint8Array> = [];
+    WORKJET_GATEWAY_KIMI_ENDPOINTS.map(
+      async ({ plan, upstreamBaseUrl }): Promise<KimiConnection | undefined> => {
+        let response: Response | undefined;
         try {
-          for (;;) {
-            const next = await reader.read();
-            if (next.done) break;
-            size += next.value.byteLength;
-            if (size > 64 * 1024) return undefined;
-            chunks.push(next.value);
+          response = await fetch(`${upstreamBaseUrl}/models`, {
+            redirect: "error",
+            headers: { authorization: `Bearer ${apiKey}`, "User-Agent": "Workjet" },
+            signal: deadline,
+          });
+          if (!response.ok || response.body === null) return undefined;
+          const declared = response.headers.get("content-length");
+          if (declared !== null && Number(declared) > 64 * 1024) return undefined;
+          const reader = response.body.getReader();
+          let size = 0;
+          const chunks: Array<Uint8Array> = [];
+          try {
+            for (;;) {
+              const next = await reader.read();
+              if (next.done) break;
+              size += next.value.byteLength;
+              if (size > 64 * 1024) return undefined;
+              chunks.push(next.value);
+            }
+          } finally {
+            await reader.cancel().catch(() => undefined);
+            reader.releaseLock();
           }
+          const bytes = new Uint8Array(size);
+          let offset = 0;
+          for (const chunk of chunks) {
+            bytes.set(chunk, offset);
+            offset += chunk.byteLength;
+          }
+          const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
+          if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined;
+          const data = (body as Record<string, unknown>).data;
+          if (!Array.isArray(data) || data.length === 0 || data.length > 256) return undefined;
+          const models: Array<string> = [];
+          for (const model of data) {
+            if (typeof model !== "object" || model === null || Array.isArray(model))
+              return undefined;
+            const id: unknown = (model as Record<string, unknown>).id;
+            if (
+              typeof id !== "string" ||
+              id.length === 0 ||
+              id.length > 160 ||
+              id.trim() !== id ||
+              [...id].some((character) => {
+                const code = character.codePointAt(0) ?? 0;
+                return code < 0x20 || code === 0x7f;
+              })
+            )
+              return undefined;
+            models.push(id);
+          }
+          return { plan, upstreamBaseUrl, models: [...new Set(models)] };
+        } catch {
+          // Provider bodies, echoed keys and fetch errors never leave this boundary.
+          return undefined;
         } finally {
-          await reader.cancel().catch(() => undefined);
-          reader.releaseLock();
+          await response?.body?.cancel().catch(() => undefined);
         }
-        const bytes = new Uint8Array(size);
-        let offset = 0;
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-        const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
-        if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined;
-        const data = (body as Record<string, unknown>).data;
-        if (!Array.isArray(data) || data.length === 0 || data.length > 256) return undefined;
-        const models: Array<string> = [];
-        for (const model of data) {
-          if (typeof model !== "object" || model === null || Array.isArray(model)) return undefined;
-          const id: unknown = (model as Record<string, unknown>).id;
-          if (
-            typeof id !== "string" ||
-            id.length === 0 ||
-            id.length > 160 ||
-            id.trim() !== id ||
-            [...id].some((character) => {
-              const code = character.codePointAt(0) ?? 0;
-              return code < 0x20 || code === 0x7f;
-            })
-          )
-            return undefined;
-          models.push(id);
-        }
-        return { plan, upstreamBaseUrl, models: [...new Set(models)] };
-      } catch {
-        // Provider bodies, echoed keys and fetch errors never leave this boundary.
-        return undefined;
-      } finally {
-        await response?.body?.cancel().catch(() => undefined);
-      }
-    }),
+      },
+    ),
   );
   return (
     results.find((result) => result?.upstreamBaseUrl === preferredBaseUrl) ??

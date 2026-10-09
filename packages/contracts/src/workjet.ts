@@ -1141,7 +1141,9 @@ export const WorkjetGatewayKimiPlan = Schema.Literals(["coding", "api"]);
 export type WorkjetGatewayKimiPlan = typeof WorkjetGatewayKimiPlan.Type;
 export const WorkjetGatewayKimiConnection = Schema.Struct({
   plan: WorkjetGatewayKimiPlan,
-  upstreamBaseUrl: Schema.Literals(WORKJET_GATEWAY_KIMI_ENDPOINTS.map((endpoint) => endpoint.upstreamBaseUrl)),
+  upstreamBaseUrl: Schema.Literals(
+    WORKJET_GATEWAY_KIMI_ENDPOINTS.map((endpoint) => endpoint.upstreamBaseUrl),
+  ),
 });
 export type WorkjetGatewayKimiConnection = typeof WorkjetGatewayKimiConnection.Type;
 

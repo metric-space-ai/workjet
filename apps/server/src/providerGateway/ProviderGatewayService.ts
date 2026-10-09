@@ -1357,7 +1357,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           throw safeError("invalid-configuration");
       }
       if (input.provider === "kimi" && kimiConnection === undefined)
-        throw safeError(platform.discoverKimiConnection === undefined ? "management-unavailable" : "kimi-key-not-accepted");
+        throw safeError(
+          platform.discoverKimiConnection === undefined
+            ? "management-unavailable"
+            : "kimi-key-not-accepted",
+        );
       if (
         kimiConnection !== undefined &&
         input.models?.some((id) => !kimiConnection.models.includes(id))
@@ -1777,7 +1781,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           JSON.stringify(account.models) === JSON.stringify(models)
         )
           continue;
-        accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, kimiPlan: connection.plan, models };
+        accounts[index] = {
+          ...account,
+          upstreamBaseUrl: connection.upstreamBaseUrl,
+          kimiPlan: connection.plan,
+          models,
+        };
         changed = true;
       }
       if (!changed) return;

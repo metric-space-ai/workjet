@@ -1,4 +1,8 @@
-import { WorkjetGatewayAccountId, WorkjetGatewayOperationError, type WorkjetGatewayAccountSummary } from "@workjet/contracts";
+import {
+  WorkjetGatewayAccountId,
+  WorkjetGatewayOperationError,
+  type WorkjetGatewayAccountSummary,
+} from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 import {
@@ -90,10 +94,14 @@ function html(overrides: Partial<typeof state> = {}) {
 describe("Provider account table", () => {
   it("shows the safe endpoint discovery failure inside the Kimi key form", () => {
     const message = new WorkjetGatewayOperationError({ reason: "kimi-key-not-accepted" }).message;
-    const rendered = renderToStaticMarkup(<WorkjetModelsKeyForm
-      provider="kimi" models={[]} onClose={() => {}}
-      state={{ ...state, apiKey: { status: "failed", provider: "kimi", message } }}
-    />);
+    const rendered = renderToStaticMarkup(
+      <WorkjetModelsKeyForm
+        provider="kimi"
+        models={[]}
+        onClose={() => {}}
+        state={{ ...state, apiKey: { status: "failed", provider: "kimi", message } }}
+      />,
+    );
     expect(rendered).toContain('role="alert"');
     expect(rendered).toContain("https://api.moonshot.cn/v1");
     expect(rendered).toContain("https://api.kimi.com/coding/v1");
@@ -155,19 +163,35 @@ describe("Provider account table", () => {
     expect(html()).not.toContain("API key");
   });
   it.each([
-    { plan: "coding" as const, upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const, title: "Coding plan" },
-    { plan: "api" as const, upstreamBaseUrl: "https://api.moonshot.cn/v1" as const, title: "API plan" },
-  ])("shows $title and its verified endpoint directly on the account", ({ title, ...kimiConnection }) => {
-    const account: WorkjetGatewayAccountSummary = {
-      ...first, provider: "kimi", label: "Kimi work", credentialKind: "api-key",
-      credentialSuffix: "abcd", modelIds: ["k3"], kimiConnection,
-    };
-    const rendered = html({ catalog: { ...state.catalog!, accounts: [account] } });
-    expect(rendered).toContain(title);
-    expect(rendered).toContain(kimiConnection.upstreamBaseUrl);
-    expect(rendered).toContain("API key ··abcd");
-    expect(rendered).not.toContain("<select");
-  });
+    {
+      plan: "coding" as const,
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const,
+      title: "Coding plan",
+    },
+    {
+      plan: "api" as const,
+      upstreamBaseUrl: "https://api.moonshot.cn/v1" as const,
+      title: "API plan",
+    },
+  ])(
+    "shows $title and its verified endpoint directly on the account",
+    ({ title, ...kimiConnection }) => {
+      const account: WorkjetGatewayAccountSummary = {
+        ...first,
+        provider: "kimi",
+        label: "Kimi work",
+        credentialKind: "api-key",
+        credentialSuffix: "abcd",
+        modelIds: ["k3"],
+        kimiConnection,
+      };
+      const rendered = html({ catalog: { ...state.catalog!, accounts: [account] } });
+      expect(rendered).toContain(title);
+      expect(rendered).toContain(kimiConnection.upstreamBaseUrl);
+      expect(rendered).toContain("API key ··abcd");
+      expect(rendered).not.toContain("<select");
+    },
+  );
   it("reveals re-login only when this enabled account has an authentication failure", () => {
     expect(
       html({ modelChecks: [{ ...check, status: "error", errorClass: "auth", httpStatus: 401 }] }),

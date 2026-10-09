@@ -36,9 +36,7 @@ describe("Kimi key origin discovery", () => {
 
   it("retains an explicitly configured, accepted origin when both lists work", async () => {
     vi.stubGlobal("fetch", list);
-    expect((await discoverKimiConnection("fixture-key", apiUrl))?.upstreamBaseUrl).toBe(
-      apiUrl,
-    );
+    expect((await discoverKimiConnection("fixture-key", apiUrl))?.upstreamBaseUrl).toBe(apiUrl);
   });
 
   it("chooses the platform only when its authenticated list succeeds", async () => {
@@ -48,12 +46,18 @@ describe("Kimi key origin discovery", () => {
     expect((await discoverKimiConnection("fixture-key"))?.upstreamBaseUrl).toBe(apiUrl);
   });
 
-  it.each(WORKJET_GATEWAY_KIMI_ENDPOINTS)("selects the accepted $plan origin $upstreamBaseUrl automatically", async (endpoint) => {
-    vi.stubGlobal("fetch", (url: string) =>
-      url === `${endpoint.upstreamBaseUrl}/models` ? list() : new Response("", { status: 401 }),
-    );
-    expect(await discoverKimiConnection("fixture-key")).toEqual({ ...endpoint, models: liveModels });
-  });
+  it.each(WORKJET_GATEWAY_KIMI_ENDPOINTS)(
+    "selects the accepted $plan origin $upstreamBaseUrl automatically",
+    async (endpoint) => {
+      vi.stubGlobal("fetch", (url: string) =>
+        url === `${endpoint.upstreamBaseUrl}/models` ? list() : new Response("", { status: 401 }),
+      );
+      expect(await discoverKimiConnection("fixture-key")).toEqual({
+        ...endpoint,
+        models: liveModels,
+      });
+    },
+  );
 
   it("never reports provider text or an unverified origin when all endpoints fail", async () => {
     vi.stubGlobal("fetch", () => new Response("provider echoed fixture-key", { status: 401 }));

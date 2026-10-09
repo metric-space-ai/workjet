@@ -504,7 +504,12 @@ function AccountRow({
             )}
           </div>
           {account.kimiConnection && (
-            <div className={cn("min-w-0 text-[10px] leading-4 text-muted-foreground", grouped && "pl-5")}>
+            <div
+              className={cn(
+                "min-w-0 text-[10px] leading-4 text-muted-foreground",
+                grouped && "pl-5",
+              )}
+            >
               <span>{account.kimiConnection.plan === "coding" ? "Coding plan" : "API plan"}</span>
               <span className="ml-1 break-all">{account.kimiConnection.upstreamBaseUrl}</span>
             </div>

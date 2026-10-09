@@ -1202,7 +1202,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               </span>
             ) : null}
             {props.teamParentTitle ? (
-              <span className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground" title={`Dispatched by ${props.teamParentTitle}`}>
+              <span
+                className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
+                title={`Dispatched by ${props.teamParentTitle}`}
+              >
                 {props.teamParentTitle}
               </span>
             ) : null}
@@ -1489,11 +1492,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <span className="flex-1" />
               )}
               {props.teamParentTitle ? (
-              <span className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground" title={`Dispatched by ${props.teamParentTitle}`}>
-                {props.teamParentTitle}
-              </span>
-            ) : null}
-            {terminalStatusIcon}
+                <span
+                  className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
+                  title={`Dispatched by ${props.teamParentTitle}`}
+                >
+                  {props.teamParentTitle}
+                </span>
+              ) : null}
+              {terminalStatusIcon}
               {prBadge}
               {diff ? (
                 <span className="shrink-0 font-mono">
@@ -4016,7 +4022,11 @@ export default function Sidebar() {
                         thread={thread}
                         variant={rowVariant}
                         projectTeam={groupByTeam}
-                        teamParentTitle={groupByTeam ? projectTeamParentTitle(thread, [...pinnedThreads, ...activeThreads]) : undefined}
+                        teamParentTitle={
+                          groupByTeam
+                            ? projectTeamParentTitle(thread, [...pinnedThreads, ...activeThreads])
+                            : undefined
+                        }
                         teamHarnessLabel={
                           groupByTeam && duplicateTitles.has(thread.title)
                             ? projectTeamHarnessLabel(thread)

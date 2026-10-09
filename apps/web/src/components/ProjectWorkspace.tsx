@@ -354,7 +354,10 @@ export function ProjectWorkspace({
                                 >
                                   <span className="min-w-0 truncate">{thread.title}</span>
                                   {parentTitle ? (
-                                    <span className="max-w-28 truncate rounded border border-border px-1 text-[10px] font-normal text-muted-foreground" title="Dispatched by">
+                                    <span
+                                      className="max-w-28 truncate rounded border border-border px-1 text-[10px] font-normal text-muted-foreground"
+                                      title="Dispatched by"
+                                    >
                                       {parentTitle}
                                     </span>
                                   ) : null}
@@ -504,7 +507,9 @@ export function ProjectWorkspace({
                   setDomain("");
                   setGoal("");
                 } catch {
-                  setError("Could not save this persistent worker. Check the connection and model settings.");
+                  setError(
+                    "Could not save this persistent worker. Check the connection and model settings.",
+                  );
                 } finally {
                   setSaving(false);
                 }

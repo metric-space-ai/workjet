@@ -46,18 +46,23 @@ export function groupThreadsByProjectTeam<T extends TeamThread>(
 }
 
 /** Resolve a dispatched worker’s parent only inside its project and environment. */
-export function projectTeamParentTitle<T extends TeamThread & {
-  readonly id: string;
-  readonly title: string;
-  readonly environmentId: string;
-}>(thread: T, threads: readonly T[]): string | undefined {
+export function projectTeamParentTitle<
+  T extends TeamThread & {
+    readonly id: string;
+    readonly title: string;
+    readonly environmentId: string;
+  },
+>(thread: T, threads: readonly T[]): string | undefined {
   const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
   if (team?.role !== "worker") return undefined;
   return threads.find((candidate) => {
-    const parent = candidate.workjetConfig.schemaVersion === 2 ? candidate.workjetConfig.team : undefined;
-    return candidate.id === team.parentThreadId &&
+    const parent =
+      candidate.workjetConfig.schemaVersion === 2 ? candidate.workjetConfig.team : undefined;
+    return (
+      candidate.id === team.parentThreadId &&
       candidate.environmentId === thread.environmentId &&
-      parent?.projectId === team.projectId;
+      parent?.projectId === team.projectId
+    );
   })?.title;
 }
 

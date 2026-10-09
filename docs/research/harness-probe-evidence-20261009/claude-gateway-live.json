@@ -1,0 +1,2230 @@
+{
+  "time": "2026-10-09T21:56:22.582883+00:00",
+  "results": [
+    {
+      "type": "control_response",
+      "response": {
+        "subtype": "success",
+        "request_id": "init",
+        "response": {
+          "commands": [
+            {
+              "name": "loop",
+              "description": "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.",
+              "argumentHint": "[interval] [prompt]",
+              "aliases": [
+                "proactive"
+              ],
+              "builtin": true
+            },
+            {
+              "name": "compact",
+              "description": "Free up context by summarizing the conversation so far",
+              "argumentHint": "<optional custom summarization instructions>",
+              "builtin": true
+            },
+            {
+              "name": "context",
+              "description": "Show current context usage",
+              "argumentHint": "",
+              "builtin": true
+            },
+            {
+              "name": "model",
+              "description": "Set the AI model for Claude Code",
+              "argumentHint": "<model>",
+              "builtin": true
+            },
+            {
+              "name": "goal",
+              "description": "Set a goal \u2014 keep working until the condition is met",
+              "argumentHint": "",
+              "builtin": true
+            }
+          ],
+          "agents": [
+            {
+              "name": "claude",
+              "description": "Catch-all for any task that doesn't fit a more specific agent. FleetView's default when no agent name is typed."
+            },
+            {
+              "name": "claude-code-guide",
+              "description": "Use this agent when the user asks questions (\"Can Claude...\", \"Does Claude...\", \"How do I...\") about: (1) Claude Code (the CLI tool) - features, hooks, slash commands, MCP servers, settings, IDE integrations, keyboard shortcuts; (2) Claude Agent SDK - building custom agents; (3) Claude API (formerly Anthropic API) - Messages API for directly passing messages to Claude, Tool Runner (`client.beta.messages.tool_runner`) for running an agentic loop over your own tools, manual tool-use loops, Managed Agents for server-hosted agents with a managed sandbox, prompt caching, and general Anthropic SDK usage; (4) Claude Tag (Claude in Slack) - what it is, setting it up for a Slack workspace, `/install-slack-app`; (5) `claude plugin eval` (writing and running plugin eval suites, its JSON/report, sandbox, CI) and the `/skill-doctor` report. **IMPORTANT:** Before spawning a new agent, check if there is already a running or recently completed claude-code-guide agent that you can continue via SendMessage.",
+              "model": "<unvalidated-model:5a5110eb>"
+            },
+            {
+              "name": "Explore",
+              "description": "Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"), grep for symbols or keywords (eg. \"API endpoints\"), or answer \"where is X defined / which files reference Y.\" Do NOT use it for code review, design-doc auditing, cross-file consistency checks, or open-ended analysis \u2014 it reads excerpts rather than whole files and will miss content past its read window. When calling, specify search breadth: \"quick\" for a single targeted lookup, \"medium\" for moderate exploration, or \"very thorough\" to search across multiple locations and naming conventions.",
+              "model": "<unvalidated-model:035300f3>"
+            },
+            {
+              "name": "general-purpose",
+              "description": "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you."
+            },
+            {
+              "name": "Plan",
+              "description": "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
+              "model": "<unvalidated-model:035300f3>"
+            },
+            {
+              "name": "statusline-setup",
+              "description": "Use this agent to configure the user's Claude Code status line setting.",
+              "model": "<unvalidated-model:c9ad8f2c>"
+            }
+          ],
+          "output_style": "default",
+          "available_output_styles": [
+            "default",
+            "Proactive",
+            "Concise",
+            "Explanatory",
+            "Learning"
+          ],
+          "user_output_styles_dir": "/Users/michaelwelsch/.claude/output-styles",
+          "models": [
+            {
+              "value": "default",
+              "resolvedModel": "<unvalidated-model:005912be>",
+              "displayName": "Default (recommended)",
+              "description": "Use the default model (currently Opus 5.5) \u00b7 $4/$20 per Mtok",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsFastMode": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "opus",
+              "resolvedModel": "<unvalidated-model:005912be>",
+              "displayName": "Opus",
+              "description": "Opus 5.5 \u00b7 Best for everyday, complex tasks \u00b7 $4/$20 per Mtok",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsFastMode": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "claude-fable-5-1[1m]",
+              "resolvedModel": "claude-fable-5-1[1m]",
+              "displayName": "Fable",
+              "description": "Fable 5.1 \u00b7 Most capable for your hardest and longest-running tasks",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "<unvalidated-model:c9ad8f2c>",
+              "resolvedModel": "claude-sonnet-5-5",
+              "displayName": "Sonnet",
+              "description": "Sonnet 5.5 \u00b7 Efficient for routine tasks \u00b7 $2/$10 per Mtok",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "<unvalidated-model:5a5110eb>",
+              "resolvedModel": "claude-haiku-5-5",
+              "displayName": "Haiku",
+              "description": "Haiku 5.5 \u00b7 Fastest for quick answers \u00b7 $0.10/$0.50 per Mtok ($0.50/$2.50 for prompts over 100k)",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "glm-5.3-flash",
+              "resolvedModel": "glm-5.3-flash",
+              "displayName": "glm-5.3-flash",
+              "description": "Custom model",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            }
+          ],
+          "account": {
+            "tokenSource": "none",
+            "apiKeySource": "ANTHROPIC_API_KEY",
+            "apiProvider": "firstParty"
+          },
+          "pid": 33197,
+          "claude_code_version": "2.1.296",
+          "current_permission_mode": "auto",
+          "feedback_mode": {
+            "kind": "disabled"
+          },
+          "analytics_disabled": true,
+          "remote_control_auto_enable": false,
+          "remote_control_auto_connect_default": false,
+          "remote_control_available": false,
+          "remote_control_auto_on_by_default": false,
+          "ide_rc_auto_enable_gate": false,
+          "fast_mode_state": "off",
+          "fast_mode_disabled_reason": "sdk_opt_in_required",
+          "session_state": "idle",
+          "capabilities": [
+            "ui_surface_v1"
+          ]
+        },
+        "pending_permission_requests": [],
+        "pending_user_dialog_requests": []
+      }
+    },
+    {
+      "type": "control_response",
+      "response": {
+        "subtype": "success",
+        "request_id": "model"
+      }
+    },
+    {
+      "duration_api_ms": 0,
+      "stop_reason": "stop_sequence",
+      "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+      "total_cost_usd": 0,
+      "usage": {
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 0,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "modelUsage": {
+        "model_entries_omitted": 0
+      },
+      "permission_denials": [],
+      "terminal_reason": "api_error",
+      "fast_mode_state": "off",
+      "fast_mode_disabled_reason": "sdk_opt_in_required",
+      "subagent_stats": {
+        "spawned": 0,
+        "requested": {
+          "background": 0,
+          "foreground": 0,
+          "unset": 0
+        },
+        "started_in_background": 0,
+        "max_depth": 0,
+        "spawned_by_subagents": 0,
+        "completed": 0,
+        "failed": 0,
+        "killed": {
+          "parent": 0,
+          "user": 0,
+          "system": 0
+        },
+        "refused": {
+          "depth_limit": 0,
+          "concurrency_limit": 0,
+          "budget": 0
+        },
+        "by_type": {}
+      },
+      "safety_stops": 0,
+      "is_error": true,
+      "num_turns": 1,
+      "subtype": "success",
+      "api_error_status": 400,
+      "result": "API Error: 400 unknown provider for model <unvalidated-model:005912be>",
+      "type": "result",
+      "duration_ms": 62,
+      "uuid": "b40bf18e-c7f1-4044-8b0d-15f39163bf63",
+      "queued_turn_count": 0,
+      "result_index": 0
+    },
+    {
+      "compact_result": {
+        "is_error": false,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "stop_reason": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "subtype": "success",
+        "result": "Not enough messages to compact.",
+        "local_command": "compact",
+        "type": "result",
+        "duration_ms": 5,
+        "uuid": "decbc0e2-7e73-49fd-af47-8fbef31b2519",
+        "queued_turn_count": 0,
+        "result_index": 1
+      }
+    },
+    {
+      "local_command": "/goal",
+      "response": {
+        "is_error": false,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "stop_reason": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "subtype": "success",
+        "result": "No goal set. Usage: `/goal <condition>`",
+        "local_command": "goal",
+        "type": "result",
+        "duration_ms": 1,
+        "uuid": "4e781e25-7704-45cd-8b28-2c2d5b7d782f",
+        "queued_turn_count": 0,
+        "result_index": 2
+      }
+    },
+    {
+      "local_command": "/goal pause",
+      "response": {
+        "duration_api_ms": 0,
+        "stop_reason": "stop_sequence",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "terminal_reason": "api_error",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "is_error": true,
+        "num_turns": 1,
+        "subtype": "success",
+        "api_error_status": 400,
+        "result": "API Error: 400 unknown provider for model <unvalidated-model:005912be>",
+        "type": "result",
+        "duration_ms": 11,
+        "uuid": "c44f6bca-59da-4453-a512-608243bdd19d",
+        "queued_turn_count": 0,
+        "result_index": 3
+      }
+    },
+    {
+      "local_command": "/goal clear",
+      "response": {
+        "is_error": false,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "stop_reason": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "subtype": "success",
+        "result": "Goal cleared: pause",
+        "local_command": "goal",
+        "type": "result",
+        "duration_ms": 2,
+        "uuid": "cad93001-b101-492e-bc0e-0a28e8e99922",
+        "queued_turn_count": 0,
+        "result_index": 4
+      }
+    }
+  ],
+  "command": [
+    "claude",
+    "--print",
+    "--bare",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\": {\"workjet_probe\": {\"command\": \"python3\", \"args\": [\"/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium/scripts/harness-probes/mcp_echo.py\"]}}}",
+    "--tools",
+    "",
+    "--allowedTools",
+    "mcp__workjet_probe__probe_echo",
+    "--append-system-prompt",
+    "For this probe call mcp__workjet_probe__probe_echo once, then answer ROLE_PROBE_OK."
+  ],
+  "pid": 33197,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "type": "control_request",
+        "request_id": "init",
+        "request": {
+          "subtype": "initialize"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "init",
+          "response": {
+            "commands": [
+              {
+                "name": "loop",
+                "description": "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.",
+                "argumentHint": "[interval] [prompt]",
+                "aliases": [
+                  "proactive"
+                ],
+                "builtin": true
+              },
+              {
+                "name": "compact",
+                "description": "Free up context by summarizing the conversation so far",
+                "argumentHint": "<optional custom summarization instructions>",
+                "builtin": true
+              },
+              {
+                "name": "context",
+                "description": "Show current context usage",
+                "argumentHint": "",
+                "builtin": true
+              },
+              {
+                "name": "model",
+                "description": "Set the AI model for Claude Code",
+                "argumentHint": "<model>",
+                "builtin": true
+              },
+              {
+                "name": "goal",
+                "description": "Set a goal \u2014 keep working until the condition is met",
+                "argumentHint": "",
+                "builtin": true
+              }
+            ],
+            "agents": [
+              {
+                "name": "claude",
+                "description": "Catch-all for any task that doesn't fit a more specific agent. FleetView's default when no agent name is typed."
+              },
+              {
+                "name": "claude-code-guide",
+                "description": "Use this agent when the user asks questions (\"Can Claude...\", \"Does Claude...\", \"How do I...\") about: (1) Claude Code (the CLI tool) - features, hooks, slash commands, MCP servers, settings, IDE integrations, keyboard shortcuts; (2) Claude Agent SDK - building custom agents; (3) Claude API (formerly Anthropic API) - Messages API for directly passing messages to Claude, Tool Runner (`client.beta.messages.tool_runner`) for running an agentic loop over your own tools, manual tool-use loops, Managed Agents for server-hosted agents with a managed sandbox, prompt caching, and general Anthropic SDK usage; (4) Claude Tag (Claude in Slack) - what it is, setting it up for a Slack workspace, `/install-slack-app`; (5) `claude plugin eval` (writing and running plugin eval suites, its JSON/report, sandbox, CI) and the `/skill-doctor` report. **IMPORTANT:** Before spawning a new agent, check if there is already a running or recently completed claude-code-guide agent that you can continue via SendMessage.",
+                "model": "<unvalidated-model:5a5110eb>"
+              },
+              {
+                "name": "Explore",
+                "description": "Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"), grep for symbols or keywords (eg. \"API endpoints\"), or answer \"where is X defined / which files reference Y.\" Do NOT use it for code review, design-doc auditing, cross-file consistency checks, or open-ended analysis \u2014 it reads excerpts rather than whole files and will miss content past its read window. When calling, specify search breadth: \"quick\" for a single targeted lookup, \"medium\" for moderate exploration, or \"very thorough\" to search across multiple locations and naming conventions.",
+                "model": "<unvalidated-model:035300f3>"
+              },
+              {
+                "name": "general-purpose",
+                "description": "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you."
+              },
+              {
+                "name": "Plan",
+                "description": "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
+                "model": "<unvalidated-model:035300f3>"
+              },
+              {
+                "name": "statusline-setup",
+                "description": "Use this agent to configure the user's Claude Code status line setting.",
+                "model": "<unvalidated-model:c9ad8f2c>"
+              }
+            ],
+            "output_style": "default",
+            "available_output_styles": [
+              "default",
+              "Proactive",
+              "Concise",
+              "Explanatory",
+              "Learning"
+            ],
+            "user_output_styles_dir": "/Users/michaelwelsch/.claude/output-styles",
+            "models": [
+              {
+                "value": "default",
+                "resolvedModel": "<unvalidated-model:005912be>",
+                "displayName": "Default (recommended)",
+                "description": "Use the default model (currently Opus 5.5) \u00b7 $4/$20 per Mtok",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsFastMode": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "opus",
+                "resolvedModel": "<unvalidated-model:005912be>",
+                "displayName": "Opus",
+                "description": "Opus 5.5 \u00b7 Best for everyday, complex tasks \u00b7 $4/$20 per Mtok",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsFastMode": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "resolvedModel": "claude-fable-5-1[1m]",
+                "displayName": "Fable",
+                "description": "Fable 5.1 \u00b7 Most capable for your hardest and longest-running tasks",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "<unvalidated-model:c9ad8f2c>",
+                "resolvedModel": "claude-sonnet-5-5",
+                "displayName": "Sonnet",
+                "description": "Sonnet 5.5 \u00b7 Efficient for routine tasks \u00b7 $2/$10 per Mtok",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "<unvalidated-model:5a5110eb>",
+                "resolvedModel": "claude-haiku-5-5",
+                "displayName": "Haiku",
+                "description": "Haiku 5.5 \u00b7 Fastest for quick answers \u00b7 $0.10/$0.50 per Mtok ($0.50/$2.50 for prompts over 100k)",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "glm-5.3-flash",
+                "resolvedModel": "glm-5.3-flash",
+                "displayName": "glm-5.3-flash",
+                "description": "Custom model",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              }
+            ],
+            "account": {
+              "tokenSource": "none",
+              "apiKeySource": "ANTHROPIC_API_KEY",
+              "apiProvider": "firstParty"
+            },
+            "pid": 33197,
+            "claude_code_version": "2.1.296",
+            "current_permission_mode": "auto",
+            "feedback_mode": {
+              "kind": "disabled"
+            },
+            "analytics_disabled": true,
+            "remote_control_auto_enable": false,
+            "remote_control_auto_connect_default": false,
+            "remote_control_available": false,
+            "remote_control_auto_on_by_default": false,
+            "ide_rc_auto_enable_gate": false,
+            "fast_mode_state": "off",
+            "fast_mode_disabled_reason": "sdk_opt_in_required",
+            "session_state": "idle",
+            "capabilities": [
+              "ui_surface_v1"
+            ]
+          },
+          "pending_permission_requests": [],
+          "pending_user_dialog_requests": []
+        }
+      }
+    },
+    {
+      "send": {
+        "type": "control_request",
+        "request_id": "model",
+        "request": {
+          "subtype": "set_model",
+          "model": null
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "model"
+        }
+      }
+    },
+    {
+      "send": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "Imported foreign history: HISTORY_PROBE_42. Run the role/tool probe."
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/claude-gateway-workspace",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "tools": [
+          "mcp__workjet_probe__probe_echo"
+        ],
+        "mcp_servers": [
+          {
+            "name": "workjet_probe",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "model": "<unvalidated-model:005912be>",
+        "permissionMode": "auto",
+        "slash_commands": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "security-review",
+          "usage",
+          "insights",
+          "recap",
+          "goal",
+          "list-agents",
+          "team-onboarding"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "ANTHROPIC_API_KEY",
+        "claude_code_version": "2.1.296",
+        "output_style": "default",
+        "agents": [
+          "claude",
+          "claude-code-guide",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup"
+        ],
+        "skills": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "request_marker_lists_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": true,
+        "product_feedback_disabled": true,
+        "uuid": "99c14986-aad8-492d-b45a-b2bf6a9ea11b",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": true,
+        "view_mode": "default"
+      }
+    },
+    {
+      "receive": {
+        "type": "assistant",
+        "message": {
+          "diagnostics": null,
+          "id": "43e51b0e-4411-40f6-ae95-341af4f07bb8",
+          "container": null,
+          "model": "<synthetic>",
+          "role": "assistant",
+          "stop_details": null,
+          "stop_reason": "stop_sequence",
+          "stop_sequence": "",
+          "type": "message",
+          "usage": {
+            "output_tokens_details": null,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": null,
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": null,
+            "iterations": null,
+            "speed": null,
+            "fallback_credit": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "API Error: 400 unknown provider for model <unvalidated-model:005912be>"
+            }
+          ],
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "f24b6748-8e70-43a3-b6a7-8112ed4ebdcd",
+        "timestamp": "2026-10-09T21:56:22.556Z",
+        "error": "unknown",
+        "is_api_error_message": true
+      }
+    },
+    {
+      "receive": {
+        "duration_api_ms": 0,
+        "stop_reason": "stop_sequence",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "terminal_reason": "api_error",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "is_error": true,
+        "num_turns": 1,
+        "subtype": "success",
+        "api_error_status": 400,
+        "result": "API Error: 400 unknown provider for model <unvalidated-model:005912be>",
+        "type": "result",
+        "duration_ms": 62,
+        "uuid": "b40bf18e-c7f1-4044-8b0d-15f39163bf63",
+        "queued_turn_count": 0,
+        "result_index": 0
+      }
+    },
+    {
+      "send": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "/compact Keep HISTORY_PROBE_42 and the probe receipt."
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "status",
+        "status": "compacting",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "f94f6eb2-25c0-43d8-afa3-b74f16b66d7d"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "status",
+        "status": null,
+        "compact_result": "failed",
+        "compact_error": "Not enough messages to compact.",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "9ee3ae55-65cb-4d0d-be4d-a40651d3550e"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/claude-gateway-workspace",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "tools": [
+          "mcp__workjet_probe__probe_echo"
+        ],
+        "mcp_servers": [
+          {
+            "name": "workjet_probe",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "model": "<unvalidated-model:005912be>",
+        "permissionMode": "auto",
+        "slash_commands": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "security-review",
+          "usage",
+          "insights",
+          "recap",
+          "goal",
+          "list-agents",
+          "team-onboarding"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "ANTHROPIC_API_KEY",
+        "claude_code_version": "2.1.296",
+        "output_style": "default",
+        "agents": [
+          "claude",
+          "claude-code-guide",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup"
+        ],
+        "skills": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "request_marker_lists_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": true,
+        "product_feedback_disabled": true,
+        "uuid": "5cf5fcff-8656-4011-9e7e-571b51f3e68c",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": true,
+        "view_mode": "default"
+      }
+    },
+    {
+      "receive": {
+        "type": "assistant",
+        "message": {
+          "diagnostics": null,
+          "id": "8ee4b38d-f61b-4921-9511-b28cd4877c8d",
+          "container": null,
+          "model": "<synthetic>",
+          "role": "assistant",
+          "stop_details": null,
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "output_tokens_details": null,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": null,
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": null,
+            "iterations": null,
+            "speed": null,
+            "fallback_credit": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Not enough messages to compact."
+            }
+          ],
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "local_command_source": "<local-command-stdout>Not enough messages to compact.</local-command-stdout>",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "b1caded6-1de0-4568-a67c-055be1e9d0d0",
+        "timestamp": "2026-10-09T21:56:22.565Z",
+        "local_command_run": {
+          "command": "compact",
+          "args": "Keep HISTORY_PROBE_42 and the probe receipt."
+        }
+      }
+    },
+    {
+      "receive": {
+        "is_error": false,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "stop_reason": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "subtype": "success",
+        "result": "Not enough messages to compact.",
+        "local_command": "compact",
+        "type": "result",
+        "duration_ms": 5,
+        "uuid": "decbc0e2-7e73-49fd-af47-8fbef31b2519",
+        "queued_turn_count": 0,
+        "result_index": 1
+      }
+    },
+    {
+      "send": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "/goal"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/claude-gateway-workspace",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "tools": [
+          "mcp__workjet_probe__probe_echo"
+        ],
+        "mcp_servers": [
+          {
+            "name": "workjet_probe",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "model": "<unvalidated-model:005912be>",
+        "permissionMode": "auto",
+        "slash_commands": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "security-review",
+          "usage",
+          "insights",
+          "recap",
+          "goal",
+          "list-agents",
+          "team-onboarding"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "ANTHROPIC_API_KEY",
+        "claude_code_version": "2.1.296",
+        "output_style": "default",
+        "agents": [
+          "claude",
+          "claude-code-guide",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup"
+        ],
+        "skills": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "request_marker_lists_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": true,
+        "product_feedback_disabled": true,
+        "uuid": "1b575eda-5b21-4e83-8306-aa20e5594758",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": true,
+        "view_mode": "default"
+      }
+    },
+    {
+      "receive": {
+        "type": "assistant",
+        "message": {
+          "diagnostics": null,
+          "id": "59396067-49c0-4407-ba68-55c7f36ab843",
+          "container": null,
+          "model": "<synthetic>",
+          "role": "assistant",
+          "stop_details": null,
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "output_tokens_details": null,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": null,
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": null,
+            "iterations": null,
+            "speed": null,
+            "fallback_credit": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "No goal set. Usage: `/goal <condition>`"
+            }
+          ],
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "local_command_source": "<local-command-stdout>No goal set. Usage: `/goal <condition>`</local-command-stdout>",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "cf2a7101-4883-4bde-a82c-79761e5e7fb9",
+        "timestamp": "2026-10-09T21:56:22.568Z",
+        "local_command_run": {
+          "command": "goal",
+          "args": ""
+        }
+      }
+    },
+    {
+      "receive": {
+        "is_error": false,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "stop_reason": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "subtype": "success",
+        "result": "No goal set. Usage: `/goal <condition>`",
+        "local_command": "goal",
+        "type": "result",
+        "duration_ms": 1,
+        "uuid": "4e781e25-7704-45cd-8b28-2c2d5b7d782f",
+        "queued_turn_count": 0,
+        "result_index": 2
+      }
+    },
+    {
+      "send": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "/goal pause"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/claude-gateway-workspace",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "tools": [
+          "mcp__workjet_probe__probe_echo"
+        ],
+        "mcp_servers": [
+          {
+            "name": "workjet_probe",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "model": "<unvalidated-model:005912be>",
+        "permissionMode": "auto",
+        "slash_commands": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "security-review",
+          "usage",
+          "insights",
+          "recap",
+          "goal",
+          "list-agents",
+          "team-onboarding"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "ANTHROPIC_API_KEY",
+        "claude_code_version": "2.1.296",
+        "output_style": "default",
+        "agents": [
+          "claude",
+          "claude-code-guide",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup"
+        ],
+        "skills": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "request_marker_lists_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": true,
+        "product_feedback_disabled": true,
+        "uuid": "b8f9ddae-1f42-42fc-bfb5-67dbb5558b5c",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": true,
+        "view_mode": "default"
+      }
+    },
+    {
+      "receive": {
+        "type": "assistant",
+        "message": {
+          "diagnostics": null,
+          "id": "6cde68c5-11e5-4e81-8771-35065688e1d7",
+          "container": null,
+          "model": "<synthetic>",
+          "role": "assistant",
+          "stop_details": null,
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "output_tokens_details": null,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": null,
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": null,
+            "iterations": null,
+            "speed": null,
+            "fallback_credit": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal set: pause"
+            }
+          ],
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "local_command_source": "<local-command-stdout>Goal set: pause</local-command-stdout>",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "4a4e6659-2859-4328-b823-867d83ed94c6",
+        "timestamp": "2026-10-09T21:56:22.570Z",
+        "local_command_run": {
+          "command": "goal",
+          "args": "pause"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "assistant",
+        "message": {
+          "diagnostics": null,
+          "id": "97119870-38d0-4226-b0ce-ed62ccac6c76",
+          "container": null,
+          "model": "<synthetic>",
+          "role": "assistant",
+          "stop_details": null,
+          "stop_reason": "stop_sequence",
+          "stop_sequence": "",
+          "type": "message",
+          "usage": {
+            "output_tokens_details": null,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": null,
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": null,
+            "iterations": null,
+            "speed": null,
+            "fallback_credit": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "API Error: 400 unknown provider for model <unvalidated-model:005912be>"
+            }
+          ],
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "1a867d59-0a9a-414d-ad60-d3b46483e227",
+        "timestamp": "2026-10-09T21:56:22.579Z",
+        "error": "unknown",
+        "is_api_error_message": true
+      }
+    },
+    {
+      "receive": {
+        "duration_api_ms": 0,
+        "stop_reason": "stop_sequence",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "terminal_reason": "api_error",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "is_error": true,
+        "num_turns": 1,
+        "subtype": "success",
+        "api_error_status": 400,
+        "result": "API Error: 400 unknown provider for model <unvalidated-model:005912be>",
+        "type": "result",
+        "duration_ms": 11,
+        "uuid": "c44f6bca-59da-4453-a512-608243bdd19d",
+        "queued_turn_count": 0,
+        "result_index": 3
+      }
+    },
+    {
+      "send": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "/goal clear"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/claude-gateway-workspace",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "tools": [
+          "mcp__workjet_probe__probe_echo"
+        ],
+        "mcp_servers": [
+          {
+            "name": "workjet_probe",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "model": "<unvalidated-model:005912be>",
+        "permissionMode": "auto",
+        "slash_commands": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "security-review",
+          "usage",
+          "insights",
+          "recap",
+          "goal",
+          "list-agents",
+          "team-onboarding"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "ANTHROPIC_API_KEY",
+        "claude_code_version": "2.1.296",
+        "output_style": "default",
+        "agents": [
+          "claude",
+          "claude-code-guide",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup"
+        ],
+        "skills": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "request_marker_lists_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": true,
+        "product_feedback_disabled": true,
+        "uuid": "0a7ada4a-4205-4126-82e9-908d5a8518de",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": true,
+        "view_mode": "default"
+      }
+    },
+    {
+      "receive": {
+        "type": "assistant",
+        "message": {
+          "diagnostics": null,
+          "id": "60c9d18d-6096-48d2-9270-9cf1ca0a80f1",
+          "container": null,
+          "model": "<synthetic>",
+          "role": "assistant",
+          "stop_details": null,
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "output_tokens_details": null,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": null,
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": null,
+            "iterations": null,
+            "speed": null,
+            "fallback_credit": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Goal cleared: pause"
+            }
+          ],
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "local_command_source": "<local-command-stdout>Goal cleared: pause</local-command-stdout>",
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "uuid": "279ff42d-bbce-432a-afb5-3a360429b628",
+        "timestamp": "2026-10-09T21:56:22.581Z",
+        "local_command_run": {
+          "command": "goal",
+          "args": "clear"
+        }
+      }
+    },
+    {
+      "receive": {
+        "is_error": false,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "stop_reason": null,
+        "session_id": "7e27516a-42fa-4509-b812-8cff4c6e3ac0",
+        "total_cost_usd": 0,
+        "usage": {
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "",
+          "iterations": [],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "model_entries_omitted": 0
+        },
+        "permission_denials": [],
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "safety_stops": 0,
+        "subtype": "success",
+        "result": "Goal cleared: pause",
+        "local_command": "goal",
+        "type": "result",
+        "duration_ms": 2,
+        "uuid": "cad93001-b101-492e-bc0e-0a28e8e99922",
+        "queued_turn_count": 0,
+        "result_index": 4
+      }
+    }
+  ],
+  "stderr": "",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

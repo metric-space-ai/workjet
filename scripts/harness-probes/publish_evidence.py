@@ -23,7 +23,8 @@ def inspect(value,key=''):
   if isinstance(value.get('id'),str) and ('api' in value or 'provider' in value):candidates.add(value['id'])
   if 'modelUsage' in value and isinstance(value['modelUsage'],dict):candidates.update(value['modelUsage'])
   for k,v in value.items():
-   if k in ['modelId','currentModelId','responseModel','model'] and isinstance(v,str):candidates.add(v)
+   if k in ['modelId','currentModelId','responseModel'] and isinstance(v,str):candidates.add(v)
+   if k=='model' and isinstance(v,str) and not v.isdecimal() and v not in ['model','unset']:candidates.add(v)
    inspect(v,k)
  elif isinstance(value,list):
   for v in value:inspect(v,key)
@@ -40,6 +41,26 @@ def sanitize(value,key=''):
   if key=='catalog':return value  # the observed live-list source is intentionally retained
   return {k:sanitize(v,k) for k,v in value.items() if k not in ['thinking','thinkingSignature','signature']}
  if isinstance(value,list):
+  if key=='events':
+   kept=[]
+   assembled={}
+   for entry in value:
+    event=entry.get('receive',{})
+    method=event.get('method','')
+    update=event.get('params',{}).get('update',{})
+    if method.startswith('codex/event/') or event.get('type') in ['message_update','message_start','tool_execution_update'] or 'Delta' in method or method.endswith('/delta'):
+     continue
+    if method=='session/update' and update.get('sessionUpdate') in ['agent_message_chunk','user_message_chunk']:
+     params=event.get('params',{})
+     group=(params.get('sessionId',''),params.get('_meta',{}).get('promptId',''),bool(params.get('_meta',{}).get('isReplay')),update['sessionUpdate'])
+     assembled.setdefault(group,[]).append(update.get('content',{}).get('text',''))
+     continue
+    if method=='session/update' and update.get('sessionUpdate')=='agent_thought_chunk':continue
+    kept.append(sanitize(entry))
+   for group,chunks in assembled.items():
+    kept.append({'assembled_session_text':{'sessionId':group[0],'promptId':group[1],
+       'isReplay':group[2],'kind':group[3],'text':sanitize(''.join(chunks))}})
+   return kept
   if key in ['availableModels','options'] and any(isinstance(v,dict) and ('modelId' in v or v.get('value') in candidates) for v in value):
    return [{'catalog_omitted':True,'advertised_count':len(value)}]
   if key in ['availableCommands','commands']:

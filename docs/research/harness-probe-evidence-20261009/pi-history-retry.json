@@ -1,0 +1,1431 @@
+{
+  "time": "2026-10-09T22:14:43.459654+00:00",
+  "results": [
+    {
+      "method": "get_state",
+      "response": {
+        "id": "1",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-4.5-air",
+            "name": "GLM-4.5-Air",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai"
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 98304
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/imported.jsonl",
+          "sessionId": "e30d1b43-2e2b-4796-bcef-d84dafda0b61",
+          "autoCompactionEnabled": true,
+          "messageCount": 5,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "imported_entry_count": 5,
+      "source": "readable foreign user-context records",
+      "live_model_check": true
+    },
+    {
+      "method": "compact",
+      "response": {
+        "id": "2",
+        "type": "response",
+        "command": "compact",
+        "success": true,
+        "data": {
+          "summary": "## Goal\nNo explicit user task exists in this session. The conversation consists solely of four imported \"foreign records\" (numbered 0\u20133), each serving as a bounded probe context whose stated purpose is to establish a durable history marker: **HISTORY_PROBE_42**.\n\n## Constraints & Preferences\n- Each record explicitly states \"no file work or external effects\" \u2014 the probe is bounded to context only.\n- The marker **HISTORY_PROBE_42** is designated as \"the durable marker\" and must be preserved.\n\n## Progress\n### Done\n- [x] Imported foreign record 0 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 1 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 2 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 3 containing marker HISTORY_PROBE_42\n\n### In Progress\n- [ ] Nothing active; no task beyond acknowledging/preserving the probe records.\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Treat all messages as bounded probe context**: Each record self-describes as probe context with no file work or external effects requested, so no actions were taken.\n\n## Next Steps\n1. Preserve the durable marker **HISTORY_PROBE_42** in any continued context.\n2. Await an actual user task; no work is pending from these records.\n\n## Critical Context\n- Durable marker: **HISTORY_PROBE_42** (appears identically in all four imported foreign records, indices 0\u20133).\n- All record content beyond the marker is the repeated filler phrase: \"Bounded probe context; no file work or external effects.\"\n- No file paths, function names, code, or error messages were introduced anywhere in the session.",
+          "firstKeptEntryId": "4a043993",
+          "tokensBefore": 8635,
+          "estimatedTokensAfter": 2131,
+          "details": {
+            "readFiles": [],
+            "modifiedFiles": []
+          }
+        }
+      }
+    },
+    {
+      "method": "get_available_models",
+      "response": {
+        "id": "3",
+        "type": "response",
+        "command": "get_available_models",
+        "success": true,
+        "data": {
+          "models": [
+            {
+              "id": "MiniMax-M2.7",
+              "name": "MiniMax-M2.7",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.3,
+                "output": 1.2,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M2.7-highspeed",
+              "name": "MiniMax-M2.7-highspeed",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax-M3",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.12,
+                "cacheWrite": 0
+              },
+              "contextWindow": 512000,
+              "maxTokens": 128000
+            },
+            {
+              "id": "glm-4.5-air",
+              "name": "GLM-4.5-Air",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai"
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 131072,
+              "maxTokens": 98304
+            },
+            {
+              "id": "glm-4.7",
+              "name": "GLM-4.7",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5-turbo",
+              "name": "GLM-5-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.1",
+              "name": "GLM-5.1",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.2",
+              "name": "GLM-5.2",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": true,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "thinkingLevelMap": {
+                "minimal": null,
+                "low": "high",
+                "medium": "high",
+                "high": "high",
+                "xhigh": "max"
+              },
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 1000000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:d2cac3f4>",
+              "name": "GLM-5V-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:44968622>",
+              "name": "Grok 4.6 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "<unvalidated-model:80a8bf70>",
+              "name": "Kimi K3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "glm-5.3",
+              "name": "GLM 5.3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax M3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 524288,
+              "maxTokens": 131072,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "set_model",
+      "response": {
+        "id": "4",
+        "type": "response",
+        "command": "set_model",
+        "success": true,
+        "data": {
+          "id": "glm-4.7",
+          "name": "GLM-4.7",
+          "api": "openai-completions",
+          "provider": "zai",
+          "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "zai",
+            "zaiToolStream": true
+          },
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 204800,
+          "maxTokens": 131072
+        }
+      }
+    },
+    {
+      "method": "prompt",
+      "response": {
+        "id": "5",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      }
+    },
+    {
+      "agent_end": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Reply with the exact imported marker only."
+              }
+            ],
+            "timestamp": 1791584099583
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "text",
+                "text": "HISTORY_PROBE_42"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-4.7",
+            "usage": {
+              "input": 2248,
+              "output": 31,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 2279,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791584099589,
+            "responseId": "2026101006145977053caac78048fa",
+            "responseModel": "glm-5.3-flash"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    {
+      "method": "get_state",
+      "response": {
+        "id": "6",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-4.7",
+            "name": "GLM-4.7",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 204800,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/imported.jsonl",
+          "sessionId": "e30d1b43-2e2b-4796-bcef-d84dafda0b61",
+          "autoCompactionEnabled": true,
+          "messageCount": 4,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "method": "get_messages",
+      "response": {
+        "id": "7",
+        "type": "response",
+        "command": "get_messages",
+        "success": true,
+        "data": {
+          "messages": [
+            {
+              "role": "compactionSummary",
+              "summary": "## Goal\nNo explicit user task exists in this session. The conversation consists solely of four imported \"foreign records\" (numbered 0\u20133), each serving as a bounded probe context whose stated purpose is to establish a durable history marker: **HISTORY_PROBE_42**.\n\n## Constraints & Preferences\n- Each record explicitly states \"no file work or external effects\" \u2014 the probe is bounded to context only.\n- The marker **HISTORY_PROBE_42** is designated as \"the durable marker\" and must be preserved.\n\n## Progress\n### Done\n- [x] Imported foreign record 0 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 1 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 2 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 3 containing marker HISTORY_PROBE_42\n\n### In Progress\n- [ ] Nothing active; no task beyond acknowledging/preserving the probe records.\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Treat all messages as bounded probe context**: Each record self-describes as probe context with no file work or external effects requested, so no actions were taken.\n\n## Next Steps\n1. Preserve the durable marker **HISTORY_PROBE_42** in any continued context.\n2. Await an actual user task; no work is pending from these records.\n\n## Critical Context\n- Durable marker: **HISTORY_PROBE_42** (appears identically in all four imported foreign records, indices 0\u20133).\n- All record content beyond the marker is the repeated filler phrase: \"Bounded probe context; no file work or external effects.\"\n- No file paths, function names, code, or error messages were introduced anywhere in the session.",
+              "tokensBefore": 8635,
+              "timestamp": 1791584099469
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 4: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791584083460
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reply with the exact imported marker only."
+                }
+              ],
+              "timestamp": 1791584099583
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "text",
+                  "text": "HISTORY_PROBE_42"
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-4.7",
+              "usage": {
+                "input": 2248,
+                "output": 31,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 2279,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1791584099589,
+              "responseId": "2026101006145977053caac78048fa",
+              "responseModel": "glm-5.3-flash"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "export_html",
+      "response": {
+        "id": "8",
+        "type": "response",
+        "command": "export_html",
+        "success": true,
+        "data": {
+          "path": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/export.html"
+        }
+      }
+    }
+  ],
+  "command": [
+    "pi",
+    "--approve",
+    "--offline",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-builtin-tools",
+    "--session",
+    "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/imported.jsonl",
+    "--mode",
+    "rpc"
+  ],
+  "pid": 83888,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "id": "1",
+        "type": "get_state"
+      }
+    },
+    {
+      "receive": {
+        "id": "1",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-4.5-air",
+            "name": "GLM-4.5-Air",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai"
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 98304
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/imported.jsonl",
+          "sessionId": "e30d1b43-2e2b-4796-bcef-d84dafda0b61",
+          "autoCompactionEnabled": true,
+          "messageCount": 5,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "2",
+        "type": "compact",
+        "customInstructions": "Preserve the marker HISTORY_PROBE_42."
+      }
+    },
+    {
+      "receive": {
+        "type": "compaction_start",
+        "reason": "manual"
+      }
+    },
+    {
+      "receive": {
+        "type": "compaction_end",
+        "reason": "manual",
+        "result": {
+          "summary": "## Goal\nNo explicit user task exists in this session. The conversation consists solely of four imported \"foreign records\" (numbered 0\u20133), each serving as a bounded probe context whose stated purpose is to establish a durable history marker: **HISTORY_PROBE_42**.\n\n## Constraints & Preferences\n- Each record explicitly states \"no file work or external effects\" \u2014 the probe is bounded to context only.\n- The marker **HISTORY_PROBE_42** is designated as \"the durable marker\" and must be preserved.\n\n## Progress\n### Done\n- [x] Imported foreign record 0 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 1 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 2 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 3 containing marker HISTORY_PROBE_42\n\n### In Progress\n- [ ] Nothing active; no task beyond acknowledging/preserving the probe records.\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Treat all messages as bounded probe context**: Each record self-describes as probe context with no file work or external effects requested, so no actions were taken.\n\n## Next Steps\n1. Preserve the durable marker **HISTORY_PROBE_42** in any continued context.\n2. Await an actual user task; no work is pending from these records.\n\n## Critical Context\n- Durable marker: **HISTORY_PROBE_42** (appears identically in all four imported foreign records, indices 0\u20133).\n- All record content beyond the marker is the repeated filler phrase: \"Bounded probe context; no file work or external effects.\"\n- No file paths, function names, code, or error messages were introduced anywhere in the session.",
+          "firstKeptEntryId": "4a043993",
+          "tokensBefore": 8635,
+          "estimatedTokensAfter": 2131,
+          "details": {
+            "readFiles": [],
+            "modifiedFiles": []
+          }
+        },
+        "aborted": false,
+        "willRetry": false
+      }
+    },
+    {
+      "receive": {
+        "id": "2",
+        "type": "response",
+        "command": "compact",
+        "success": true,
+        "data": {
+          "summary": "## Goal\nNo explicit user task exists in this session. The conversation consists solely of four imported \"foreign records\" (numbered 0\u20133), each serving as a bounded probe context whose stated purpose is to establish a durable history marker: **HISTORY_PROBE_42**.\n\n## Constraints & Preferences\n- Each record explicitly states \"no file work or external effects\" \u2014 the probe is bounded to context only.\n- The marker **HISTORY_PROBE_42** is designated as \"the durable marker\" and must be preserved.\n\n## Progress\n### Done\n- [x] Imported foreign record 0 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 1 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 2 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 3 containing marker HISTORY_PROBE_42\n\n### In Progress\n- [ ] Nothing active; no task beyond acknowledging/preserving the probe records.\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Treat all messages as bounded probe context**: Each record self-describes as probe context with no file work or external effects requested, so no actions were taken.\n\n## Next Steps\n1. Preserve the durable marker **HISTORY_PROBE_42** in any continued context.\n2. Await an actual user task; no work is pending from these records.\n\n## Critical Context\n- Durable marker: **HISTORY_PROBE_42** (appears identically in all four imported foreign records, indices 0\u20133).\n- All record content beyond the marker is the repeated filler phrase: \"Bounded probe context; no file work or external effects.\"\n- No file paths, function names, code, or error messages were introduced anywhere in the session.",
+          "firstKeptEntryId": "4a043993",
+          "tokensBefore": 8635,
+          "estimatedTokensAfter": 2131,
+          "details": {
+            "readFiles": [],
+            "modifiedFiles": []
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "3",
+        "type": "get_available_models"
+      }
+    },
+    {
+      "receive": {
+        "id": "3",
+        "type": "response",
+        "command": "get_available_models",
+        "success": true,
+        "data": {
+          "models": [
+            {
+              "id": "MiniMax-M2.7",
+              "name": "MiniMax-M2.7",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.3,
+                "output": 1.2,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M2.7-highspeed",
+              "name": "MiniMax-M2.7-highspeed",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax-M3",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.12,
+                "cacheWrite": 0
+              },
+              "contextWindow": 512000,
+              "maxTokens": 128000
+            },
+            {
+              "id": "glm-4.5-air",
+              "name": "GLM-4.5-Air",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai"
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 131072,
+              "maxTokens": 98304
+            },
+            {
+              "id": "glm-4.7",
+              "name": "GLM-4.7",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5-turbo",
+              "name": "GLM-5-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.1",
+              "name": "GLM-5.1",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.2",
+              "name": "GLM-5.2",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": true,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "thinkingLevelMap": {
+                "minimal": null,
+                "low": "high",
+                "medium": "high",
+                "high": "high",
+                "xhigh": "max"
+              },
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 1000000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:d2cac3f4>",
+              "name": "GLM-5V-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:44968622>",
+              "name": "Grok 4.6 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "<unvalidated-model:80a8bf70>",
+              "name": "Kimi K3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "glm-5.3",
+              "name": "GLM 5.3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax M3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 524288,
+              "maxTokens": 131072,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "4",
+        "type": "set_model",
+        "provider": "zai",
+        "modelId": "glm-4.7"
+      }
+    },
+    {
+      "receive": {
+        "id": "4",
+        "type": "response",
+        "command": "set_model",
+        "success": true,
+        "data": {
+          "id": "glm-4.7",
+          "name": "GLM-4.7",
+          "api": "openai-completions",
+          "provider": "zai",
+          "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "zai",
+            "zaiToolStream": true
+          },
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 204800,
+          "maxTokens": 131072
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "5",
+        "type": "prompt",
+        "message": "Reply with the exact imported marker only."
+      }
+    },
+    {
+      "receive": {
+        "id": "5",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      }
+    },
+    {
+      "receive": {
+        "type": "agent_start"
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_start"
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reply with the exact imported marker only."
+            }
+          ],
+          "timestamp": 1791584099583
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "text",
+              "text": "HISTORY_PROBE_42"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-4.7",
+          "usage": {
+            "input": 2248,
+            "output": 31,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 2279,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1791584099589,
+          "responseId": "2026101006145977053caac78048fa",
+          "responseModel": "glm-5.3-flash"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "text",
+              "text": "HISTORY_PROBE_42"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-4.7",
+          "usage": {
+            "input": 2248,
+            "output": 31,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 2279,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1791584099589,
+          "responseId": "2026101006145977053caac78048fa",
+          "responseModel": "glm-5.3-flash"
+        },
+        "toolResults": []
+      }
+    },
+    {
+      "receive": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Reply with the exact imported marker only."
+              }
+            ],
+            "timestamp": 1791584099583
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "text",
+                "text": "HISTORY_PROBE_42"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-4.7",
+            "usage": {
+              "input": 2248,
+              "output": 31,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 2279,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791584099589,
+            "responseId": "2026101006145977053caac78048fa",
+            "responseModel": "glm-5.3-flash"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    {
+      "send": {
+        "id": "6",
+        "type": "get_state"
+      }
+    },
+    {
+      "receive": {
+        "id": "6",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-4.7",
+            "name": "GLM-4.7",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 204800,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/imported.jsonl",
+          "sessionId": "e30d1b43-2e2b-4796-bcef-d84dafda0b61",
+          "autoCompactionEnabled": true,
+          "messageCount": 4,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "7",
+        "type": "get_messages"
+      }
+    },
+    {
+      "receive": {
+        "id": "7",
+        "type": "response",
+        "command": "get_messages",
+        "success": true,
+        "data": {
+          "messages": [
+            {
+              "role": "compactionSummary",
+              "summary": "## Goal\nNo explicit user task exists in this session. The conversation consists solely of four imported \"foreign records\" (numbered 0\u20133), each serving as a bounded probe context whose stated purpose is to establish a durable history marker: **HISTORY_PROBE_42**.\n\n## Constraints & Preferences\n- Each record explicitly states \"no file work or external effects\" \u2014 the probe is bounded to context only.\n- The marker **HISTORY_PROBE_42** is designated as \"the durable marker\" and must be preserved.\n\n## Progress\n### Done\n- [x] Imported foreign record 0 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 1 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 2 containing marker HISTORY_PROBE_42\n- [x] Imported foreign record 3 containing marker HISTORY_PROBE_42\n\n### In Progress\n- [ ] Nothing active; no task beyond acknowledging/preserving the probe records.\n\n### Blocked\n- (none)\n\n## Key Decisions\n- **Treat all messages as bounded probe context**: Each record self-describes as probe context with no file work or external effects requested, so no actions were taken.\n\n## Next Steps\n1. Preserve the durable marker **HISTORY_PROBE_42** in any continued context.\n2. Await an actual user task; no work is pending from these records.\n\n## Critical Context\n- Durable marker: **HISTORY_PROBE_42** (appears identically in all four imported foreign records, indices 0\u20133).\n- All record content beyond the marker is the repeated filler phrase: \"Bounded probe context; no file work or external effects.\"\n- No file paths, function names, code, or error messages were introduced anywhere in the session.",
+              "tokensBefore": 8635,
+              "timestamp": 1791584099469
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 4: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791584083460
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reply with the exact imported marker only."
+                }
+              ],
+              "timestamp": 1791584099583
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "text",
+                  "text": "HISTORY_PROBE_42"
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-4.7",
+              "usage": {
+                "input": 2248,
+                "output": 31,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 2279,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1791584099589,
+              "responseId": "2026101006145977053caac78048fa",
+              "responseModel": "glm-5.3-flash"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "8",
+        "type": "export_html",
+        "outputPath": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/export.html"
+      }
+    },
+    {
+      "receive": {
+        "id": "8",
+        "type": "response",
+        "command": "export_html",
+        "success": true,
+        "data": {
+          "path": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history-retry/export.html"
+        }
+      }
+    }
+  ],
+  "stderr": "",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

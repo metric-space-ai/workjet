@@ -595,7 +595,7 @@ fn shared_catalog_preserves_aliases_and_publishes_real_model_ids() {
         serde_json::json!({"id":"gpt-6.1-sol","display_name":"gpt-6.1-sol","providers":["codex"]}).as_object().unwrap().clone(),
     ];
     let response = shared_models_response(&available);
-    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
     let data = body["data"].as_array().unwrap();
     let ids: BTreeSet<&str> = data
         .iter()

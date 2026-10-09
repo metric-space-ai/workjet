@@ -105,6 +105,10 @@ describe("desktop SSH pairing", () => {
       for (const [message, reason] of [
         ["Permission denied (publickey,password).", "authentication"],
         ["Authentication failed", "authentication"],
+        [
+          "Tailscale SSH requires an additional check. Approve access, then retry.",
+          "authentication",
+        ],
         ["tailnet policy does not permit metricspace", "permission"],
         ["Host key verification failed", "configuration"],
       ] as const) {

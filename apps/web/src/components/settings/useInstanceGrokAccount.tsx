@@ -29,8 +29,10 @@ export function useInstanceGrokAccount(instanceId: string, label: string): Insta
   const apply = useCallback((result: WorkjetInstanceGrokResponse) => {
     retained.current = result;
     setState(result);
-    if (!result.installed) setChecks({});
-    else if (result.check) setChecks((old) => ({ ...old, [result.check!.modelId]: result.check! }));
+    const check = result.check;
+    if (!result.installed || result.action === "instance.grok.read" || result.action === "instance.grok.remove") {
+      setChecks(check && result.installed ? { [check.modelId]: check } : {});
+    } else if (check) setChecks((old) => ({ ...old, [check.modelId]: check }));
   }, []);
   const run = useCallback(async (input: InstanceGrokInput) => {
     if (!alive.current) return undefined;

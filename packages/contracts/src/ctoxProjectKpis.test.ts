@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { CtoxWorkjetProjectControlRequest, CtoxWorkjetProjectControlResponse } from "./ctox";
+import { CtoxWorkjetProjectControlRequest, CtoxWorkjetProjectControlResponse } from "./ctox.ts";
 
 const decodeRequest = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, { onExcessProperty: "error" });
 const decodeResponse = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse, { onExcessProperty: "error" });

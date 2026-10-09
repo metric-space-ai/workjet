@@ -15,7 +15,12 @@ const teams: readonly WorkjetProjectTeamMember[] = [
   { ...common, role: "worker", parentThreadId: ThreadId.make("parent"), packageId: "package" },
 ];
 const compile = (team: WorkjetProjectTeamMember) =>
-  compileCapabilityPrompt({ role: "orchestrator", team, managedInstructions: "Owner policy.", manifests: [] });
+  compileCapabilityPrompt({
+    role: "orchestrator",
+    team,
+    managedInstructions: "Owner policy.",
+    manifests: [],
+  });
 
 describe("project team role prompts", () => {
   it.each(teams)("uses the project $role instead of the legacy settings role", (team) => {
@@ -23,7 +28,9 @@ describe("project team role prompts", () => {
     expect(prompt).not.toContain("## Workjet Role: Orchestrator");
     expect(prompt).toContain(common.goal);
     expect(prompt).toContain("Project: molecularity. Thread: member.");
-    expect(prompt.indexOf("## Workjet Role:")).toBeLessThan(prompt.indexOf("## Managed Instructions"));
+    expect(prompt.indexOf("## Workjet Role:")).toBeLessThan(
+      prompt.indexOf("## Managed Instructions"),
+    );
   });
 
   it("keeps the supervisor permanent and gives implementation to its workers", () => {
@@ -39,7 +46,9 @@ describe("project team role prompts", () => {
     const prompt = compile(teams[1]!);
     expect(prompt).toContain("Your durable parent thread is supervisor.");
     expect(prompt).toContain("Perform substantive work yourself");
-    expect(prompt).toContain("A completed turn, a partial result, a queued build or a pull request does not by itself complete the goal");
+    expect(prompt).toContain(
+      "A completed turn, a partial result, a queued build or a pull request does not by itself complete the goal",
+    );
     expect(prompt).toContain("respect an explicit Owner stop");
     expect(prompt).toContain("Do not send routine progress or acknowledgements");
     expect(prompt).not.toContain("Stop after submission");

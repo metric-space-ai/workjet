@@ -56,7 +56,9 @@ describe("resolveThreadCapabilityContext", () => {
     expect(context.compiledManagedPrompt).toContain("Open exactly one pull request");
     expect(context.compiledManagedPrompt).toContain("keep all rework in that same pull request");
     expect(context.compiledManagedPrompt).toContain("Stop after submission");
-    expect(context.compiledManagedPrompt).not.toContain("merged or closed and execution is stopped");
+    expect(context.compiledManagedPrompt).not.toContain(
+      "merged or closed and execution is stopped",
+    );
   });
 
   it("gives a bound parent its persistent role even when its old settings role is orchestrator", () => {

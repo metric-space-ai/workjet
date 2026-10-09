@@ -1,4 +1,8 @@
-import type { CapabilityManifest, WorkjetProjectTeamMember, WorkjetThreadRole } from "@workjet/contracts";
+import type {
+  CapabilityManifest,
+  WorkjetProjectTeamMember,
+  WorkjetThreadRole,
+} from "@workjet/contracts";
 
 import { compileWorkjetTeamRolePrompt } from "./teamRolePrompt.ts";
 

@@ -18,6 +18,7 @@ use crate::internal::auth::claude::{
     RefreshHttpResponse, RefreshRequest, RefreshTransportFailure, SecretStoreError, SecretString,
     CLAUDE_DEVICE_IDS_METADATA_KEY,
 };
+use crate::internal::runtime::executor::helps;
 use crate::internal::runtime::executor::{
     AccountStateClock, ClaudeCloakPolicy, ClaudeMessagesRequest, ClaudeMessagesResponse,
     ClaudeMessagesStreamResponse, ClaudeMessagesStreamingTransport, ClaudeMessagesTransport,
@@ -662,7 +663,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         ("X-App".to_owned(), vec!["cli".to_owned()]),
         (
             "User-Agent".to_owned(),
-            vec![super::helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
+            vec![helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
         ),
         (
             "Anthropic-Beta".to_owned(),
@@ -674,7 +675,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         ),
         (
             "X-Stainless-Package-Version".to_owned(),
-            vec![super::helps::DEFAULT_CLAUDE_FINGERPRINT_PACKAGE_VERSION.to_owned()],
+            vec![helps::DEFAULT_CLAUDE_FINGERPRINT_PACKAGE_VERSION.to_owned()],
         ),
         (
             "X-Stainless-Runtime-Version".to_owned(),
@@ -710,7 +711,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         ("X-App".to_owned(), vec!["cli".to_owned()]),
         (
             "User-Agent".to_owned(),
-            vec![super::helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
+            vec![helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
         ),
         (
             "Anthropic-Beta".to_owned(),
@@ -885,7 +886,7 @@ async fn provider_path_does_not_promote_user_agent_only_to_verified_cloak_bypass
     provider_request.original_request = provider_request.payload.clone();
     provider_request.headers = [(
         "User-Agent".to_owned(),
-        vec![super::helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
+        vec![helps::DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()],
     )]
     .into_iter()
     .collect();

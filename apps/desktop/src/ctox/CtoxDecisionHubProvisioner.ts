@@ -1,7 +1,4 @@
-import {
-  bootstrapRemoteBearerSession,
-  resolveRemoteWebSocketConnectionUrl,
-} from "@workjet/client-runtime/authorization";
+import { resolveRemoteWebSocketConnectionUrl } from "@workjet/client-runtime/authorization";
 import {
   type PreparedConnection,
   PrimaryConnectionTarget,
@@ -33,6 +30,7 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import { resolveCtoxBinary } from "./CtoxLocalDaemonLaunch.ts";
+import { resolveProvisioningBackendBearerToken } from "./CtoxProvisioningEnvironment.ts";
 import {
   acquireWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
@@ -139,15 +137,11 @@ const make = Effect.gen(function* () {
           httpBaseUrl: config.value.httpBaseUrl.href,
         });
         if (descriptor.environmentId !== environmentId) continue;
-        const session = yield* bootstrapRemoteBearerSession({
-          httpBaseUrl: config.value.httpBaseUrl.href,
-          credential: config.value.bootstrap.desktopBootstrapToken,
-          clientMetadata: { label: "Workjet Decision Hub", deviceType: "desktop" },
-        });
+        const bearerToken = yield* resolveProvisioningBackendBearerToken(config.value);
         return {
           httpBaseUrl: config.value.httpBaseUrl.href,
           wsBaseUrl: config.value.httpBaseUrl.href.replace(/^http/, "ws"),
-          bearerToken: session.access_token,
+          bearerToken,
         };
       }
       return yield* Effect.fail("environment_unavailable" as const);

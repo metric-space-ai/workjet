@@ -7,6 +7,7 @@ import {
   type WorkjetSupervisorExecutionPageRequest,
   type WorkjetSupervisorJournal,
   type WorkjetSupervisorTurnIntent,
+  type WorkjetSupervisorTurnKind,
 } from "@workjet/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -16,6 +17,11 @@ import {
 } from "../../supervisorPublicReplies";
 import { NativeSupervisorConversation } from "./NativeSupervisorConversation";
 import { SupervisorMarkdown } from "./SupervisorMarkdown";
+import {
+  SupervisorTurnKindPicker,
+  supervisorConversationSupported,
+  type ScopedSupervisorTurnCapabilities,
+} from "./SupervisorTurnKindPicker";
 import { newCommandId } from "~/lib/utils";
 import {
   persistSupervisorJournal,
@@ -28,6 +34,7 @@ import {
   bindWorkjetSupervisor,
   resumeWorkjetSupervisorTurn,
   submitWorkjetSupervisorTurn,
+  readWorkjetSupervisorTurnCapabilities,
 } from "../../workjetSupervisorControl";
 import {
   requestWorkjetProjectControl,
@@ -52,6 +59,9 @@ export function NativeSupervisorComposer(props: {
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
   const [prompt, setPrompt] = useState("");
+  const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
+  const [capabilityRetry, setCapabilityRetry] = useState(0);
+  const [capability, setCapability] = useState<ScopedSupervisorTurnCapabilities | null>(null);
   const [newMessageFor, setNewMessageFor] = useState<string | null>(null);
   const [bindingRetry, setBindingRetry] = useState(0);
   const [binding, setBinding] = useState<{
@@ -71,6 +81,14 @@ export function NativeSupervisorComposer(props: {
     binding.scope.projectId === props.scope.projectId &&
     binding.scope.threadId === props.scope.threadId;
   const bindingPending = bindingMatches && binding.pending;
+  const capabilityMatches =
+    props.scope !== null &&
+    capability !== null &&
+    capability.scope.instanceId === props.scope.instanceId &&
+    capability.scope.projectId === props.scope.projectId &&
+    capability.scope.threadId === props.scope.threadId;
+  const conversationUnavailable =
+    turnKind === "conversation" && !supervisorConversationSupported(props.scope, capability);
   const [execution, setExecution] = useState<{
     commandId: string;
     request: WorkjetSupervisorExecutionPageRequest;
@@ -129,6 +147,7 @@ export function NativeSupervisorComposer(props: {
     if (
       operation === "send" &&
       (prompt.trim() === "" ||
+        conversationUnavailable ||
         (canResumeSupervisorJournal(saved, null) &&
           !(
             saved?.submission === "confirmed" &&
@@ -166,6 +185,7 @@ export function NativeSupervisorComposer(props: {
           commandId: CommandId.make(`supervisor-${newCommandId()}`),
           goal: prompt.trim(),
           createdAt: new Date().toISOString(),
+          ...(turnKind === "conversation" ? { turnKind } : {}),
         };
         result = await submitWorkjetSupervisorTurn(intent, port);
       } else if (operation === "resume" && saved !== null) {
@@ -347,6 +367,62 @@ export function NativeSupervisorComposer(props: {
       stale = true;
     };
   }, [bindingInstanceId, bindingProjectId, bindingThreadId, disabled, bindingRetry]);
+
+  useEffect(() => {
+    setTurnKind("work");
+  }, [bindingInstanceId, bindingProjectId, bindingThreadId]);
+  const bindingError = bindingMatches ? binding.error : null;
+  useEffect(() => {
+    if (
+      disabled ||
+      !bindingMatches ||
+      bindingPending ||
+      bindingError ||
+      !bindingInstanceId ||
+      !bindingProjectId ||
+      !bindingThreadId
+    )
+      return;
+    const target = {
+      instanceId: bindingInstanceId,
+      projectId: bindingProjectId,
+      threadId: bindingThreadId,
+    };
+    let stale = false;
+    setCapability({ scope: target, response: null, error: null });
+    void readWorkjetSupervisorTurnCapabilities(target, CommandId.make(`kind-${newCommandId()}`))
+      .then((result) => {
+        if (stale) return;
+        setCapability({
+          scope: target,
+          response:
+            result._tag === "completed" &&
+            result.response.action === "project.supervisor.turn.capabilities"
+              ? result.response
+              : null,
+          error:
+            result._tag === "failed"
+              ? describeWorkjetProjectControlFailure(result, target.instanceId)
+              : null,
+        });
+      })
+      .catch(() => {
+        if (!stale)
+          setCapability({ scope: target, response: null, error: "Could not check chat support." });
+      });
+    return () => {
+      stale = true;
+    };
+  }, [
+    bindingInstanceId,
+    bindingProjectId,
+    bindingThreadId,
+    disabled,
+    bindingMatches,
+    bindingPending,
+    bindingError,
+    capabilityRetry,
+  ]);
 
   useEffect(() => {
     // Restore pending and terminal turns alike; events are backfilled from the saved identity.
@@ -638,6 +714,13 @@ export function NativeSupervisorComposer(props: {
         }}
         className="flex items-end gap-2"
       >
+        <SupervisorTurnKindPicker
+          scope={scope}
+          capability={capability}
+          value={turnKind}
+          disabled={disabled || busy || (pending && !confirmedPending)}
+          onChange={setTurnKind}
+        />
         <textarea
           aria-label="Message to Supervisor"
           placeholder="Ask the Supervisor …"
@@ -667,13 +750,31 @@ export function NativeSupervisorComposer(props: {
           type="submit"
           aria-label="Send to Supervisor"
           disabled={
-            disabled || busy || bindingPending || (pending && !continuing) || prompt.trim() === ""
+            disabled ||
+            busy ||
+            bindingPending ||
+            conversationUnavailable ||
+            (pending && !continuing) ||
+            prompt.trim() === ""
           }
           className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
         >
           Send
         </button>
       </form>
+      {capabilityMatches && capability.error && (
+        <p role="status" className="mt-1 text-xs text-muted-foreground">
+          Chat unavailable: {capability.error}{" "}
+          <button
+            type="button"
+            className="underline"
+            disabled={disabled || busy}
+            onClick={() => setCapabilityRetry((value) => value + 1)}
+          >
+            Check support
+          </button>
+        </p>
+      )}
       {journal && (
         <div className="mt-2 flex gap-3 text-xs">
           <button

@@ -132,6 +132,20 @@ describe("Workjet gateway account surface", () => {
     expect(message).toContain("https://api.moonshot.cn/v1");
     expect(message).not.toContain("private-fixture-key");
   });
+  it.each(["api-key-model-list-unavailable", "invalid-model-selection"] as const)(
+    "shows the secret-free %s retry from the typed contract",
+    (reason) => {
+      const message = workjetGatewayFailureDescription({
+        _tag: "WorkjetGatewayOperationError",
+        reason,
+        message: "provider echoed private-fixture-key",
+      });
+      expect(message).toContain("live model list");
+      expect(message).toContain("retry");
+      expect(message).not.toContain("private-fixture-key");
+      expect(message).not.toContain("Credentials rejected");
+    },
+  );
   it("lists every gateway provider with its accounts, enablement, and model count", () => {
     const markup = render();
 

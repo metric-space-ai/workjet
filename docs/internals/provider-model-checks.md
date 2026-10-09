@@ -55,3 +55,24 @@ static fallback. Failed refreshes are throttled for one minute.
 Cached suggestions do not authorize adding a model ID. Provider selection edits
 still require a fresh public observation or the account's authenticated live
 list. This cache does not add catalog provider coverage or federated routing.
+
+## API-key model admission
+
+Adding or replacing a MiniMax or xAI key first reads the account's authenticated
+GET /v1/models at its official configured vendor origin. Requests refuse redirects,
+share an eight-second deadline and admit only bounded, complete model lists.
+Unrecognized custom origins are not probed with a private key. A failed list or an
+explicit selection absent from that list changes neither secrets nor configuration;
+the inline form offers a clear retry instead of labelling a transport failure as
+rejected credentials.
+
+A new account inherits the provider-wide selection intersected with its own list.
+For a provider without a selection, defaults use only the fresh curated public
+catalog intersected with that account's list. If no fresh catalog exists, the
+selection remains empty. Replacement keeps identity, disabled state and account
+exclusions. Full account-list evidence stays in the holder's private configuration;
+public suggestions still come only from llm.ctox.dev, and green checks still need
+successful exact-account inference.
+
+Vendor endpoints: [MiniMax list models](https://platform.minimax.io/docs/api-reference/models/openai/list-models)
+and [xAI models](https://docs.x.ai/developers/rest-api-reference/inference/models).

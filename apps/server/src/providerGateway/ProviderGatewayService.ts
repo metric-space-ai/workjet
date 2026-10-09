@@ -73,6 +73,7 @@ import {
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
 import { decodeLiveProviderModels } from "./LiveProviderCatalog.ts";
 import { makePublicModelCatalogCache } from "./PublicModelCatalogCache.ts";
+import type { ApiKeyModelConnection } from "./ApiKeyModelConnection.ts";
 import {
   applyProviderModelSelection,
   projectProviderModelSelection,
@@ -132,6 +133,12 @@ export interface ProviderGatewayPlatform {
     preferredBaseUrl?: string,
     signal?: AbortSignal,
   ) => Promise<KimiConnection | undefined>;
+  readonly discoverApiKeyModels?: (
+    provider: "minimax" | "xai",
+    apiKey: string,
+    preferredBaseUrl?: string,
+    signal?: AbortSignal,
+  ) => Promise<ApiKeyModelConnection | undefined>;
   readonly fingerprint?: ((value: string) => string) | undefined;
   readonly discoverZaiConnection?: (
     apiKey: string,
@@ -1361,6 +1368,30 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       }
       const apiReplacement =
         replacement !== undefined && isApiKeyAccount(replacement) ? replacement : undefined;
+      let apiConnection: ApiKeyModelConnection | undefined;
+      let discoveredApiModels: ReadonlyArray<string> | undefined;
+      if (input.provider === "minimax" || input.provider === "xai") {
+        apiConnection = await platform
+          .discoverApiKeyModels?.(input.provider, apiKey, apiReplacement?.upstreamBaseUrl)
+          .catch(() => undefined);
+        if (apiConnection === undefined) throw safeError("api-key-model-list-unavailable");
+        if (input.models?.some((model) => !apiConnection!.models.includes(model)))
+          throw safeError("invalid-model-selection");
+        const selected =
+          existing === undefined
+            ? undefined
+            : providerModelSelections(existing).find((entry) => entry.provider === input.provider);
+        let preferredModels = input.models?.length
+          ? input.models
+          : (selected?.modelIds ?? apiReplacement?.models);
+        if (preferredModels === undefined) {
+          const catalog = await platform.publicModelCatalog?.().catch(() => undefined);
+          preferredModels = decodeLiveProviderModels(catalog, input.provider, platform.now()) ?? [];
+        }
+        discoveredApiModels = preferredModels.filter((model) =>
+          apiConnection!.models.includes(model),
+        );
+      }
       const kimiConnection =
         input.provider === "kimi"
           ? await platform.discoverKimiConnection?.(apiKey, apiReplacement?.upstreamBaseUrl)
@@ -1425,9 +1456,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         weight: replacement?.weight ?? 1,
         models:
           input.models !== undefined &&
-          (!["kimi", "zai"].includes(input.provider) || input.models.length > 0)
+          (!["kimi", "zai", "minimax", "xai"].includes(input.provider) || input.models.length > 0)
             ? input.models
-            : (discoveredKimiModels ??
+            : (discoveredApiModels ??
+              discoveredKimiModels ??
               (discoveredZaiModels?.length
                 ? discoveredZaiModels
                 : zaiConnection === undefined
@@ -1443,14 +1475,20 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         ...(replacement?.legacyModelIds === undefined
           ? {}
           : { legacyModelIds: replacement.legacyModelIds }),
-        ...(kimiConnection === undefined ? {} : { availableModelIds: kimiConnection.models }),
+        ...(apiConnection !== undefined
+          ? { availableModelIds: apiConnection.models }
+          : kimiConnection !== undefined
+            ? { availableModelIds: kimiConnection.models }
+            : {}),
         ...(kimiConnection !== undefined
           ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl, kimiPlan: kimiConnection.plan }
-          : zaiConnection !== undefined
-            ? { upstreamBaseUrl: zaiConnection.upstreamBaseUrl }
-            : apiReplacement?.upstreamBaseUrl
-              ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
-              : {}),
+          : apiConnection !== undefined
+            ? { upstreamBaseUrl: apiConnection.upstreamBaseUrl }
+            : zaiConnection !== undefined
+              ? { upstreamBaseUrl: zaiConnection.upstreamBaseUrl }
+              : apiReplacement?.upstreamBaseUrl
+                ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
+                : {}),
         ...(suffix ? { credentialSuffix: suffix } : {}),
       };
       if (replacement === undefined) accounts.push(nextAccount);

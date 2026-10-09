@@ -1108,6 +1108,10 @@ describe("ProviderGatewayService · API-key accounts", () => {
     });
     const platform: ProviderGatewayPlatform = {
       ...base.platform,
+      discoverApiKeyModels: async (provider) => ({
+        upstreamBaseUrl: provider === "xai" ? "https://api.x.ai/v1" : "https://api.minimax.io/v1",
+        models: provider === "xai" ? ["grok-4.7"] : ["MiniMax-M3", "MiniMax-M3.1-Flash-Preview"],
+      }),
       discoverKimiConnection: async () => ({
         plan: "coding",
         upstreamBaseUrl: "https://api.kimi.com/coding/v1",
@@ -1175,6 +1179,169 @@ describe("ProviderGatewayService · API-key accounts", () => {
       expect(result.accountId).toBe(`${provider}-key`);
       expect(harness.writes.join("\n")).not.toContain(API_KEY);
     }
+  });
+
+  it.each(["minimax", "xai"] as const)(
+    "preserves secrets and configuration when the %s live list is unavailable",
+    async (provider) => {
+      const harness = apiKeyHarness();
+      harness.platform = {
+        ...harness.platform,
+        discoverApiKeyModels: async () => {
+          throw new Error(API_KEY);
+        },
+      };
+      const error = await runWithSecrets(harness, (gateway) =>
+        gateway.addApiKeyAccount({ provider, label: "key", apiKey: API_KEY }).pipe(Effect.flip),
+      );
+      expect(error.reason).toBe("api-key-model-list-unavailable");
+      expect(error.message).not.toContain(API_KEY);
+      expect(error.message).not.toContain("Credentials rejected");
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(harness.writes).toEqual([]);
+    },
+  );
+
+  it.each(["minimax", "xai"] as const)(
+    "rejects another provider's live ID before saving a %s key",
+    async (provider) => {
+      const harness = apiKeyHarness();
+      const error = await runWithSecrets(harness, (gateway) =>
+        gateway
+          .addApiKeyAccount({ provider, label: "key", apiKey: API_KEY, models: ["k3"] })
+          .pipe(Effect.flip),
+      );
+      expect(error.reason).toBe("invalid-model-selection");
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(harness.writes).toEqual([]);
+    },
+  );
+
+  it("uses only curated live IDs for a new provider, keeping complete account evidence private", async () => {
+    const harness = apiKeyHarness();
+    harness.platform = {
+      ...harness.platform,
+      publicModelCatalog: async () => ({
+        schemaVersion: 1,
+        checkedAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now())),
+        expiresAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now() + 60_000)),
+        providers: [{ provider: "xai", status: "observed", models: ["grok-4.7"] }],
+      }),
+      discoverApiKeyModels: async () => ({
+        upstreamBaseUrl: "https://api.x.ai/v1",
+        models: ["grok-4.6", "grok-4.7"],
+      }),
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "xai", label: "key", apiKey: API_KEY, models: [] }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      document.accounts.find((account: { provider: string }) => account.provider === "xai"),
+    ).toMatchObject({
+      models: ["grok-4.7"],
+      availableModelIds: ["grok-4.6", "grok-4.7"],
+      upstreamBaseUrl: "https://api.x.ai/v1",
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("never invents defaults when a new provider has no fresh curated list", async () => {
+    const harness = apiKeyHarness();
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "xai", label: "key", apiKey: API_KEY, models: [] }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      document.accounts.find((account: { provider: string }) => account.provider === "xai"),
+    ).toMatchObject({
+      models: [],
+      availableModelIds: ["grok-4.7"],
+    });
+  });
+
+  it("inherits one provider selection on another account without widening the selection", async () => {
+    const harness = apiKeyHarness();
+    const oldAccount = {
+      id: "xai-first",
+      provider: "xai",
+      label: "First",
+      enabled: true,
+      priority: 0,
+      weight: 1,
+      models: ["grok-4.7"],
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "first-key" },
+    };
+    harness.platform = {
+      ...harness.platform,
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [oldAccount],
+          providerModels: [{ provider: "xai", modelIds: ["grok-4.7"] }],
+        }),
+      discoverApiKeyModels: async () => ({
+        upstreamBaseUrl: "https://api.x.ai/v1",
+        models: ["grok-4.6", "grok-4.7"],
+      }),
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "xai", label: "Second", apiKey: API_KEY, models: [] }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(document.providerModels).toEqual([{ provider: "xai", modelIds: ["grok-4.7"] }]);
+    expect(
+      document.accounts.find((account: { id: string }) => account.id === "xai-second").models,
+    ).toEqual(["grok-4.7"]);
+  });
+
+  it("retains account identity, disabled state and exclusions when replacing a verified key", async () => {
+    const harness = apiKeyHarness();
+    const oldAccount = {
+      id: "xai-stable",
+      provider: "xai",
+      label: "Team",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      models: ["grok-4.7"],
+      excludedModels: ["grok-4.6"],
+      upstreamBaseUrl: "https://api.x.ai/v1",
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    harness.platform = {
+      ...harness.platform,
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [oldAccount],
+          providerModels: [{ provider: "xai", modelIds: ["grok-4.6", "grok-4.7"] }],
+        }),
+      discoverApiKeyModels: async (_provider, key, origin) => {
+        expect(key).toBe(API_KEY);
+        expect(origin).toBe(oldAccount.upstreamBaseUrl);
+        return { upstreamBaseUrl: origin!, models: ["grok-4.6", "grok-4.7"] };
+      },
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        provider: "xai",
+        accountId: WorkjetGatewayAccountId.make(oldAccount.id),
+        label: oldAccount.label,
+        apiKey: API_KEY,
+        models: [],
+      }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      document.accounts.find((account: { id: string }) => account.id === oldAccount.id),
+    ).toEqual({
+      ...oldAccount,
+      credentialSuffix: "abcd",
+      availableModelIds: ["grok-4.6", "grok-4.7"],
+    });
+    expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
   });
 
   it("stores the accepted Z.ai plan with only its selected live model", async () => {

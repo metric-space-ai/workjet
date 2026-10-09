@@ -59,7 +59,9 @@ export const WorkjetSpeechSettingsResponse = Schema.Struct({
     Schema.NullOr(
       Schema.Struct({
         ...Check.fields,
-        model: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
+        model: Schema.optionalKey(
+          Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+        ),
         audioDurationMs: Schema.optionalKey(
           Schema.Number.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
         ),
@@ -68,7 +70,9 @@ export const WorkjetSpeechSettingsResponse = Schema.Struct({
       }),
     ),
   ),
-  transcript: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192))),
+  transcript: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192)),
+  ),
   voices: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

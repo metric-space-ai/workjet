@@ -377,15 +377,13 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                   ? "Checking…"
                   : sttCheck?.state === "ok"
                     ? sttCheck.latencyMs + " ms"
-                    : sttCheck?.errorClass ?? "Not checked"}
+                    : (sttCheck?.errorClass ?? "Not checked")}
               </span>
               <Button
                 size="sm"
                 variant="outline"
                 disabled={
-                  disabled ||
-                  config?.transcription !== "mistral" ||
-                  config?.synthesis !== "mistral"
+                  disabled || config?.transcription !== "mistral" || config?.synthesis !== "mistral"
                 }
                 onClick={() => void run({ action: "speech.settings.check.transcription" })}
               >

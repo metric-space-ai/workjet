@@ -3187,6 +3187,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "background_tasks_changed":
       case "vcs_state_changed":
       case "code_change_published":
+      case "per_turn_effort_changed":
+        // Per-turn effort activation is an informational CLI state notice.
         return;
     }
 

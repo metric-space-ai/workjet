@@ -176,6 +176,21 @@ export function nativeSupervisorResultText(
         value.attempt !== expected.attempt
       )
         return "The result belongs to a different Supervisor turn.";
+      // Older native chat tools place their public reply in a serialized chat result.
+      // Only unwrap that known envelope after both the turn and chat IDs match.
+      try {
+        const chat: unknown = JSON.parse(value.user_reply);
+        if (
+          chat &&
+          typeof chat === "object" &&
+          !Array.isArray(chat) &&
+          (chat as Record<string, unknown>).chat_id === `chat_${expected.commandId}` &&
+          typeof (chat as Record<string, unknown>).outbound_text === "string"
+        )
+          return (chat as Record<string, unknown>).outbound_text as string;
+      } catch {
+        // Ordinary Markdown remains unchanged.
+      }
       return value.user_reply;
     }
   }

@@ -202,6 +202,38 @@ describe("native supervisor composer authority", () => {
     expect(nativeSupervisorResultText(result, turn)).toBe(result.user_reply);
     expect(nativeSupervisorResultText(JSON.stringify(result), turn)).toBe(result.user_reply);
   });
+  it("unwraps only a legacy chat envelope belonging to the already-correlated turn", () => {
+    const turn = { commandId: "cmd-public", taskId: "native-task", attempt: 1 };
+    const reply = "- **Verified** source\n- No completion claimed";
+    const legacy = {
+      chat_id: "chat_cmd-public",
+      outbound_text: reply,
+      response: reply,
+      answer: reply,
+      summary: reply,
+      document_writeback: null,
+    };
+    const result = {
+      command_id: turn.commandId,
+      execution_task_id: turn.taskId,
+      attempt: 1,
+      user_reply: JSON.stringify(legacy),
+    };
+    expect(nativeSupervisorResultText(result, turn)).toBe(reply);
+    expect(nativeSupervisorResultText(JSON.stringify(result), turn)).toBe(reply);
+    for (const chat of [
+      { ...legacy, chat_id: "chat_foreign" },
+      { answer: reply },
+      { ...legacy, outbound_text: null },
+    ]) {
+      const user_reply = JSON.stringify(chat);
+      expect(nativeSupervisorResultText({ ...result, user_reply }, turn)).toBe(user_reply);
+    }
+    expect(nativeSupervisorResultText({ ...result, execution_task_id: "foreign" }, turn)).toBe(
+      "The result belongs to a different Supervisor turn.",
+    );
+    expect(nativeSupervisorResultText(JSON.stringify(legacy), turn)).toBe(JSON.stringify(legacy));
+  });
   it("never presents another task or attempt's reply as this turn's answer", () => {
     const turn = { commandId: "native-command", taskId: "native-task", attempt: 1 };
     const result = {

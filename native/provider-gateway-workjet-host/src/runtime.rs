@@ -408,7 +408,9 @@ pub fn build_provider_routes(
                 let api_key = store
                     .resolve_text(&account.api_key_secret)
                     .map_err(|_| RuntimeBuildError::Secret)?;
-                let base_url = account.base_url().map_err(|_| RuntimeBuildError::Configuration)?;
+                let base_url = account
+                    .base_url()
+                    .map_err(|_| RuntimeBuildError::Configuration)?;
                 state
                     .bind_api_key_target(provider, &account.id, api_key.as_bytes(), Some(&base_url))
                     .map_err(|_| RuntimeBuildError::Configuration)?;

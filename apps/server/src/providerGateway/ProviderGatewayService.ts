@@ -1342,7 +1342,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           : undefined;
       let zaiConnection: ZaiConnection | undefined;
       if (input.provider === "zai" && platform.discoverZaiConnection !== undefined) {
-        let preferredModels = input.models?.length ? input.models : apiReplacement?.models ?? [];
+        let preferredModels = input.models?.length ? input.models : (apiReplacement?.models ?? []);
         if (preferredModels.length === 0) {
           const catalog = await platform.publicModelCatalog?.().catch(() => undefined);
           preferredModels = decodeLiveProviderModels(catalog, "zai", platform.now()) ?? [];
@@ -1352,7 +1352,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           preferredModels,
           apiReplacement?.upstreamBaseUrl,
         );
-        if (zaiConnection !== undefined && input.models?.some((id) => !zaiConnection.models.includes(id)))
+        const zaiModels = zaiConnection?.models;
+        if (zaiModels !== undefined && input.models?.some((id) => !zaiModels.includes(id)))
           throw safeError("invalid-configuration");
       }
       if (input.provider === "kimi" && kimiConnection === undefined)
@@ -1369,9 +1370,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           : [];
       const discoveredKimiModels =
         retainedKimiModels.length > 0 ? retainedKimiModels : kimiConnection?.models;
-      const discoveredZaiModels = zaiConnection === undefined
-        ? undefined
-        : apiReplacement?.models.filter((id) => zaiConnection.models.includes(id));
+      const discoveredZaiModels =
+        zaiConnection === undefined
+          ? undefined
+          : apiReplacement?.models.filter((id) => zaiConnection.models.includes(id));
       const usedIds = new Set(accounts.map((account) => account.id));
       const base = `${input.provider}-${secretSlug(input.label)}`;
       let id = replacement?.id ?? base;
@@ -1393,10 +1395,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         priority: replacement?.priority ?? 0,
         weight: replacement?.weight ?? 1,
         models:
-          input.models !== undefined && (!["kimi", "zai"].includes(input.provider) || input.models.length > 0)
+          input.models !== undefined &&
+          (!["kimi", "zai"].includes(input.provider) || input.models.length > 0)
             ? input.models
             : (discoveredKimiModels ??
-              (discoveredZaiModels?.length ? discoveredZaiModels : zaiConnection === undefined ? undefined : [zaiConnection.probeModel]) ??
+              (discoveredZaiModels?.length
+                ? discoveredZaiModels
+                : zaiConnection === undefined
+                  ? undefined
+                  : [zaiConnection.probeModel]) ??
               replacement?.models ??
               accounts.find((account) => account.provider === input.provider)?.models ??
               []),
@@ -1405,9 +1412,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl }
           : zaiConnection !== undefined
             ? { upstreamBaseUrl: zaiConnection.upstreamBaseUrl }
-          : apiReplacement?.upstreamBaseUrl
-            ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
-            : {}),
+            : apiReplacement?.upstreamBaseUrl
+              ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
+              : {}),
         ...(suffix ? { credentialSuffix: suffix } : {}),
       };
       if (replacement === undefined) accounts.push(nextAccount);
@@ -1803,8 +1810,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           (accountId !== undefined && account.id !== accountId)
         )
           continue;
-        const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret)))
-          .catch(() => Option.none<Uint8Array>());
+        const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
+          () => Option.none<Uint8Array>(),
+        );
         if (Option.isNone(secret)) continue;
         const apiKey = new TextDecoder().decode(secret.value);
         if (!isAcceptableApiKey(apiKey)) continue;
@@ -1816,14 +1824,20 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         );
         if (connection === undefined || deadline.aborted) continue;
         const models = account.models.filter((id) => connection.models.includes(id));
-        if (account.upstreamBaseUrl === connection.upstreamBaseUrl && JSON.stringify(account.models) === JSON.stringify(models))
+        if (
+          account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+          JSON.stringify(account.models) === JSON.stringify(models)
+        )
           continue;
         accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, models };
         changed = true;
       }
       if (!changed) return;
       await modelChecks.cancel();
-      await platform.writePrivateText(configurationPath, `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`);
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+      );
       await stopSingleFlight();
       await startSingleFlight();
     };

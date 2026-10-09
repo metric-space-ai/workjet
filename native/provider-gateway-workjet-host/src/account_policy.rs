@@ -218,15 +218,27 @@ impl AccountState {
         let previous_key = state.api_key_fingerprints.get(&identity);
         // Legacy Z.ai accounts used the platform default before plan discovery.
         // Only that known default-to-coding repair may migrate unscoped legacy health.
-        let previous_upstream = state.api_key_upstreams.get(&identity).map(String::as_str)
+        let previous_upstream = state
+            .api_key_upstreams
+            .get(&identity)
+            .map(String::as_str)
             .or_else(|| {
-                (previous_key.is_some() && provider == "zai" && upstream == Some("https://api.z.ai/api/coding/paas/v4"))
-                    .then_some("https://api.z.ai/api/paas/v4")
+                (previous_key.is_some()
+                    && provider == "zai"
+                    && upstream == Some("https://api.z.ai/api/coding/paas/v4"))
+                .then_some("https://api.z.ai/api/paas/v4")
             });
-        let target_changed = previous_upstream.zip(upstream).is_some_and(|(old, new)| old != new);
+        let target_changed = previous_upstream
+            .zip(upstream)
+            .is_some_and(|(old, new)| old != new);
         if previous_key == Some(&fingerprint)
             && !target_changed
-            && upstream.is_none_or(|target| state.api_key_upstreams.get(&identity).is_some_and(|old| old == target))
+            && upstream.is_none_or(|target| {
+                state
+                    .api_key_upstreams
+                    .get(&identity)
+                    .is_some_and(|old| old == target)
+            })
         {
             return Ok(());
         }
@@ -239,7 +251,8 @@ impl AccountState {
             next.observations.remove(&identity);
         }
         if let Some(upstream) = upstream {
-            next.api_key_upstreams.insert(identity.clone(), upstream.to_owned());
+            next.api_key_upstreams
+                .insert(identity.clone(), upstream.to_owned());
         }
         next.api_key_fingerprints.insert(identity, fingerprint);
         self.persist(&next)?;

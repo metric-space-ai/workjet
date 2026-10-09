@@ -287,20 +287,42 @@ fn upstream_change_retires_only_that_accounts_old_health_and_keeps_affinity() {
     });
     let body = br#"{"session_id":"stable-plan-session"}"#;
     state.bind_api_key("zai", "a", b"same-api-key").unwrap();
-    assert_eq!(state.select("zai", Some(model), 1000, &accounts, &[], body).unwrap().auth_id, "a");
+    assert_eq!(
+        state
+            .select("zai", Some(model), 1000, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
     state.outcome("zai", "a", model, 429, 1001);
     state.outcome("zai", "b", model, 429, 1001);
     let coding = "https://api.z.ai/api/coding/paas/v4";
-    state.bind_api_key_target("zai", "a", b"same-api-key", Some(coding)).unwrap();
+    state
+        .bind_api_key_target("zai", "a", b"same-api-key", Some(coding))
+        .unwrap();
     assert!(state.observation("zai", "a").is_none());
     assert_eq!(state.observation("zai", "b").unwrap().0, 429);
-    assert_eq!(state.select("zai", Some(model), 1002, &accounts, &[], body).unwrap().auth_id, "a");
+    assert_eq!(
+        state
+            .select("zai", Some(model), 1002, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
     state.outcome("zai", "a", model, 429, 1003);
     let restarted = open(dir.path());
-    restarted.bind_api_key_target("zai", "a", b"same-api-key", Some(coding)).unwrap();
+    restarted
+        .bind_api_key_target("zai", "a", b"same-api-key", Some(coding))
+        .unwrap();
     assert_eq!(restarted.observation("zai", "a").unwrap().0, 429);
-    assert!(restarted.select("zai", Some(model), 1004, &accounts, &[], body).is_err());
-    let snapshot = std::fs::read_to_string(dir.path().join("workjet-provider-gateway.account-policy-state.v1.bin")).unwrap();
+    assert!(restarted
+        .select("zai", Some(model), 1004, &accounts, &[], body)
+        .is_err());
+    let snapshot = std::fs::read_to_string(
+        dir.path()
+            .join("workjet-provider-gateway.account-policy-state.v1.bin"),
+    )
+    .unwrap();
     assert!(!snapshot.contains("same-api-key"));
     assert!(!snapshot.contains("stable-plan-session"));
 }

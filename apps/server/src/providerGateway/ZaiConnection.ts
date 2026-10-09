@@ -94,7 +94,7 @@ export async function discoverZaiConnection(
       const models = modelIds(await boundedJson(response));
       if (models === undefined) return undefined;
       const probeModel = preferredModels.find((id) => models.includes(id));
-      if (probeModel === undefined) return undefined;
+      if (probeModel === undefined) continue;
       response = await fetch(`${upstreamBaseUrl}/chat/completions`, {
         method: "POST",
         redirect: "error",
@@ -115,7 +115,12 @@ export async function discoverZaiConnection(
         signal: deadline,
       });
       const body = record(await boundedJson(response));
-      if (response.ok && body?.error == null && Array.isArray(body?.choices) && body.choices.length > 0)
+      if (
+        response.ok &&
+        body?.error == null &&
+        Array.isArray(body?.choices) &&
+        body.choices.length > 0
+      )
         return { upstreamBaseUrl, models, probeModel };
       const code = record(body?.error)?.code;
       // Do not fall back to a billed API when a Coding Plan hits its real quota.

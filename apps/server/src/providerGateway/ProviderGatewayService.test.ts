@@ -6,6 +6,7 @@ import {
   WorkjetGatewayOperationError,
 } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -1181,37 +1182,62 @@ describe("ProviderGatewayService · API-key accounts", () => {
     harness.platform = {
       ...harness.platform,
       publicModelCatalog: async () => ({
-        schemaVersion: 1, checkedAt: new Date(harness.platform.now()).toISOString(),
-        expiresAt: new Date(harness.platform.now() + 60_000).toISOString(),
+        schemaVersion: 1,
+        checkedAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now())),
+        expiresAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now() + 60_000)),
         providers: [{ provider: "zai", status: "observed", models: [model] }],
       }),
       discoverZaiConnection: async (_key, preferredModels) => {
         expect(preferredModels).toEqual([model]);
-        return { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4", models: [model], probeModel: model };
+        return {
+          upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+          models: [model],
+          probeModel: model,
+        };
       },
     };
-    await runWithSecrets(harness, (gateway) => gateway.addApiKeyAccount({
-      provider: "zai", label: "Coding plan", apiKey: API_KEY, models: [],
-    }));
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        provider: "zai",
+        label: "Coding plan",
+        apiKey: API_KEY,
+        models: [],
+      }),
+    );
     const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
-    expect(stored.accounts.find((entry: { provider: string }) => entry.provider === "zai")).toMatchObject({
-      upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4", models: [model],
+    expect(
+      stored.accounts.find((entry: { provider: string }) => entry.provider === "zai"),
+    ).toMatchObject({
+      upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+      models: [model],
     });
     expect(harness.writes.join("\n")).not.toContain(API_KEY);
   });
 
   it.each(["accepted", "unavailable", "disabled", "other-account", "custom", "coding"] as const)(
-    "repairs only a verified legacy Z.ai binding (%s)", async (mode) => {
+    "repairs only a verified legacy Z.ai binding (%s)",
+    async (mode) => {
       const harness = apiKeyHarness();
       const model = "glm-5.3-flash"; // Real account GET /models, 2026-10-09.
       const account = {
-        id: "zai-existing", provider: "zai", label: "Existing plan",
-        enabled: mode !== "disabled", priority: 7, weight: 1, models: [model],
+        id: "zai-existing",
+        provider: "zai",
+        label: "Existing plan",
+        enabled: mode !== "disabled",
+        priority: 7,
+        weight: 1,
+        models: [model],
         apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
-        ...(mode === "custom" ? { upstreamBaseUrl: "https://other.example/v1" } :
-          mode === "coding" ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" } : {}),
+        ...(mode === "custom"
+          ? { upstreamBaseUrl: "https://other.example/v1" }
+          : mode === "coding"
+            ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" }
+            : {}),
       };
-      let document = JSON.stringify({ ...JSON.parse(configuration), accounts: [...JSON.parse(configuration).accounts, account] });
+      let document = JSON.stringify({
+        ...JSON.parse(configuration),
+        accounts: [...JSON.parse(configuration).accounts, account],
+      });
       let discoveries = 0;
       const writer = harness.platform.writePrivateText;
       harness.platform = {
@@ -1221,9 +1247,13 @@ describe("ProviderGatewayService · API-key accounts", () => {
           expect(key).toBe("provider-secret");
           expect(models).toEqual([model]);
           expect(origin).toBe("https://api.z.ai/api/paas/v4");
-          return mode === "unavailable" ? undefined : {
-            upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4", models: [model], probeModel: model,
-          };
+          return mode === "unavailable"
+            ? undefined
+            : {
+                upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+                models: [model],
+                probeModel: model,
+              };
         },
         readText: async (path) => {
           if (path.endsWith("model-checks.json"))
@@ -1235,12 +1265,19 @@ describe("ProviderGatewayService · API-key accounts", () => {
           if (path.endsWith("/provider-gateway.json")) document = value;
         },
       };
-      await runWithSecrets(harness, (gateway) => gateway.checkModels({
-        force: true,
-        ...(mode === "other-account" ? { accountId: WorkjetGatewayAccountId.make("codex-primary") } : {}),
-      }));
-      expect(JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id)).toEqual({
-        ...account, ...(mode === "accepted" ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" } : {}),
+      await runWithSecrets(harness, (gateway) =>
+        gateway.checkModels({
+          force: true,
+          ...(mode === "other-account"
+            ? { accountId: WorkjetGatewayAccountId.make("codex-primary") }
+            : {}),
+        }),
+      );
+      expect(
+        JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id),
+      ).toEqual({
+        ...account,
+        ...(mode === "accepted" ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" } : {}),
       });
       expect(discoveries).toBe(mode === "accepted" || mode === "unavailable" ? 1 : 0);
       expect(harness.storedSecrets.size).toBe(0);

@@ -54,6 +54,35 @@ describe("server-retained supervisor submission", () => {
       ).error,
     ).toContain("still unresolved");
   });
+  it("allows a separate request only when the confirmed prior receipt remains durable", () => {
+    const confirmed: WorkjetSupervisorJournal = { intent, turn, submission: "confirmed" };
+    const second = { ...pending, intent: { ...intent, commandId: CommandId.make("new-owner-message") } };
+    const next = { ...config(second), ctoxSupervisorPreviousTurns: [confirmed] };
+    expect(retainWorkjetCtoxBinding(config(confirmed), next).error).toBeNull();
+    expect(retainWorkjetCtoxBinding(config(pending), { ...next, ctoxSupervisorPreviousTurns: [pending] }).error)
+      .toContain("still unresolved");
+    expect(retainWorkjetCtoxBinding(config(confirmed), {
+      ...next, ctoxSupervisorPreviousTurns: [{ ...confirmed, turn: { ...turn, taskId: "forged" } }],
+    }).error).not.toBeNull();
+  });
+  it("retains previous tasks on unrelated settings changes and cannot erase or retarget active tasks", () => {
+    const confirmed: WorkjetSupervisorJournal = { intent, turn, submission: "confirmed" };
+    const nextIntent = { ...intent, commandId: CommandId.make("new-owner-message") };
+    const nextJournal: WorkjetSupervisorJournal = {
+      intent: nextIntent, submission: "confirmed",
+      turn: { ...turn, commandId: "new-native-command", taskId: "new-native-task" },
+    };
+    const before = { ...config(nextJournal), ctoxSupervisorPreviousTurns: [confirmed] };
+    expect(retainWorkjetCtoxBinding(before, DEFAULT_WORKJET_THREAD_CONFIG).config)
+      .toMatchObject({ ctoxSupervisorPreviousTurns: [confirmed], ctoxSupervisorTurn: nextJournal });
+    expect(retainWorkjetCtoxBinding(before, { ...before, ctoxSupervisorPreviousTurns: [] }).error)
+      .toContain("cannot be removed");
+    const selected = { ...config(confirmed), ctoxSupervisorPreviousTurns: [nextJournal] };
+    expect(retainWorkjetCtoxBinding(before, selected).error).toBeNull();
+    expect(retainWorkjetCtoxBinding(before, {
+      ...selected, ctoxSupervisorTurn: { ...confirmed, turn: { ...turn, taskId: "foreign-task" } },
+    }).error).not.toBeNull();
+  });
   it("cannot change the retry payload, erase uncertainty, or replace the native identity", () => {
     const confirmed: WorkjetSupervisorJournal = { intent, turn, submission: "confirmed" };
     for (const changed of [

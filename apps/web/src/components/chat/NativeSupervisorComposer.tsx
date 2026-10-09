@@ -52,6 +52,7 @@ export function NativeSupervisorComposer(props: {
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
   const [prompt, setPrompt] = useState("");
+  const [newMessageFor, setNewMessageFor] = useState<string | null>(null);
   const [bindingRetry, setBindingRetry] = useState(0);
   const [binding, setBinding] = useState<{
     readonly scope: NativeSupervisorScope;
@@ -97,6 +98,14 @@ export function NativeSupervisorComposer(props: {
     scope !== null && (journal === null || supervisorJournalMatchesScope(journal, scope));
   const disabled = props.unavailable || !scopeMatches;
   const pending = canResumeSupervisorJournal(journal, null);
+  const confirmedPending = pending && journal?.submission === "confirmed" && journal.turn !== null;
+  const continuing = confirmedPending && newMessageFor === journal.intent.commandId;
+  const previousTurns = props.config.schemaVersion === 2
+    ? (props.config.ctoxSupervisorPreviousTurns ?? []).filter(
+        (entry) => scope !== null && supervisorJournalMatchesScope(entry, scope) &&
+          entry.intent.commandId !== journal?.intent.commandId,
+      )
+    : [];
   const latestProps = useRef(props);
   latestProps.current = props;
 
@@ -114,8 +123,12 @@ export function NativeSupervisorComposer(props: {
       (saved !== null && !supervisorJournalMatchesScope(saved, target))
     )
       return;
-    if (operation === "send" && (prompt.trim() === "" || canResumeSupervisorJournal(saved, null)))
-      return;
+    if (operation === "send" && (
+      prompt.trim() === "" ||
+      (canResumeSupervisorJournal(saved, null) &&
+        !(saved?.submission === "confirmed" && saved.turn !== null &&
+          newMessageFor === saved.intent.commandId))
+    )) return;
     if (operation !== "send" && saved === null) return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
     if (operation === "events" && saved?.turn == null) return;
@@ -186,7 +199,7 @@ export function NativeSupervisorComposer(props: {
         result?._tag === "completed" &&
         (operation === "send" || prompt.trim() === saved?.intent.goal)
       )
-        setPrompt("");
+        setPrompt((draft) => operation === "send" && draft === prompt ? "" : draft);
       const confirmed = journalRef.current;
       if (
         (operation === "events" || result?._tag === "completed") &&
@@ -370,7 +383,37 @@ export function NativeSupervisorComposer(props: {
     if (target && followReply.current) target.scrollTop = target.scrollHeight;
   }, [props.conversationTarget, publicReplies, journal]);
 
+  const selectTask = async (commandId: string) => {
+    if (inFlight.current || disabled || (pending && !confirmedPending)) return;
+    const selected = previousTurns.find((entry) => entry.intent.commandId === commandId);
+    if (!selected) return;
+    inFlight.current = true;
+    setBusy(true);
+    try {
+      await persistSupervisorJournal({
+        config: latestProps.current.config,
+        journal: selected,
+        dispatch: latestProps.current.saveConfig,
+      });
+      journalRef.current = selected;
+      setJournal(selected);
+      setExecution(null);
+      executionRef.current = null;
+      setExecutionError(null);
+      setError(null);
+      setFailureCode(null);
+      setNewMessageFor(null);
+      restored.current = false;
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not restore the task.");
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
   const conversation =
+
     journal && scopeMatches ? (
       <NativeSupervisorConversation
         journal={journal}
@@ -534,6 +577,46 @@ export function NativeSupervisorComposer(props: {
             Sign in to ctox.dev
           </button>
         )}
+      {previousTurns.length > 0 && journal && scopeMatches && (
+        <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+          Task history
+          <select
+            aria-label="Supervisor request"
+            value={journal.intent.commandId}
+            disabled={disabled || busy || (pending && !confirmedPending)}
+            onChange={(event) => void selectTask(event.target.value)}
+            className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1"
+          >
+            {[...previousTurns, journal].map((entry) => (
+              <option key={entry.intent.commandId} value={entry.intent.commandId}>
+                {entry.turn?.status ?? "Waiting for receipt"} · {entry.intent.goal.slice(0, 80)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {confirmedPending && (
+        <div role="status" className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>
+            Previous request: {journal.turn.status}. A new message starts a separate request;
+            this task stays in Task history.
+          </span>
+          {!continuing ? (
+            <button
+              type="button"
+              disabled={disabled || busy}
+              className="underline underline-offset-2"
+              onClick={() => setNewMessageFor(journal.intent.commandId)}
+            >
+              Continue anyway
+            </button>
+          ) : (
+            <button type="button" className="underline underline-offset-2" onClick={() => setNewMessageFor(null)}>
+              Keep waiting
+            </button>
+          )}
+        </div>
+      )}
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -547,7 +630,7 @@ export function NativeSupervisorComposer(props: {
           rows={2}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          disabled={busy || pending}
+          disabled={pending && !confirmedPending}
           onKeyDown={(event) => {
             if (
               (event.metaKey || event.ctrlKey) &&
@@ -569,7 +652,7 @@ export function NativeSupervisorComposer(props: {
         <button
           type="submit"
           aria-label="Send to Supervisor"
-          disabled={disabled || busy || bindingPending || pending || prompt.trim() === ""}
+          disabled={disabled || busy || bindingPending || (pending && !continuing) || prompt.trim() === ""}
           className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
         >
           Send

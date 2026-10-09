@@ -122,6 +122,27 @@ describe("native supervisor receipt display", () => {
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
     expect(html).toContain("Refresh task");
   });
+  it("keeps drafting available for a confirmed running task with an explicit separate-message action", () => {
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={{
+          ...config,
+          ctoxSupervisorTurn: {
+            ...config.ctoxSupervisorTurn!,
+            turn: { ...config.ctoxSupervisorTurn!.turn!, executionPhase: "running", status: "accepted", terminal: false },
+          },
+        }}
+        instanceId={scope.instanceId} blockReason={null} unavailable={false} saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain("Continue anyway");
+    expect(html).toContain("starts a separate request");
+    expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
+    expect(html).toContain("Refresh task");
+    expect(html).toContain("Cancel");
+    expect(html).not.toContain("Approve");
+  });
   it("shows received native result and attempt without local provider controls", () => {
     const html = renderToStaticMarkup(
       <NativeSupervisorComposer

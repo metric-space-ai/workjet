@@ -42,7 +42,7 @@ impl ClaudeMessagesHttpResponse {
         &self.body
     }
 
-    pub(super) fn json(status: u16, body: Vec<u8>) -> Self {
+    pub fn json(status: u16, body: Vec<u8>) -> Self {
         Self {
             status,
             content_type: "application/json",

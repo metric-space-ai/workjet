@@ -55,10 +55,17 @@ async function dispatchSavedSupervisorTurn(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   const { intent } = saved;
-  if (saved.submission === "not-submitted")
+  if (
+    saved.submission === "not-submitted" &&
+    saved.submissionError !== "not_active" &&
+    saved.submissionError !== "timeout"
+  )
     return { _tag: "failed", code: saved.submissionError ?? "unsupported" };
-  await journal.save(saved);
-  if (saved.submission === "prepared") {
+  // Older clients stored a transient bind failure as a refusal. Replay its
+  // original binding command before submitting the original user intent.
+  const submission = saved.submission === "not-submitted" ? "prepared" : saved.submission;
+  await journal.save({ ...saved, submission });
+  if (submission === "prepared") {
     const binding = await confirmedControl(
       intent,
       {
@@ -73,7 +80,8 @@ async function dispatchSavedSupervisorTurn(
       await journal.save({
         intent,
         turn: null,
-        submission: "not-submitted",
+        submission:
+          binding.code === "not_active" || binding.code === "timeout" ? "prepared" : "not-submitted",
         submissionError: binding.code,
       });
       return binding;

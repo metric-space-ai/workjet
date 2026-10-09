@@ -381,6 +381,8 @@ import {
   resolveNativeSupervisorScope,
 } from "../nativeSupervisorComposer";
 import { NativeSupervisorComposer } from "./chat/NativeSupervisorComposer";
+import { NativeWorkerSourceControl } from "./chat/NativeWorkerSourceControl";
+import { withWorkerSourceConnection } from "../workjetWorkerSourceConnection";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
@@ -7280,41 +7282,79 @@ function ChatViewContent(props: ChatViewProps) {
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           {nativeSupervisorThread && visibleWorkjetConfig && activeServerThread ? (
-                            <NativeSupervisorComposer
-                              key={`${activeThreadKey}:${presentationInstanceId}`}
-                              scope={nativeSupervisorScope}
-                              config={visibleWorkjetConfig}
-                              instanceId={presentationInstanceId}
-                              blockReason={
-                                nativeSupervisorScope === null
-                                  ? nativeSupervisorBlockReason({
-                                      project: activeProject ?? null,
-                                      registry: workjetProjectRegistry,
-                                    })
-                                  : null
-                              }
-                              unavailable={
-                                activeEnvironmentUnavailable ||
-                                threadDetailLoading ||
-                                workjetCapabilityBusy
-                              }
-                              saveConfig={async (nextConfig) => {
-                                const result = await setThreadWorkjetConfig({
-                                  environmentId: activeServerThread.environmentId,
-                                  input: {
-                                    threadId: activeServerThread.id,
-                                    workjetConfig: nextConfig,
-                                  },
-                                });
-                                if (result._tag === "Success" && activeThreadKey) {
-                                  setWorkjetConfigOverridesByThreadKey((current) => ({
-                                    ...current,
-                                    [activeThreadKey]: { config: nextConfig, busy: false },
-                                  }));
+                            <>
+                              <NativeWorkerSourceControl
+                                key={`worker-source:${activeThreadKey}:${presentationInstanceId}`}
+                                environmentId={activeServerThread.environmentId}
+                                instanceId={presentationInstanceId}
+                                config={visibleWorkjetConfig}
+                                bindConnection={async (connection) => {
+                                  const nextConfig = withWorkerSourceConnection(
+                                    visibleWorkjetConfig,
+                                    presentationInstanceId,
+                                    connection,
+                                  );
+                                  if (!nextConfig) return false;
+                                  const result = await setThreadWorkjetConfig({
+                                    environmentId: activeServerThread.environmentId,
+                                    input: {
+                                      threadId: activeServerThread.id,
+                                      workjetConfig: nextConfig,
+                                    },
+                                  });
+                                  if (result._tag === "Success" && activeThreadKey) {
+                                    setWorkjetConfigOverridesByThreadKey((current) => ({
+                                      ...current,
+                                      [activeThreadKey]: {
+                                        config: nextConfig,
+                                        busy: false,
+                                      },
+                                    }));
+                                  }
+                                  return result._tag === "Success";
+                                }}
+                                unavailable={
+                                  activeEnvironmentUnavailable ||
+                                  threadDetailLoading ||
+                                  workjetCapabilityBusy
                                 }
-                                return result;
-                              }}
-                            />
+                              />
+                              <NativeSupervisorComposer
+                                key={`${activeThreadKey}:${presentationInstanceId}`}
+                                scope={nativeSupervisorScope}
+                                config={visibleWorkjetConfig}
+                                instanceId={presentationInstanceId}
+                                blockReason={
+                                  nativeSupervisorScope === null
+                                    ? nativeSupervisorBlockReason({
+                                        project: activeProject ?? null,
+                                        registry: workjetProjectRegistry,
+                                      })
+                                    : null
+                                }
+                                unavailable={
+                                  activeEnvironmentUnavailable ||
+                                  threadDetailLoading ||
+                                  workjetCapabilityBusy
+                                }
+                                saveConfig={async (nextConfig) => {
+                                  const result = await setThreadWorkjetConfig({
+                                    environmentId: activeServerThread.environmentId,
+                                    input: {
+                                      threadId: activeServerThread.id,
+                                      workjetConfig: nextConfig,
+                                    },
+                                  });
+                                  if (result._tag === "Success" && activeThreadKey) {
+                                    setWorkjetConfigOverridesByThreadKey((current) => ({
+                                      ...current,
+                                      [activeThreadKey]: { config: nextConfig, busy: false },
+                                    }));
+                                  }
+                                  return result;
+                                }}
+                              />
+                            </>
                           ) : (
                             <ChatComposer
                               composerRef={composerRef}

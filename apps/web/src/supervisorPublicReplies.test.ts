@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { WorkjetSupervisorExecutionEvent, WorkjetSupervisorPublicAssistantText } from "@workjet/contracts";
 import { appendSupervisorExecutionEvents, reconstructSupervisorPublicReplies } from "./supervisorPublicReplies";
 
@@ -17,7 +17,7 @@ describe("actual Supervisor public reply reconstruction", () => {
     expect(reconstructSupervisorPublicReplies("attempt", conflict.events)[0]).toMatchObject({ text: "Hello", incomplete: true });
   });
   it("bounds retained UI history without losing the last known native prefix", () => {
-    const prefix = Array.from({ length: 4096 }, (_, index) => ({ ...event(`event-${index}`), kind: "worker.tool", public_text: undefined }));
+    const prefix = Array.from({ length: 4096 }, (_, index) => ({ id: `event-${index}`, sequence: 1, kind: "worker.tool", title: "Tool result", created_at_ms: 0 }));
     expect(appendSupervisorExecutionEvents(prefix, [event("overflow")])).toEqual({ events: prefix, limited: true, conflicted: false });
     expect(appendSupervisorExecutionEvents(prefix, [prefix[0]!])).toEqual({ events: prefix, limited: false, conflicted: false });
   });
@@ -62,7 +62,7 @@ describe("actual Supervisor public reply reconstruction", () => {
       .toMatchObject({ text: "Hello", completed: false, truncated: true });
   });
   it("does not render tool titles or other event payloads as assistant replies", () => {
-    expect(reconstructSupervisorPublicReplies("attempt", [{ ...event("tool"), kind: "worker.tool", public_text: undefined }]))
+    expect(reconstructSupervisorPublicReplies("attempt", [{ id: "tool", sequence: 1, kind: "worker.tool", title: "Tool result", created_at_ms: 0 }]))
       .toEqual([]);
   });
   it("does not accept new text after item completion", () => {

@@ -81,6 +81,7 @@ import {
 
 import { makeModelChecks } from "./ProviderGatewayModelChecks.ts";
 import type { KimiConnection } from "./KimiConnection.ts";
+import { ZAI_BASE_URLS, type ZaiConnection } from "./ZaiConnection.ts";
 import { repairClaudeModelIds } from "./ClaudeConnection.ts";
 
 const CONFIG_MAX_BYTES = 256 * 1024;
@@ -123,6 +124,12 @@ export interface ProviderGatewayPlatform {
     signal?: AbortSignal,
   ) => Promise<KimiConnection | undefined>;
   readonly fingerprint?: ((value: string) => string) | undefined;
+  readonly discoverZaiConnection?: (
+    apiKey: string,
+    preferredModels: ReadonlyArray<string>,
+    preferredBaseUrl?: string,
+    signal?: AbortSignal,
+  ) => Promise<ZaiConnection | undefined>;
   readonly providerModelCheck?: (
     endpoint: string,
     provider: WorkjetGatewayProvider,
@@ -1333,6 +1340,22 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         input.provider === "kimi"
           ? await platform.discoverKimiConnection?.(apiKey, apiReplacement?.upstreamBaseUrl)
           : undefined;
+      let zaiConnection: ZaiConnection | undefined;
+      if (input.provider === "zai" && platform.discoverZaiConnection !== undefined) {
+        let preferredModels = input.models?.length ? input.models : (apiReplacement?.models ?? []);
+        if (preferredModels.length === 0) {
+          const catalog = await platform.publicModelCatalog?.().catch(() => undefined);
+          preferredModels = decodeLiveProviderModels(catalog, "zai", platform.now()) ?? [];
+        }
+        zaiConnection = await platform.discoverZaiConnection(
+          apiKey,
+          preferredModels,
+          apiReplacement?.upstreamBaseUrl,
+        );
+        const zaiModels = zaiConnection?.models;
+        if (zaiModels !== undefined && input.models?.some((id) => !zaiModels.includes(id)))
+          throw safeError("invalid-configuration");
+      }
       if (input.provider === "kimi" && kimiConnection === undefined)
         throw safeError("management-unavailable");
       if (
@@ -1347,6 +1370,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           : [];
       const discoveredKimiModels =
         retainedKimiModels.length > 0 ? retainedKimiModels : kimiConnection?.models;
+      const discoveredZaiModels =
+        zaiConnection === undefined
+          ? undefined
+          : apiReplacement?.models.filter((id) => zaiConnection.models.includes(id));
       const usedIds = new Set(accounts.map((account) => account.id));
       const base = `${input.provider}-${secretSlug(input.label)}`;
       let id = replacement?.id ?? base;
@@ -1368,18 +1395,26 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         priority: replacement?.priority ?? 0,
         weight: replacement?.weight ?? 1,
         models:
-          input.models !== undefined && (input.provider !== "kimi" || input.models.length > 0)
+          input.models !== undefined &&
+          (!["kimi", "zai"].includes(input.provider) || input.models.length > 0)
             ? input.models
             : (discoveredKimiModels ??
+              (discoveredZaiModels?.length
+                ? discoveredZaiModels
+                : zaiConnection === undefined
+                  ? undefined
+                  : [zaiConnection.probeModel]) ??
               replacement?.models ??
               accounts.find((account) => account.provider === input.provider)?.models ??
               []),
         apiKeySecret,
         ...(kimiConnection !== undefined
           ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl }
-          : apiReplacement?.upstreamBaseUrl
-            ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
-            : {}),
+          : zaiConnection !== undefined
+            ? { upstreamBaseUrl: zaiConnection.upstreamBaseUrl }
+            : apiReplacement?.upstreamBaseUrl
+              ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
+              : {}),
         ...(suffix ? { credentialSuffix: suffix } : {}),
       };
       if (replacement === undefined) accounts.push(nextAccount);
@@ -1756,6 +1791,57 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       await startSingleFlight();
     };
 
+    /** Repair legacy Z.ai plan routing only after real inference accepts the existing key. */
+    const runRepairZaiConnections = async (accountId?: string): Promise<void> => {
+      if (platform.discoverZaiConnection === undefined) return;
+      const configuration = await loadConfiguration();
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(16_000);
+      let changed = false;
+      for (const [index, account] of accounts.entries()) {
+        if (
+          deadline.aborted ||
+          account.provider !== "zai" ||
+          !account.enabled ||
+          !isApiKeyAccount(account) ||
+          account.models.length === 0 ||
+          account.upstreamBaseUrl === ZAI_BASE_URLS[0] ||
+          (account.upstreamBaseUrl !== undefined && account.upstreamBaseUrl !== ZAI_BASE_URLS[1]) ||
+          (accountId !== undefined && account.id !== accountId)
+        )
+          continue;
+        const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
+          () => Option.none<Uint8Array>(),
+        );
+        if (Option.isNone(secret)) continue;
+        const apiKey = new TextDecoder().decode(secret.value);
+        if (!isAcceptableApiKey(apiKey)) continue;
+        const connection = await platform.discoverZaiConnection(
+          apiKey.trim(),
+          account.models,
+          account.upstreamBaseUrl ?? ZAI_BASE_URLS[1],
+          deadline,
+        );
+        if (connection === undefined || deadline.aborted) continue;
+        const models = account.models.filter((id) => connection.models.includes(id));
+        if (
+          account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+          JSON.stringify(account.models) === JSON.stringify(models)
+        )
+          continue;
+        accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, models };
+        changed = true;
+      }
+      if (!changed) return;
+      await modelChecks.cancel();
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+      );
+      await stopSingleFlight();
+      await startSingleFlight();
+    };
+
     /** A spelling repair is permitted only by this account's real provider list. */
     const runRepairClaudeModels = async (accountId?: string): Promise<void> => {
       if (platform.discoverClaudeModels === undefined) return;
@@ -1835,6 +1921,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             try: async () => {
               await runRepairClaudeModels(input.accountId);
               await runRepairKimiConnections(input.accountId);
+              await runRepairZaiConnections(input.accountId);
               return modelChecks.schedule(input);
             },
             catch: () => safeError("management-unavailable"),

@@ -325,7 +325,8 @@ export interface OpenCodeAdapterLiveOptions {
    * spawns itself; an instance configured with an external `serverUrl` is
    * rejected before this point by the driver.
    */
-  readonly resolveSessionEnvironment?: () => Effect.Effect<
+  readonly resolveSessionModel?: (model?: string) => Effect.Effect<string, ProviderGatewayRoutingError>;
+  readonly resolveSessionEnvironment?: (model?: string) => Effect.Effect<
     NodeJS.ProcessEnv,
     ProviderGatewayRoutingError
   >;
@@ -1322,7 +1323,7 @@ export function makeOpenCodeAdapter(
         // Resolved per session start so gateway-routed instances observe the
         // gateway's current status rather than a value frozen at construction.
         const sessionEnvironment = options?.resolveSessionEnvironment
-          ? yield* options.resolveSessionEnvironment()
+          ? yield* options.resolveSessionEnvironment(input.modelSelection?.model)
           : options?.environment;
 
         const started = yield* Effect.gen(function* () {
@@ -1572,7 +1573,10 @@ export function makeOpenCodeAdapter(
           issue: `OpenCode model selection is bound to instance '${modelSelection?.instanceId}', expected '${boundInstanceId}'.`,
         });
       }
-      const parsedModel = parseOpenCodeModelSlug(modelSelection?.model);
+      const nativeModel = options?.resolveSessionModel
+        ? yield* options.resolveSessionModel(modelSelection?.model)
+        : modelSelection?.model;
+      const parsedModel = parseOpenCodeModelSlug(nativeModel);
       if (!parsedModel) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,

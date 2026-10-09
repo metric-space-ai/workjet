@@ -179,7 +179,6 @@ function BrowserBusinessOsEnvironmentNavigation({
         <Button size="sm" variant="ghost" onClick={() => openInstanceSetup("connect")}>
           Connect instance
         </Button>
-
       ) : null}
     </div>
   );

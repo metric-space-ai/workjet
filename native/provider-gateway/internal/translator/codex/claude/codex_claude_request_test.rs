@@ -30,6 +30,26 @@ fn maps_system_reminders_tools_web_search_and_policy_fields() {
 }
 
 #[test]
+fn maximum_claude_effort_uses_the_responses_level() {
+    for thinking_type in ["adaptive", "auto"] {
+        for (effort, expected) in [("max", "xhigh"), ("MAX", "xhigh"), ("high", "high")] {
+            let request = json!({
+                "messages": [{"role": "user", "content": "Hi"}],
+                "thinking": {"type": thinking_type},
+                "output_config": {"effort": effort}
+            });
+            let output: Value = serde_json::from_slice(&convert_claude_request_to_codex(
+                "grok-4.7",
+                &serde_json::to_vec(&request).unwrap(),
+                false,
+            ))
+            .unwrap();
+            assert_eq!(output["reasoning"]["effort"], expected);
+        }
+    }
+}
+
+#[test]
 fn preserves_order_signature_and_shortens_matching_call_ids() {
     let signature = gpt_signature();
     let long_id = format!("toolu_{}", "a".repeat(70));

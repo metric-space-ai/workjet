@@ -6,6 +6,10 @@ After connecting, Workjet checks the installed coding tools and adds the compute
 
 The computer list checks coding tools on each connected machine and shows its installed versions or missing tools. While a check runs, the list shows progress. A disconnected computer is marked as disconnected and its previous tool results are hidden; reconnect it to check again.
 
+If SSH setup cannot reach a computer, Workjet makes up to four attempts, with pauses of 3, 15, and 60 seconds. After that, the connection error stays visible. Check the address or jump route and choose **Connect** to try again. Returning to the app does not restart setup. A network reconnection starts a new attempt.
+
+When Tailscale SSH requires approval, open the approval link shown in the error and approve access, then reconnect. A saved SSH alias uses its configured jump route.
+
 Previously saved connections appear in the same table automatically. The status dot reflects the connection; coding tool chips show a check only after that computer reports availability. Hover over a tool for its version or the reason it is missing. Use **Use** to select a computer and the row’s **⋯** menu for Edit, Connection, Business OS assignment, or Remove. Editing keeps its connection fixed. Remove its Business OS assignment before removing the computer.
 
 Registered build, storage, and GPU capabilities appear as chips. Select them to open the capabilities drawer; saved GPU details appear when supplied by the Business OS. A storage-only NAS has its own row and cannot be selected as a coding computer. More than five computers adds a capability filter. This machine appears first, followed by connected and disconnected computers.

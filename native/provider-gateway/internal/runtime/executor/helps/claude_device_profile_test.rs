@@ -306,6 +306,36 @@ fn local_cache_survives_across_requests() {
 }
 
 #[test]
+fn legacy_stored_profile_uses_current_protocol_without_replacing_identity() {
+    let store = FakeStore::default();
+    let key = claude_device_profile_kv_key(Some("auth-1"), "api-key");
+    let legacy = stored_profile("claude-cli/2.1.220 (external, cli)", "0.94.0", "v26.3.0");
+    store.inner.lock().unwrap().values.insert(key.clone(), legacy.clone());
+    let profile = ClaudeDeviceProfileCache::new()
+        .resolve_required(
+            Some(&store),
+            Some("auth-1"),
+            "api-key",
+            None,
+            &ClaudeHeaderDefaults::default(),
+        )
+        .unwrap();
+    assert_eq!(profile.user_agent, DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT);
+    assert_eq!(
+        profile.package_version,
+        DEFAULT_CLAUDE_FINGERPRINT_PACKAGE_VERSION
+    );
+    assert_eq!(
+        default_claude_version(&ClaudeHeaderDefaults::default()),
+        DEFAULT_CLAUDE_CLI_VERSION
+    );
+    let inner = store.inner.lock().unwrap();
+    assert_eq!(inner.values.get(&key), Some(&legacy));
+    assert_eq!(inner.set_count, 0);
+    assert_eq!(inner.expire_count, 1);
+}
+
+#[test]
 fn application_helpers_preserve_pinned_and_legacy_semantics() {
     let defaults = ClaudeHeaderDefaults::default();
     let profile = default_claude_device_profile(&defaults);
@@ -323,7 +353,7 @@ fn application_helpers_preserve_pinned_and_legacy_semantics() {
         legacy.get("User-Agent").unwrap(),
         &vec![DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT.to_owned()]
     );
-    assert_eq!(default_claude_version(&defaults), "2.1.220");
+    assert_eq!(default_claude_version(&defaults), DEFAULT_CLAUDE_CLI_VERSION);
 
     let prefix_match = ClaudeHeaderDefaults {
         user_agent: "claude-cli/2.8.4suffix".to_owned(),

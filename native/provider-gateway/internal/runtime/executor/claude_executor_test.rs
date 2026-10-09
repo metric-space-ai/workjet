@@ -690,7 +690,7 @@ async fn provider_count_tokens_preserves_strong_native_session_and_profile() {
         let requests = transport.requests.lock().unwrap();
         let captured = requests.last().unwrap();
         assert_eq!(captured.session_id, session_id);
-        assert_eq!(captured.user_agent, "claude-cli/2.1.220 (external, cli)");
+        assert_eq!(captured.user_agent, "claude-cli/2.1.280 (external, cli)");
         assert_eq!(captured.authorization, "Bearer access-token");
         let body: serde_json::Value = serde_json::from_slice(&captured.body).unwrap();
         assert_eq!(body["system"], "native caller system");

@@ -2,7 +2,7 @@
 import * as Schema from "effect/Schema";
 import type { WorkjetGatewayProvider } from "@workjet/contracts";
 
-const Catalog = Schema.Struct({
+export const PublicModelCatalog = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   checkedAt: Schema.String,
   expiresAt: Schema.String,
@@ -14,7 +14,7 @@ const Catalog = Schema.Struct({
     }),
   ),
 });
-const decodeCatalog = Schema.decodeUnknownSync(Catalog);
+const decodeCatalog = Schema.decodeUnknownSync(PublicModelCatalog);
 const PROVIDERS: Readonly<Partial<Record<WorkjetGatewayProvider, string>>> = {
   codex: "openai",
   claude: "anthropic",
@@ -24,11 +24,12 @@ const PROVIDERS: Readonly<Partial<Record<WorkjetGatewayProvider, string>>> = {
   minimax: "minimax",
 };
 
-export function decodeLiveProviderModels(
+/** Cached suggestions retain their upstream timestamp and expire after seven days. */
+export function decodePublicModelCatalog(
   value: unknown,
-  provider: WorkjetGatewayProvider,
   nowMs: number,
-): ReadonlyArray<string> | undefined {
+  cached = false,
+): typeof PublicModelCatalog.Type | undefined {
   try {
     const catalog = decodeCatalog(value);
     const checked = Date.parse(catalog.checkedAt);
@@ -37,24 +38,39 @@ export function decodeLiveProviderModels(
       !Number.isFinite(checked) ||
       !Number.isFinite(expires) ||
       checked > nowMs + 5_000 ||
-      checked < nowMs - 300_000 ||
-      expires <= nowMs ||
+      checked < nowMs - (cached ? 7 * 24 * 60 * 60 * 1_000 : 300_000) ||
+      expires <= checked ||
+      (!cached && expires <= nowMs) ||
       expires > checked + 300_000 ||
       catalog.providers.length > 32
     )
       return undefined;
-    const entries = catalog.providers.filter((entry) => entry.provider === PROVIDERS[provider]);
-    if (entries.length !== 1 || entries[0]?.status !== "observed") return undefined;
-    const models = entries[0].models;
     if (
-      models.length > 1024 ||
-      models.some((id) => !id || id.length > 160 || id.trim() !== id || /[\x00-\x1f\x7f]/.test(id))
+      new Set(catalog.providers.map((entry) => entry.provider)).size !== catalog.providers.length ||
+      catalog.providers.some(
+        (entry) =>
+          entry.models.length > 1024 ||
+          entry.models.some(
+            (id) => !id || id.length > 160 || id.trim() !== id || /[\x00-\x1f\x7f]/.test(id),
+          ),
+      )
     )
       return undefined;
-    return [...new Set(models)].sort();
+    return catalog;
   } catch {
     return undefined;
   }
+}
+
+export function decodeLiveProviderModels(
+  value: unknown,
+  provider: WorkjetGatewayProvider,
+  nowMs: number,
+  cached = false,
+): ReadonlyArray<string> | undefined {
+  const catalog = decodePublicModelCatalog(value, nowMs, cached);
+  const entry = catalog?.providers.find((item) => item.provider === PROVIDERS[provider]);
+  return entry?.status === "observed" ? [...new Set(entry.models)].sort() : undefined;
 }
 
 export async function readPublicModelCatalog(

@@ -41,3 +41,17 @@ checks.
 This holder-side compatibility slice does not implement native federation,
 remove the Environment boundary or claim an offline Mac serves remote workers.
 Instance metadata, membership/withdrawals and holder dispatch follow separately.
+
+## Public catalog cache
+
+The server loads its bounded public catalog cache and refreshes llm.ctox.dev at
+startup and every day while its service scope is alive. Concurrent readers share
+one refresh. The cache contains only the decoded public catalog, not credentials
+or account configuration. It survives restarts and retains the original upstream
+observation timestamp during an outage. Suggestions older than seven days are
+omitted; malformed, future-dated and unavailable observations never become a
+static fallback. Failed refreshes are throttled for one minute.
+
+Cached suggestions do not authorize adding a model ID. Provider selection edits
+still require a fresh public observation or the account's authenticated live
+list. This cache does not add catalog provider coverage or federated routing.

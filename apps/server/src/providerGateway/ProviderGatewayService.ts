@@ -41,6 +41,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Schedule from "effect/Schedule";
 
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -71,6 +72,7 @@ import {
 } from "./ProviderGatewayUsage.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
 import { decodeLiveProviderModels } from "./LiveProviderCatalog.ts";
+import { makePublicModelCatalogCache } from "./PublicModelCatalogCache.ts";
 import {
   applyProviderModelSelection,
   projectProviderModelSelection,
@@ -431,6 +433,16 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     );
     const hostPidPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-host.pid.json");
     const grantsPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-grants.json");
+    const publicCatalogPath = platform.joinPath(
+      serverConfig.stateDir,
+      "provider-model-catalog.json",
+    );
+    const publicCatalogCache = makePublicModelCatalogCache({
+      now: platform.now,
+      read: () => platform.readText(publicCatalogPath, 128 * 1024),
+      write: (value) => platform.writePrivateText(publicCatalogPath, value),
+      fetch: async () => platform.publicModelCatalog?.(),
+    });
     const grantsMutex = yield* Semaphore.make(1);
     const executable = options.executable ?? platform.defaultExecutable(serverConfig.stateDir);
     const startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
@@ -1647,23 +1659,21 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
     };
 
-    /** Fresh llm.ctox.dev suggestions; account configuration is separate from live observations. */
+    /** Public catalog suggestions; cached observations never authorize a new model ID. */
     const runDiscoverModels = async (): Promise<WorkjetGatewayModelDiscovery> => {
       requireManagement();
       const configuration = await loadConfiguration();
-      const observedAtMs = Math.max(0, Math.trunc(platform.now()));
-      let liveCatalog: unknown;
-      try {
-        liveCatalog = await platform.publicModelCatalog?.();
-      } catch {
-        liveCatalog = undefined;
-      }
+      const liveCatalog = await publicCatalogCache.read();
+      const observedAtMs = Math.max(
+        0,
+        Math.trunc(liveCatalog === undefined ? platform.now() : Date.parse(liveCatalog.checkedAt)),
+      );
       const providers: Array<WorkjetGatewayProviderModels> = [];
       for (const provider of GATEWAY_PROVIDERS) {
         const accounts = configuration.accounts.filter(
           (account) => account.provider === provider && account.enabled,
         );
-        const liveModels = decodeLiveProviderModels(liveCatalog, provider, platform.now());
+        const liveModels = decodeLiveProviderModels(liveCatalog, provider, platform.now(), true);
         if (accounts.length === 0 && liveModels === undefined) continue;
         const models: Array<WorkjetGatewayDiscoveredModel> = (liveModels ?? []).map((id) => ({
           id,
@@ -2060,6 +2070,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     );
 
     yield* Effect.addFinalizer(() => Effect.promise(modelChecks.shutdown));
+
+    // The service scope owns startup/daily refresh; no detached timer survives shutdown.
+    yield* Effect.forkScoped(
+      Effect.promise(publicCatalogCache.refresh).pipe(Effect.repeat(Schedule.spaced("1 day"))),
+    );
 
     return ProviderGatewayService.of({
       modelChecks: () =>

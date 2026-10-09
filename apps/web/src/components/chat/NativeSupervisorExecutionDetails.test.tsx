@@ -34,12 +34,12 @@ const render = (value: WorkjetSupervisorExecutionPage | null, error: string | nu
 describe("native supervisor event details", () => {
   it("shows actual native identities and escaped event titles with explicit paging", () => {
     const html = render(page);
-    expect(html).toContain("Versuch-ID actual-attempt");
+    expect(html).toContain("Attempt ID actual-attempt");
     expect(html).toContain("Run-ID actual-run");
     expect(html).toContain("7. &lt;script&gt;unsafe()&lt;/script&gt;");
     expect(html).not.toContain("<script>");
-    expect(html).toContain("Weitere Ereignisse");
-    expect(html).toContain("Von Anfang laden");
+    expect(html).toContain("Load more events");
+    expect(html).toContain("Reload from start");
   });
   it("does not invent an attempt or run for a queued task", () => {
     const html = render({
@@ -48,16 +48,16 @@ describe("native supervisor event details", () => {
       events: [],
       has_more: false,
     });
-    expect(html).toContain("Noch keine gespeicherten Ereignisse");
-    expect(html).not.toContain("Versuch-ID");
+    expect(html).toContain("No retained events yet");
+    expect(html).not.toContain("Attempt ID");
     expect(html).not.toContain("Run-ID");
-    expect(html).not.toContain("Weitere Ereignisse");
+    expect(html).not.toContain("Load more events");
   });
   it("shows unsupported observation separately without a fabricated empty history", () => {
     expect(render(null)).toBe("");
     const html = render(null, "Diese CTOX-Version stellt keinen Ausführungsverlauf bereit.");
     expect(html).toContain("keinen Ausführungsverlauf");
-    expect(html).not.toContain("Noch keine gespeicherten Ereignisse");
+    expect(html).not.toContain("No retained events yet");
     expect(html).not.toContain("Run-ID");
   });
 });

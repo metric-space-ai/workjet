@@ -1670,6 +1670,7 @@ function ChatViewContent(props: ChatViewProps) {
       : null;
   const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
   const nativeSupervisorThread = isNativeSupervisorThread(visibleWorkjetConfig);
+  const [nativeSupervisorConversationTarget, setNativeSupervisorConversationTarget] = useState<HTMLDivElement | null>(null);
   const browserSurfaceEnabled = workjetBrowserSurfaceEnabled({
     isServerThread,
     serverConfig: visibleWorkjetConfig,
@@ -7161,7 +7162,7 @@ function ChatViewContent(props: ChatViewProps) {
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
+              {(!nativeSupervisorThread || timelineEntries.length > 0) && <MessagesTimeline
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
                 onOpenThread={onOpenWorkjetPeerThread}
@@ -7206,7 +7207,13 @@ function ChatViewContent(props: ChatViewProps) {
                 }
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
-              />
+              />}
+              {nativeSupervisorThread && <div
+                key={`native-conversation:${activeThreadKey}:${presentationInstanceId}`}
+                ref={setNativeSupervisorConversationTarget}
+                className="min-h-0 flex-1 overflow-y-auto"
+                style={{ paddingBottom: composerOverlayHeight }}
+              />}
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (
@@ -7321,6 +7328,7 @@ function ChatViewContent(props: ChatViewProps) {
                               />
                               <NativeSupervisorComposer
                                 key={`${activeThreadKey}:${presentationInstanceId}`}
+                                conversationTarget={nativeSupervisorConversationTarget}
                                 scope={nativeSupervisorScope}
                                 config={visibleWorkjetConfig}
                                 instanceId={presentationInstanceId}

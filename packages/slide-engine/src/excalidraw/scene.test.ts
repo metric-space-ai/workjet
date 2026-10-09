@@ -185,3 +185,21 @@ test("legacy projections of native scenes stay readable; invalid native canvases
   NodeAssert.equal(validateSlideDocument(invalid).ok, false);
   NodeAssert.throws(() => parseSlideDocument(invalid), /validation failed/);
 });
+
+test("canvas text projections never end inside a surrogate pair", () => {
+  const deck = parseSlideDocument(allBlockTypesSlideDocument);
+  const slide = deck.slides[0]!;
+  const scene = canvasSceneForSlide(slide, deck.assets);
+  const title = `${"x".repeat(139)}😀 und mehr`;
+  const edited = {
+    ...scene,
+    elements: scene.elements.map((element) =>
+      element.id === `${slide.id}:title` ? { ...element, text: title, originalText: title } : element,
+    ),
+  };
+  const next = updateSlideCanvas(deck, slide.id, edited);
+  const stored = next.slides[0]!.title;
+  NodeAssert.ok(stored.length <= 140);
+  NodeAssert.ok(!/[\ud800-\udbff]$/.test(stored), "title ends with a lone high surrogate");
+  NodeAssert.doesNotThrow(() => JSON.parse(JSON.stringify(next)));
+});

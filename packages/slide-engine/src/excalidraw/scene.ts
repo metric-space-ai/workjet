@@ -200,6 +200,18 @@ export function canvasSceneForSlide(slide: SlideNode, assets: SlideAssetRef[] = 
 }
 
 /** Replace only the canvas; retain stable slide/block IDs, provenance and quiz anchors. */
+/**
+ * Workjet fork delta: cut at a code point, never inside a surrogate pair. A lone
+ * surrogate serializes as an escape that strict JSON parsers (CTOX) reject.
+ */
+function codePointSlice(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max;
+  const code = text.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return text.slice(0, end);
+}
+
 export function updateSlideCanvas(document: SlideDocument, slideId: string, scene: CanvasScene): SlideDocument {
   const canvas = canvasSceneSchema.parse(scene);
   if (!document.slides.some((slide) => slide.id === slideId)) throw new Error(`Slide ${slideId} does not exist.`);
@@ -208,14 +220,14 @@ export function updateSlideCanvas(document: SlideDocument, slideId: string, scen
     const next = { ...slide, canvas };
     const titleElement = canvas.elements.find((item) => item.id === `${slide.id}:title` && item.type === "text" && !item.isDeleted);
     const title = (titleElement?.originalText ?? titleElement?.text)?.trim();
-    if (title) next.title = title.slice(0, 140);
+    if (title) next.title = codePointSlice(title, 140);
     // Semantic blocks are bounded projections for search/quiz context. Native
     // canvas text remains complete even when it exceeds a legacy block budget.
     next.blocks = slide.blocks.map((block) => {
       if (block.type !== "heading" && block.type !== "paragraph") return block;
       const text = canvasTextForBlock(next, block.id)?.trim();
       if (!text) return block; // Keep stable metadata/anchor targets for deleted text.
-      return { ...block, text: text.slice(0, block.type === "heading" ? 140 : 1200) };
+      return { ...block, text: codePointSlice(text, block.type === "heading" ? 140 : 1200) };
     });
     return next;
   }) });

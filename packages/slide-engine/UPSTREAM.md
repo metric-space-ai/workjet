@@ -106,3 +106,18 @@ and `LICENSES/reveal.js-MIT.txt`.
     reaching it throw until the business scene renderer replaces this path.
 13. **Index exports.** `src/index.ts` also exports `scene-data.ts` and the `meeting.ts` read
     models.
+14. **Business scenes.** `src/scenes/business-{common,fallback,three,host,kpi-bars,trend}.ts` render
+    `business.kpi-bars` and `business.trend` with three r140 (render on demand, drag to orbit,
+    reduced motion, 2D fallback); `components/Scene3DBlockRenderer.tsx` dispatches business ids
+    to them and keeps every `modell.*` scene unchanged. QA page in `qa/`.
+15. **Canvas adapter.** `src/canvas/` ports the learnordie app's Excalidraw runtime loader,
+    `CanvasEmbed` and canvas sync helpers without app dependencies, plus `SlideCanvas`
+    (`present` / `edit`). New text uses the handwriting font family 1, like migrated slides.
+    The runtime itself lives in `apps/web/public/vendor/excalidraw/`.
+16. **CSP.** `src/zod-config.ts` sets zod `jitless` and is imported first by every module that
+    builds schemas at load time; `package.json` lists it under `sideEffects`.
+17. **Strict settings.** Minimal changes in `schema.ts`, `excalidraw/canvas-schema.ts`,
+    `excalidraw/scene.ts` and `scenes/modell-state.ts` so the sources type-check under Workjet's
+    `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` (apps import them as source).
+18. **Code point truncation.** `updateSlideCanvas` cuts projected titles and paragraphs at a code
+    point, never inside a surrogate pair, so the stored JSON stays valid for strict parsers.

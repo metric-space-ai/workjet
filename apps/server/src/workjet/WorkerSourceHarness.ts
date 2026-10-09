@@ -34,24 +34,34 @@ function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void 
   const event = (type: string, data: Record<string, unknown>) =>
     res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
   event("message_start", {
-    message: { ...message, content: [], stop_reason: null, stop_sequence: null, usage: { ...message.usage, output_tokens: 0 } },
+    message: {
+      ...message,
+      content: [],
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { ...message.usage, output_tokens: 0 },
+    },
   });
   for (const [index, block] of message.content.entries()) {
     const { text, input, thinking, signature, ...metadata } = block;
     event("content_block_start", {
       index,
-      content_block: block.type === "text"
-        ? { ...metadata, text: "" }
-        : block.type === "tool_use"
-          ? { ...metadata, input: {} }
-          : block.type === "thinking"
-            ? { ...metadata, thinking: "", signature: "" }
-            : block,
+      content_block:
+        block.type === "text"
+          ? { ...metadata, text: "" }
+          : block.type === "tool_use"
+            ? { ...metadata, input: {} }
+            : block.type === "thinking"
+              ? { ...metadata, thinking: "", signature: "" }
+              : block,
     });
     if (block.type === "text" && typeof text === "string")
       event("content_block_delta", { index, delta: { type: "text_delta", text } });
     if (block.type === "tool_use")
-      event("content_block_delta", { index, delta: { type: "input_json_delta", partial_json: JSON.stringify(input) } });
+      event("content_block_delta", {
+        index,
+        delta: { type: "input_json_delta", partial_json: JSON.stringify(input) },
+      });
     if (block.type === "thinking") {
       if (typeof thinking === "string")
         event("content_block_delta", { index, delta: { type: "thinking_delta", thinking } });
@@ -158,15 +168,19 @@ export async function installWorkerSourceRoute(
   };
   const server: NodeHttp.Server = NodeHttp.createServer(async (req, res) => {
     const messages = pin.harness === "claude-code";
-    const authenticated = req.headers.authorization !== undefined
-      ? req.headers.authorization === `Bearer ${apiKey}`
-      : messages && req.headers["x-api-key"] === apiKey;
+    const authenticated =
+      req.headers.authorization !== undefined
+        ? req.headers.authorization === `Bearer ${apiKey}`
+        : messages && req.headers["x-api-key"] === apiKey;
     if (revoked || !authenticated) {
       res.writeHead(403).end();
       return;
     }
     const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
-    if (!inventory && (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses"))) {
+    if (
+      !inventory &&
+      (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses"))
+    ) {
       res.writeHead(404).end();
       return;
     }
@@ -194,7 +208,9 @@ export async function installWorkerSourceRoute(
         if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
         const body = JSON.stringify(response);
         if (Buffer.byteLength(body) > 64 * 1024) throw new Error("Worker inventory too large");
-        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }).end(body);
+        res
+          .writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
+          .end(body);
         return;
       }
       const chunks: Buffer[] = [];
@@ -220,7 +236,8 @@ export async function installWorkerSourceRoute(
       const result = JSON.parse(reply.requestJson);
       if (messages) {
         const message = Schema.decodeUnknownSync(MessagesResponse)(result);
-        if (message.model !== pin.modelId) throw new Error("Worker response model differs from source permit");
+        if (message.model !== pin.modelId)
+          throw new Error("Worker response model differs from source permit");
       } else Schema.decodeUnknownSync(Response)(result);
       if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
       if (request.stream && messages) {

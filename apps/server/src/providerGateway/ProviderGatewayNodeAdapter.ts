@@ -88,22 +88,25 @@ export async function forwardSourceGatewayResponses(
     throw new Error("invalid gateway endpoint");
   const remaining = deadlineMs - Date.now();
   if (remaining <= 0) throw new Error("expired");
-  const response = await fetch(new URL(protocol === "messages" ? "/v1/messages" : "/v1/responses", url), {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      authorization: "Bearer workjet-gateway",
-      "content-type": "application/json",
-      "X-CTOX-Provider": selected.providerRef.provider,
-      "X-CTOX-Account": selected.credentialRef.accountId,
-      "X-CTOX-Purpose": "remote-worker",
+  const response = await fetch(
+    new URL(protocol === "messages" ? "/v1/messages" : "/v1/responses", url),
+    {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        authorization: "Bearer workjet-gateway",
+        "content-type": "application/json",
+        "X-CTOX-Provider": selected.providerRef.provider,
+        "X-CTOX-Account": selected.credentialRef.accountId,
+        "X-CTOX-Purpose": "remote-worker",
+      },
+      body: requestJson,
+      signal: AbortSignal.any([
+        AbortSignal.timeout(Math.min(120_000, remaining)),
+        ...(signal === undefined ? [] : [signal]),
+      ]),
     },
-    body: requestJson,
-    signal: AbortSignal.any([
-      AbortSignal.timeout(Math.min(120_000, remaining)),
-      ...(signal === undefined ? [] : [signal]),
-    ]),
-  });
+  );
   if (response.headers.get("X-CTOX-Account-Selected") !== selected.credentialRef.accountId) {
     await response.body?.cancel();
     throw new Error("exact account unavailable");

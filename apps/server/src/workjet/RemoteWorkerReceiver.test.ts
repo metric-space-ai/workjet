@@ -2,24 +2,43 @@ it.effect("requires an installed source route before creating a Claude worker ch
   Effect.gen(function* () {
     const h = harness();
     const service = yield* h.receiver;
-    expect((yield* Effect.flip(service.receive({ ...request, harness: "claude-code" }))).reason).toBe("source-unavailable");
+    expect(
+      (yield* Effect.flip(service.receive({ ...request, harness: "claude-code" }))).reason,
+    ).toBe("source-unavailable");
     expect(h.worktreeCalls).toEqual([]);
     expect(h.commands).toEqual([]);
   }),
 );
 it("selects the commissioned target driver and preserves its pinned model options", () => {
-  const claude = { ...request, harness: "claude-code" as const, modelSelection: { ...request.modelSelection, options: { effort: "high" } } };
+  const claude = {
+    ...request,
+    harness: "claude-code" as const,
+    modelSelection: {
+      ...request.modelSelection,
+      options: [{ id: "effort", value: "high" }],
+    },
+  };
   const source = { harness: "claude-code" as const, model: request.modelSelection.model };
   const instance = (id: string, driverKind: "codex" | "claudeAgent", enabled = true) => ({
-    instanceId: ProviderInstanceId.make(id), driverKind: ProviderDriverKind.make(driverKind), enabled,
+    instanceId: ProviderInstanceId.make(id),
+    driverKind: ProviderDriverKind.make(driverKind),
+    enabled,
   });
   const candidates = [instance("codex", "codex"), instance("target-claude", "claudeAgent")];
   expect(remoteWorkerRuntimeSelection(claude, source, candidates)).toEqual({
-    ...claude.modelSelection, instanceId: candidates[1]!.instanceId,
+    ...claude.modelSelection,
+    instanceId: candidates[1]!.instanceId,
   });
   expect(remoteWorkerRuntimeSelection(claude, source, [candidates[0]!])).toBeUndefined();
-  expect(remoteWorkerRuntimeSelection(claude, source, [instance("disabled", "claudeAgent", false)])).toBeUndefined();
-  expect(remoteWorkerRuntimeSelection(claude, source, [instance("a", "claudeAgent"), instance("b", "claudeAgent")])).toBeUndefined();
+  expect(
+    remoteWorkerRuntimeSelection(claude, source, [instance("disabled", "claudeAgent", false)]),
+  ).toBeUndefined();
+  expect(
+    remoteWorkerRuntimeSelection(claude, source, [
+      instance("a", "claudeAgent"),
+      instance("b", "claudeAgent"),
+    ]),
+  ).toBeUndefined();
   expect(remoteWorkerRuntimeSelection(request, source, candidates)).toBeUndefined();
 });
 // @effect-diagnostics preferSchemaOverJson:off -- immutable request comparisons in an in-memory receipt fixture.

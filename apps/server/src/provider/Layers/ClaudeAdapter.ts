@@ -3840,21 +3840,27 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ? yield* environment.value.getEnvironmentId
           : undefined;
         const foreign = input.workjetConfig.parent.environmentId !== localEnvironmentId;
-        if (foreign && (
-          !workerSource ||
-          workerSource.harness !== "claude-code" ||
-          workerSource.identity.sourceEnvironmentId !== input.workjetConfig.parent.environmentId ||
-          workerSource.identity.targetEnvironmentId !== localEnvironmentId
-        )) {
+        if (
+          foreign &&
+          (!workerSource ||
+            workerSource.harness !== "claude-code" ||
+            workerSource.identity.sourceEnvironmentId !==
+              input.workjetConfig.parent.environmentId ||
+            workerSource.identity.targetEnvironmentId !== localEnvironmentId)
+        ) {
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
             operation: "startSession",
-            issue: "Foreign worker source route is unavailable or mismatched; reconnect its source before restart.",
+            issue:
+              "Foreign worker source route is unavailable or mismatched; reconnect its source before restart.",
           });
         }
       }
       if (workerSource) {
-        if (workerSource.harness !== "claude-code" || workerSource.model !== input.modelSelection?.model) {
+        if (
+          workerSource.harness !== "claude-code" ||
+          workerSource.model !== input.modelSelection?.model
+        ) {
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
             operation: "startSession",
@@ -3863,11 +3869,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         }
         yield* Effect.tryPromise({
           try: () => workerSource.admit(),
-          catch: () => new ProviderAdapterValidationError({
-            provider: PROVIDER,
-            operation: "startSession",
-            issue: "Foreign worker source admission failed or expired.",
-          }),
+          catch: () =>
+            new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Foreign worker source admission failed or expired.",
+            }),
         });
       }
       const resumeState = readClaudeResumeState(input.resumeCursor);
@@ -4286,7 +4293,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
-      const apiModelId = workerSource?.model ?? (modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined);
+      const apiModelId =
+        workerSource?.model ??
+        (modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined);
       const initialContextWindow = selectedClaudeContextWindow(modelSelection);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
@@ -4326,7 +4335,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             HOME: process.env.HOME,
             TMPDIR: process.env.TMPDIR,
             LANG: process.env.LANG,
-            CLAUDE_CONFIG_DIR: path.join(serverConfig.stateDir, "worker-harnesses", input.threadId, "claude"),
+            CLAUDE_CONFIG_DIR: path.join(
+              serverConfig.stateDir,
+              "worker-harnesses",
+              input.threadId,
+              "claude",
+            ),
             ANTHROPIC_BASE_URL: workerSource.baseUrl.slice(0, -3),
             ANTHROPIC_API_KEY: workerSource.apiKey,
             WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
@@ -4339,13 +4353,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             ANTHROPIC_CUSTOM_HEADERS: undefined,
           }
         : options?.resolveSessionEnvironment
-        ? yield* makeClaudeEnvironment(
-            claudeSettings,
-            // The API model id is what actually travels on the wire, so it is
-            // the identity the gateway catalog has to be matched against.
-            yield* options.resolveSessionEnvironment({ model: apiModelId }),
-          ).pipe(Effect.provideService(Path.Path, path))
-        : claudeEnvironment;
+          ? yield* makeClaudeEnvironment(
+              claudeSettings,
+              // The API model id is what actually travels on the wire, so it is
+              // the identity the gateway catalog has to be matched against.
+              yield* options.resolveSessionEnvironment({ model: apiModelId }),
+            ).pipe(Effect.provideService(Path.Path, path))
+          : claudeEnvironment;
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an

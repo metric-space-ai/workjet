@@ -44,13 +44,23 @@ export const remoteWorkerRuntimeSelection = (
   source: Pick<import("./WorkerSourceHarness.ts").WorkerSourceHarness, "harness" | "model">,
   instances: ReadonlyArray<Pick<ProviderInstance, "instanceId" | "enabled" | "driverKind">>,
 ): RemoteWorkerRequest["modelSelection"] | undefined => {
-  if (source.harness !== (request.harness ?? "codex-cli") || source.model !== request.modelSelection.model)
+  if (
+    source.harness !== (request.harness ?? "codex-cli") ||
+    source.model !== request.modelSelection.model
+  )
     return undefined;
   const driverKind = source.harness === "claude-code" ? "claudeAgent" : "codex";
-  const candidates = instances.filter((instance) => instance.enabled && instance.driverKind === driverKind);
-  const selected = candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId) ??
-    (candidates.length === 1 ? candidates[0] : candidates.find((instance) => instance.instanceId === driverKind));
-  return selected === undefined ? undefined : { ...request.modelSelection, instanceId: selected.instanceId, model: source.model };
+  const candidates = instances.filter(
+    (instance) => instance.enabled && instance.driverKind === driverKind,
+  );
+  const selected =
+    candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId) ??
+    (candidates.length === 1
+      ? candidates[0]
+      : candidates.find((instance) => instance.instanceId === driverKind));
+  return selected === undefined
+    ? undefined
+    : { ...request.modelSelection, instanceId: selected.instanceId, model: source.model };
 };
 export class RemoteWorkerReceiver extends Context.Service<
   RemoteWorkerReceiver,
@@ -222,7 +232,11 @@ export const make = Effect.gen(function* () {
       if (sourceHarness.harness !== (request.harness ?? "codex-cli"))
         return yield* failure("source-unavailable");
       if (Option.isNone(providerInstances)) return yield* failure("computer-unavailable");
-      const selected = remoteWorkerRuntimeSelection(request, sourceHarness, yield* providerInstances.value.listInstances);
+      const selected = remoteWorkerRuntimeSelection(
+        request,
+        sourceHarness,
+        yield* providerInstances.value.listInstances,
+      );
       if (selected === undefined) return yield* failure("computer-unavailable");
       runtimeModelSelection = selected;
     }

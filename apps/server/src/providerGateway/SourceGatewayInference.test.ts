@@ -194,9 +194,15 @@ describe("source gateway inference", () => {
     Effect.gen(function* () {
       const requestJson = encodeJson({
         model: input.workerRequest.modelSelection.model,
-        messages: [{ role: "user", content: "Task" }], max_tokens: 100, stream: false,
+        messages: [{ role: "user", content: "Task" }],
+        max_tokens: 100,
+        stream: false,
       });
-      const claude = { ...input, workerRequest: { ...input.workerRequest, harness: "claude-code" as const }, requestJson };
+      const claude = {
+        ...input,
+        workerRequest: { ...input.workerRequest, harness: "claude-code" as const },
+        requestJson,
+      };
       const f = fixture(requestJson);
       yield* f.consumer.infer(claude);
       expect(f.protocols).toEqual(["messages"]);
@@ -204,11 +210,16 @@ describe("source gateway inference", () => {
       yield* codex.consumer.infer(input);
       expect(codex.protocols).toEqual(["responses"]);
       const denied = fixture();
-      expect(yield* reason(denied.consumer.infer({ ...input, requestJson }))).toBe("invalid-request");
-      expect(yield* reason(denied.consumer.infer({ ...claude, requestJson: input.requestJson }))).toBe("invalid-request");
+      expect(yield* reason(denied.consumer.infer({ ...input, requestJson }))).toBe(
+        "invalid-request",
+      );
+      expect(
+        yield* reason(denied.consumer.infer({ ...claude, requestJson: input.requestJson })),
+      ).toBe("invalid-request");
       expect(denied.events).toEqual([]);
-      expect(yield* remoteWorkerRequestDigest(claude.workerRequest))
-        .not.toBe(yield* remoteWorkerRequestDigest(input.workerRequest));
+      expect(yield* remoteWorkerRequestDigest(claude.workerRequest)).not.toBe(
+        yield* remoteWorkerRequestDigest(input.workerRequest),
+      );
     }),
   );
 

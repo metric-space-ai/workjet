@@ -65,7 +65,7 @@ export interface WorkerDispatchResult {
   readonly branch: string;
   readonly worktreePath: string;
   readonly harness?: RemoteWorkerRequest["harness"];
-  readonly hostname?: string;
+  readonly hostname?: string | undefined;
   readonly parent: WorkjetParentThreadReference;
   readonly modelSelection: ModelSelection;
   readonly enabledCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;

@@ -471,7 +471,14 @@ foreignWorkerLayer("CodexAdapter foreign worker source authority", (it) => {
           NodeAssert.equal(options.environment?.WORKJET_WORKER_SOURCE_KEY, harness.apiKey);
           NodeAssert.deepStrictEqual(
             Object.keys(options.environment ?? {}).sort(),
-            ["HOME", "LANG", "PATH", "TMPDIR", "WORKJET_WORKER_SOURCE_KEY", "WORKJET_WORKER_SOURCE_URL"].sort(),
+            [
+              "HOME",
+              "LANG",
+              "PATH",
+              "TMPDIR",
+              "WORKJET_WORKER_SOURCE_KEY",
+              "WORKJET_WORKER_SOURCE_URL",
+            ].sort(),
           );
           NodeAssert.equal(options.environment?.OPENAI_API_KEY, undefined);
           NodeAssert.equal(options.launchArgs, "");

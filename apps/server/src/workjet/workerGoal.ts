@@ -44,6 +44,7 @@ export function workerGoalContinuationText(goal: WorkjetThreadGoal): string {
   return [
     "Continue working towards your active Workjet goal:",
     goal.objective,
+    `Iteration ${goal.continuationCount}: before any other work, update your retained mini-kanban with workjet_worker_kanban, action update. Include the current todo/doing/done/blocked cards and verified evidence.`,
     "Use the retained context and results. A turn ending is not goal completion. Continue substantive work and verification.",
     "When the goal is verified complete, call workjet_update_goal with status complete and the result/evidence. For a concrete external blocker, call it with status blocked and the exact decision needed. Do not mark ordinary resource waits blocked.",
   ].join("\n\n");

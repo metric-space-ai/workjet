@@ -1682,7 +1682,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         .catch(() => undefined);
       if (available === undefined || deadline.aborted) return account;
       const models = repairClaudeModelIds(account.models, available);
-      return JSON.stringify(models) === JSON.stringify(account.models) ? account : { ...account, models };
+      return JSON.stringify(models) === JSON.stringify(account.models)
+        ? account
+        : { ...account, models };
     };
 
     /**
@@ -1712,22 +1714,21 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const deadline = AbortSignal.timeout(8_000);
       for (const account of existing.accounts) {
         const update = updates.get(account.id);
-        const next = update === undefined
-          ? account
-          : {
-              ...account,
-              ...(update.label !== undefined ? { label: update.label } : {}),
-              enabled: update.enabled,
-              priority: update.priority,
-              weight: update.weight,
-              // Omitted means "not editing this list", which must stay
-              // distinct from an empty array clearing it.
-              ...(update.models === undefined ? {} : { models: [...update.models] }),
-            };
+        const next =
+          update === undefined
+            ? account
+            : {
+                ...account,
+                ...(update.label !== undefined ? { label: update.label } : {}),
+                enabled: update.enabled,
+                priority: update.priority,
+                weight: update.weight,
+                // Omitted means "not editing this list", which must stay
+                // distinct from an empty array clearing it.
+                ...(update.models === undefined ? {} : { models: [...update.models] }),
+              };
         accounts.push(
-          update?.models !== undefined
-            ? await repairClaudeAccountModels(next, deadline)
-            : next,
+          update?.models !== undefined ? await repairClaudeAccountModels(next, deadline) : next,
         );
       }
       const candidate = {

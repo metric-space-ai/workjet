@@ -1484,7 +1484,9 @@ describe("ProviderGatewayService · API-key accounts", () => {
             if (discovery === "failed") throw new Error("transport failed");
             return discovery === "unavailable"
               ? undefined
-              : discovery === "other-model" ? ["claude-sonnet-5-5"] : [model];
+              : discovery === "other-model"
+                ? ["claude-sonnet-5-5"]
+                : [model];
           },
           readText: async (path) => {
             if (path.endsWith("model-checks.json"))
@@ -1499,13 +1501,15 @@ describe("ProviderGatewayService · API-key accounts", () => {
         const result = await runWithSecrets(harness, (gateway) =>
           gateway.updateRouting({
             strategy: "fill-first",
-            accounts: [{
-              accountId: WorkjetGatewayAccountId.make(account.id),
-              enabled: account.enabled,
-              priority: account.priority,
-              weight: account.weight,
-              models: [legacy],
-            }],
+            accounts: [
+              {
+                accountId: WorkjetGatewayAccountId.make(account.id),
+                enabled: account.enabled,
+                priority: account.priority,
+                weight: account.weight,
+                models: [legacy],
+              },
+            ],
           }),
         );
         const expected = discovery === "live" ? model : legacy;

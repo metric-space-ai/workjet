@@ -1437,7 +1437,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
           if (path.endsWith("/provider-gateway.json")) document = value;
         },
       };
-      await runWithSecrets(harness, (gateway) =>
+      const result = await runWithSecrets(harness, (gateway) =>
         gateway.checkModels({
           force: true,
           ...(mode === "other-account"
@@ -1445,6 +1445,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
             : {}),
         }),
       );
+      if (mode === "disabled") expect(result.pending).toEqual([]);
       expect(JSON.parse(document).accounts).toEqual([
         { ...account, models: [mode === "observed" || mode === "disabled" ? model : legacy] },
       ]);

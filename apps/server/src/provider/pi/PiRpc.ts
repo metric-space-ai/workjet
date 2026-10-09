@@ -64,7 +64,7 @@ export const makePiRpc = Effect.fn("makePiRpc")(function* (input: {
     const reply = yield* Deferred.make<unknown, ProviderAdapterRequestError>();
     pending.set(id, reply);
     return yield* Effect.gen(function* () {
-      const encoded = yield* Schema.encodeEffect(Schema.UnknownFromJsonString)({ ...fields, id, type }).pipe(Effect.mapError(cause => error(type, cause.message)));
+      const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({ ...fields, id, type }).pipe(Effect.mapError(cause => error(type, cause.message)));
       yield* Queue.offer(outgoing, new TextEncoder().encode(encoded + "\n"));
       return yield* Deferred.await(reply).pipe(Effect.timeout("30 seconds"), Effect.mapError(cause => error(type, cause.message)));
     }).pipe(Effect.ensuring(Effect.sync(() => pending.delete(id))));

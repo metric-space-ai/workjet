@@ -35,6 +35,7 @@ pub struct XaiPreparedRequest {
     pub base_model: String,
     pub session_id: String,
     pub namespace_tools: BTreeMap<String, NamespaceToolRef>,
+    pub custom_tools: BTreeSet<String>,
     pub client_declared_tools: BTreeSet<ClientToolKey>,
     pub filter_internal_x_search: bool,
 }
@@ -275,6 +276,7 @@ pub fn prepare_xai_responses_body(
         }
     }
     promote_additional_tools(&mut root);
+    let custom_tools = collect_custom_tool_names(&root);
     normalize_tools(&mut root);
     normalize_input_custom_tool_calls(&mut root);
     if policy.inject_x_search {
@@ -290,6 +292,7 @@ pub fn prepare_xai_responses_body(
         base_model: strip_thinking_suffix(policy.model),
         session_id,
         namespace_tools,
+        custom_tools,
         client_declared_tools,
         filter_internal_x_search,
     })
@@ -345,6 +348,38 @@ fn promote_additional_tools(root: &mut Value) {
     }
 }
 
+fn collect_custom_tool_names(root: &Value) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for tool in root
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if tool.get("type").and_then(Value::as_str) == Some("custom") {
+            if let Some(name) = tool.get("name").and_then(Value::as_str) {
+                names.insert(name.to_owned());
+            }
+        } else if tool.get("type").and_then(Value::as_str) == Some("namespace") {
+            if let Some(namespace) = tool.get("name").and_then(Value::as_str) {
+                for child in tool
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    if child.get("type").and_then(Value::as_str) == Some("custom") {
+                        if let Some(name) = child.get("name").and_then(Value::as_str) {
+                            names.insert(format!("{namespace}__{name}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    names
+}
+
 fn normalize_tools(root: &mut Value) {
     let Some(tools) = root.get_mut("tools").and_then(Value::as_array_mut) else {
         return;
@@ -382,6 +417,15 @@ fn normalize_function_tool(tool: &mut Value, namespace: Option<&str>) {
         .unwrap_or_default();
     if kind == "custom" {
         object.insert("type".into(), Value::String("function".into()));
+        object.remove("format");
+        object.insert(
+            "parameters".into(),
+            serde_json::json!({
+                "type": "object", "properties": {"input": {"type": "string"}},
+                "required": ["input"], "additionalProperties": false
+            }),
+        );
+        object.insert("strict".into(), Value::Bool(true));
     }
     if object.get("type").and_then(Value::as_str) != Some("function") {
         return;
@@ -457,11 +501,30 @@ fn normalize_input_custom_tool_calls(root: &mut Value) {
         let Some(object) = item.as_object_mut() else {
             continue;
         };
+        if matches!(
+            object.get("type").and_then(Value::as_str),
+            Some("function_call" | "custom_tool_call")
+        ) {
+            if let (Some(namespace), Some(name)) = (
+                object
+                    .remove("namespace")
+                    .and_then(|value| value.as_str().map(str::to_owned)),
+                object
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            ) {
+                object.insert("name".into(), Value::String(format!("{namespace}__{name}")));
+            }
+        }
         match object.get("type").and_then(Value::as_str) {
             Some("custom_tool_call") => {
                 object.insert("type".into(), Value::String("function_call".into()));
                 if let Some(input) = object.remove("input") {
-                    object.insert("arguments".into(), input);
+                    object.insert(
+                        "arguments".into(),
+                        Value::String(serde_json::json!({"input": input}).to_string()),
+                    );
                 }
             }
             Some("custom_tool_call_output") => {

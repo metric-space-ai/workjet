@@ -93,6 +93,8 @@ impl XaiExecutor {
         };
         let target =
             XaiUpstreamTarget::new(&base_url).map_err(|_| XaiExecutionError::InvalidTarget)?;
+        let mut custom = super::xai_custom_tools::XaiCustomToolAdapter::default();
+        let mut namespace_tools = std::collections::BTreeMap::new();
         let (body, mut headers) = if media {
             (normalize_image_refs(&request.payload), Headers::new())
         } else {
@@ -116,6 +118,8 @@ impl XaiExecutor {
             if path == "/responses/compact" {
                 sanitize_compact_body(&mut prepared.body);
             }
+            custom = super::xai_custom_tools::XaiCustomToolAdapter::new(prepared.custom_tools);
+            namespace_tools = prepared.namespace_tools;
             (prepared.body, Headers::new())
         };
         if media || path == "/responses/compact" {
@@ -172,7 +176,8 @@ impl XaiExecutor {
                     cache_reasoning_replay_from_completed(store, replay_scope.as_ref(), &completed);
                 }
             }
-            completed
+            let completed = custom.restore_buffered(&completed);
+            super::xai_executor_response::restore_namespace_tool_calls(&completed, &namespace_tools)
         };
         Ok(Response {
             payload,

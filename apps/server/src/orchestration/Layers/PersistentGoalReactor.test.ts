@@ -20,7 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -129,25 +129,29 @@ const harness = Effect.fn("test.goalHarness")(function* (
         yield* action;
         return true;
       }),
-    dispatch: Effect.fn("test.dispatch")(function* (command: OrchestrationCommand) {
-      if (receipts.has(command.commandId)) return { sequence: receipts.get(command.commandId)! };
-      const decided = yield* decideOrchestrationCommand({ command, readModel: readModel() });
-      const planned = Array.isArray(decided) ? decided : [decided];
-      for (const event of planned) {
-        const committed = { ...event, sequence: ++sequence };
-        const result = yield* projectEvent(readModel(), committed);
-        current = { ...current, ...result.threads[0]! };
-        yield* PubSub.publish(events, committed);
-      }
-      receipts.set(command.commandId, sequence);
-      if (command.type === "thread.turn.start") {
-        starts.push(command);
-        current = { ...current, session: { ...current.session!, status: "starting" } };
-        if (signals[starts.length - 1])
-          yield* Deferred.succeed(signals[starts.length - 1]!, undefined);
-      }
-      return { sequence };
-    }, Effect.provideService(Crypto.Crypto, crypto), Effect.orDie),
+    dispatch: Effect.fn("test.dispatch")(
+      function* (command: OrchestrationCommand) {
+        if (receipts.has(command.commandId)) return { sequence: receipts.get(command.commandId)! };
+        const decided = yield* decideOrchestrationCommand({ command, readModel: readModel() });
+        const planned = Array.isArray(decided) ? decided : [decided];
+        for (const event of planned) {
+          const committed = { ...event, sequence: ++sequence };
+          const result = yield* projectEvent(readModel(), committed);
+          current = { ...current, ...result.threads[0]! };
+          yield* PubSub.publish(events, committed);
+        }
+        receipts.set(command.commandId, sequence);
+        if (command.type === "thread.turn.start") {
+          starts.push(command);
+          current = { ...current, session: { ...current.session!, status: "starting" } };
+          if (signals[starts.length - 1])
+            yield* Deferred.succeed(signals[starts.length - 1]!, undefined);
+        }
+        return { sequence };
+      },
+      Effect.provideService(Crypto.Crypto, crypto),
+      Effect.orDie,
+    ),
   } as OrchestrationEngineService["Service"];
   const query = {
     getThreadShellById: () => Effect.sync(() => Option.some(current)),
@@ -204,8 +208,7 @@ const harness = Effect.fn("test.goalHarness")(function* (
 });
 
 describe("persistent goal reactor", () => {
-  it("automatically starts successive turns from persisted completions and stops at a recorded result", async () => {
-    await Effect.runPromise(
+  it.effect("automatically starts successive turns from persisted completions and stops at a recorded result", () =>
       Effect.scoped(
         Effect.gen(function* () {
           const h = yield* harness();
@@ -230,11 +233,9 @@ describe("persistent goal reactor", () => {
           expect(cfg.schemaVersion === 2 && cfg.goal?.continuationCount).toBe(2);
         }),
       ).pipe(Effect.provide(NodeServices.layer)),
-    );
-  });
+  );
 
-  it("recovers a pending continuation and admits its stable command only once", async () => {
-    await Effect.runPromise(
+  it.effect("recovers a pending continuation and admits its stable command only once", () =>
       Effect.scoped(
         Effect.gen(function* () {
           const h = yield* harness();
@@ -264,13 +265,11 @@ describe("persistent goal reactor", () => {
           expect(h.starts).toHaveLength(1);
         }),
       ).pipe(Effect.provide(NodeServices.layer)),
-    );
-  });
+  );
 
-  it.each(["paused", "blocked", "complete"] as const)(
+  it.effect.each(["paused", "blocked", "complete"] as const)(
     "never revives a saved %s goal on startup",
-    async (status) => {
-      await Effect.runPromise(
+    (status) =>
         Effect.scoped(
           Effect.gen(function* () {
             const h = yield* harness();
@@ -290,14 +289,11 @@ describe("persistent goal reactor", () => {
             expect(h.starts).toHaveLength(0);
           }),
         ).pipe(Effect.provide(NodeServices.layer)),
-      );
-    },
   );
 
-  it.each(["complete", "usageLimited", "blocked"] as const)(
+  it.effect.each(["complete", "usageLimited", "blocked"] as const)(
     "persists native Codex %s without another automatic turn",
-    async (status) => {
-      await Effect.runPromise(
+    (status) =>
         Effect.scoped(
           Effect.gen(function* () {
             let reads = 0;
@@ -320,12 +316,9 @@ describe("persistent goal reactor", () => {
             expect(h.starts).toHaveLength(0);
           }),
         ).pipe(Effect.provide(NodeServices.layer)),
-      );
-    },
   );
 
-  it("records an unsupported native control as a blocker instead of emulating success", async () => {
-    await Effect.runPromise(
+  it.effect("records an unsupported native control as a blocker instead of emulating success", () =>
       Effect.scoped(
         Effect.gen(function* () {
           const h = yield* harness({
@@ -344,13 +337,11 @@ describe("persistent goal reactor", () => {
           expect(h.starts).toHaveLength(0);
         }),
       ).pipe(Effect.provide(NodeServices.layer)),
-    );
-  });
+  );
 
-  it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
+  it.effect.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     "retains %s instead of silently continuing",
-    async (field) => {
-      await Effect.runPromise(
+    (field) =>
         Effect.scoped(
           Effect.gen(function* () {
             const h = yield* harness();
@@ -361,7 +352,5 @@ describe("persistent goal reactor", () => {
             expect(h.starts).toHaveLength(0);
           }),
         ).pipe(Effect.provide(NodeServices.layer)),
-      );
-    },
   );
 });

@@ -25,6 +25,9 @@ export const WorkerKanbanInput = Schema.Union([
   }),
   Schema.Struct({ action: Schema.Literal("project") }),
 ]);
+const decodeWorkerKanbanInput = Schema.decodeUnknownEffect(WorkerKanbanInput, {
+  onExcessProperty: "error",
+});
 const result = Schema.Struct({
   threadId: ThreadId,
   accepted: Schema.optional(Schema.Boolean),
@@ -142,9 +145,7 @@ const register = Effect.fn("McpHttpServer.registerWorkerKanban")(function* () {
         const query = Context.getUnsafe(fiber.context, ProjectionSnapshotQuery);
         return Effect.gen(function* () {
           yield* Invocation.requireWorkjetMember();
-          const input = yield* Schema.decodeUnknownEffect(WorkerKanbanInput, {
-            onExcessProperty: "error",
-          })(payload);
+          const input = yield* decodeWorkerKanbanInput(payload);
           const output = yield* operateWorkerKanban(input);
           return new McpSchema.CallToolResult({
             isError: false,

@@ -527,10 +527,7 @@ export function EnvironmentProviderSettings({
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
-  // Live Workjet harness probe of the selected environment. Pi Code has no
-  // chat driver (no instance card), but it IS a harness runtime — Workjet
-  // workers run on it — so the page reports its real installed state instead
-  // of omitting it (operator: "pi code fehlt bei den harnesses").
+  // Report Pi's installed state before the operator adds a chat instance.
   const workjetHarnessProbe = useEnvironmentQuery(
     serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
@@ -1091,13 +1088,7 @@ export function EnvironmentProviderSettings({
               />
             );
           })}
-          {/* Pi Code has no chat-driver instance yet, but it IS a harness
-              runtime this app can run Workjet workers on — so it appears
-              here like the other runtimes: mark, status dot, version, and
-              the same "Installed · checked" line. */}
-          {/* Same silhouette as ProviderInstanceCard's shell — the bordered
-              card broke the list rhythm (Befund F12); missing toggle/chevron
-              stay deliberate, there is no chat driver to configure. */}
+          {!serverProviders.some((provider) => provider.driver === "pi") ? (
           <div className="rounded-xl transition-colors hover:bg-muted/20">
             <div className="px-3 py-3 sm:px-4">
               <div className="flex items-center gap-2">
@@ -1133,11 +1124,12 @@ export function EnvironmentProviderSettings({
                 {piCodeProbe === null
                   ? "Checking…"
                   : piCodeProbe.availability === "available"
-                    ? "Installed · available to Workjet Lumas"
+                    ? "Installed · add a Pi Code instance to use it"
                     : "Not installed on this machine"}
               </p>
             </div>
           </div>
+          ) : null}
         </div>
       </SettingsSection>
 

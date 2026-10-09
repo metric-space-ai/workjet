@@ -196,6 +196,7 @@ export function AddProviderInstanceDialog({
     const nextInstance: ProviderInstanceConfig = {
       driver,
       enabled: true,
+      ...(driver === "pi" ? { routeViaGateway: true } : {}),
       ...(label.trim().length > 0 ? { displayName: label.trim() } : {}),
       ...(normalizedAccentColor ? { accentColor: normalizedAccentColor } : {}),
       ...(hasConfig ? { config } : {}),

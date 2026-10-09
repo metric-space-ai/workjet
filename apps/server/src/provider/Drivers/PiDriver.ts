@@ -1,4 +1,4 @@
-import { ProviderDriverKind, TextGenerationError, resolveWorkjetGatewayModelRoute, type ServerProvider } from "@workjet/contracts";
+import { PiSettings, ProviderDriverKind, TextGenerationError, resolveWorkjetGatewayModelRoute, type ServerProvider } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -21,12 +21,7 @@ import { haveProviderSnapshotSettingsChanged, makeProviderSnapshotSettingsSource
 import { PI_WORKJET_EXTENSION } from "../pi/PiWorkjetExtension.ts";
 import { piGatewayConfiguration, piGatewayModel } from "../pi/PiGatewayProfile.ts";
 
-export const PiSettings = Schema.Struct({
-  binaryPath: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("pi"))),
-  model: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-});
-export type PiSettings = typeof PiSettings.Type;
+
 const DRIVER = ProviderDriverKind.make("pi");
 export type PiDriverEnv = ServerConfig | FileSystem.FileSystem | Path.Path | ProviderGatewayService | ChildProcessSpawner.ChildProcessSpawner | ServerSettingsService | BackgroundPolicy.BackgroundPolicy;
 

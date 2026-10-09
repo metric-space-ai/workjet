@@ -183,6 +183,7 @@ describe("harness ↔ provider-instance mapping", () => {
     expect(harnessForProviderInstanceId("opencode")).toBe("opencode");
     expect(harnessForProviderInstanceId("grok")).toBe("grok-cli");
     expect(harnessForProviderInstanceId("cursor")).toBe("cursor-agent");
+    expect(harnessForProviderInstanceId("pi", "pi")).toBe("pi-code");
   });
 
   it("maps named profiles by their actual driver and marks that family configured", () => {
@@ -199,8 +200,7 @@ describe("harness ↔ provider-instance mapping", () => {
 
   it("HIDES a harness this build has no instance for, and marks unconfigured ones", () => {
     const options = composerHarnessOptions(new Set(["claudeAgent"]));
-    // pi-code maps to no provider instance — it must not be listed at all.
-    expect(options.some((option) => option.id === "pi-code")).toBe(false);
+    expect(options.find((option) => option.id === "pi-code")?.configured).toBe(false);
     expect(options.find((option) => option.id === "claude-code")?.configured).toBe(true);
     expect(options.find((option) => option.id === "codex-cli")?.configured).toBe(false);
   });

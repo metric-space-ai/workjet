@@ -889,7 +889,7 @@ export function NativeSupervisorComposer(props: {
         />
         <ComposerBar
           attachments={<ComposerControl type="button" disabled aria-label="Add attachments" title="This supervisor connection accepts text. Attachment support requires a CTOX update." className="size-7 justify-center px-0"><PlusIcon className="size-4" /></ComposerControl>}
-          worker={<ComposerControl type="button" aria-disabled="true" title="The project's supervisor Luma is managed by its instance. Selection requires a CTOX update.">Supervisor</ComposerControl>}
+          worker={<ComposerControl type="button" aria-disabled="true" title="Managed by the project instance. Luma selection requires an instance update.">Supervisor</ComposerControl>}
           manual={<>
             <ComposerControl type="button" aria-disabled="true" title="Execution and model are managed by this project's CTOX instance.">Instance model</ComposerControl>
             <ComposerControl type="button" aria-disabled="true" title={props.instanceId ?? "No connected instance"}>Project instance</ComposerControl>

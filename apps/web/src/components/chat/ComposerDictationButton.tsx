@@ -5,6 +5,14 @@ import { ComposerDictationStream } from "../../lib/composerDictation";
 import { requestSpeechSettings } from "../../lib/workjetSpeechSettings";
 import { captureJourFixeMicrophone, type JourFixeMicrophoneCapture } from "../../lib/jourFixeBrowserMicrophone";
 
+type DictationSession = {
+  controller: AbortController;
+  stream: ComposerDictationStream;
+  capture?: JourFixeMicrophoneCapture;
+  timer?: ReturnType<typeof setTimeout>;
+  finishing?: boolean;
+};
+
 export function ComposerDictationButton(props: {
   readonly instanceId: string | null;
   readonly disabled?: boolean;
@@ -12,13 +20,7 @@ export function ComposerDictationButton(props: {
 }) {
   const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "finishing">("idle");
   const [error, setError] = useState<string | null>(null);
-  const session = useRef<{
-    controller: AbortController;
-    stream: ComposerDictationStream;
-    capture?: JourFixeMicrophoneCapture;
-    timer?: ReturnType<typeof setTimeout>;
-    finishing?: boolean;
-  } | null>(null);
+  const session = useRef<DictationSession | null>(null);
   const currentProps = useRef(props);
   currentProps.current = props;
   const settings = () => { window.location.hash = "#/settings/speech"; };
@@ -62,7 +64,7 @@ export function ComposerDictationButton(props: {
     setError(null);
     setPhase("starting");
     const controller = new AbortController();
-    const current = { controller, stream: new ComposerDictationStream(props.instanceId, controller.signal) } as NonNullable<typeof session.current>;
+    const current: DictationSession = { controller, stream: new ComposerDictationStream(props.instanceId, controller.signal) };
     session.current = current;
     try {
       const response = await requestSpeechSettings(props.instanceId, { action: "speech.settings.read" }, controller.signal);

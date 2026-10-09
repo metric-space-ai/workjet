@@ -4,7 +4,7 @@ import { ComposerDictationStream } from "./composerDictation";
 
 function fixture(options: { foreign?: boolean; unsupported?: boolean } = {}) {
   const requests: unknown[] = [];
-  const port: WorkjetProjectControlPort = vi.fn(async (_instance, request) => {
+  const port = vi.fn<WorkjetProjectControlPort>(async (_instance, request) => {
     requests.push(request);
     if (options.unsupported) return { _tag: "failed", code: "unsupported" };
     if (request.action !== "speech.dictation") throw new Error("Unexpected meeting or settings mutation");
@@ -21,6 +21,27 @@ function fixture(options: { foreign?: boolean; unsupported?: boolean } = {}) {
 }
 
 describe("composer dictation transport", () => {
+  it("closes a native stream whose open receipt arrives after navigation", async () => {
+    const controller = new AbortController();
+    let resolve!: (value: Awaited<ReturnType<WorkjetProjectControlPort>>) => void;
+    const pending = new Promise<Awaited<ReturnType<WorkjetProjectControlPort>>>((accept) => { resolve = accept; });
+    let openRequest: Parameters<WorkjetProjectControlPort>[1] | undefined;
+    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, request) => {
+      if (request.action !== "speech.dictation") throw new Error("Unexpected action");
+      if (request.op === "open") { openRequest = request; return pending; }
+      return { _tag: "completed", response: { action: request.action, commandId: request.commandId, op: request.op, streamId: request.streamId, state: "canceled", events: [], text: null, error: null } };
+    });
+    const stream = new ComposerDictationStream("managed:dictation-fixture", controller.signal, port);
+    const opening = stream.open();
+    const rejected = expect(opening).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort(); stream.cancel();
+    await rejected;
+    if (!openRequest || openRequest.action !== "speech.dictation") throw new Error("Missing open request");
+    resolve({ _tag: "completed", response: { action: openRequest.action, commandId: openRequest.commandId, op: "open", streamId: "late-recording", state: "open", events: [], text: null, error: null } });
+    await pending; await Promise.resolve();
+    expect(port).toHaveBeenLastCalledWith("managed:dictation-fixture", expect.objectContaining({ op: "cancel", streamId: "late-recording" }));
+  });
+
   it("routes PCM to the configured instance and returns final text without meeting writes", async () => {
     const f = fixture();
     await f.stream.open();

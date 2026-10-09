@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { WorkjetProjectTeamMember } from "./workjetProjectTeam.ts";
+import { WorkjetThreadGoal } from "./workjetGoal.ts";
 import { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
 import {
   EnvironmentId,
@@ -982,6 +983,7 @@ export type WorkjetWorkerPullRequest = typeof WorkjetWorkerPullRequest.Type;
 const WorkjetThreadConfigV2BaseFields = {
   schemaVersion: Schema.Literal(2),
   team: Schema.optionalKey(WorkjetProjectTeamMember),
+  goal: Schema.optionalKey(WorkjetThreadGoal),
   managedInstructions: Schema.String,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),

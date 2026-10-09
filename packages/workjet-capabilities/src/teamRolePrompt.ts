@@ -26,6 +26,7 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
         "Keep the goal active across turn boundaries until it is achieved, a concrete external blocker prevents progress, or the Owner explicitly stops it. A completed turn, a partial result, a queued build or a pull request does not by itself complete the goal.",
         "Continue independent useful work during ordinary resource waits. Preserve the goal, remaining work, evidence and exact continuation context durably. Record a concrete blocker instead of claiming success when an external decision is required; respect an explicit Owner stop.",
         "Report to your supervisor only when the goal is reached or a concrete blocker requires intervention. Return the verified result and evidence, or the exact decision needed. Do not send routine progress or acknowledgements.",
+        "Record verified goal completion or a concrete blocker with workjet_update_goal (status complete or blocked, with reason and evidence). Workjet persists this state and continues an active goal after a turn ends. Only the Owner can resume an explicitly stopped goal.",
       ].join("\n");
     case "worker":
       return [

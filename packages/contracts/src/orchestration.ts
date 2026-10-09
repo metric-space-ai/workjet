@@ -819,6 +819,26 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ThreadGoalSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  status: Schema.Literals(["active", "paused", "blocked", "complete"]),
+  objective: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4096))),
+  reason: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(8000))),
+  expectedRevision: Schema.optional(NonNegativeInt),
+  createdAt: IsoDateTime,
+});
+
+const ThreadGoalAdvanceCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.advance"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  completedTurnId: TurnId,
+  expectedRevision: NonNegativeInt,
+  createdAt: IsoDateTime,
+});
+
 export const ThreadWorkjetConfigSetCommand = Schema.Struct({
   type: Schema.Literal("thread.workjet-config.set"),
   commandId: CommandId,
@@ -858,6 +878,8 @@ export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
 
 export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
+  // Server continuations use the goal revision as an admission fence.
+  goalRevision: Schema.optional(NonNegativeInt),
   commandId: CommandId,
   threadId: ThreadId,
   message: Schema.Struct({
@@ -962,6 +984,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadWorkjetConfigSetCommand,
+  ThreadGoalSetCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -991,6 +1014,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadWorkjetConfigSetCommand,
+  ThreadGoalSetCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -1094,6 +1118,7 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadGoalAdvanceCommand,
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
@@ -1317,6 +1342,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  goalRevision: Schema.optional(NonNegativeInt),
   messageId: MessageId,
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),

@@ -164,7 +164,18 @@ export function terminateProviderProcesses<E>(input: {
   });
 }
 
+export interface ProviderNativeGoal {
+  readonly objective: string;
+  readonly status: "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
+}
+export interface ProviderNativeGoalControl<E> {
+  /** Undefined means unsupported; null means the supported runtime has no goal. */
+  readonly get: (threadId: ThreadId) => Effect.Effect<ProviderNativeGoal | null | undefined, E>;
+  readonly set: (threadId: ThreadId, objective: string, status: "active" | "paused" | "blocked" | "complete") => Effect.Effect<void, E>;
+}
+
 export interface ProviderAdapterShape<TError> {
+  readonly nativeGoal?: ProviderNativeGoalControl<TError>;
   /**
    * Provider kind implemented by this adapter.
    */

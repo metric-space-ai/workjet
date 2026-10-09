@@ -138,7 +138,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   options: {
     readonly instanceId: ProviderInstanceId;
     readonly protocolLogging?: AcpSessionRuntimeOptions["protocolLogging"];
-    readonly resolveSessionEnvironment: () => Effect.Effect<
+    readonly resolveSessionEnvironment: (model?: string) => Effect.Effect<
       NodeJS.ProcessEnv,
       ProviderAdapterError
     >;
@@ -292,7 +292,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
             "startSession",
             "A saved MiniMax Code session cursor is required. Workjet will not create a replacement session.",
           );
-        const environment = yield* options.resolveSessionEnvironment();
+        const environment = yield* options.resolveSessionEnvironment(model);
         const profileKey = NodeCrypto.createHash("sha256")
           .update(
             encodeProfileKey([

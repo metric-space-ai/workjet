@@ -121,3 +121,8 @@ and `LICENSES/reveal.js-MIT.txt`.
     `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` (apps import them as source).
 18. **Code point truncation.** `updateSlideCanvas` cuts projected titles and paragraphs at a code
     point, never inside a surrogate pair, so the stored JSON stays valid for strict parsers.
+19. **Scene column.** `canvasSceneForSlide` gives a `scene3d` visual in the figure layouts a
+    760-wide column (text 624 wide) and embeds scenes up to 560 high, so KPI and trend scenes stay
+    readable on a meeting screen. Image figures keep learnordie's 660-wide column.
+20. **Scene theme in slides.** `Scene3DBlockRenderer` follows the `data-theme` of the enclosing
+    `SlideCanvas` (light paper stays light in a dark app) and falls back to the page theme.

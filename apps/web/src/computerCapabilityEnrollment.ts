@@ -51,7 +51,7 @@ export async function enrollOperationalComputer(
     throw new Error("Keep saved capabilities or replace them, without combining both.");
   }
   if (endpoint?.createNativeKey && endpoint.connection.protocol !== "ssh") {
-    throw new Error("Native SSH key creation requires an SSH endpoint.");
+    throw new Error("SSH key creation requires an SSH endpoint.");
   }
   const requiresEndpoint = capabilityConfig.some((capability) => capability.kind !== "gpu");
   if (

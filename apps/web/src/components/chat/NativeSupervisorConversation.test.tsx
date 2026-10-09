@@ -65,13 +65,21 @@ describe("native Supervisor conversation display", () => {
     expect(html).toContain("running · Attempt 1");
   });
   it("renders retained final answers as Markdown too", () => {
-    const html = render([], { ...journal, turn: { ...journal.turn!, result: "**Fertig**\n\n1. Ergebnis" } });
+    const html = render([], {
+      ...journal,
+      turn: { ...journal.turn!, result: "**Fertig**\n\n1. Ergebnis" },
+    });
     expect(html).toContain("<strong>Fertig</strong>");
     expect(html).toContain("<ol>");
     expect(html).toContain("<li>Ergebnis</li>");
   });
   it("does not interpret model-provided HTML or dangerous link schemes", () => {
-    const html = render([{ ...reply, text: '<img src=x onerror="unsafe()">\n\n[unsafe](javascript:unsafe())\n\n[safe](https://ctox.dev)' }]);
+    const html = render([
+      {
+        ...reply,
+        text: '<img src=x onerror="unsafe()">\n\n[unsafe](javascript:unsafe())\n\n[safe](https://ctox.dev)',
+      },
+    ]);
     expect(html).toContain("&lt;img");
     expect(html).not.toContain("<img");
     expect(html).not.toContain('href="javascript:');

@@ -434,7 +434,9 @@ export function NativeSupervisorComposer(props: {
             />
           )}
           {journal.turn?.result != null && (
-            <SupervisorMarkdown text={nativeSupervisorResultText(journal.turn.result, journal.turn)} />
+            <SupervisorMarkdown
+              text={nativeSupervisorResultText(journal.turn.result, journal.turn)}
+            />
           )}
           {journal.turn?.resultTruncated && (
             <p className="text-xs text-muted-foreground">Result truncated</p>

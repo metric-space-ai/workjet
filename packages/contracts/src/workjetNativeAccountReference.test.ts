@@ -57,9 +57,7 @@ describe("native Luma account reference persistence", () => {
         { id: "driver", label: "Driver", providerInstanceId: route.gatewayAccountId },
       ],
     });
-    const reloaded = decodeConfiguration(
-      encodeConfiguration(local),
-    );
+    const reloaded = decodeConfiguration(encodeConfiguration(local));
     expect(reloaded.llmRoutes.map((entry) => entry.gatewayAccountId)).toEqual([
       route.gatewayAccountId,
       route.gatewayAccountId,

@@ -102,6 +102,8 @@ const harness = Effect.fn("test.goalHarness")(function* (
   });
   const engine = {
     streamDomainEvents: Stream.fromPubSub(events),
+    readEvents: () => Stream.empty,
+    latestSequence: Effect.sync(() => sequence),
     runTurnStartIfActive: (threadId: ThreadId, action: Effect.Effect<void>, revision?: number) =>
       Effect.gen(function* () {
         const config = current.workjetConfig;
@@ -170,6 +172,9 @@ const harness = Effect.fn("test.goalHarness")(function* (
       aggregateId: id,
       occurredAt: now,
       commandId: CommandId.make(value),
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
       payload: { threadId: id, session: current.session! },
     });
   });
@@ -312,7 +317,7 @@ describe("persistent goal reactor", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const h = yield* harness({
-            get: () => Effect.fail(new Error("unsupported native goal protocol")),
+            get: () => Effect.fail({ _tag: "UnsupportedNativeGoal", message: "unsupported native goal protocol" } as const),
             set: () => Effect.void,
           } as unknown as ProviderService["Service"]["nativeGoal"]);
           yield* h.reactor.start();

@@ -137,17 +137,30 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
   it.effect("journals iteration mini-kanbans and rejects stale or duplicate cards", () =>
     Effect.gen(function* () {
       const model = withGoal();
-      const kanban = { goalRevision: 0, iteration: 0, updatedAt: NOW,
-        cards: [{ id: "verify", title: "Verify the outcome", status: "doing" as const }] };
-      const command: OrchestrationCommand = { type: "thread.worker-kanban.set", commandId: CommandId.make("board"),
-        threadId: id, kanban, createdAt: NOW };
+      const kanban = {
+        goalRevision: 0,
+        iteration: 0,
+        updatedAt: NOW,
+        cards: [{ id: "verify", title: "Verify the outcome", status: "doing" as const }],
+      };
+      const command: OrchestrationCommand = {
+        type: "thread.worker-kanban.set",
+        commandId: CommandId.make("board"),
+        threadId: id,
+        kanban,
+        createdAt: NOW,
+      };
       const result = yield* apply(model, command);
       const config = result.threads[0]!.workjetConfig;
       expect(config.schemaVersion === 2 && config.goal?.kanban).toEqual(kanban);
       for (const next of [
-        { ...kanban, iteration: 1 }, { ...kanban, goalRevision: 1 },
+        { ...kanban, iteration: 1 },
+        { ...kanban, goalRevision: 1 },
         { ...kanban, cards: [...kanban.cards, ...kanban.cards] },
-      ]) expect((yield* apply(model, { ...command, kanban: next }).pipe(Effect.result))._tag).toBe("Failure");
+      ])
+        expect((yield* apply(model, { ...command, kanban: next }).pipe(Effect.result))._tag).toBe(
+          "Failure",
+        );
       expect((yield* apply(withGoal("paused"), command).pipe(Effect.result))._tag).toBe("Failure");
     }),
   );

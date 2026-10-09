@@ -76,9 +76,13 @@ export function resolveThreadCapabilityContext(
           ? [
               `Durable Workjet goal status: ${workjetConfig.goal.status}. ${workjetConfig.goal.reason ?? ""} Do not reactivate a paused goal; only an explicit Owner resume may do that.`,
               ...(workjetConfig.team?.role === "specialist" && workjetConfig.goal.kanban
-                ? ["Retained mini-kanban (update first at the next iteration):",
-                   ...workjetConfig.goal.kanban.cards.map((card) =>
-                     `${card.id}: ${card.status} — ${card.title}${card.evidence ? ` (${card.evidence})` : ""}`)]
+                ? [
+                    "Retained mini-kanban (update first at the next iteration):",
+                    ...workjetConfig.goal.kanban.cards.map(
+                      (card) =>
+                        `${card.id}: ${card.status} — ${card.title}${card.evidence ? ` (${card.evidence})` : ""}`,
+                    ),
+                  ]
                 : []),
             ]
           : []),

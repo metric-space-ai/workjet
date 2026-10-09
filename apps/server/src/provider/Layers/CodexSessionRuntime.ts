@@ -40,6 +40,7 @@ import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 import { codexWorkjetTurnOptions } from "./CodexWorkjetTurnOptions.ts";
+import type { ProviderNativeGoal } from "../Services/ProviderAdapter.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -137,7 +138,7 @@ export interface CodexThreadSnapshot {
 
 export interface CodexSessionRuntimeShape {
   readonly getNativeGoal?: Effect.Effect<
-    EffectCodexSchema.V2ThreadGoalGetResponse["goal"],
+    ProviderNativeGoal | null | undefined,
     CodexSessionRuntimeError
   >;
   readonly setNativeGoal?: (

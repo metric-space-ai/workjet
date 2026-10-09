@@ -1097,23 +1097,38 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     case "thread.worker-kanban.set": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
       const config = thread.workjetConfig;
-      if (config.schemaVersion !== 2 || config.team?.role !== "specialist" ||
-          thread.archivedAt !== null || thread.deletedAt !== null || config.goal?.status !== "active" ||
-          config.goal.revision !== command.kanban.goalRevision ||
-          config.goal.continuationCount !== command.kanban.iteration ||
-          new Set(command.kanban.cards.map((card) => card.id)).size !== command.kanban.cards.length) {
+      if (
+        config.schemaVersion !== 2 ||
+        config.team?.role !== "specialist" ||
+        thread.archivedAt !== null ||
+        thread.deletedAt !== null ||
+        config.goal?.status !== "active" ||
+        config.goal.revision !== command.kanban.goalRevision ||
+        config.goal.continuationCount !== command.kanban.iteration ||
+        new Set(command.kanban.cards.map((card) => card.id)).size !== command.kanban.cards.length
+      ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "Only the current active persistent worker iteration may update a mini-kanban with unique card IDs.",
+          detail:
+            "Only the current active persistent worker iteration may update a mini-kanban with unique card IDs.",
         });
       }
       return {
-        ...(yield* withEventBase({ aggregateKind: "thread", aggregateId: thread.id,
-          occurredAt: command.createdAt, commandId: command.commandId })),
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: thread.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
         type: "thread.workjet-config-set",
-        payload: { threadId: thread.id, workjetConfig: {
-          ...config, goal: { ...config.goal, kanban: command.kanban },
-        }, updatedAt: command.createdAt },
+        payload: {
+          threadId: thread.id,
+          workjetConfig: {
+            ...config,
+            goal: { ...config.goal, kanban: command.kanban },
+          },
+          updatedAt: command.createdAt,
+        },
       };
     }
 

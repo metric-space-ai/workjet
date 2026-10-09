@@ -96,9 +96,10 @@ it.effect(
         ])
           expect((yield* call(args)).isError).toBe(true);
         expect(commands).toHaveLength(0);
+        const { workjetRole: _role, ...nonWorkjetScope } = scope;
         const denied = yield* call(
           { status: "complete", reason: "Verified" },
-          { ...scope, workjetRole: undefined },
+          nonWorkjetScope,
         ).pipe(Effect.result);
         expect(denied._tag === "Failure" || denied.success.isError).toBe(true);
         expect(

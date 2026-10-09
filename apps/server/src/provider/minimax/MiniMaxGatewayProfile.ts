@@ -1,5 +1,8 @@
 import type { WorkjetGatewayCatalog } from "@workjet/contracts";
-import { resolveWorkjetGatewayModelRoute, WORKJET_GATEWAY_PROVIDER_HEADER } from "@workjet/contracts";
+import {
+  resolveWorkjetGatewayModelRoute,
+  WORKJET_GATEWAY_PROVIDER_HEADER,
+} from "@workjet/contracts";
 import { GATEWAY_PLACEHOLDER_API_KEY, normalizeGatewayBaseUrl } from "../ProviderGatewayRouting.ts";
 
 export const MINIMAX_GATEWAY_PROFILE_PROVIDER = "workjet-gateway";

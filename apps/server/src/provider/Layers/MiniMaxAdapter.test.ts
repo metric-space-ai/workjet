@@ -783,41 +783,38 @@ describe("MiniMax Code adapter protocol fixture", () => {
       }),
     );
   });
-  it.live(
-    "keeps a missing gateway service unavailable without probing direct credentials",
-    () => {
-      return runTest((cwd, binaryPath, log) =>
-        Effect.gen(function* () {
-          const provider = yield* MiniMaxDriver.create({
-            instanceId,
-            displayName: undefined,
-            environment: [{ name: "MINIMAX_TEST_LOG", value: log, sensitive: false }],
-            enabled: true,
-            routeViaGateway: true,
-            config: settings(binaryPath),
-          });
-          const snapshot = yield* provider.snapshot.refresh;
-          expect(snapshot.status).toBe("error");
-          expect(snapshot.auth.status).toBe("unknown");
-          expect(snapshot.models).toEqual([]);
-          expect(snapshot.message).toContain("gateway service is unavailable");
-          const failure = yield* provider.adapter.startSession(input(cwd)).pipe(Effect.flip);
-          expect(failure.message).toContain("gateway service is unavailable");
-          expect(NodeFS.existsSync(log)).toBe(false);
-        }).pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              configLayerTest(cwd, NodePath.join(cwd, "server-state")),
-              settingsLayerTest(),
-              Layer.mock(BackgroundPolicy.BackgroundPolicy)({
-                shouldRunScopeWork: () => Effect.succeed(false),
-              }),
-            ),
+  it.live("keeps a missing gateway service unavailable without probing direct credentials", () => {
+    return runTest((cwd, binaryPath, log) =>
+      Effect.gen(function* () {
+        const provider = yield* MiniMaxDriver.create({
+          instanceId,
+          displayName: undefined,
+          environment: [{ name: "MINIMAX_TEST_LOG", value: log, sensitive: false }],
+          enabled: true,
+          routeViaGateway: true,
+          config: settings(binaryPath),
+        });
+        const snapshot = yield* provider.snapshot.refresh;
+        expect(snapshot.status).toBe("error");
+        expect(snapshot.auth.status).toBe("unknown");
+        expect(snapshot.models).toEqual([]);
+        expect(snapshot.message).toContain("gateway service is unavailable");
+        const failure = yield* provider.adapter.startSession(input(cwd)).pipe(Effect.flip);
+        expect(failure.message).toContain("gateway service is unavailable");
+        expect(NodeFS.existsSync(log)).toBe(false);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            configLayerTest(cwd, NodePath.join(cwd, "server-state")),
+            settingsLayerTest(),
+            Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+              shouldRunScopeWork: () => Effect.succeed(false),
+            }),
           ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  });
   it.live("distinguishes missing login, unsupported release and unavailable model", () => {
     return runTest((cwd, binaryPath, log) =>
       Effect.gen(function* () {

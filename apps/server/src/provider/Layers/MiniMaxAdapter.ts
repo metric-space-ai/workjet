@@ -140,10 +140,9 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     readonly instanceId: ProviderInstanceId;
     readonly dispatchPromptInBackground?: boolean;
     readonly protocolLogging?: AcpSessionRuntimeOptions["protocolLogging"];
-    readonly resolveSessionEnvironment: (model?: string) => Effect.Effect<
-      NodeJS.ProcessEnv,
-      ProviderAdapterError
-    >;
+    readonly resolveSessionEnvironment: (
+      model?: string,
+    ) => Effect.Effect<NodeJS.ProcessEnv, ProviderAdapterError>;
   },
 ) {
   const crypto = yield* Crypto.Crypto;

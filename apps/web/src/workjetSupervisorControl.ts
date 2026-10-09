@@ -127,9 +127,10 @@ async function dispatchSavedSupervisorTurn(
     }
   }
   if (submission === "prepared" && intent.turnKind === "conversation") {
+    const capabilityNonce = Effect.runSync(Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER));
     const capability = await readWorkjetSupervisorTurnCapabilities(
       intent,
-      CommandId.make(`supervisor-kind-${Effect.runSync(Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER))}`),
+      CommandId.make(`supervisor-kind-${capabilityNonce}`),
       port,
     );
     if (capability._tag !== "completed") {

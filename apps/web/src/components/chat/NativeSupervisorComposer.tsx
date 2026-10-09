@@ -434,7 +434,7 @@ export function NativeSupervisorComposer(props: {
           )}
           {journal.turn?.result != null && (
             <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
-              {nativeSupervisorResultText(journal.turn.result)}
+              {nativeSupervisorResultText(journal.turn.result, journal.turn)}
             </pre>
           )}
           {journal.turn?.resultTruncated && (

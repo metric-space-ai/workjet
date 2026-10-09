@@ -18,7 +18,9 @@ export function NativeSupervisorConversation(props: {
 }) {
   const { journal } = props;
   const finalText =
-    journal.turn?.result != null ? nativeSupervisorResultText(journal.turn.result) : null;
+    journal.turn?.result != null
+      ? nativeSupervisorResultText(journal.turn.result, journal.turn)
+      : null;
   const publicAnswer = props.replies
     .filter((reply) => reply.phase !== "commentary")
     .map((reply) => reply.text)

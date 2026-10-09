@@ -338,8 +338,8 @@ export function NativeSupervisorComposer(props: {
 
   const conversation = journal && scopeMatches ? <NativeSupervisorConversation
     journal={journal}
-    page={execution?.commandId === journal.turn?.commandId ? execution.page : null}
-    replies={execution?.commandId === journal.turn?.commandId ? publicReplies : []}
+    page={execution !== null && execution.commandId === journal.turn?.commandId ? execution.page : null}
+    replies={execution !== null && execution.commandId === journal.turn?.commandId ? publicReplies : []}
     historyLimited={execution?.historyLimited ?? false}
     error={executionError}
     disabled={disabled || busy}

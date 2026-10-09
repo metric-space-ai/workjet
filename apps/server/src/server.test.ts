@@ -1531,6 +1531,60 @@ const NodeHttpServerTestWithWsDeflate = HttpServer.layerTestClient.pipe(
 );
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect("keeps worker connections available across authenticated WebSocket sessions", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      for (let connection = 0; connection < 2; connection++) {
+        const wsUrl = yield* getWsServerUrl("/ws");
+        yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const listed = yield* client[WS_METHODS.workjetDecisionHubListConnections]({});
+              assert.deepEqual(listed.connections, []);
+              const error = yield* Effect.flip(
+                client[WS_METHODS.workjetDecisionHubProbeConnection]({
+                  connectionId: WorkjetConnectionId.make("missing-worker-source"),
+                }),
+              );
+              assert.equal(error._tag, "WorkjetDecisionHubConnectionError");
+              if (error._tag === "WorkjetDecisionHubConnectionError") {
+                assert.equal(error.reason, "unknown-connection");
+              }
+            }),
+          ),
+        );
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps the remote worker broker available to authenticated WebSocket sessions", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const pending = yield* client[WS_METHODS.workjetWorkerRequests]({}).pipe(
+              Stream.take(1),
+              Stream.runCollect,
+            );
+            assert.deepEqual(Array.from(pending), [[]]);
+            const error = yield* Effect.flip(
+              client[WS_METHODS.workjetWorkerRespond]({
+                requestId: ThreadId.make("missing-worker-request"),
+                outcome: { status: "failed", reason: "invalid-request" },
+              }),
+            );
+            assert.equal(error._tag, "RemoteWorkerDispatchError");
+            if (error._tag === "RemoteWorkerDispatchError") {
+              assert.equal(error.reason, "invalid-request");
+            }
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("parks HTTP ingress until command readiness", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

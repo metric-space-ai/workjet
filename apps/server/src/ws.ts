@@ -3135,6 +3135,14 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+    // These services are provided while the route is built. Capture them here
+    // and carry the same instances into the later authenticated RPC scope.
+    const decisionHubConnections =
+      yield* DecisionHubConnectionRegistry.DecisionHubConnectionRegistry;
+    const workerBroker = yield* RemoteWorkerBroker;
+    const workerReceiver = yield* RemoteWorkerReceiver;
+    const computerEnrollment = yield* RemoteWorkerComputerEnrollment;
+    const workerConnection = yield* RemoteWorkerConnectionBootstrap;
     // Resolved out here, exactly like the Greppy runtime and provider gateway
     // below: one server-lifetime mailbox shared by every WebSocket client,
     // never one delivery service per connection.
@@ -3197,6 +3205,16 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               workjetSessionImport,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provide(
+                Layer.succeed(
+                  DecisionHubConnectionRegistry.DecisionHubConnectionRegistry,
+                  decisionHubConnections,
+                ),
+              ),
+              Layer.provide(Layer.succeed(RemoteWorkerBroker, workerBroker)),
+              Layer.provide(Layer.succeed(RemoteWorkerReceiver, workerReceiver)),
+              Layer.provide(Layer.succeed(RemoteWorkerComputerEnrollment, computerEnrollment)),
+              Layer.provide(Layer.succeed(RemoteWorkerConnectionBootstrap, workerConnection)),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               Layer.provide(Layer.succeed(GreppyRuntime.GreppyRuntime, greppyRuntime)),

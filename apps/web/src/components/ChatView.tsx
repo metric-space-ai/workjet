@@ -381,6 +381,7 @@ import {
   resolveNativeSupervisorScope,
 } from "../nativeSupervisorComposer";
 import { NativeSupervisorComposer } from "./chat/NativeSupervisorComposer";
+import { NativeWorkerSourceControl } from "./chat/NativeWorkerSourceControl";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
@@ -7280,6 +7281,17 @@ function ChatViewContent(props: ChatViewProps) {
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           {nativeSupervisorThread && visibleWorkjetConfig && activeServerThread ? (
+                            <>
+                              <NativeWorkerSourceControl
+                                key={`worker-source:${activeThreadKey}:${presentationInstanceId}`}
+                                environmentId={activeServerThread.environmentId}
+                                instanceId={presentationInstanceId}
+                                unavailable={
+                                  activeEnvironmentUnavailable ||
+                                  threadDetailLoading ||
+                                  workjetCapabilityBusy
+                                }
+                              />
                             <NativeSupervisorComposer
                               key={`${activeThreadKey}:${presentationInstanceId}`}
                               scope={nativeSupervisorScope}
@@ -7315,6 +7327,7 @@ function ChatViewContent(props: ChatViewProps) {
                                 return result;
                               }}
                             />
+                            </>
                           ) : (
                             <ChatComposer
                               composerRef={composerRef}

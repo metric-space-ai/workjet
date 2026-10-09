@@ -48,6 +48,8 @@ function harness() {
   const projectId = ProjectId.make("project");
   let thread = {
     id,
+    title: "Worker",
+    modelSelection: { model: "fixture-model" },
     projectId,
     branch,
     worktreePath: "/safe/worktrees/leaf-a",
@@ -81,13 +83,15 @@ function harness() {
   let nativeHead = "a".repeat(40);
   let archiveUnavailable = false;
   let bindingUnavailable = false;
+  let projectionPaused = false;
+  let projectedThread = thread;
   const service = make.pipe(
     Effect.provideService(ProjectionSnapshotQuery, {
       getCommandReadModel: () =>
         Effect.succeed({
           snapshotSequence: 0,
           projects: [],
-          threads: [thread],
+          threads: [projectionPaused ? projectedThread : thread],
           updatedAt: thread.updatedAt,
         }),
     } as unknown as ProjectionSnapshotQuery["Service"]),
@@ -101,6 +105,8 @@ function harness() {
           commands.push(command);
           if (command.type === "thread.workjet-config.set")
             thread = { ...thread, workjetConfig: command.workjetConfig };
+          if (command.type === "thread.meta.update" && command.title)
+            thread = { ...thread, title: command.title };
           if (command.type === "thread.archive")
             thread = { ...thread, archivedAt: thread.updatedAt };
           return { sequence: commands.length };
@@ -139,6 +145,10 @@ function harness() {
     setBindingUnavailable: (value: boolean) => {
       bindingUnavailable = value;
     },
+    setProjectionPaused: (value: boolean) => {
+      if (value) projectedThread = thread;
+      projectionPaused = value;
+    },
     setCandidates: (value: ReadonlyArray<ChangeRequest>) => {
       candidates = value;
     },
@@ -152,150 +162,117 @@ function harness() {
 }
 
 describe("native worker PR reconciler", () => {
-  for (const state of ["merged", "closed"] as const) {
-    it.effect(`binds the native PR then archives on ${state}, retaining source`, () =>
-      database(
-        Effect.gen(function* () {
-          yield* runMigrations();
-          const h = harness();
-          const service = yield* h.service;
-          yield* service.runCycle;
-          assert.equal(h.commands[0]?.type, "thread.workjet-config.set");
-          assert.equal(h.stops(), 0);
-          h.setCandidates([{ ...request, state }]);
-          yield* service.runCycle;
-          assert.equal(h.commands[1]?.type, "thread.archive");
-          assert.equal(h.thread().deletedAt, null);
-          assert.equal(h.thread().worktreePath, "/safe/worktrees/leaf-a");
-          yield* service.runCycle;
-          assert.equal(h.commands.length, 2);
-        }),
-      ),
-    );
-  }
-  it.effect("recovers the first terminal PR binding from its native receipt", () =>
-    database(
+  it.effect("waits for committed binding and title rather than using the stale thread", () => database(
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const h = harness();
+      h.setProjectionPaused(true);
+      const service = yield* h.service;
+      yield* service.runCycle;
+      assert.equal(h.commands.length, 2);
+      assert.equal(h.stops(), 0);
+      h.setProjectionPaused(false);
+      h.setCandidates([]);
+      yield* service.runCycle;
+      assert.equal(h.thread().archivedAt, h.thread().updatedAt);
+    }),
+  ));
+  for (const state of ["open", "merged", "closed"] as const) {
+    it.effect(`archives a verified ${state} submission in its binding cycle`, () => database(
       Effect.gen(function* () {
         yield* runMigrations();
         const h = harness();
-        h.setCandidates([{ ...request, state: "closed" }]);
+        h.setCandidates([{ ...request, state }]);
+        const service = yield* h.service;
+        yield* service.runCycle;
+        assert.deepEqual(h.commands.map((command) => command.type), [
+          "thread.workjet-config.set", "thread.meta.update", "thread.archive",
+        ]);
+        assert.equal(h.thread().title, "#7: fixture-model");
+        assert.equal(h.thread().deletedAt, null);
+        assert.equal(h.thread().worktreePath, "/safe/worktrees/leaf-a");
+        const store = yield* WorkerPullRequestStore;
+        assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 1);
+        yield* service.runCycle;
+        assert.equal(h.commands.length, 3);
+        assert.equal(h.stops(), 1);
+      }),
+    ));
+    it.effect(`recovers the ${state} receipt after lost binding acknowledgement`, () => database(
+      Effect.gen(function* () {
+        yield* runMigrations();
+        const h = harness();
+        h.setCandidates([{ ...request, state }]);
         h.setBindingUnavailable(true);
         const service = yield* h.service;
         yield* service.runCycle;
         const store = yield* WorkerPullRequestStore;
-        assert.equal(Option.getOrThrow(yield* store.get(id)).state, "closed");
+        assert.equal(Option.getOrThrow(yield* store.get(id)).state, state);
         assert.equal(h.commands.length, 0);
         h.setBindingUnavailable(false);
         h.setCandidates([]);
+        h.setHead("b".repeat(40));
         const restarted = yield* h.service;
         yield* restarted.runCycle;
-        assert.equal(h.commands[0]?.type, "thread.workjet-config.set");
-        yield* restarted.runCycle;
-        assert.equal(h.commands[1]?.type, "thread.archive");
-        assert.equal(h.thread().deletedAt, null);
+        assert.equal(h.thread().archivedAt, h.thread().updatedAt);
+        assert.equal(h.thread().title, "#7: fixture-model");
       }),
-    ),
-  );
-
-  it.effect("archives the bound closed PR while retaining later unpublished commits", () =>
-    database(
-      Effect.gen(function* () {
-        yield* runMigrations();
-        const h = harness();
-        const service = yield* h.service;
+    ));
+  }
+  it.effect("retries stopped open submissions without another provider lookup", () => database(
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const h = harness();
+      h.setArchiveUnavailable(true);
+      const service = yield* h.service;
+      yield* service.runCycle;
+      const store = yield* WorkerPullRequestStore;
+      assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 1);
+      assert.equal(h.thread().archivedAt, null);
+      h.setStopped(false);
+      h.setCandidates([]);
+      h.setArchiveUnavailable(false);
+      const restarted = yield* h.service;
+      yield* restarted.runCycle;
+      assert.equal(h.stops(), 1);
+      assert.equal(h.thread().archivedAt, h.thread().updatedAt);
+    }),
+  ));
+  it.effect("rejects missing, ambiguous, forked and nonmatching native submissions", () => database(
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const h = harness();
+      const service = yield* h.service;
+      for (const candidates of [
+        [], [request, { ...request, number: 8 }],
+        [{ ...request, isCrossRepository: true }],
+        [{ ...request, headCommitOid: "b".repeat(40) }],
+        [{ ...request, headRefName: "foreign" }],
+      ]) {
+        h.setCandidates(candidates);
         yield* service.runCycle;
-        h.setHead("b".repeat(40));
-        h.setCandidates([{ ...request, state: "closed" }]);
-        yield* service.runCycle;
-        assert.equal(h.commands[1]?.type, "thread.archive");
-        assert.equal(h.thread().deletedAt, null);
-        assert.equal(h.thread().worktreePath, "/safe/worktrees/leaf-a");
-      }),
-    ),
-  );
-  it.effect(
-    "resumes persisted terminal and stopped receipts after native runtime reconstruction",
-    () =>
-      database(
-        Effect.gen(function* () {
-          yield* runMigrations();
-          const h = harness();
-          const service = yield* h.service;
-          yield* service.runCycle;
-          h.setCandidates([{ ...request, state: "closed" }]);
-          h.setStopped(false);
-          yield* service.runCycle;
-          const store = yield* WorkerPullRequestStore;
-          assert.equal(Option.getOrThrow(yield* store.get(id)).state, "closed");
-          h.setCandidates([]);
-          h.setStopped(true);
-          h.setArchiveUnavailable(true);
-          const afterTerminal = yield* h.service;
-          yield* afterTerminal.runCycle;
-          assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 1);
-          assert.equal(h.thread().archivedAt, null);
-          const stops = h.stops();
-          h.setStopped(false);
-          h.setHead("c".repeat(40));
-          h.setArchiveUnavailable(false);
-          const afterStop = yield* h.service;
-          yield* afterStop.runCycle;
-          assert.equal(h.stops(), stops);
-          assert.equal(h.commands[1]?.type, "thread.archive");
-          assert.equal(h.thread().deletedAt, null);
-        }),
-      ),
-  );
-
-  it.effect(
-    "rejects ambiguous PRs, forked branches, wrong native head and another PR after binding",
-    () =>
-      database(
-        Effect.gen(function* () {
-          yield* runMigrations();
-          const h = harness();
-          const service = yield* h.service;
-          for (const candidates of [
-            [],
-            [request, { ...request, number: 8 }],
-            [{ ...request, isCrossRepository: true }],
-            [{ ...request, headCommitOid: "b".repeat(40) }],
-            [{ ...request, headRefName: "foreign" }],
-          ]) {
-            h.setCandidates(candidates);
-            yield* service.runCycle;
-          }
-          assert.equal(h.commands.length, 0);
-          h.setCandidates([request]);
-          yield* service.runCycle;
-          h.setCandidates([{ ...request, number: 8, state: "closed" }]);
-          yield* service.runCycle;
-          assert.equal(h.commands.length, 1);
-          assert.equal(h.stops(), 0);
-        }),
-      ),
-  );
-  it.effect("keeps terminal work visible until provider and terminals have actually stopped", () =>
-    database(
-      Effect.gen(function* () {
-        yield* runMigrations();
-        const h = harness();
-        const service = yield* h.service;
-        yield* service.runCycle;
-        h.setCandidates([{ ...request, state: "closed" }]);
-        h.setStopped(false);
-        yield* service.runCycle;
-        const store = yield* WorkerPullRequestStore;
-        assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 0);
-        h.setStopped(true);
-        h.setTerminalClosed(false);
-        yield* service.runCycle;
-        assert.equal(h.commands.length, 1);
-        h.setTerminalClosed(true);
-        yield* service.runCycle;
-        assert.equal(h.commands[1]?.type, "thread.archive");
-        assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 1);
-      }),
-    ),
-  );
+      }
+      assert.equal(h.commands.length, 0);
+      assert.equal(h.stops(), 0);
+    }),
+  ));
+  it.effect("keeps submitted work visible until provider and terminals stop", () => database(
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const h = harness();
+      h.setStopped(false);
+      const service = yield* h.service;
+      yield* service.runCycle;
+      const store = yield* WorkerPullRequestStore;
+      assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 0);
+      h.setStopped(true);
+      h.setTerminalClosed(false);
+      yield* service.runCycle;
+      assert.equal(h.thread().archivedAt, null);
+      h.setTerminalClosed(true);
+      yield* service.runCycle;
+      assert.equal(h.thread().archivedAt, h.thread().updatedAt);
+      assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 1);
+    }),
+  ));
 });

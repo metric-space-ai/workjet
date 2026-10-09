@@ -24,6 +24,7 @@ import {
   WorkerPullRequestStore,
   sameWorkerPullRequest,
   receiptMatchesThread,
+  type WorkerPullRequestReceipt,
 } from "./WorkerPullRequestStore.ts";
 
 export const WORKER_PR_CYCLE_INTERVAL = Duration.minutes(1);
@@ -48,16 +49,41 @@ export const make = Effect.gen(function* () {
       const stopped = yield* provider.stopSession({ threadId: thread.id });
       if (stopped === undefined || !stopped.terminated) return;
       if (!(yield* terminals.closeForCleanup({ threadId: thread.id }))) return;
+      const harness = readWorkerSourceHarness(thread.id);
+      if (harness) yield* Effect.promise(() => harness.retire());
       yield* store.markExecutionStopped(thread.id);
     }
-    // Preserve checkout/history for closed or dirty/unpublished work. Merge cleanup remains separate.
+    // Preserve checkout and history after submission; merge cleanup remains separate.
     yield* engine.dispatch({
       type: "thread.archive",
       commandId: CommandId.make(`worker-pr-archive-${thread.id}`),
       threadId: thread.id,
     });
-    const harness = readWorkerSourceHarness(thread.id);
-    if (harness) yield* Effect.promise(() => harness.retire());
+  });
+
+  const finishSubmission = Effect.fn("WorkerPullRequestLifecycle.finishSubmission")(function* (
+    thread: OrchestrationThread,
+    receipt: WorkerPullRequestReceipt,
+  ) {
+    const title = `#${receipt.prNumber}: ${thread.modelSelection.model}`;
+    if (thread.title !== title) {
+      yield* engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make(`worker-pr-title-${thread.id}`),
+        threadId: thread.id,
+        title,
+      });
+    }
+    const model = yield* query.getCommandReadModel();
+    const committed = model.threads.find((candidate) => candidate.id === thread.id);
+    if (
+      !committed ||
+      committed.deletedAt !== null ||
+      committed.archivedAt !== null ||
+      committed.title !== title ||
+      !receiptMatchesThread(receipt, committed)
+    ) return;
+    yield* retire(committed, receipt.executionStopped === 1);
   });
 
   const reconcile = Effect.fn("WorkerPullRequestLifecycle.reconcile")(function* (
@@ -75,7 +101,7 @@ export const make = Effect.gen(function* () {
     )
       return;
     const previous = Option.getOrUndefined(yield* store.get(thread.id));
-    if (previous && previous.state !== "open") {
+    if (previous) {
       const retainedIdentity: WorkjetWorkerPullRequest = {
         provider: previous.provider,
         number: previous.prNumber,
@@ -87,8 +113,7 @@ export const make = Effect.gen(function* () {
         workjetConfig: { ...config, pullRequest: config.pullRequest ?? retainedIdentity },
       };
       if (!receiptMatchesThread(previous, retainedThread)) return;
-      // A native terminal receipt is monotonic. Resume after lost acknowledgement
-      // or restart even when the source-control provider is temporarily unavailable.
+      // Verified submission is monotonic, including open PRs. Recover without a provider lookup.
       if (!config.pullRequest) {
         yield* engine.dispatch({
           type: "thread.workjet-config.set",
@@ -97,9 +122,8 @@ export const make = Effect.gen(function* () {
           workjetConfig: retainedThread.workjetConfig,
           createdAt: thread.createdAt,
         });
-        return;
       }
-      yield* retire(thread, previous.executionStopped === 1);
+      yield* finishSubmission(thread, previous);
       return;
     }
     const local = yield* git.statusDetailsLocal(cwd);
@@ -121,8 +145,7 @@ export const make = Effect.gen(function* () {
       pr.headRefName !== branch ||
       pr.isCrossRepository !== false ||
       !pr.headCommitOid ||
-      (pr.headCommitOid !== head.commitSha &&
-        !(previous && pr.state !== "open" && receiptMatchesThread(previous, thread)))
+      pr.headCommitOid !== head.commitSha
     )
       return;
     const identity: WorkjetWorkerPullRequest = {
@@ -153,11 +176,10 @@ export const make = Effect.gen(function* () {
         workjetConfig: { ...config, pullRequest: identity },
         createdAt: thread.createdAt,
       });
-      // Wait for the committed projection before acting on this binding.
-      return;
+      // The committed projection is read below before retirement.
     }
-    if (pr.state === "open") return;
-    yield* retire(thread, false);
+    const receipt = Option.getOrUndefined(yield* store.get(thread.id));
+    if (receipt) yield* finishSubmission(thread, receipt);
   });
 
   const runCycle = mutex

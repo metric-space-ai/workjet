@@ -1564,10 +1564,15 @@ export const WorkjetGatewayAccountModels = Schema.Struct({
   accountId: WorkjetGatewayAccountId,
   checkedAtMs: NonNegativeInt,
   state: Schema.Literals(["observed", "unavailable"]),
-  reason: Schema.NullOr(Schema.Literals([
-    "account-unavailable", "account-disabled", "provider-unsupported",
-    "catalog-unavailable", "account-changed",
-  ])),
+  reason: Schema.NullOr(
+    Schema.Literals([
+      "account-unavailable",
+      "account-disabled",
+      "provider-unsupported",
+      "catalog-unavailable",
+      "account-changed",
+    ]),
+  ),
   modelIds: Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160)))).pipe(
     Schema.check(Schema.isMaxLength(1024)),
   ),

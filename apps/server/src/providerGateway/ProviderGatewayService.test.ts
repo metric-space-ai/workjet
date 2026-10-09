@@ -152,14 +152,23 @@ describe("ProviderGatewayService", () => {
     const harness = readyHarness();
     let probes = 0;
     const claude = JSON.stringify({
-      ...JSON.parse(configuration), defaultProvider: "claude",
-      accounts: [{ id: "claude-primary", label: "Claude", provider: "claude", enabled: true,
-        models: ["claude-opus-5-5"],
-        accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
-        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" } }],
+      ...JSON.parse(configuration),
+      defaultProvider: "claude",
+      accounts: [
+        {
+          id: "claude-primary",
+          label: "Claude",
+          provider: "claude",
+          enabled: true,
+          models: ["claude-opus-5-5"],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" },
+        },
+      ],
     });
     const platform: ProviderGatewayPlatform = {
-      ...harness.platform, readText: async () => claude,
+      ...harness.platform,
+      readText: async () => claude,
       discoverClaudeModels: async (token, signal) => {
         expect(token).toBe("provider-secret");
         expect(signal).toBeDefined();
@@ -167,39 +176,65 @@ describe("ProviderGatewayService", () => {
         return ["claude-opus-5-5", "claude-sonnet-5-5"];
       },
     };
-    const result = await runGateway(platform, gateway => Effect.gen(function* () {
-      yield* gateway.start();
-      return yield* gateway.accountModels({ accountId: WorkjetGatewayAccountId.make("claude-primary") });
-    }));
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const writesBefore = [...harness.writes];
+        const result = yield* gateway.accountModels({
+          accountId: WorkjetGatewayAccountId.make("claude-primary"),
+        });
+        expect(harness.writes).toEqual(writesBefore);
+        return result;
+      }),
+    );
     expect(result.state).toBe("observed");
     expect(result.modelIds).toEqual(["claude-opus-5-5", "claude-sonnet-5-5"]);
     expect(result.reason).toBeNull();
     expect(probes).toBe(1);
     expect(JSON.stringify(result)).not.toContain("provider-secret");
-    expect(harness.writes.some(value => value.includes("claude-primary"))).toBe(false);
   });
 
   it("discards a live-list completion if the exact account changes during discovery", async () => {
     const harness = readyHarness();
     let enabled = true;
-    const readText = async () => JSON.stringify({
-      ...JSON.parse(configuration), defaultProvider: "claude",
-      accounts: [{ id: "claude-primary", label: "Claude", provider: "claude", enabled,
-        models: ["claude-opus-5-5"],
-        accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
-        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" } }],
-    });
+    const readText = async () =>
+      JSON.stringify({
+        ...JSON.parse(configuration),
+        defaultProvider: "claude",
+        accounts: [
+          {
+            id: "claude-primary",
+            label: "Claude",
+            provider: "claude",
+            enabled,
+            models: ["claude-opus-5-5"],
+            accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
+            refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" },
+          },
+        ],
+      });
     let probes = 0;
     const platform: ProviderGatewayPlatform = {
-      ...harness.platform, readText,
-      discoverClaudeModels: async () => { ++probes; enabled = false; return ["claude-opus-5-5"]; },
+      ...harness.platform,
+      readText,
+      discoverClaudeModels: async () => {
+        ++probes;
+        enabled = false;
+        return ["claude-opus-5-5"];
+      },
     };
-    const result = await runGateway(platform, gateway => Effect.gen(function* () {
-      yield* gateway.start();
-      const first = yield* gateway.accountModels({ accountId: WorkjetGatewayAccountId.make("claude-primary") });
-      const second = yield* gateway.accountModels({ accountId: WorkjetGatewayAccountId.make("claude-primary") });
-      return { first, second };
-    }));
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const first = yield* gateway.accountModels({
+          accountId: WorkjetGatewayAccountId.make("claude-primary"),
+        });
+        const second = yield* gateway.accountModels({
+          accountId: WorkjetGatewayAccountId.make("claude-primary"),
+        });
+        return { first, second };
+      }),
+    );
     expect(result.first.reason).toBe("account-changed");
     expect(result.second.reason).toBe("account-disabled");
     expect(result.first.modelIds).toEqual([]);
@@ -210,23 +245,39 @@ describe("ProviderGatewayService", () => {
   it("does not turn failed live discovery into an account authentication error", async () => {
     const harness = readyHarness();
     const claude = JSON.stringify({
-      ...JSON.parse(configuration), defaultProvider: "claude",
-      accounts: [{ id: "claude-primary", label: "Claude", provider: "claude",
-        models: ["claude-opus-5-5"],
-        accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
-        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" } }],
+      ...JSON.parse(configuration),
+      defaultProvider: "claude",
+      accounts: [
+        {
+          id: "claude-primary",
+          label: "Claude",
+          provider: "claude",
+          models: ["claude-opus-5-5"],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" },
+        },
+      ],
     });
-    const result = await runGateway({
-      ...harness.platform, readText: async () => claude,
-      discoverClaudeModels: async () => undefined,
-    }, gateway => Effect.gen(function* () {
-      yield* gateway.start();
-      return yield* gateway.accountModels({ accountId: WorkjetGatewayAccountId.make("claude-primary") });
-    }));
+    const result = await runGateway(
+      {
+        ...harness.platform,
+        readText: async () => claude,
+        discoverClaudeModels: async () => undefined,
+      },
+      (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          const writesBefore = [...harness.writes];
+          const result = yield* gateway.accountModels({
+            accountId: WorkjetGatewayAccountId.make("claude-primary"),
+          });
+          expect(harness.writes).toEqual(writesBefore);
+          return result;
+        }),
+    );
     expect(result.state).toBe("unavailable");
     expect(result.reason).toBe("catalog-unavailable");
     expect(result.modelIds).toEqual([]);
-    expect(harness.writes.some(value => value.includes("claude-primary"))).toBe(false);
   });
 
   it("admits no inference or auth error for an intentionally disabled account", async () => {

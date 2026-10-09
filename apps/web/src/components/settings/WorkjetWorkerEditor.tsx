@@ -345,12 +345,15 @@ export function WorkjetWorkerEditor({
     WORKJET_HARNESS_OPTIONS.find((option) => option.id === draft.harness)?.label ?? draft.harness;
   const chosenComputer = computers.find((computer) => computer.id === draft.computerId) ?? null;
   const chosenRoute = routes.find((route) => route.id === draft.llmRouteId);
-  const chosenAccount = gatewayAccounts.find((account) => account.id === chosenRoute?.gatewayAccountId);
+  const chosenAccount = gatewayAccounts.find(
+    (account) => account.id === chosenRoute?.gatewayAccountId,
+  );
   const liveModels = useEnvironmentQuery(
     gatewayEnvironmentId === null || chosenAccount?.provider !== "claude"
       ? null
       : serverEnvironment.workjetGatewayAccountModels({
-          environmentId: gatewayEnvironmentId, input: { accountId: chosenAccount.id },
+          environmentId: gatewayEnvironmentId,
+          input: { accountId: chosenAccount.id },
         }),
   );
   const choiceCatalog = !liveModels.isPending && liveModels.error === null ? liveModels.data : null;
@@ -549,19 +552,24 @@ export function WorkjetWorkerEditor({
             <>
               <Select
                 value={draft.modelId || null}
-                onValueChange={(model) => { if (model !== null) patchDraft({ modelId: model }); }}
+                onValueChange={(model) => {
+                  if (model !== null) patchDraft({ modelId: model });
+                }}
               >
                 <SelectTrigger id="workjet-worker-model" className="w-full">
                   <SelectValue placeholder="Choose a live account model" />
                 </SelectTrigger>
                 <SelectPopup>
-                  {choiceCatalog?.accountId === chosenAccount.id && choiceCatalog.state === "observed"
-                    ? choiceCatalog.modelIds.map((model) => (
-                        <SelectItem key={model} value={model}>
-                          <span className="break-all whitespace-normal">{model}</span>
-                        </SelectItem>
-                      ))
-                    : draft.modelId ? <SelectItem value={draft.modelId}>{draft.modelId} · saved</SelectItem> : null}
+                  {choiceCatalog?.accountId === chosenAccount.id &&
+                  choiceCatalog.state === "observed" ? (
+                    choiceCatalog.modelIds.map((model) => (
+                      <SelectItem key={model} value={model}>
+                        <span className="break-all whitespace-normal">{model}</span>
+                      </SelectItem>
+                    ))
+                  ) : draft.modelId ? (
+                    <SelectItem value={draft.modelId}>{draft.modelId} · saved</SelectItem>
+                  ) : null}
                 </SelectPopup>
               </Select>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -572,8 +580,15 @@ export function WorkjetWorkerEditor({
                       ? "Live model list unavailable. Check this account in Settings → Models."
                       : `Live list · ${chosenAccount.label}. This does not replace a model check.`}
                 </span>
-                <Button type="button" size="sm" variant="ghost" disabled={liveModels.isPending}
-                  onClick={liveModels.refresh}>Refresh models</Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={liveModels.isPending}
+                  onClick={liveModels.refresh}
+                >
+                  Refresh models
+                </Button>
               </div>
             </>
           ) : (

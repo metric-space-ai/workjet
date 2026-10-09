@@ -4329,6 +4329,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             CLAUDE_CONFIG_DIR: path.join(serverConfig.stateDir, "worker-harnesses", input.threadId, "claude"),
             ANTHROPIC_BASE_URL: workerSource.baseUrl.slice(0, -3),
             ANTHROPIC_API_KEY: workerSource.apiKey,
+            WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
+            WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
             ANTHROPIC_AUTH_TOKEN: undefined,
             CLAUDE_CODE_OAUTH_TOKEN: undefined,
             CLAUDE_CODE_USE_BEDROCK: undefined,

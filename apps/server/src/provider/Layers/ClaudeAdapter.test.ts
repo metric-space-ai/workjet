@@ -370,6 +370,8 @@ describe("ClaudeAdapter foreign worker source authority", () => {
       assert.equal(options?.model, source.model);
       assert.equal(options?.env?.ANTHROPIC_BASE_URL, source.baseUrl.slice(0, -3));
       assert.equal(options?.env?.ANTHROPIC_API_KEY, source.apiKey);
+      assert.equal(options?.env?.WORKJET_WORKER_SOURCE_KEY, source.apiKey);
+      assert.equal(options?.env?.WORKJET_WORKER_SOURCE_URL, source.baseUrl);
       assert.isUndefined(options?.env?.ANTHROPIC_AUTH_TOKEN);
       assert.isUndefined(options?.env?.CLAUDE_CODE_OAUTH_TOKEN);
       assert.include(options?.env?.CLAUDE_CONFIG_DIR, "worker-harnesses/claude-pinned-source/claude");

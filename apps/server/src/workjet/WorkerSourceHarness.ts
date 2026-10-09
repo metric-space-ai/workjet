@@ -2,7 +2,7 @@
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
 import { Schema } from "effect";
-import type { RemoteWorkerHarness } from "@workjet/contracts";
+import { WorkjetComputerInventory, type RemoteWorkerHarness } from "@workjet/contracts";
 
 const Route = Schema.Struct({
   sourceEnvironmentId: Schema.NonEmptyString,
@@ -136,7 +136,7 @@ export async function installWorkerSourceRoute(
   let revoked = false;
   let busy = false;
   const source = async (
-    operation: "admit" | "infer" | "retire",
+    operation: "admit" | "infer" | "retire" | "computers",
     payload: unknown,
     signal: AbortSignal,
   ) => {
@@ -165,7 +165,8 @@ export async function installWorkerSourceRoute(
       res.writeHead(403).end();
       return;
     }
-    if (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses")) {
+    const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
+    if (!inventory && (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses"))) {
       res.writeHead(404).end();
       return;
     }
@@ -185,6 +186,17 @@ export async function installWorkerSourceRoute(
     };
     res.on("close", disconnect);
     try {
+      if (inventory) {
+        await source("admit", {}, controller.signal);
+        const response = Schema.decodeUnknownSync(WorkjetComputerInventory)(
+          await source("computers", {}, controller.signal),
+        );
+        if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
+        const body = JSON.stringify(response);
+        if (Buffer.byteLength(body) > 64 * 1024) throw new Error("Worker inventory too large");
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }).end(body);
+        return;
+      }
       const chunks: Buffer[] = [];
       let size = 0;
       for await (const chunk of req) {

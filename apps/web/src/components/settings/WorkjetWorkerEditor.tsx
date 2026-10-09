@@ -1,3 +1,5 @@
+import type { WorkjetNativeProviderAccount } from "@workjet/contracts";
+import { nativeAccountForRoute, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import {
   WorkjetComputerId,
   WorkjetConnectionId,
@@ -289,6 +291,10 @@ export function WorkjetWorkerEditor({
   routes,
   gatewayAccounts = [],
   gatewayEnvironmentId = null,
+  nativeAccounts = [],
+  nativeModelsBusy = false,
+  onRefreshNativeModels,
+  onValidateNativeModel,
   onSave,
   onCancel,
   onAddRoute,
@@ -304,6 +310,10 @@ export function WorkjetWorkerEditor({
   /** The account holder, independent of the worker's target computer. */
   readonly gatewayEnvironmentId?: EnvironmentId | null;
   readonly gatewayAccounts?: ReadonlyArray<WorkjetGatewayAccountSummary>;
+  readonly nativeAccounts?: readonly WorkjetNativeProviderAccount[];
+  readonly nativeModelsBusy?: boolean;
+  readonly onRefreshNativeModels?: (account: WorkjetNativeProviderAccount) => void;
+  readonly onValidateNativeModel?: (account: WorkjetNativeProviderAccount, model: string) => Promise<void>;
   readonly onSave: (worker: WorkjetWorkerProfile) => void | Promise<void>;
   readonly onCancel: () => void;
   readonly initialDraft?: WorkjetWorkerDraft | undefined;
@@ -345,6 +355,7 @@ export function WorkjetWorkerEditor({
     WORKJET_HARNESS_OPTIONS.find((option) => option.id === draft.harness)?.label ?? draft.harness;
   const chosenComputer = computers.find((computer) => computer.id === draft.computerId) ?? null;
   const chosenRoute = routes.find((route) => route.id === draft.llmRouteId);
+  const chosenNativeAccount = nativeAccountForRoute(chosenRoute, nativeAccounts);
   const chosenAccount = gatewayAccounts.find(
     (account) => account.id === chosenRoute?.gatewayAccountId,
   );
@@ -439,7 +450,12 @@ export function WorkjetWorkerEditor({
         setError(null);
         void (async () => {
           try {
-            assertLumaLiveModelChoice(draft, worker, chosenAccount, choiceCatalog);
+            if (chosenRoute?.nativeAccountReference) {
+              requireNativeLumaModel(chosenNativeAccount, draft.modelId.trim());
+              if (onValidateNativeModel === undefined || chosenNativeAccount === undefined)
+                throw new Error("Refresh the instance account before saving this Luma.");
+              await onValidateNativeModel(chosenNativeAccount, draft.modelId.trim());
+            } else assertLumaLiveModelChoice(draft, worker, chosenAccount, choiceCatalog);
             await onSave(saveWorkjetWorkerDraft(draft));
             clearDraftStash();
           } catch (cause) {
@@ -548,7 +564,35 @@ export function WorkjetWorkerEditor({
 
         <div className="space-y-1.5">
           <Label htmlFor="workjet-worker-model">Model</Label>
-          {chosenAccount?.provider === "claude" ? (
+          {chosenRoute?.nativeAccountReference ? (
+            <>
+              <Select value={draft.modelId || null} onValueChange={(model) => {
+                if (model !== null) patchDraft({ modelId: model });
+              }}>
+                <SelectTrigger id="workjet-worker-model" className="w-full">
+                  <SelectValue placeholder="Choose a live instance account model" />
+                </SelectTrigger>
+                <SelectPopup>
+                  {(chosenNativeAccount?.modelCatalog.fresh ? chosenNativeAccount.effectiveModels : []).map(model => (
+                    <SelectItem key={model} value={model}>
+                      <span className="break-all whitespace-normal">{model}</span>
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span role="status">{chosenNativeAccount?.modelCatalog.fresh
+                  ? "Live instance account models. Execution availability is checked by CTOX."
+                  : "Refresh this instance account in Settings → Models before choosing a model."}</span>
+                {onRefreshNativeModels && chosenNativeAccount && (
+                  <Button type="button" size="sm" variant="ghost" disabled={nativeModelsBusy}
+                    onClick={() => onRefreshNativeModels(chosenNativeAccount)}>
+                    Refresh models
+                  </Button>
+                )}
+              </div>
+            </>
+          ) : chosenAccount?.provider === "claude" ? (
             <>
               <Select
                 value={draft.modelId || null}

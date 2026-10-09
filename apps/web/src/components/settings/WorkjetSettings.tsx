@@ -1,3 +1,5 @@
+import { useInstanceProviders } from "./useInstanceProviders";
+import { nativeLumaRoutes, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import { openInstanceSetup } from "../../instanceSetup";
 import type {
   EnvironmentId,
@@ -668,6 +670,9 @@ export function WorkjetSettingsView({
   greppy,
   gateway,
   gatewayEnvironmentId = null,
+  nativeInstanceId = null,
+  nativeInstanceLabel = "CTOX instance",
+  onSaveWorkerConfiguration,
   automaticWorktreeStorage,
   defaultSection = "workers",
   onChange,
@@ -677,10 +682,15 @@ export function WorkjetSettingsView({
   readonly greppy: GreppySectionState;
   readonly gateway: WorkjetGatewaySectionState;
   readonly gatewayEnvironmentId?: EnvironmentId | null;
+  readonly nativeInstanceId?: string | null;
+  readonly nativeInstanceLabel?: string;
+  readonly onSaveWorkerConfiguration?: (configuration: WorkjetConfiguration) => Promise<void>;
   readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
   readonly defaultSection?: WorkjetSettingsSectionId;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
+  const nativeProviders = useInstanceProviders(nativeInstanceId);
+  const availableRoutes = nativeLumaRoutes(configuration.llmRoutes, nativeProviders.registry, nativeInstanceLabel);
   const locationHash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
@@ -721,7 +731,15 @@ export function WorkjetSettingsView({
         worker={editingWorker}
         draftScopeKey={draftScopeKey}
         computers={configuration.computers}
-        routes={configuration.llmRoutes}
+        routes={availableRoutes}
+        nativeAccounts={nativeProviders.registry?.accounts ?? []}
+        nativeModelsBusy={nativeProviders.busy}
+        onRefreshNativeModels={account => { void nativeProviders.run({ action: "instance.providers.observe", accountId: account.id, expectedAccountRevision: account.revision }); }}
+        onValidateNativeModel={async (account, model) => {
+          const registry = await nativeProviders.run({ action: "instance.providers.observe", accountId: account.id, expectedAccountRevision: account.revision });
+          requireNativeLumaModel(registry?.accounts.find(current => current.id === account.id &&
+            current.holder.id === account.holder.id && current.revision === account.revision), model);
+        }}
         gatewayAccounts={gateway.catalog?.accounts ?? []}
         gatewayEnvironmentId={gatewayEnvironmentId}
         onAddRoute={() =>
@@ -738,7 +756,7 @@ export function WorkjetSettingsView({
           setEditingWorkerId(null);
           setPendingWorkerParentId(null);
         }}
-        onSave={(worker: WorkjetWorkerProfile) => {
+        onSave={async (worker: WorkjetWorkerProfile) => {
           const workerProfiles = replaceCatalogItem(configuration.workerProfiles, worker);
           const cleanGraph = sanitizeWorkjetWorkerGraph(configuration.workerGraph, workerProfiles);
           const workerGraph =
@@ -756,11 +774,18 @@ export function WorkjetSettingsView({
                     { fromWorkerId: pendingWorkerParentId, toWorkerId: worker.id },
                   ],
                 };
-          onChange({
+          const nextConfiguration = {
             ...configuration,
             workerProfiles,
             workerGraph,
-          });
+            llmRoutes: (() => {
+              const selected = availableRoutes.find(route => route.id === worker.llmRouteId);
+              return selected?.nativeAccountReference
+                ? replaceCatalogItem(configuration.llmRoutes, selected) : configuration.llmRoutes;
+            })(),
+          };
+          if (onSaveWorkerConfiguration) await onSaveWorkerConfiguration(nextConfiguration);
+          else onChange(nextConfiguration);
           setAddingWorker(false);
           setEditingWorkerId(null);
           setPendingWorkerParentId(null);
@@ -1336,6 +1361,7 @@ export function WorkjetSettings({
       key={`${environment.environmentId}:${target.instanceId}:${target.connectionId}`}
       environment={environment}
       target={target}
+      nativeInstanceId={scope.presentationInstanceId}
       {...(defaultSection ? { defaultSection } : {})}
     />
   );
@@ -1343,11 +1369,13 @@ export function WorkjetSettings({
 
 function ScopedWorkjetSettings({
   environment,
+  nativeInstanceId,
   target,
   defaultSection,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly target: WorkjetLumaTarget;
+  readonly nativeInstanceId: string | null;
   readonly defaultSection?: WorkjetSettingsSectionId;
 }) {
   const environmentId = environment.environmentId;
@@ -1363,27 +1391,36 @@ function ScopedWorkjetSettings({
     instance.data?.configuration === null || instance.data === null
       ? settings.workjet
       : applyLumaInstanceDocument(settings.workjet, instance.data.configuration);
-  const updateConfiguration = useCallback(
-    (next: WorkjetConfiguration) => {
-      if (instance.data === null || instance.isPending) return;
+  const persistInstanceConfiguration = useCallback(
+    async (next: WorkjetConfiguration) => {
+      if (instance.data === null || instance.isPending)
+        throw new Error("Wait until the instance's Luma configuration has loaded.");
       setSaveError(null);
-      void saveInstance({
+      const result = await saveInstance({
         environmentId,
         input: {
           target,
           expectedRevision: instance.data.revision,
           configuration: extractLumaInstanceDocument(next),
         },
-      }).then((result) => {
-        if (result._tag === "Failure")
-          setSaveError("Die Instanzkonfiguration konnte nicht gespeichert werden.");
-        else if (result.value.status === "conflict")
-          setSaveError(
-            "Eine andere Sitzung hat die Lumas geändert. Der aktuelle Stand wird geladen; bitte die Änderung erneut anwenden.",
-          );
       });
+      const failure = result._tag === "Failure"
+        ? "The instance Luma configuration could not be saved."
+        : result.value.status === "conflict"
+          ? "Another session changed the Lumas. Refresh and apply the change again."
+          : null;
+      if (failure !== null) {
+        setSaveError(failure);
+        throw new Error(failure);
+      }
     },
     [environmentId, instance.data, instance.isPending, saveInstance, target],
+  );
+  const updateConfiguration = useCallback(
+    (next: WorkjetConfiguration) => {
+      void persistInstanceConfiguration(next).catch(() => undefined);
+    },
+    [persistInstanceConfiguration],
   );
   const query = useEnvironmentQuery(
     environmentId === null
@@ -1520,7 +1557,10 @@ function ScopedWorkjetSettings({
       ) : null}
       <WorkjetSettingsView
         {...(defaultSection ? { defaultSection } : {})}
-        draftScopeKey={environmentId}
+        draftScopeKey={`${environmentId}:${target.instanceId}:${target.connectionId}`}
+        nativeInstanceId={nativeInstanceId}
+        nativeInstanceLabel={target.instanceId}
+        onSaveWorkerConfiguration={persistInstanceConfiguration}
         configuration={configuration}
         greppy={{
           snapshot: query.data,

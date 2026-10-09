@@ -209,6 +209,14 @@ describe("harness ↔ provider-instance mapping", () => {
 describe("gateway models per route", () => {
   const models = [model("m-openai", ["acc-openai"]), model("m-kimi", ["acc-kimi"])];
 
+  it("does not substitute source gateway models for a native-only account", () => {
+    expect(gatewayModelsForRoute(models, {
+      id: WorkjetLlmRouteId.make("native-only"), label: "Native Claude",
+      nativeAccountReference: { accountId: "196a89ba-ee86-4413-885c-04ca60e6f291",
+        holderInstanceId: "322084e5-8239-48d7-b3c5-c5178fbe5822", accountRevision: 3 },
+    })).toEqual([]);
+  });
+
   it("narrows the catalog to the selected route's account", () => {
     const scoped = gatewayModelsForRoute(models, route("r1", "OpenAI", "acc-openai"));
     expect(scoped.map((entry) => entry.id)).toEqual(["m-openai"]);

@@ -136,18 +136,19 @@ export const WorkjetNativeAccountReference = Schema.Struct({
 export type WorkjetNativeAccountReference = typeof WorkjetNativeAccountReference.Type;
 
 /**
- * A non-secret route keeps its local gateway account id separately from the
- * optional native CTOX reference. Decoding metadata does not grant authority:
- * native execution re-resolves
+ * A non-secret route identifies a local gateway account, a native CTOX account,
+ * or an explicitly verified pairing of both. Decoding metadata does not grant
+ * authority: native execution re-resolves
  * Owner, holder, account revision, live model and the actual Supervisor lease.
  * Legacy gateway ids must never be promoted by matching provider/email labels.
  */
 export const WorkjetLlmRoute = Schema.Struct({
   id: WorkjetLlmRouteId,
   label: TrimmedNonEmptyString,
-  gatewayAccountId: WorkjetGatewayAccountId,
+  gatewayAccountId: Schema.optionalKey(WorkjetGatewayAccountId),
   nativeAccountReference: Schema.optionalKey(WorkjetNativeAccountReference),
-});
+}).check(Schema.makeFilter(route => route.gatewayAccountId !== undefined || route.nativeAccountReference !== undefined
+  ? true : "Choose a gateway account or an authoritative native account."));
 export type WorkjetLlmRoute = typeof WorkjetLlmRoute.Type;
 
 /**
@@ -202,14 +203,16 @@ const WorkjetLlmRoutePersisted = Schema.Union([WorkjetLlmRoute, WorkjetLlmRouteV
     WorkjetLlmRoute,
     SchemaTransformation.transformOrFail({
       decode: (route: WorkjetLlmRoutePersistedInput): Effect.Effect<WorkjetLlmRoute> =>
-        Effect.succeed("gatewayAccountId" in route ? route : migrateWorkjetLlmRouteV1ToV2(route)),
+        Effect.succeed("providerInstanceId" in route ? migrateWorkjetLlmRouteV1ToV2(route) : route),
       encode: (
         route: typeof WorkjetLlmRoute.Encoded,
       ): Effect.Effect<WorkjetLlmRoutePersistedInput> =>
         Effect.succeed({
           id: WorkjetLlmRouteId.make(route.id),
           label: route.label,
-          gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId),
+          ...(route.gatewayAccountId === undefined
+            ? {}
+            : { gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId) }),
           ...(route.nativeAccountReference === undefined
             ? {}
             : { nativeAccountReference: route.nativeAccountReference }),

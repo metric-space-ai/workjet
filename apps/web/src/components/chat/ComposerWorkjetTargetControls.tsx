@@ -147,7 +147,9 @@ export function gatewayModelsForRoute(
   route: WorkjetLlmRoute | null,
 ): ReadonlyArray<WorkjetGatewayModelSummary> {
   if (route === null) return models;
-  const scoped = models.filter((model) => model.accountIds.includes(route.gatewayAccountId));
+  const accountId = route.gatewayAccountId;
+  if (accountId === undefined) return [];
+  const scoped = models.filter((model) => model.accountIds.includes(accountId));
   // A catalog that does not link this route's account to any model would
   // leave the control empty and lie about the gateway offering nothing;
   // fall back to the whole catalog instead.

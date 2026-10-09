@@ -2337,6 +2337,7 @@ describe("ProviderGatewayService environment scoping", () => {
 });
 
 describe("shared provider model commands", () => {
+  const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
   const account = {
     id: "kimi-primary",
     label: "Primary",
@@ -2350,7 +2351,7 @@ describe("shared provider model commands", () => {
   };
   const harnessForSharedModels = () => {
     const harness = readyHarness();
-    let stored = JSON.stringify({
+    let stored = encodeJson({
       schemaVersion: 1,
       defaultProvider: "kimi",
       accounts: [
@@ -2370,7 +2371,7 @@ describe("shared provider model commands", () => {
       stored: () => stored,
       platform: {
         ...harness.platform,
-        discoverKimiConnection: undefined,
+        discoverKimiConnection: async () => undefined,
         readText: async () => stored,
         writePrivateText: async (path: string, text: string) => {
           if (path.endsWith("provider-gateway.json")) stored = text;
@@ -2406,8 +2407,9 @@ describe("shared provider model commands", () => {
         });
         expect(excluded.catalog.accounts[0]?.modelIds).toEqual(["kimi-for-coding"]);
         expect(excluded.catalog.accounts[1]?.enabled).toBe(false);
-        expect(JSON.parse(fixture.stored()).accounts[0].apiKeySecret).toEqual(account.apiKeySecret);
-        expect(JSON.stringify(excluded.catalog)).not.toContain("apiKeySecret");
+        const saved = yield* decodeStoredAccounts(fixture.stored());
+        expect(saved.accounts[0]).toMatchObject({ apiKeySecret: account.apiKeySecret });
+        expect(encodeJson(excluded.catalog)).not.toContain("apiKeySecret");
         expect((yield* gateway.catalog()).accounts[0]?.excludedModelIds).toEqual(["k3"]);
       }),
     );

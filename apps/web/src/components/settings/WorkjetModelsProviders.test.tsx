@@ -113,11 +113,20 @@ describe("Provider account table", () => {
     const message = new WorkjetGatewayOperationError({ reason: "kimi-key-not-accepted" }).message;
     for (const failedAccountId of [first.id, second.id]) {
       const rendered = renderToStaticMarkup(
-        <WorkjetModelsKeyForm provider="kimi" account={{ ...first, provider: "kimi", modelIds: ["k3"] }}
-          models={["k3"]} onClose={() => {}}
-          state={{ ...state, apiKey: {
-            status: "failed", provider: "kimi", accountId: failedAccountId, message,
-          } }}
+        <WorkjetModelsKeyForm
+          provider="kimi"
+          account={{ ...first, provider: "kimi", modelIds: ["k3"] }}
+          models={["k3"]}
+          onClose={() => {}}
+          state={{
+            ...state,
+            apiKey: {
+              status: "failed",
+              provider: "kimi",
+              accountId: failedAccountId,
+              message,
+            },
+          }}
         />,
       );
       expect(rendered.includes('role="alert"')).toBe(failedAccountId === first.id);

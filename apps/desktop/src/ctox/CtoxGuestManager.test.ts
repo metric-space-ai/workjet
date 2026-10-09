@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { CommandId, ProjectId, WorkjetJourFixeMeeting, WorkjetSupervisorThreadId } from "@workjet/contracts";
+import {
+  CommandId,
+  ProjectId,
+  WorkjetJourFixeMeeting,
+  WorkjetSupervisorThreadId,
+} from "@workjet/contracts";
 import jourFixeFixture from "../../../../packages/contracts/src/workjetJourFixeMeeting.fixture.json" with { type: "json" };
 import * as NodeVM from "node:vm";
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
@@ -2537,12 +2542,14 @@ describe("CtoxGuestManager", () => {
           entered.resolve();
           return pending.promise;
         });
-        const binding = yield* Effect.forkChild(manager.requestProjectControl(descriptor.id, request));
+        const binding = yield* Effect.forkChild(
+          manager.requestProjectControl(descriptor.id, request),
+        );
         yield* Effect.promise(() => entered.promise);
         assert.deepEqual(
-          yield* (touch === "ensurePooled"
+          yield* touch === "ensurePooled"
             ? manager.ensurePooled(descriptor.id)
-            : manager.activate(descriptor.id, { ...bounds, width: 900 })),
+            : manager.activate(descriptor.id, { ...bounds, width: 900 }),
           { _tag: "ready", instanceId: descriptor.id },
         );
         pending.resolve({ status: "completed", result: response });

@@ -667,6 +667,7 @@ export function WorkjetSettingsView({
   draftScopeKey,
   greppy,
   gateway,
+  gatewayEnvironmentId = null,
   automaticWorktreeStorage,
   defaultSection = "workers",
   onChange,
@@ -675,6 +676,7 @@ export function WorkjetSettingsView({
   readonly draftScopeKey: string;
   readonly greppy: GreppySectionState;
   readonly gateway: WorkjetGatewaySectionState;
+  readonly gatewayEnvironmentId?: EnvironmentId | null;
   readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
   readonly defaultSection?: WorkjetSettingsSectionId;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
@@ -720,6 +722,8 @@ export function WorkjetSettingsView({
         draftScopeKey={draftScopeKey}
         computers={configuration.computers}
         routes={configuration.llmRoutes}
+        gatewayAccounts={gateway.catalog?.accounts ?? []}
+        gatewayEnvironmentId={gatewayEnvironmentId}
         onAddRoute={() =>
           // LLM routes live on the Models page; "Set up access" takes the
           // operator to where an access is actually created.
@@ -1528,6 +1532,7 @@ function ScopedWorkjetSettings({
           onInstall: handleInstall,
         }}
         gateway={gateway}
+        gatewayEnvironmentId={environmentId}
         automaticWorktreeStorage={{
           configuredRoot: settings.automaticWorktreeRoot,
           selectedServerLabel: environment.label,

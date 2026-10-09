@@ -18,6 +18,8 @@ import {
   type WorkjetGatewayUsage,
   type WorkjetGatewayUsageInput,
   type WorkjetGatewayModelDiscovery,
+  type WorkjetGatewayAccountModelsInput,
+  type WorkjetGatewayAccountModels,
   type WorkjetGatewayOauthPollInput,
   type WorkjetGatewayOauthPollResult,
   type WorkjetGatewayOauthSession,
@@ -271,6 +273,10 @@ export interface ProviderGatewayServiceShape {
    */
   readonly discoverModels: () => Effect.Effect<
     WorkjetGatewayModelDiscovery,
+    WorkjetGatewayOperationError
+  >;
+  readonly accountModels: (input: WorkjetGatewayAccountModelsInput) => Effect.Effect<
+    WorkjetGatewayAccountModels,
     WorkjetGatewayOperationError
   >;
   /** Edits the host-wide selection strategy and per-account pool membership. */
@@ -1736,6 +1742,41 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return { schemaVersion: 1, observedAtMs, providers };
     };
 
+    /** Read-only live metadata; stale account or credential completions are discarded. */
+    const runAccountModels = async (
+      input: WorkjetGatewayAccountModelsInput,
+    ): Promise<WorkjetGatewayAccountModels> => {
+      requireManagement();
+      const unavailable = (reason: NonNullable<WorkjetGatewayAccountModels["reason"]>): WorkjetGatewayAccountModels => ({
+        accountId: input.accountId, checkedAtMs: Math.max(0, Math.trunc(platform.now())),
+        state: "unavailable", reason, modelIds: [],
+      });
+      const configuration = await loadConfiguration();
+      const account = configuration.accounts.find((candidate) => candidate.id === input.accountId);
+      if (account === undefined) return unavailable("account-unavailable");
+      if (!account.enabled) return unavailable("account-disabled");
+      if (account.provider !== "claude" || platform.discoverClaudeModels === undefined)
+        return unavailable("provider-unsupported");
+      const readToken = async () => {
+        const secret = await runPromise(secrets.get(secretStoreName(account.accessTokenSecret)));
+        return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
+      };
+      const token = await readToken();
+      if (token === undefined || !isAcceptableApiKey(token))
+        return unavailable("catalog-unavailable");
+      const models = await platform.discoverClaudeModels(token, AbortSignal.timeout(8_000))
+        .catch(() => undefined);
+      const current = (await loadConfiguration()).accounts.find((candidate) => candidate.id === input.accountId);
+      if (JSON.stringify(current) !== JSON.stringify(account) || (await readToken()) !== token)
+        return unavailable("account-changed");
+      if (models === undefined || models.length === 0)
+        return unavailable("catalog-unavailable");
+      return {
+        accountId: input.accountId, checkedAtMs: Math.max(0, Math.trunc(platform.now())),
+        state: "observed", reason: null, modelIds: [...new Set(models)],
+      };
+    };
+
     /** User edits and legacy repairs share the account's authenticated model evidence. */
     const repairClaudeAccountModels = async (
       account: GatewayAccount,
@@ -2306,6 +2347,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("management-unavailable"),
         }),
+      accountModels: (input) => Effect.tryPromise({
+        try: () => runAccountModels(input),
+        catch: () => safeError("management-unavailable"),
+      }),
       updateRouting: (input) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({

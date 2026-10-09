@@ -247,6 +247,8 @@ import {
   WorkjetGatewayUsage,
   WorkjetGatewayUsageInput,
   WorkjetGatewayModelDiscovery,
+  WorkjetGatewayAccountModelsInput,
+  WorkjetGatewayAccountModels,
   WorkjetGatewayOauthPollInput,
   WorkjetGatewayOauthPollResult,
   WorkjetGatewayOauthSession,
@@ -456,6 +458,7 @@ export const WS_METHODS = {
   workjetGatewayModelChecks: "workjet.providerGateway.modelChecks",
   workjetGatewayCheckModels: "workjet.providerGateway.checkModels",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
+  workjetGatewayAccountModels: "workjet.providerGateway.accountModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
 
   // ADDITIVE one-shot import of the legacy Swift Workjet configuration. The
@@ -884,6 +887,11 @@ export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGate
 export const WsWorkjetGatewayModelChecksRpc = Rpc.make(WS_METHODS.workjetGatewayModelChecks, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayModelChecks,
+  error: WorkjetGatewayRpcError,
+});
+export const WsWorkjetGatewayAccountModelsRpc = Rpc.make(WS_METHODS.workjetGatewayAccountModels, {
+  payload: WorkjetGatewayAccountModelsInput,
+  success: WorkjetGatewayAccountModels,
   error: WorkjetGatewayRpcError,
 });
 export const WsWorkjetGatewayCheckModelsRpc = Rpc.make(WS_METHODS.workjetGatewayCheckModels, {
@@ -1841,6 +1849,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayModelChecksRpc,
   WsWorkjetGatewayCheckModelsRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
+  WsWorkjetGatewayAccountModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetLegacyImportInspectRpc,
   WsWorkjetLegacyImportDecideRpc,

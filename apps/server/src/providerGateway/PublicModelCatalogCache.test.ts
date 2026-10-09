@@ -15,22 +15,31 @@ const harness = () => {
   let saved = "";
   let calls = 0;
   let unavailable = false;
-  const cache = () => makePublicModelCatalogCache({
-    now: () => now,
-    read: async () => saved,
-    write: async (value) => { saved = value; },
-    fetch: async () => {
-      calls++;
-      if (unavailable) throw new Error("unavailable");
-      return catalog(now);
-    },
-  });
+  const cache = () =>
+    makePublicModelCatalogCache({
+      now: () => now,
+      read: async () => saved,
+      write: async (value) => {
+        saved = value;
+      },
+      fetch: async () => {
+        calls++;
+        if (unavailable) throw new Error("unavailable");
+        return catalog(now);
+      },
+    });
   return {
     cache,
-    advance: (ms: number) => { now += ms; },
-    offline: () => { unavailable = true; },
+    advance: (ms: number) => {
+      now += ms;
+    },
+    offline: () => {
+      unavailable = true;
+    },
     saved: () => saved,
-    replace: (value: string) => { saved = value; },
+    replace: (value: string) => {
+      saved = value;
+    },
     calls: () => calls,
     now: () => now,
   };
@@ -57,7 +66,10 @@ describe("PublicModelCatalogCache", () => {
     const restarted = h.cache();
     const value = await restarted.read();
     expect(value?.checkedAt).toBe(new Date(DAY).toISOString());
-    expect(decodeLiveProviderModels(value, "kimi", h.now(), true)).toEqual(["k3", "kimi-for-coding"]);
+    expect(decodeLiveProviderModels(value, "kimi", h.now(), true)).toEqual([
+      "k3",
+      "kimi-for-coding",
+    ]);
     expect(decodeLiveProviderModels(value, "kimi", h.now())).toBeUndefined();
     await restarted.read();
     expect(h.calls()).toBe(2);
@@ -68,7 +80,9 @@ describe("PublicModelCatalogCache", () => {
     h.advance(7 * DAY + 1);
     h.offline();
     expect(await h.cache().read()).toBeUndefined();
-    h.replace(JSON.stringify({ schemaVersion: 1, savedAtMs: h.now() + DAY, catalog: catalog(h.now()) }));
+    h.replace(
+      JSON.stringify({ schemaVersion: 1, savedAtMs: h.now() + DAY, catalog: catalog(h.now()) }),
+    );
     expect(await h.cache().read()).toBeUndefined();
     h.replace("invalid");
     expect(await h.cache().read()).toBeUndefined();
@@ -77,11 +91,14 @@ describe("PublicModelCatalogCache", () => {
     const observed = catalog(DAY);
     const cache = makePublicModelCatalogCache({
       now: () => DAY,
-      read: async () => { throw new Error("missing"); },
-      write: async () => { throw new Error("read-only"); },
+      read: async () => {
+        throw new Error("missing");
+      },
+      write: async () => {
+        throw new Error("read-only");
+      },
       fetch: async () => ({ ...observed, unrelatedPrivateValue: "must-not-persist" }),
     });
     expect(await cache.read()).toEqual(observed);
   });
 });
-

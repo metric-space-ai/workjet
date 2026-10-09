@@ -47,9 +47,13 @@ export function decodePublicModelCatalog(
       return undefined;
     if (
       new Set(catalog.providers.map((entry) => entry.provider)).size !== catalog.providers.length ||
-      catalog.providers.some((entry) => entry.models.length > 1024 ||
-        entry.models.some((id) => !id || id.length > 160 || id.trim() !== id ||
-          /[\x00-\x1f\x7f]/.test(id)))
+      catalog.providers.some(
+        (entry) =>
+          entry.models.length > 1024 ||
+          entry.models.some(
+            (id) => !id || id.length > 160 || id.trim() !== id || /[\x00-\x1f\x7f]/.test(id),
+          ),
+      )
     )
       return undefined;
     return catalog;

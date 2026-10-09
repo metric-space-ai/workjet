@@ -26,8 +26,12 @@ export function makePublicModelCatalogCache(io: {
       try {
         const saved = decodeCache(JSON.parse(await io.read()));
         const now = io.now();
-        if (!Number.isFinite(saved.savedAtMs) || saved.savedAtMs > now + 5_000 ||
-            saved.savedAtMs < Date.parse(saved.catalog.checkedAt)) return;
+        if (
+          !Number.isFinite(saved.savedAtMs) ||
+          saved.savedAtMs > now + 5_000 ||
+          saved.savedAtMs < Date.parse(saved.catalog.checkedAt)
+        )
+          return;
         catalog = decodePublicModelCatalog(saved.catalog, now, true);
       } catch {
         // Missing/corrupt cache never falls back to an invented/static model list.
@@ -46,11 +50,15 @@ export function makePublicModelCatalogCache(io: {
         if (observed === undefined) return;
         catalog = observed;
         nextRefreshAtMs = io.now() + DAY_MS;
-        await io.write(JSON.stringify({
-          schemaVersion: 1,
-          savedAtMs: io.now(),
-          catalog: observed,
-        }) + "\n").catch(() => undefined);
+        await io
+          .write(
+            JSON.stringify({
+              schemaVersion: 1,
+              savedAtMs: io.now(),
+              catalog: observed,
+            }) + "\n",
+          )
+          .catch(() => undefined);
       } catch {
         // Retain the original observation time; an outage is never a fresh observation.
       }
@@ -71,4 +79,3 @@ export function makePublicModelCatalogCache(io: {
     },
   };
 }
-

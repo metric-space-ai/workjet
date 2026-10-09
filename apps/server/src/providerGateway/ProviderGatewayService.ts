@@ -433,7 +433,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     );
     const hostPidPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-host.pid.json");
     const grantsPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-grants.json");
-    const publicCatalogPath = platform.joinPath(serverConfig.stateDir, "provider-model-catalog.json");
+    const publicCatalogPath = platform.joinPath(
+      serverConfig.stateDir,
+      "provider-model-catalog.json",
+    );
     const publicCatalogCache = makePublicModelCatalogCache({
       now: platform.now,
       read: () => platform.readText(publicCatalogPath, 128 * 1024),
@@ -1661,9 +1664,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       requireManagement();
       const configuration = await loadConfiguration();
       const liveCatalog = await publicCatalogCache.read();
-      const observedAtMs = Math.max(0, Math.trunc(
-        liveCatalog === undefined ? platform.now() : Date.parse(liveCatalog.checkedAt),
-      ));
+      const observedAtMs = Math.max(
+        0,
+        Math.trunc(liveCatalog === undefined ? platform.now() : Date.parse(liveCatalog.checkedAt)),
+      );
       const providers: Array<WorkjetGatewayProviderModels> = [];
       for (const provider of GATEWAY_PROVIDERS) {
         const accounts = configuration.accounts.filter(

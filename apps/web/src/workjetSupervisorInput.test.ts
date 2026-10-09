@@ -158,7 +158,7 @@ describe("durable same-task Supervisor context", () => {
 
   it("recovers an admitted input after the task finishes without reverting its current state", async () => {
     const finished: WorkjetSupervisorJournal = { ...saved,
-      turn: { ...turn, terminal: true, status: "completed", attempt: 5, result: "Completed" },
+      turn: { ...turn, executionPhase: "terminal", queueStatus: "completed", terminal: true, status: "completed", attempt: 5, result: "Completed" },
       inputs: [{ intent, receipt: null, submission: "awaiting-receipt" }] };
     let state = finished;
     await submitWorkjetSupervisorInput(finished, intent, { save: async next => { state = next; } },

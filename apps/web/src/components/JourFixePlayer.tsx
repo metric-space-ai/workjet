@@ -10,6 +10,7 @@ import { Button } from "./ui/button";
 
 export interface JourFixePlayerProps {
   readonly source?: string | undefined;
+  readonly rate?: number | undefined;
   readonly hasPrevious: boolean;
   readonly hasNext: boolean;
   readonly onPrevious: () => void;
@@ -34,6 +35,7 @@ export function JourFixePlayer(props: JourFixePlayerProps) {
 
 function PlayerContent({
   source,
+  rate = 1.15,
   hasPrevious,
   hasNext,
   onPrevious,
@@ -47,9 +49,15 @@ function PlayerContent({
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(rate);
   const [failed, setFailed] = useState(false);
   const playable = source?.startsWith("blob:") === true && !failed;
+  useEffect(() => {
+    if (audio.current) {
+      audio.current.preservesPitch = true;
+      audio.current.playbackRate = speed;
+    }
+  }, [speed]);
   useEffect(() => {
     const element = audio.current;
     return () => element?.pause();
@@ -138,11 +146,14 @@ function PlayerContent({
           className="h-7 rounded-full border border-border bg-background px-2 text-xs"
           onChange={(event) => {
             const rate = Number(event.target.value);
-            if (audio.current) audio.current.playbackRate = rate;
+            if (audio.current) {
+              audio.current.preservesPitch = true;
+              audio.current.playbackRate = rate;
+            }
             setSpeed(rate);
           }}
         >
-          {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
+          {[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])].sort((a, b) => a - b).map((rate) => (
             <option key={rate} value={rate}>
               {rate}×
             </option>
@@ -176,6 +187,8 @@ function PlayerContent({
             preload="metadata"
             src={source}
             onLoadedMetadata={(event) => {
+              event.currentTarget.preservesPitch = true;
+              event.currentTarget.playbackRate = speed;
               const value = event.currentTarget.duration;
               setDuration(Number.isFinite(value) ? value : 0);
             }}

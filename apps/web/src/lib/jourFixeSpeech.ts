@@ -27,7 +27,7 @@ export interface JourFixeSpeechProvider {
     readonly scope: JourFixeSpeechScope;
     readonly slideId: string;
     readonly signal: AbortSignal;
-  }): Promise<Blob>;
+  }): Promise<Blob | { readonly blob: Blob; readonly rate: number }>;
 }
 
 export interface JourFixeSpeechAudio {
@@ -36,6 +36,7 @@ export interface JourFixeSpeechAudio {
   readonly deckRevision: number;
   readonly slideId: string;
   readonly blobUrl: string;
+  readonly rate: number;
 }
 
 /** One room owns one selected provider. Closing never falls back to another provider. */
@@ -146,16 +147,20 @@ export class JourFixeSpeechSession {
     const controller = new AbortController();
     this.narration = controller;
     try {
-      const blob = await this.provider.prepareNarration({
+      const prepared = await this.provider.prepareNarration({
         scope: this.scope,
         slideId,
         signal: controller.signal,
       });
       if (this.closed || controller.signal.aborted) return;
+      const blob = prepared instanceof Blob ? prepared : prepared.blob;
+      const rate = prepared instanceof Blob ? 1.15 : prepared.rate;
+      if (!Number.isFinite(rate) || rate < 0.8 || rate > 1.5)
+        throw new Error("Narration has an invalid speaking speed.");
       if (!blob.type.startsWith("audio/") || blob.size === 0 || blob.size > 32 * 1024 * 1024)
         throw new Error("Narration is not a supported audio recording.");
       this.audioUrl = URL.createObjectURL(blob);
-      this.events.onAudio({ ...this.scope, slideId, blobUrl: this.audioUrl });
+      this.events.onAudio({ ...this.scope, slideId, blobUrl: this.audioUrl, rate });
     } catch (error) {
       if (!this.closed && !controller.signal.aborted) this.report(error);
     }

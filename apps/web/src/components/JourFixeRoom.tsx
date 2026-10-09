@@ -92,6 +92,7 @@ export interface JourFixeRoomProps {
     readonly slideId: string;
     readonly deckRevision: number;
     readonly blobUrl: string;
+    readonly rate?: number;
   };
 }
 
@@ -751,6 +752,7 @@ function JourFixeRoomContent({
               <JourFixePlayer
                 key={`${slide.id}:${meeting.deckRevision}`}
                 source={narration}
+                rate={narration ? audio?.rate : undefined}
                 hasPrevious={index > 0}
                 hasNext={index < slides.length - 1}
                 onPrevious={() => selectSlide(slides[index - 1]!.id)}

@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as Schema from "effect/Schema";
 import {
+  WorkjetSpeechSettingsRequests,
+  WorkjetSpeechSettingsResponse,
+  WorkjetSpeechPlaybackResponse,
+} from "./workjetSpeechSettings.ts";
+export * from "./workjetSpeechSettings.ts";
+import {
   WorkjetJourFixeNarrationReadRequest,
   WorkjetJourFixeNarrationReadResponse,
 } from "./workjetJourFixeNarration.ts";
@@ -703,6 +709,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetJourFixeSpeechRequests,
   ...WorkjetPresentationRequests,
   ...WorkjetCalendarNativeRequests,
+  ...WorkjetSpeechSettingsRequests,
   Schema.Struct({
     action: Schema.Literal("project.kpis.read"),
     commandId: CommandId,
@@ -855,6 +862,8 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetJourFixeSpeechResponse,
   ...WorkjetPresentationResponses,
   ...WorkjetCalendarNativeResponses,
+  WorkjetSpeechSettingsResponse,
+  WorkjetSpeechPlaybackResponse,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,

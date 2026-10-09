@@ -153,6 +153,7 @@ mod websocket_lifecycle_bind_test;
 mod websocket_session_target_test;
 #[cfg(test)]
 mod xai_executor_test;
+mod xai_custom_tools;
 #[cfg(test)]
 mod xai_status_err_test;
 #[cfg(test)]

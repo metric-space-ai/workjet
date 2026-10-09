@@ -42,6 +42,7 @@ import {
   orderGalleryProjects,
 } from "../projectGalleryOrder";
 import type { PromptedProjectKpis, ProjectKpiPromptInput } from "../projectKpis";
+import { mergeProjectKpiRead } from "../projectKpiProjection";
 import { SortableProjectTile } from "../components/SortableProjectTile";
 import {
   closestCenter,
@@ -677,33 +678,50 @@ function ProjectGallery({
     };
   }, [instanceId]);
 
+  const readKpis = useCallback(
+    async (projectId: string) => {
+      const scope = kpiScope.current;
+      if (
+        instanceId === null ||
+        !scope.active ||
+        scope.instanceId !== instanceId ||
+        !nativeProjectIds.split("\n").includes(projectId)
+      )
+        return null;
+      const result = await readWorkjetProjectKpis(
+        instanceId,
+        ProjectId.make(projectId),
+        newCommandId(),
+      );
+      if (
+        !scope.active ||
+        kpiScope.current !== scope ||
+        result._tag !== "completed" ||
+        !("kpis" in result.response)
+      )
+        return null;
+      const kpis = result.response.kpis;
+      setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
+      return kpis;
+    },
+    [instanceId, nativeProjectIds],
+  );
+
   useEffect(() => {
     if (instanceId === null) return;
     const scope = { instanceId, active: true };
     kpiScope.current = scope;
     const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
-    void Promise.all(
-      projectIds.map(async (projectId) => {
-        const result = await readWorkjetProjectKpis(
-          instanceId,
-          ProjectId.make(projectId),
-          newCommandId(),
-        );
-        return result._tag === "completed" && "kpis" in result.response
-          ? ([projectId, result.response.kpis] as const)
-          : null;
-      }),
-    ).then((entries) => {
-      if (!scope.active) return;
-      setKpiProjection({
-        instanceId,
-        records: Object.fromEntries(entries.filter((entry) => entry !== null)),
-      });
-    });
+    void (async () => {
+      for (const projectId of projectIds) {
+        if (!scope.active) return;
+        await readKpis(projectId);
+      }
+    })();
     return () => {
       scope.active = false;
     };
-  }, [instanceId, nativeProjectIds]);
+  }, [instanceId, nativeProjectIds, readKpis]);
 
   const saveKpis = useCallback(
     async (
@@ -861,6 +879,7 @@ function ProjectGallery({
                               ? (prompts, revision) => saveKpis(project.id, prompts, revision)
                               : undefined
                           }
+                          onReadKpis={project.native && instanceId !== null ? readKpis : undefined}
                           reorderHandle={reorderHandle}
                         />
                       )}

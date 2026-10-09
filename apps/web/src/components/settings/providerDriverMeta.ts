@@ -3,6 +3,7 @@ import {
   CodexSettings,
   CursorSettings,
   GrokSettings,
+  GreppySettings,
   OpenCodeSettings,
   MiniMaxSettings,
   ProviderDriverKind,
@@ -74,6 +75,12 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     label: "OpenCode",
     icon: OpenCodeIcon,
     settingsSchema: OpenCodeSettings,
+  },
+  {
+    value: ProviderDriverKind.make("greppy"),
+    label: "Greppy",
+    icon: TerminalIcon,
+    settingsSchema: GreppySettings,
   },
 ];
 

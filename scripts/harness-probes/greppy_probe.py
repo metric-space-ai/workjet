@@ -45,6 +45,11 @@ try:
     req('session/prompt',{'sessionId':sid,'prompt':[{'type':'text','text':'Reply with the exact imported marker. Do not use tools.'}]},timeout=60)
     req('session/prompt',{'sessionId':sid,'prompt':[{'type':'text','text':'/compact'}]},timeout=60)
     req('session/load',{'sessionId':sid,'cwd':a.cwd,'mcpServers':[]})
+    if len(matching)>1:
+        target=next(m for m in matching if m!=model)
+        req('session/set_model',{'sessionId':sid,'modelId':target})
+        req('session/prompt',{'sessionId':sid,'prompt':[{'type':'text','text':'After the model switch, reply with the exact imported marker only; no tools.'}]},timeout=60)
+        req('session/load',{'sessionId':sid,'cwd':a.cwd,'mcpServers':[]})
     req('session/new',{'cwd':a.cwd,'mcpServers':[{'name':'workjet_probe','command':'python3',
         'args':[str(Path(__file__).with_name('mcp_echo.py').resolve())],'env':[]}]})
 except Exception as error:results.append({'error':repr(error)})

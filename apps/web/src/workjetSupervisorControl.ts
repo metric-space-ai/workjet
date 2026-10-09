@@ -7,6 +7,7 @@ import {
   type CtoxWorkjetProjectControlResult,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
+import { Effect, Random } from "effect";
 import {
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
@@ -49,6 +50,24 @@ export function bindWorkjetSupervisor(
     scope,
     {
       action: "project.supervisor.bind",
+      commandId,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    },
+    port,
+  );
+}
+
+/** Query the current native capability without creating a model turn. */
+export function readWorkjetSupervisorTurnCapabilities(
+  scope: Pick<WorkjetSupervisorTurnIntent, "instanceId" | "projectId" | "threadId">,
+  commandId: CommandId,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return confirmedControl(
+    scope,
+    {
+      action: "project.supervisor.turn.capabilities",
       commandId,
       projectId: scope.projectId,
       threadId: scope.threadId,
@@ -107,6 +126,26 @@ async function dispatchSavedSupervisorTurn(
       return binding;
     }
   }
+  if (submission === "prepared" && intent.turnKind === "conversation") {
+    const capabilityNonce = Effect.runSync(Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER));
+    const capability = await readWorkjetSupervisorTurnCapabilities(
+      intent,
+      CommandId.make(`supervisor-kind-${capabilityNonce}`),
+      port,
+    );
+    if (capability._tag !== "completed") {
+      await journal.save({
+        intent,
+        turn: null,
+        submission:
+          capability.code === "not_active" || capability.code === "timeout"
+            ? "prepared"
+            : "not-submitted",
+        submissionError: capability.code,
+      });
+      return capability;
+    }
+  }
   // Persist the uncertainty boundary before the first native submit can start.
   await journal.save({ intent, turn: null, submission: "awaiting-receipt" });
   const result = await confirmedControl(
@@ -117,6 +156,7 @@ async function dispatchSavedSupervisorTurn(
       projectId: intent.projectId,
       threadId: intent.threadId,
       goal: intent.goal,
+      ...(intent.turnKind === "conversation" ? { turnKind: intent.turnKind } : {}),
     },
     port,
   );

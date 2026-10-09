@@ -55,6 +55,28 @@ export const WorkjetSupervisorTurn = Schema.Struct({
 );
 export type WorkjetSupervisorTurn = typeof WorkjetSupervisorTurn.Type;
 
+/** Owner-selected intent; missing legacy kinds retain work review. */
+export const WorkjetSupervisorTurnKind = Schema.Literals(["work", "conversation"]);
+export type WorkjetSupervisorTurnKind = typeof WorkjetSupervisorTurnKind.Type;
+
+export const WorkjetSupervisorTurnCapabilitiesResponse = Schema.Struct({
+  action: Schema.Literal("project.supervisor.turn.capabilities"),
+  commandId: CommandId,
+  projectId: ProjectId,
+  contract: Schema.Literal("ctox.workjet.supervisor_turn_capabilities.v1"),
+  binding: WorkjetSupervisorBinding,
+  turnKinds: Schema.Tuple([Schema.Literal("work"), Schema.Literal("conversation")]),
+  defaultTurnKind: Schema.Literal("work"),
+}).check(
+  Schema.makeFilter(
+    (response) =>
+      response.projectId === response.binding.projectId ||
+      "Supervisor capability belongs to another project.",
+  ),
+);
+export type WorkjetSupervisorTurnCapabilitiesResponse =
+  typeof WorkjetSupervisorTurnCapabilitiesResponse.Type;
+
 /** A durable submission intent, saved before dispatch. It grants no native authority. */
 export const WorkjetSupervisorTurnIntent = Schema.Struct({
   instanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
@@ -62,6 +84,7 @@ export const WorkjetSupervisorTurnIntent = Schema.Struct({
   threadId: WorkjetSupervisorThreadId,
   commandId: CommandId.check(Schema.isMaxLength(120)),
   goal: WorkjetSupervisorGoal,
+  turnKind: Schema.optionalKey(WorkjetSupervisorTurnKind),
   createdAt: IsoDateTime,
 });
 export type WorkjetSupervisorTurnIntent = typeof WorkjetSupervisorTurnIntent.Type;

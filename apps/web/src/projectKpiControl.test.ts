@@ -19,13 +19,17 @@ const response = {
 } as const;
 
 function port(next = response) {
-  return vi.fn<WorkjetProjectControlPort>().mockResolvedValue({ _tag: "completed", response: next });
+  return vi
+    .fn<WorkjetProjectControlPort>()
+    .mockResolvedValue({ _tag: "completed", response: next });
 }
 
 describe("native project KPI saves", () => {
   it("persists prompts through the selected instance with operation ID and revision", async () => {
     const persist = port();
-    expect(await saveWorkjetProjectKpis("managed:selected", request, persist)).toEqual(response.kpis);
+    expect(await saveWorkjetProjectKpis("managed:selected", request, persist)).toEqual(
+      response.kpis,
+    );
     expect(persist).toHaveBeenCalledExactlyOnceWith("managed:selected", request);
   });
   it("clears prompts through an empty native list", async () => {
@@ -39,12 +43,15 @@ describe("native project KPI saves", () => {
     { ...response, kpis: { ...response.kpis, project_id: ProjectId.make("another-project") } },
     { ...response, kpis: { ...response.kpis, revision: 4 } },
   ])("retains the previous card for an uncorrelated or stale receipt", async (next) => {
-    const persist = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({ _tag: "completed", response: next });
+    const persist = vi
+      .fn<WorkjetProjectControlPort>()
+      .mockResolvedValue({ _tag: "completed", response: next });
     expect(await saveWorkjetProjectKpis("managed:selected", request, persist)).toBeNull();
   });
   it("does not treat a read receipt as save confirmation", async () => {
     const persist = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
-      _tag: "completed", response: { ...response, action: "project.kpis.read" },
+      _tag: "completed",
+      response: { ...response, action: "project.kpis.read" },
     });
     expect(await saveWorkjetProjectKpis("managed:selected", request, persist)).toBeNull();
   });

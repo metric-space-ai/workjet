@@ -706,12 +706,19 @@ function ProjectGallery({
   }, [instanceId, nativeProjectIds]);
 
   const saveKpis = useCallback(
-    async (projectId: string, prompts: readonly ProjectKpiPromptInput[], expectedRevision: number) => {
+    async (
+      projectId: string,
+      prompts: readonly ProjectKpiPromptInput[],
+      expectedRevision: number,
+    ) => {
       const scope = kpiScope.current;
       if (
-        instanceId === null || !scope.active || scope.instanceId !== instanceId ||
+        instanceId === null ||
+        !scope.active ||
+        scope.instanceId !== instanceId ||
         !nativeProjectIds.split("\n").includes(projectId)
-      ) return false;
+      )
+        return false;
       const kpis = await saveWorkjetProjectKpis(instanceId, {
         action: "project.kpis.configure",
         commandId: newCommandId(),
@@ -721,9 +728,11 @@ function ProjectGallery({
         prompts,
       });
       if (!kpis || !scope.active || kpiScope.current !== scope) return false;
-      setKpiProjection((previous) => previous.instanceId === instanceId
-        ? { instanceId, records: { ...previous.records, [projectId]: kpis } }
-        : previous);
+      setKpiProjection((previous) =>
+        previous.instanceId === instanceId
+          ? { instanceId, records: { ...previous.records, [projectId]: kpis } }
+          : previous,
+      );
       return true;
     },
     [instanceId, nativeProjectIds],
@@ -842,12 +851,16 @@ function ProjectGallery({
                           onSaveConfiguration={project.onSaveConfiguration}
                           canArchive={project.canArchive}
                           statistics={project.statistics}
-                          kpis={kpiProjection.instanceId === instanceId
-                            ? kpiProjection.records[project.id]
-                            : undefined}
-                          onSaveKpis={project.native && instanceId !== null
-                            ? (prompts, revision) => saveKpis(project.id, prompts, revision)
-                            : undefined}
+                          kpis={
+                            kpiProjection.instanceId === instanceId
+                              ? kpiProjection.records[project.id]
+                              : undefined
+                          }
+                          onSaveKpis={
+                            project.native && instanceId !== null
+                              ? (prompts, revision) => saveKpis(project.id, prompts, revision)
+                              : undefined
+                          }
                           reorderHandle={reorderHandle}
                         />
                       )}

@@ -27,6 +27,7 @@ export const WorkjetSpeechSettingsRequests = [
   }),
   Schema.Struct({ action: Schema.Literal("speech.settings.voices"), ...base }),
   Schema.Struct({ action: Schema.Literal("speech.settings.check"), ...base }),
+  Schema.Struct({ action: Schema.Literal("speech.settings.check.transcription"), ...base }),
   Schema.Struct({ action: Schema.Literal("speech.settings.playback"), ...base }),
 ] as const;
 const Check = Schema.Struct({
@@ -42,6 +43,7 @@ export const WorkjetSpeechSettingsResponse = Schema.Struct({
     "speech.settings.key",
     "speech.settings.voices",
     "speech.settings.check",
+    "speech.settings.check.transcription",
   ]),
   ...base,
   status: Schema.Struct({
@@ -53,6 +55,14 @@ export const WorkjetSpeechSettingsResponse = Schema.Struct({
     tts: Schema.Literals(["available", "unavailable", "unknown"]),
   }),
   ttsCheck: Schema.NullOr(Check),
+  sttCheck: Schema.optionalKey(Schema.NullOr(Schema.Struct({
+    ...Check.fields,
+    model: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
+    audioDurationMs: Schema.optionalKey(Schema.Number.check(Schema.isBetween({ minimum: 1, maximum: 10_000 }))),
+    partialBeforeAudioEnd: Schema.optionalKey(Schema.Boolean),
+    measurementBoundary: Schema.optionalKey(Schema.Literal("gateway_audio_end_to_final")),
+  }))),
+  transcript: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192))),
   voices: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

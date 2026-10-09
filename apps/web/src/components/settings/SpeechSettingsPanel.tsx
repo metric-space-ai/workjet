@@ -16,6 +16,7 @@ const remedies: Readonly<Record<string, string>> = {
   rate_limit: "The API rate limit was reached. Retry later.",
   timeout: "The API did not respond in time. Retry the check.",
   invalid_audio: "The API returned an invalid recording. Retry the check.",
+  invalid_transcript: "The API did not return a final transcript. Retry the check.",
   backend_unavailable: "This check requires the Mistral API speech path.",
 };
 
@@ -42,6 +43,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const [recording, setRecording] = useState<string>();
+  const [transcript, setTranscript] = useState<string>();
   const controller = useRef<AbortController | undefined>(undefined);
   const audio = useRef<HTMLAudioElement>(null);
   const url = useRef<string | undefined>(undefined);
@@ -59,6 +61,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
     controller.current = active;
     setBusy(input.action);
     setError(undefined);
+    if (input.action === "speech.settings.check.transcription") setTranscript(undefined);
     if (input.action !== "speech.settings.voices" && input.action !== "speech.settings.read")
       releaseAudio();
     try {
@@ -67,6 +70,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
       setSettings(result);
       setRate(String(result.status.config.rate));
       if (result.voices) setVoices(result.voices);
+      if (result.transcript) setTranscript(result.transcript);
       if (result.audioBase64) {
         url.current = URL.createObjectURL(speechCheckAudio(result.audioBase64));
         setRecording(url.current);
@@ -108,6 +112,8 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const check = settings?.ttsCheck;
   const checked = check?.state === "ok";
   const pending = busy === "speech.settings.check";
+  const sttCheck = settings?.sttCheck;
+  const sttPending = busy === "speech.settings.check.transcription";
   const disabled = busy !== undefined || !config;
   return (
     <SettingsSection
@@ -343,8 +349,49 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
         </SettingsRow>
         <SettingsRow
           title="Transcription check"
-          status="Not checked — selecting a path does not verify live transcription."
-        />
+          description="Checks a short clip from the selected voice. No microphone recording."
+          status={
+            sttCheck?.state === "error"
+              ? (remedies[sttCheck.errorClass ?? ""] ?? "Transcription failed. Retry the check.")
+              : sttCheck?.state === "ok"
+                ? "Measured from audio end to final transcript; microphone and connection setup are separate."
+                : "Not checked — selecting a path does not verify live transcription."
+          }
+          control={
+            <div className="flex items-center gap-3">
+              <span
+                role="status"
+                className="flex items-center gap-1.5 text-xs"
+                title={sttCheck ? "Checked " + sttCheck.checkedAt : "No transcription check yet"}
+              >
+                {sttPending ? (
+                  <CircleDashedIcon className="size-4 animate-spin text-muted-foreground" />
+                ) : sttCheck?.state === "ok" ? (
+                  <CheckIcon className="size-4 text-emerald-500" />
+                ) : sttCheck ? (
+                  <XIcon className="size-4 text-destructive" />
+                ) : (
+                  <CircleDashedIcon className="size-4 text-muted-foreground" />
+                )}
+                {sttPending
+                  ? "Checking…"
+                  : sttCheck?.state === "ok"
+                    ? sttCheck.latencyMs + " ms"
+                    : sttCheck?.errorClass ?? "Not checked"}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={disabled || config?.transcription !== "mistral" || config?.synthesis !== "mistral"}
+                onClick={() => void run({ action: "speech.settings.check.transcription" })}
+              >
+                Check transcription
+              </Button>
+            </div>
+          }
+        >
+          {transcript && <p className="mt-2 text-sm">{transcript}</p>}
+        </SettingsRow>
       </div>
     </SettingsSection>
   );

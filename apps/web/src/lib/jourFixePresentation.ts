@@ -160,3 +160,34 @@ export async function saveJourFixePresentationCanvas(
   if (answer.action !== "project.presentation.canvas.save") throw new Error("Unexpected answer.");
   return { mutation: answer.mutation, manifest: answer.presentation };
 }
+
+/**
+ * The room's save workflow. An uncertain or rejected write is never rebased into
+ * another mutation: retry the edit's original manifest/operation. Only a confirmed
+ * write permits a read refresh, and a failed refresh cannot revoke that receipt.
+ */
+export async function saveJourFixePresentationSlide(
+  instanceId: string,
+  projectId: ProjectId,
+  manifest: WorkjetPresentationManifest,
+  slideId: string,
+  scene: CanvasScene,
+  control: Control = requestWorkjetProjectControl,
+): Promise<{ readonly presentation: JourFixePresentation | null; readonly reloadError: string | null }> {
+  const saved = await saveJourFixePresentationCanvas(
+    instanceId, projectId, manifest, slideId, scene, control,
+  );
+  try {
+    const presentation = await readJourFixePresentation(instanceId, projectId, manifest.meeting_id, control);
+    if (!presentation || presentation.manifest.revision < saved.manifest.revision)
+      throw new Error("The confirmed presentation revision is not available yet.");
+    return { presentation, reloadError: null };
+  } catch (reason) {
+    return {
+      presentation: null,
+      reloadError: reason instanceof Error
+        ? `The slide is saved, but the presentation could not be reloaded: ${reason.message}`
+        : "The slide is saved, but the presentation could not be reloaded.",
+    };
+  }
+}

@@ -74,6 +74,7 @@ const fixturePresentation: SlideDocument = {
 function Fixture() {
   const [view, setView] = useState<"overview" | "calendar" | "meeting">("overview");
   const [presentation, setPresentation] = useState<SlideDocument>(fixturePresentation);
+  const [canvasSaveCount, setCanvasSaveCount] = useState(0);
   const [meeting, setMeeting] = useState<JourFixeRoomSnapshot>({
     ...contractMeeting,
     state: "live",
@@ -122,6 +123,7 @@ function Fixture() {
         <span className="mr-auto text-xs text-muted-foreground">
           Isolated fixture · {fixture.source.contract}
         </span>
+        {withPresentation && <output aria-label="Fixture canvas save count">{canvasSaveCount}</output>}
         <Button size="sm" variant="outline" onClick={() => setView("overview")}>
           Project overview
         </Button>
@@ -192,6 +194,7 @@ function Fixture() {
                   document: presentation,
                   editable: true,
                   onSave: async (slideId, scene) => {
+                    setCanvasSaveCount((count) => count + 1);
                     setPresentation(updateSlideCanvas(presentation, slideId, scene));
                   },
                 },

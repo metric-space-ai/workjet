@@ -3,9 +3,8 @@ import type { ProjectId, WorkjetJourFixeReadResponse } from "@workjet/contracts"
 import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
 import {
-  PresentationSlideChangedError,
   readJourFixePresentation,
-  saveJourFixePresentationCanvas,
+  saveJourFixePresentationSlide,
   type JourFixePresentation,
 } from "../lib/jourFixePresentation";
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
@@ -73,41 +72,12 @@ function NativeJourFixeRoomContent({
   const savePresentationSlide = useCallback(
     async (slideId: string, scene: CanvasScene) => {
       if (!presentation) throw new Error("This meeting has no presentation.");
-      const base = presentation;
-      try {
-        await saveJourFixePresentationCanvas(instanceId, projectId, base.manifest, slideId, scene);
-      } catch (reason) {
-        // A newer revision rejects the save. If it did not touch this slide, store the
-        // edit on top of it; otherwise show the newer slide and say the edit was not kept.
-        const fresh = await readJourFixePresentation(
-          instanceId,
-          projectId,
-          base.manifest.meeting_id,
-        );
-        if (!fresh || fresh.manifest.revision === base.manifest.revision) throw reason;
-        const before = JSON.stringify(base.document.slides.find((item) => item.id === slideId));
-        const after = JSON.stringify(fresh.document.slides.find((item) => item.id === slideId));
-        if (before !== after) {
-          if (active.current) setPresentation(fresh);
-          throw new PresentationSlideChangedError();
-        }
-        await saveJourFixePresentationCanvas(instanceId, projectId, fresh.manifest, slideId, scene);
-      }
-      try {
-        const stored = await readJourFixePresentation(
-          instanceId,
-          projectId,
-          base.manifest.meeting_id,
-        );
-        if (active.current) setPresentation(stored);
-      } catch (reason) {
-        // The slide is stored; only the refreshed view is missing.
-        if (active.current)
-          setError(
-            reason instanceof Error
-              ? `The slide is saved, but the presentation could not be reloaded: ${reason.message}`
-              : "The slide is saved, but the presentation could not be reloaded.",
-          );
+      const saved = await saveJourFixePresentationSlide(
+        instanceId, projectId, presentation.manifest, slideId, scene,
+      );
+      if (active.current) {
+        if (saved.presentation) setPresentation(saved.presentation);
+        if (saved.reloadError) setError(saved.reloadError);
       }
     },
     [instanceId, projectId, presentation],

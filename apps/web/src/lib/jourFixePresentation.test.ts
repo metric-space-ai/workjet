@@ -10,6 +10,7 @@ import {
   presentationSaveOperationId,
   readJourFixePresentation,
   saveJourFixePresentationCanvas,
+  saveJourFixePresentationSlide,
 } from "./jourFixePresentation";
 
 const projectId = "project" as ProjectId;
@@ -196,5 +197,75 @@ describe("Jour fixe presentation transport", () => {
     expect(again).toBe(first);
     expect(other).not.toBe(first);
     expect(newer).not.toBe(first);
+  });
+});
+
+describe("the room's confirmed presentation-save workflow", () => {
+  const scene = {
+    version: "learnordie.excalidraw.v1" as const,
+    width: 1600,
+    height: 900,
+    backgroundColor: "#fffef8",
+    elements: [],
+    files: {},
+  };
+
+  it("replays a committed save with a lost reply without rebasing or writing twice", async () => {
+    const base = await manifest();
+    const next = { ...base, revision: base.revision + 1, source: "owner" as const };
+    const server = control(base);
+    const reads = control(next);
+    let writes = 0;
+    let retained: Extract<CtoxWorkjetProjectControlRequest, { action: "project.presentation.canvas.save" }> | undefined;
+    const requests: CtoxWorkjetProjectControlRequest[] = [];
+    const port: typeof server.port = async (instance, request) => {
+      requests.push(request);
+      if (request.action !== "project.presentation.canvas.save") return reads.port(instance, request);
+      if (!retained) {
+        retained = request;
+        writes += 1;
+        // The server committed the operation, but the reply was lost.
+        return { _tag: "failed", code: "timeout" };
+      }
+      expect(request.operationId).toBe(retained.operationId);
+      expect(request.expectedRevision).toBe(retained.expectedRevision);
+      expect(request.sceneJson).toBe(retained.sceneJson);
+      return server.port(instance, request);
+    };
+    await expect(saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port))
+      .rejects.toThrow("timeout");
+    expect(requests.map((request) => request.action)).toEqual(["project.presentation.canvas.save"]);
+    const retried = await saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port);
+    expect(retried.presentation?.manifest.revision).toBe(3);
+    expect(retried.reloadError).toBeNull();
+    expect(writes).toBe(1);
+    expect(requests.filter((request) => request.action === "project.presentation.canvas.save")).toHaveLength(2);
+  });
+
+  it("never turns a concurrent-revision rejection into a mutation on the refreshed slide", async () => {
+    const base = await manifest();
+    const requests: CtoxWorkjetProjectControlRequest[] = [];
+    const port: ReturnType<typeof control>["port"] = async (_instance, request) => {
+      requests.push(request);
+      return { _tag: "failed", code: "guest_failed" };
+    };
+    await expect(saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port))
+      .rejects.toThrow("guest_failed");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.action === "project.presentation.canvas.save" && requests[0].expectedRevision).toBe(base.revision);
+  });
+
+  it("keeps a confirmed receipt when the subsequent read is unavailable", async () => {
+    const base = await manifest();
+    const server = control(base);
+    const port: typeof server.port = async (instance, request) =>
+      request.action === "project.presentation.canvas.save"
+        ? server.port(instance, request)
+        : { _tag: "failed", code: "not_active" };
+    const saved = await saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port);
+    expect(saved.presentation).toBeNull();
+    expect(saved.reloadError).toContain("The slide is saved");
+    expect(saved.reloadError).toContain("not_active");
+    expect(server.calls).toHaveLength(1);
   });
 });

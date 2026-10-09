@@ -323,7 +323,7 @@ export function SlideCanvas({
     const capture = latestRef.current.captureRef;
     if (capture && !present) {
       capture.current = () => {
-        if (disposed || !api) return null;
+        if (disposed || !api || !userEdited) return null;
         const next = toCanvasScene(
           source,
           api.getSceneElements(),

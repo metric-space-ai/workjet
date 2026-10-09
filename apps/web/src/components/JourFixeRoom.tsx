@@ -134,6 +134,11 @@ function JourFixeRoomContent({
   const [canvasEditing, setCanvasEditing] = useState(false);
   const [editingSlideId, setEditingSlideId] = useState<string | null>(null);
   const captureRef = useRef<(() => CanvasScene | null) | null>(null);
+  // Retain the revision/operation captured when editing starts, even if a read refreshes props.
+  const saveEditRef = useRef<((slideId: string, scene: CanvasScene) => Promise<void>) | null>(null);
+  const [editDocument, setEditDocument] = useState<SlideDocument | null>(null);
+  const canvasEpochRef = useRef(0);
+  const [canvasEpoch, setCanvasEpoch] = useState(0);
   const [pendingScene, setPendingScene] = useState<CanvasScene | null>(null);
   const [savingSlide, setSavingSlide] = useState(false);
   const [slideSaveError, setSlideSaveError] = useState<string | null>(null);
@@ -191,13 +196,22 @@ function JourFixeRoomContent({
       setBusy(false);
     }
   }
-  function selectSlide(id: string) {
-    setSlideId(id);
-    // Unsaved canvas edits belong to the slide they were made on.
+  function discardCanvasEdit() {
+    // Invalidate the old editor callback before its cleanup can flush a debounced edit.
+    canvasEpochRef.current += 1;
+    setCanvasEpoch(canvasEpochRef.current);
+    captureRef.current = null;
+    saveEditRef.current = null;
+    setEditDocument(null);
     setCanvasEditing(false);
     setEditingSlideId(null);
     setPendingScene(null);
     setSlideSaveError(null);
+  }
+  function selectSlide(id: string) {
+    setSlideId(id);
+    // Unsaved canvas edits belong to the slide they were made on.
+    discardCanvasEdit();
     setPlacingComment(false);
     onSlideChange?.(id);
   }
@@ -467,12 +481,7 @@ function JourFixeRoomContent({
                         size="sm"
                         variant="outline"
                         disabled={savingSlide}
-                        onClick={() => {
-                          setCanvasEditing(false);
-                          setEditingSlideId(null);
-                          setPendingScene(null);
-                          setSlideSaveError(null);
-                        }}
+                        onClick={discardCanvasEdit}
                       >
                         <XIcon className="size-3" />
                         Cancel
@@ -493,7 +502,7 @@ function JourFixeRoomContent({
                           }
                           setSavingSlide(true);
                           setSlideSaveError(null);
-                          presentation.onSave(target, scene).then(
+                          (saveEditRef.current ?? presentation.onSave)(target, scene).then(
                             () => {
                               setCanvasEditing(false);
                               setEditingSlideId(null);
@@ -543,6 +552,8 @@ function JourFixeRoomContent({
                           variant="outline"
                           disabled={busy || placingComment}
                           onClick={() => {
+                            saveEditRef.current = presentation.onSave;
+                            setEditDocument(presentation.document);
                             setCanvasEditing(true);
                             setEditingSlideId(slide.id);
                             setPendingScene(null);
@@ -579,10 +590,13 @@ function JourFixeRoomContent({
                       />
                     )}
                     <JourFixeCanvasStage
-                      document={presentation.document}
+                      key={`${slide.id}:${canvasEpoch}`}
+                      document={canvasEditing ? (editDocument ?? presentation.document) : presentation.document}
                       slideId={slide.id}
                       mode={canvasEditing && editingSlideId === slide.id ? "edit" : "present"}
-                      onSceneChange={setPendingScene}
+                      onSceneChange={(scene) => {
+                        if (canvasEpochRef.current === canvasEpoch) setPendingScene(scene);
+                      }}
                       captureRef={captureRef}
                     />
                   </Suspense>

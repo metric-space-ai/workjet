@@ -94,7 +94,11 @@ describe("remote computer enrollment source", () => {
         `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
       ),
     };
-    for (const entries of [[], [{ ...connection, status: "offline" as const }], [connection, second]]) {
+    for (const entries of [
+      [],
+      [{ ...connection, status: "offline" as const }],
+      [connection, second],
+    ]) {
       expect(workerSourceConnectionForEnrollment(entries, selected)).toBeUndefined();
     }
     expect(workerSourceConnectionForEnrollment([connection], "managed:foreign")).toBeUndefined();
@@ -103,7 +107,10 @@ describe("remote computer enrollment source", () => {
 
   it("ignores an offline prior source and preserves an explicitly selected native instance", () => {
     expect(
-      workerSourceConnectionForEnrollment([{ ...connection, status: "offline" }, connection], selected),
+      workerSourceConnectionForEnrollment(
+        [{ ...connection, status: "offline" }, connection],
+        selected,
+      ),
     ).toBe(connection);
     expect(workerSourceConnectionForEnrollment([connection], nativeInstance)).toBe(connection);
     expect(workerSourceConnectionForEnrollment([connection], "other-native")).toBeUndefined();

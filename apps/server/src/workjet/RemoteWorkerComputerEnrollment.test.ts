@@ -186,15 +186,17 @@ it.effect(
     }),
 );
 
-it.effect("uses the explicitly selected source grant when another grant has the same native pin", () =>
-  Effect.gen(function* () {
-    const other = { ...ready, connectionId: WorkjetConnectionId.make("other-grant") };
-    const f = fixture([other, ready]);
-    const service = yield* f.make;
-    const result = yield* service.enroll({ ...input, sourceConnectionId: connectionId });
-    assert.equal(result.computerId, nativeId);
-    assert.equal(f.calls(), 1);
-  }),
+it.effect(
+  "uses the explicitly selected source grant when another grant has the same native pin",
+  () =>
+    Effect.gen(function* () {
+      const other = { ...ready, connectionId: WorkjetConnectionId.make("other-grant") };
+      const f = fixture([other, ready]);
+      const service = yield* f.make;
+      const result = yield* service.enroll({ ...input, sourceConnectionId: connectionId });
+      assert.equal(result.computerId, nativeId);
+      assert.equal(f.calls(), 1);
+    }),
 );
 
 it.effect("rejects an unknown or foreign explicit source grant before native enrollment", () =>

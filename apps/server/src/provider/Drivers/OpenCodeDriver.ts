@@ -173,11 +173,12 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
           ...(model ? { model } : {}),
         }).pipe(Effect.provideService(ProviderGatewayService, gateway));
         if (!routeViaGateway) return resolved;
-        const status = yield* gateway.status;
+        const status = yield* gateway.status();
         if (!status.providerEndpoint) return yield* Effect.fail(routingError("The gateway has no provider endpoint."));
+        const endpoint = status.providerEndpoint;
         const catalog = yield* gateway.catalog().pipe(Effect.mapError(routingError));
         const content = yield* Effect.try({
-          try: () => openCodeGatewayConfiguration(status.providerEndpoint!, catalog, resolved.OPENCODE_CONFIG_CONTENT),
+          try: () => openCodeGatewayConfiguration(endpoint, catalog, resolved.OPENCODE_CONFIG_CONTENT),
           catch: routingError,
         });
         return { ...resolved, OPENCODE_CONFIG_CONTENT: content };
@@ -199,7 +200,10 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
       const checkProvider = (routeViaGateway
         ? resolveSessionEnvironment().pipe(Effect.flatMap(env => checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, env)))
         : checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, processEnv)
-      ).pipe(Effect.map(stampIdentity), Effect.provideService(OpenCodeRuntime, openCodeRuntime));
+      ).pipe(
+        Effect.catch(cause => makePendingOpenCodeProvider(effectiveConfig).pipe(Effect.map(draft => ({ ...draft, status: "error" as const, message: cause.message })))),
+        Effect.map(stampIdentity), Effect.provideService(OpenCodeRuntime, openCodeRuntime),
+      );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<OpenCodeSettings>>(

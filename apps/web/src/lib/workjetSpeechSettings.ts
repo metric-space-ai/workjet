@@ -12,7 +12,13 @@ import {
 } from "../workjetProjectControl";
 
 type Input =
-  | { readonly action: "speech.settings.read" | "speech.settings.voices" | "speech.settings.check" }
+  | {
+      readonly action:
+        | "speech.settings.read"
+        | "speech.settings.voices"
+        | "speech.settings.check"
+        | "speech.settings.check.transcription";
+    }
   | { readonly action: "speech.settings.configure"; readonly config: WorkjetSpeechConfig }
   | { readonly action: "speech.settings.key"; readonly secret: string }
   | { readonly action: "speech.settings.playback" };
@@ -36,7 +42,7 @@ async function request(
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error("Speech request timed out. Retry the check.")),
-          25_000,
+          input.action === "speech.settings.check.transcription" ? 30_000 : 25_000,
         );
         onAbort = () => reject(new DOMException("Cancelled", "AbortError"));
         signal.addEventListener("abort", onAbort, { once: true });

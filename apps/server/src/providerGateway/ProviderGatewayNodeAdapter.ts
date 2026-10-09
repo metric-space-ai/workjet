@@ -136,6 +136,8 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       body: JSON.stringify({
         model: modelId,
         input: [{ role: "user", content: "Hi" }],
+        // Keep the xAI answer within its small visible-output limit.
+        ...(provider === "xai" ? { instructions: "Reply with Hi only." } : {}),
         // Codex subscriptions reject token caps; checks use non-stored requests.
         // Other providers keep the small output bound; the transport/body bounds apply to all.
         ...(provider === "codex"

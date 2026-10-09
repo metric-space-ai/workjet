@@ -76,6 +76,36 @@ fn non_string_tool_name_is_normalized_without_panicking() {
     assert_eq!(output["tools"][0]["parameters"]["properties"], json!({}));
 }
 
+#[test]
+fn twenty_claude_tool_results_replay_valid_responses_arguments() {
+    let mut messages = Vec::new();
+    for index in 1..=20 {
+        let call_id = format!("toolu_{index}");
+        let arguments = json!({"command":format!("printf 'PROXY_MATRIX_{index:02}\\n'"),"description":"quote \" and Unicode ß"});
+        messages.push(json!({"role":"assistant","content":[{"type":"tool_use","id":call_id,"name":"Bash","input":arguments}]}));
+        messages.push(json!({"role":"user","content":[{"type":"tool_result","tool_use_id":call_id,"content":format!("PROXY_MATRIX_{index:02}\n")}]}));
+    }
+    let request = serde_json::to_vec(&json!({"messages":messages})).unwrap();
+    let output: Value = serde_json::from_slice(&convert_claude_request_to_codex(
+        "claude-opus-5-5",
+        &request,
+        true,
+    ))
+    .unwrap();
+    let input = output["input"].as_array().unwrap();
+    assert_eq!(input.len(), 40);
+    for (index, pair) in input.chunks_exact(2).enumerate() {
+        assert_eq!(pair[0]["type"], "function_call");
+        let arguments = pair[0]["arguments"]
+            .as_str()
+            .expect("Responses function-call arguments must be JSON text");
+        let decoded: Value = serde_json::from_str(arguments).unwrap();
+        assert_eq!(decoded, messages[index * 2]["content"][0]["input"]);
+        assert_eq!(pair[1]["type"], "function_call_output");
+        assert_eq!(pair[1]["call_id"], pair[0]["call_id"]);
+    }
+}
+
 fn gpt_signature() -> String {
     let mut payload = vec![0_u8; 1 + 8 + 16 + 16 + 32];
     payload[0] = 0x80;

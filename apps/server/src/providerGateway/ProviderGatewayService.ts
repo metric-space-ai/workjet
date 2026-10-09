@@ -1371,17 +1371,16 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       let apiConnection: ApiKeyModelConnection | undefined;
       let discoveredApiModels: ReadonlyArray<string> | undefined;
       if (input.provider === "minimax" || input.provider === "xai") {
-        apiConnection = await platform.discoverApiKeyModels?.(
-          input.provider,
-          apiKey,
-          apiReplacement?.upstreamBaseUrl,
-        ).catch(() => undefined);
+        apiConnection = await platform
+          .discoverApiKeyModels?.(input.provider, apiKey, apiReplacement?.upstreamBaseUrl)
+          .catch(() => undefined);
         if (apiConnection === undefined) throw safeError("api-key-model-list-unavailable");
         if (input.models?.some((model) => !apiConnection!.models.includes(model)))
           throw safeError("invalid-model-selection");
-        const selected = existing === undefined
-          ? undefined
-          : providerModelSelections(existing).find((entry) => entry.provider === input.provider);
+        const selected =
+          existing === undefined
+            ? undefined
+            : providerModelSelections(existing).find((entry) => entry.provider === input.provider);
         let preferredModels = input.models?.length
           ? input.models
           : (selected?.modelIds ?? apiReplacement?.models);
@@ -1389,7 +1388,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           const catalog = await platform.publicModelCatalog?.().catch(() => undefined);
           preferredModels = decodeLiveProviderModels(catalog, input.provider, platform.now()) ?? [];
         }
-        discoveredApiModels = preferredModels.filter((model) => apiConnection!.models.includes(model));
+        discoveredApiModels = preferredModels.filter((model) =>
+          apiConnection!.models.includes(model),
+        );
       }
       const kimiConnection =
         input.provider === "kimi"
@@ -1457,7 +1458,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           input.models !== undefined &&
           (!["kimi", "zai", "minimax", "xai"].includes(input.provider) || input.models.length > 0)
             ? input.models
-            : (discoveredApiModels ?? discoveredKimiModels ??
+            : (discoveredApiModels ??
+              discoveredKimiModels ??
               (discoveredZaiModels?.length
                 ? discoveredZaiModels
                 : zaiConnection === undefined
@@ -1484,9 +1486,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             ? { upstreamBaseUrl: apiConnection.upstreamBaseUrl }
             : zaiConnection !== undefined
               ? { upstreamBaseUrl: zaiConnection.upstreamBaseUrl }
-            : apiReplacement?.upstreamBaseUrl
-              ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
-              : {}),
+              : apiReplacement?.upstreamBaseUrl
+                ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
+                : {}),
         ...(suffix ? { credentialSuffix: suffix } : {}),
       };
       if (replacement === undefined) accounts.push(nextAccount);

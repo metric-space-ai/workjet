@@ -79,9 +79,7 @@ export async function discoverApiKeyModels(
       return undefined;
     const models = list.data.map((entry) => entry.id);
     if (
-      models.some(
-        (id) => !id || id.length > 160 || id.trim() !== id || /[\x00-\x1f\x7f]/.test(id),
-      )
+      models.some((id) => !id || id.length > 160 || id.trim() !== id || /[\x00-\x1f\x7f]/.test(id))
     )
       return undefined;
     return { upstreamBaseUrl, models: [...new Set(models)] };

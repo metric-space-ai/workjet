@@ -1760,9 +1760,9 @@ export class WorkjetGatewayOperationError extends Schema.TaggedErrorClass<Workje
       case "kimi-key-not-accepted":
         return `The Kimi key could not be verified. Checked GET /models at: ${WORKJET_GATEWAY_KIMI_ENDPOINTS.map((endpoint) => endpoint.upstreamBaseUrl).join(", ")}. Check that the key comes from Kimi Code or the Moonshot API platform, or retry if the service is unavailable. The key was not saved.`;
       case "api-key-model-list-unavailable":
-        return "The key could not be verified against the provider\'s live model list. Check the key and configured endpoint, or retry if the service is unavailable. No account or credential was changed.";
+        return "The key could not be verified against the provider's live model list. Check the key and configured endpoint, or retry if the service is unavailable. No account or credential was changed.";
       case "invalid-model-selection":
-        return "A selected model is missing from this account\'s live model list. Update the provider model selection and retry. No account or credential was changed.";
+        return "A selected model is missing from this account's live model list. Update the provider model selection and retry. No account or credential was changed.";
       case "process-exit":
         return "The Workjet provider gateway process exited unexpectedly.";
       case "shutdown-timeout":

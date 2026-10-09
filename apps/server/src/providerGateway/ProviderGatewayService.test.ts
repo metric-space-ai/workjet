@@ -1181,14 +1181,15 @@ describe("ProviderGatewayService · API-key accounts", () => {
     }
   });
 
-
   it.each(["minimax", "xai"] as const)(
     "preserves secrets and configuration when the %s live list is unavailable",
     async (provider) => {
       const harness = apiKeyHarness();
       harness.platform = {
         ...harness.platform,
-        discoverApiKeyModels: async () => { throw new Error(API_KEY); },
+        discoverApiKeyModels: async () => {
+          throw new Error(API_KEY);
+        },
       };
       const error = await runWithSecrets(harness, (gateway) =>
         gateway.addApiKeyAccount({ provider, label: "key", apiKey: API_KEY }).pipe(Effect.flip),
@@ -1206,7 +1207,9 @@ describe("ProviderGatewayService · API-key accounts", () => {
     async (provider) => {
       const harness = apiKeyHarness();
       const error = await runWithSecrets(harness, (gateway) =>
-        gateway.addApiKeyAccount({ provider, label: "key", apiKey: API_KEY, models: ["k3"] }).pipe(Effect.flip),
+        gateway
+          .addApiKeyAccount({ provider, label: "key", apiKey: API_KEY, models: ["k3"] })
+          .pipe(Effect.flip),
       );
       expect(error.reason).toBe("invalid-model-selection");
       expect(harness.storedSecrets.size).toBe(0);
@@ -1233,7 +1236,9 @@ describe("ProviderGatewayService · API-key accounts", () => {
       gateway.addApiKeyAccount({ provider: "xai", label: "key", apiKey: API_KEY, models: [] }),
     );
     const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
-    expect(document.accounts.find((account: { provider: string }) => account.provider === "xai")).toMatchObject({
+    expect(
+      document.accounts.find((account: { provider: string }) => account.provider === "xai"),
+    ).toMatchObject({
       models: ["grok-4.7"],
       availableModelIds: ["grok-4.6", "grok-4.7"],
       upstreamBaseUrl: "https://api.x.ai/v1",
@@ -1247,7 +1252,9 @@ describe("ProviderGatewayService · API-key accounts", () => {
       gateway.addApiKeyAccount({ provider: "xai", label: "key", apiKey: API_KEY, models: [] }),
     );
     const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
-    expect(document.accounts.find((account: { provider: string }) => account.provider === "xai")).toMatchObject({
+    expect(
+      document.accounts.find((account: { provider: string }) => account.provider === "xai"),
+    ).toMatchObject({
       models: [],
       availableModelIds: ["grok-4.7"],
     });
@@ -1256,18 +1263,26 @@ describe("ProviderGatewayService · API-key accounts", () => {
   it("inherits one provider selection on another account without widening the selection", async () => {
     const harness = apiKeyHarness();
     const oldAccount = {
-      id: "xai-first", provider: "xai", label: "First", enabled: true, priority: 0, weight: 1,
+      id: "xai-first",
+      provider: "xai",
+      label: "First",
+      enabled: true,
+      priority: 0,
+      weight: 1,
       models: ["grok-4.7"],
       apiKeySecret: { scope: "workjet-provider-gateway", name: "first-key" },
     };
     harness.platform = {
       ...harness.platform,
-      readText: async () => JSON.stringify({
-        ...JSON.parse(configuration), accounts: [oldAccount],
-        providerModels: [{ provider: "xai", modelIds: ["grok-4.7"] }],
-      }),
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [oldAccount],
+          providerModels: [{ provider: "xai", modelIds: ["grok-4.7"] }],
+        }),
       discoverApiKeyModels: async () => ({
-        upstreamBaseUrl: "https://api.x.ai/v1", models: ["grok-4.6", "grok-4.7"],
+        upstreamBaseUrl: "https://api.x.ai/v1",
+        models: ["grok-4.6", "grok-4.7"],
       }),
     };
     await runWithSecrets(harness, (gateway) =>
@@ -1275,24 +1290,34 @@ describe("ProviderGatewayService · API-key accounts", () => {
     );
     const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
     expect(document.providerModels).toEqual([{ provider: "xai", modelIds: ["grok-4.7"] }]);
-    expect(document.accounts.find((account: { id: string }) => account.id === "xai-second").models).toEqual(["grok-4.7"]);
+    expect(
+      document.accounts.find((account: { id: string }) => account.id === "xai-second").models,
+    ).toEqual(["grok-4.7"]);
   });
 
   it("retains account identity, disabled state and exclusions when replacing a verified key", async () => {
     const harness = apiKeyHarness();
     const oldAccount = {
-      id: "xai-stable", provider: "xai", label: "Team", enabled: false, priority: 7, weight: 1,
-      models: ["grok-4.7"], excludedModels: ["grok-4.6"],
+      id: "xai-stable",
+      provider: "xai",
+      label: "Team",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      models: ["grok-4.7"],
+      excludedModels: ["grok-4.6"],
       upstreamBaseUrl: "https://api.x.ai/v1",
       apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
       credentialSuffix: "old1",
     };
     harness.platform = {
       ...harness.platform,
-      readText: async () => JSON.stringify({
-        ...JSON.parse(configuration), accounts: [oldAccount],
-        providerModels: [{ provider: "xai", modelIds: ["grok-4.6", "grok-4.7"] }],
-      }),
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [oldAccount],
+          providerModels: [{ provider: "xai", modelIds: ["grok-4.6", "grok-4.7"] }],
+        }),
       discoverApiKeyModels: async (_provider, key, origin) => {
         expect(key).toBe(API_KEY);
         expect(origin).toBe(oldAccount.upstreamBaseUrl);
@@ -1301,13 +1326,20 @@ describe("ProviderGatewayService · API-key accounts", () => {
     };
     await runWithSecrets(harness, (gateway) =>
       gateway.addApiKeyAccount({
-        provider: "xai", accountId: WorkjetGatewayAccountId.make(oldAccount.id),
-        label: oldAccount.label, apiKey: API_KEY, models: [],
+        provider: "xai",
+        accountId: WorkjetGatewayAccountId.make(oldAccount.id),
+        label: oldAccount.label,
+        apiKey: API_KEY,
+        models: [],
       }),
     );
     const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
-    expect(document.accounts.find((account: { id: string }) => account.id === oldAccount.id)).toEqual({
-      ...oldAccount, credentialSuffix: "abcd", availableModelIds: ["grok-4.6", "grok-4.7"],
+    expect(
+      document.accounts.find((account: { id: string }) => account.id === oldAccount.id),
+    ).toEqual({
+      ...oldAccount,
+      credentialSuffix: "abcd",
+      availableModelIds: ["grok-4.6", "grok-4.7"],
     });
     expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
   });

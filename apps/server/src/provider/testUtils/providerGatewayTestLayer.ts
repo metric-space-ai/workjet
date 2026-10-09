@@ -75,6 +75,7 @@ export const providerGatewayTestLayer = (
       checkModels: () =>
         Effect.succeed({ schemaVersion: 1, checks: [], pending: [], deferredCount: 0 }),
       discoverModels: () => unsupported(),
+      accountModels: () => unsupported(),
       updateRouting: () => unsupported(),
     }),
   );

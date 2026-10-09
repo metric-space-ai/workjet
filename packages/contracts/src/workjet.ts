@@ -1555,6 +1555,30 @@ export const WorkjetGatewayModelDiscovery = Schema.Struct({
 });
 export type WorkjetGatewayModelDiscovery = typeof WorkjetGatewayModelDiscovery.Type;
 
+/** An authenticated list for one exact account; never an inference permission. */
+export const WorkjetGatewayAccountModelsInput = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+});
+export type WorkjetGatewayAccountModelsInput = typeof WorkjetGatewayAccountModelsInput.Type;
+export const WorkjetGatewayAccountModels = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+  checkedAtMs: NonNegativeInt,
+  state: Schema.Literals(["observed", "unavailable"]),
+  reason: Schema.NullOr(
+    Schema.Literals([
+      "account-unavailable",
+      "account-disabled",
+      "provider-unsupported",
+      "catalog-unavailable",
+      "account-changed",
+    ]),
+  ),
+  modelIds: Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160)))).pipe(
+    Schema.check(Schema.isMaxLength(1024)),
+  ),
+});
+export type WorkjetGatewayAccountModels = typeof WorkjetGatewayAccountModels.Type;
+
 /** One account's pool membership edit. Every field is replaced, never merged. */
 export const WorkjetGatewayAccountRoutingUpdate = Schema.Struct({
   excludedModels: Schema.optionalKey(

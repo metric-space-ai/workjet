@@ -6,6 +6,9 @@ import {
   createDefaultWorkjetWorkerPersonalization,
   type WorkjetCapabilityId,
   type WorkjetComputer,
+  type EnvironmentId,
+  type WorkjetGatewayAccountSummary,
+  type WorkjetGatewayAccountModels,
   type WorkjetCapabilityBinding,
   type CtoxManagedInstance,
   type WorkjetHarness,
@@ -259,11 +262,33 @@ function SectionHeader({ title, action }: { readonly title: string; readonly act
   );
 }
 
+/** New Claude choices require the exact account's live list and enabled model selection.
+ * Unchanged saved choices remain editable during an outage; they gain no health claim. */
+export function assertLumaLiveModelChoice(
+  draft: WorkjetWorkerDraft,
+  prior: WorkjetWorkerProfile | null,
+  account: WorkjetGatewayAccountSummary | undefined,
+  catalog: WorkjetGatewayAccountModels | null,
+): void {
+  if (account?.provider !== "claude") return;
+  const model = draft.modelId.trim();
+  if (prior?.modelId === model && prior.llmRouteId === draft.llmRouteId) return;
+  if (!account.enabled) throw new Error("Enable this account in Settings → Models.");
+  if (catalog?.accountId !== account.id || catalog.state !== "observed" || catalog.reason !== null)
+    throw new Error("Refresh this account's live model list before choosing a new model.");
+  if (!catalog.modelIds.includes(model))
+    throw new Error("Choose a model from this account's live list.");
+  if (!account.modelIds.includes(model) || account.excludedModelIds?.includes(model))
+    throw new Error(`Enable ${model} for this account in Settings → Models first.`);
+}
+
 export function WorkjetWorkerEditor({
   worker = null,
   draftScopeKey,
   computers,
   routes,
+  gatewayAccounts = [],
+  gatewayEnvironmentId = null,
   onSave,
   onCancel,
   onAddRoute,
@@ -276,6 +301,9 @@ export function WorkjetWorkerEditor({
   readonly draftScopeKey: string;
   readonly computers: ReadonlyArray<WorkjetComputer>;
   readonly routes: ReadonlyArray<WorkjetLlmRoute>;
+  /** The account holder, independent of the worker's target computer. */
+  readonly gatewayEnvironmentId?: EnvironmentId | null;
+  readonly gatewayAccounts?: ReadonlyArray<WorkjetGatewayAccountSummary>;
   readonly onSave: (worker: WorkjetWorkerProfile) => void | Promise<void>;
   readonly onCancel: () => void;
   readonly initialDraft?: WorkjetWorkerDraft | undefined;
@@ -316,6 +344,19 @@ export function WorkjetWorkerEditor({
   const harnessLabel =
     WORKJET_HARNESS_OPTIONS.find((option) => option.id === draft.harness)?.label ?? draft.harness;
   const chosenComputer = computers.find((computer) => computer.id === draft.computerId) ?? null;
+  const chosenRoute = routes.find((route) => route.id === draft.llmRouteId);
+  const chosenAccount = gatewayAccounts.find(
+    (account) => account.id === chosenRoute?.gatewayAccountId,
+  );
+  const liveModels = useEnvironmentQuery(
+    gatewayEnvironmentId === null || chosenAccount?.provider !== "claude"
+      ? null
+      : serverEnvironment.workjetGatewayAccountModels({
+          environmentId: gatewayEnvironmentId,
+          input: { accountId: chosenAccount.id },
+        }),
+  );
+  const choiceCatalog = !liveModels.isPending && liveModels.error === null ? liveModels.data : null;
   const decisionHubConnections = useEnvironmentQuery(
     chosenComputer === null
       ? null
@@ -398,6 +439,7 @@ export function WorkjetWorkerEditor({
         setError(null);
         void (async () => {
           try {
+            assertLumaLiveModelChoice(draft, worker, chosenAccount, choiceCatalog);
             await onSave(saveWorkjetWorkerDraft(draft));
             clearDraftStash();
           } catch (cause) {
@@ -506,13 +548,58 @@ export function WorkjetWorkerEditor({
 
         <div className="space-y-1.5">
           <Label htmlFor="workjet-worker-model">Model</Label>
-          <Input
-            id="workjet-worker-model"
-            nativeInput
-            value={draft.modelId}
-            onChange={(event) => patchDraft({ modelId: event.target.value })}
-            placeholder="Model ID"
-          />
+          {chosenAccount?.provider === "claude" ? (
+            <>
+              <Select
+                value={draft.modelId || null}
+                onValueChange={(model) => {
+                  if (model !== null) patchDraft({ modelId: model });
+                }}
+              >
+                <SelectTrigger id="workjet-worker-model" className="w-full">
+                  <SelectValue placeholder="Choose a live account model" />
+                </SelectTrigger>
+                <SelectPopup>
+                  {choiceCatalog?.accountId === chosenAccount.id &&
+                  choiceCatalog.state === "observed" ? (
+                    choiceCatalog.modelIds.map((model) => (
+                      <SelectItem key={model} value={model}>
+                        <span className="break-all whitespace-normal">{model}</span>
+                      </SelectItem>
+                    ))
+                  ) : draft.modelId ? (
+                    <SelectItem value={draft.modelId}>{draft.modelId} · saved</SelectItem>
+                  ) : null}
+                </SelectPopup>
+              </Select>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span role="status">
+                  {liveModels.isPending
+                    ? "Reading this account's live model list…"
+                    : choiceCatalog?.state !== "observed"
+                      ? "Live model list unavailable. Check this account in Settings → Models."
+                      : `Live list · ${chosenAccount.label}. This does not replace a model check.`}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={liveModels.isPending}
+                  onClick={liveModels.refresh}
+                >
+                  Refresh models
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Input
+              id="workjet-worker-model"
+              nativeInput
+              value={draft.modelId}
+              onChange={(event) => patchDraft({ modelId: event.target.value })}
+              placeholder="Model ID"
+            />
+          )}
         </div>
 
         <div className="space-y-1.5">

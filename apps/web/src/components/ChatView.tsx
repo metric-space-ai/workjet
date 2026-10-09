@@ -7295,7 +7295,8 @@ function ChatViewContent(props: ChatViewProps) {
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           {nativeSupervisorThread && visibleWorkjetConfig && activeServerThread ? (
                             <>
-                              <NativeWorkerSourceControl
+                              <NativeSupervisorComposer
+                                workerSourceControl={<NativeWorkerSourceControl
                                 key={`worker-source:${activeThreadKey}:${presentationInstanceId}`}
                                 environmentId={activeServerThread.environmentId}
                                 instanceId={presentationInstanceId}
@@ -7330,8 +7331,7 @@ function ChatViewContent(props: ChatViewProps) {
                                   threadDetailLoading ||
                                   workjetCapabilityBusy
                                 }
-                              />
-                              <NativeSupervisorComposer
+                              />}
                                 key={`${activeThreadKey}:${presentationInstanceId}`}
                                 conversationTarget={nativeSupervisorConversationTarget}
                                 scope={nativeSupervisorScope}

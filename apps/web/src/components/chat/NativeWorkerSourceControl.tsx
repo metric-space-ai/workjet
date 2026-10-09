@@ -3,7 +3,7 @@ import type {
   WorkjetConnectionSummary,
   WorkjetThreadConfig,
 } from "@workjet/contracts";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import {
@@ -38,6 +38,7 @@ export function NativeWorkerSourceControl(props: {
     null,
   );
   const inFlight = useRef(false);
+  const autoAttempted = useRef<string | null>(null);
   const request = workerSourceProvisionRequest(props.environmentId, props.instanceId);
   // The refreshed catalog replaces the provisioning receipt, including revocation.
   const connections =
@@ -52,7 +53,10 @@ export function NativeWorkerSourceControl(props: {
 
   const connect = async () => {
     if (!request || props.unavailable || query.isPending || inFlight.current || bound) return;
-    if (!ready && !provision) return;
+    if (!ready && !provision) {
+      setError({ scope, message: "Open Workjet desktop to connect this project's workers." });
+      return;
+    }
     const requestedScope = scope;
     const queryData = query.data;
     inFlight.current = true;
@@ -91,7 +95,7 @@ export function NativeWorkerSourceControl(props: {
         setError({
           scope: requestedScope,
           message:
-            "Could not save the worker connection for this supervisor. Retry Connect workers.",
+            "Could not save the worker connection for this supervisor. Retry the worker connection.",
         });
       }
     } catch {
@@ -107,51 +111,33 @@ export function NativeWorkerSourceControl(props: {
     }
   };
 
+  const connectRef = useRef(connect);
+  connectRef.current = connect;
+  useEffect(() => {
+    if (props.unavailable || query.isPending || bound || autoAttempted.current === scope) return;
+    autoAttempted.current = scope;
+    if (request === null) {
+      setError({ scope, message: "Select a managed instance to connect workers." });
+      return;
+    }
+    void connectRef.current();
+  }, [scope, props.unavailable, query.isPending, bound, request === null]);
+
+  const currentError = error?.scope === scope ? error.message : null;
   return (
-    <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs"
+    <span
+      className="inline-flex shrink-0 items-center text-xs"
       data-workjet-worker-source-connection-id={bound ? source?.connectionId : undefined}
       data-workjet-worker-source-instance-id={bound ? source?.instanceId : undefined}
     >
-      {bound ? (
-        <span role="status" className="text-emerald-500">
-          Workers connected
-        </span>
-      ) : (
-        <>
-          <button
-            type="button"
-            aria-label="Connect workers for this project"
-            className="rounded-md border px-2.5 py-1.5 disabled:opacity-50"
-            disabled={
-              props.unavailable ||
-              busy ||
-              request === null ||
-              (!ready && provision === undefined) ||
-              query.isPending
-            }
-            onClick={() => {
-              void connect();
-            }}
-          >
-            {busy ? "Connecting workers…" : "Connect workers"}
-          </button>
-          {!ready && !provision ? (
-            <span role="status" className="text-muted-foreground">
-              Connect workers in the desktop app.
-            </span>
-          ) : request === null ? (
-            <span role="status" className="text-muted-foreground">
-              Select a managed Business OS to connect workers.
-            </span>
-          ) : null}
-        </>
-      )}
-      {error?.scope === scope ? (
-        <span role="alert" className="text-amber-500">
-          {error.message}
-        </span>
-      ) : null}
-    </div>
+      {currentError ? <button
+        type="button"
+        aria-label="Reconnect project workers"
+        title={currentError}
+        className="rounded border px-2 py-1 text-amber-500 disabled:opacity-50"
+        disabled={props.unavailable || busy || query.isPending || request === null}
+        onClick={() => void connectRef.current()}
+      >Erneut verbinden</button> : null}
+    </span>
   );
 }

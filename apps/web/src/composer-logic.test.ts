@@ -17,8 +17,12 @@ describe("shouldSubmitComposerOnEnter", () => {
     expect(shouldSubmitComposerOnEnter({ isMobileViewport: false, shiftKey: false })).toBe(true);
   });
 
-  it("inserts a newline for plain Enter on mobile", () => {
-    expect(shouldSubmitComposerOnEnter({ isMobileViewport: true, shiftKey: false })).toBe(false);
+  it("sends with plain Enter in narrow windows too", () => {
+    expect(shouldSubmitComposerOnEnter({ isMobileViewport: true, shiftKey: false })).toBe(true);
+  });
+
+  it("does not submit while an IME is composing", () => {
+    expect(shouldSubmitComposerOnEnter({ shiftKey: false, isComposing: true })).toBe(false);
   });
 
   it("inserts a newline for Shift+Enter", () => {

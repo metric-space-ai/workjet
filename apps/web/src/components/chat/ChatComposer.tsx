@@ -111,7 +111,8 @@ import { resolveManualHarnessInstances } from "./manualHarnessInstances";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { ComposerFooterControls, composerFooterRowCountForWidth } from "./ComposerFooterControls";
+import { ComposerBar } from "./ComposerBar";
+import { ComposerDictationButton } from "./ComposerDictationButton";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import {
   COMPOSER_COMPUTER_LOCKED_REASON,
@@ -139,7 +140,6 @@ import {
   getComposerPromptInjectionState,
   getComposerProviderState,
   renderProviderTraitsMenuContent,
-  renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -1722,7 +1722,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
-  const [composerFooterRowCount, setComposerFooterRowCount] = useState<1 | 2 | 3>(1);
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
@@ -1990,17 +1989,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     prompt,
     onPromptChange: setPromptFromTraits,
   });
-  const providerTraitsPicker = renderProviderTraitsPicker({
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
-    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
-    ...(routeKind === "draft" && draftId ? { draftId } : {}),
-    model: selectedModel,
-    models: selectedProviderModels,
-    modelOptions: composerModelOptions?.[selectedInstanceId],
-    prompt,
-    onPromptChange: setPromptFromTraits,
-  });
   const pendingPrimaryAction = useMemo(
     () =>
       activePendingProgress
@@ -2198,8 +2186,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // Measuring the whole form made the row tiers optimistic by exactly that
     // reserved width, so a nominal one-row layout could wrap unexpectedly at
     // the boundary. Observe and measure the actual left flow instead.
-    const measureComposerFooterFlowWidth = () =>
-      composerFooterFlow?.clientWidth ?? measureComposerFormWidth();
     const measureFooterCompactness = (composerFormWidth = measureComposerFormWidth()) => {
       const footerCompact = shouldUseCompactComposerFooter(composerFormWidth, {
         hasWideActions: composerFooterHasWideActions,
@@ -2217,7 +2203,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
     const initialComposerFormWidth = measureComposerFormWidth();
     const initialCompactness = measureFooterCompactness(initialComposerFormWidth);
-    setComposerFooterRowCount(composerFooterRowCountForWidth(measureComposerFooterFlowWidth()));
     setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
     setIsComposerFooterCompact(initialCompactness.footerCompact);
     if (typeof ResizeObserver === "undefined") return;
@@ -2225,10 +2210,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const observer = new ResizeObserver(() => {
       const composerFormWidth = measureComposerFormWidth();
       const nextCompactness = measureFooterCompactness(composerFormWidth);
-      const nextRowCount = composerFooterRowCountForWidth(measureComposerFooterFlowWidth());
-      setComposerFooterRowCount((previous) =>
-        previous === nextRowCount ? previous : nextRowCount,
-      );
       setIsComposerPrimaryActionsCompact((previous) =>
         previous === nextCompactness.primaryActionsCompact
           ? previous
@@ -2696,7 +2677,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (
       key === "Enter" &&
-      shouldSubmitComposerOnEnter({ isMobileViewport, shiftKey: event.shiftKey })
+      shouldSubmitComposerOnEnter({ shiftKey: event.shiftKey, isComposing: event.isComposing })
     ) {
       submitComposer();
       return true;
@@ -4051,20 +4032,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   aligned with the last row and never overlaps the flow. */}
               <div
                 ref={composerFooterFlowRef}
-                className={cn(
-                  "@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 p-1 ps-3.5",
-                  workjetManualControlsAvailable || props.workspaceExtraControls
-                    ? "flex-nowrap"
-                    : "flex-wrap",
-                )}
+                className="flex min-w-0 flex-1 items-center"
               >
-                {/* With Workjet manual controls the retired provider picker
-                    stays hidden in BOTH layouts — compact used to fall back
-                    to it, resurrecting the removed provider chip (K-A2). */}
-                {isComposerFooterCompact && !props.workspaceExtraControls
-                  ? renderLegacyProviderTargetControl(true)
-                  : null}
-
+                <ComposerBar
+                  attachments={composerAttachmentControl}
+                  worker={<ComposerWorkerControl
+                    key={environmentId}
+                    environmentId={environmentId}
+                    workers={workjetWorkers}
+                    selectedWorkerId={selectedWorkjetWorkerId}
+                    disabled={effectiveWorkjetCapabilityDisabled}
+                    onSelectWorker={handleSelectWorkjetWorker}
+                    onOpenWorkjetSettings={onOpenWorkjetSettings}
+                  />}
+                  manual={workerModeActive ? null : <>
+                    {composerManualTargetControls ?? renderLegacyProviderTargetControl(true)}
+                    <ComposerComputerControl
+                      key={environmentId}
+                      editor={{ state: computerEditorState, update: setComputerEditorState }}
+                      computers={workjetComputers}
+                      selectedComputerId={composerSelectedComputerId}
+                      activeEnvironmentId={environmentId}
+                      selectableEnvironmentIds={selectableEnvironmentIds}
+                      disabledReason={composerComputerDisabledReason}
+                      mismatchNote={composerComputerMismatchNote}
+                      onSelectComputer={handleSelectComposerComputer}
+                      onAddComputer={() => { window.location.hash = "#/settings/computers"; }}
+                    />
+                  </>}
+                  status={<>
                 {!composerTargetIsThread &&
                 selectedWorkjetWorker !== null &&
                 nativeProject !== undefined &&
@@ -4111,267 +4107,48 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 ) : null}
 
-                {workjetManualControlsAvailable || props.workspaceExtraControls ? (
-                  <>
-                    <CompactComposerControlsMenu
-                      addIcon
-                      interactionMode={interactionMode}
-                      showInteractionModeToggle={
-                        !workerModeActive && composerProviderControls.showInteractionModeToggle
-                      }
-                      onToggleInteractionMode={toggleInteractionMode}
-                      traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
-                      contextWindowMenuContent={composerContextWindowMenuContent}
-                      systemPromptMenuContent={composerSystemPromptControl}
-                      workerMenuContent={
-                        <ComposerWorkerControl
-                          key={environmentId}
-                          environmentId={environmentId}
-                          workers={workjetWorkers}
-                          selectedWorkerId={selectedWorkjetWorkerId}
-                          disabled={effectiveWorkjetCapabilityDisabled}
-                          onSelectWorker={handleSelectWorkjetWorker}
-                          onOpenWorkjetSettings={onOpenWorkjetSettings}
-                        />
-                      }
-                      extraMenuContent={
-                        <div className="flex max-w-sm flex-col items-start gap-2 px-2 py-1">
-                          {props.workspaceExtraControls}
-                          {composerAttachmentControl}
-                          {workerModeActive
-                            ? null
-                            : workjetSendToWorkerControl?.({ compact: true })}
-                        </div>
-                      }
-                      workjetMenuContent={
-                        effectiveWorkjetGreppyEnabled === null ? undefined : (
-                          <WorkjetCapabilityMenu
-                            compact
-                            greppyEnabled={effectiveWorkjetGreppyEnabled}
-                            busy={effectiveWorkjetCapabilityBusy}
-                            disabled={effectiveWorkjetCapabilityDisabled}
-                            onGreppyEnabledChange={effectiveGreppyEnabledChange}
-                            onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
-                            enabledCapabilityIds={effectiveEnabledCapabilityIds}
-                            decisionHubConnections={decisionHubConnections}
-                            decisionHubConnectionId={decisionHubConnectionId}
-                            onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
-                            ctoxBusinessOsConnections={ctoxBusinessOsConnections}
-                            ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
-                            ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
-                            onCtoxBusinessOsConnect={
-                              canConnectCtoxBusinessOs
-                                ? () => {
-                                    void handleCtoxBusinessOsConnect();
-                                  }
-                                : undefined
-                            }
-                            ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
-                            ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
-                            onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
-                            workjetRole={workerModeActive ? null : effectiveWorkjetRole}
-                            onWorkjetRoleChange={effectiveWorkjetRoleChange}
-                          />
-                        )
-                      }
-                    />
-                    <div
-                      className="flex min-w-0 items-center gap-1"
-                      data-workjet-composer-target=""
-                    >
-                      {composerManualTargetControls}
-                    </div>
-                    <ComposerComputerControl
-                      key={environmentId}
-                      editor={{ state: computerEditorState, update: setComputerEditorState }}
-                      computers={workjetComputers}
-                      selectedComputerId={composerSelectedComputerId}
-                      activeEnvironmentId={environmentId}
-                      selectableEnvironmentIds={selectableEnvironmentIds}
-                      disabledReason={composerComputerDisabledReason}
-                      mismatchNote={composerComputerMismatchNote}
-                      onSelectComputer={handleSelectComposerComputer}
-                      onAddComputer={() => {
-                        try {
-                          window.sessionStorage.setItem("workjet-computer-create", "1");
-                        } catch {
-                          /* The settings route still opens. */
-                        }
-                        window.location.hash = "#/settings/computers";
-                      }}
-                    />
-                  </>
-                ) : isComposerFooterCompact ? (
-                  <>
-                    <ComposerWorkerControl
-                      key={environmentId}
-                      environmentId={environmentId}
-                      workers={workjetWorkers}
-                      selectedWorkerId={selectedWorkjetWorkerId}
-                      disabled={effectiveWorkjetCapabilityDisabled}
-                      onSelectWorker={handleSelectWorkjetWorker}
-                      onOpenWorkjetSettings={onOpenWorkjetSettings}
-                    />
-                    <CompactComposerControlsMenu
-                      interactionMode={interactionMode}
-                      showInteractionModeToggle={
-                        workerModeActive
-                          ? false
-                          : composerProviderControls.showInteractionModeToggle
-                      }
-                      traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
-                      contextWindowMenuContent={composerContextWindowMenuContent}
-                      systemPromptMenuContent={composerSystemPromptControl}
-                      workjetMenuContent={
-                        effectiveWorkjetGreppyEnabled === null ? undefined : (
-                          <WorkjetCapabilityMenu
-                            compact
-                            greppyEnabled={effectiveWorkjetGreppyEnabled}
-                            busy={effectiveWorkjetCapabilityBusy}
-                            disabled={effectiveWorkjetCapabilityDisabled}
-                            onGreppyEnabledChange={effectiveGreppyEnabledChange}
-                            onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
-                            enabledCapabilityIds={effectiveEnabledCapabilityIds}
-                            decisionHubConnections={decisionHubConnections}
-                            decisionHubConnectionId={decisionHubConnectionId}
-                            onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
-                            ctoxBusinessOsConnections={ctoxBusinessOsConnections}
-                            ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
-                            ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
-                            onCtoxBusinessOsConnect={
-                              canConnectCtoxBusinessOs
-                                ? () => {
-                                    void handleCtoxBusinessOsConnect();
-                                  }
-                                : undefined
-                            }
-                            ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
-                            ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
-                            onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
-                            workjetRole={workerModeActive ? null : effectiveWorkjetRole}
-                            onWorkjetRoleChange={effectiveWorkjetRoleChange}
-                          />
-                        )
-                      }
-                      onToggleInteractionMode={toggleInteractionMode}
-                    />
-                    {!workjetManualControlsAvailable && !workerModeActive ? null : (
-                      <ComposerComputerControl
-                        key={environmentId}
-                        editor={{ state: computerEditorState, update: setComputerEditorState }}
-                        computers={workjetComputers}
-                        selectedComputerId={composerSelectedComputerId}
-                        activeEnvironmentId={environmentId}
-                        selectableEnvironmentIds={selectableEnvironmentIds}
-                        disabledReason={composerComputerDisabledReason}
-                        mismatchNote={composerComputerMismatchNote}
-                        onSelectComputer={handleSelectComposerComputer}
-                        onAddComputer={() => {
-                          try {
-                            window.sessionStorage.setItem("workjet-computer-create", "1");
-                          } catch {
-                            // Without storage the existing setup page still opens.
-                          }
-                          window.location.hash = "#/settings/computers";
-                        }}
-                      />
-                    )}
-                    {composerManualTargetControls}
-                    {effectiveWorkjetGreppyEnabled === null ? null : (
-                      <WorkjetCapabilityMenu
-                        compact
-                        greppyEnabled={effectiveWorkjetGreppyEnabled}
-                        busy={effectiveWorkjetCapabilityBusy}
-                        disabled={effectiveWorkjetCapabilityDisabled}
-                        onGreppyEnabledChange={effectiveGreppyEnabledChange}
-                        onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
-                        enabledCapabilityIds={effectiveEnabledCapabilityIds}
-                        decisionHubConnections={decisionHubConnections}
-                        decisionHubConnectionId={decisionHubConnectionId}
-                        onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
-                        workjetRole={workerModeActive ? null : effectiveWorkjetRole}
-                        onWorkjetRoleChange={effectiveWorkjetRoleChange}
-                      />
-                    )}
-                    {composerAttachmentControl}
-                    {workerModeActive
-                      ? null
-                      : (workjetSendToWorkerControl?.({ compact: true }) ?? null)}
-                  </>
-                ) : (
-                  <ComposerFooterControls
-                    workerMode={workerModeActive}
-                    workerSettingsEnvironmentId={environmentId}
-                    workjetWorkers={workjetWorkers}
-                    selectedWorkjetWorkerId={selectedWorkjetWorkerId}
-                    onSelectWorkjetWorker={handleSelectWorkjetWorker}
-                    computerControl={
-                      /* A pre-Workjet install (no computers, no llmRoutes)
-                         keeps its bar unchanged. */
-                      !workjetManualControlsAvailable && !workerModeActive ? null : (
-                        <ComposerComputerControl
-                          key={environmentId}
-                          editor={{ state: computerEditorState, update: setComputerEditorState }}
-                          computers={workjetComputers}
-                          selectedComputerId={composerSelectedComputerId}
-                          activeEnvironmentId={environmentId}
-                          selectableEnvironmentIds={selectableEnvironmentIds}
-                          disabledReason={composerComputerDisabledReason}
-                          mismatchNote={composerComputerMismatchNote}
-                          onSelectComputer={handleSelectComposerComputer}
-                          onAddComputer={() => {
-                            try {
-                              window.sessionStorage.setItem("workjet-computer-create", "1");
-                            } catch {
-                              // Without storage the page still opens.
-                            }
-                            window.location.hash = "#/settings/computers";
-                          }}
-                        />
-                      )
-                    }
-                    providerTargetControl={renderLegacyProviderTargetControl(false)}
-                    manualTargetControls={composerManualTargetControls}
-                    contextWindowControl={composerContextWindowControl}
-                    systemPromptControl={composerSystemPromptControl}
-                    attachmentControl={composerAttachmentControl}
-                    rowCount={
-                      !workerModeActive && workjetManualControlsAvailable
-                        ? composerFooterRowCount
-                        : 1
-                    }
-                    traitsPicker={workerModeActive ? null : providerTraitsPicker}
-                    showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+
+                  </>}
+                  settings={<CompactComposerControlsMenu
                     interactionMode={interactionMode}
-                    workjetRole={effectiveWorkjetRole}
-                    workjetGreppyEnabled={effectiveWorkjetGreppyEnabled}
-                    workjetBusy={effectiveWorkjetCapabilityBusy}
-                    workjetDisabled={effectiveWorkjetCapabilityDisabled}
-                    sendToWorkerControl={workjetSendToWorkerControl?.({ compact: false }) ?? null}
+                    showInteractionModeToggle={!workerModeActive && composerProviderControls.showInteractionModeToggle}
                     onToggleInteractionMode={toggleInteractionMode}
-                    onWorkjetRoleChange={effectiveWorkjetRoleChange}
-                    onWorkjetGreppyEnabledChange={effectiveGreppyEnabledChange}
-                    onWorkjetCapabilityEnabledChange={effectiveCapabilityEnabledChange}
-                    workjetEnabledCapabilityIds={effectiveEnabledCapabilityIds}
-                    decisionHubConnections={decisionHubConnections}
-                    decisionHubConnectionId={decisionHubConnectionId}
-                    onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
-                    ctoxBusinessOsConnections={ctoxBusinessOsConnections}
-                    ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
-                    ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
-                    onCtoxBusinessOsConnect={
-                      canConnectCtoxBusinessOs
-                        ? () => {
-                            void handleCtoxBusinessOsConnect();
-                          }
-                        : undefined
-                    }
-                    ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
-                    ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
-                    onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
-                    onOpenWorkjetSettings={onOpenWorkjetSettings}
-                  />
-                )}
+                    traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
+                    contextWindowMenuContent={composerContextWindowMenuContent}
+                    systemPromptMenuContent={composerSystemPromptControl}
+                    extraMenuContent={<div className="flex max-w-sm flex-col items-start gap-2 px-2 py-1">
+                      {props.workspaceExtraControls}
+                      {workerModeActive ? null : workjetSendToWorkerControl?.({ compact: true })}
+                    </div>}
+                    workjetMenuContent={effectiveWorkjetGreppyEnabled === null ? undefined : <WorkjetCapabilityMenu
+                      compact
+                      greppyEnabled={effectiveWorkjetGreppyEnabled}
+                      busy={effectiveWorkjetCapabilityBusy}
+                      disabled={effectiveWorkjetCapabilityDisabled}
+                      onGreppyEnabledChange={effectiveGreppyEnabledChange}
+                      onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                      enabledCapabilityIds={effectiveEnabledCapabilityIds}
+                      decisionHubConnections={decisionHubConnections}
+                      decisionHubConnectionId={decisionHubConnectionId}
+                      onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                      ctoxBusinessOsConnections={ctoxBusinessOsConnections}
+                      ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
+                      ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
+                      onCtoxBusinessOsConnect={canConnectCtoxBusinessOs ? () => { void handleCtoxBusinessOsConnect(); } : undefined}
+                      ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
+                      ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
+                      onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
+                      workjetRole={workerModeActive ? null : effectiveWorkjetRole}
+                      onWorkjetRoleChange={effectiveWorkjetRoleChange}
+                    />}
+                  />}
+                  dictation={<ComposerDictationButton
+                    key={JSON.stringify([composerDraftTarget, activeWorkjetScope.selectedInstanceId])}
+                    instanceId={activeWorkjetScope.selectedInstanceId}
+                    disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
+                    onTranscript={(text) => insertComposerTextAtEnd(text, { ensureLeadingBoundary: true })}
+                  />}
+                />
               </div>
 
               {/* Right side: send / stop button */}

@@ -174,6 +174,7 @@ const GATEWAY_FAILURE_REASONS = new Set<WorkjetGatewayFailureReason>([
   "startup-timeout",
   "invalid-readiness",
   "management-unavailable",
+  "kimi-key-not-accepted",
   "process-exit",
   "shutdown-timeout",
   "gateway-not-ready",

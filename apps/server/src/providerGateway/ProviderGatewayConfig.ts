@@ -1,5 +1,7 @@
 import {
   WORKJET_GATEWAY_API_KEY_MAX_LENGTH,
+  WORKJET_GATEWAY_KIMI_ENDPOINTS,
+  type WorkjetGatewayKimiPlan,
   WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
   WorkjetGatewayAccountId,
   WorkjetGatewayPoolId,
@@ -77,6 +79,7 @@ export interface ApiKeyGatewayAccount extends GatewayAccountBase {
   readonly provider: WorkjetGatewayApiKeyProvider;
   readonly apiKeySecret: GatewaySecretReference;
   readonly upstreamBaseUrl?: string;
+  readonly kimiPlan?: WorkjetGatewayKimiPlan;
   readonly credentialSuffix?: string;
 }
 
@@ -293,7 +296,7 @@ const parseCommonAccountFields = (
   };
 };
 
-const API_KEY_ACCOUNT_KEYS = ["apiKeySecret", "upstreamBaseUrl", "credentialSuffix"] as const;
+const API_KEY_ACCOUNT_KEYS = ["apiKeySecret", "upstreamBaseUrl", "kimiPlan", "credentialSuffix"] as const;
 
 /** Plain HTTP is accepted only for an explicitly configured local API endpoint. */
 const isApiKeyUpstreamUrl = (value: string): boolean => {
@@ -329,9 +332,14 @@ const parseApiKeyAccount = (
   const upstreamBaseUrl =
     value.upstreamBaseUrl === undefined ? undefined : text(value.upstreamBaseUrl);
   const suffix = value.credentialSuffix;
+  const kimiPlan = value.kimiPlan;
+  const verifiedKimiEndpoint = WORKJET_GATEWAY_KIMI_ENDPOINTS.find((endpoint) =>
+    endpoint.upstreamBaseUrl === upstreamBaseUrl && endpoint.plan === kimiPlan,
+  );
   if (
     common === undefined ||
     apiKeySecret === undefined ||
+    (kimiPlan !== undefined && (accountProvider !== "kimi" || verifiedKimiEndpoint === undefined)) ||
     (value.upstreamBaseUrl !== undefined &&
       (upstreamBaseUrl === undefined || !isApiKeyUpstreamUrl(upstreamBaseUrl))) ||
     (suffix !== undefined &&
@@ -346,6 +354,7 @@ const parseApiKeyAccount = (
     provider: accountProvider,
     apiKeySecret,
     ...(upstreamBaseUrl ? { upstreamBaseUrl } : {}),
+    ...(verifiedKimiEndpoint ? { kimiPlan: verifiedKimiEndpoint.plan } : {}),
     ...(typeof suffix === "string" ? { credentialSuffix: suffix } : {}),
   };
 };
@@ -718,7 +727,13 @@ export const providerPools = (
 export const gatewayCatalog = (
   configuration: ProviderGatewayConfiguration,
 ): WorkjetGatewayCatalog => {
-  const accounts: Array<WorkjetGatewayAccountSummary> = configuration.accounts.map((account) => ({
+  const accounts: Array<WorkjetGatewayAccountSummary> = configuration.accounts.map((account) => {
+    const kimiConnection = isApiKeyAccount(account) && account.provider === "kimi" && account.kimiPlan !== undefined
+      ? WORKJET_GATEWAY_KIMI_ENDPOINTS.find((endpoint) =>
+          endpoint.plan === account.kimiPlan && endpoint.upstreamBaseUrl === account.upstreamBaseUrl,
+        )
+      : undefined;
+    return {
     id: WorkjetGatewayAccountId.make(account.id),
     label: account.label,
     provider: account.provider,
@@ -729,7 +744,9 @@ export const gatewayCatalog = (
     // The only credential-derived value any read route carries.
     credentialSuffix: isApiKeyAccount(account) ? (account.credentialSuffix ?? null) : null,
     credentialKind: isApiKeyAccount(account) ? "api-key" : "oauth",
-  }));
+    ...(kimiConnection === undefined ? {} : { kimiConnection }),
+    };
+  });
   const modelMap = new Map<
     string,
     { providers: Set<WorkjetGatewayProvider>; accountIds: Set<string> }

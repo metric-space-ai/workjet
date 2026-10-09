@@ -1,11 +1,12 @@
 // @effect-diagnostics globalFetch:off -- Vendor-only API-key discovery at the Node boundary.
-export const KIMI_BASE_URLS = [
-  "https://api.kimi.com/coding/v1",
-  "https://api.moonshot.ai/v1",
-] as const;
+import {
+  WORKJET_GATEWAY_KIMI_ENDPOINTS,
+  type WorkjetGatewayKimiConnection,
+} from "@workjet/contracts";
 
-export interface KimiConnection {
-  readonly upstreamBaseUrl: (typeof KIMI_BASE_URLS)[number];
+export const KIMI_BASE_URLS = WORKJET_GATEWAY_KIMI_ENDPOINTS.map((endpoint) => endpoint.upstreamBaseUrl);
+
+export interface KimiConnection extends WorkjetGatewayKimiConnection {
   readonly models: ReadonlyArray<string>;
 }
 
@@ -20,7 +21,7 @@ export const discoverKimiConnection = async (
     ...(signal === undefined ? [] : [signal]),
   ]);
   const results = await Promise.all(
-    KIMI_BASE_URLS.map(async (upstreamBaseUrl): Promise<KimiConnection | undefined> => {
+    WORKJET_GATEWAY_KIMI_ENDPOINTS.map(async ({ plan, upstreamBaseUrl }): Promise<KimiConnection | undefined> => {
       let response: Response | undefined;
       try {
         response = await fetch(`${upstreamBaseUrl}/models`, {
@@ -73,7 +74,7 @@ export const discoverKimiConnection = async (
             return undefined;
           models.push(id);
         }
-        return { upstreamBaseUrl, models: [...new Set(models)] };
+        return { plan, upstreamBaseUrl, models: [...new Set(models)] };
       } catch {
         // Provider bodies, echoed keys and fetch errors never leave this boundary.
         return undefined;

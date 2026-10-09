@@ -194,6 +194,35 @@ describe("ProviderGatewayConfig", () => {
       }
     });
 
+    it.each([
+      { kimiPlan: "coding", upstreamBaseUrl: "https://api.kimi.com/coding/v1" },
+      { kimiPlan: "coding", upstreamBaseUrl: "https://api.kimi.ai/coding/v1" },
+      { kimiPlan: "api", upstreamBaseUrl: "https://api.moonshot.ai/v1" },
+      { kimiPlan: "api", upstreamBaseUrl: "https://api.moonshot.cn/v1" },
+    ])("persists and exposes the verified Kimi plan $kimiPlan at $upstreamBaseUrl", (connection) => {
+      const decoded = decodeProviderGatewayConfiguration({
+        ...apiKeyConfiguration({ provider: "kimi", ...connection }),
+        defaultProvider: "kimi",
+      })!;
+      expect(decoded.accounts[0]).toMatchObject(connection);
+      expect(gatewayCatalog(decoded).accounts[0]?.kimiConnection).toEqual({
+        plan: connection.kimiPlan,
+        upstreamBaseUrl: connection.upstreamBaseUrl,
+      });
+      expect(JSON.stringify(gatewayCatalog(decoded))).not.toContain("apiKeySecret");
+    });
+
+    it.each([
+      { provider: "kimi", kimiPlan: "coding", upstreamBaseUrl: "https://api.moonshot.ai/v1" },
+      { provider: "kimi", kimiPlan: "api", upstreamBaseUrl: "https://example.test/v1" },
+      { provider: "kimi", kimiPlan: "unknown", upstreamBaseUrl: "https://api.kimi.com/coding/v1" },
+      { provider: "zai", kimiPlan: "coding", upstreamBaseUrl: "https://api.kimi.com/coding/v1" },
+    ])("refuses mismatched or unverified Kimi plan metadata", (connection) => {
+      expect(decodeProviderGatewayConfiguration({
+        ...apiKeyConfiguration(connection), defaultProvider: connection.provider,
+      })).toBeUndefined();
+    });
+
     it("refuses a literal key, an OAuth token reference, a plaintext suffix, and a non-https override", () => {
       for (const patch of [
         { apiKey: "sk-plaintext-must-not-be-accepted" },

@@ -80,7 +80,7 @@ import {
 } from "./ProviderGatewayGrants.ts";
 
 import { makeModelChecks } from "./ProviderGatewayModelChecks.ts";
-import type { KimiConnection } from "./KimiConnection.ts";
+import { KIMI_BASE_URLS, type KimiConnection } from "./KimiConnection.ts";
 import { ZAI_BASE_URLS, type ZaiConnection } from "./ZaiConnection.ts";
 import { repairClaudeModelIds } from "./ClaudeConnection.ts";
 
@@ -1357,7 +1357,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           throw safeError("invalid-configuration");
       }
       if (input.provider === "kimi" && kimiConnection === undefined)
-        throw safeError("management-unavailable");
+        throw safeError(platform.discoverKimiConnection === undefined ? "management-unavailable" : "kimi-key-not-accepted");
       if (
         kimiConnection !== undefined &&
         input.models?.some((id) => !kimiConnection.models.includes(id))
@@ -1409,7 +1409,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
               []),
         apiKeySecret,
         ...(kimiConnection !== undefined
-          ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl }
+          ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl, kimiPlan: kimiConnection.plan }
           : zaiConnection !== undefined
             ? { upstreamBaseUrl: zaiConnection.upstreamBaseUrl }
             : apiReplacement?.upstreamBaseUrl
@@ -1751,9 +1751,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           !account.enabled ||
           !isApiKeyAccount(account) ||
           (account.upstreamBaseUrl !== undefined &&
-            !["https://api.kimi.com/coding/v1", "https://api.moonshot.ai/v1"].includes(
-              account.upstreamBaseUrl,
-            )) ||
+            !(KIMI_BASE_URLS as ReadonlyArray<string>).includes(account.upstreamBaseUrl)) ||
           (accountId !== undefined && account.id !== accountId)
         )
           continue;
@@ -1775,10 +1773,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             : connection.models;
         if (
           account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+          account.kimiPlan === connection.plan &&
           JSON.stringify(account.models) === JSON.stringify(models)
         )
           continue;
-        accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, models };
+        accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, kimiPlan: connection.plan, models };
         changed = true;
       }
       if (!changed) return;

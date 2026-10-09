@@ -277,7 +277,7 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
   );
 }
 
-function KeyForm({
+export function WorkjetModelsKeyForm({
   provider,
   account,
   models,
@@ -321,7 +321,7 @@ function KeyForm({
           .onSaveApiKey(provider, credential, label.trim(), parsed, account?.id)
           .then((saved) => {
             if (saved) onClose();
-            else setError("API key was not saved. Enter it again and retry.");
+            else setError(null);
           });
       }}
     >
@@ -383,9 +383,9 @@ function KeyForm({
           />
         </label>
       )}
-      {error && (
+      {(error || (state.apiKey.status === "failed" && state.apiKey.provider === provider)) && (
         <p role="alert" className="col-span-full text-xs text-destructive">
-          {error}
+          {error ?? (state.apiKey.status === "failed" ? state.apiKey.message : null)}
         </p>
       )}
     </form>
@@ -503,6 +503,12 @@ function AccountRow({
               </button>
             )}
           </div>
+          {account.kimiConnection && (
+            <div className={cn("min-w-0 text-[10px] leading-4 text-muted-foreground", grouped && "pl-5")}>
+              <span>{account.kimiConnection.plan === "coding" ? "Coding plan" : "API plan"}</span>
+              <span className="ml-1 break-all">{account.kimiConnection.upstreamBaseUrl}</span>
+            </div>
+          )}
         </div>
         <div role="cell" className="min-w-0">
           <WorkjetModelsCell account={account} state={state} />
@@ -643,7 +649,7 @@ function AccountRow({
         />
       )}
       {replaceKey && isWorkjetGatewayApiKeyProvider(account.provider) && (
-        <KeyForm
+        <WorkjetModelsKeyForm
           provider={account.provider}
           account={account}
           models={account.modelIds}
@@ -928,7 +934,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                     </div>
                   )}
                 {keyProvider === provider && isWorkjetGatewayApiKeyProvider(provider) && (
-                  <KeyForm
+                  <WorkjetModelsKeyForm
                     provider={provider}
                     models={models}
                     state={state}

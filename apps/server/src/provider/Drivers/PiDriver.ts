@@ -50,7 +50,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       const endpoint = status.providerEndpoint;
       const catalog = yield* gateway.catalog().pipe(Effect.mapError(cause => fail(cause.message)));
       const selected = yield* Effect.try({ try: () => piGatewayModel(catalog, model), catch: cause => fail(String(cause)) });
-      const encoded = yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(piGatewayConfiguration(endpoint, catalog)).pipe(Effect.mapError(cause => fail(cause.message)));
+      const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(piGatewayConfiguration(endpoint, catalog)).pipe(Effect.mapError(cause => fail(cause.message)));
       yield* fs.makeDirectory(sessionDirectory, { recursive: true }).pipe(Effect.mapError(cause => fail(cause.message)));
       yield* profileLock.withPermit(Effect.gen(function* () {
         for (const [filename, content] of [["models.json", encoded], ["workjet-extension.mjs", PI_WORKJET_EXTENSION]] as const) {

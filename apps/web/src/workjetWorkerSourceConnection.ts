@@ -31,6 +31,21 @@ export function workerSourceConnectionForInstance(
   return matching.find((connection) => connection.status === "ready") ?? matching[0];
 }
 
+/** Enrollment carries the native pin of one existing ready source, never the desktop tenant ID. */
+export function workerSourceConnectionForEnrollment(
+  connections: readonly WorkjetConnectionSummary[],
+  selectedInstanceId: string | null,
+): WorkjetConnectionSummary | undefined {
+  const matching = connections.filter(
+    (connection) =>
+      connection.status === "ready" &&
+      (selectedInstanceId?.startsWith("managed:")
+        ? workerSourceConnectionForInstance([connection], selectedInstanceId) === connection
+        : selectedInstanceId !== null && connection.instanceId === selectedInstanceId),
+  );
+  return matching.length === 1 ? matching[0] : undefined;
+}
+
 export function workerSourceIsBound(
   config: WorkjetThreadConfig,
   connection: WorkjetConnectionSummary,

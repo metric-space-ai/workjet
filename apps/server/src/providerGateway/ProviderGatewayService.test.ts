@@ -1606,7 +1606,9 @@ describe("ProviderGatewayService · API-key accounts", () => {
         return yield* gateway.catalog();
       }),
     );
-    expect(JSON.parse(document).accounts).toEqual([{ ...account, kimiPlan: "coding", availableModelIds: ["k3", "kimi-for-coding"] }]);
+    expect(JSON.parse(document).accounts).toEqual([
+      { ...account, kimiPlan: "coding", availableModelIds: ["k3", "kimi-for-coding"] },
+    ]);
     expect(catalog.accounts[0]?.kimiConnection).toEqual({
       plan: "coding",
       upstreamBaseUrl: account.upstreamBaseUrl,

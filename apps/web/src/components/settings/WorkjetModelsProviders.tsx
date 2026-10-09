@@ -112,6 +112,7 @@ function InlineField({
   onSave,
   className,
   action,
+  failureMessage,
 }: {
   readonly value: string;
   readonly label: string;
@@ -120,6 +121,7 @@ function InlineField({
   readonly onSave: (value: string) => Promise<boolean>;
   readonly className?: string;
   readonly action?: string;
+  readonly failureMessage?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const [failed, setFailed] = useState(false);
@@ -203,7 +205,7 @@ function InlineField({
       )}
       {failed && (
         <span role="alert" className="text-xs text-destructive">
-          Not saved. Check your entry and press Enter to try again.
+          {failureMessage ?? "Not saved. Check your entry and press Enter to try again."}
         </span>
       )}
     </div>
@@ -775,6 +777,7 @@ function ProviderModelsField({
   readonly state: ModelsManagementState;
 }) {
   const suggestions = state.modelSuggestions?.[provider] ?? [];
+  const [suggestionError, setSuggestionError] = useState(false);
   return (
     <div className="flex min-w-0 items-start gap-1">
       <div className="min-w-0 flex-1">
@@ -783,6 +786,7 @@ function ProviderModelsField({
           multiline
           label={"Models for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
           action={"models.provider." + provider + ".models"}
+          failureMessage="Not saved. Use model IDs from the live catalog and press Enter to retry."
           disabled={state.mutationBusy}
           className="font-mono text-[11px]"
           onSave={async (value) => {
@@ -791,6 +795,7 @@ function ProviderModelsField({
           }}
         />
       </div>
+      {suggestionError && <span role="alert" className="text-xs text-destructive">Not saved. Refresh the live catalog and try again.</span>}
       {suggestions.length > 0 && (
         <Popover>
           <PopoverTrigger
@@ -813,7 +818,11 @@ function ProviderModelsField({
                   type="button"
                   key={id}
                   className="block w-full px-2 py-1 text-left font-mono text-xs hover:bg-accent"
-                  onClick={() => void state.onEditProviderModels?.(provider, [...models, id])}
+                  disabled={state.mutationBusy}
+                  onClick={() => {
+                    setSuggestionError(false);
+                    void state.onEditProviderModels?.(provider, [...models, id]).then(saved => setSuggestionError(!saved));
+                  }}
                 >
                   {id}
                 </button>

@@ -458,7 +458,7 @@ export function useWorkjetGatewaySection(
   const editProviderModels = useCallback(
     async (provider: WorkjetGatewayProvider, models: ReadonlyArray<string>): Promise<boolean> => {
       const catalog = editedCatalog ?? catalogQuery.data;
-      if (environmentId === null || routingRef.current || catalog === undefined) return false;
+      if (environmentId === null || routingRef.current || catalog == null) return false;
       routingRef.current = true;
       setRouting({ status: "saving" });
       try {

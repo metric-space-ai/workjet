@@ -1839,9 +1839,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
                   ? { excludedModels: [...new Set(update.excludedModels)] }
                   : selection !== undefined && update.models !== undefined
                     ? {
-                        excludedModels: selection.modelIds.filter(
-                          (id) => !update.models!.includes(id),
-                        ),
+                        excludedModels: [
+                          ...(account.excludedModels ?? []).filter(id => !selection.modelIds.includes(id)),
+                          ...selection.modelIds.filter(id => !update.models!.includes(id)),
+                        ],
                       }
                     : {}),
               };

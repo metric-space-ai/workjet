@@ -223,7 +223,7 @@ export function WorkjetModelsCell({
 }: {
   readonly account: WorkjetGatewayAccountSummary;
   readonly state: ModelsManagementState;
-  readonly models?: ReadonlyArray<string>;
+  readonly models?: ReadonlyArray<string> | undefined;
 }) {
   const [adding, setAdding] = useState(false);
   if (models !== undefined && state.onExcludeModel)

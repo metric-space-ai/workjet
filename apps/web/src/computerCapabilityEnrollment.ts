@@ -112,9 +112,11 @@ export async function enrollOperationalComputer(
         || result.response.computerId !== enrollment.computerId) {
         throw new Error("Computer registered; its SSH key still needs confirmation. Retry.");
       }
-      const { action: _action, ...key } = result.response;
-      sshKey = key;
-      connection = { ...endpoint.connection, private_key: key.privateKey, passphrase: null };
+      const response = result.response;
+      sshKey = { contract: response.contract, computerId: response.computerId,
+        privateKey: response.privateKey, publicKey: response.publicKey,
+        publicKeySha256: response.publicKeySha256 };
+      connection = { ...endpoint.connection, private_key: sshKey.privateKey, passphrase: null };
     } else {
       connection = endpoint.connection;
     }

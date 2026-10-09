@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { CommandId, ProjectId, WorkjetJourFixeMeeting } from "@workjet/contracts";
+import {
+  CommandId,
+  ProjectId,
+  WorkjetJourFixeMeeting,
+  WorkjetSupervisorThreadId,
+} from "@workjet/contracts";
 import jourFixeFixture from "../../../../packages/contracts/src/workjetJourFixeMeeting.fixture.json" with { type: "json" };
 import * as NodeVM from "node:vm";
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
@@ -2503,6 +2508,87 @@ describe("CtoxGuestManager", () => {
         { _tag: "failed", code: "not_active" },
       );
       expect(harness.views).toHaveLength(1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  for (const touch of ["ensurePooled", "activate"] as const) {
+    it.effect(`keeps an in-flight supervisor bind valid after a warm ${touch}`, () => {
+      const harness = makeGuestHarness();
+      const entered = Promise.withResolvers<void>();
+      const pending = Promise.withResolvers<unknown>();
+      const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+      const request = {
+        action: "project.supervisor.bind" as const,
+        commandId: CommandId.make("supervisor-bind"),
+        projectId: ProjectId.make("project-one"),
+        threadId: WorkjetSupervisorThreadId.make("11111111-1111-4111-8111-111111111111"),
+      };
+      const response = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        binding: {
+          contract: "ctox.workjet.supervisor_binding.v1" as const,
+          projectId: request.projectId,
+          threadId: request.threadId,
+          threadKey: `business-os/threads/${request.threadId}`,
+        },
+      };
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.enterBusinessOsMode;
+        yield* manager.activate(descriptor.id, bounds);
+        harness.views[0]?.executeJavaScript.mockImplementationOnce(() => {
+          entered.resolve();
+          return pending.promise;
+        });
+        const binding = yield* Effect.forkChild(
+          manager.requestProjectControl(descriptor.id, request),
+        );
+        yield* Effect.promise(() => entered.promise);
+        assert.deepEqual(
+          yield* touch === "ensurePooled"
+            ? manager.ensurePooled(descriptor.id)
+            : manager.activate(descriptor.id, { ...bounds, width: 900 }),
+          { _tag: "ready", instanceId: descriptor.id },
+        );
+        pending.resolve({ status: "completed", result: response });
+        assert.deepEqual(yield* Fiber.join(binding), { _tag: "completed", response });
+        expect(harness.views).toHaveLength(1);
+        expect(harness.views[0]?.executeJavaScript).toHaveBeenCalledOnce();
+        expect(harness.launch).toHaveBeenCalledOnce();
+      }).pipe(Effect.provide(harness.layer));
+    });
+  }
+
+  it.effect("rejects an in-flight project receipt after the guest is replaced", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<unknown>();
+    const response = { action: "project.list" as const, projects: [], count: 0, truncated: false };
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      const old = harness.views[0]!;
+      old.executeJavaScript.mockImplementationOnce(() => {
+        entered.resolve();
+        return pending.promise;
+      });
+      const request = yield* Effect.forkChild(
+        manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      yield* manager.deactivate;
+      assert.deepEqual(yield* manager.ensurePooled(descriptor.id), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
+      expect(harness.views).toHaveLength(2);
+      expect(old.close).toHaveBeenCalledOnce();
+      pending.resolve({ status: "completed", result: response });
+      assert.deepEqual(yield* Fiber.join(request), { _tag: "failed", code: "not_active" });
+      expect(harness.views[1]?.executeJavaScript).not.toHaveBeenCalled();
     }).pipe(Effect.provide(harness.layer));
   });
 

@@ -1906,7 +1906,12 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         );
         if (Option.isNone(pending)) return { _tag: "failed", code: "timeout" };
         const current = yield* SynchronizedRef.get(stateRef);
-        if (current.pool.get(instanceId) !== guest || guest.view.webContents.isDestroyed()) {
+        // Warm reuse changes pool metadata, not the renderer that produced this receipt.
+        // A replacement or destroyed view still fences the old response.
+        if (
+          current.pool.get(instanceId)?.view !== guest.view ||
+          guest.view.webContents.isDestroyed()
+        ) {
           return { _tag: "failed", code: "not_active" };
         }
         const raw = pending.value;

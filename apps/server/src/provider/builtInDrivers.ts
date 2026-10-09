@@ -28,6 +28,7 @@ import { GreppyDriver, type GreppyDriverEnv } from "./Drivers/GreppyDriver.ts";
 import { MiniMaxDriver, type MiniMaxDriverEnv } from "./Drivers/MiniMaxDriver.ts";
 import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
 import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
+import { PiDriver, type PiDriverEnv } from "./Drivers/PiDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 
 /**
@@ -43,7 +44,8 @@ export type BuiltInDriversEnv =
   | GreppyDriverEnv
   | MiniMaxDriverEnv
   | GrokDriverEnv
-  | OpenCodeDriverEnv;
+  | OpenCodeDriverEnv
+  | PiDriverEnv;
 
 /**
  * Ordered list of built-in drivers. Order matters only for tie-breaking in
@@ -62,4 +64,5 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   GreppyDriver,
   MiniMaxDriver,
   OpenCodeDriver,
+  PiDriver,
 ];

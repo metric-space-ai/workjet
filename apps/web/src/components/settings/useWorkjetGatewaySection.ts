@@ -597,6 +597,7 @@ export function useWorkjetGatewaySection(
             setApiKey({
               status: "failed",
               provider,
+              ...(accountId === undefined ? {} : { accountId }),
               message: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
             });
           }

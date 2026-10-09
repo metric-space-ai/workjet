@@ -294,6 +294,12 @@ export function WorkjetModelsKeyForm({
   const [label, setLabel] = useState(account?.label ?? WORKJET_GATEWAY_PROVIDER_LABELS[provider]);
   const [modelText, setModelText] = useState(provider === "kimi" ? "" : models.join(", "));
   const [error, setError] = useState<string | null>(null);
+  const apiKeyError =
+    state.apiKey.status === "failed" &&
+    state.apiKey.provider === provider &&
+    state.apiKey.accountId === account?.id
+      ? state.apiKey.message
+      : null;
   return (
     <form
       data-settings-inline-editor=""
@@ -383,9 +389,9 @@ export function WorkjetModelsKeyForm({
           />
         </label>
       )}
-      {(error || (state.apiKey.status === "failed" && state.apiKey.provider === provider)) && (
+      {(error || apiKeyError) && (
         <p role="alert" className="col-span-full text-xs text-destructive">
-          {error ?? (state.apiKey.status === "failed" ? state.apiKey.message : null)}
+          {error ?? apiKeyError}
         </p>
       )}
     </form>

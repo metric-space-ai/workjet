@@ -21,7 +21,7 @@ describe("Kimi key origin discovery", () => {
         authorization: "Bearer fixture-key",
         "User-Agent": "Workjet",
       });
-      return url.startsWith(KIMI_BASE_URLS[0]) ? list() : new Response("", { status: 401 });
+      return url.startsWith(codingUrl) ? list() : new Response("", { status: 401 });
     });
     expect(await discoverKimiConnection("fixture-key")).toEqual({
       plan: "coding",

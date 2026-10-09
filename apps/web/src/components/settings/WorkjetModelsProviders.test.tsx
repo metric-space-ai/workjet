@@ -109,6 +109,20 @@ describe("Provider account table", () => {
     expect(rendered).not.toContain("control plane is unavailable");
     expect(rendered).not.toContain("Credentials rejected");
   });
+  it("keeps a failed key replacement with the account that submitted it", () => {
+    const message = new WorkjetGatewayOperationError({ reason: "kimi-key-not-accepted" }).message;
+    for (const failedAccountId of [first.id, second.id]) {
+      const rendered = renderToStaticMarkup(
+        <WorkjetModelsKeyForm provider="kimi" account={{ ...first, provider: "kimi" }}
+          models={first.modelIds} onClose={() => {}}
+          state={{ ...state, apiKey: {
+            status: "failed", provider: "kimi", accountId: failedAccountId, message,
+          } }}
+        />,
+      );
+      expect(rendered.includes('role="alert"')).toBe(failedAccountId === first.id);
+    }
+  });
   it("shows a timeout with a direct retry and no false authentication failure", () => {
     const timeout: ModelsModelCheck = {
       ...check,

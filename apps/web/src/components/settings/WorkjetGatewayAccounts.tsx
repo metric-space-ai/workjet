@@ -115,6 +115,7 @@ export type WorkjetGatewayApiKeyState =
   | {
       readonly status: "failed";
       readonly provider: WorkjetGatewayApiKeyProvider;
+      readonly accountId?: string;
       readonly message: string;
     }
   | { readonly status: "completed"; readonly provider: WorkjetGatewayApiKeyProvider };

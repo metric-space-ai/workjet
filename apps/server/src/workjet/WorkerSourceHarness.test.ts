@@ -272,9 +272,7 @@ it("runs Claude Messages tool round trips through the same pinned source route",
   ];
   const next = await invoke(continuation, false);
   expect(await next.json()).toMatchObject({
-    content: expect.arrayContaining([
-      expect.objectContaining({ type: "tool_use", id: "tool-1" }),
-    ]),
+    content: expect.arrayContaining([expect.objectContaining({ type: "tool_use", id: "tool-1" })]),
   });
   expect(received.map((entry) => entry.stream)).toEqual([false, false]);
   expect(received[1]?.messages).toEqual(continuation);

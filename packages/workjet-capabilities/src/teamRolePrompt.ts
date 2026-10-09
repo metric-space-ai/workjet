@@ -5,9 +5,7 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
   const context = [
     `Project: ${team.projectId}. Thread: ${team.threadId}.`,
     `Goal: ${team.goal}`,
-    ...(team.parentThreadId
-      ? [`Your durable parent thread is ${team.parentThreadId}.`]
-      : []),
+    ...(team.parentThreadId ? [`Your durable parent thread is ${team.parentThreadId}.`] : []),
   ];
   switch (team.role) {
     case "supervisor":

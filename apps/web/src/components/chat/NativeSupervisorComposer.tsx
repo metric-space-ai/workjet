@@ -433,15 +433,18 @@ export function NativeSupervisorComposer(props: {
     }
   }, [disabled, journal]);
   useEffect(() => {
-    if (disabled || busy || !canResumeSupervisorJournal(journal, failureCode)) return;
+    // Drafting a follow-up pauses background polling so receipt reads cannot
+    // repeatedly take the Send lock. An already running read finishes normally.
+    if (disabled || busy || continuing || !canResumeSupervisorJournal(journal, failureCode)) return;
     const timer = setTimeout(() => {
       void runRef.current("resume");
     }, 3000);
     return () => clearTimeout(timer);
-  }, [disabled, busy, failureCode, journal]);
+  }, [disabled, busy, continuing, failureCode, journal]);
 
   useEffect(() => {
-    if (disabled || busy || !execution?.page.has_more || execution.historyLimited) return;
+    if (disabled || busy || continuing || !execution?.page.has_more || execution.historyLimited)
+      return;
     // Backfill retained pages without another turn. One request at a time; a forward native cursor is required.
     const timer = setTimeout(
       () =>
@@ -449,7 +452,7 @@ export function NativeSupervisorComposer(props: {
       100,
     );
     return () => clearTimeout(timer);
-  }, [disabled, busy, execution]);
+  }, [disabled, busy, continuing, execution]);
 
   const followReply = useRef(true);
   useEffect(() => {
@@ -690,7 +693,7 @@ export function NativeSupervisorComposer(props: {
           {!continuing ? (
             <button
               type="button"
-              disabled={disabled || busy}
+              disabled={disabled}
               className="underline underline-offset-2"
               onClick={() => setNewMessageFor(journal.intent.commandId)}
             >
@@ -762,6 +765,12 @@ export function NativeSupervisorComposer(props: {
           Send
         </button>
       </form>
+      {continuing && busy && (
+        <p role="status" className="mt-1 text-xs text-muted-foreground">
+          Checking the task receipt. You can edit your draft; Send becomes available when this read
+          finishes.
+        </p>
+      )}
       {capabilityMatches && capability.error && (
         <p role="status" className="mt-1 text-xs text-muted-foreground">
           Chat unavailable: {capability.error}{" "}

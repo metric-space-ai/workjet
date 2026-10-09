@@ -232,7 +232,13 @@ describe("native supervisor composer authority", () => {
     expect(nativeSupervisorResultText({ ...result, execution_task_id: "foreign" }, turn)).toBe(
       "The result belongs to a different Supervisor turn.",
     );
-    expect(nativeSupervisorResultText(JSON.stringify(legacy), turn)).toBe(JSON.stringify(legacy));
+    expect(nativeSupervisorResultText(JSON.stringify(legacy), turn)).toBe(legacy.outbound_text);
+    expect(
+      nativeSupervisorResultText(JSON.stringify({ ...legacy, chat_id: "chat_foreign" }), turn),
+    ).toBe(JSON.stringify({ ...legacy, chat_id: "chat_foreign" }));
+    expect(nativeSupervisorResultText(JSON.stringify(legacy))).toBe(JSON.stringify(legacy));
+    const mixed = { ...legacy, command_id: "foreign", execution_task_id: "foreign", attempt: 2 };
+    expect(nativeSupervisorResultText(JSON.stringify(mixed), turn)).toBe(JSON.stringify(mixed));
   });
   it("never presents another task or attempt's reply as this turn's answer", () => {
     const turn = { commandId: "native-command", taskId: "native-task", attempt: 1 };

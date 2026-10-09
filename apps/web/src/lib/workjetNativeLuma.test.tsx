@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import { WorkjetNativeProviderRegistry } from "@workjet/contracts";
-import { WorkjetWorkerEditor } from "../components/settings/WorkjetWorkerEditor";
+import { createWorkjetWorkerDraft, WorkjetWorkerEditor } from "../components/settings/WorkjetWorkerEditor";
 import { nativeLumaRoutes } from "./workjetNativeProviders";
 
 describe("native Claude Luma editor", () => {
@@ -24,7 +24,7 @@ describe("native Claude Luma editor", () => {
     });
     const markup = renderToStaticMarkup(<WorkjetWorkerEditor draftScopeKey="native-test"
       computers={[]} routes={nativeLumaRoutes([], registry, "Welsch")}
-      nativeAccounts={registry.accounts} onSave={() => undefined} onCancel={() => undefined} />);
+      nativeAccounts={registry.accounts} initialDraft={{ ...createWorkjetWorkerDraft({ computers: [], routes: nativeLumaRoutes([], registry, "Welsch") }), modelId: "claude-opus-5-5" }} onSave={() => undefined} onCancel={() => undefined} />);
     expect(markup).toContain("claude-opus-5-5");
     expect(markup).toContain("CTOX");
     expect(markup).not.toContain("source-claude-account");

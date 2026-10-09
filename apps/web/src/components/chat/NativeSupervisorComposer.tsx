@@ -899,7 +899,7 @@ export function NativeSupervisorComposer(props: {
           scope={scope}
           capability={capability}
           value={turnKind}
-          disabled={disabled || busy || (pending && !confirmedPending)}
+          disabled={disabled || busy || inputting || (pending && !confirmedPending)}
           onChange={setTurnKind}
         />
 

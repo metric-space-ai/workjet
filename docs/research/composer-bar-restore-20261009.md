@@ -21,7 +21,7 @@ Dictation reads the selected instance's speech settings, captures bounded 16 kHz
 
 ## Coordination and dependencies
 
-PR #284 (`codex/supervisor-owner-input`) was open/draft at `587b373cb26f10f56061f3a71befe179f84953f2` before implementation. Its same-task context logic is untouched. Recheck/rebase after it lands; both branches edit the supervisor form and require a layout-only conflict resolution.
+PR #284 (`codex/supervisor-owner-input`) was open/draft at `587b373cb26f10f56061f3a71befe179f84953f2` before implementation and merged as `e15cb09d98773e0f07a3a137e4efb46e4ef092ab` during this task. This branch was rebased onto that merge. The overlapping form conflict was resolved by moving its Task/Chat picker into the bar, retaining its `inputting` disabled guard and its exact input-versus-send callbacks. Its same-task context logic is untouched.
 
 Models owns native/shell dispatch for standalone dictation. Existing `project.jour_fixe.speech` is meeting-scoped and cannot safely be used for composer dictation. A concrete DTO handoff has been sent. Main owns actual supervisor execution-route facts and Luma selection; a direct boundary handoff has been sent.
 

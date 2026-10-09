@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::{
-    remap_claude_oauth_tool_names_with_secret,
-    restore_claude_oauth_tool_names_from_response, restore_claude_oauth_tool_names_from_stream_line,
+    remap_claude_oauth_tool_names_with_secret, restore_claude_oauth_tool_names_from_response,
+    restore_claude_oauth_tool_names_from_stream_line,
 };
 
 #[test]
@@ -19,16 +19,27 @@ fn oauth_stream_restores_complete_event_frames_and_preserves_boundaries() {
                 "event: content_block_start{newline}data: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"{alias}\",\"input\":{{}}}}}}{newline}{newline}"
             );
             let restored = restore_claude_oauth_tool_names_from_stream_line(
-                frame.as_bytes(), "", false, &reverse,
+                frame.as_bytes(),
+                "",
+                false,
+                &reverse,
             );
             assert_eq!(
-                restore_claude_oauth_tool_names_from_response(frame.as_bytes(), "", false, &reverse),
+                restore_claude_oauth_tool_names_from_response(
+                    frame.as_bytes(),
+                    "",
+                    false,
+                    &reverse
+                ),
                 restored,
             );
             let restored = String::from_utf8(restored).unwrap();
             assert!(restored.starts_with(&format!("event: content_block_start{newline}data: ")));
             assert!(restored.ends_with(&format!("{newline}{newline}")));
-            let data = restored.lines().find_map(|line| line.strip_prefix("data: ")).unwrap();
+            let data = restored
+                .lines()
+                .find_map(|line| line.strip_prefix("data: "))
+                .unwrap();
             let payload: serde_json::Value = serde_json::from_str(data).unwrap();
             assert_eq!(payload["content_block"]["name"], tool);
             assert_eq!(payload["content_block"]["id"], "call_1");
@@ -39,10 +50,15 @@ fn oauth_stream_restores_complete_event_frames_and_preserves_boundaries() {
 #[test]
 fn oauth_stream_restores_data_only_frames_without_losing_separator() {
     let reverse = std::collections::HashMap::from([("alias".to_owned(), "Read".to_owned())]);
-    let frame = b"data: {\"content_block\":{\"type\":\"tool_reference\",\"tool_name\":\"alias\"}}\n\n";
+    let frame =
+        b"data: {\"content_block\":{\"type\":\"tool_reference\",\"tool_name\":\"alias\"}}\n\n";
     let restored = restore_claude_oauth_tool_names_from_stream_line(frame, "", false, &reverse);
     assert!(restored.ends_with(b"\n\n"));
-    let data = std::str::from_utf8(&restored).unwrap().trim().strip_prefix("data: ").unwrap();
+    let data = std::str::from_utf8(&restored)
+        .unwrap()
+        .trim()
+        .strip_prefix("data: ")
+        .unwrap();
     let payload: serde_json::Value = serde_json::from_str(data).unwrap();
     assert_eq!(payload["content_block"]["tool_name"], "Read");
 }

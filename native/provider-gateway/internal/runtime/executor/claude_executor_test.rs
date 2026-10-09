@@ -518,7 +518,14 @@ impl ClaudeMessagesStreamingTransport for ToolEchoStreamingTransport {
         &'a self,
         request: &'a ClaudeMessagesRequest,
         _timeout: Duration,
-    ) -> Pin<Box<dyn Future<Output = Result<ClaudeMessagesStreamResponse, ClaudeMessagesTransportFailure>> + Send + 'a>> {
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ClaudeMessagesStreamResponse, ClaudeMessagesTransportFailure>,
+                > + Send
+                + 'a,
+        >,
+    > {
         Box::pin(async move {
             let body: serde_json::Value = serde_json::from_slice(request.body()).unwrap();
             let alias = body["tools"][0]["name"].as_str().unwrap();
@@ -559,7 +566,8 @@ async fn oauth_tool_stream_round_trips_twenty_successive_calls_per_harness_tool(
                 "model": input.model,
                 "tools": [{"name": tool, "input_schema": {"type": "object"}}],
                 "messages": history,
-            })).unwrap();
+            }))
+            .unwrap();
             let mut response = adapter.execute_stream(input).await.unwrap();
             let mut received = Vec::new();
             while let Some(chunk) = response.chunks.recv().await {
@@ -567,7 +575,8 @@ async fn oauth_tool_stream_round_trips_twenty_successive_calls_per_harness_tool(
                 received.extend_from_slice(&chunk.payload);
             }
             let wire = std::str::from_utf8(&received).unwrap();
-            let starts: Vec<serde_json::Value> = wire.lines()
+            let starts: Vec<serde_json::Value> = wire
+                .lines()
                 .filter_map(|line| line.strip_prefix("data: "))
                 .map(|data| serde_json::from_str(data).unwrap())
                 .filter(|data: &serde_json::Value| data["type"] == "content_block_start")

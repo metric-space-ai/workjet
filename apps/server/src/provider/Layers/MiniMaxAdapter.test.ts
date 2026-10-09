@@ -784,7 +784,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
     );
   });
   it.live(
-    "keeps an unsupported gateway route unavailable without probing direct credentials",
+    "keeps a missing gateway service unavailable without probing direct credentials",
     () => {
       return runTest((cwd, binaryPath, log) =>
         Effect.gen(function* () {
@@ -800,9 +800,9 @@ describe("MiniMax Code adapter protocol fixture", () => {
           expect(snapshot.status).toBe("error");
           expect(snapshot.auth.status).toBe("unknown");
           expect(snapshot.models).toEqual([]);
-          expect(snapshot.message).toContain("Disable the gateway option");
+          expect(snapshot.message).toContain("gateway service is unavailable");
           const failure = yield* provider.adapter.startSession(input(cwd)).pipe(Effect.flip);
-          expect(failure.message).toContain("gateway injection is not verified");
+          expect(failure.message).toContain("gateway service is unavailable");
           expect(NodeFS.existsSync(log)).toBe(false);
         }).pipe(
           Effect.provide(

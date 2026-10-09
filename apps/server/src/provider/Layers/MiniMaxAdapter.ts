@@ -140,7 +140,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     readonly instanceId: ProviderInstanceId;
     readonly dispatchPromptInBackground?: boolean;
     readonly protocolLogging?: AcpSessionRuntimeOptions["protocolLogging"];
-    readonly resolveSessionEnvironment: () => Effect.Effect<
+    readonly resolveSessionEnvironment: (model?: string) => Effect.Effect<
       NodeJS.ProcessEnv,
       ProviderAdapterError
     >;
@@ -296,7 +296,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           );
         const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
         const environment =
-          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment());
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
         const runtimeConfig = sourceProfile
           ? { ...config, dataDirectory: sourceProfile.directory }
           : config;

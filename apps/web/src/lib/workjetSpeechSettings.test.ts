@@ -18,11 +18,13 @@ const status = {
 } as const;
 describe("native speech settings consumer", () => {
   it("uses the selected instance, correlates receipts and never treats configured paths as checked", async () => {
-    const port: WorkjetProjectControlPort = vi.fn<WorkjetProjectControlPort>(async (instance, input) => {
-      expect(instance).toBe("instance-a");
-      if (input.action !== "speech.settings.read") throw new Error("unexpected action");
-      return { _tag: "completed", response: { ...input, status, ttsCheck: null } };
-    });
+    const port: WorkjetProjectControlPort = vi.fn<WorkjetProjectControlPort>(
+      async (instance, input) => {
+        expect(instance).toBe("instance-a");
+        if (input.action !== "speech.settings.read") throw new Error("unexpected action");
+        return { _tag: "completed", response: { ...input, status, ttsCheck: null } };
+      },
+    );
     const result = await requestSpeechSettings(
       "instance-a",
       { action: "speech.settings.read" },

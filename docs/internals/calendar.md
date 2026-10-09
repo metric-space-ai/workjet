@@ -1,5 +1,16 @@
 # Calendar
 
+In the desktop host, account calendars use the selected instance's authenticated
+Business OS guest through `project.calendar.accounts.read` and
+`project.calendar.events.read`. The shell sends the typed read over the
+`communication_accounts` WebRTC lane; the native peer derives the actor from its
+capability and keeps canonical owner/shared-mailbox authorization before and
+after provider I/O. No extra external MCP registration or credential is created.
+Replies are correlated to the command, account and date range, and changing the
+instance or leaving the calendar fences late replies. Other hosts retain their
+explicitly registered MCP calendar connection.
+
+
 Workjet's calendar provides Day, Week, Month and Year views, a mini month,
 calendar visibility controls and an All projects/per-project selector.
 

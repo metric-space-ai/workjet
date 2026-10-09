@@ -34,6 +34,12 @@ actions; there is no HTTP data path.
    revision it was edited from. CTOX re-validates the whole document and stores
    a new revision; a newer revision rejects the save, so the client reloads.
 
+Decks the Supervisor writes must also pass the validator's `lintMeeting` op
+(`src/meeting-lint.ts`): no heading that repeats the slide title, no slide or
+table that only says evidence is missing, no wording about the slide, the
+display, the data plumbing or the author, and no internal ids or system terms.
+The Owner's own canvas saves are not linted.
+
 Every revision is an immutable file. Canvas edits change the presentation
 revision only, never the meeting's `deck_revision`, so comments, to-dos and
 narration stay bound to their slide ids. The meeting deck (one markdown slide

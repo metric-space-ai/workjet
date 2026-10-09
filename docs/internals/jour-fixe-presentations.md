@@ -46,6 +46,14 @@ presentation exists: `mode: "present"` while presenting, `mode: "edit"` with
 `onSceneChange` for editing, saving through `saveJourFixePresentationCanvas`.
 Slides without a presentation keep the markdown stage.
 
+Presenter keys, as in learnordie's live presenter: ← and → (or Page Up/Down)
+change the slide, Space starts and pauses the narration, F shows the slide stage
+full screen. Keys are ignored in text fields, on focused buttons (Space) and
+while a slide is being edited (`src/lib/jourFixeShortcuts.ts`). The player's
+Auto switch plays each slide's narration as soon as it is available and moves
+to the next slide when it ends; slides without narration wait for the
+presenter.
+
 ## Fixture
 
 `apps/web/slide-engine-fixture.html` (port 5746, renderer CSP as meta tag) and

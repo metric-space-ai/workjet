@@ -14,7 +14,8 @@ import time
 def redact(text):
     text = re.sub(r'(?i)(Bearer\s+)[^\s"\\]+', r'\1<redacted>', text)
     text = re.sub(r'\b(?:sk-|gho_|ghp_)[A-Za-z0-9_-]{12,}', '<redacted>', text)
-    text = re.sub(r'(?i)("(?:access_token|refresh_token|api_key|apiKey|authorization)"\s*:\s*")[^"]*', r'\1<redacted>', text)
+    text = re.sub(r'(?i)("(?:access_token|refresh_token|api_key|apiKey|authorization|cookie|credential|ticket|sessionToken|desktopBootstrapToken)"\s*:\s*")[^"]*', r'\1<redacted>', text)
+    text = re.sub(r'(?i)([?&](?:token|wsTicket|pairingToken)=)[^&\s"\\]+', r'\1<redacted>', text)
     return text
 
 
@@ -39,11 +40,11 @@ def main():
             stdout, stderr = child.communicate(timeout=args.timeout)
         except subprocess.TimeoutExpired:
             result['timed_out'] = True
-            os.killpg(child.pid, signal.SIGTERM)
+            child.terminate()
             try:
                 stdout, stderr = child.communicate(timeout=5)
             except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
+                child.kill()
                 stdout, stderr = child.communicate()
         result.update(exit_code=child.returncode, stdout=redact(stdout), stderr=redact(stderr))
     except OSError as error:

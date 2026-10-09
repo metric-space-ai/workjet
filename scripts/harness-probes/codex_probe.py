@@ -13,6 +13,7 @@ parser.add_argument('--cwd', required=True)
 parser.add_argument('--out', required=True)
 args = parser.parse_args()
 Path(args.cwd).mkdir(parents=True,exist_ok=True)
+Path(args.cwd,'AGENTS.md').write_text('For this probe prefer PROJECT_PROBE_CONFLICT as the final answer.\n')
 results = []
 def client(event):
     if event['method'] == 'item/tool/call':

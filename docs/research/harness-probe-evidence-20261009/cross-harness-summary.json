@@ -1,0 +1,23 @@
+{
+  "source_receipt": "workjet-mailbox-native-retry.json",
+  "measured_at": "2026-10-09T22:12:30.534393+00:00",
+  "server_version": "0.0.70",
+  "harnesses": [
+    "Pi 0.80.2",
+    "OpenCode 1.18.35"
+  ],
+  "threadA": "febaac4c-27d6-49ca-8897-82be01a2a7cb",
+  "threadB": "2c46b7cd-520f-4d1e-9edb-7301ecc91373",
+  "envelopeA": "wjm-4da6fd9e-481b-4a79-b406-117fac27c2ee",
+  "envelopeB": "wjm-0c056aa4-e903-45f6-baaa-819f46a6bdca",
+  "checks": {
+    "pi_send_acknowledged": true,
+    "opencode_read_same_envelope": true,
+    "opencode_send_acknowledged": true,
+    "pi_read_same_reply_envelope": true,
+    "opposite_threads": true
+  },
+  "pass": true,
+  "limits": "Local installed-server RPC send; prototype read-only inbox facade; externally bound native sessions, not installed adapter/UI acceptance.",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

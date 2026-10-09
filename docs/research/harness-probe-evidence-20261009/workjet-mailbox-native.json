@@ -1,0 +1,1251 @@
+{
+  "time": "2026-10-09T22:10:13.628819+00:00",
+  "pid": 69082,
+  "server_exit_code": 130,
+  "results": [
+    {
+      "auth": {
+        "authenticated": true,
+        "scopes": [
+          "orchestration:read",
+          "orchestration:operate",
+          "terminal:operate",
+          "review:write",
+          "relay:read",
+          "access:read",
+          "access:write",
+          "relay:write"
+        ],
+        "sessionMethod": "browser-session-cookie",
+        "expiresAt": "2026-11-08T22:09:18.344Z"
+      }
+    },
+    {
+      "command": "project.create",
+      "response": {
+        "sequence": 2
+      }
+    },
+    {
+      "command": "thread.create",
+      "response": {
+        "sequence": 3
+      }
+    },
+    {
+      "command": "thread.create",
+      "response": {
+        "sequence": 4
+      }
+    },
+    {
+      "threads_created": [
+        "f6f80219-127d-41b2-8136-c1e5a4e6f704",
+        "e9167ab6-7aa8-4f1a-9982-c004555d5589"
+      ],
+      "environmentId": "62e5b7ac-dca0-423e-ae04-3ac590d4d19b",
+      "snapshot_thread_count": 3
+    },
+    {
+      "bridge_source": "f6f80219-127d-41b2-8136-c1e5a4e6f704",
+      "bridge_target": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+      "exit_code": 0,
+      "stdout": "{\"schemaVersion\":1,\"status\":\"acknowledged\",\"envelopeId\":\"wjm-2894bb0b-30c7-46df-9a4c-00044836fa25\",\"disposition\":\"accepted-new\",\"acknowledgedAt\":\"2026-10-09T22:09:29.564Z\"}\n",
+      "stderr": ""
+    },
+    {
+      "bridge_source": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+      "bridge_target": "f6f80219-127d-41b2-8136-c1e5a4e6f704",
+      "exit_code": 0,
+      "stdout": "{\"schemaVersion\":1,\"status\":\"acknowledged\",\"envelopeId\":\"wjm-c4cb9ded-739a-4e98-8ab3-aa766b400e67\",\"disposition\":\"accepted-new\",\"acknowledgedAt\":\"2026-10-09T22:09:30.278Z\"}\n",
+      "stderr": ""
+    },
+    {
+      "harness": "pi",
+      "workjet_thread_id": "f6f80219-127d-41b2-8136-c1e5a4e6f704",
+      "state": {
+        "id": "1",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-5.3",
+            "name": "glm-5.3",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/workjet-mailbox/c7e96e80-b874-499c-89fa-39892b51ef8f/pi-sessions/2026-10-09T22-09-31-350Z_01a122b6-dad6-79a3-bdbb-554a9d0e8e8f.jsonl",
+          "sessionId": "01a122b6-dad6-79a3-bdbb-554a9d0e8e8f",
+          "autoCompactionEnabled": true,
+          "messageCount": 0,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "harness": "pi",
+      "prompt_ack": {
+        "id": "2",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      },
+      "agent_end": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Send MAILBOX_NATIVE_A to Workjet thread e9167ab6-7aa8-4f1a-9982-c004555d5589 using thread_send. Then reply SENT_A."
+              }
+            ],
+            "timestamp": 1791583771391
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "toolCall",
+                "id": "call_3053e9d0782d4eb686565a12",
+                "name": "thread_send",
+                "arguments": {
+                  "targetThreadId": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+                  "text": "MAILBOX_NATIVE_A"
+                }
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "usage": {
+              "input": 693,
+              "output": 88,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 781,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1791583771427,
+            "responseId": "202610100609312afa92842c184aba"
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_3053e9d0782d4eb686565a12",
+            "toolName": "thread_send",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"schemaVersion\": 1, \"status\": \"acknowledged\", \"envelopeId\": \"wjm-ced90e49-c4d4-4d4d-9c9a-60254f1cba2c\", \"disposition\": \"accepted-new\", \"acknowledgedAt\": \"2026-10-09T22:09:37.663Z\"}\n"
+              }
+            ],
+            "details": {},
+            "isError": false,
+            "timestamp": 1791583782089
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "SENT_A"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "usage": {
+              "input": 229,
+              "output": 4,
+              "cacheRead": 640,
+              "cacheWrite": 0,
+              "totalTokens": 873,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791583782702,
+            "responseId": "202610100609424c08958cbb834857"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    {
+      "harness": "opencode",
+      "workjet_thread_id": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+      "session_id": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+      "prompt_response": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 318,
+            "outputTokens": 8,
+            "totalTokens": 12230,
+            "cachedReadTokens": 11904
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "harness": "pi",
+      "prompt_ack": {
+        "id": "3",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      },
+      "agent_end": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Call thread_read now. Reply RECEIVED_B only if the incoming body says MAILBOX_NATIVE_B."
+              }
+            ],
+            "timestamp": 1791583810929
+          },
+          {
+            "role": "assistant",
+            "content": [],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 0,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "error",
+            "timestamp": 1791583810930,
+            "errorMessage": "Request timed out."
+          }
+        ],
+        "willRetry": true
+      }
+    },
+    {
+      "native_receipt": {
+        "command": [
+          "opencode",
+          "--pure",
+          "acp"
+        ],
+        "pid": 70947,
+        "exit_code": 0,
+        "events": [
+          {
+            "send": {
+              "jsonrpc": "2.0",
+              "id": "1",
+              "method": "initialize",
+              "params": {
+                "protocolVersion": 1,
+                "clientInfo": {
+                  "name": "harness-compendium",
+                  "version": "1"
+                },
+                "clientCapabilities": {}
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "id": "1",
+              "result": {
+                "protocolVersion": 1,
+                "agentCapabilities": {
+                  "loadSession": true,
+                  "mcpCapabilities": {
+                    "http": true,
+                    "sse": true
+                  },
+                  "promptCapabilities": {
+                    "embeddedContext": true,
+                    "image": true
+                  },
+                  "sessionCapabilities": {
+                    "close": {},
+                    "fork": {},
+                    "list": {},
+                    "resume": {}
+                  }
+                },
+                "authMethods": [
+                  {
+                    "description": "Run `opencode auth login` in the terminal",
+                    "name": "Login with opencode",
+                    "id": "opencode-login"
+                  }
+                ],
+                "agentInfo": {
+                  "name": "OpenCode",
+                  "version": "1.18.35"
+                }
+              }
+            }
+          },
+          {
+            "send": {
+              "jsonrpc": "2.0",
+              "id": "2",
+              "method": "session/new",
+              "params": {
+                "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/workjet-mailbox/c7e96e80-b874-499c-89fa-39892b51ef8f",
+                "mcpServers": [
+                  {
+                    "name": "workjet_probe",
+                    "command": "python3",
+                    "args": [
+                      "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium/scripts/harness-probes/mcp_mailbox.py"
+                    ],
+                    "env": [
+                      {
+                        "name": "HARNESS_PROBE_BRIDGE_CONFIG",
+                        "value": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/workjet-mailbox/c7e96e80-b874-499c-89fa-39892b51ef8f/bridge-private.json"
+                      },
+                      {
+                        "name": "HARNESS_PROBE_SOURCE_THREAD",
+                        "value": "e9167ab6-7aa8-4f1a-9982-c004555d5589"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "id": "2",
+              "result": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "configOptions": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "probe/glm-5.3",
+                    "options": [
+                      {
+                        "catalog_omitted": true,
+                        "advertised_count": 1
+                      }
+                    ]
+                  },
+                  {
+                    "id": "mode",
+                    "name": "Session Mode",
+                    "category": "mode",
+                    "type": "select",
+                    "currentValue": "build",
+                    "options": [
+                      {
+                        "value": "build",
+                        "name": "build",
+                        "description": "The default agent. Executes tools based on configured permissions."
+                      },
+                      {
+                        "value": "compendium",
+                        "name": "compendium"
+                      },
+                      {
+                        "value": "plan",
+                        "name": "plan",
+                        "description": "Plan mode. Disallows all edit tools."
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "send": {
+              "jsonrpc": "2.0",
+              "id": "3",
+              "method": "session/set_mode",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "modeId": "compendium"
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "id": "3",
+              "result": {}
+            }
+          },
+          {
+            "send": {
+              "jsonrpc": "2.0",
+              "id": "4",
+              "method": "session/prompt",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "prompt": [
+                  {
+                    "type": "text",
+                    "text": "Call thread_read. If the incoming body says MAILBOX_NATIVE_A, send MAILBOX_NATIVE_B in reply to Workjet thread f6f80219-127d-41b2-8136-c1e5a4e6f704 using thread_send. Then reply RECEIVED_A_SENT_B."
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "method": "session/update",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "update": {
+                  "sessionUpdate": "available_commands_update",
+                  "availableCommands": []
+                }
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "method": "session/update",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "update": {
+                  "sessionUpdate": "tool_call",
+                  "toolCallId": "call_8416f929fa004ce8a046cb44",
+                  "title": "workjet_probe_thread_read",
+                  "kind": "other",
+                  "status": "pending",
+                  "locations": [],
+                  "rawInput": {}
+                }
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "method": "session/update",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "update": {
+                  "sessionUpdate": "tool_call_update",
+                  "toolCallId": "call_8416f929fa004ce8a046cb44",
+                  "status": "in_progress",
+                  "progress_content_omitted": true
+                }
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "method": "session/update",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "update": {
+                  "sessionUpdate": "tool_call_update",
+                  "toolCallId": "call_8416f929fa004ce8a046cb44",
+                  "status": "completed",
+                  "content": [
+                    {
+                      "type": "content",
+                      "content": {
+                        "type": "text",
+                        "text": "{\"boundThreadId\": \"e9167ab6-7aa8-4f1a-9982-c004555d5589\", \"messages\": [{\"schemaVersion\": 1, \"envelopeId\": \"wjm-2894bb0b-30c7-46df-9a4c-00044836fa25\", \"source\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"f6f80219-127d-41b2-8136-c1e5a4e6f704\"}, \"target\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"e9167ab6-7aa8-4f1a-9982-c004555d5589\"}, \"createdAt\": \"2026-10-09T22:09:29.564Z\", \"expiresAt\": \"2026-10-09T23:09:29.564Z\", \"body\": {\"_tag\": \"inline\", \"text\": \"MAILBOX_PROBE_A\"}}, {\"schemaVersion\": 1, \"envelopeId\": \"wjm-ced90e49-c4d4-4d4d-9c9a-60254f1cba2c\", \"source\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"f6f80219-127d-41b2-8136-c1e5a4e6f704\"}, \"target\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"e9167ab6-7aa8-4f1a-9982-c004555d5589\"}, \"createdAt\": \"2026-10-09T22:09:37.663Z\", \"expiresAt\": \"2026-10-09T23:09:37.663Z\", \"body\": {\"_tag\": \"inline\", \"text\": \"MAILBOX_NATIVE_A\"}}], \"readImplementation\": \"probe-only read-only inbox facade\"}"
+                      }
+                    }
+                  ],
+                  "rawOutput": {
+                    "output": "{\"boundThreadId\": \"e9167ab6-7aa8-4f1a-9982-c004555d5589\", \"messages\": [{\"schemaVersion\": 1, \"envelopeId\": \"wjm-2894bb0b-30c7-46df-9a4c-00044836fa25\", \"source\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"f6f80219-127d-41b2-8136-c1e5a4e6f704\"}, \"target\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"e9167ab6-7aa8-4f1a-9982-c004555d5589\"}, \"createdAt\": \"2026-10-09T22:09:29.564Z\", \"expiresAt\": \"2026-10-09T23:09:29.564Z\", \"body\": {\"_tag\": \"inline\", \"text\": \"MAILBOX_PROBE_A\"}}, {\"schemaVersion\": 1, \"envelopeId\": \"wjm-ced90e49-c4d4-4d4d-9c9a-60254f1cba2c\", \"source\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"f6f80219-127d-41b2-8136-c1e5a4e6f704\"}, \"target\": {\"schemaVersion\": 1, \"workspaceId\": \"workjet-mesh-FS9P3qruZk-cyGnrtppklQ\", \"environmentId\": \"62e5b7ac-dca0-423e-ae04-3ac590d4d19b\", \"threadId\": \"e9167ab6-7aa8-4f1a-9982-c004555d5589\"}, \"createdAt\": \"2026-10-09T22:09:37.663Z\", \"expiresAt\": \"2026-10-09T23:09:37.663Z\", \"body\": {\"_tag\": \"inline\", \"text\": \"MAILBOX_NATIVE_A\"}}], \"readImplementation\": \"probe-only read-only inbox facade\"}",
+                    "metadata": {
+                      "truncated": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "method": "session/update",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "update": {
+                  "sessionUpdate": "tool_call",
+                  "toolCallId": "call_e583b0046fb64c88913047f0",
+                  "title": "workjet_probe_thread_send",
+                  "kind": "other",
+                  "status": "pending",
+                  "locations": [],
+                  "rawInput": {}
+                }
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "method": "session/update",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "update": {
+                  "sessionUpdate": "tool_call_update",
+                  "toolCallId": "call_e583b0046fb64c88913047f0",
+                  "status": "in_progress",
+                  "progress_content_omitted": true
+                }
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "method": "session/update",
+              "params": {
+                "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+                "update": {
+                  "sessionUpdate": "tool_call_update",
+                  "toolCallId": "call_e583b0046fb64c88913047f0",
+                  "status": "completed",
+                  "content": [
+                    {
+                      "type": "content",
+                      "content": {
+                        "type": "text",
+                        "text": "{\"schemaVersion\": 1, \"status\": \"acknowledged\", \"envelopeId\": \"wjm-03d8d04e-12e0-4dcb-a84c-c15e9ac2241e\", \"disposition\": \"accepted-new\", \"acknowledgedAt\": \"2026-10-09T22:10:06.668Z\"}"
+                      }
+                    }
+                  ],
+                  "rawOutput": {
+                    "output": "{\"schemaVersion\": 1, \"status\": \"acknowledged\", \"envelopeId\": \"wjm-03d8d04e-12e0-4dcb-a84c-c15e9ac2241e\", \"disposition\": \"accepted-new\", \"acknowledgedAt\": \"2026-10-09T22:10:06.668Z\"}",
+                    "metadata": {
+                      "truncated": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "receive": {
+              "jsonrpc": "2.0",
+              "id": "4",
+              "result": {
+                "stopReason": "end_turn",
+                "usage": {
+                  "inputTokens": 318,
+                  "outputTokens": 8,
+                  "totalTokens": 12230,
+                  "cachedReadTokens": 11904
+                },
+                "_meta": {}
+              }
+            }
+          },
+          {
+            "assembled_session_text": {
+              "sessionId": "ses_edd48ce52ffeIAqxnBxUE7efAJ",
+              "promptId": "",
+              "isReplay": false,
+              "kind": "agent_message_chunk",
+              "text": "The inbox contains a message with body `MAILBOX_NATIVE_A` from thread `f6f80219-127d-41b2-8136-c1e5a4e6f704` \u2014 condition met. Sending the reply now.RECEIVED_A_SENT_B"
+            }
+          }
+        ],
+        "stderr": "",
+        "cleanup": "owned child exited"
+      }
+    },
+    {
+      "native_receipt": {
+        "command": [
+          "pi",
+          "--offline",
+          "--no-extensions",
+          "--no-skills",
+          "--no-prompt-templates",
+          "--extension",
+          "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium/scripts/harness-probes/pi-mailbox-extension.ts",
+          "--no-builtin-tools",
+          "--provider",
+          "zai",
+          "--model",
+          "glm-5.3",
+          "--session-dir",
+          "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/workjet-mailbox/c7e96e80-b874-499c-89fa-39892b51ef8f/pi-sessions",
+          "--mode",
+          "rpc"
+        ],
+        "pid": 69996,
+        "exit_code": 0,
+        "events": [
+          {
+            "send": {
+              "id": "1",
+              "type": "get_state"
+            }
+          },
+          {
+            "receive": {
+              "id": "1",
+              "type": "response",
+              "command": "get_state",
+              "success": true,
+              "data": {
+                "model": {
+                  "id": "glm-5.3",
+                  "name": "glm-5.3",
+                  "api": "openai-completions",
+                  "provider": "zai",
+                  "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+                  "compat": {
+                    "supportsStore": false,
+                    "supportsDeveloperRole": false,
+                    "supportsReasoningEffort": false,
+                    "thinkingFormat": "zai",
+                    "zaiToolStream": true
+                  },
+                  "reasoning": true,
+                  "input": [
+                    "text"
+                  ],
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0
+                  },
+                  "contextWindow": 200000,
+                  "maxTokens": 131072
+                },
+                "thinkingLevel": "medium",
+                "isStreaming": false,
+                "isCompacting": false,
+                "steeringMode": "one-at-a-time",
+                "followUpMode": "one-at-a-time",
+                "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/workjet-mailbox/c7e96e80-b874-499c-89fa-39892b51ef8f/pi-sessions/2026-10-09T22-09-31-350Z_01a122b6-dad6-79a3-bdbb-554a9d0e8e8f.jsonl",
+                "sessionId": "01a122b6-dad6-79a3-bdbb-554a9d0e8e8f",
+                "autoCompactionEnabled": true,
+                "messageCount": 0,
+                "pendingMessageCount": 0
+              }
+            }
+          },
+          {
+            "send": {
+              "id": "2",
+              "type": "prompt",
+              "message": "Send MAILBOX_NATIVE_A to Workjet thread e9167ab6-7aa8-4f1a-9982-c004555d5589 using thread_send. Then reply SENT_A."
+            }
+          },
+          {
+            "receive": {
+              "id": "2",
+              "type": "response",
+              "command": "prompt",
+              "success": true
+            }
+          },
+          {
+            "receive": {
+              "type": "agent_start"
+            }
+          },
+          {
+            "receive": {
+              "type": "turn_start"
+            }
+          },
+          {
+            "receive": {
+              "type": "message_end",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Send MAILBOX_NATIVE_A to Workjet thread e9167ab6-7aa8-4f1a-9982-c004555d5589 using thread_send. Then reply SENT_A."
+                  }
+                ],
+                "timestamp": 1791583771391
+              }
+            }
+          },
+          {
+            "receive": {
+              "type": "message_end",
+              "message": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "thinking",
+                    "content": "<omitted reasoning>"
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "call_3053e9d0782d4eb686565a12",
+                    "name": "thread_send",
+                    "arguments": {
+                      "targetThreadId": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+                      "text": "MAILBOX_NATIVE_A"
+                    }
+                  }
+                ],
+                "api": "openai-completions",
+                "provider": "zai",
+                "model": "glm-5.3",
+                "usage": {
+                  "input": 693,
+                  "output": 88,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 781,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "toolUse",
+                "timestamp": 1791583771427,
+                "responseId": "202610100609312afa92842c184aba"
+              }
+            }
+          },
+          {
+            "receive": {
+              "type": "tool_execution_start",
+              "toolCallId": "call_3053e9d0782d4eb686565a12",
+              "toolName": "thread_send",
+              "args": {
+                "targetThreadId": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+                "text": "MAILBOX_NATIVE_A"
+              }
+            }
+          },
+          {
+            "receive": {
+              "type": "tool_execution_end",
+              "toolCallId": "call_3053e9d0782d4eb686565a12",
+              "toolName": "thread_send",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"schemaVersion\": 1, \"status\": \"acknowledged\", \"envelopeId\": \"wjm-ced90e49-c4d4-4d4d-9c9a-60254f1cba2c\", \"disposition\": \"accepted-new\", \"acknowledgedAt\": \"2026-10-09T22:09:37.663Z\"}\n"
+                  }
+                ],
+                "details": {}
+              },
+              "isError": false
+            }
+          },
+          {
+            "receive": {
+              "type": "message_end",
+              "message": {
+                "role": "toolResult",
+                "toolCallId": "call_3053e9d0782d4eb686565a12",
+                "toolName": "thread_send",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"schemaVersion\": 1, \"status\": \"acknowledged\", \"envelopeId\": \"wjm-ced90e49-c4d4-4d4d-9c9a-60254f1cba2c\", \"disposition\": \"accepted-new\", \"acknowledgedAt\": \"2026-10-09T22:09:37.663Z\"}\n"
+                  }
+                ],
+                "details": {},
+                "isError": false,
+                "timestamp": 1791583782089
+              }
+            }
+          },
+          {
+            "receive": {
+              "type": "turn_end",
+              "message": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "thinking",
+                    "content": "<omitted reasoning>"
+                  },
+                  {
+                    "type": "toolCall",
+                    "id": "call_3053e9d0782d4eb686565a12",
+                    "name": "thread_send",
+                    "arguments": {
+                      "targetThreadId": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+                      "text": "MAILBOX_NATIVE_A"
+                    }
+                  }
+                ],
+                "api": "openai-completions",
+                "provider": "zai",
+                "model": "glm-5.3",
+                "usage": {
+                  "input": 693,
+                  "output": 88,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 781,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "toolUse",
+                "timestamp": 1791583771427,
+                "responseId": "202610100609312afa92842c184aba"
+              },
+              "toolResults": [
+                {
+                  "role": "toolResult",
+                  "toolCallId": "call_3053e9d0782d4eb686565a12",
+                  "toolName": "thread_send",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\"schemaVersion\": 1, \"status\": \"acknowledged\", \"envelopeId\": \"wjm-ced90e49-c4d4-4d4d-9c9a-60254f1cba2c\", \"disposition\": \"accepted-new\", \"acknowledgedAt\": \"2026-10-09T22:09:37.663Z\"}\n"
+                    }
+                  ],
+                  "details": {},
+                  "isError": false,
+                  "timestamp": 1791583782089
+                }
+              ]
+            }
+          },
+          {
+            "receive": {
+              "type": "turn_start"
+            }
+          },
+          {
+            "receive": {
+              "type": "message_end",
+              "message": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "SENT_A"
+                  }
+                ],
+                "api": "openai-completions",
+                "provider": "zai",
+                "model": "glm-5.3",
+                "usage": {
+                  "input": 229,
+                  "output": 4,
+                  "cacheRead": 640,
+                  "cacheWrite": 0,
+                  "totalTokens": 873,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1791583782702,
+                "responseId": "202610100609424c08958cbb834857"
+              }
+            }
+          },
+          {
+            "receive": {
+              "type": "turn_end",
+              "message": {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "SENT_A"
+                  }
+                ],
+                "api": "openai-completions",
+                "provider": "zai",
+                "model": "glm-5.3",
+                "usage": {
+                  "input": 229,
+                  "output": 4,
+                  "cacheRead": 640,
+                  "cacheWrite": 0,
+                  "totalTokens": 873,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1791583782702,
+                "responseId": "202610100609424c08958cbb834857"
+              },
+              "toolResults": []
+            }
+          },
+          {
+            "receive": {
+              "type": "agent_end",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Send MAILBOX_NATIVE_A to Workjet thread e9167ab6-7aa8-4f1a-9982-c004555d5589 using thread_send. Then reply SENT_A."
+                    }
+                  ],
+                  "timestamp": 1791583771391
+                },
+                {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "thinking",
+                      "content": "<omitted reasoning>"
+                    },
+                    {
+                      "type": "toolCall",
+                      "id": "call_3053e9d0782d4eb686565a12",
+                      "name": "thread_send",
+                      "arguments": {
+                        "targetThreadId": "e9167ab6-7aa8-4f1a-9982-c004555d5589",
+                        "text": "MAILBOX_NATIVE_A"
+                      }
+                    }
+                  ],
+                  "api": "openai-completions",
+                  "provider": "zai",
+                  "model": "glm-5.3",
+                  "usage": {
+                    "input": 693,
+                    "output": 88,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "totalTokens": 781,
+                    "cost": {
+                      "input": 0,
+                      "output": 0,
+                      "cacheRead": 0,
+                      "cacheWrite": 0,
+                      "total": 0
+                    }
+                  },
+                  "stopReason": "toolUse",
+                  "timestamp": 1791583771427,
+                  "responseId": "202610100609312afa92842c184aba"
+                },
+                {
+                  "role": "toolResult",
+                  "toolCallId": "call_3053e9d0782d4eb686565a12",
+                  "toolName": "thread_send",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\"schemaVersion\": 1, \"status\": \"acknowledged\", \"envelopeId\": \"wjm-ced90e49-c4d4-4d4d-9c9a-60254f1cba2c\", \"disposition\": \"accepted-new\", \"acknowledgedAt\": \"2026-10-09T22:09:37.663Z\"}\n"
+                    }
+                  ],
+                  "details": {},
+                  "isError": false,
+                  "timestamp": 1791583782089
+                },
+                {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "SENT_A"
+                    }
+                  ],
+                  "api": "openai-completions",
+                  "provider": "zai",
+                  "model": "glm-5.3",
+                  "usage": {
+                    "input": 229,
+                    "output": 4,
+                    "cacheRead": 640,
+                    "cacheWrite": 0,
+                    "totalTokens": 873,
+                    "cost": {
+                      "input": 0,
+                      "output": 0,
+                      "cacheRead": 0,
+                      "cacheWrite": 0,
+                      "total": 0
+                    }
+                  },
+                  "stopReason": "stop",
+                  "timestamp": 1791583782702,
+                  "responseId": "202610100609424c08958cbb834857"
+                }
+              ],
+              "willRetry": false
+            }
+          },
+          {
+            "send": {
+              "id": "3",
+              "type": "prompt",
+              "message": "Call thread_read now. Reply RECEIVED_B only if the incoming body says MAILBOX_NATIVE_B."
+            }
+          },
+          {
+            "receive": {
+              "id": "3",
+              "type": "response",
+              "command": "prompt",
+              "success": true
+            }
+          },
+          {
+            "receive": {
+              "type": "agent_start"
+            }
+          },
+          {
+            "receive": {
+              "type": "turn_start"
+            }
+          },
+          {
+            "receive": {
+              "type": "message_end",
+              "message": {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Call thread_read now. Reply RECEIVED_B only if the incoming body says MAILBOX_NATIVE_B."
+                  }
+                ],
+                "timestamp": 1791583810929
+              }
+            }
+          },
+          {
+            "receive": {
+              "type": "message_end",
+              "message": {
+                "role": "assistant",
+                "content": [],
+                "api": "openai-completions",
+                "provider": "zai",
+                "model": "glm-5.3",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "error",
+                "timestamp": 1791583810930,
+                "errorMessage": "Request timed out."
+              }
+            }
+          },
+          {
+            "receive": {
+              "type": "turn_end",
+              "message": {
+                "role": "assistant",
+                "content": [],
+                "api": "openai-completions",
+                "provider": "zai",
+                "model": "glm-5.3",
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "totalTokens": 0,
+                  "cost": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0
+                  }
+                },
+                "stopReason": "error",
+                "timestamp": 1791583810930,
+                "errorMessage": "Request timed out."
+              },
+              "toolResults": []
+            }
+          },
+          {
+            "receive": {
+              "type": "agent_end",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Call thread_read now. Reply RECEIVED_B only if the incoming body says MAILBOX_NATIVE_B."
+                    }
+                  ],
+                  "timestamp": 1791583810929
+                },
+                {
+                  "role": "assistant",
+                  "content": [],
+                  "api": "openai-completions",
+                  "provider": "zai",
+                  "model": "glm-5.3",
+                  "usage": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "totalTokens": 0,
+                    "cost": {
+                      "input": 0,
+                      "output": 0,
+                      "cacheRead": 0,
+                      "cacheWrite": 0,
+                      "total": 0
+                    }
+                  },
+                  "stopReason": "error",
+                  "timestamp": 1791583810930,
+                  "errorMessage": "Request timed out."
+                }
+              ],
+              "willRetry": true
+            }
+          },
+          {
+            "receive": {
+              "type": "auto_retry_start",
+              "attempt": 1,
+              "maxAttempts": 3,
+              "delayMs": 2000,
+              "errorMessage": "Request timed out."
+            }
+          }
+        ],
+        "stderr": "Warning: Model \"glm-5.3\" not found for provider \"zai\". Using custom model id.\n",
+        "cleanup": "owned child exited"
+      }
+    }
+  ],
+  "server_log": [
+    "    '53_WorkjetMailboxPeerRevocations',\n",
+    "    '54_WorkjetDelegationStateEvents',\n",
+    "    '55_WorkjetDecisionHub',\n",
+    "    '56_WorkjetSessionImports',\n",
+    "    '57_WorkjetBusinessOsComputerOwnership',\n",
+    "    '58_WorkjetDevicePairing',\n",
+    "    '59_WorkjetCtoxConnectionBindings',\n",
+    "    '60_WorkjetCtoxNativeRequests',\n",
+    "    '61_WorkjetCtoxNativeTurns',\n",
+    "    '62_WorkjetCtoxCrewStarts',\n",
+    "    '63_WorkjetCtoxCrewProviderBinding',\n",
+    "    '64_WorkjetWorkerCleanupReceipts',\n",
+    "    '65_WorkjetMailboxReviewRedrive',\n",
+    "    '66_WorkjetProjectTeamLearning',\n",
+    "    '67_WorkjetCtoxCrewRecoveryDispatch',\n",
+    "    '68_WorkjetCtoxCrewTerminalOutbox',\n",
+    "    '69_WorkjetCtoxCrewResumeCursor',\n",
+    "    '70_WorkjetCtoxCrewAdmissionRedrive',\n",
+    "    '71_WorkjetWorkerCleanupRemoved',\n",
+    "    '72_WorkjetCtoxCrewProviderResumeIdentity',\n",
+    "    '73_LogicalProjects',\n",
+    "    '74_ProjectOverview',\n",
+    "    '75_WorkjetWorkerPullRequests',\n",
+    "    '76_RemoteWorkerReceipts',\n",
+    "    '78_RemoteWorkerAuthority'\n",
+    "  ]\n",
+    "[00:09:01.730] INFO (#535): agent activity publishing standby; waiting for Workjet Connect link reconciliation\n",
+    "[00:09:01.731] INFO (#535): provider.session.reaper.started\n",
+    "  { inactivityThresholdMs: 1800000, sweepIntervalMs: 300000 }\n",
+    "[00:09:01.914] INFO (#536): Listening on http://127.0.0.1:57574\n"
+  ],
+  "cleanup": "owned disposable server exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

@@ -58,17 +58,22 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
-                  "name": "unset",
-                  "value": "unset"
+                  "catalog_omitted": true,
+                  "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {
-            "availableModels": [],
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
             "currentModelId": ""
           },
           "sessionId": "sess-1791582649851-22738-0"
@@ -172,17 +177,22 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
-                  "name": "unset",
-                  "value": "unset"
+                  "catalog_omitted": true,
+                  "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {
-            "availableModels": [],
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
             "currentModelId": ""
           }
         }
@@ -278,17 +288,22 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
-                  "name": "unset",
-                  "value": "unset"
+                  "catalog_omitted": true,
+                  "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {
-            "availableModels": [],
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
             "currentModelId": ""
           },
           "sessionId": "sess-1791582649851-22738-0"
@@ -446,17 +461,22 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
-                  "name": "unset",
-                  "value": "unset"
+                  "catalog_omitted": true,
+                  "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {
-            "availableModels": [],
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
             "currentModelId": ""
           }
         }

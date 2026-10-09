@@ -20,7 +20,7 @@ verified={m for row in catalog.get('providers',[]) if row.get('status')=='observ
 candidates=set()
 def inspect(value,key=''):
  if isinstance(value,dict):
-  if isinstance(value.get('id'),str) and ('api' in value or 'provider' in value):candidates.add(value['id'])
+  if isinstance(value.get('id'),str) and not value['id'].isdecimal() and 'api' in value and 'provider' in value:candidates.add(value['id'])
   if 'modelUsage' in value and isinstance(value['modelUsage'],dict):candidates.update(value['modelUsage'])
   for k,v in value.items():
    if k in ['modelId','currentModelId','responseModel'] and isinstance(v,str):candidates.add(v)
@@ -36,9 +36,26 @@ replacements={m:'<unvalidated-model:'+hashlib.sha256(m.encode()).hexdigest()[:8]
 relevant={'goal','loop','compact','export','model','resume','context'}
 def sanitize(value,key=''):
  if isinstance(value,dict):
+  if key=='rawOutput' and 'type' in value:
+   if value.get('raw_artifact_output_omitted'):return value
+   return {'type':value['type'],'raw_artifact_output_omitted':True,
+           'encoded_byte_count':len(json.dumps(value).encode()),'sha256':hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()}
+  if value.get('sessionUpdate')=='tool_call_update' and isinstance(value.get('rawOutput'),dict) and value['rawOutput'].get('type') in ['ReadFile','GrepSearch']:
+   return {'sessionUpdate':value['sessionUpdate'],'toolCallId':value.get('toolCallId'),'status':value.get('status'),
+           'unrelated_builtin_read_output_omitted':True,'rawOutput':sanitize(value['rawOutput'],'rawOutput')}
   if value.get('type') in ['thinking','reasoning']:return {'type':value['type'],'content':'<omitted reasoning>'}
   if key=='modelUsage':return {'model_entries_omitted':len(value)}
   if key=='catalog':return value  # the observed live-list source is intentionally retained
+  if value.get('category')=='model' and isinstance(value.get('options'),list):
+   if value['options'] and value['options'][0].get('catalog_omitted'):return value
+   return {**{k:sanitize(v,k) for k,v in value.items() if k!='options'},
+           'options':[{'catalog_omitted':True,'advertised_count':len(value['options'])}]}
+  # Grok repeats full tool snapshots in metadata and each running update.
+  # Keep the canonical terminal result; omit progress snapshots and reasoning.
+  if value.get('sessionUpdate')=='tool_call_update' and value.get('status') not in ['completed','failed']:
+   return {'sessionUpdate':'tool_call_update','toolCallId':value.get('toolCallId'),'status':value.get('status'),'progress_content_omitted':True}
+  if key=='_meta':
+   return {k:sanitize(v,k) for k,v in value.items() if k in ['isReplay','promptId','totalTokens','eventId','agentTimestampMs','workjetImportHistory']}
   return {k:sanitize(v,k) for k,v in value.items() if k not in ['thinking','thinkingSignature','signature']}
  if isinstance(value,list):
   if key=='events':
@@ -61,7 +78,8 @@ def sanitize(value,key=''):
     kept.append({'assembled_session_text':{'sessionId':group[0],'promptId':group[1],
        'isReplay':group[2],'kind':group[3],'text':sanitize(''.join(chunks))}})
    return kept
-  if key in ['availableModels','options'] and any(isinstance(v,dict) and ('modelId' in v or v.get('value') in candidates) for v in value):
+  if key=='availableModels' or (key=='options' and any(isinstance(v,dict) and ('modelId' in v or v.get('value') in candidates) for v in value)):
+   if value and isinstance(value[0],dict) and value[0].get('catalog_omitted'):return value
    return [{'catalog_omitted':True,'advertised_count':len(value)}]
   if key in ['availableCommands','commands']:
    value=[v for v in value if isinstance(v,dict) and v.get('name') in relevant]
@@ -78,7 +96,7 @@ def sanitize(value,key=''):
 for path,value in receipts.items():
  if path.name in ['live-catalog.json']:continue
  if path.name.endswith('models.json') and 'ids' in value:
-  value['model_count']=len(value['ids'])
+  value.setdefault('model_count',len(value['ids']))
   value['ids']=[m for m in value['ids'] if m in verified]
  value=sanitize(value)
  value['publication_note']='Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections.'

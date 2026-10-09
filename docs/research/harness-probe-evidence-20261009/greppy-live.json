@@ -58,13 +58,13 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
                   "catalog_omitted": true,
                   "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {
@@ -148,13 +148,13 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
                   "catalog_omitted": true,
                   "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {
@@ -282,13 +282,13 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
                   "catalog_omitted": true,
                   "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {
@@ -3444,13 +3444,13 @@
               "description": "Model id passed through to the local gateway",
               "id": "model",
               "name": "Model",
+              "type": "select",
               "options": [
                 {
                   "catalog_omitted": true,
                   "advertised_count": 1
                 }
-              ],
-              "type": "select"
+              ]
             }
           ],
           "models": {

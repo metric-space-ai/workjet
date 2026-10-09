@@ -1,0 +1,738 @@
+{
+  "time": "2026-10-09T21:58:25.492173+00:00",
+  "results": [
+    {
+      "type": "control_response",
+      "response": {
+        "subtype": "success",
+        "request_id": "init",
+        "response": {
+          "commands": [
+            {
+              "name": "loop",
+              "description": "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.",
+              "argumentHint": "[interval] [prompt]",
+              "aliases": [
+                "proactive"
+              ],
+              "builtin": true
+            },
+            {
+              "name": "compact",
+              "description": "Free up context by summarizing the conversation so far",
+              "argumentHint": "<optional custom summarization instructions>",
+              "builtin": true
+            },
+            {
+              "name": "context",
+              "description": "Show current context usage",
+              "argumentHint": "",
+              "builtin": true
+            },
+            {
+              "name": "model",
+              "description": "Set the AI model for Claude Code",
+              "argumentHint": "<model>",
+              "builtin": true
+            },
+            {
+              "name": "goal",
+              "description": "Set a goal \u2014 keep working until the condition is met",
+              "argumentHint": "",
+              "builtin": true
+            }
+          ],
+          "agents": [
+            {
+              "name": "claude",
+              "description": "Catch-all for any task that doesn't fit a more specific agent. FleetView's default when no agent name is typed."
+            },
+            {
+              "name": "claude-code-guide",
+              "description": "Use this agent when the user asks questions (\"Can Claude...\", \"Does Claude...\", \"How do I...\") about: (1) Claude Code (the CLI tool) - features, hooks, slash commands, MCP servers, settings, IDE integrations, keyboard shortcuts; (2) Claude Agent SDK - building custom agents; (3) Claude API (formerly Anthropic API) - Messages API for directly passing messages to Claude, Tool Runner (`client.beta.messages.tool_runner`) for running an agentic loop over your own tools, manual tool-use loops, Managed Agents for server-hosted agents with a managed sandbox, prompt caching, and general Anthropic SDK usage; (4) Claude Tag (Claude in Slack) - what it is, setting it up for a Slack workspace, `/install-slack-app`; (5) `claude plugin eval` (writing and running plugin eval suites, its JSON/report, sandbox, CI) and the `/skill-doctor` report. **IMPORTANT:** Before spawning a new agent, check if there is already a running or recently completed claude-code-guide agent that you can continue via SendMessage.",
+              "model": "<unvalidated-model:5a5110eb>"
+            },
+            {
+              "name": "Explore",
+              "description": "Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"), grep for symbols or keywords (eg. \"API endpoints\"), or answer \"where is X defined / which files reference Y.\" Do NOT use it for code review, design-doc auditing, cross-file consistency checks, or open-ended analysis \u2014 it reads excerpts rather than whole files and will miss content past its read window. When calling, specify search breadth: \"quick\" for a single targeted lookup, \"medium\" for moderate exploration, or \"very thorough\" to search across multiple locations and naming conventions.",
+              "model": "<unvalidated-model:035300f3>"
+            },
+            {
+              "name": "general-purpose",
+              "description": "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you."
+            },
+            {
+              "name": "Plan",
+              "description": "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
+              "model": "<unvalidated-model:035300f3>"
+            },
+            {
+              "name": "statusline-setup",
+              "description": "Use this agent to configure the user's Claude Code status line setting.",
+              "model": "<unvalidated-model:c9ad8f2c>"
+            }
+          ],
+          "output_style": "default",
+          "available_output_styles": [
+            "default",
+            "Proactive",
+            "Concise",
+            "Explanatory",
+            "Learning"
+          ],
+          "user_output_styles_dir": "/Users/michaelwelsch/.claude/output-styles",
+          "models": [
+            {
+              "value": "default",
+              "resolvedModel": "claude-opus-5-5",
+              "displayName": "Default (recommended)",
+              "description": "Opus 5.5 \u00b7 Best for everyday, complex tasks",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsFastMode": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "opus",
+              "resolvedModel": "claude-opus-5-5",
+              "displayName": "Opus",
+              "description": "Opus 5.5 \u00b7 Best for everyday, complex tasks",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsFastMode": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "claude-fable-5-1[1m]",
+              "resolvedModel": "claude-fable-5-1[1m]",
+              "displayName": "Fable",
+              "description": "Fable 5.1 \u00b7 Most capable for your hardest and longest-running tasks",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "<unvalidated-model:c9ad8f2c>",
+              "resolvedModel": "claude-sonnet-5-5",
+              "displayName": "Sonnet",
+              "description": "Sonnet 5.5 \u00b7 Efficient for routine tasks",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "<unvalidated-model:5a5110eb>",
+              "resolvedModel": "claude-haiku-5-5",
+              "displayName": "Haiku",
+              "description": "Haiku 5.5 \u00b7 Fastest for quick answers",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            },
+            {
+              "value": "glm-5.3-flash",
+              "resolvedModel": "glm-5.3-flash",
+              "displayName": "glm-5.3-flash",
+              "description": "Custom model",
+              "supportsEffort": true,
+              "supportedEffortLevels": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "supportsAdaptiveThinking": true,
+              "supportsAutoMode": true
+            }
+          ],
+          "account": {
+            "email": "metricspace.ai@gmail.com",
+            "organization": "metricspace.ai@gmail.com's Organization",
+            "subscriptionType": "Claude Max",
+            "apiKeySource": "ANTHROPIC_API_KEY",
+            "apiProvider": "firstParty"
+          },
+          "pid": 34570,
+          "claude_code_version": "2.1.296",
+          "current_permission_mode": "auto",
+          "feedback_mode": {
+            "kind": "disabled"
+          },
+          "analytics_disabled": true,
+          "remote_control_auto_enable": false,
+          "remote_control_auto_connect_default": false,
+          "remote_control_available": false,
+          "remote_control_auto_on_by_default": false,
+          "ide_rc_auto_enable_gate": false,
+          "fast_mode_state": "off",
+          "fast_mode_disabled_reason": "sdk_opt_in_required",
+          "session_state": "idle",
+          "capabilities": [
+            "ui_surface_v1"
+          ]
+        },
+        "pending_permission_requests": [],
+        "pending_user_dialog_requests": []
+      }
+    },
+    {
+      "type": "control_response",
+      "response": {
+        "subtype": "error",
+        "request_id": "model",
+        "error": "Authentication failed. Please check your API credentials.",
+        "error_code": "auth_failed"
+      }
+    },
+    {
+      "error": "Empty()"
+    }
+  ],
+  "command": [
+    "claude",
+    "--print",
+    "--setting-sources",
+    "",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\": {\"workjet_probe\": {\"command\": \"python3\", \"args\": [\"/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium/scripts/harness-probes/mcp_echo.py\"]}}}",
+    "--tools",
+    "",
+    "--allowedTools",
+    "mcp__workjet_probe__probe_echo",
+    "--append-system-prompt",
+    "For this probe call mcp__workjet_probe__probe_echo once, then answer ROLE_PROBE_OK.",
+    "--model",
+    "glm-5.3-flash"
+  ],
+  "pid": 34570,
+  "exit_code": 143,
+  "events": [
+    {
+      "send": {
+        "type": "control_request",
+        "request_id": "init",
+        "request": {
+          "subtype": "initialize"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "init",
+          "response": {
+            "commands": [
+              {
+                "name": "loop",
+                "description": "Run a prompt or slash command on a recurring interval (e.g. /loop 5m /foo). Omit the interval to let the model self-pace.",
+                "argumentHint": "[interval] [prompt]",
+                "aliases": [
+                  "proactive"
+                ],
+                "builtin": true
+              },
+              {
+                "name": "compact",
+                "description": "Free up context by summarizing the conversation so far",
+                "argumentHint": "<optional custom summarization instructions>",
+                "builtin": true
+              },
+              {
+                "name": "context",
+                "description": "Show current context usage",
+                "argumentHint": "",
+                "builtin": true
+              },
+              {
+                "name": "model",
+                "description": "Set the AI model for Claude Code",
+                "argumentHint": "<model>",
+                "builtin": true
+              },
+              {
+                "name": "goal",
+                "description": "Set a goal \u2014 keep working until the condition is met",
+                "argumentHint": "",
+                "builtin": true
+              }
+            ],
+            "agents": [
+              {
+                "name": "claude",
+                "description": "Catch-all for any task that doesn't fit a more specific agent. FleetView's default when no agent name is typed."
+              },
+              {
+                "name": "claude-code-guide",
+                "description": "Use this agent when the user asks questions (\"Can Claude...\", \"Does Claude...\", \"How do I...\") about: (1) Claude Code (the CLI tool) - features, hooks, slash commands, MCP servers, settings, IDE integrations, keyboard shortcuts; (2) Claude Agent SDK - building custom agents; (3) Claude API (formerly Anthropic API) - Messages API for directly passing messages to Claude, Tool Runner (`client.beta.messages.tool_runner`) for running an agentic loop over your own tools, manual tool-use loops, Managed Agents for server-hosted agents with a managed sandbox, prompt caching, and general Anthropic SDK usage; (4) Claude Tag (Claude in Slack) - what it is, setting it up for a Slack workspace, `/install-slack-app`; (5) `claude plugin eval` (writing and running plugin eval suites, its JSON/report, sandbox, CI) and the `/skill-doctor` report. **IMPORTANT:** Before spawning a new agent, check if there is already a running or recently completed claude-code-guide agent that you can continue via SendMessage.",
+                "model": "<unvalidated-model:5a5110eb>"
+              },
+              {
+                "name": "Explore",
+                "description": "Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"), grep for symbols or keywords (eg. \"API endpoints\"), or answer \"where is X defined / which files reference Y.\" Do NOT use it for code review, design-doc auditing, cross-file consistency checks, or open-ended analysis \u2014 it reads excerpts rather than whole files and will miss content past its read window. When calling, specify search breadth: \"quick\" for a single targeted lookup, \"medium\" for moderate exploration, or \"very thorough\" to search across multiple locations and naming conventions.",
+                "model": "<unvalidated-model:035300f3>"
+              },
+              {
+                "name": "general-purpose",
+                "description": "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you."
+              },
+              {
+                "name": "Plan",
+                "description": "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
+                "model": "<unvalidated-model:035300f3>"
+              },
+              {
+                "name": "statusline-setup",
+                "description": "Use this agent to configure the user's Claude Code status line setting.",
+                "model": "<unvalidated-model:c9ad8f2c>"
+              }
+            ],
+            "output_style": "default",
+            "available_output_styles": [
+              "default",
+              "Proactive",
+              "Concise",
+              "Explanatory",
+              "Learning"
+            ],
+            "user_output_styles_dir": "/Users/michaelwelsch/.claude/output-styles",
+            "models": [
+              {
+                "value": "default",
+                "resolvedModel": "claude-opus-5-5",
+                "displayName": "Default (recommended)",
+                "description": "Opus 5.5 \u00b7 Best for everyday, complex tasks",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsFastMode": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "opus",
+                "resolvedModel": "claude-opus-5-5",
+                "displayName": "Opus",
+                "description": "Opus 5.5 \u00b7 Best for everyday, complex tasks",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsFastMode": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "resolvedModel": "claude-fable-5-1[1m]",
+                "displayName": "Fable",
+                "description": "Fable 5.1 \u00b7 Most capable for your hardest and longest-running tasks",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "<unvalidated-model:c9ad8f2c>",
+                "resolvedModel": "claude-sonnet-5-5",
+                "displayName": "Sonnet",
+                "description": "Sonnet 5.5 \u00b7 Efficient for routine tasks",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "<unvalidated-model:5a5110eb>",
+                "resolvedModel": "claude-haiku-5-5",
+                "displayName": "Haiku",
+                "description": "Haiku 5.5 \u00b7 Fastest for quick answers",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              },
+              {
+                "value": "glm-5.3-flash",
+                "resolvedModel": "glm-5.3-flash",
+                "displayName": "glm-5.3-flash",
+                "description": "Custom model",
+                "supportsEffort": true,
+                "supportedEffortLevels": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "supportsAdaptiveThinking": true,
+                "supportsAutoMode": true
+              }
+            ],
+            "account": {
+              "email": "metricspace.ai@gmail.com",
+              "organization": "metricspace.ai@gmail.com's Organization",
+              "subscriptionType": "Claude Max",
+              "apiKeySource": "ANTHROPIC_API_KEY",
+              "apiProvider": "firstParty"
+            },
+            "pid": 34570,
+            "claude_code_version": "2.1.296",
+            "current_permission_mode": "auto",
+            "feedback_mode": {
+              "kind": "disabled"
+            },
+            "analytics_disabled": true,
+            "remote_control_auto_enable": false,
+            "remote_control_auto_connect_default": false,
+            "remote_control_available": false,
+            "remote_control_auto_on_by_default": false,
+            "ide_rc_auto_enable_gate": false,
+            "fast_mode_state": "off",
+            "fast_mode_disabled_reason": "sdk_opt_in_required",
+            "session_state": "idle",
+            "capabilities": [
+              "ui_surface_v1"
+            ]
+          },
+          "pending_permission_requests": [],
+          "pending_user_dialog_requests": []
+        }
+      }
+    },
+    {
+      "send": {
+        "type": "control_request",
+        "request_id": "model",
+        "request": {
+          "subtype": "set_model",
+          "model": "glm-5.3-flash"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "control_response",
+        "response": {
+          "subtype": "error",
+          "request_id": "model",
+          "error": "Authentication failed. Please check your API credentials.",
+          "error_code": "auth_failed"
+        }
+      }
+    },
+    {
+      "send": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "Imported foreign history: HISTORY_PROBE_42. Run the role/tool probe."
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/claude-gateway-workspace",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "tools": [
+          "mcp__workjet_probe__probe_echo"
+        ],
+        "mcp_servers": [
+          {
+            "name": "workjet_probe",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "model": "glm-5.3-flash",
+        "permissionMode": "auto",
+        "slash_commands": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "schedule",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "security-review",
+          "usage-credits",
+          "extra-usage",
+          "usage",
+          "insights",
+          "recap",
+          "goal",
+          "list-agents",
+          "team-onboarding"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "ANTHROPIC_API_KEY",
+        "claude_code_version": "2.1.296",
+        "output_style": "default",
+        "agents": [
+          "claude",
+          "claude-code-guide",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup"
+        ],
+        "skills": [
+          "deep-research",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "schedule",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "request_marker_lists_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": true,
+        "product_feedback_disabled": true,
+        "uuid": "e6d7df31-882b-43f4-8748-8320fec0e0b1",
+        "memory_paths": {
+          "auto": "/Users/michaelwelsch/.claude/projects/-Volumes-tmp-dev-artifacts-workjet-harness-compendium-claude-gateway-workspace/memory/"
+        },
+        "messaging_socket_path": "/tmp/cc-socks/34570.sock",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": false,
+        "view_mode": "default"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 1,
+        "max_retries": 10,
+        "retry_delay_ms": 551,
+        "error_status": 401,
+        "error": "authentication_failed",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "uuid": "934710bd-8ddc-47eb-9f27-859fda867921"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 2,
+        "max_retries": 10,
+        "retry_delay_ms": 1028,
+        "error_status": 401,
+        "error": "authentication_failed",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "uuid": "5979b5ba-0cbc-4b61-82f8-11e7efa890a3"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 3,
+        "max_retries": 10,
+        "retry_delay_ms": 2021,
+        "error_status": 401,
+        "error": "authentication_failed",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "uuid": "5afecddd-00e4-4c4a-aad4-c0209e9610bc"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 4,
+        "max_retries": 10,
+        "retry_delay_ms": 4193,
+        "error_status": 401,
+        "error": "authentication_failed",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "uuid": "d5e77f72-4149-4400-87c1-e61f330683cb"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 5,
+        "max_retries": 10,
+        "retry_delay_ms": 8488,
+        "error_status": 401,
+        "error": "authentication_failed",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "uuid": "446492ed-72e8-4177-9489-1f5f71d0f6da"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 6,
+        "max_retries": 10,
+        "retry_delay_ms": 18576,
+        "error_status": 401,
+        "error": "authentication_failed",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "uuid": "0bd74ded-78a2-427a-aef3-6d22fdfe680f"
+      }
+    },
+    {
+      "receive": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 7,
+        "max_retries": 10,
+        "retry_delay_ms": 35241,
+        "error_status": 401,
+        "error": "authentication_failed",
+        "session_id": "cf8773bd-69a1-48e8-8df3-703d06eb5a75",
+        "uuid": "9358c91e-8045-4f11-a9da-8b5747c4f0c5"
+      }
+    }
+  ],
+  "stderr": "[claude-code:unrecognized_model] {\"model\":\"glm-5.3-flash\",\"query_source\":\"sdk\"}\n",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

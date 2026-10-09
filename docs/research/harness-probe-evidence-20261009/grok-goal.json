@@ -25,33 +25,7 @@
               "close": {}
             },
             "auth": {},
-            "_meta": {
-              "x.ai/fs_notify": true,
-              "x.ai/hooks": {
-                "blockingEvents": [
-                  "pre_tool_use",
-                  "stop",
-                  "subagent_stop"
-                ],
-                "decisions": [
-                  "deny",
-                  "block"
-                ],
-                "stopSignals": [
-                  "continue",
-                  "stopReason",
-                  "additionalContext"
-                ]
-              },
-              "x.ai/capabilities": {
-                "toolOverrides": {
-                  "x_keyword_search": true,
-                  "x_semantic_search": true,
-                  "x_user_search": false,
-                  "x_thread_fetch": false
-                }
-              }
-            }
+            "_meta": {}
           },
           "authMethods": [
             {
@@ -65,52 +39,7 @@
               "description": "Sign in with Grok"
             }
           ],
-          "_meta": {
-            "grokShell": true,
-            "defaultAuthMethodId": "cached_token",
-            "x.ai/mcp/sdk": true,
-            "x.ai/pluginDirs": true,
-            "currentWorkingDirectory": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/grok-goal-workspace",
-            "agentVersion": "1.0.50",
-            "agentId": "15c4071b-b717-5be1-bb3d-450ed341ef7e",
-            "agentInstanceId": "4678af16-3c5f-4ee7-85bc-c3787496792e",
-            "hostname": "MacBook-Pro-von-Michael-2.local",
-            "modelState": {
-              "currentModelId": "<unvalidated-model:44968622>",
-              "availableModels": [
-                {
-                  "catalog_omitted": true,
-                  "advertised_count": 4
-                }
-              ]
-            },
-            "mcpServers": [],
-            "mcpApps": false,
-            "metadata": null,
-            "availableCommands": [
-              {
-                "name": "compact",
-                "description": "Compress conversation history to save context window",
-                "input": null
-              },
-              {
-                "name": "context",
-                "description": "Show context window usage and session stats",
-                "input": null
-              },
-              {
-                "name": "goal",
-                "description": "Set, manage, or check an autonomous goal",
-                "input": {
-                  "hint": "<objective> [--budget <tokens>] | status | pause | resume | clear"
-                }
-              }
-            ],
-            "cancelRewind": true,
-            "sessionRecap": true,
-            "feedbackTraceOffer": false,
-            "voiceMode": true
-          }
+          "_meta": {}
         }
       }
     },
@@ -126,7 +55,7 @@
             "availableModels": [
               {
                 "catalog_omitted": true,
-                "advertised_count": 4
+                "advertised_count": 1
               }
             ]
           },
@@ -140,7 +69,7 @@
               "options": [
                 {
                   "catalog_omitted": true,
-                  "advertised_count": 4
+                  "advertised_count": 1
                 }
               ]
             },
@@ -174,77 +103,7 @@
               ]
             }
           ],
-          "_meta": {
-            "currentWorkingDirectory": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/grok-goal-workspace",
-            "codebaseIndexed": [],
-            "isGitRepo": false,
-            "gitRoot": null,
-            "showNonGitWarning": false,
-            "feedbackEnabled": true,
-            "x.ai/sessionConfig": {
-              "options": [
-                {
-                  "id": "<unvalidated-model:459415a9>",
-                  "category": "model",
-                  "label": "Grok 4.7",
-                  "selected": false
-                },
-                {
-                  "id": "<unvalidated-model:7dba0291>",
-                  "category": "model",
-                  "label": "Grok 4.7 Fast",
-                  "selected": false
-                },
-                {
-                  "id": "<unvalidated-model:44968622>",
-                  "category": "model",
-                  "label": "Grok 4.6",
-                  "selected": true
-                },
-                {
-                  "id": "<unvalidated-model:d3b23c79>",
-                  "category": "model",
-                  "label": "Grok 4.5",
-                  "selected": false
-                },
-                {
-                  "id": "xhigh",
-                  "category": "mode",
-                  "label": "Extra High",
-                  "description": "Highest effort and reasoning level",
-                  "selected": false
-                },
-                {
-                  "id": "high",
-                  "category": "mode",
-                  "label": "High",
-                  "description": "Higher implementation quality with extensive reasoning",
-                  "selected": true
-                },
-                {
-                  "id": "medium",
-                  "category": "mode",
-                  "label": "Medium",
-                  "description": "Balanced effort with standard implementation and testing",
-                  "selected": false
-                },
-                {
-                  "id": "low",
-                  "category": "mode",
-                  "label": "Low",
-                  "description": "Quick, fast implementations",
-                  "selected": false
-                }
-              ]
-            },
-            "x.ai/sessionDetail": {
-              "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-              "kind": "build",
-              "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/grok-goal-workspace",
-              "currentModelId": "<unvalidated-model:44968622>"
-            },
-            "x.ai/memoryNotesWritable": true
-          }
+          "_meta": {}
         }
       }
     },
@@ -256,11 +115,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "b9ce4eff-52c0-4a3a-9cf7-d41fa0f75680",
             "promptId": "b9ce4eff-52c0-4a3a-9cf7-d41fa0f75680",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }
@@ -273,11 +129,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "315a8f75-be33-4f2a-b62a-44d4b5224837",
             "promptId": "315a8f75-be33-4f2a-b62a-44d4b5224837",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }
@@ -290,11 +143,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "38675ccc-4f26-416a-ae82-487dd25e07ee",
             "promptId": "38675ccc-4f26-416a-ae82-487dd25e07ee",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }
@@ -307,11 +157,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "1a28b31e-ecb7-4339-af2c-121cfd9b4fd8",
             "promptId": "1a28b31e-ecb7-4339-af2c-121cfd9b4fd8",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }
@@ -364,33 +211,7 @@
               "close": {}
             },
             "auth": {},
-            "_meta": {
-              "x.ai/fs_notify": true,
-              "x.ai/hooks": {
-                "blockingEvents": [
-                  "pre_tool_use",
-                  "stop",
-                  "subagent_stop"
-                ],
-                "decisions": [
-                  "deny",
-                  "block"
-                ],
-                "stopSignals": [
-                  "continue",
-                  "stopReason",
-                  "additionalContext"
-                ]
-              },
-              "x.ai/capabilities": {
-                "toolOverrides": {
-                  "x_keyword_search": true,
-                  "x_semantic_search": true,
-                  "x_user_search": false,
-                  "x_thread_fetch": false
-                }
-              }
-            }
+            "_meta": {}
           },
           "authMethods": [
             {
@@ -404,52 +225,7 @@
               "description": "Sign in with Grok"
             }
           ],
-          "_meta": {
-            "grokShell": true,
-            "defaultAuthMethodId": "cached_token",
-            "x.ai/mcp/sdk": true,
-            "x.ai/pluginDirs": true,
-            "currentWorkingDirectory": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/grok-goal-workspace",
-            "agentVersion": "1.0.50",
-            "agentId": "15c4071b-b717-5be1-bb3d-450ed341ef7e",
-            "agentInstanceId": "4678af16-3c5f-4ee7-85bc-c3787496792e",
-            "hostname": "MacBook-Pro-von-Michael-2.local",
-            "modelState": {
-              "currentModelId": "<unvalidated-model:44968622>",
-              "availableModels": [
-                {
-                  "catalog_omitted": true,
-                  "advertised_count": 4
-                }
-              ]
-            },
-            "mcpServers": [],
-            "mcpApps": false,
-            "metadata": null,
-            "availableCommands": [
-              {
-                "name": "compact",
-                "description": "Compress conversation history to save context window",
-                "input": null
-              },
-              {
-                "name": "context",
-                "description": "Show context window usage and session stats",
-                "input": null
-              },
-              {
-                "name": "goal",
-                "description": "Set, manage, or check an autonomous goal",
-                "input": {
-                  "hint": "<objective> [--budget <tokens>] | status | pause | resume | clear"
-                }
-              }
-            ],
-            "cancelRewind": true,
-            "sessionRecap": true,
-            "feedbackTraceOffer": false,
-            "voiceMode": true
-          }
+          "_meta": {}
         }
       }
     },
@@ -579,7 +355,7 @@
             "availableModels": [
               {
                 "catalog_omitted": true,
-                "advertised_count": 4
+                "advertised_count": 1
               }
             ]
           },
@@ -593,7 +369,7 @@
               "options": [
                 {
                   "catalog_omitted": true,
-                  "advertised_count": 4
+                  "advertised_count": 1
                 }
               ]
             },
@@ -627,77 +403,7 @@
               ]
             }
           ],
-          "_meta": {
-            "currentWorkingDirectory": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/grok-goal-workspace",
-            "codebaseIndexed": [],
-            "isGitRepo": false,
-            "gitRoot": null,
-            "showNonGitWarning": false,
-            "feedbackEnabled": true,
-            "x.ai/sessionConfig": {
-              "options": [
-                {
-                  "id": "<unvalidated-model:459415a9>",
-                  "category": "model",
-                  "label": "Grok 4.7",
-                  "selected": false
-                },
-                {
-                  "id": "<unvalidated-model:7dba0291>",
-                  "category": "model",
-                  "label": "Grok 4.7 Fast",
-                  "selected": false
-                },
-                {
-                  "id": "<unvalidated-model:44968622>",
-                  "category": "model",
-                  "label": "Grok 4.6",
-                  "selected": true
-                },
-                {
-                  "id": "<unvalidated-model:d3b23c79>",
-                  "category": "model",
-                  "label": "Grok 4.5",
-                  "selected": false
-                },
-                {
-                  "id": "xhigh",
-                  "category": "mode",
-                  "label": "Extra High",
-                  "description": "Highest effort and reasoning level",
-                  "selected": false
-                },
-                {
-                  "id": "high",
-                  "category": "mode",
-                  "label": "High",
-                  "description": "Higher implementation quality with extensive reasoning",
-                  "selected": true
-                },
-                {
-                  "id": "medium",
-                  "category": "mode",
-                  "label": "Medium",
-                  "description": "Balanced effort with standard implementation and testing",
-                  "selected": false
-                },
-                {
-                  "id": "low",
-                  "category": "mode",
-                  "label": "Low",
-                  "description": "Quick, fast implementations",
-                  "selected": false
-                }
-              ]
-            },
-            "x.ai/sessionDetail": {
-              "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-              "kind": "build",
-              "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/grok-goal-workspace",
-              "currentModelId": "<unvalidated-model:44968622>"
-            },
-            "x.ai/memoryNotesWritable": true
-          }
+          "_meta": {}
         }
       }
     },
@@ -806,46 +512,12 @@
                 }
               }
             ],
-            "_meta": {
-              "tools": [
-                "run_terminal_command",
-                "read_file",
-                "search_replace",
-                "list_dir",
-                "grep",
-                "kill_command_or_subagent",
-                "todo_write",
-                "get_command_or_subagent_output",
-                "spawn_subagent",
-                "scheduler_create",
-                "scheduler_delete",
-                "scheduler_list",
-                "monitor",
-                "search_tool",
-                "use_tool",
-                "workflow",
-                "enter_plan_mode",
-                "exit_plan_mode",
-                "ask_user_question",
-                "send_feedback",
-                "web_search",
-                "web_fetch",
-                "image_gen",
-                "image_edit",
-                "image_to_video",
-                "reference_to_video",
-                "write"
-              ]
-            }
+            "_meta": {}
           },
           "_meta": {
             "totalTokens": 1802,
             "eventId": "01a122aa-25dc-7fe3-9d70-a0ca04676520-0",
-            "agentTimestampMs": 1791582938720,
-            "updateType": "AvailableCommandsUpdate",
-            "updateParams": {
-              "commandsCount": 51
-            }
+            "agentTimestampMs": 1791582938720
           }
         }
       }
@@ -884,46 +556,12 @@
                 }
               }
             ],
-            "_meta": {
-              "tools": [
-                "run_terminal_command",
-                "read_file",
-                "search_replace",
-                "list_dir",
-                "grep",
-                "kill_command_or_subagent",
-                "todo_write",
-                "get_command_or_subagent_output",
-                "spawn_subagent",
-                "scheduler_create",
-                "scheduler_delete",
-                "scheduler_list",
-                "monitor",
-                "search_tool",
-                "use_tool",
-                "workflow",
-                "enter_plan_mode",
-                "exit_plan_mode",
-                "ask_user_question",
-                "send_feedback",
-                "web_search",
-                "web_fetch",
-                "image_gen",
-                "image_edit",
-                "image_to_video",
-                "reference_to_video",
-                "write"
-              ]
-            }
+            "_meta": {}
           },
           "_meta": {
             "totalTokens": 1802,
             "eventId": "01a122aa-25dc-7fe3-9d70-a0ca04676520-1",
-            "agentTimestampMs": 1791582938733,
-            "updateType": "AvailableCommandsUpdate",
-            "updateParams": {
-              "commandsCount": 51
-            }
+            "agentTimestampMs": 1791582938733
           }
         }
       }
@@ -1059,11 +697,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "b9ce4eff-52c0-4a3a-9cf7-d41fa0f75680",
             "promptId": "b9ce4eff-52c0-4a3a-9cf7-d41fa0f75680",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }
@@ -1310,7 +945,7 @@
           "availableModels": [
             {
               "catalog_omitted": true,
-              "advertised_count": 4
+              "advertised_count": 1
             }
           ]
         }
@@ -1675,7 +1310,7 @@
           "availableModels": [
             {
               "catalog_omitted": true,
-              "advertised_count": 4
+              "advertised_count": 1
             }
           ]
         }
@@ -1715,44 +1350,13 @@
                 }
               }
             ],
-            "_meta": {
-              "tools": [
-                "run_terminal_command",
-                "read_file",
-                "search_replace",
-                "list_dir",
-                "grep",
-                "kill_command_or_subagent",
-                "todo_write",
-                "get_command_or_subagent_output",
-                "wait_commands_or_subagents",
-                "scheduler_create",
-                "scheduler_delete",
-                "scheduler_list",
-                "monitor",
-                "search_tool",
-                "use_tool",
-                "web_search",
-                "web_fetch",
-                "image_gen",
-                "image_edit",
-                "image_to_video",
-                "reference_to_video",
-                "write"
-              ]
-            }
+            "_meta": {}
           },
           "_meta": {
             "totalTokens": 14830,
             "eventId": "01a122aa-2696-7083-be7e-f1985030cc5e-40",
             "agentTimestampMs": 1791582948336,
-            "promptId": "01a122aa-279f-7a12-9136-f1a174dd5281",
-            "streamStartMs": 1791582942413,
-            "turnStartMs": 1791582939180,
-            "updateType": "AvailableCommandsUpdate",
-            "updateParams": {
-              "commandsCount": 47
-            }
+            "promptId": "01a122aa-279f-7a12-9136-f1a174dd5281"
           }
         }
       }
@@ -2016,11 +1620,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "315a8f75-be33-4f2a-b62a-44d4b5224837",
             "promptId": "315a8f75-be33-4f2a-b62a-44d4b5224837",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }
@@ -2172,11 +1773,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "38675ccc-4f26-416a-ae82-487dd25e07ee",
             "promptId": "38675ccc-4f26-416a-ae82-487dd25e07ee",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }
@@ -2356,11 +1954,8 @@
         "result": {
           "stopReason": "end_turn",
           "_meta": {
-            "sessionId": "01a122aa-25dc-7fe3-9d70-a0ca04676520",
-            "requestId": "1a28b31e-ecb7-4339-af2c-121cfd9b4fd8",
             "promptId": "1a28b31e-ecb7-4339-af2c-121cfd9b4fd8",
-            "totalTokens": 0,
-            "modelId": "<unvalidated-model:44968622>"
+            "totalTokens": 0
           }
         }
       }

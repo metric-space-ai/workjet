@@ -19,3 +19,12 @@ side should not be the default. Safety rules, facts, and required output formats
 The generated prompt and its JSON use canonical English text. Changing the app's display language
 does not translate or otherwise alter the instructions sent to the model. Custom slider poles are
 therefore entered as English prompt text.
+
+## Connect project workers
+
+Open the project supervisor and choose **Connect workers**. This connects the selected Business OS
+for worker dispatch without configuring a separate coding chat. **Workers connected** confirms that
+the worker connection is ready. Ordinary supervisor messages remain available independently.
+
+Connect from the desktop app. If the connection is unavailable later, choose **Connect workers** again;
+existing Business OS permissions still apply.

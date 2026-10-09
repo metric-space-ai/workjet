@@ -83,6 +83,8 @@ struct State {
     #[serde(default)]
     oauth_fingerprints: BTreeMap<String, String>,
     #[serde(default)]
+    oauth_login_recoveries: std::collections::BTreeSet<String>,
+    #[serde(default)]
     observations: BTreeMap<String, (u16, i64)>,
     #[serde(default)]
     affinities: BTreeMap<String, String>,
@@ -100,6 +102,53 @@ pub struct AccountState {
     conductor: Arc<CooldownConductor>,
 }
 impl AccountState {
+    /// A verified OAuth claim can reuse the current token. Clear only stale
+    /// authentication failures belonging to that provider/token identity.
+    /// Quota, balance, model failures and session affinity remain authoritative.
+    pub fn recover_oauth_claim(
+        &self,
+        provider: &str,
+        token: &[u8],
+    ) -> Result<(), CooldownStoreError> {
+        let fingerprint = format!("{:x}", Sha256::digest(token));
+        let prefix = format!("{}:", provider.trim().to_ascii_lowercase());
+        let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
+        let identities: std::collections::BTreeSet<_> = state
+            .oauth_fingerprints
+            .iter()
+            .filter(|(identity, saved)| identity.starts_with(&prefix) && **saved == fingerprint)
+            .map(|(identity, _)| identity.clone())
+            .collect();
+        if identities.is_empty() {
+            return Ok(());
+        }
+        let mut next = state.clone();
+        next.cooldowns.retain(|record| {
+            !(identities.contains(&account_key(&record.provider, &record.auth_id))
+                && matches!(
+                    record
+                        .last_error
+                        .as_ref()
+                        .and_then(|error| error.http_status),
+                    Some(401 | 403)
+                ))
+        });
+        next.observations.retain(|identity, (status, _)| {
+            !(identities.contains(identity) && matches!(*status, 401 | 403))
+        });
+        // The reload consumes this marker after the old process has exited.
+        next.oauth_login_recoveries.extend(identities);
+        if next.cooldowns.len() == state.cooldowns.len()
+            && next.observations.len() == state.observations.len()
+            && next.oauth_login_recoveries == state.oauth_login_recoveries
+        {
+            return Ok(());
+        }
+        self.persist(&next)?;
+        *state = next;
+        Ok(())
+    }
+
     /// OAuth token replacement keeps the stable account's quota and session affinity.
     /// Only a one-way token fingerprint is stored; old authentication outcomes expire.
     pub fn bind_oauth(
@@ -111,13 +160,32 @@ impl AccountState {
         let identity = account_key(provider, account);
         let fingerprint = format!("{:x}", Sha256::digest(token));
         let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
-        if state.oauth_fingerprints.get(&identity) == Some(&fingerprint) {
+        let unchanged = state.oauth_fingerprints.get(&identity) == Some(&fingerprint);
+        if unchanged && !state.oauth_login_recoveries.contains(&identity) {
             return Ok(());
         }
         let mut next = state.clone();
-        next.cooldowns
-            .retain(|r| !(r.provider.eq_ignore_ascii_case(provider) && r.auth_id == account));
-        next.observations.remove(&identity);
+        next.cooldowns.retain(|record| {
+            let selected =
+                record.provider.eq_ignore_ascii_case(provider) && record.auth_id == account;
+            let auth_failure = matches!(
+                record
+                    .last_error
+                    .as_ref()
+                    .and_then(|error| error.http_status),
+                Some(401 | 403)
+            );
+            !(selected && (!unchanged || auth_failure))
+        });
+        if !unchanged
+            || next
+                .observations
+                .get(&identity)
+                .is_some_and(|(status, _)| matches!(*status, 401 | 403))
+        {
+            next.observations.remove(&identity);
+        }
+        next.oauth_login_recoveries.remove(&identity);
         next.oauth_fingerprints.insert(identity, fingerprint);
         self.persist(&next)?;
         *state = next;

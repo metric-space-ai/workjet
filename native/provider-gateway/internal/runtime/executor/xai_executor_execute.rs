@@ -163,8 +163,14 @@ impl XaiExecutor {
             response.body.to_vec()
         } else {
             let completed = aggregate_responses_sse(&response.body)?;
-            if let Some(store) = self.replay_store.as_deref() {
-                cache_reasoning_replay_from_completed(store, replay_scope.as_ref(), &completed);
+            // A valid token-limited response can be returned, but must not
+            // replace the last complete reasoning replay for this session.
+            if serde_json::from_slice::<Value>(&completed).is_ok_and(|event| {
+                event.get("type").and_then(Value::as_str) == Some("response.completed")
+            }) {
+                if let Some(store) = self.replay_store.as_deref() {
+                    cache_reasoning_replay_from_completed(store, replay_scope.as_ref(), &completed);
+                }
             }
             completed
         };
@@ -232,7 +238,7 @@ fn aggregate_responses_sse(body: &[u8]) -> Result<Vec<u8>, XaiExecutionError> {
             .ok()
             .and_then(|event| event.get("type").and_then(Value::as_str).map(str::to_owned))
             .as_deref()
-            == Some("response.completed")
+            .is_some_and(|kind| matches!(kind, "response.completed" | "response.incomplete"))
         {
             completed = Some(normalized);
         }

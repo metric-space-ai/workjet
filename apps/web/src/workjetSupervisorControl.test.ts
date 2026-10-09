@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CommandId,
   ProjectId,
+  type CtoxWorkjetProjectControlRequest,
   type WorkjetSupervisorJournal,
   type WorkjetSupervisorTurnIntent,
 } from "@workjet/contracts";
@@ -10,6 +11,7 @@ import {
   submitWorkjetSupervisorTurn,
 } from "./workjetSupervisorControl";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
+import { canResumeSupervisorJournal } from "./nativeSupervisorComposer";
 
 const intent: WorkjetSupervisorTurnIntent = {
   instanceId: "managed:acceptance",
@@ -42,6 +44,130 @@ const turn = {
 } as const;
 
 describe("durable native supervisor submission", () => {
+  it.each([
+    { code: "not_active", legacy: false },
+    { code: "timeout", legacy: false },
+    { code: "not_active", legacy: true },
+    { code: "timeout", legacy: true },
+  ] as const)(
+    "recovers $code binding failure (legacy=$legacy) using the original intent",
+    async ({ code, legacy }) => {
+      const state: { saved: WorkjetSupervisorJournal | null } = {
+        saved: legacy
+          ? { intent, turn: null, submission: "not-submitted", submissionError: code }
+          : null,
+      };
+      const journal = {
+        save: async (value: WorkjetSupervisorJournal) => {
+          state.saved = structuredClone(value);
+        },
+      };
+      const requests: CtoxWorkjetProjectControlRequest[] = [];
+      let bindingReady = legacy;
+      const port: WorkjetProjectControlPort = async (instanceId, request) => {
+        expect(instanceId).toBe(intent.instanceId);
+        expect(state.saved?.intent).toEqual(intent);
+        requests.push(request);
+        if (request.action === "project.supervisor.bind") {
+          expect(request.commandId).toBe(`${intent.commandId}:bind`);
+          if (!bindingReady) {
+            bindingReady = true;
+            return { _tag: "failed", code };
+          }
+          return {
+            _tag: "completed",
+            response: {
+              action: request.action,
+              commandId: request.commandId,
+              projectId: request.projectId,
+              binding,
+            },
+          };
+        }
+        if (request.action === "project.supervisor.turn.submit")
+          return {
+            _tag: "completed",
+            response: {
+              action: request.action,
+              commandId: request.commandId,
+              projectId: request.projectId,
+              binding,
+              contract: "ctox.workjet.supervisor_turn.v1",
+              messageId: "native-message-1",
+              turn,
+            },
+          };
+        return { _tag: "failed", code: "unsupported" };
+      };
+      if (!legacy) {
+        expect(await submitWorkjetSupervisorTurn(intent, journal, port)).toEqual({
+          _tag: "failed",
+          code,
+        });
+        expect(state.saved).toEqual({
+          intent,
+          turn: null,
+          submission: "prepared",
+          submissionError: code,
+        });
+      }
+      expect(canResumeSupervisorJournal(state.saved, null)).toBe(true);
+      expect(canResumeSupervisorJournal(state.saved, code)).toBe(true);
+      expect(canResumeSupervisorJournal(state.saved, "local_failed")).toBe(false);
+      await resumeWorkjetSupervisorTurn(
+        structuredClone(state.saved!),
+        CommandId.make("observation-after-binding-readiness"),
+        journal,
+        port,
+      );
+      expect(
+        requests.filter((request) => request.action === "project.supervisor.bind"),
+      ).toHaveLength(legacy ? 1 : 2);
+      expect(
+        requests.filter((request) => request.action === "project.supervisor.turn.submit"),
+      ).toEqual([
+        {
+          action: "project.supervisor.turn.submit",
+          commandId: intent.commandId,
+          projectId: intent.projectId,
+          threadId: intent.threadId,
+          goal: intent.goal,
+        },
+      ]);
+      expect(state.saved).toEqual({ intent, turn, submission: "confirmed" });
+    },
+  );
+
+  it.each(["authentication_required", "unsupported", "guest_failed"] as const)(
+    "does not replay a persisted %s refusal",
+    async (code) => {
+      const saved: WorkjetSupervisorJournal = {
+        intent,
+        turn: null,
+        submission: "not-submitted",
+        submissionError: code,
+      };
+      let calls = 0;
+      expect(canResumeSupervisorJournal(saved, null)).toBe(false);
+      expect(canResumeSupervisorJournal(saved, "timeout")).toBe(false);
+      expect(
+        await resumeWorkjetSupervisorTurn(
+          saved,
+          CommandId.make("observation-after-refusal"),
+          {
+            save: async () => {
+              throw new Error("A refused intent must not be rewritten");
+            },
+          },
+          async () => {
+            calls += 1;
+            return { _tag: "failed", code };
+          },
+        ),
+      ).toEqual({ _tag: "failed", code });
+      expect(calls).toBe(0);
+    },
+  );
   it("recovers a lost submit reply with the same saved command, then watches the native execution", async () => {
     const state: { saved: WorkjetSupervisorJournal | null } = { saved: null };
     const journal = {
@@ -114,6 +240,15 @@ describe("durable native supervisor submission", () => {
       code: "timeout",
     });
     expect(state.saved).toEqual({ intent, turn: null, submission: "awaiting-receipt" });
+    expect(canResumeSupervisorJournal(state.saved, "timeout")).toBe(true);
+    expect(canResumeSupervisorJournal(state.saved, null)).toBe(true);
+    for (const refusal of [
+      "authentication_required",
+      "unsupported",
+      "guest_failed",
+      "local_failed",
+    ])
+      expect(canResumeSupervisorJournal(state.saved, refusal)).toBe(false);
     // A fresh UI/runtime uses only persisted intent; it has no in-memory send token.
     await resumeWorkjetSupervisorTurn(
       structuredClone(state.saved!),
@@ -131,6 +266,8 @@ describe("durable native supervisor submission", () => {
       port,
     );
     expect(observed).toEqual([turn.commandId]);
+    expect(canResumeSupervisorJournal(state.saved, null)).toBe(false);
+    expect(canResumeSupervisorJournal(state.saved, "timeout")).toBe(false);
     expect(state.saved?.turn).toMatchObject({
       taskId: turn.taskId,
       commandId: turn.commandId,
@@ -156,6 +293,8 @@ describe("durable native supervisor submission", () => {
     expect(result).toEqual({ _tag: "failed", code: "unsupported" });
     expect(observations.map((value) => value.submission)).toEqual(["prepared", "not-submitted"]);
     expect(observations.at(-1)?.submissionError).toBe("unsupported");
+    expect(canResumeSupervisorJournal(observations.at(-1)!, null)).toBe(false);
+    expect(canResumeSupervisorJournal(observations.at(-1)!, "timeout")).toBe(false);
   });
 
   it("does not dispatch if saving the intent fails", async () => {

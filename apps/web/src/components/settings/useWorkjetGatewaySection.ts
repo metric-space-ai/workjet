@@ -137,7 +137,8 @@ export function useWorkjetGatewaySection(
       catalogQuery.refresh,
     ],
   );
-  const checksBusy = checksSubmitting || (checksQuery.data?.pending.length ?? 0) > 0;
+  const checksBusy =
+    checksSubmitting || (checksError === null && (checksQuery.data?.pending.length ?? 0) > 0);
   useEffect(() => {
     if (
       environmentId === null ||
@@ -179,16 +180,14 @@ export function useWorkjetGatewaySection(
     };
   }, [environmentId]);
   useEffect(() => {
-    if (
-      environmentId === null ||
-      checksSubmitting ||
-      checksQuery.error !== null ||
-      checksError !== null ||
-      !checksQuery.data
-    )
+    if (environmentId === null || checksSubmitting || checksError !== null || !checksQuery.data)
       return;
     const { pending, deferredCount } = checksQuery.data;
     if (pending.length === 0 && deferredCount === 0) return;
+    if (checksQuery.error !== null) {
+      setChecksError("Model check status could not be loaded. Retry the checks.");
+      return;
+    }
     const pass = checksPass.current;
     if (
       pending.length === 0 &&
@@ -199,7 +198,10 @@ export function useWorkjetGatewaySection(
       return;
     if (checksPollingDeadline.current === 0)
       checksPollingDeadline.current = Date.now() + 20 * 60_000;
-    if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) return;
+    if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) {
+      setChecksError("Model checks timed out. Retry the checks.");
+      return;
+    }
     // Only this mounted page owns the timer. Completed observations persist
     // server-side; each continuation admits a bounded batch from this finite pass.
     const timer = setTimeout(() => {
@@ -544,13 +546,10 @@ export function useWorkjetGatewaySection(
               accountIds: polled.value.completedAccountIds,
             });
             setChecksError(null);
-            setRecoveryAccounts((previous) => [
-              ...new Set([
-                ...previous,
-                ...(accountId ? [accountId] : []),
-                ...polled.value.completedAccountIds,
-              ]),
-            ]);
+            // The server force-checks successful logins, including unchanged tokens.
+            checksPass.current = null;
+            checksPollingDeadline.current = 0;
+            checksPolls.current = 0;
             // The server persisted the account and reloaded the gateway, so the
             // new account only appears after a fresh catalog read.
             refresh();
@@ -689,7 +688,7 @@ export function useWorkjetGatewaySection(
     loginAccountId,
     accountErrors,
     modelChecks: checksQuery.data?.checks ?? [],
-    pendingModelChecks: checksQuery.data?.pending ?? [],
+    pendingModelChecks: checksError === null ? (checksQuery.data?.pending ?? []) : [],
     deferredChecksCount:
       checksPass.current === null
         ? (checksQuery.data?.deferredCount ?? 0)

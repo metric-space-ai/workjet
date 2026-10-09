@@ -1,4 +1,80 @@
 #[test]
+fn verified_same_token_login_clears_only_its_auth_failure_and_preserves_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = ["a", "b"].map(|id| AccountCandidate {
+        auth_id: id.into(),
+        provider: "xai".into(),
+        supported_models: vec!["grok-4.7".into()],
+        ..Default::default()
+    });
+    state.bind_oauth("xai", "a", b"reused-access").unwrap();
+    state.bind_oauth("xai", "b", b"other-access").unwrap();
+    state
+        .observe_quota("xai", "a", quota(5000, 1000, 50.0))
+        .unwrap();
+    state
+        .observe_quota("xai", "b", quota(3000, 1000, 30.0))
+        .unwrap();
+    let body = br#"{"session_id":"retained-xai-session"}"#;
+    assert_eq!(
+        state
+            .select("xai", Some("grok-4.7"), 1000, &accounts[..1], &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    state.outcome("xai", "a", "grok-4.7", 401, 1001);
+    state.outcome("xai", "b", "grok-4.7", 403, 1001);
+    state.outcome("xai", "quota-account", "grok-4.7", 429, 1001);
+    state.outcome("xai", "model-account", "grok-4.7", 404, 1001);
+    let before = state.load().unwrap();
+    assert_eq!(before.len(), 4);
+    // Startup alone, an unrelated token and another provider cannot heal an auth rejection.
+    let state = open(dir.path());
+    state.bind_oauth("xai", "a", b"reused-access").unwrap();
+    state
+        .recover_oauth_claim("xai", b"unrelated-access")
+        .unwrap();
+    state
+        .recover_oauth_claim("claude", b"reused-access")
+        .unwrap();
+    assert_eq!(state.load().unwrap(), before);
+    state.recover_oauth_claim("xai", b"reused-access").unwrap();
+    assert_eq!(
+        state.load().unwrap(),
+        before
+            .into_iter()
+            .filter(|record| record.auth_id != "a")
+            .collect::<Vec<_>>(),
+    );
+    assert!(state.observation("xai", "a").is_none());
+    assert_eq!(state.observation("xai", "b").unwrap().0, 403);
+    assert_eq!(state.quotas("xai", "a")[0].remaining_percent, Some(50.0));
+    assert_eq!(state.quotas("xai", "b")[0].remaining_percent, Some(30.0));
+    // A request already running in the old process may report after the claim.
+    state.outcome("xai", "a", "grok-4.7", 401, 1002);
+    let restarted = open(dir.path());
+    restarted.bind_oauth("xai", "a", b"reused-access").unwrap();
+    assert_eq!(
+        restarted
+            .select("xai", Some("grok-4.7"), 1002, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    assert!(restarted.observation("xai", "a").is_none());
+    assert_eq!(restarted.load().unwrap().len(), 3);
+    let snapshot = std::fs::read_to_string(
+        dir.path()
+            .join("workjet-provider-gateway.account-policy-state.v1.bin"),
+    )
+    .unwrap();
+    assert!(!snapshot.contains("reused-access"));
+    assert!(!snapshot.contains("retained-xai-session"));
+}
+
+#[test]
 #[cfg(unix)]
 fn failed_durable_probe_write_reports_refresh_error_without_changing_auth_or_affinity() {
     use std::os::unix::fs::PermissionsExt;

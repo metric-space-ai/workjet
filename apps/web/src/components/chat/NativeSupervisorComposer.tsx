@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { newCommandId } from "~/lib/utils";
 import {
   persistSupervisorJournal,
+  canResumeSupervisorJournal,
   nativeSupervisorResultText,
   supervisorJournalMatchesScope,
   type NativeSupervisorScope,
@@ -40,6 +41,7 @@ export function NativeSupervisorComposer(props: {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failureCode, setFailureCode] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [execution, setExecution] = useState<{
     commandId: string;
@@ -57,8 +59,7 @@ export function NativeSupervisorComposer(props: {
   const scopeMatches =
     scope !== null && (journal === null || supervisorJournalMatchesScope(journal, scope));
   const disabled = props.unavailable || !scopeMatches;
-  const pending =
-    journal !== null && journal.submission !== "not-submitted" && journal.turn?.terminal !== true;
+  const pending = canResumeSupervisorJournal(journal, null);
   const latestProps = useRef(props);
   latestProps.current = props;
 
@@ -76,11 +77,7 @@ export function NativeSupervisorComposer(props: {
       (saved !== null && !supervisorJournalMatchesScope(saved, target))
     )
       return;
-    if (
-      operation === "send" &&
-      (prompt.trim() === "" ||
-        (saved !== null && saved.submission !== "not-submitted" && saved.turn?.terminal !== true))
-    )
+    if (operation === "send" && (prompt.trim() === "" || canResumeSupervisorJournal(saved, null)))
       return;
     if (operation !== "send" && saved === null) return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
@@ -88,6 +85,7 @@ export function NativeSupervisorComposer(props: {
     inFlight.current = true;
     setBusy(true);
     setError(null);
+    setFailureCode(null);
     const port = {
       save: async (next: WorkjetSupervisorJournal) => {
         await persistSupervisorJournal({
@@ -143,8 +141,10 @@ export function NativeSupervisorComposer(props: {
           throw new Error("The response belongs to a different task.");
       }
       if (journalRef.current?.turn?.terminal) setNotice(null);
-      if (result?._tag === "failed")
+      if (result?._tag === "failed") {
+        setFailureCode(result.code);
         setError(`CTOX: ${result.code}. Check the task and reconnect.`);
+      }
       if (
         result?._tag === "completed" &&
         (operation === "send" || prompt.trim() === saved?.intent.goal)
@@ -192,6 +192,7 @@ export function NativeSupervisorComposer(props: {
         }
       }
     } catch (failure) {
+      setFailureCode("local_failed");
       setError(failure instanceof Error ? failure.message : "Could not confirm the CTOX task.");
     } finally {
       inFlight.current = false;
@@ -207,6 +208,7 @@ export function NativeSupervisorComposer(props: {
       journalRef.current = persistedJournal;
       setJournal(persistedJournal);
       setError(null);
+      setFailureCode(null);
     }
   }, [persistedJournal]);
 
@@ -214,17 +216,17 @@ export function NativeSupervisorComposer(props: {
     // Restore pending and terminal turns alike; events are backfilled from the saved identity.
     if (!restored.current && !disabled && journal !== null) {
       restored.current = true;
-      if (journal.submission !== "not-submitted") void runRef.current("resume");
+      if (journal.turn !== null || canResumeSupervisorJournal(journal, null))
+        void runRef.current("resume");
     }
   }, [disabled, journal]);
   useEffect(() => {
-    if (disabled || busy || error !== null || journal?.turn == null || journal.turn.terminal)
-      return;
+    if (disabled || busy || !canResumeSupervisorJournal(journal, failureCode)) return;
     const timer = setTimeout(() => {
       void runRef.current("resume");
     }, 3000);
     return () => clearTimeout(timer);
-  }, [disabled, busy, error, journal]);
+  }, [disabled, busy, failureCode, journal]);
 
   return (
     <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor task">
@@ -234,9 +236,9 @@ export function NativeSupervisorComposer(props: {
           <p className="mt-1 text-xs text-muted-foreground">
             {journal.turn
               ? `${journal.turn.status} · Attempt ${journal.turn.attempt}`
-              : journal.submission === "not-submitted"
+              : journal.submission === "not-submitted" && !pending
                 ? "Not sent"
-                : "Awaiting confirmation"}
+                : "Waiting for CTOX receipt"}
           </p>
           {journal.turn?.taskId && (
             <details className="mt-1 text-xs text-muted-foreground">
@@ -271,7 +273,7 @@ export function NativeSupervisorComposer(props: {
           {journal.turn?.resultTruncated && (
             <p className="text-xs text-muted-foreground">Result truncated</p>
           )}
-          {journal.submission === "not-submitted" && (
+          {journal.submission === "not-submitted" && !pending && (
             <p role="alert" className="text-destructive">
               CTOX: {journal.submissionError}. You can send a new request.
             </p>

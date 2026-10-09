@@ -119,6 +119,19 @@ function render(overrides: Partial<WorkjetGatewaySectionState> = {}) {
 }
 
 describe("Workjet gateway account surface", () => {
+  it("derives Kimi discovery errors only from the typed reason, never an echoed key", () => {
+    const message = workjetGatewayFailureDescription({
+      _tag: "WorkjetGatewayOperationError",
+      reason: "kimi-key-not-accepted",
+      message: "provider echoed private-fixture-key",
+    });
+    expect(message).toContain("GET /models");
+    expect(message).toContain("https://api.kimi.com/coding/v1");
+    expect(message).toContain("https://api.kimi.ai/coding/v1");
+    expect(message).toContain("https://api.moonshot.ai/v1");
+    expect(message).toContain("https://api.moonshot.cn/v1");
+    expect(message).not.toContain("private-fixture-key");
+  });
   it("lists every gateway provider with its accounts, enablement, and model count", () => {
     const markup = render();
 

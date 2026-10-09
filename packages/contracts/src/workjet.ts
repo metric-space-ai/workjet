@@ -1130,6 +1130,23 @@ export const WorkjetGatewayRouteId = TrimmedNonEmptyString.pipe(
 );
 export type WorkjetGatewayRouteId = typeof WorkjetGatewayRouteId.Type;
 
+/** Official Kimi Code and Moonshot API origins; keys never follow redirects. */
+export const WORKJET_GATEWAY_KIMI_ENDPOINTS = [
+  { plan: "coding", upstreamBaseUrl: "https://api.kimi.com/coding/v1" },
+  { plan: "coding", upstreamBaseUrl: "https://api.kimi.ai/coding/v1" },
+  { plan: "api", upstreamBaseUrl: "https://api.moonshot.ai/v1" },
+  { plan: "api", upstreamBaseUrl: "https://api.moonshot.cn/v1" },
+] as const;
+export const WorkjetGatewayKimiPlan = Schema.Literals(["coding", "api"]);
+export type WorkjetGatewayKimiPlan = typeof WorkjetGatewayKimiPlan.Type;
+export const WorkjetGatewayKimiConnection = Schema.Struct({
+  plan: WorkjetGatewayKimiPlan,
+  upstreamBaseUrl: Schema.Literals(
+    WORKJET_GATEWAY_KIMI_ENDPOINTS.map((endpoint) => endpoint.upstreamBaseUrl),
+  ),
+});
+export type WorkjetGatewayKimiConnection = typeof WorkjetGatewayKimiConnection.Type;
+
 export const WorkjetGatewayAccountSummary = Schema.Struct({
   id: WorkjetGatewayAccountId,
   label: TrimmedNonEmptyString,
@@ -1139,6 +1156,8 @@ export const WorkjetGatewayAccountSummary = Schema.Struct({
   weight: PositiveInt,
   modelIds: Schema.Array(TrimmedNonEmptyString),
   credentialKind: Schema.optionalKey(Schema.Literals(["oauth", "api-key"])),
+  /** Plan and public endpoint verified with this account's authenticated model list. */
+  kimiConnection: Schema.optionalKey(WorkjetGatewayKimiConnection),
   /**
    * Last few characters of an API-key account's credential, for recognition
    * only; `null` for OAuth accounts and whenever no suffix was recorded. This
@@ -1671,6 +1690,7 @@ export const WorkjetGatewayFailureReason = Schema.Literals([
   "startup-timeout",
   "invalid-readiness",
   "management-unavailable",
+  "kimi-key-not-accepted",
   "usage-unavailable",
   "invalid-usage-query",
   "process-exit",
@@ -1716,6 +1736,8 @@ export class WorkjetGatewayOperationError extends Schema.TaggedErrorClass<Workje
         return "The Workjet provider gateway usage query has an invalid timezone.";
       case "management-unavailable":
         return "The Workjet provider gateway control plane is unavailable.";
+      case "kimi-key-not-accepted":
+        return `The Kimi key could not be verified. Checked GET /models at: ${WORKJET_GATEWAY_KIMI_ENDPOINTS.map((endpoint) => endpoint.upstreamBaseUrl).join(", ")}. Check that the key comes from Kimi Code or the Moonshot API platform, or retry if the service is unavailable. The key was not saved.`;
       case "process-exit":
         return "The Workjet provider gateway process exited unexpectedly.";
       case "shutdown-timeout":

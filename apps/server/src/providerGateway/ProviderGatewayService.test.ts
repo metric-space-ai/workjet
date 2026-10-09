@@ -1109,6 +1109,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
     const platform: ProviderGatewayPlatform = {
       ...base.platform,
       discoverKimiConnection: async () => ({
+        plan: "coding",
         upstreamBaseUrl: "https://api.kimi.com/coding/v1",
         models: ["k3"],
       }),
@@ -1300,6 +1301,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
       stored.accounts.find((account: { provider: string }) => account.provider === "kimi"),
     ).toMatchObject({
       upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      kimiPlan: "coding",
       models: ["k3"],
     });
     expect(harness.writes.join("\n")).not.toContain(API_KEY);
@@ -1327,6 +1329,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
           accounts: [...JSON.parse(configuration).accounts, account],
         }),
       discoverKimiConnection: async () => ({
+        plan: "coding",
         upstreamBaseUrl: account.upstreamBaseUrl,
         models: ["k3", "kimi-for-coding"],
       }),
@@ -1344,6 +1347,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
     const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
     expect(stored.accounts.find((entry: { id: string }) => entry.id === account.id)).toEqual({
       ...account,
+      kimiPlan: "coding",
       credentialSuffix: "abcd",
     });
     expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
@@ -1389,6 +1393,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
       ).toEqual({
         ...account,
         upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+        kimiPlan: "coding",
         models: ["k3"],
       });
       expect(harness.storedSecrets.size).toBe(0);
@@ -1486,7 +1491,125 @@ describe("ProviderGatewayService · API-key accounts", () => {
     expect(harness.storedSecrets.size).toBe(0);
   });
 
-  it("does not persist a Kimi key when neither endpoint returns a live list", async () => {
+  it("adds plan metadata to an accepted existing Coding endpoint without changing its selection or secret", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "kimi-existing",
+      provider: "kimi",
+      label: "Coding work",
+      enabled: true,
+      priority: 7,
+      weight: 1,
+      models: ["kimi-for-coding"],
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    let document = JSON.stringify({
+      ...JSON.parse(configuration),
+      providerPort: 41000,
+      accounts: [account],
+    });
+    const writer = harness.platform.writePrivateText;
+    harness.platform = {
+      ...harness.platform,
+      discoverKimiConnection: async () => ({
+        plan: "coding",
+        upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+        models: ["k3", "kimi-for-coding"],
+      }),
+      readText: async (path) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return document;
+      },
+      writePrivateText: async (path, value) => {
+        await writer(path, value);
+        if (path.endsWith("/provider-gateway.json")) document = value;
+      },
+    };
+    const catalog = await runWithSecrets(harness, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.checkModels({ force: true });
+        yield* gateway.checkModels({ force: true });
+        return yield* gateway.catalog();
+      }),
+    );
+    expect(JSON.parse(document).accounts).toEqual([{ ...account, kimiPlan: "coding" }]);
+    expect(catalog.accounts[0]?.kimiConnection).toEqual({
+      plan: "coding",
+      upstreamBaseUrl: account.upstreamBaseUrl,
+    });
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes.filter((value) => value.includes('"kimiPlan"'))).toHaveLength(1);
+  });
+
+  it("persists the accepted regional API plan without a user choice", async () => {
+    const harness = apiKeyHarness();
+    harness.platform = {
+      ...harness.platform,
+      discoverKimiConnection: async () => ({
+        plan: "api",
+        upstreamBaseUrl: "https://api.moonshot.cn/v1",
+        models: ["k3"],
+      }),
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        provider: "kimi",
+        label: "API work",
+        apiKey: API_KEY,
+      }),
+    );
+    const stored = JSON.parse(harness.writes.find((value) => value.includes("apiKeySecret"))!);
+    expect(
+      stored.accounts.find((account: { provider: string }) => account.provider === "kimi"),
+    ).toMatchObject({
+      kimiPlan: "api",
+      upstreamBaseUrl: "https://api.moonshot.cn/v1",
+      models: ["k3"],
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("preserves the existing account and secret when a replacement Kimi key is not accepted", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "kimi-existing",
+      provider: "kimi",
+      label: "Coding work",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      models: ["kimi-for-coding"],
+      kimiPlan: "coding",
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    const document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
+    harness.platform = {
+      ...harness.platform,
+      readText: async () => document,
+      discoverKimiConnection: async () => undefined,
+    };
+    const error = await runWithSecrets(harness, (gateway) =>
+      gateway
+        .addApiKeyAccount({
+          provider: "kimi",
+          accountId: WorkjetGatewayAccountId.make(account.id),
+          label: account.label,
+          apiKey: API_KEY,
+        })
+        .pipe(Effect.flip),
+    );
+    expect(error.reason).toBe("kimi-key-not-accepted");
+    expect(error.message).not.toContain(API_KEY);
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes).toEqual([]);
+  });
+
+  it("does not persist a Kimi key when no official endpoint returns a live list", async () => {
     const harness = apiKeyHarness();
     harness.platform = { ...harness.platform, discoverKimiConnection: async () => undefined };
     const error = await runWithSecrets(harness, (gateway) =>
@@ -1494,7 +1617,13 @@ describe("ProviderGatewayService · API-key accounts", () => {
         .addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY })
         .pipe(Effect.flip),
     );
-    expect(error.reason).toBe("management-unavailable");
+    expect(error.reason).toBe("kimi-key-not-accepted");
+    expect(error.message).toContain("https://api.kimi.com/coding/v1");
+    expect(error.message).toContain("https://api.kimi.ai/coding/v1");
+    expect(error.message).toContain("https://api.moonshot.ai/v1");
+    expect(error.message).toContain("https://api.moonshot.cn/v1");
+    expect(error.message).not.toContain(API_KEY);
+    expect(error.message).not.toContain("Credentials rejected");
     expect(harness.storedSecrets.size).toBe(0);
     expect(harness.writes).toEqual([]);
   });

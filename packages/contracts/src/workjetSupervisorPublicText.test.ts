@@ -68,9 +68,7 @@ describe("native Supervisor public-text opt-in wire", () => {
       { ...chunk, offset: 65537 },
       { ...chunk, offset: -1 },
     ])
-      expect(() =>
-        decodeText(invalid),
-      ).toThrow();
+      expect(() => decodeText(invalid)).toThrow();
   });
   it("rejects text on unrelated event kinds or without native support", () => {
     expect(() =>
@@ -93,11 +91,7 @@ describe("native Supervisor public-text opt-in wire", () => {
     ).toThrow();
   });
   it("retains the opt-in and actual attempt/cursor for continuation", () => {
-    expect(
-      nextWorkjetSupervisorExecutionPageRequest(
-        decodePage(page),
-      ),
-    ).toEqual({
+    expect(nextWorkjetSupervisorExecutionPageRequest(decodePage(page))).toEqual({
       attempt_id: "attempt",
       cursor: page.next_cursor,
       limit: 25,

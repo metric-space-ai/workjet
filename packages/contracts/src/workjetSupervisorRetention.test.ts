@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { CommandId, ProjectId } from "./baseSchemas.ts";
-import { DEFAULT_WORKJET_THREAD_CONFIG, type WorkjetThreadConfig } from "./workjet.ts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, type WorkjetThreadConfigV2 } from "./workjet.ts";
 import { retainWorkjetCtoxBinding } from "./workjetCtoxBinding.ts";
 import type { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
 
@@ -28,7 +28,7 @@ const turn = {
   errorCode: null,
   errorMessage: null,
 };
-const config = (journal: WorkjetSupervisorJournal): WorkjetThreadConfig => ({
+const config = (journal: WorkjetSupervisorJournal): WorkjetThreadConfigV2 => ({
   ...DEFAULT_WORKJET_THREAD_CONFIG,
   ctoxSupervisorTurn: journal,
 });

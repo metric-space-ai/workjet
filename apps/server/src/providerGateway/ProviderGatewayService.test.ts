@@ -1505,7 +1505,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
       apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
       credentialSuffix: "old1",
     };
-    let document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
+    let document = JSON.stringify({ ...JSON.parse(configuration), providerPort: 41000, accounts: [account] });
     const writer = harness.platform.writePrivateText;
     harness.platform = {
       ...harness.platform,

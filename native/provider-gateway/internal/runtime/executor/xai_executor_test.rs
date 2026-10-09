@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
 
 use super::*;
+use crate::internal::runtime::executor::xai_executor_execute::XaiExecutionError;
 use crate::sdk::cliproxy::auth::Auth;
 use crate::sdk::cliproxy::executor::{ExecutionMetadata, Headers, Options, Request};
 
@@ -462,9 +463,8 @@ async fn execute_aggregates_completed_event() {
 async fn execute_preserves_incomplete_response_and_previous_session_replay() {
     let store = Arc::new(MemoryReplay::default());
     let scope = XaiReasoningReplayScope::new("xai", "session-1", None).unwrap();
-    let previous = vec![
-        br#"{"type":"reasoning","encrypted_content":"YWJjZGVmZ2hpamtsbW5vcA=="}"#.to_vec(),
-    ];
+    let previous =
+        vec![br#"{"type":"reasoning","encrypted_content":"YWJjZGVmZ2hpamtsbW5vcA=="}"#.to_vec()];
     store.store(&scope.key(), &previous).unwrap();
     let terminal = json!({
         "type": "response.incomplete",
@@ -480,10 +480,7 @@ async fn execute_preserves_incomplete_response_and_previous_session_replay() {
         }
     });
     let transport = Arc::new(HttpFixture {
-        response: Mutex::new(Some((
-            200,
-            format!("data: {terminal}\n\n").into_bytes(),
-        ))),
+        response: Mutex::new(Some((200, format!("data: {terminal}\n\n").into_bytes()))),
         seen: Mutex::new(None),
         seen_body: Mutex::new(None),
     });
@@ -514,7 +511,8 @@ async fn execute_does_not_accept_failed_terminal_as_success() {
     let transport = Arc::new(HttpFixture {
         response: Mutex::new(Some((
             200,
-            b"data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\"}}\n\n".to_vec(),
+            b"data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\"}}\n\n"
+                .to_vec(),
         ))),
         seen: Mutex::new(None),
         seen_body: Mutex::new(None),

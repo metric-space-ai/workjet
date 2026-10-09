@@ -5,6 +5,7 @@ import {
   canResumeSupervisorJournal,
 } from "../../nativeSupervisorComposer";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
+import { SupervisorMarkdown } from "./SupervisorMarkdown";
 
 export function NativeSupervisorConversation(props: {
   readonly journal: WorkjetSupervisorJournal;
@@ -43,7 +44,7 @@ export function NativeSupervisorConversation(props: {
             <p className="mb-2 text-xs text-muted-foreground">
               {reply.phase === "commentary" ? "Supervisor · Progress" : "Supervisor"}
             </p>
-            <p className="whitespace-pre-wrap break-words leading-relaxed">{reply.text}</p>
+            <SupervisorMarkdown text={reply.text} />
             {(reply.truncated || reply.incomplete) && (
               <p role="status" className="mt-1 text-xs text-muted-foreground">
                 {reply.incomplete
@@ -56,7 +57,7 @@ export function NativeSupervisorConversation(props: {
       {finalText && finalText !== publicAnswer && (
         <article aria-label="Supervisor final result">
           <p className="mb-2 text-xs text-muted-foreground">Supervisor</p>
-          <p className="whitespace-pre-wrap break-words leading-relaxed">{finalText}</p>
+          <SupervisorMarkdown text={finalText} />
         </article>
       )}
       {journal.turn?.resultTruncated && (

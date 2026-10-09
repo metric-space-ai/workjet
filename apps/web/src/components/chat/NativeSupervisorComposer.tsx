@@ -15,6 +15,7 @@ import {
   reconstructSupervisorPublicReplies,
 } from "../../supervisorPublicReplies";
 import { NativeSupervisorConversation } from "./NativeSupervisorConversation";
+import { SupervisorMarkdown } from "./SupervisorMarkdown";
 import { newCommandId } from "~/lib/utils";
 import {
   persistSupervisorJournal,
@@ -433,9 +434,9 @@ export function NativeSupervisorComposer(props: {
             />
           )}
           {journal.turn?.result != null && (
-            <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
-              {nativeSupervisorResultText(journal.turn.result, journal.turn)}
-            </pre>
+            <SupervisorMarkdown
+              text={nativeSupervisorResultText(journal.turn.result, journal.turn)}
+            />
           )}
           {journal.turn?.resultTruncated && (
             <p className="text-xs text-muted-foreground">Result truncated</p>

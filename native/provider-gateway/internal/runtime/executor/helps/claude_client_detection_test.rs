@@ -78,7 +78,8 @@ fn classifies_native_and_non_native_entrypoints() {
         ("claude-desktop", "claude-desktop", false),
         ("copied-client", "", false),
     ] {
-        let user_agent = format!("claude-cli/{DEFAULT_CLAUDE_CLI_VERSION} (external, {entrypoint})");
+        let user_agent =
+            format!("claude-cli/{DEFAULT_CLAUDE_CLI_VERSION} (external, {entrypoint})");
         let detection = detect_claude_code_request(
             Some(&confirmed_headers(&user_agent)),
             &payload(VALID_USER_ID),

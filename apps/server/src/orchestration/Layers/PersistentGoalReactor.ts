@@ -95,9 +95,14 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
             Effect.flatMap((native) => {
               const ownerRestart =
                 goal.pendingContinuation?.commandId.startsWith("server:goal-start:") &&
-                (thread.latestTurn === null || thread.latestTurn.turnId === goal.lastCompletedTurnId);
-              if (native !== undefined && (native === null || native.objective !== goal.objective || ownerRestart))
-                return providers.nativeGoal!.set(thread.id, goal.objective, "active")
+                (thread.latestTurn === null ||
+                  thread.latestTurn.turnId === goal.lastCompletedTurnId);
+              if (
+                native !== undefined &&
+                (native === null || native.objective !== goal.objective || ownerRestart)
+              )
+                return providers
+                  .nativeGoal!.set(thread.id, goal.objective, "active")
                   .pipe(Effect.timeout("10 seconds"), Effect.as(native));
               return Effect.succeed(native);
             }),
@@ -125,7 +130,12 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
         const ownerRestart =
           goal.pendingContinuation?.commandId.startsWith("server:goal-start:") &&
           (thread.latestTurn === null || thread.latestTurn.turnId === goal.lastCompletedTurnId);
-        if (native !== null && native.objective === goal.objective && !ownerRestart && native.status !== "active") {
+        if (
+          native !== null &&
+          native.objective === goal.objective &&
+          !ownerRestart &&
+          native.status !== "active"
+        ) {
           yield* engine.dispatch({
             type: "thread.goal.set",
             commandId: CommandId.make(`server:goal-native-state:${thread.id}:${goal.revision}`),

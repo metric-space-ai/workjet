@@ -67,6 +67,7 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "CtoxCrewTool.ts", enforcer: "requireWorkjetMember" },
   { file: "DecisionHubTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "GreppyTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
+  { file: "GoalTool.ts", enforcer: "requireWorkjetMember" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },

@@ -101,6 +101,7 @@ const register = Effect.fn("McpHttpServer.registerWorkjetGoal")(function* () {
         const engine = Context.getUnsafe(fiber.context, OrchestrationEngineService);
         const query = Context.getUnsafe(fiber.context, ProjectionSnapshotQuery);
         return Effect.gen(function* () {
+          yield* McpInvocationContext.requireWorkjetMember();
           const input = yield* Schema.decodeUnknownEffect(WorkjetUpdateGoalInput, {
             onExcessProperty: "error",
           })(payload);

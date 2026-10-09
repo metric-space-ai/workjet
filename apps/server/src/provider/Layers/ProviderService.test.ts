@@ -248,8 +248,16 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       }),
   );
 
-  const nativeGoalGet = vi.fn(() => Effect.succeed({ objective: "Verify the approved outcome.", status: "active" as const }));
-  const nativeGoalSet = vi.fn((_threadId: ThreadId, _objective: string, _status: "active" | "paused" | "blocked" | "complete") => Effect.void);
+  const nativeGoalGet = vi.fn(() =>
+    Effect.succeed({ objective: "Verify the approved outcome.", status: "active" as const }),
+  );
+  const nativeGoalSet = vi.fn(
+    (
+      _threadId: ThreadId,
+      _objective: string,
+      _status: "active" | "paused" | "blocked" | "complete",
+    ) => Effect.void,
+  );
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
     provider,
     nativeGoal: provider === CODEX_DRIVER ? { get: nativeGoalGet, set: nativeGoalSet } : undefined,
@@ -909,7 +917,10 @@ routing.layer("ProviderServiceLive routing", (it) => {
       const provider = yield* ProviderService.ProviderService;
       const threadId = asThreadId("native-goal-no-recovery");
       yield* provider.startSession(threadId, {
-        provider: CODEX_DRIVER, providerInstanceId: codexInstanceId, threadId, runtimeMode: "full-access",
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
       });
       routing.codex.startSession.mockClear();
       routing.codex.nativeGoalGet.mockClear();
@@ -921,10 +932,12 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.equal(routing.codex.nativeGoalGet.mock.calls.length, 0);
       assert.equal(routing.codex.nativeGoalSet.mock.calls.length, 0);
       assert.deepEqual(yield* provider.nativeGoal!.get(threadId), {
-        objective: "Verify the approved outcome.", status: "active",
+        objective: "Verify the approved outcome.",
+        status: "active",
       });
       assert.equal(routing.codex.startSession.mock.calls.length, 1);
       assert.equal(routing.codex.nativeGoalGet.mock.calls.length, 1);
+      yield* provider.stopSession(threadId);
     }),
   );
 

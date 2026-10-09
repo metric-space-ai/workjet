@@ -76,7 +76,9 @@ const makeThread = (): OrchestrationThreadShell => ({
   hasActionableProposedPlan: false,
 });
 
-const harness = Effect.fn("test.goalHarness")(function* (nativeGoal?: ProviderService["Service"]["nativeGoal"]) {
+const harness = Effect.fn("test.goalHarness")(function* (
+  nativeGoal?: ProviderService["Service"]["nativeGoal"],
+) {
   let current = makeThread();
   let sequence = 0;
   const starts: OrchestrationCommand[] = [];
@@ -100,12 +102,19 @@ const harness = Effect.fn("test.goalHarness")(function* (nativeGoal?: ProviderSe
   });
   const engine = {
     streamDomainEvents: Stream.fromPubSub(events),
-    runTurnStartIfActive: (threadId: ThreadId, action: Effect.Effect<void>, revision?: number) => Effect.gen(function* () {
-      const config = current.workjetConfig;
-      if (threadId !== current.id || config.schemaVersion !== 2 || config.goal?.status !== "active" || (revision !== undefined && config.goal.revision !== revision)) return false;
-      yield* action;
-      return true;
-    }),
+    runTurnStartIfActive: (threadId: ThreadId, action: Effect.Effect<void>, revision?: number) =>
+      Effect.gen(function* () {
+        const config = current.workjetConfig;
+        if (
+          threadId !== current.id ||
+          config.schemaVersion !== 2 ||
+          config.goal?.status !== "active" ||
+          (revision !== undefined && config.goal.revision !== revision)
+        )
+          return false;
+        yield* action;
+        return true;
+      }),
     dispatch: Effect.fn("test.dispatch")(function* (command: OrchestrationCommand) {
       if (receipts.has(command.commandId)) return { sequence: receipts.get(command.commandId)! };
       const decided = yield* decideOrchestrationCommand({ command, readModel: readModel() });
@@ -268,36 +277,53 @@ describe("persistent goal reactor", () => {
     },
   );
 
-  it.each(["complete", "usageLimited", "blocked"] as const)("persists native Codex %s without another automatic turn", async (status) => {
-    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-      let reads = 0;
-      const h = yield* harness({
-        get: () => Effect.sync(() => { reads++; return { objective: "Verify the approved outcome.", status }; }),
-        set: () => Effect.die("terminal native goal must not be resumed"),
-      });
-      yield* h.reactor.start();
-      yield* h.completeTurn("native-finished");
-      yield* h.reactor.drain;
-      const config = h.read().workjetConfig;
-      expect(reads).toBeGreaterThan(0);
-      expect(config.schemaVersion === 2 && config.goal?.status).toBe(status === "complete" ? "complete" : "blocked");
-      expect(h.starts).toHaveLength(0);
-    })).pipe(Effect.provide(NodeServices.layer)));
-  });
+  it.each(["complete", "usageLimited", "blocked"] as const)(
+    "persists native Codex %s without another automatic turn",
+    async (status) => {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            let reads = 0;
+            const h = yield* harness({
+              get: () =>
+                Effect.sync(() => {
+                  reads++;
+                  return { objective: "Verify the approved outcome.", status };
+                }),
+              set: () => Effect.die("terminal native goal must not be resumed"),
+            });
+            yield* h.reactor.start();
+            yield* h.completeTurn("native-finished");
+            yield* h.reactor.drain;
+            const config = h.read().workjetConfig;
+            expect(reads).toBeGreaterThan(0);
+            expect(config.schemaVersion === 2 && config.goal?.status).toBe(
+              status === "complete" ? "complete" : "blocked",
+            );
+            expect(h.starts).toHaveLength(0);
+          }),
+        ).pipe(Effect.provide(NodeServices.layer)),
+      );
+    },
+  );
 
   it("records an unsupported native control as a blocker instead of emulating success", async () => {
-    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-      const h = yield* harness({
-        get: () => Effect.fail(new Error("unsupported native goal protocol")),
-        set: () => Effect.void,
-      } as unknown as ProviderService["Service"]["nativeGoal"]);
-      yield* h.reactor.start();
-      yield* h.completeTurn("unsupported-native");
-      yield* h.reactor.drain;
-      const config = h.read().workjetConfig;
-      expect(config.schemaVersion === 2 && config.goal?.status).toBe("blocked");
-      expect(h.starts).toHaveLength(0);
-    })).pipe(Effect.provide(NodeServices.layer)));
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const h = yield* harness({
+            get: () => Effect.fail(new Error("unsupported native goal protocol")),
+            set: () => Effect.void,
+          } as unknown as ProviderService["Service"]["nativeGoal"]);
+          yield* h.reactor.start();
+          yield* h.completeTurn("unsupported-native");
+          yield* h.reactor.drain;
+          const config = h.read().workjetConfig;
+          expect(config.schemaVersion === 2 && config.goal?.status).toBe("blocked");
+          expect(h.starts).toHaveLength(0);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+    );
   });
 
   it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(

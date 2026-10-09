@@ -1246,7 +1246,7 @@ export function WorkjetComputersSettings({
               configuration,
               computer,
               selectedInstanceId,
-              membership: activeMembership,
+              membership: activeMembership ?? null,
               savedEnvironmentIds: connections.savedEnvironments.map(
                 (entry) => entry.environmentId,
               ),

@@ -68,8 +68,9 @@ export function ComposerDictationButton(props: {
   const finishRef = useRef(finish);
   finishRef.current = finish;
   const start = async () => {
-    if (session.current || props.disabled) return;
+    if (session.current) return;
     if (!props.instanceId) return settings();
+    if (props.disabled) return;
     setError(null);
     setPhase("starting");
     const controller = new AbortController();
@@ -130,7 +131,9 @@ export function ComposerDictationButton(props: {
         aria-label={phase === "recording" ? "Stop dictation" : "Dictate message"}
         aria-pressed={phase === "recording"}
         disabled={
-          (props.disabled && phase !== "recording") || phase === "starting" || phase === "finishing"
+          (props.disabled && props.instanceId !== null && phase !== "recording") ||
+          phase === "starting" ||
+          phase === "finishing"
         }
         title={phase === "recording" ? "Stop dictation" : "Dictate message"}
         onClick={() => (phase === "recording" ? finish() : start())}

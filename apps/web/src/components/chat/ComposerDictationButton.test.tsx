@@ -86,7 +86,9 @@ afterEach(() => {
 });
 describe("composer microphone", () => {
   it("opens Speech settings without opening a microphone when no instance is configured", async () => {
-    await button(null).props.onClick();
+    const microphone = button(null, true);
+    expect(microphone.props.disabled).toBe(false);
+    await microphone.props.onClick();
     expect(window.location.hash).toBe("#/settings/speech");
     expect(requestSpeechSettings).not.toHaveBeenCalled();
     expect(captureJourFixeMicrophone).not.toHaveBeenCalled();

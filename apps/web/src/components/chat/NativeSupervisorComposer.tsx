@@ -740,6 +740,13 @@ export function NativeSupervisorComposer(props: {
           </button>
         </p>
       )}
+      {inputting && journal?.turn?.terminal && !unresolvedInput && (
+        <p role="status" className="mb-2 text-xs text-muted-foreground">
+          This task has finished. Your context was not sent.
+          <button type="button" className="ml-2 underline" disabled={disabled || busy}
+            onClick={() => setInputFor(null)}>Start a new request</button>
+        </p>
+      )}
       {confirmedPending && (
         <div
           role="status"
@@ -758,7 +765,12 @@ export function NativeSupervisorComposer(props: {
           >
             Add context to task
           </button>
-          {!inputSupported && <span>Same-task context is unavailable on this connection.</span>}
+          {!inputSupported && <span>Same-task context is unavailable on this connection.{' '}
+            <button type="button" className="underline" disabled={disabled || busy}
+              onClick={() => setCapabilityRetry(value => value + 1)}>
+              Check context support
+            </button>
+          </span>}
           {inputting && <button type="button" className="underline underline-offset-2"
             onClick={() => setInputFor(null)}>Keep waiting</button>}
           {!continuing ? (
@@ -830,6 +842,7 @@ export function NativeSupervisorComposer(props: {
             bindingPending ||
             (!inputting && conversationUnavailable) ||
             (inputting && !inputSupported) ||
+            (inputting && journal?.turn?.terminal && !unresolvedInput) ||
             (pending && !drafting) ||
             prompt.trim() === ""
           }

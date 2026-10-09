@@ -81,6 +81,8 @@ struct State {
     #[serde(default)]
     api_key_fingerprints: BTreeMap<String, String>,
     #[serde(default)]
+    api_key_upstreams: BTreeMap<String, String>,
+    #[serde(default)]
     oauth_fingerprints: BTreeMap<String, String>,
     #[serde(default)]
     oauth_login_recoveries: std::collections::BTreeSet<String>,
@@ -199,19 +201,58 @@ impl AccountState {
         account: &str,
         key: &[u8],
     ) -> Result<(), CooldownStoreError> {
+        self.bind_api_key_target(provider, account, key, None)
+    }
+
+    /// Health belongs to a credential at one upstream, while session affinity belongs to the account.
+    pub fn bind_api_key_target(
+        &self,
+        provider: &str,
+        account: &str,
+        key: &[u8],
+        upstream: Option<&str>,
+    ) -> Result<(), CooldownStoreError> {
         let identity = account_key(provider, account);
         let fingerprint = format!("{:x}", Sha256::digest(key));
         let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
-        if state.api_key_fingerprints.get(&identity) == Some(&fingerprint) {
+        let previous_key = state.api_key_fingerprints.get(&identity);
+        // Legacy Z.ai accounts used the platform default before plan discovery.
+        // Only that known default-to-coding repair may migrate unscoped legacy health.
+        let previous_upstream = state
+            .api_key_upstreams
+            .get(&identity)
+            .map(String::as_str)
+            .or_else(|| {
+                (previous_key.is_some()
+                    && provider == "zai"
+                    && upstream == Some("https://api.z.ai/api/coding/paas/v4"))
+                .then_some("https://api.z.ai/api/paas/v4")
+            });
+        let target_changed = previous_upstream
+            .zip(upstream)
+            .is_some_and(|(old, new)| old != new);
+        if previous_key == Some(&fingerprint)
+            && !target_changed
+            && upstream.is_none_or(|target| {
+                state
+                    .api_key_upstreams
+                    .get(&identity)
+                    .is_some_and(|old| old == target)
+            })
+        {
             return Ok(());
         }
         let mut next = state.clone();
-        if next.api_key_fingerprints.contains_key(&identity) {
+        if previous_key.is_some() && (previous_key != Some(&fingerprint) || target_changed) {
             next.cooldowns
                 .retain(|r| !(r.provider.eq_ignore_ascii_case(provider) && r.auth_id == account));
             next.quotas.remove(&identity);
             next.balances.remove(&identity);
             next.observations.remove(&identity);
+        }
+        if let Some(upstream) = upstream {
+            next.api_key_upstreams
+                .insert(identity.clone(), upstream.to_owned());
         }
         next.api_key_fingerprints.insert(identity, fingerprint);
         self.persist(&next)?;

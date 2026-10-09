@@ -173,7 +173,8 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 const secret = key;
                 setKey("");
                 void run({ action: "speech.settings.key", secret }).then((result) => {
-                  if (result?.status.mistral_credential_present) void run({ action: "speech.settings.voices" });
+                  if (result?.status.mistral_credential_present)
+                    void run({ action: "speech.settings.voices" });
                 });
               }}
             >

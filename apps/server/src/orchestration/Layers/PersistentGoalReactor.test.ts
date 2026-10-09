@@ -208,7 +208,9 @@ const harness = Effect.fn("test.goalHarness")(function* (
 });
 
 describe("persistent goal reactor", () => {
-  it.effect("automatically starts successive turns from persisted completions and stops at a recorded result", () =>
+  it.effect(
+    "automatically starts successive turns from persisted completions and stops at a recorded result",
+    () =>
       Effect.scoped(
         Effect.gen(function* () {
           const h = yield* harness();
@@ -236,6 +238,40 @@ describe("persistent goal reactor", () => {
   );
 
   it.effect("recovers a pending continuation and admits its stable command only once", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const h = yield* harness();
+        const thread = h.read();
+        if (thread.workjetConfig.schemaVersion !== 2 || !thread.workjetConfig.goal)
+          throw new Error("missing goal");
+        h.replace({
+          ...thread,
+          workjetConfig: {
+            ...thread.workjetConfig,
+            goal: {
+              ...thread.workjetConfig.goal,
+              pendingContinuation: {
+                commandId: CommandId.make("saved-continuation"),
+                messageId: MessageId.make("saved-continuation"),
+                createdAt: now,
+              },
+            },
+          },
+        });
+        yield* h.reactor.start();
+        yield* Deferred.await(h.signals[0]!);
+        expect(h.starts).toHaveLength(1);
+        expect(h.starts[0]?.commandId).toBe("saved-continuation");
+        // The actual engine receipt boundary is exercised separately by the engine suite.
+        yield* h.engine.dispatch(h.starts[0]!);
+        expect(h.starts).toHaveLength(1);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.each(["paused", "blocked", "complete"] as const)(
+    "never revives a saved %s goal on startup",
+    (status) =>
       Effect.scoped(
         Effect.gen(function* () {
           const h = yield* harness();
@@ -246,111 +282,77 @@ describe("persistent goal reactor", () => {
             ...thread,
             workjetConfig: {
               ...thread.workjetConfig,
-              goal: {
-                ...thread.workjetConfig.goal,
-                pendingContinuation: {
-                  commandId: CommandId.make("saved-continuation"),
-                  messageId: MessageId.make("saved-continuation"),
-                  createdAt: now,
-                },
-              },
+              goal: { ...thread.workjetConfig.goal, status },
             },
           });
           yield* h.reactor.start();
-          yield* Deferred.await(h.signals[0]!);
-          expect(h.starts).toHaveLength(1);
-          expect(h.starts[0]?.commandId).toBe("saved-continuation");
-          // The actual engine receipt boundary is exercised separately by the engine suite.
-          yield* h.engine.dispatch(h.starts[0]!);
-          expect(h.starts).toHaveLength(1);
-        }),
-      ).pipe(Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect.each(["paused", "blocked", "complete"] as const)(
-    "never revives a saved %s goal on startup",
-    (status) =>
-        Effect.scoped(
-          Effect.gen(function* () {
-            const h = yield* harness();
-            const thread = h.read();
-            if (thread.workjetConfig.schemaVersion !== 2 || !thread.workjetConfig.goal)
-              throw new Error("missing goal");
-            h.replace({
-              ...thread,
-              workjetConfig: {
-                ...thread.workjetConfig,
-                goal: { ...thread.workjetConfig.goal, status },
-              },
-            });
-            yield* h.reactor.start();
-            yield* h.completeTurn("old-completion");
-            yield* h.reactor.drain;
-            expect(h.starts).toHaveLength(0);
-          }),
-        ).pipe(Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect.each(["complete", "usageLimited", "blocked"] as const)(
-    "persists native Codex %s without another automatic turn",
-    (status) =>
-        Effect.scoped(
-          Effect.gen(function* () {
-            let reads = 0;
-            const h = yield* harness({
-              get: () =>
-                Effect.sync(() => {
-                  reads++;
-                  return { objective: "Verify the approved outcome.", status };
-                }),
-              set: () => Effect.die("terminal native goal must not be resumed"),
-            });
-            yield* h.reactor.start();
-            yield* h.completeTurn("native-finished");
-            yield* h.reactor.drain;
-            const config = h.read().workjetConfig;
-            expect(reads).toBeGreaterThan(0);
-            expect(config.schemaVersion === 2 && config.goal?.status).toBe(
-              status === "complete" ? "complete" : "blocked",
-            );
-            expect(h.starts).toHaveLength(0);
-          }),
-        ).pipe(Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("records an unsupported native control as a blocker instead of emulating success", () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const h = yield* harness({
-            get: () =>
-              Effect.fail({
-                _tag: "UnsupportedNativeGoal",
-                message: "unsupported native goal protocol",
-              } as const),
-            set: () => Effect.void,
-          } as unknown as ProviderService["Service"]["nativeGoal"]);
-          yield* h.reactor.start();
-          yield* h.completeTurn("unsupported-native");
+          yield* h.completeTurn("old-completion");
           yield* h.reactor.drain;
-          const config = h.read().workjetConfig;
-          expect(config.schemaVersion === 2 && config.goal?.status).toBe("blocked");
           expect(h.starts).toHaveLength(0);
         }),
       ).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect.each(["complete", "usageLimited", "blocked"] as const)(
+    "persists native Codex %s without another automatic turn",
+    (status) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          let reads = 0;
+          const h = yield* harness({
+            get: () =>
+              Effect.sync(() => {
+                reads++;
+                return { objective: "Verify the approved outcome.", status };
+              }),
+            set: () => Effect.die("terminal native goal must not be resumed"),
+          });
+          yield* h.reactor.start();
+          yield* h.completeTurn("native-finished");
+          yield* h.reactor.drain;
+          const config = h.read().workjetConfig;
+          expect(reads).toBeGreaterThan(0);
+          expect(config.schemaVersion === 2 && config.goal?.status).toBe(
+            status === "complete" ? "complete" : "blocked",
+          );
+          expect(h.starts).toHaveLength(0);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("records an unsupported native control as a blocker instead of emulating success", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const h = yield* harness({
+          get: () =>
+            Effect.fail({
+              _tag: "UnsupportedNativeGoal",
+              message: "unsupported native goal protocol",
+            } as const),
+          set: () => Effect.void,
+        } as unknown as ProviderService["Service"]["nativeGoal"]);
+        yield* h.reactor.start();
+        yield* h.completeTurn("unsupported-native");
+        yield* h.reactor.drain;
+        const config = h.read().workjetConfig;
+        expect(config.schemaVersion === 2 && config.goal?.status).toBe("blocked");
+        expect(h.starts).toHaveLength(0);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     "retains %s instead of silently continuing",
     (field) =>
-        Effect.scoped(
-          Effect.gen(function* () {
-            const h = yield* harness();
-            h.replace({ ...h.read(), [field]: true });
-            yield* h.reactor.start();
-            yield* h.completeTurn("awaiting-owner");
-            yield* h.reactor.drain;
-            expect(h.starts).toHaveLength(0);
-          }),
-        ).pipe(Effect.provide(NodeServices.layer)),
+      Effect.scoped(
+        Effect.gen(function* () {
+          const h = yield* harness();
+          h.replace({ ...h.read(), [field]: true });
+          yield* h.reactor.start();
+          yield* h.completeTurn("awaiting-owner");
+          yield* h.reactor.drain;
+          expect(h.starts).toHaveLength(0);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
   );
 });

@@ -214,6 +214,7 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
           disabled={props.disabled}
           className="min-w-0 max-w-52 font-medium"
           aria-label="Luma"
+          title={selected ? [workjetHarnessDisplayLabel(selected.harness), selected.modelId, selected.computerId].join(" · ") : "Choose a Luma or configure Manual"}
         >
           <ComposerControlIcon icon={UsersRoundIcon} />
           <span className="min-w-0 truncate">{selected?.name ?? "Manual"}</span>

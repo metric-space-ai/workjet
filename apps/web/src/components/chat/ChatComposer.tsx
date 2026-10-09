@@ -1649,7 +1649,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ),
     [selectedProviderEntry, selectedInstanceId, settings.providerInstances],
   );
-  const manualModels = greppyManualModels ?? manualGatewayModels;
+  const manualModels = workjetManualControlsAvailable
+    ? (greppyManualModels ?? manualGatewayModels)
+    : selectedProviderModels.map((model) => ({ id: model.slug, displayName: model.name, providers: [], accountIds: [] }));
   /**
    * The instances a manual harness choice may target: configured in this
    * build, and — on a thread locked to a continuation provider — of the
@@ -3481,7 +3483,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
   const composerManualTargetControls =
-    workerModeActive || !workjetManualControlsAvailable ? null : (
+    workerModeActive ? null : (
       <ComposerManualTargetControls
         key={manualModelDraftKey}
         customModelEditor={{
@@ -3507,6 +3509,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         modelSource={
           miniMaxManualCatalog !== null
             ? "native"
+            : !workjetManualControlsAvailable
+              ? "configured"
             : greppyManualModels === null
               ? "gateway"
               : "configured"
@@ -3526,7 +3530,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
 
   const composerSystemPromptControl =
-    workerModeActive || !workjetManualControlsAvailable ? null : (
+    workerModeActive ? null : (
       <ComposerSystemPromptControl
         value={
           composerTargetIsThread

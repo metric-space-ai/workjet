@@ -17,6 +17,7 @@ export function ComposerDictationButton(props: {
     stream: ComposerDictationStream;
     capture?: JourFixeMicrophoneCapture;
     timer?: ReturnType<typeof setTimeout>;
+    finishing?: boolean;
   } | null>(null);
   const currentProps = useRef(props);
   currentProps.current = props;
@@ -38,7 +39,8 @@ export function ComposerDictationButton(props: {
   };
   const finish = async () => {
     const current = session.current;
-    if (!current?.capture || phase === "finishing") return;
+    if (!current?.capture || current.finishing) return;
+    current.finishing = true;
     clearTimeout(current.timer);
     setPhase("finishing");
     try {
@@ -65,7 +67,7 @@ export function ComposerDictationButton(props: {
     try {
       const response = await requestSpeechSettings(props.instanceId, { action: "speech.settings.read" }, controller.signal);
       if (session.current !== current) return;
-      if (response.status.stt === "unavailable" ||
+      if (response.status.stt !== "available" ||
         (response.status.config.transcription === "mistral" && !response.status.mistral_credential_present)) {
         dispose(); setPhase("idle"); settings(); return;
       }

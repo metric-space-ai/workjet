@@ -22,8 +22,18 @@ export class ComposerDictationStream {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let abort: (() => void) | undefined;
     try {
+      const pending = requestWorkjetProjectControl(this.instanceId, input, this.port);
+      // An open receipt arriving after cancellation still owns a stream to close.
+      if (input.op === "open") void pending.then((result) => {
+        if ((!this.signal.aborted && !this.canceled) || result._tag !== "completed") return;
+        const decoded = Schema.decodeUnknownOption(WorkjetDictationResponse)(result.response);
+        if (decoded._tag === "Some" && decoded.value.commandId === input.commandId && decoded.value.op === "open") {
+          this.streamId = decoded.value.streamId;
+          this.cancel();
+        }
+      }, () => {});
       const result = await Promise.race([
-        requestWorkjetProjectControl(this.instanceId, input, this.port),
+        pending,
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error("Dictation timed out. Retry or check Speech settings.")), 25_000);
           abort = () => reject(new DOMException("Dictation canceled", "AbortError"));

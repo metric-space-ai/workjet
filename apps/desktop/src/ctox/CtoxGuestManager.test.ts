@@ -2601,7 +2601,7 @@ describe("CtoxGuestManager", () => {
       };
       const response = {
         action: request.action,
-        contract: "ctox.workjet.computer-ssh-key.v1",
+        contract: "ctox.workjet.computer-ssh-key.v1" as const,
         computerId: "gpu3",
         privateKey: { scope: "computer-access", name: `workjet-ssh-${"a".repeat(64)}` },
         publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3Q=",

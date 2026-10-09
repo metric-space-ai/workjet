@@ -1325,7 +1325,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   return {
     nativeGoal: {
-      get: (threadId) =>
+      get: (threadId, options) =>
         Effect.gen(function* () {
           const binding = yield* directory.getBinding(threadId);
           if (Option.isNone(binding)) return undefined;
@@ -1338,8 +1338,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           const routed = yield* resolveRoutableSession({
             threadId,
             operation: "ProviderService.nativeGoal.get",
-            allowRecovery: true,
+            allowRecovery: options?.allowRecovery !== false,
           });
+          if (!routed.isActive) return null;
           return yield* routed.adapter.nativeGoal!.get(threadId);
         }),
       set: (threadId, objective, status) =>

@@ -170,7 +170,10 @@ export interface ProviderNativeGoal {
 }
 export interface ProviderNativeGoalControl<E> {
   /** Undefined means unsupported; null means the supported runtime has no goal. */
-  readonly get: (threadId: ThreadId) => Effect.Effect<ProviderNativeGoal | null | undefined, E>;
+  readonly get: (
+    threadId: ThreadId,
+    options?: { readonly allowRecovery?: boolean },
+  ) => Effect.Effect<ProviderNativeGoal | null | undefined, E>;
   readonly set: (
     threadId: ThreadId,
     objective: string,

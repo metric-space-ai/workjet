@@ -114,7 +114,7 @@ const register = Effect.fn("McpHttpServer.registerWorkjetGoal")(function* () {
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.provideService(OrchestrationEngineService, engine),
           Effect.provideService(ProjectionSnapshotQuery, query),
-        Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(Crypto.Crypto, crypto),
           Effect.catch(() =>
             Effect.succeed(
               new McpSchema.CallToolResult({

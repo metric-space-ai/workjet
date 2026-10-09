@@ -7,6 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import type { ProviderNativeGoal } from "../../provider/Services/ProviderAdapter.ts";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 
@@ -48,7 +49,7 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
         (yield* providers.listSessions()).some((session) => session.threadId === thread.id)
       ) {
         const native = yield* providers.nativeGoal
-          .get(thread.id)
+          .get(thread.id, { allowRecovery: false })
           .pipe(Effect.timeout("10 seconds"));
         if (native !== undefined && native?.status !== goal.status) {
           yield* providers.nativeGoal
@@ -85,9 +86,27 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
       return;
     }
     if (providers.nativeGoal && thread.session !== null) {
-      const nativeResult = yield* providers.nativeGoal
-        .get(thread.id)
-        .pipe(Effect.timeout("10 seconds"), Effect.result);
+      let nativeResult: Result.Result<ProviderNativeGoal | null | undefined, unknown> | undefined;
+      const admitted = yield* engine.runTurnStartIfActive(
+        thread.id,
+        Effect.gen(function* () {
+          nativeResult = yield* providers.nativeGoal!.get(thread.id).pipe(
+            Effect.timeout("10 seconds"),
+            Effect.flatMap((native) => {
+              const ownerRestart =
+                goal.pendingContinuation?.commandId.startsWith("server:goal-start:") &&
+                (thread.latestTurn === null || thread.latestTurn.turnId === goal.lastCompletedTurnId);
+              if (native !== undefined && (native === null || native.objective !== goal.objective || ownerRestart))
+                return providers.nativeGoal!.set(thread.id, goal.objective, "active")
+                  .pipe(Effect.timeout("10 seconds"), Effect.as(native));
+              return Effect.succeed(native);
+            }),
+            Effect.result,
+          );
+        }),
+        goal.revision,
+      );
+      if (!admitted || !nativeResult) return;
       if (Result.isFailure(nativeResult)) {
         yield* engine.dispatch({
           type: "thread.goal.set",
@@ -106,11 +125,7 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
         const ownerRestart =
           goal.pendingContinuation?.commandId.startsWith("server:goal-start:") &&
           (thread.latestTurn === null || thread.latestTurn.turnId === goal.lastCompletedTurnId);
-        if (native === null || native.objective !== goal.objective || ownerRestart) {
-          yield* providers.nativeGoal
-            .set(thread.id, goal.objective, "active")
-            .pipe(Effect.timeout("10 seconds"));
-        } else if (native.status !== "active") {
+        if (native !== null && native.objective === goal.objective && !ownerRestart && native.status !== "active") {
           yield* engine.dispatch({
             type: "thread.goal.set",
             commandId: CommandId.make(`server:goal-native-state:${thread.id}:${goal.revision}`),

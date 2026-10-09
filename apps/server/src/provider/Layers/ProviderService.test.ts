@@ -248,8 +248,11 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       }),
   );
 
+  const nativeGoalGet = vi.fn(() => Effect.succeed({ objective: "Verify the approved outcome.", status: "active" as const }));
+  const nativeGoalSet = vi.fn((_threadId: ThreadId, _objective: string, _status: "active" | "paused" | "blocked" | "complete") => Effect.void);
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
     provider,
+    nativeGoal: provider === CODEX_DRIVER ? { get: nativeGoalGet, set: nativeGoalSet } : undefined,
     capabilities: {
       sessionModelSwitch: "in-session",
     },
@@ -286,6 +289,8 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
 
   return {
     adapter,
+    nativeGoalGet,
+    nativeGoalSet,
     emit,
     updateSession,
     startSession,
@@ -899,6 +904,30 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("native goal inspection and stop never recover a closed Owner session", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("native-goal-no-recovery");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER, providerInstanceId: codexInstanceId, threadId, runtimeMode: "full-access",
+      });
+      routing.codex.startSession.mockClear();
+      routing.codex.nativeGoalGet.mockClear();
+      routing.codex.nativeGoalSet.mockClear();
+      yield* routing.codex.stopSession(threadId);
+      assert.isNull(yield* provider.nativeGoal!.get(threadId, { allowRecovery: false }));
+      yield* provider.nativeGoal!.set(threadId, "Retain this objective.", "paused");
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+      assert.equal(routing.codex.nativeGoalGet.mock.calls.length, 0);
+      assert.equal(routing.codex.nativeGoalSet.mock.calls.length, 0);
+      assert.deepEqual(yield* provider.nativeGoal!.get(threadId), {
+        objective: "Verify the approved outcome.", status: "active",
+      });
+      assert.equal(routing.codex.startSession.mock.calls.length, 1);
+      assert.equal(routing.codex.nativeGoalGet.mock.calls.length, 1);
+    }),
+  );
+
   for (const [driver, instanceId, adapter] of [
     [CODEX_DRIVER, codexInstanceId, routing.codex],
     [CLAUDE_AGENT_DRIVER, claudeAgentInstanceId, routing.claude],

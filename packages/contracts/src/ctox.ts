@@ -1072,6 +1072,16 @@ export const CtoxComputerEndpoint = Schema.Union([
 ]);
 export type CtoxComputerEndpoint = typeof CtoxComputerEndpoint.Type;
 
+/** Private key bytes remain in the selected native Secret Store. */
+export const CtoxWorkjetComputerSshKey = Schema.Struct({
+  contract: Schema.Literal("ctox.workjet.computer-ssh-key.v1"),
+  computerId: CtoxComputerId,
+  privateKey: CtoxComputerSecretReference,
+  publicKey: CtoxProjectText(1024),
+  publicKeySha256: CtoxProjectText(80),
+});
+export type CtoxWorkjetComputerSshKey = typeof CtoxWorkjetComputerSshKey.Type;
+
 /** Computer membership is confirmed by the selected instance over RxDB/WebRTC. */
 export const CtoxWorkjetComputerControlRequest = Schema.Union([
   Schema.Struct({
@@ -1091,6 +1101,11 @@ export const CtoxWorkjetComputerControlRequest = Schema.Union([
   }),
   Schema.Struct({
     action: Schema.Literal("computer.unassign"),
+    commandId: CommandId,
+    computerId: CtoxComputerId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.ssh_key.ensure"),
     commandId: CommandId,
     computerId: CtoxComputerId,
   }),
@@ -1145,6 +1160,10 @@ export const CtoxWorkjetComputerControlResponse = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("computer.unassign"),
     computer: CtoxWorkjetComputerProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.ssh_key.ensure"),
+    ...CtoxWorkjetComputerSshKey.fields,
   }),
   Schema.Struct({
     action: Schema.Literals(["computer.endpoint.upsert", "computer.endpoint.disable"]),

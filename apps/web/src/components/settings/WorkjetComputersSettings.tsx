@@ -961,6 +961,11 @@ export function WorkjetComputersSettings({
       ? null
       : serverEnvironment.workjetDecisionHubConnections({ environmentId, input: {} }),
   );
+  const finishCapabilities = () => {
+    setAddMode(null);
+    setCapabilityComputer(null);
+    if (setupOnly) onCompleted?.();
+  };
   const saveCapabilities = async (enrollment: OperationalComputerEnrollment) => {
     if (!selectedInstanceId) throw new Error("Select a Business OS before adding this computer.");
     const computer = setupOnly ? setupComputer : capabilityComputer;
@@ -995,10 +1000,9 @@ export function WorkjetComputersSettings({
         );
       assigned = { ...enrollment, computerId: result.value.computerId };
     }
-    await membershipStore.enroll(selectedInstanceId, assigned, window.desktopBridge?.ctox);
-    setAddMode(null);
-    setCapabilityComputer(null);
-    if (setupOnly) onCompleted?.();
+    const key = await membershipStore.enroll(selectedInstanceId, assigned, window.desktopBridge?.ctox);
+    if (!key) finishCapabilities();
+    return key;
   };
   const enrollmentAvailable =
     !!selectedInstanceId &&
@@ -1045,6 +1049,7 @@ export function WorkjetComputersSettings({
           addMode === "capabilities" ? (
             <ComputerCapabilitiesEditor
               onSave={saveCapabilities}
+              onDone={finishCapabilities}
               onCancel={() => setAddMode(null)}
             />
           ) : (
@@ -1099,6 +1104,7 @@ export function WorkjetComputersSettings({
                 ) ?? false
               }
               onSave={saveCapabilities}
+              onDone={finishCapabilities}
               onCancel={() => setSetupComputer(null)}
             />
             {activeMembership?.phase === "failed" ? (
@@ -1179,6 +1185,7 @@ export function WorkjetComputersSettings({
                   false)
               }
               onSave={saveCapabilities}
+              onDone={finishCapabilities}
               onCancel={() => setAddMode(null)}
             />
           </SheetPanel>

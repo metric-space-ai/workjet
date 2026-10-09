@@ -8,7 +8,7 @@ export function validateManualWorkerSource(
 ): { readonly branch: string; readonly resuming: boolean } {
   const branch = `workjet/worker/${thread.id}`;
   const resuming = thread.branch === branch && thread.worktreePath !== null;
-  if ((thread.branch || thread.worktreePath) && !resuming)
+  if (thread.worktreePath && !resuming)
     throw new Error("Existing checkout ownership is ambiguous; preserve its work and create an isolated worker explicitly.");
   if (resuming && threads.some((other) => other.id !== thread.id && other.worktreePath === thread.worktreePath))
     throw new Error("Worker checkout is shared; execution is refused.");

@@ -1241,7 +1241,18 @@ const makeWsRpcLayer = (
               const sourceStatus = yield* gitWorkflow.status({ cwd });
               const { branch, resuming } = validateManualWorkerSource(thread, shell.threads, sourceStatus);
               if (!resuming) {
-                const worktree = yield* gitWorkflow.createWorktree({ cwd, refName: "HEAD", newRefName: branch, path: null });
+                const baseRef = thread.branch ?? sourceStatus.refName;
+                if (!baseRef) return yield* Effect.fail(new Error("Select a published base branch before starting this worker."));
+                const pinnedBase = yield* gitVcsDriver.resolveCommit({ cwd, revision: baseRef });
+                const publishedBase = yield* gitWorkflow.resolveRemoteTrackingCommit({ cwd, refName: baseRef, fallbackRemoteName: "origin" });
+                const published = yield* gitVcsDriver.execute({
+                  cwd, operation: "manual-worker-published-base",
+                  args: ["merge-base", "--is-ancestor", pinnedBase.commitSha, publishedBase.commitSha],
+                  allowNonZeroExit: true,
+                });
+                if (published.exitCode !== 0)
+                  return yield* Effect.fail(new Error("Selected worker base has unpublished commits; publish it before starting. Existing work is preserved."));
+                const worktree = yield* gitWorkflow.createWorktree({ cwd, refName: pinnedBase.commitSha, baseRefName: baseRef, newRefName: branch, path: null });
                 // Once created, retain this owned checkout on dispatch failure: retries reuse
                 // persisted identity, and no user edits can be removed by rollback.
                 manualWorkerPrepared = true;

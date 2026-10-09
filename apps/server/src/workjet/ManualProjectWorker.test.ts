@@ -53,6 +53,7 @@ describe("manual project worker qualification", () => {
 const published = { isRepo: true, hasPrimaryRemote: true, hasUpstream: true, aheadCount: 0, hasWorkingTreeChanges: false } as VcsStatusResult;
 it("requires published clean source and never inherits an existing checkout", () => {
   expect(validateManualWorkerSource(thread, [], published)).toEqual({ branch: `workjet/worker/${thread.id}`, resuming: false });
+  expect(validateManualWorkerSource({ ...thread, branch: "main", worktreePath: null }, [], published)).toEqual({ branch: `workjet/worker/${thread.id}`, resuming: false });
   for (const status of [{ ...published, hasWorkingTreeChanges: true }, { ...published, aheadCount: 1 }, { ...published, hasUpstream: false }, { ...published, isRepo: false }])
     expect(() => validateManualWorkerSource(thread, [], status)).toThrow("clean and published");
   expect(() => validateManualWorkerSource({ ...thread, worktreePath: "/user/work" }, [], published)).toThrow("ownership is ambiguous");

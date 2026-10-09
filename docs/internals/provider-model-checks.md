@@ -19,3 +19,25 @@ The xAI subscription buffered path accepts both `response.completed` and `respon
 Z.ai API and Coding Plans can return identical authenticated model lists. On adding a key, a bounded eight-token inference selects an accepted official endpoint; new selections come from the live public catalog intersected with the account's own list. Check all repairs legacy platform-default accounts only when the same stored key accepts inference at the Coding endpoint. Custom origins and disabled accounts stay untouched. An exhausted Coding quota never triggers a paid platform fallback. Stored endpoint bindings isolate quota, balance and cooldown observations from the old endpoint while retaining account identity, secret references and session affinity; subsequent restarts preserve genuine failures at the new endpoint.
 
 Claude model spelling is repaired only when the account's complete authenticated GET /models contains the corrected ID. Inline model edits are normalized before persistence. Check all also repairs disabled Claude accounts while preserving their disabled state and secret references; disabled accounts never run inference probes. Unknown IDs remain visible for their actual check result when no live correction is available. The gateway's OAuth claim carries no default Claude model list, and it does not import the Claude CLI settings model. Historical stored selections have no author/source audit field, so the current configuration alone cannot identify who entered a legacy ID.
+
+## Provider-wide model selection
+
+The Models table edits one providerModels selection per provider. Account rows
+retain real per-account check results and only expose model exclusions. The
+holder's private gateway configuration persists exclusions and projects the
+selection into native account lists; no secret enters catalog read responses.
+
+Legacy lists are adopted as their provider's union. Each account retains its
+effective list through exclusions and a conservative migration snapshot.
+Adoption does not enable disabled accounts or broaden usable models. New IDs
+require the current public llm.ctox.dev catalog or an authenticated account list;
+existing legacy IDs may be retained or removed. Suggestions exclude
+configuration-only IDs. Kimi and Claude edits refresh account evidence privately.
+An observed account list constrains effective selection; unknown access remains
+limited to the migration snapshot. Exclusions survive provider model removal,
+re-addition and credential replacement. Changed lists schedule exact-account Hi
+checks.
+
+This holder-side compatibility slice does not implement native federation,
+remove the Environment boundary or claim an offline Mac serves remote workers.
+Instance metadata, membership/withdrawals and holder dispatch follow separately.

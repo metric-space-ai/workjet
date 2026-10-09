@@ -293,3 +293,29 @@ describe("Provider account table", () => {
     expect(parseModels("x".repeat(129))).toBeNull();
   });
 });
+
+describe("shared provider models", () => {
+  it("edits models once per provider and offers only account exclusions", () => {
+    const account = { ...first, provider: "kimi" as const, modelIds: ["k3"], availableModelIds: ["k3", "kimi-for-coding"], excludedModelIds: ["kimi-for-coding"] };
+    const rendered = html({
+      catalog: { ...state.catalog!, accounts: [account], providerModels: [{ provider: "kimi", modelIds: ["k3", "kimi-for-coding"] }] },
+      onEditProviderModels: async () => true, onExcludeModel: async () => true,
+    });
+    expect(rendered).toContain('data-workjet-action="models.provider.kimi.models"');
+    expect(rendered).toContain("k3, kimi-for-coding");
+    expect(rendered).toContain('aria-label="Use k3 for work@example.test"');
+    expect(rendered).toContain("Excluded for this account");
+    expect(rendered).not.toContain('aria-label="Add model for work@example.test"');
+    expect(rendered).not.toContain('aria-label="Model k3 for work@example.test"');
+  });
+  it("does not activate a model absent from this account's live list", () => {
+    const rendered = html({
+      catalog: { ...state.catalog!, accounts: [{ ...first, provider: "kimi", modelIds: ["k3"], availableModelIds: ["k3"] }],
+        providerModels: [{ provider: "kimi", modelIds: ["k3", "kimi-for-coding"] }] },
+      onEditProviderModels: async () => true, onExcludeModel: async () => true,
+    });
+    expect(rendered).toContain("Not offered by this account&#x27;s live model list");
+    expect(rendered).toContain('aria-label="Use kimi-for-coding for work@example.test"');
+    expect(rendered).toContain('disabled=""');
+  });
+});

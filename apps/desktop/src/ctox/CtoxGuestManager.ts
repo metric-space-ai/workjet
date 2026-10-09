@@ -1137,7 +1137,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       const diagnose = (
         stage: string,
         details: Readonly<Record<string, string | number | null>> = {},
-      ) => Effect.logWarning("CTOX guest preparation failed", { instanceId, stage, ...details });
+      ) => Effect.logWarning("Business OS preparation failed", { instanceId, stage, ...details });
       let releaseLaunch: (() => void) | undefined;
       let awaitLaunchRelease: Effect.Effect<void> = Effect.void;
       let reservedLease: CtoxGuestLease | undefined;

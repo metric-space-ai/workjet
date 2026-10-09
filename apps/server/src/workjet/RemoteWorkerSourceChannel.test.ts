@@ -59,6 +59,38 @@ const post = (route: WorkerSourceRoute, override: Record<string, unknown> = {}) 
   });
 
 describe("Node-owned worker source channel", () => {
+  it("requires live worker admission for source computer discovery", async () => {
+    const channel = await openWorkerSourceChannel();
+    const calls: string[] = [];
+    let authorized = true;
+    const route = channel.issue({
+      ...identity,
+      expiresAtMs: Date.now() + 60_000,
+      invoke: async (operation) => {
+        calls.push(operation);
+        if (!authorized) throw new Error("revoked native authority");
+        return operation === "computers" ? { schemaVersion: 1, computers: [] } : { admitted: true };
+      },
+    });
+    try {
+      assert.equal(
+        (await post(route, { operation: "computers", targetEnvironmentId: "foreign" })).status,
+        403,
+      );
+      assert.deepEqual(calls, []);
+      const response = await post(route, { operation: "computers" });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { schemaVersion: 1, computers: [] });
+      assert.deepEqual(calls, ["admit", "computers"]);
+      authorized = false;
+      assert.equal((await post(route, { operation: "computers" })).status, 400);
+      assert.deepEqual(calls, ["admit", "computers", "admit"]);
+      channel.revoke(route.requestId);
+      assert.equal((await post(route, { operation: "computers" })).status, 401);
+    } finally {
+      await channel.close();
+    }
+  });
   it("pins request identity and checks live admission before each inference", async () => {
     const channel = await openWorkerSourceChannel();
     const calls: string[] = [];

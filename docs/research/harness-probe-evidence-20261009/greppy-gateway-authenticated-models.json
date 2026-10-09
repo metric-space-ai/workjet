@@ -1,0 +1,14 @@
+{
+  "time": "2026-10-09T21:52:22.277617+00:00",
+  "url": "http://127.0.0.1:8317/v1/models",
+  "credential_used": true,
+  "method": "GET",
+  "status": 200,
+  "ids": [
+    "MiniMax-M3",
+    "glm-5.3-flash",
+    "glm-5.3"
+  ],
+  "model_count": 3,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

@@ -1,0 +1,469 @@
+{
+  "time": "2026-10-09T21:50:49.852545+00:00",
+  "results": [
+    {
+      "method": "initialize",
+      "response": {
+        "id": "1",
+        "jsonrpc": "2.0",
+        "result": {
+          "agentCapabilities": {
+            "_meta": {
+              "workjetImportHistory": {
+                "version": 1
+              }
+            },
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": false,
+              "sse": false
+            },
+            "promptCapabilities": {
+              "audio": false,
+              "embeddedContext": false,
+              "image": false
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "agentInfo": {
+            "name": "greppy",
+            "title": "Greppy",
+            "version": "0.<unvalidated-model:4b227777>.1"
+          },
+          "authMethods": [
+            {
+              "description": "Uses GREPPY_ENDPOINT, GREPPY_MODEL, and GREPPY_API_KEY from the agent process. ACP does not accept a secret.",
+              "id": "greppy.env",
+              "name": "Local gateway environment"
+            }
+          ],
+          "protocolVersion": 1
+        }
+      }
+    },
+    {
+      "method": "session/new",
+      "response": {
+        "id": "2",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "unset",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "options": [
+                {
+                  "name": "unset",
+                  "value": "unset"
+                }
+              ],
+              "type": "select"
+            }
+          ],
+          "models": {
+            "availableModels": [],
+            "currentModelId": ""
+          },
+          "sessionId": "sess-1791582649851-22738-0"
+        }
+      }
+    },
+    {
+      "method": "session/goal/get",
+      "response": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32601,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32601,
+                "message": "Method not found: session/goal/get"
+              }
+            }
+          ],
+          "message": "Method not found: session/goal/get"
+        },
+        "id": "3",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "method": "session/set_system_prompt",
+      "response": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32601,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32601,
+                "message": "Method not found: session/set_system_prompt"
+              }
+            }
+          ],
+          "message": "Method not found: session/set_system_prompt"
+        },
+        "id": "<unvalidated-model:4b227777>",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "method": "session/compact",
+      "response": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32601,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32601,
+                "message": "Method not found: session/compact"
+              }
+            }
+          ],
+          "message": "Method not found: session/compact"
+        },
+        "id": "5",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "method": "session/prompt",
+      "response": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32602,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32602,
+                "message": "model is not configured; set GREPPY_MODEL or call session/set_model"
+              }
+            }
+          ],
+          "message": "model is not configured; set GREPPY_MODEL or call session/set_model"
+        },
+        "id": "6",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "method": "session/load",
+      "response": {
+        "id": "7",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "unset",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "options": [
+                {
+                  "name": "unset",
+                  "value": "unset"
+                }
+              ],
+              "type": "select"
+            }
+          ],
+          "models": {
+            "availableModels": [],
+            "currentModelId": ""
+          }
+        }
+      }
+    }
+  ],
+  "command": [
+    "greppy",
+    "agent",
+    "stdio"
+  ],
+  "pid": 22738,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "harness-compendium",
+            "version": "1"
+          },
+          "clientCapabilities": {}
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "1",
+        "jsonrpc": "2.0",
+        "result": {
+          "agentCapabilities": {
+            "_meta": {
+              "workjetImportHistory": {
+                "version": 1
+              }
+            },
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": false,
+              "sse": false
+            },
+            "promptCapabilities": {
+              "audio": false,
+              "embeddedContext": false,
+              "image": false
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "agentInfo": {
+            "name": "greppy",
+            "title": "Greppy",
+            "version": "0.<unvalidated-model:4b227777>.1"
+          },
+          "authMethods": [
+            {
+              "description": "Uses GREPPY_ENDPOINT, GREPPY_MODEL, and GREPPY_API_KEY from the agent process. ACP does not accept a secret.",
+              "id": "greppy.env",
+              "name": "Local gateway environment"
+            }
+          ],
+          "protocolVersion": 1
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "session/new",
+        "params": {
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/greppy-workspace",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "2",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "unset",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "options": [
+                {
+                  "name": "unset",
+                  "value": "unset"
+                }
+              ],
+              "type": "select"
+            }
+          ],
+          "models": {
+            "availableModels": [],
+            "currentModelId": ""
+          },
+          "sessionId": "sess-1791582649851-22738-0"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "session/goal/get",
+        "params": {
+          "sessionId": "sess-1791582649851-22738-0"
+        }
+      }
+    },
+    {
+      "receive": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32601,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32601,
+                "message": "Method not found: session/goal/get"
+              }
+            }
+          ],
+          "message": "Method not found: session/goal/get"
+        },
+        "id": "3",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "<unvalidated-model:4b227777>",
+        "method": "session/set_system_prompt",
+        "params": {
+          "sessionId": "sess-1791582649851-22738-0",
+          "systemPrompt": "ROLE_PROBE_OK"
+        }
+      }
+    },
+    {
+      "receive": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32601,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32601,
+                "message": "Method not found: session/set_system_prompt"
+              }
+            }
+          ],
+          "message": "Method not found: session/set_system_prompt"
+        },
+        "id": "<unvalidated-model:4b227777>",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "method": "session/compact",
+        "params": {
+          "sessionId": "sess-1791582649851-22738-0"
+        }
+      }
+    },
+    {
+      "receive": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32601,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32601,
+                "message": "Method not found: session/compact"
+              }
+            }
+          ],
+          "message": "Method not found: session/compact"
+        },
+        "id": "5",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "sess-1791582649851-22738-0",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "Reply exactly ROLE_PROBE_OK. Do not use tools."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32602,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32602,
+                "message": "model is not configured; set GREPPY_MODEL or call session/set_model"
+              }
+            }
+          ],
+          "message": "model is not configured; set GREPPY_MODEL or call session/set_model"
+        },
+        "id": "6",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "method": "session/load",
+        "params": {
+          "sessionId": "sess-1791582649851-22738-0",
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/greppy-workspace",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "7",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "unset",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "options": [
+                {
+                  "name": "unset",
+                  "value": "unset"
+                }
+              ],
+              "type": "select"
+            }
+          ],
+          "models": {
+            "availableModels": [],
+            "currentModelId": ""
+          }
+        }
+      }
+    }
+  ],
+  "stderr": "",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

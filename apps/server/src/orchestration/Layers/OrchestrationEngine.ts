@@ -130,6 +130,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined;
           if (
             thread.archivedAt !== null ||
+            thread.workjetConfig.schemaVersion !== 2 ||
+            thread.workjetConfig.team?.role !== "specialist" ||
             goal?.status !== "active" ||
             goal.revision !== goalRevision
           )

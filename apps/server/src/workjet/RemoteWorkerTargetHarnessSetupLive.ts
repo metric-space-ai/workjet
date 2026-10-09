@@ -79,6 +79,7 @@ export const make = Effect.gen(function* () {
           targetEnvironmentId,
           requestDigest,
           modelId: binding.modelRef.modelId,
+          harness: request.harness ?? "codex-cli",
         }),
       catch: failure,
     }).pipe(Effect.timeout("15 seconds"), Effect.mapError(failure));

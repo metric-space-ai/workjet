@@ -82,6 +82,8 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import { readWorkerSourceHarness } from "../../workjet/WorkerSourceHarness.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
@@ -3831,6 +3833,43 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
         });
       }
+      const workerSource = readWorkerSourceHarness(input.threadId);
+      if (input.workjetConfig?.role === "worker") {
+        const environment = yield* Effect.serviceOption(ServerEnvironment);
+        const localEnvironmentId = Option.isSome(environment)
+          ? yield* environment.value.getEnvironmentId
+          : undefined;
+        const foreign = input.workjetConfig.parent.environmentId !== localEnvironmentId;
+        if (foreign && (
+          !workerSource ||
+          workerSource.harness !== "claude-code" ||
+          workerSource.identity.sourceEnvironmentId !== input.workjetConfig.parent.environmentId ||
+          workerSource.identity.targetEnvironmentId !== localEnvironmentId
+        )) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Foreign worker source route is unavailable or mismatched; reconnect its source before restart.",
+          });
+        }
+      }
+      if (workerSource) {
+        if (workerSource.harness !== "claude-code" || workerSource.model !== input.modelSelection?.model) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Worker harness or model differs from the source permit.",
+          });
+        }
+        yield* Effect.tryPromise({
+          try: () => workerSource.admit(),
+          catch: () => new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Foreign worker source admission failed or expired.",
+          }),
+        });
+      }
       const resumeState = readClaudeResumeState(input.resumeCursor);
       const strictResume = input.resumePolicy === "require-existing";
       if (strictResume && (!resumeState?.resume || resumeState.threadId !== input.threadId)) {
@@ -4242,12 +4281,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
       const claudeBinaryPath = claudeSdkExecutablePath;
-      const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
+      const extraArgs = workerSource ? {} : parseCliArgs(claudeSettings.launchArgs).flags;
       const modelSelection =
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
-      const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
+      const apiModelId = workerSource?.model ?? (modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined);
       const initialContextWindow = selectedClaudeContextWindow(modelSelection);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
@@ -4281,7 +4320,23 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // The resolver returns the per-instance merge only, so the Claude home
       // isolation (CLAUDE_CONFIG_DIR) is re-applied on top of it exactly as
       // it is for the construction-time environment.
-      const sessionEnvironment = options?.resolveSessionEnvironment
+      const sessionEnvironment = workerSource
+        ? {
+            PATH: process.env.PATH,
+            HOME: process.env.HOME,
+            TMPDIR: process.env.TMPDIR,
+            LANG: process.env.LANG,
+            CLAUDE_CONFIG_DIR: path.join(serverConfig.stateDir, "worker-harnesses", input.threadId, "claude"),
+            ANTHROPIC_BASE_URL: workerSource.baseUrl.slice(0, -3),
+            ANTHROPIC_API_KEY: workerSource.apiKey,
+            ANTHROPIC_AUTH_TOKEN: undefined,
+            CLAUDE_CODE_OAUTH_TOKEN: undefined,
+            CLAUDE_CODE_USE_BEDROCK: undefined,
+            CLAUDE_CODE_USE_VERTEX: undefined,
+            CLAUDE_CODE_USE_FOUNDRY: undefined,
+            ANTHROPIC_CUSTOM_HEADERS: undefined,
+          }
+        : options?.resolveSessionEnvironment
         ? yield* makeClaudeEnvironment(
             claudeSettings,
             // The API model id is what actually travels on the wire, so it is
@@ -4332,7 +4387,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
         systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
-        settingSources: [...CLAUDE_SETTING_SOURCES],
+        settingSources: workerSource ? [] : [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
         ...(effectiveEffort

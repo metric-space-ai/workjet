@@ -41,6 +41,33 @@ async function withGateway(
 }
 
 describe("source exact-account inference transport", () => {
+  it("uses the Messages route with the exact source account and preserves tool blocks", async () => {
+    const body = JSON.stringify({
+      model: selected.modelRef.modelId,
+      messages: [{ role: "user", content: "Task" }], max_tokens: 100, stream: false,
+    });
+    const message = {
+      id: "message", type: "message", role: "assistant", model: selected.modelRef.modelId,
+      content: [{ type: "tool_use", id: "tool", name: "Bash", input: { command: "hostname" } }],
+      stop_reason: "tool_use", usage: { input_tokens: 1, output_tokens: 2 },
+    };
+    await withGateway(
+      async (request, response) => {
+        expect(request.url).toBe("/v1/messages");
+        expect(request.headers["x-ctox-account"]).toBe(selected.credentialRef.accountId);
+        expect(request.headers["x-ctox-provider"]).toBe(selected.providerRef.provider);
+        let received = "";
+        for await (const chunk of request) received += chunk;
+        expect(received).toBe(body);
+        response.writeHead(200, { "X-CTOX-Account-Selected": selected.credentialRef.accountId });
+        response.end(JSON.stringify(message));
+      },
+      async (endpoint) => expect(JSON.parse(await forwardSourceGatewayResponses(
+        endpoint, selected, body, Date.now() + 10000, undefined, "messages",
+      ))).toEqual(message),
+    );
+  });
+
   it("uses the real loopback Responses route with exact account and provider headers", async () => {
     await withGateway(
       async (request, response) => {

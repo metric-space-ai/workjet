@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeHttp from "node:http";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -35,6 +36,8 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import { installWorkerSourceRoute } from "../../workjet/WorkerSourceHarness.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
@@ -308,6 +311,77 @@ function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): vo
     compiledManagedPrompt,
   });
 }
+
+const foreignClaudeStart = (threadId: string, model?: string) => ({
+  threadId: ThreadId.make(threadId), provider: ProviderDriverKind.make("claudeAgent"),
+  runtimeMode: "auto-accept-edits" as const,
+  ...(model === undefined ? {} : { modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model } }),
+  workjetConfig: {
+    schemaVersion: 2 as const, role: "worker" as const,
+    parent: { environmentId: EnvironmentId.make("source-environment"), threadId: ThreadId.make("supervisor") },
+    managedInstructions: "Bounded leaf worker.", enabledCapabilityIds: [], capabilityBindings: [],
+  },
+});
+const onClaudeTarget = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(
+  Effect.provideService(ServerEnvironment, {
+    getEnvironmentId: Effect.succeed(EnvironmentId.make("target-environment")),
+    getDescriptor: Effect.die("Descriptor is unused by the Claude startup seam"),
+  }),
+);
+const foreignClaudeSource = (requestId: string) => Effect.acquireRelease(
+  Effect.promise(async () => {
+    const server = NodeHttp.createServer((_req, res) => res.setHeader("content-type", "application/json").end("{}"));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing address");
+    const source = await installWorkerSourceRoute(requestId, {
+      sourceEnvironmentId: "source-environment", targetEnvironmentId: "target-environment",
+      requestId, requestDigest: "pinned-request", capability: "worker-scoped-capability", port: address.port,
+    }, {
+      targetEnvironmentId: "target-environment", requestDigest: "pinned-request",
+      modelId: "gpt-6.1-sol", harness: "claude-code",
+    });
+    return { server, source };
+  }),
+  ({ server, source }) => Effect.promise(async () => {
+    await source.revoke();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }),
+);
+describe("ClaudeAdapter foreign worker source authority", () => {
+  it.effect("refuses foreign workers without source authority before starting the target harness", () => {
+    const harness = makeHarness();
+    return onClaudeTarget(Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const error = yield* Effect.flip(adapter.startSession(foreignClaudeStart("claude-missing-source")));
+      assert.isTrue(Schema.is(ProviderAdapterValidationError)(error));
+      assert.isUndefined(harness.getLastCreateQueryInput());
+    })).pipe(Effect.provide(harness.layer));
+  });
+  it.effect("starts only the pinned source model with isolated Claude configuration and source credentials", () => {
+    const harness = makeHarness({ claudeConfig: { launchArgs: "--verbose" } });
+    return onClaudeTarget(Effect.scoped(Effect.gen(function* () {
+      const { source } = yield* foreignClaudeSource("claude-pinned-source");
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession(foreignClaudeStart("claude-pinned-source", source.model));
+      const options = harness.getLastCreateQueryInput()?.options;
+      assert.isDefined(options);
+      assert.equal(options?.model, source.model);
+      assert.equal(options?.env?.ANTHROPIC_BASE_URL, source.baseUrl.slice(0, -3));
+      assert.equal(options?.env?.ANTHROPIC_API_KEY, source.apiKey);
+      assert.isUndefined(options?.env?.ANTHROPIC_AUTH_TOKEN);
+      assert.isUndefined(options?.env?.CLAUDE_CODE_OAUTH_TOKEN);
+      assert.include(options?.env?.CLAUDE_CONFIG_DIR, "worker-harnesses/claude-pinned-source/claude");
+      assert.deepEqual(options?.settingSources, []);
+      assert.isUndefined(options?.extraArgs);
+      yield* adapter.stopSession(ThreadId.make("claude-pinned-source"));
+      yield* Effect.promise(() => source.revoke());
+      const error = yield* Effect.flip(adapter.startSession(foreignClaudeStart("claude-pinned-source", source.model)));
+      assert.isTrue(Schema.is(ProviderAdapterValidationError)(error));
+    }))).pipe(Effect.provide(harness.layer));
+  });
+});
 
 describe("ClaudeAdapterLive", () => {
   it.effect("returns validation error for non-claude provider on startSession", () => {

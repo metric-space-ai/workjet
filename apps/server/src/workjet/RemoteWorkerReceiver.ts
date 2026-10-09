@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeCrypto from "node:crypto";
+import * as NodeOS from "node:os";
+import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import {
   CommandId,
   MessageId,
@@ -36,6 +38,20 @@ import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
 import { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
 export { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
 
+/** A source account is not a target executable. Select only the commissioned driver. */
+export const remoteWorkerRuntimeSelection = (
+  request: Pick<RemoteWorkerRequest, "harness" | "modelSelection">,
+  source: Pick<import("./WorkerSourceHarness.ts").WorkerSourceHarness, "harness" | "model">,
+  instances: ReadonlyArray<Pick<ProviderInstance, "instanceId" | "enabled" | "driverKind">>,
+): RemoteWorkerRequest["modelSelection"] | undefined => {
+  if (source.harness !== (request.harness ?? "codex-cli") || source.model !== request.modelSelection.model)
+    return undefined;
+  const driverKind = source.harness === "claude-code" ? "claudeAgent" : "codex";
+  const candidates = instances.filter((instance) => instance.enabled && instance.driverKind === driverKind);
+  const selected = candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId) ??
+    (candidates.length === 1 ? candidates[0] : candidates.find((instance) => instance.instanceId === driverKind));
+  return selected === undefined ? undefined : { ...request.modelSelection, instanceId: selected.instanceId, model: source.model };
+};
 export class RemoteWorkerReceiver extends Context.Service<
   RemoteWorkerReceiver,
   {
@@ -200,19 +216,15 @@ export const make = Effect.gen(function* () {
     // native provider instance ID whose empty target binding cannot execute.
     let runtimeModelSelection = request.modelSelection;
     const sourceHarness = readWorkerSourceHarness(request.requestId);
+    if (request.harness === "claude-code" && sourceHarness === undefined)
+      return yield* failure("source-unavailable");
     if (sourceHarness !== undefined) {
+      if (sourceHarness.harness !== (request.harness ?? "codex-cli"))
+        return yield* failure("source-unavailable");
       if (Option.isNone(providerInstances)) return yield* failure("computer-unavailable");
-      const candidates = (yield* providerInstances.value.listInstances).filter(
-        (instance) => instance.enabled && instance.driverKind === "codex",
-      );
-      const selected =
-        candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId) ??
-        (candidates.length === 1
-          ? candidates[0]
-          : candidates.find((instance) => instance.instanceId === "codex"));
-      if (selected === undefined || sourceHarness.model !== request.modelSelection.model)
-        return yield* failure("computer-unavailable");
-      runtimeModelSelection = { instanceId: selected.instanceId, model: sourceHarness.model };
+      const selected = remoteWorkerRuntimeSelection(request, sourceHarness, yield* providerInstances.value.listInstances);
+      if (selected === undefined) return yield* failure("computer-unavailable");
+      runtimeModelSelection = selected;
     }
 
     const runGit = Effect.fn("RemoteWorkerReceiver.git")(function* (
@@ -405,6 +417,8 @@ export const make = Effect.gen(function* () {
       computerId: request.computerId,
       branch,
       worktreePath,
+      harness: request.harness ?? "codex-cli",
+      hostname: NodeOS.hostname(),
       parent: request.parent,
       modelSelection: request.modelSelection,
       enabledCapabilityIds: request.enabledCapabilityIds,

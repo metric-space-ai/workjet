@@ -73,6 +73,7 @@ export async function forwardSourceGatewayResponses(
   requestJson: string,
   deadlineMs: number,
   signal?: AbortSignal,
+  protocol: "responses" | "messages" = "responses",
 ): Promise<string> {
   const url = new URL(endpoint);
   if (
@@ -87,7 +88,7 @@ export async function forwardSourceGatewayResponses(
     throw new Error("invalid gateway endpoint");
   const remaining = deadlineMs - Date.now();
   if (remaining <= 0) throw new Error("expired");
-  const response = await fetch(new URL("/v1/responses", url), {
+  const response = await fetch(new URL(protocol === "messages" ? "/v1/messages" : "/v1/responses", url), {
     method: "POST",
     redirect: "error",
     headers: {
@@ -112,7 +113,13 @@ export async function forwardSourceGatewayResponses(
     const parsed: unknown = JSON.parse(body);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
     const result = parsed as Record<string, unknown>;
-    if (result.error != null || result.status === "failed" || !Array.isArray(result.output))
+    if (
+      result.error != null ||
+      result.status === "failed" ||
+      (protocol === "messages"
+        ? result.type !== "message" || result.role !== "assistant" || !Array.isArray(result.content)
+        : !Array.isArray(result.output))
+    )
       throw new Error("invalid response");
     return body;
   } finally {

@@ -1,3 +1,30 @@
+it.effect("dispatches a remote Claude profile with its own immutable harness and model", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ remoteSource: true, remoteReplyLost: true });
+    const profile = { ...remoteProfile, harness: "claude-code" as const };
+    const configuration = {
+      computers: [remoteComputer], workerProfiles: [profile],
+      llmRoutes: [{ id: profile.llmRouteId, label: "Worker route", gatewayAccountId: WorkjetGatewayAccountId.make("worker-account") }],
+    };
+    const service = yield* harness.service.pipe(Effect.provide(serverSettingsLayerTest({ workjet: configuration })));
+    const input = { task: "Fix docs", workerProfileId: profile.id };
+    const pending = yield* Effect.flip(service.dispatch(invocation, input));
+    expect(pending.reason).toBe("remote-dispatch-pending");
+    const request = harness.remoteRequests[0]!;
+    expect(request.harness).toBe(profile.harness);
+    expect(request.modelSelection.model).toBe(profile.modelId);
+    expect(request.modelSelection.model).not.toBe(inheritedModel.model);
+    const switched = yield* harness.service.pipe(Effect.provide(serverSettingsLayerTest({
+      workjet: { ...configuration, workerProfiles: [remoteProfile] },
+    })));
+    expect((yield* Effect.flip(switched.dispatch(invocation, { ...input, remoteRequestId: pending.remoteRequestId! }))).reason)
+      .toBe("remote-dispatch-failed");
+    expect((yield* service.dispatch(invocation, { ...input, remoteRequestId: pending.remoteRequestId! })).workerThreadId)
+      .toBe(request.requestId);
+    expect(harness.remoteRequests).toHaveLength(1);
+    expect(harness.commands).toEqual([]);
+  }),
+);
 it.effect(
   "uses the native intent as the first remote worker ID and reconciles it after source restart",
   () =>

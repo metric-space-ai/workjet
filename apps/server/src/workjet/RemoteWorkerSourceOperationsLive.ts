@@ -95,7 +95,7 @@ export const make = Effect.gen(function* () {
       (entry) =>
         entry.id === request.workerProfileId &&
         entry.computerId === request.computerId &&
-        entry.harness === "codex-cli" &&
+        entry.harness === (request.harness ?? "codex-cli") &&
         entry.modelId === request.modelSelection.model &&
         entry.llmRouteId === request.llmRouteId,
     );

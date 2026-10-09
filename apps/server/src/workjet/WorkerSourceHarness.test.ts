@@ -145,3 +145,76 @@ it("fails closed when source connection disappears", async () => {
   });
   expect(response.status).toBe(502);
 });
+it("runs Claude Messages tool round trips through the same pinned source route", async () => {
+  const received: Array<Record<string, unknown>> = [];
+  const server = NodeHttp.createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString());
+    expect(body.requestId).toBe("claude-http-worker");
+    expect(body.requestDigest).toBe("claude-digest");
+    res.setHeader("content-type", "application/json");
+    if (body.operation !== "infer") return res.end("{}");
+    const request = JSON.parse(body.payload.requestJson);
+    received.push(request);
+    res.end(JSON.stringify({ requestJson: JSON.stringify({
+      id: "message-1", type: "message", role: "assistant", model: request.model,
+      content: [
+        { type: "thinking", thinking: "Inspect the checkout.", signature: "signed-thinking" },
+        { type: "text", text: "Running the check." },
+        { type: "tool_use", id: "tool-1", name: "Bash", input: { command: "hostname" } },
+      ],
+      stop_reason: "tool_use", stop_sequence: null, usage: { input_tokens: 10, output_tokens: 20 },
+    }) }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  cleanups.push(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no listener");
+  const route = {
+    sourceEnvironmentId: "source", targetEnvironmentId: "target",
+    requestId: "claude-http-worker", requestDigest: "claude-digest",
+    capability: "scoped-claude-capability", port: address.port,
+  };
+  const pin = {
+    targetEnvironmentId: "target", requestDigest: route.requestDigest,
+    modelId: "gpt-6.1-sol", harness: "claude-code" as const,
+  };
+  const harness = await installWorkerSourceRoute(route.requestId, route, pin);
+  cleanups.push(harness.revoke);
+  const invoke = (messages: unknown, stream = true, key = harness.apiKey) => fetch(
+    `${harness.baseUrl}/messages`, {
+      method: "POST", headers: { "x-api-key": key },
+      body: JSON.stringify({ model: harness.model, max_tokens: 100, messages, stream }),
+    },
+  );
+  expect((await invoke([], true, "foreign-token")).status).toBe(403);
+  expect((await fetch(`${harness.baseUrl}/responses`, {
+    method: "POST", headers: { authorization: `Bearer ${harness.apiKey}` },
+  })).status).toBe(404);
+  const response = await invoke([{ role: "user", content: "Check hostname" }]);
+  expect(response.status).toBe(200);
+  const events = (await response.text()).split("\n\n").filter(Boolean)
+    .map((entry) => JSON.parse(entry.split("\ndata: ")[1]!));
+  expect(events[0].type).toBe("message_start");
+  expect(events.find((entry) => entry.delta?.type === "signature_delta").delta.signature).toBe("signed-thinking");
+  const tool = events.find((entry) => entry.content_block?.type === "tool_use");
+  expect(tool.content_block).toEqual({ type: "tool_use", id: "tool-1", name: "Bash", input: {} });
+  expect(events.find((entry) => entry.delta?.type === "input_json_delta").delta.partial_json)
+    .toBe(JSON.stringify({ command: "hostname" }));
+  expect(events.at(-2).delta.stop_reason).toBe("tool_use");
+  expect(events.at(-1).type).toBe("message_stop");
+  const continuation = [
+    { role: "assistant", content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "hostname" } }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-1", content: "gpu3" }] },
+  ];
+  const next = await invoke(continuation, false);
+  expect((await next.json()).content[2].id).toBe("tool-1");
+  expect(received.map((entry) => entry.stream)).toEqual([false, false]);
+  expect(received[1]?.messages).toEqual(continuation);
+  await expect(installWorkerSourceRoute(route.requestId, route, { ...pin, harness: "codex-cli" }))
+    .rejects.toThrow("substitution");
+});

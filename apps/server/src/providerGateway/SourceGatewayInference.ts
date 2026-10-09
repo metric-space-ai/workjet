@@ -83,6 +83,7 @@ export function makeSourceGatewayInference(dependencies: {
     selected: WorkjetGatewayModelBinding,
     requestJson: string,
     deadlineMs: number,
+    protocol: "responses" | "messages",
   ) => Effect.Effect<string, WorkjetGatewayInferenceError>;
   readonly now: Effect.Effect<number>;
 }) {
@@ -195,7 +196,9 @@ export function makeSourceGatewayInference(dependencies: {
           (request.background !== undefined && request.background !== false) ||
           request.previous_response_id !== undefined ||
           request.conversation !== undefined ||
-          request.input === undefined
+          (input.workerRequest.harness === "claude-code"
+            ? !Array.isArray(request.messages) || request.input !== undefined
+            : request.input === undefined || request.messages !== undefined)
         )
           throw new Error();
       },
@@ -208,6 +211,7 @@ export function makeSourceGatewayInference(dependencies: {
       authority.selected,
       input.requestJson,
       authority.permit.expiresAtMs,
+      input.workerRequest.harness === "claude-code" ? "messages" : "responses",
     );
     // A revoked/expired grant or native permit also prevents publication after the await.
     yield* requireAuthority({ ...input, permit: authority.permit });

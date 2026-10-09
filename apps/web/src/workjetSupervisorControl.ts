@@ -81,7 +81,9 @@ async function dispatchSavedSupervisorTurn(
         intent,
         turn: null,
         submission:
-          binding.code === "not_active" || binding.code === "timeout" ? "prepared" : "not-submitted",
+          binding.code === "not_active" || binding.code === "timeout"
+            ? "prepared"
+            : "not-submitted",
         submissionError: binding.code,
       });
       return binding;

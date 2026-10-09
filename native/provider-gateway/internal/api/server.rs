@@ -1091,11 +1091,7 @@ mod tests {
         > {
             Box::pin(async move {
                 super::ClaudeMessagesRouteResponse::Buffered(
-                    super::ClaudeMessagesHttpResponse::json(
-                        200,
-                        serde_json::to_vec(&serde_json::json!({"selectedProvider": provider}))
-                            .unwrap(),
-                    ),
+                    super::ClaudeMessagesHttpResponse::error(200, provider.unwrap_or("")),
                 )
             })
         }
@@ -1120,6 +1116,7 @@ mod tests {
                 &SelectedProviderProbe,
                 Some(&SelectedProviderProbe),
                 &catalog,
+                None,
             )
             .await
             .unwrap();
@@ -1167,7 +1164,12 @@ mod tests {
             for model in ["claude-opus-5-5", "claude-opus-5-5(high)"] {
                 let (status, body) = catalog_routed_request(path, model, &["claude"], None).await;
                 assert_eq!(status, 200);
-                assert_eq!(body["selectedProvider"], "claude");
+                let selected = if path == "/v1/messages" {
+                    &body["error"]["message"]
+                } else {
+                    &body["selectedProvider"]
+                };
+                assert_eq!(selected, "claude");
             }
         }
     }
@@ -1178,7 +1180,12 @@ mod tests {
             let (status, body) =
                 catalog_routed_request(path, "claude-opus-5-5", &["claude"], Some("codex")).await;
             assert_eq!(status, 200);
-            assert_eq!(body["selectedProvider"], "codex");
+            let selected = if path == "/v1/messages" {
+                &body["error"]["message"]
+            } else {
+                &body["selectedProvider"]
+            };
+            assert_eq!(selected, "codex");
         }
     }
 
@@ -1188,7 +1195,10 @@ mod tests {
             let (status, body) =
                 catalog_routed_request(path, "claude-opus-5-5", &["claude", "codex"], None).await;
             assert_eq!(status, 400);
-            assert!(body["error"].as_str().unwrap().contains("X-CTOX-Provider"));
+            assert!(body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("X-CTOX-Provider"));
         }
     }
 

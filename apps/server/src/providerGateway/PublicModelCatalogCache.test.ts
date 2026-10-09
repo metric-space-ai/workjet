@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
+import * as DateTime from "effect/DateTime";
 import { decodeLiveProviderModels } from "./LiveProviderCatalog.ts";
 import { makePublicModelCatalogCache } from "./PublicModelCatalogCache.ts";
 
 // These IDs were observed in the real configured Kimi Code GET /models on 2026-10-08.
+const iso = (milliseconds: number) => DateTime.formatIso(DateTime.makeUnsafe(milliseconds));
 const catalog = (now: number) => ({
   schemaVersion: 1,
   checkedAt: new Date(now).toISOString(),

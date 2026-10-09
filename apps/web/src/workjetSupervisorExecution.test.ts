@@ -6,7 +6,10 @@ import {
   type WorkjetSupervisorJournal,
 } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { readWorkjetSupervisorExecutionPage } from "./workjetSupervisorExecution";
+import {
+  readWorkjetSupervisorExecutionPage,
+  readWorkjetSupervisorPublicExecutionPage,
+} from "./workjetSupervisorExecution";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
 
 const threadId = "e28290b0-7b0a-4d19-a242-f27041fadb84";
@@ -193,5 +196,89 @@ describe("bounded installed supervisor observer", () => {
         port,
       ),
     ).toEqual({ _tag: "failed", code: "invalid_input" });
+  });
+});
+
+describe("native public reply reader", () => {
+  it("forwards the opt-in and preserves actual text without another submit", async () => {
+    const result = await readWorkjetSupervisorPublicExecutionPage(
+      saved,
+      response.commandId,
+      { save: async () => {} },
+      { include_public_text: true },
+      async (instanceId, request) => {
+        expect(instanceId).toBe(saved.intent.instanceId);
+        expect(request.action).toBe("project.supervisor.turn.watch");
+        if (request.action !== "project.supervisor.turn.watch")
+          throw new Error("No submit allowed");
+        expect(request.executionPage?.include_public_text).toBe(true);
+        return {
+          _tag: "completed",
+          response: {
+            ...response,
+            commandId: request.commandId,
+            executionPage: {
+              ...page,
+              public_text_supported: true,
+              events: [
+                {
+                  ...event,
+                  kind: "worker.assistant_text",
+                  public_text: {
+                    turn_id: "turn",
+                    item_id: "item",
+                    phase: "final_answer",
+                    offset: 0,
+                    text: "Actual public text",
+                    completed: false,
+                    truncated: false,
+                  },
+                },
+              ],
+            },
+          },
+        };
+      },
+    );
+    expect(result._tag).toBe("completed");
+  });
+  it("uses a new observation identity for the bounded legacy read, retaining the exact task", async () => {
+    const seen: string[] = [];
+    const result = await readWorkjetSupervisorPublicExecutionPage(
+      saved,
+      response.commandId,
+      { save: async () => {} },
+      { include_public_text: true },
+      async (_instanceId, request) => {
+        if (request.action !== "project.supervisor.turn.watch")
+          throw new Error("No submit allowed");
+        expect(request.targetCommandId).toBe(saved.turn!.commandId);
+        seen.push(request.commandId);
+        if (request.executionPage?.include_public_text)
+          return { _tag: "failed", code: "unsupported" };
+        expect(request.executionPage).toEqual({});
+        return { _tag: "completed", response: { ...response, commandId: request.commandId } };
+      },
+    );
+    expect(result._tag).toBe("completed");
+    expect(seen).toEqual(["observe-one", "observe-one:legacy"]);
+    if (result._tag === "completed" && result.response.action === "project.supervisor.turn.watch")
+      expect(result.response.executionPage?.public_text_supported).toBeUndefined();
+  });
+  it("does not retry authorization failures or use a different instance", async () => {
+    let calls = 0;
+    const result = await readWorkjetSupervisorPublicExecutionPage(
+      saved,
+      response.commandId,
+      { save: async () => {} },
+      { include_public_text: true },
+      async (instanceId) => {
+        calls++;
+        expect(instanceId).toBe(saved.intent.instanceId);
+        return { _tag: "failed", code: "authentication_required" };
+      },
+    );
+    expect(calls).toBe(1);
+    expect(result).toEqual({ _tag: "failed", code: "authentication_required" });
   });
 });

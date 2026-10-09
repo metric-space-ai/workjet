@@ -3,11 +3,18 @@ import {
   isWorkjetSupervisorReceiptForRequest,
   nextWorkjetSupervisorExecutionPageRequest,
   type WorkjetSupervisorExecutionPage,
+  type WorkjetSupervisorExecutionEvent,
   type WorkjetSupervisorExecutionPageRequest,
   type WorkjetSupervisorJournal,
   type WorkjetSupervisorTurnIntent,
 } from "@workjet/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  appendSupervisorExecutionEvents,
+  reconstructSupervisorPublicReplies,
+} from "../../supervisorPublicReplies";
+import { NativeSupervisorConversation } from "./NativeSupervisorConversation";
 import { newCommandId } from "~/lib/utils";
 import {
   persistSupervisorJournal,
@@ -25,7 +32,7 @@ import {
   requestWorkjetProjectControl,
   describeWorkjetProjectControlFailure,
 } from "../../workjetProjectControl";
-import { readWorkjetSupervisorExecutionPage } from "../../workjetSupervisorExecution";
+import { readWorkjetSupervisorPublicExecutionPage } from "../../workjetSupervisorExecution";
 import { requestLocalProjectRegistrationRetry } from "../../localProjectRegistration";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
@@ -38,6 +45,7 @@ export function NativeSupervisorComposer(props: {
   readonly blockReason: string | null;
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
+  readonly conversationTarget?: HTMLElement | null;
 }) {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
@@ -65,8 +73,18 @@ export function NativeSupervisorComposer(props: {
     commandId: string;
     request: WorkjetSupervisorExecutionPageRequest;
     page: WorkjetSupervisorExecutionPage;
+    taskAttempt: number;
+    events: readonly WorkjetSupervisorExecutionEvent[];
+    historyLimited: boolean;
   } | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  const publicReplies = useMemo(
+    () =>
+      execution?.page.attempt
+        ? reconstructSupervisorPublicReplies(execution.page.attempt.attempt_id, execution.events)
+        : [],
+    [execution],
+  );
   const executionRef = useRef(execution);
   executionRef.current = execution;
   const inFlight = useRef(false);
@@ -175,11 +193,18 @@ export function NativeSupervisorComposer(props: {
         confirmed.turn
       ) {
         const previous = executionRef.current;
+        const sameTaskAttempt =
+          previous !== null &&
+          previous.commandId === confirmed.turn.commandId &&
+          previous.taskAttempt === confirmed.turn.attempt;
         const request =
-          pageRequest ?? (previous?.commandId === confirmed.turn.commandId ? previous.request : {});
+          pageRequest ??
+          (sameTaskAttempt
+            ? nextWorkjetSupervisorExecutionPageRequest(previous.page)
+            : { include_public_text: true });
         // One bounded watch per refresh. Page failures must not stop task observation.
         try {
-          const observed = await readWorkjetSupervisorExecutionPage(
+          const observed = await readWorkjetSupervisorPublicExecutionPage(
             confirmed,
             CommandId.make(`events-${newCommandId()}`),
             port,
@@ -190,14 +215,41 @@ export function NativeSupervisorComposer(props: {
             observed.response.action === "project.supervisor.turn.watch" &&
             observed.response.executionPage
           ) {
+            const currentScope = latestProps.current.scope;
+            if (
+              !currentScope ||
+              currentScope.instanceId !== target.instanceId ||
+              currentScope.projectId !== target.projectId ||
+              currentScope.threadId !== target.threadId
+            )
+              return;
+            const page = observed.response.executionPage;
+            const prior =
+              pageRequest?.cursor === undefined && operation === "events" ? null : previous;
+            const sameAttempt =
+              prior !== null &&
+              prior.commandId === confirmed.turn.commandId &&
+              prior.page.attempt?.attempt_id === page.attempt?.attempt_id;
+            const appended = appendSupervisorExecutionEvents(
+              sameAttempt ? prior.events : [],
+              page.events,
+            );
+            const historyLimited = (sameAttempt && prior.historyLimited) || appended.limited;
             const next = {
               commandId: confirmed.turn.commandId,
               request,
-              page: observed.response.executionPage,
+              page,
+              taskAttempt: observed.response.turn.attempt,
+              events: appended.events,
+              historyLimited,
             };
             executionRef.current = next;
             setExecution(next);
-            setExecutionError(null);
+            setExecutionError(
+              appended.conflicted
+                ? "Execution history contains conflicting retained events. Reload from the start."
+                : null,
+            );
           } else if (observed._tag === "failed") {
             setExecutionError(
               observed.code === "unsupported"
@@ -290,9 +342,62 @@ export function NativeSupervisorComposer(props: {
     return () => clearTimeout(timer);
   }, [disabled, busy, failureCode, journal]);
 
+  useEffect(() => {
+    if (disabled || busy || !execution?.page.has_more || execution.historyLimited) return;
+    // Backfill retained pages without another turn. One request at a time; a forward native cursor is required.
+    const timer = setTimeout(
+      () =>
+        void runRef.current("events", nextWorkjetSupervisorExecutionPageRequest(execution.page)),
+      100,
+    );
+    return () => clearTimeout(timer);
+  }, [disabled, busy, execution]);
+
+  const followReply = useRef(true);
+  useEffect(() => {
+    const target = props.conversationTarget;
+    if (!target) return;
+    followReply.current = true;
+    const onScroll = () => {
+      followReply.current = target.scrollHeight - target.scrollTop - target.clientHeight < 96;
+    };
+    target.addEventListener("scroll", onScroll, { passive: true });
+    return () => target.removeEventListener("scroll", onScroll);
+  }, [props.conversationTarget]);
+  useEffect(() => {
+    const target = props.conversationTarget;
+    if (target && followReply.current) target.scrollTop = target.scrollHeight;
+  }, [props.conversationTarget, publicReplies, journal]);
+
+  const conversation =
+    journal && scopeMatches ? (
+      <NativeSupervisorConversation
+        journal={journal}
+        page={
+          execution !== null && execution.commandId === journal.turn?.commandId
+            ? execution.page
+            : null
+        }
+        replies={
+          execution !== null && execution.commandId === journal.turn?.commandId ? publicReplies : []
+        }
+        historyLimited={execution?.historyLimited ?? false}
+        error={executionError}
+        disabled={disabled || busy}
+        onReset={() => void run("events", { include_public_text: true })}
+        onNext={() => {
+          if (execution)
+            void run("events", nextWorkjetSupervisorExecutionPageRequest(execution.page));
+        }}
+      />
+    ) : null;
+
   return (
     <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor task">
-      {journal && scopeMatches && (
+      {props.conversationTarget && conversation
+        ? createPortal(conversation, props.conversationTarget)
+        : null}
+      {journal && scopeMatches && !props.conversationTarget && (
         <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
           <p className="whitespace-pre-wrap break-words">{journal.intent.goal}</p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -315,7 +420,7 @@ export function NativeSupervisorComposer(props: {
               error={executionError}
               disabled={disabled || busy}
               onReset={() => {
-                void run("events", {});
+                void run("events", { include_public_text: true });
               }}
               onNext={() => {
                 if (

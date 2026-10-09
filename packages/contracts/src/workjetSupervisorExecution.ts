@@ -27,6 +27,7 @@ export const WorkjetSupervisorExecutionPageRequest = Schema.Struct({
   attempt_id: Schema.optionalKey(safeText(128)),
   cursor: Schema.optionalKey(WorkjetSupervisorEventCursor),
   limit: Schema.optionalKey(safeInteger(1).check(Schema.isLessThanOrEqualTo(50))),
+  include_public_text: Schema.optionalKey(Schema.Boolean),
 });
 export type WorkjetSupervisorExecutionPageRequest =
   typeof WorkjetSupervisorExecutionPageRequest.Type;
@@ -39,6 +40,22 @@ export const WorkjetSupervisorAttemptRef = Schema.Struct({
   started_at_ms: Schema.optionalKey(safeInteger(0)),
   finished_at_ms: Schema.optionalKey(safeInteger(0)),
 });
+export const WorkjetSupervisorPublicAssistantText = Schema.Struct({
+  turn_id: safeText(128),
+  item_id: safeText(128),
+  phase: Schema.Literals(["assistant", "commentary", "final_answer"]),
+  offset: safeInteger(0).check(Schema.isLessThanOrEqualTo(65536)),
+  text: Schema.String.check(
+    Schema.makeFilter(
+      (text) =>
+        Array.from(text).length <= 4096 || "A native text chunk exceeds 4096 Unicode characters.",
+    ),
+  ),
+  completed: Schema.Boolean,
+  truncated: Schema.Boolean,
+});
+export type WorkjetSupervisorPublicAssistantText = typeof WorkjetSupervisorPublicAssistantText.Type;
+
 export const WorkjetSupervisorExecutionEvent = Schema.Struct({
   id: safeText(128),
   sequence: safeInteger(1),
@@ -48,7 +65,17 @@ export const WorkjetSupervisorExecutionEvent = Schema.Struct({
   tool_name: Schema.optionalKey(safeText(128)),
   call_id: Schema.optionalKey(safeText(128)),
   success: Schema.optionalKey(Schema.Boolean),
-});
+  public_text: Schema.optionalKey(WorkjetSupervisorPublicAssistantText),
+}).check(
+  Schema.makeFilter(
+    (event) =>
+      (event.kind === "worker.assistant_text"
+        ? event.public_text !== undefined
+        : event.public_text === undefined) ||
+      "Public assistant text belongs only to an actual assistant-text event.",
+  ),
+);
+export type WorkjetSupervisorExecutionEvent = typeof WorkjetSupervisorExecutionEvent.Type;
 export const WorkjetSupervisorExecutionPage = Schema.Struct({
   command_id: safeText(256),
   task_id: safeText(256),
@@ -56,6 +83,7 @@ export const WorkjetSupervisorExecutionPage = Schema.Struct({
   events: Schema.Array(WorkjetSupervisorExecutionEvent).check(Schema.isMaxLength(50)),
   next_cursor: Schema.optionalKey(WorkjetSupervisorEventCursor),
   has_more: Schema.Boolean,
+  public_text_supported: Schema.optionalKey(Schema.Boolean),
 }).check(
   Schema.makeFilter((page) => {
     if (page.events.length === 0)
@@ -64,6 +92,8 @@ export const WorkjetSupervisorExecutionPage = Schema.Struct({
     const ids = new Set<string>();
     let previous = 0;
     for (const event of page.events) {
+      if (event.public_text !== undefined && page.public_text_supported !== true)
+        return "Assistant text requires explicit native public-text support.";
       if (event.sequence <= previous || ids.has(event.id))
         return "Native events must have unique IDs and increasing sequences.";
       previous = event.sequence;
@@ -86,6 +116,7 @@ export function isWorkjetSupervisorExecutionPageForRequest(
   page: WorkjetSupervisorExecutionPage,
 ): boolean {
   if (
+    (request.include_public_text !== true && page.public_text_supported !== undefined) ||
     page.command_id !== turn.commandId ||
     page.task_id !== turn.taskId ||
     page.events.length > (request.limit ?? 25) ||
@@ -120,5 +151,6 @@ export function nextWorkjetSupervisorExecutionPageRequest(
     ...(page.attempt ? { attempt_id: page.attempt.attempt_id } : {}),
     ...(page.next_cursor ? { cursor: page.next_cursor } : {}),
     limit: 25,
+    ...(page.public_text_supported !== undefined ? { include_public_text: true } : {}),
   };
 }

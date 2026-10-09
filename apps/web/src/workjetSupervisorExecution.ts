@@ -3,7 +3,7 @@ import {
   WorkjetSupervisorExecutionPageRequest,
   CtoxWorkjetProjectControlResult,
   isWorkjetSupervisorReceiptForRequest,
-  type CommandId,
+  CommandId,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import {
@@ -63,4 +63,36 @@ export async function readWorkjetSupervisorExecutionPage(
   }
   await journal.save({ intent: saved.intent, turn: result.response.turn, submission: "confirmed" });
   return result;
+}
+
+/** Opt into native assistant chunks; an older reader may still return ordinary task history. */
+export async function readWorkjetSupervisorPublicExecutionPage(
+  saved: WorkjetSupervisorJournal,
+  observationId: CommandId,
+  journal: WorkjetSupervisorJournalPort,
+  pageRequest: WorkjetSupervisorExecutionPageRequest = { include_public_text: true },
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  const result = await readWorkjetSupervisorExecutionPage(
+    saved,
+    observationId,
+    journal,
+    pageRequest,
+    port,
+  );
+  if (
+    pageRequest.include_public_text !== true ||
+    result._tag !== "failed" ||
+    !["unsupported", "guest_failed", "invalid_input"].includes(result.code)
+  )
+    return result;
+  const { include_public_text: _optIn, ...legacy } = pageRequest;
+  // This is only a second read of the same command and attempt, never another submit.
+  return readWorkjetSupervisorExecutionPage(
+    saved,
+    CommandId.make(`${observationId}:legacy`),
+    journal,
+    legacy,
+    port,
+  );
 }

@@ -8,7 +8,7 @@ import {
   isWorkjetJourFixeReceiptForRequest,
   isWorkjetJourFixeReadReceiptForRequest,
 } from "@workjet/contracts";
-import { requestWorkjetProjectControl } from "../workjetProjectControl";
+import { requestWorkjetProjectControl, describeWorkjetProjectControlFailure } from "../workjetProjectControl";
 import { newCommandId, randomUUID } from "./utils";
 import type { JourFixeCommentDraft, JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
 
@@ -111,7 +111,7 @@ export class JourFixeNativeSession {
     };
     const result = await this.control(this.instanceId, request);
     this.assertCurrent();
-    if (result._tag !== "completed") throw new Error(`Meeting unavailable: ${result.code}`);
+    if (result._tag !== "completed") throw new Error(describeWorkjetProjectControlFailure(result, this.instanceId));
     if (
       result.response.action !== request.action ||
       !isWorkjetJourFixeReadReceiptForRequest(request, result.response)

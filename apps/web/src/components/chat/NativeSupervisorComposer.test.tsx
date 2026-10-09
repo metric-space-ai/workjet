@@ -51,6 +51,14 @@ const config: WorkjetThreadConfig = {
 const saveConfig = async () => ({ _tag: "Success" });
 
 describe("native supervisor receipt display", () => {
+  it("offers the existing account login for the managed project's discovery refusal", () => {
+    const html = renderToStaticMarkup(<NativeSupervisorComposer scope={null} config={DEFAULT_WORKJET_THREAD_CONFIG}
+      instanceId="managed:acceptance" blockReason="Sign in to ctox.dev to reconnect this project's instance."
+      unavailable={false} saveConfig={saveConfig} />);
+    expect(html).toContain("Sign in to ctox.dev</button>");
+    expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
+  });
+
   it.each(["not_active", "timeout"] as const)(
     "keeps a restored legacy %s request pending before effects run",
     (code) => {

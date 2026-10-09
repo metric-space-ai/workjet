@@ -1163,10 +1163,20 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (descriptor === undefined) {
           const managedState =
             discovery._tag === "ready" ? (discovery.managedState ?? "ready") : discovery._tag;
-          if (managedState === "failed") yield* diagnose("discovery");
-          return managedState === "failed"
-            ? ([{ _tag: "failed", code: "guest_failed" }, undefined] as const)
-            : ([{ _tag: "revoked" }, undefined] as const);
+          // A missing hosted account is recoverable; it is not a revoked
+          // project binding. Paired names never substitute for tenant authority.
+          if (instanceId.startsWith("managed:") && managed._tag === "signed_out") {
+            yield* diagnose("discovery", { code: "authentication_required" });
+            return [{ _tag: "failed", code: "authentication_required" }, undefined] as const;
+          }
+          if (managedState === "failed") {
+            const failure = managed._tag === "failed"
+              ? { code: managed.code, ...(managed.httpStatus === undefined ? {} : { httpStatus: managed.httpStatus }) }
+              : undefined;
+            yield* diagnose("discovery", failure ?? {});
+            return [{ _tag: "failed", code: "guest_failed", ...(failure === undefined ? {} : { discovery: failure }) }, undefined] as const;
+          }
+          return [{ _tag: "revoked" }, undefined] as const;
         }
 
         let authoritativeDescriptor: CtoxManagedInstance;
@@ -1975,6 +1985,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return {
             _tag: "failed",
             code: prepared._tag === "failed" ? prepared.code : "not_active",
+            ...(prepared._tag === "failed" && prepared.discovery !== undefined
+              ? { discovery: prepared.discovery } : {}),
           };
         }
         const state = yield* SynchronizedRef.get(stateRef);

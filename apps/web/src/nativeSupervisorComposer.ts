@@ -12,6 +12,7 @@ import {
   type ProjectHistoryIdentity,
 } from "./workjetProjectIdentity";
 import type { WorkjetProjectRegistrySnapshot } from "./workjetProjectRegistry";
+import { describeWorkjetProjectControlFailure } from "./workjetProjectControl";
 
 const decodeSupervisorThreadId = Schema.decodeUnknownSync(WorkjetSupervisorThreadId);
 
@@ -71,7 +72,10 @@ export function nativeSupervisorBlockReason(input: {
   readonly project: ProjectHistoryIdentity | null;
   readonly registry: WorkjetProjectRegistrySnapshot;
 }): string {
-  if (input.registry.refreshFailed) return "Could not read the CTOX project list.";
+  if (input.registry.refreshFailed)
+    return input.registry.refreshError
+      ? describeWorkjetProjectControlFailure(input.registry.refreshError, input.registry.presentationInstanceId)
+      : "Could not read the CTOX project list.";
   if (input.registry.phase !== "ready") return "The CTOX project list is still loading.";
   const registration = input.project?.ctoxRegistration;
   if (registration != null && registration.status !== "confirmed")

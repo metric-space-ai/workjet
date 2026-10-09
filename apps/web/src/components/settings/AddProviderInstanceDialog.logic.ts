@@ -2,6 +2,11 @@ export type WizardNavigation =
   | { readonly kind: "navigate"; readonly step: number }
   | { readonly kind: "blocked"; readonly step: number; readonly error: string };
 
+/** Gateway defaults apply to newly created instances; saved instances retain their routing choice. */
+export function newInstanceUsesWorkjetGateway(driver: string): boolean {
+  return ["claudeAgent", "codex", "grok", "opencode", "minimax", "greppy", "pi"].includes(driver);
+}
+
 const IDENTITY_STEP = 1;
 
 export const ADD_PROVIDER_WIZARD_STEPS = ["Driver", "Identity", "Config"] as const;

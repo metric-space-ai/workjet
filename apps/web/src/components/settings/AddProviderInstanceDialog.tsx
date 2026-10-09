@@ -32,6 +32,7 @@ import { ProviderSettingsForm, deriveProviderSettingsFields } from "./ProviderSe
 import { AnimatedHeight } from "../AnimatedHeight";
 import {
   ADD_PROVIDER_WIZARD_STEPS,
+  newInstanceUsesWorkjetGateway,
   resolveWizardNavigation,
   type WizardNavigation,
 } from "./AddProviderInstanceDialog.logic";
@@ -208,7 +209,10 @@ export function AddProviderInstanceDialog({
     const brandedId = ProviderInstanceId.make(instanceId);
     const nextMap = {
       ...settings.providerInstances,
-      [brandedId]: nextInstance,
+      [brandedId]: {
+        ...nextInstance,
+        ...(newInstanceUsesWorkjetGateway(driver) ? { routeViaGateway: true } : {}),
+      },
     };
     try {
       updateSettings({ providerInstances: nextMap });

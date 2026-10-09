@@ -1,0 +1,17 @@
+{
+  "name": "grok-agent-help",
+  "time": "2026-10-09T22:14:23.743012+00:00",
+  "command": [
+    "grok",
+    "agent",
+    "--help"
+  ],
+  "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
+  "timeout_seconds": 30,
+  "pid": 83211,
+  "exit_code": 0,
+  "stdout": "Run Grok without the interactive UI\n\nUsage: grok agent [OPTIONS] [COMMAND]\n\nCommands:\n  stdio     Run the agent over stdio\n  headless  Run the agent headlessly over the Grok WebSocket relay\n  serve     Run the agent as a WebSocket server\n  leader    Run as the shared leader process for other clients\n  help      Print this message or the help of the given subcommand(s)\n\nOptions:\n      --reauth\n          Run authentication before starting the agent [aliases: ----reauthenticate]\n  -m, --model <MODEL>\n          Model ID to use\n      --reasoning-effort <EFFORT>\n          Reasoning effort for reasoning models [aliases: --effort]\n      --always-approve\n          Auto-approve all tool executions\n      --agent-profile <PATH>\n          Path to an agent profile file\n      --plugin-dir <DIR>\n          Load a plugin from this directory for this process only (repeatable). Highest-priority plugin scope; always trusted: hooks and MCP servers activate without a prompt. Used by the Agent SDKs to inject per-connection plugins\n      --leader\n          Connect to a shared leader process instead of starting a new agent. Allows multiple clients to share one backend. Defaults to [cli] use_leader in config.toml\n      --no-leader\n          Start a new agent even when config enables leader mode\n      --grok-ws-origin <GROK_WS_ORIGIN>\n          \n      --grok-ws-url <GROK_WS_URL>\n          \n      --cli-chat-proxy-base-url <CLI_CHAT_PROXY_BASE_URL>\n          Override the CLI chat proxy base URL\n      --xai-api-base-url <XAI_API_BASE_URL>\n          Override the public xAI API base URL\n      --debug\n          Enable debug logging\n      --debug-file <FILE>\n          Write debug logs to FILE\n  -h, --help\n          Print help\n      --leader-socket <PATH>\n          Use a custom leader socket path instead of the default `~/.grok/leader.sock`. A local/branch build can thus run an isolated leader without colliding with the default one already running on the machine Name it `~/.grok/leader-*.sock` to keep `grok leader list/kill` able to find it; any other location works but won't be auto-discovered\n",
+  "stderr": "",
+  "elapsed_seconds": 0.03,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

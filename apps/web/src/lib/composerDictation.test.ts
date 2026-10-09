@@ -37,12 +37,17 @@ describe("composer dictation transport", () => {
       resolve = accept;
     });
     let openRequest: Parameters<WorkjetProjectControlPort>[1] | undefined;
+    let canceled!: () => void;
+    const cancellation = new Promise<void>((accept) => {
+      canceled = accept;
+    });
     const port = vi.fn<WorkjetProjectControlPort>(async (_instance, request) => {
       if (request.action !== "speech.dictation") throw new Error("Unexpected action");
       if (request.op === "open") {
         openRequest = request;
         return pending;
       }
+      if (request.op === "cancel") canceled();
       return {
         _tag: "completed",
         response: {
@@ -83,7 +88,7 @@ describe("composer dictation transport", () => {
       },
     });
     await pending;
-    await Promise.resolve();
+    await cancellation;
     expect(port).toHaveBeenLastCalledWith(
       "managed:dictation-fixture",
       expect.objectContaining({ op: "cancel", streamId: "late-recording" }),

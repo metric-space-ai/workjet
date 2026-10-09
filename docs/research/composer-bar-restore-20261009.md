@@ -1,7 +1,7 @@
 # Restore the Workjet composer bar — 2026-10-09
 
 Owner: Michael. Source baseline: `519aaba16528e4534dd948ac3e3cd184c099083b`.
-Branch: `codex/composer-bar-restore-20261009`. Merge remains the supervisor's responsibility.
+Branch: `codex/composer-bar-restore-20261009`. PR: https://github.com/metric-space-ai/workjet/pull/292. Merge remains the supervisor's responsibility.
 
 ## Cause
 
@@ -27,7 +27,11 @@ Models owns native/shell dispatch for standalone dictation. Existing `project.jo
 
 ## Verification record
 
-Pending until executed; no acceptance claim is made from source changes alone.
+App acceptance remains pending; no acceptance claim is made from source changes alone.
+
+Formatting passed for the 21 changed files. Scoped lint passes; four existing unused-variable warnings in `ChatView.tsx` remain. The first gpu3 check on `e3c8e190d5bda906151b0655ab0193cea7feeec5` passed 176/177 tests in eleven files. The late-open cancellation assertion was corrected to wait for its cancellation receipt rather than assuming one microtask drains the transport. The corrected run is queued. Its first-run receipt is `/Volumes/tmp/dev-artifacts/build-lane/workjet-composer-bar-restore/workjet-composer-bar-restore-20261009T214917Z.receipt.json`; this temporary receipt is not final acceptance.
+
+The UI dependencies live in `/Volumes/tmp/dev-artifacts/workjet/composer-bar-restore/pnpm-virtual-store`; workspace `node_modules` contain links. An offline install reused all 978 UI packages. Electron and the pinned Node runtime are being prepared under the shared Mac gate. No live Workjet installation or database was modified.
 
 - Focused checks: keyboard policy, shared bar ordering and Luma/Manual, gear, dictation correlation/backpressure/cancellation, native supervisor bar and worker auto-connect, existing draft persistence.
 - Required CI: Check, Test, Mobile Native Static Analysis, Release Smoke on the final PR head.
@@ -35,4 +39,4 @@ Pending until executed; no acceptance claim is made from source changes alone.
 - Running-app screenshots: normal thread, project supervisor and parent at 1400 px and 900 px; Luma, Manual, gear open, dictation running. Record file paths and exact source SHA here after capture.
 - Browser stories: Enter/Shift+Enter/Cmd+Enter, draft persistence after navigation/reload, selector state, auto-connect/retry, missing speech configuration, microphone stop and late-result cancellation. Capture console/network findings.
 
-Initial environment limitation: gpu3 and gpu4 SSH timed out; no remote checks ran. The Mac UI dependency-install gate returned exit 75 because an existing Greppy index job held the shared heavy lease. No gate was bypassed and no competing compiler was started.
+Initial environment limitations were gpu3/gpu4 SSH timeouts and an occupied Mac gate. gpu3 became reachable and now runs the checks. A stale earlier gpu1 run was canceled while still queued, using its captured systemd unit/PID. No gate was bypassed and no competing compiler was started.

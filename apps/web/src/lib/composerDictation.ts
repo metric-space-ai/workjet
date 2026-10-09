@@ -6,6 +6,9 @@ import {
 } from "../workjetProjectControl";
 import { newCommandId } from "./utils";
 
+const decodeDictationResponse = Schema.decodeUnknownSync(WorkjetDictationResponse);
+const decodeOptionalDictationResponse = Schema.decodeUnknownOption(WorkjetDictationResponse);
+
 /** One short recording routed through the instance's configured speech backend. */
 export class ComposerDictationStream {
   private streamId: string | undefined;
@@ -31,7 +34,7 @@ export class ComposerDictationStream {
         void pending.then(
           (result) => {
             if ((!this.signal.aborted && !this.canceled) || result._tag !== "completed") return;
-            const decoded = Schema.decodeUnknownOption(WorkjetDictationResponse)(result.response);
+            const decoded = decodeOptionalDictationResponse(result.response);
             if (
               decoded._tag === "Some" &&
               decoded.value.commandId === input.commandId &&
@@ -62,7 +65,7 @@ export class ComposerDictationStream {
             ? "Update the instance to enable composer dictation. Open Speech settings."
             : "Dictation could not connect. Check Speech settings and retry.",
         );
-      const response = Schema.decodeUnknownSync(WorkjetDictationResponse)(result.response);
+      const response = decodeDictationResponse(result.response);
       if (
         response.commandId !== input.commandId ||
         response.op !== input.op ||

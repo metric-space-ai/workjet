@@ -2592,21 +2592,37 @@ describe("CtoxGuestManager", () => {
       yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
       const control = vi.fn();
       harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
-        NodeVM.runInNewContext(expression, { workjetComputerControl: control }));
-      const request = { action: "computer.ssh_key.ensure" as const,
-        commandId: CommandId.make("ssh-key-command"), computerId: "gpu3" };
-      const response = { action: request.action, contract: "ctox.workjet.computer-ssh-key.v1",
-        computerId: "gpu3", privateKey: { scope: "computer-access", name: `workjet-ssh-${"a".repeat(64)}` },
-        publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3Q=", publicKeySha256: `SHA256:${"A".repeat(43)}` };
+        NodeVM.runInNewContext(expression, { workjetComputerControl: control }),
+      );
+      const request = {
+        action: "computer.ssh_key.ensure" as const,
+        commandId: CommandId.make("ssh-key-command"),
+        computerId: "gpu3",
+      };
+      const response = {
+        action: request.action,
+        contract: "ctox.workjet.computer-ssh-key.v1",
+        computerId: "gpu3",
+        privateKey: { scope: "computer-access", name: `workjet-ssh-${"a".repeat(64)}` },
+        publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3Q=",
+        publicKeySha256: `SHA256:${"A".repeat(43)}`,
+      };
       control.mockResolvedValueOnce(response);
-      assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, request),
-        { _tag: "completed", response });
-      for (const fields of [ { computerId: "other-computer" }, { contract: "unknown" },
+      assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
+      for (const fields of [
+        { computerId: "other-computer" },
+        { contract: "unknown" },
         { privateKey: { ...response.privateKey, value: "private-bytes" } },
-        { privateKeyBytes: "private-bytes" } ]) {
+        { privateKeyBytes: "private-bytes" },
+      ]) {
         control.mockResolvedValueOnce({ ...response, ...fields });
-        assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, request),
-          { _tag: "failed", code: "response_invalid" });
+        assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, request), {
+          _tag: "failed",
+          code: "response_invalid",
+        });
       }
     }).pipe(Effect.provide(harness.layer));
   });

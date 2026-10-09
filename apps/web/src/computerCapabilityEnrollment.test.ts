@@ -158,35 +158,55 @@ describe("operational computer enrollment", () => {
   });
 });
 
-
 const generatedKey = {
-  contract: "ctox.workjet.computer-ssh-key.v1" as const, computerId: "nas-1",
+  contract: "ctox.workjet.computer-ssh-key.v1" as const,
+  computerId: "nas-1",
   privateKey: { scope: "computer-access", name: `workjet-ssh-${"a".repeat(64)}` },
   publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3Q=",
   publicKeySha256: `SHA256:${"A".repeat(43)}`,
 };
-const nativeKeyResult = { _tag: "completed", response: {
-  action: "computer.ssh_key.ensure", ...generatedKey,
-} } satisfies CtoxWorkjetComputerControlResult;
-const nativeKeyEnrollment: OperationalComputerEnrollment = { ...nas,
-  endpoint: { ref: "endpoint-nas", createNativeKey: true, connection: {
-    protocol: "ssh", host: "nas.example.test", port: 22, username: "admin",
-    root: "/volume1/artifacts", host_key_sha256: "SHA256:example-pin",
-  } },
+const nativeKeyResult = {
+  _tag: "completed",
+  response: {
+    action: "computer.ssh_key.ensure",
+    ...generatedKey,
+  },
+} satisfies CtoxWorkjetComputerControlResult;
+const nativeKeyEnrollment: OperationalComputerEnrollment = {
+  ...nas,
+  endpoint: {
+    ref: "endpoint-nas",
+    createNativeKey: true,
+    connection: {
+      protocol: "ssh",
+      host: "nas.example.test",
+      port: 22,
+      username: "admin",
+      root: "/volume1/artifacts",
+      host_key_sha256: "SHA256:example-pin",
+    },
+  },
 };
 
 describe("native computer SSH key enrollment", () => {
   it("uses the actual native key reference after computer and key confirmation", async () => {
-    const control = vi.fn().mockResolvedValueOnce(assigned)
-      .mockResolvedValueOnce(nativeKeyResult).mockResolvedValueOnce(endpoint);
+    const control = vi
+      .fn()
+      .mockResolvedValueOnce(assigned)
+      .mockResolvedValueOnce(nativeKeyResult)
+      .mockResolvedValueOnce(endpoint);
     const ready = vi.fn();
     await enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready);
     expect(control.mock.calls.map(([request]) => request.action)).toEqual([
-      "computer.assign", "computer.ssh_key.ensure", "computer.endpoint.upsert",
+      "computer.assign",
+      "computer.ssh_key.ensure",
+      "computer.endpoint.upsert",
     ]);
     expect(control.mock.calls[1]?.[0]).toMatchObject({ computerId: "nas-1" });
     expect(control.mock.calls[2]?.[0].connection).toEqual({
-      ...nativeKeyEnrollment.endpoint?.connection, private_key: generatedKey.privateKey, passphrase: null,
+      ...nativeKeyEnrollment.endpoint?.connection,
+      private_key: generatedKey.privateKey,
+      passphrase: null,
     });
     expect(ready).toHaveBeenCalledExactlyOnceWith(generatedKey);
   });
@@ -197,29 +217,39 @@ describe("native computer SSH key enrollment", () => {
     ]) {
       const control = vi.fn().mockResolvedValueOnce(assigned).mockResolvedValueOnce(key);
       const ready = vi.fn();
-      await expect(enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready))
-        .rejects.toThrow("SSH key still needs confirmation");
+      await expect(
+        enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready),
+      ).rejects.toThrow("SSH key still needs confirmation");
       expect(control).toHaveBeenCalledTimes(2);
       expect(ready).not.toHaveBeenCalled();
     }
   });
   it("stops if the selected instance changed during key creation", async () => {
     let current = true;
-    const control = vi.fn().mockResolvedValueOnce(assigned).mockImplementationOnce(async () => {
-      current = false; return nativeKeyResult;
-    });
+    const control = vi
+      .fn()
+      .mockResolvedValueOnce(assigned)
+      .mockImplementationOnce(async () => {
+        current = false;
+        return nativeKeyResult;
+      });
     const ready = vi.fn();
-    await expect(enrollOperationalComputer(nativeKeyEnrollment, control, command, () => current, ready))
-      .rejects.toThrow("selected Business OS changed");
+    await expect(
+      enrollOperationalComputer(nativeKeyEnrollment, control, command, () => current, ready),
+    ).rejects.toThrow("selected Business OS changed");
     expect(control).toHaveBeenCalledTimes(2);
     expect(ready).not.toHaveBeenCalled();
   });
   it("does not present completed setup if the endpoint confirmation failed", async () => {
-    const control = vi.fn().mockResolvedValueOnce(assigned).mockResolvedValueOnce(nativeKeyResult)
+    const control = vi
+      .fn()
+      .mockResolvedValueOnce(assigned)
+      .mockResolvedValueOnce(nativeKeyResult)
       .mockResolvedValueOnce({ _tag: "failed", code: "command_failed" });
     const ready = vi.fn();
-    await expect(enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready))
-      .rejects.toThrow("access endpoint still needs confirmation");
+    await expect(
+      enrollOperationalComputer(nativeKeyEnrollment, control, command, () => true, ready),
+    ).rejects.toThrow("access endpoint still needs confirmation");
     expect(ready).not.toHaveBeenCalled();
   });
 });

@@ -10,9 +10,16 @@ import {
 
 type SshEndpoint = Extract<CtoxComputerEndpoint, { readonly protocol: "ssh" }>;
 type EnrollmentEndpoint =
-  | { readonly ref: string; readonly connection: CtoxComputerEndpoint; readonly createNativeKey?: false }
-  | { readonly ref: string; readonly connection: Omit<SshEndpoint, "private_key" | "passphrase">;
-      readonly createNativeKey: true };
+  | {
+      readonly ref: string;
+      readonly connection: CtoxComputerEndpoint;
+      readonly createNativeKey?: false;
+    }
+  | {
+      readonly ref: string;
+      readonly connection: Omit<SshEndpoint, "private_key" | "passphrase">;
+      readonly createNativeKey: true;
+    };
 
 export interface OperationalComputerEnrollment {
   readonly computerId: string;
@@ -105,17 +112,27 @@ export async function enrollOperationalComputer(
   if (endpoint !== null) {
     let connection: CtoxComputerEndpoint;
     if (endpoint.createNativeKey) {
-      const result = await control({ action: "computer.ssh_key.ensure",
-        commandId: newCommandId(), computerId: enrollment.computerId });
+      const result = await control({
+        action: "computer.ssh_key.ensure",
+        commandId: newCommandId(),
+        computerId: enrollment.computerId,
+      });
       if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
-      if (result._tag !== "completed" || result.response.action !== "computer.ssh_key.ensure"
-        || result.response.computerId !== enrollment.computerId) {
+      if (
+        result._tag !== "completed" ||
+        result.response.action !== "computer.ssh_key.ensure" ||
+        result.response.computerId !== enrollment.computerId
+      ) {
         throw new Error("Computer registered; its SSH key still needs confirmation. Retry.");
       }
       const response = result.response;
-      sshKey = { contract: response.contract, computerId: response.computerId,
-        privateKey: response.privateKey, publicKey: response.publicKey,
-        publicKeySha256: response.publicKeySha256 };
+      sshKey = {
+        contract: response.contract,
+        computerId: response.computerId,
+        privateKey: response.privateKey,
+        publicKey: response.publicKey,
+        publicKeySha256: response.publicKeySha256,
+      };
       connection = { ...endpoint.connection, private_key: sshKey.privateKey, passphrase: null };
     } else {
       connection = endpoint.connection;

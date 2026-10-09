@@ -219,7 +219,9 @@ export function createComputerMembershipStore() {
         (request) => control(instanceId, request),
         () => CommandId.make(randomUUID()),
         isCurrent,
-        (key) => { sshKey = key; },
+        (key) => {
+          sshKey = key;
+        },
       );
       if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
       publish({
@@ -228,7 +230,7 @@ export function createComputerMembershipStore() {
         pendingComputerId: null,
         error: null,
       });
-    return sshKey;
+      return sshKey;
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : membershipError("guest_failed");
       if (isCurrent()) publish({ ...snapshot, pendingComputerId: null, error: message });

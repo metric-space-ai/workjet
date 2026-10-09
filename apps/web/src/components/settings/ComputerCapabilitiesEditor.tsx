@@ -30,7 +30,9 @@ export function ComputerCapabilitiesEditor({
   readonly computer?: WorkjetComputer;
   readonly nativeComputer?: CtoxWorkjetComputerProjection;
   readonly preserveExistingCapabilities?: boolean;
-  readonly onSave: (enrollment: OperationalComputerEnrollment) => Promise<void | CtoxWorkjetComputerSshKey | null>;
+  readonly onSave: (
+    enrollment: OperationalComputerEnrollment,
+  ) => Promise<void | CtoxWorkjetComputerSshKey | null>;
   readonly onDone?: () => void;
   readonly onCancel: () => void;
 }) {
@@ -40,8 +42,9 @@ export function ComputerCapabilitiesEditor({
   const [computerId] = useState(
     () => nativeComputer?.id ?? computer?.id ?? `computer-${randomUUID()}`,
   );
-  const [endpointRef] = useState(() =>
-    savedBuild?.ssh_endpoint_ref ?? savedStorage?.endpoint_ref ?? `endpoint-${randomUUID()}`);
+  const [endpointRef] = useState(
+    () => savedBuild?.ssh_endpoint_ref ?? savedStorage?.endpoint_ref ?? `endpoint-${randomUUID()}`,
+  );
   const [name, setName] = useState(nativeComputer?.displayName ?? computer?.label ?? "");
   const [storageOnly, setStorageOnly] = useState(
     nativeComputer?.agentless ?? computer === undefined,
@@ -99,22 +102,33 @@ export function ComputerCapabilitiesEditor({
     </label>
   );
   const hasEndpoint = build || storage;
-  if (createdKey) return (
-    <div className="space-y-4">
-      <p role="status" className="font-medium">Computer saved. SSH key ready.</p>
-      <p className="text-sm text-muted-foreground">
-        Authorize this public key for {fields.username} on {fields.host} to allow builds and file access.
-      </p>
-      <label className="grid gap-1 text-sm">
-        <span>Public SSH key</span>
-        <textarea className="min-h-24 rounded-md border bg-background p-3 font-mono text-xs"
-          readOnly value={createdKey.publicKey} />
-      </label>
-      <p className="break-all font-mono text-xs">{createdKey.publicKeySha256}</p>
-      <p className="text-xs text-muted-foreground">Private key saved in the selected Business OS.</p>
-      <Button type="button" onClick={onDone ?? onCancel}>Done</Button>
-    </div>
-  );
+  if (createdKey)
+    return (
+      <div className="space-y-4">
+        <p role="status" className="font-medium">
+          Computer saved. SSH key ready.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Authorize this public key for {fields.username} on {fields.host} to allow builds and file
+          access.
+        </p>
+        <label className="grid gap-1 text-sm">
+          <span>Public SSH key</span>
+          <textarea
+            className="min-h-24 rounded-md border bg-background p-3 font-mono text-xs"
+            readOnly
+            value={createdKey.publicKey}
+          />
+        </label>
+        <p className="break-all font-mono text-xs">{createdKey.publicKeySha256}</p>
+        <p className="text-xs text-muted-foreground">
+          Private key saved in the selected Business OS.
+        </p>
+        <Button type="button" onClick={onDone ?? onCancel}>
+          Done
+        </Button>
+      </div>
+    );
   if (savedStorage?.protocol === "nfs")
     return (
       <div className="space-y-3">
@@ -193,39 +207,47 @@ export function ComputerCapabilitiesEditor({
               ? null
               : {
                   ref: endpointRef,
-                  ...(protocol === "ssh" && createNativeKey ? {
-                    createNativeKey: true,
-                    connection: { ...connection, protocol: "ssh",
-                      host_key_sha256: fields.keyPin.trim(),
-                      ...(hostKeyType ? { host_key_algorithm: hostKeyType } : {}) },
-                  } : { connection:
-                    protocol === "ssh"
-                      ? {
+                  ...(protocol === "ssh" && createNativeKey
+                    ? {
+                        createNativeKey: true,
+                        connection: {
                           ...connection,
                           protocol: "ssh",
                           host_key_sha256: fields.keyPin.trim(),
                           ...(hostKeyType ? { host_key_algorithm: hostKeyType } : {}),
-                          private_key: credential,
-                          passphrase: usePassphrase
-                            ? {
-                                scope: fields.passphraseScope.trim(),
-                                name: fields.passphraseName.trim(),
-                              }
-                            : null,
-                        }
-                      : {
-                          ...connection,
-                          protocol: "smb",
-                          share: fields.share.trim(),
-                          password: credential,
                         },
-                  }),
+                      }
+                    : {
+                        connection:
+                          protocol === "ssh"
+                            ? {
+                                ...connection,
+                                protocol: "ssh",
+                                host_key_sha256: fields.keyPin.trim(),
+                                ...(hostKeyType ? { host_key_algorithm: hostKeyType } : {}),
+                                private_key: credential,
+                                passphrase: usePassphrase
+                                  ? {
+                                      scope: fields.passphraseScope.trim(),
+                                      name: fields.passphraseName.trim(),
+                                    }
+                                  : null,
+                              }
+                            : {
+                                ...connection,
+                                protocol: "smb",
+                                share: fields.share.trim(),
+                                password: credential,
+                              },
+                      }),
                 },
         };
         setBusy(true);
         setError(null);
         void onSave(enrollment)
-          .then((key) => { if (key) setCreatedKey(key); })
+          .then((key) => {
+            if (key) setCreatedKey(key);
+          })
           .catch((failure: unknown) => {
             setError(failure instanceof Error ? failure.message : "Could not save this computer.");
           })
@@ -364,18 +386,25 @@ export function ComputerCapabilitiesEditor({
           {protocol === "ssh" ? (
             <label className="grid gap-1 text-sm sm:col-span-2">
               <span>SSH key</span>
-              <select className="h-9 rounded-md border bg-background px-3"
+              <select
+                className="h-9 rounded-md border bg-background px-3"
                 value={createNativeKey ? "create" : "saved"}
-                onChange={(event) => setCreateNativeKey(event.target.value === "create")}>
+                onChange={(event) => setCreateNativeKey(event.target.value === "create")}
+              >
                 <option value="create">Create a key in the selected Business OS</option>
                 <option value="saved">Use an existing saved key</option>
               </select>
             </label>
           ) : null}
-          {protocol !== "ssh" || !createNativeKey ? <>
-            {field("credentialScope", "Saved credential group")}
-            {field("credentialName", protocol === "ssh" ? "Saved SSH key name" : "Saved password name")}
-          </> : null}
+          {protocol !== "ssh" || !createNativeKey ? (
+            <>
+              {field("credentialScope", "Saved credential group")}
+              {field(
+                "credentialName",
+                protocol === "ssh" ? "Saved SSH key name" : "Saved password name",
+              )}
+            </>
+          ) : null}
           {protocol === "ssh" && !createNativeKey ? (
             <>
               <label className="flex items-center gap-2 text-sm sm:col-span-2">

@@ -1000,7 +1000,11 @@ export function WorkjetComputersSettings({
         );
       assigned = { ...enrollment, computerId: result.value.computerId };
     }
-    const key = await membershipStore.enroll(selectedInstanceId, assigned, window.desktopBridge?.ctox);
+    const key = await membershipStore.enroll(
+      selectedInstanceId,
+      assigned,
+      window.desktopBridge?.ctox,
+    );
     if (!key) finishCapabilities();
     return key;
   };

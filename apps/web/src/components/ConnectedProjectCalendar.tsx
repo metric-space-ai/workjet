@@ -20,9 +20,14 @@ import { NativeProjectCalendar } from "./NativeProjectCalendar";
 
 // Desktop already has an authenticated tenant guest. Its account reads use that
 // WebRTC channel; no second external MCP credential is required or minted.
-export function ConnectedProjectCalendar(props: Pick<ComponentProps<typeof ProjectCalendar>, "projects">) {
-  return typeof window !== "undefined" && window.desktopBridge?.ctox?.requestProjectControl
-    ? <NativeProjectCalendar {...props} /> : <McpConnectedProjectCalendar {...props} />;
+export function ConnectedProjectCalendar(
+  props: Pick<ComponentProps<typeof ProjectCalendar>, "projects">,
+) {
+  return typeof window !== "undefined" && window.desktopBridge?.ctox?.requestProjectControl ? (
+    <NativeProjectCalendar {...props} />
+  ) : (
+    <McpConnectedProjectCalendar {...props} />
+  );
 }
 
 type Page = { readonly accountId: string; readonly read: WorkjetCalendarEvents | null };

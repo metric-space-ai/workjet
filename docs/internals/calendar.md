@@ -10,7 +10,6 @@ Replies are correlated to the command, account and date range, and changing the
 instance or leaving the calendar fences late replies. Other hosts retain their
 explicitly registered MCP calendar connection.
 
-
 Workjet's calendar provides Day, Week, Month and Year views, a mini month,
 calendar visibility controls and an All projects/per-project selector.
 

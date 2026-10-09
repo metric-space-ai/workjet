@@ -4,12 +4,7 @@
   "export_prefix": "CALENDAR",
   "types": {
     "CalendarKind": {
-      "enum": [
-        "local",
-        "project_meeting",
-        "synced",
-        "project_session"
-      ]
+      "enum": ["local", "project_meeting", "synced", "project_session"]
     },
     "CalendarEvent": {
       "fields": {

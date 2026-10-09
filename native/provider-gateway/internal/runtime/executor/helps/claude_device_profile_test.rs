@@ -442,7 +442,7 @@ fn local_cache_separates_vscode_agent_sdk_from_cli() {
             &defaults,
         )
         .unwrap();
-    let vscode_user_agent = "claude-cli/2.1.220 (external, claude-vscode, agent-sdk/0.3.220)";
+    let vscode_user_agent = "claude-cli/2.1.280 (external, claude-vscode, agent-sdk/0.3.220)";
     let vscode = cache
         .resolve_required(
             None,

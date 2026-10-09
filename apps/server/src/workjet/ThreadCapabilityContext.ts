@@ -50,17 +50,6 @@ export function resolveThreadCapabilityContext(
     "decision-hub",
   );
   const team = workjetConfig.schemaVersion === 2 ? workjetConfig.team : undefined;
-  const teamInstructions = team
-    ? `Project team role: ${team.role}. Goal: ${team.goal}\n${
-        team.parentThreadId
-          ? `Your durable parent thread is ${team.parentThreadId}. Return results and blockers to that parent.`
-          : "Retain ownership of this project across specialist and worker deliveries."
-      }\n${
-        team.role === "worker"
-          ? "You are a leaf worker. Deliver the assigned package and accept consolidated rework; do not spawn children. Open exactly one pull request from your assigned isolated worker branch and keep all rework in that same pull request. Return its URL, branch and verification evidence to your parent. The native lifecycle archives this thread after that pull request is merged or closed and execution is stopped."
-          : "Keep your goal and remaining work durable. Report meaningful transitions, not repeated status messages."
-      }`
-    : "";
 
   const ctoxBinding = bindingForCapability(
     activation.config.capabilityBindings,
@@ -72,10 +61,10 @@ export function resolveThreadCapabilityContext(
     promptCapabilityIds: Object.freeze(promptManifests.map((manifest) => manifest.id)),
     compiledManagedPrompt: compileCapabilityPrompt({
       role: workjetConfig.role,
+      ...(team ? { team } : {}),
       managedInstructions: [
         globalManagedInstructions.trim(),
         workjetConfig.managedInstructions.trim(),
-        teamInstructions,
       ]
         .filter((value) => value.length > 0)
         .join("\n\n"),

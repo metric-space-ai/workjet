@@ -24,7 +24,7 @@ const PROVIDER = ProviderDriverKind.make("pi");
 const error = (method: string, detail: string) => new ProviderAdapterRequestError({ provider: PROVIDER, method, detail });
 const Resume = Schema.Struct({ protocol: Schema.Literal("pi-rpc"), sessionFile: Schema.String });
 const decodeResume = Schema.decodeUnknownOption(Resume);
-const decodeState = Schema.decodeUnknownEffect(Schema.Struct({ sessionId: Schema.String, sessionFile: Schema.optional(Schema.NullOr(Schema.String)) }));
+const decodeState = Schema.decodeUnknownEffect(Schema.Struct({ sessionId: Schema.String, sessionFile: Schema.optional(Schema.NullOr(Schema.String)), model: Schema.NullOr(Schema.Struct({ id: Schema.String, provider: Schema.String })) }));
 const decodeAssistant = Schema.decodeUnknownOption(Schema.Struct({ role: Schema.String, stopReason: Schema.optional(Schema.String), errorMessage: Schema.optional(Schema.String) }));
 const decodeMessages = Schema.decodeUnknownEffect(Schema.Struct({ messages: Schema.Array(Schema.Unknown) }));
 
@@ -49,6 +49,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
   readonly binaryPath: string;
   readonly enabled: boolean;
   readonly sessionDirectory: string;
+  readonly extensionPath?: string;
   readonly resolveModel: (model: string) => Effect.Effect<{ provider: string; model: string; environment: NodeJS.ProcessEnv }, ProviderAdapterRequestError>;
 }) {
   const fs = yield* FileSystem.FileSystem;
@@ -138,7 +139,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
     if (!inputStart.cwd?.trim()) return yield* error("startSession", "A project folder is required.");
     if (inputStart.modelSelection?.instanceId !== input.instanceId) return yield* error("startSession", "Choose a connected gateway model for this Pi instance.");
     const managed = readMcpProviderSession(inputStart.threadId);
-    if (managed?.activeWorkjetMcpCapabilityIds.length) return yield* error("startSession", "Pi's native RPC transport does not expose Workjet MCP capabilities. Choose a harness that supports the enabled capabilities.");
+    if (managed?.activeWorkjetMcpCapabilityIds.length && !input.extensionPath) return yield* error("startSession", "The Pi Workjet MCP extension is unavailable.");
     const model = inputStart.modelSelection.model;
     const selected = yield* input.resolveModel(model);
     const decoded = decodeResume(inputStart.resumeCursor);
@@ -152,10 +153,11 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
     if (previous) yield* stop(previous);
     const scope = yield* Scope.make();
     return yield* Effect.gen(function* () {
-      const rpc = yield* makePiRpc({ binaryPath: input.binaryPath, cwd: inputStart.cwd!, environment: selected.environment,
-        args: ["--mode", "rpc", "--provider", selected.provider, "--model", selected.model, "--session-dir", input.sessionDirectory, ...(resume ? ["--session", resume] : [])],
+      const rpc = yield* makePiRpc({ binaryPath: input.binaryPath, cwd: inputStart.cwd!, environment: { ...selected.environment, ...(managed ? { WORKJET_PI_MCP_ENDPOINT: managed.endpoint, WORKJET_PI_MCP_AUTHORIZATION: managed.authorizationHeader } : {}) },
+        args: ["--mode", "rpc", "--provider", selected.provider, "--model", selected.model, "--session-dir", input.sessionDirectory, ...(input.extensionPath ? ["--extension", input.extensionPath] : []), ...(resume ? ["--session", resume] : [])],
       }).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
       const state = yield* rpc.request("get_state").pipe(Effect.flatMap(decodeState), Effect.mapError(cause => error("get_state", cause.message)));
+      if (state.model?.id !== selected.model || state.model.provider !== selected.provider) return yield* error("startSession", "Pi did not activate the selected gateway model.");
       const createdAt = yield* now;
       const session: ProviderSession = { provider: PROVIDER, providerInstanceId: input.instanceId, threadId: inputStart.threadId, runtimeMode: inputStart.runtimeMode, cwd: inputStart.cwd!, model, status: "ready", createdAt, updatedAt: createdAt,
         ...(state.sessionFile ? { resumeCursor: { protocol: "pi-rpc", sessionFile: state.sessionFile } } : {}),
@@ -219,7 +221,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
     readThread: threadId => Effect.gen(function* () {
       const ctx = yield* requireSession(threadId);
       const result = yield* ctx.rpc.request("get_messages").pipe(Effect.flatMap(decodeMessages), Effect.mapError(cause => error("get_messages", cause.message)));
-      return { threadId, turns: ctx.turns.length ? ctx.turns : [{ id: TurnId.make(`pi-${threadId}`), items: [...result.messages] }] };
+      return { threadId, turns: [{ id: TurnId.make(`pi-${threadId}`), items: [...result.messages] }] };
     }),
     rollbackThread: () => Effect.fail(error("rollbackThread", "Pi RPC does not support Workjet turn-count rollback.")),
     stopAll: () => Effect.forEach([...sessions.values()], stop, { discard: true }),

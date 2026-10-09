@@ -17,6 +17,7 @@ import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment
 import { buildServerProvider, parseGenericCliVersion, spawnAndCollect, type ProviderProbeResult } from "../providerSnapshot.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import { haveProviderSnapshotSettingsChanged, makeProviderSnapshotSettingsSource, type ProviderSnapshotSettings } from "../providerUpdateSettings.ts";
+import { PI_WORKJET_EXTENSION } from "../pi/PiWorkjetExtension.ts";
 import { piGatewayConfiguration, piGatewayModel } from "../pi/PiGatewayProfile.ts";
 
 export const PiSettings = Schema.Struct({
@@ -55,9 +56,10 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       const encoded = yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(piGatewayConfiguration(endpoint, catalog)).pipe(Effect.mapError(cause => fail(cause.message)));
       yield* fs.makeDirectory(sessionDirectory, { recursive: true }).pipe(Effect.mapError(cause => fail(cause.message)));
       yield* fs.writeFileString(path.join(agentDirectory, "models.json"), encoded).pipe(Effect.mapError(cause => fail(cause.message)));
+      yield* fs.writeFileString(path.join(agentDirectory, "workjet-extension.mjs"), PI_WORKJET_EXTENSION).pipe(Effect.mapError(cause => fail(cause.message)));
       return { ...selected, environment: { ...processEnv, PI_CODING_AGENT_DIR: agentDirectory } };
     });
-    const adapter = yield* makePiAdapter({ instanceId, binaryPath: config.binaryPath, enabled, sessionDirectory, resolveModel });
+    const adapter = yield* makePiAdapter({ instanceId, binaryPath: config.binaryPath, enabled, sessionDirectory, extensionPath: path.join(agentDirectory, "workjet-extension.mjs"), resolveModel });
     const maintenanceCapabilities = makeManualOnlyProviderMaintenanceCapabilities({ provider: DRIVER, packageName: null });
     const buildSnapshot = Effect.fn("Pi.snapshot")(function* (probe: ProviderProbeResult) {
       const catalog = yield* gateway.catalog().pipe(Effect.orElseSucceed(() => null));

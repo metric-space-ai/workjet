@@ -1184,7 +1184,12 @@ const makeWsRpcLayer = (
             });
 
           const bootstrapProgram = Effect.gen(function* () {
-            if (bootstrap?.createThread) {
+            const existingBootstrapThread = bootstrap?.createThread
+              ? yield* projectionSnapshotQuery.getThreadShellById(command.threadId)
+              : Option.none();
+            if (bootstrap?.createThread && Option.isSome(existingBootstrapThread) && existingBootstrapThread.value.projectId !== bootstrap.createThread.projectId)
+              return yield* Effect.fail(new Error("Bootstrap retry belongs to a different project."));
+            if (bootstrap?.createThread && Option.isNone(existingBootstrapThread)) {
               const workjetConfig = bootstrap.createThread.workjetConfig;
               if (workjetConfig.enabledCapabilityIds.includes("decision-hub")) {
                 const connections = yield* withDecisionHubConnections((registry) => registry.list);
@@ -1268,7 +1273,9 @@ const makeWsRpcLayer = (
               });
             }
 
-            if (bootstrap?.prepareWorktree && !manualParent) {
+            if (Option.isSome(existingBootstrapThread) && targetWorktreePath === null)
+              targetWorktreePath = existingBootstrapThread.value.worktreePath;
+            if (bootstrap?.prepareWorktree && !manualParent && !(Option.isSome(existingBootstrapThread) && existingBootstrapThread.value.worktreePath)) {
               let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
               // "Start from origin" is a stored default; repos without an
               // origin remote fall back to the local base branch instead of
@@ -1316,7 +1323,13 @@ const makeWsRpcLayer = (
 
           return yield* bootstrapProgram.pipe(
             Effect.catchCause((cause) => {
-              const dispatchError = toBootstrapDispatchCommandCauseError(cause);
+              const originalError = toBootstrapDispatchCommandCauseError(cause);
+              const dispatchError = manualWorkerPrepared && targetWorktreePath
+                ? new OrchestrationDispatchCommandError({
+                    message: `${originalError.message} Worker checkout preserved at ${targetWorktreePath} on workjet/worker/${command.threadId}; retry recorded ownership or recover it explicitly.`,
+                    cause,
+                  })
+                : originalError;
               if (Cause.hasInterruptsOnly(cause)) {
                 return Effect.fail(dispatchError);
               }

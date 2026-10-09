@@ -665,6 +665,16 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     projectId: ProjectId,
   }),
   Schema.Struct({
+    action: Schema.Literal("project.kpis.configure"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+    expectedRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    prompts: Schema.Array(
+      Schema.Struct({ kpi_id: CtoxProjectText(128), prompt: CtoxProjectText(1_024) }),
+    ).check(Schema.isMaxLength(3)),
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.gallery.order.read"),
     commandId: CommandId,
   }),
@@ -863,7 +873,7 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     ),
   ),
   Schema.Struct({
-    action: Schema.Literal("project.kpis.read"),
+    action: Schema.Literals(["project.kpis.read", "project.kpis.configure"]),
     commandId: CommandId,
     projectId: ProjectId,
     contract: Schema.Literal("ctox.workjet.project_kpis.v1"),

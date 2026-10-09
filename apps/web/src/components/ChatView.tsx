@@ -7292,41 +7292,41 @@ function ChatViewContent(props: ChatViewProps) {
                                   workjetCapabilityBusy
                                 }
                               />
-                            <NativeSupervisorComposer
-                              key={`${activeThreadKey}:${presentationInstanceId}`}
-                              scope={nativeSupervisorScope}
-                              config={visibleWorkjetConfig}
-                              instanceId={presentationInstanceId}
-                              blockReason={
-                                nativeSupervisorScope === null
-                                  ? nativeSupervisorBlockReason({
-                                      project: activeProject ?? null,
-                                      registry: workjetProjectRegistry,
-                                    })
-                                  : null
-                              }
-                              unavailable={
-                                activeEnvironmentUnavailable ||
-                                threadDetailLoading ||
-                                workjetCapabilityBusy
-                              }
-                              saveConfig={async (nextConfig) => {
-                                const result = await setThreadWorkjetConfig({
-                                  environmentId: activeServerThread.environmentId,
-                                  input: {
-                                    threadId: activeServerThread.id,
-                                    workjetConfig: nextConfig,
-                                  },
-                                });
-                                if (result._tag === "Success" && activeThreadKey) {
-                                  setWorkjetConfigOverridesByThreadKey((current) => ({
-                                    ...current,
-                                    [activeThreadKey]: { config: nextConfig, busy: false },
-                                  }));
+                              <NativeSupervisorComposer
+                                key={`${activeThreadKey}:${presentationInstanceId}`}
+                                scope={nativeSupervisorScope}
+                                config={visibleWorkjetConfig}
+                                instanceId={presentationInstanceId}
+                                blockReason={
+                                  nativeSupervisorScope === null
+                                    ? nativeSupervisorBlockReason({
+                                        project: activeProject ?? null,
+                                        registry: workjetProjectRegistry,
+                                      })
+                                    : null
                                 }
-                                return result;
-                              }}
-                            />
+                                unavailable={
+                                  activeEnvironmentUnavailable ||
+                                  threadDetailLoading ||
+                                  workjetCapabilityBusy
+                                }
+                                saveConfig={async (nextConfig) => {
+                                  const result = await setThreadWorkjetConfig({
+                                    environmentId: activeServerThread.environmentId,
+                                    input: {
+                                      threadId: activeServerThread.id,
+                                      workjetConfig: nextConfig,
+                                    },
+                                  });
+                                  if (result._tag === "Success" && activeThreadKey) {
+                                    setWorkjetConfigOverridesByThreadKey((current) => ({
+                                      ...current,
+                                      [activeThreadKey]: { config: nextConfig, busy: false },
+                                    }));
+                                  }
+                                  return result;
+                                }}
+                              />
                             </>
                           ) : (
                             <ChatComposer

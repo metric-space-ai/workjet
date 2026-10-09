@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, WorkjetConnectionId, type WorkjetConnectionSummary } from "@workjet/contracts";
+import {
+  EnvironmentId,
+  WorkjetConnectionId,
+  type WorkjetConnectionSummary,
+} from "@workjet/contracts";
 import {
   workerSourceConnectionForInstance,
   workerSourceProvisionRequest,
@@ -36,15 +40,26 @@ describe("native supervisor worker source connection", () => {
     expect(connection.instanceId).not.toBe(tenant);
   });
   it("does not treat the decision-hub-only grant as a worker source", () => {
-    expect(workerSourceConnectionForInstance([
-      { ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) },
-    ], selected)).toBeUndefined();
+    expect(
+      workerSourceConnectionForInstance(
+        [{ ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) }],
+        selected,
+      ),
+    ).toBeUndefined();
   });
   it("does not expose a different tenant or an invalid source connection identity", () => {
     expect(workerSourceConnectionForInstance([connection], "managed:foreign")).toBeUndefined();
-    expect(workerSourceConnectionForInstance([
-      { ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev-worker-source:${tenant}:invalid`) },
-    ], selected)).toBeUndefined();
+    expect(
+      workerSourceConnectionForInstance(
+        [
+          {
+            ...connection,
+            connectionId: WorkjetConnectionId.make(`ctox-dev-worker-source:${tenant}:invalid`),
+          },
+        ],
+        selected,
+      ),
+    ).toBeUndefined();
   });
   it("prefers a ready source over an unavailable older connection", () => {
     const unavailable: WorkjetConnectionSummary = { ...connection, status: "unavailable" };

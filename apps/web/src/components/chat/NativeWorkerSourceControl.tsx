@@ -27,7 +27,9 @@ export function NativeWorkerSourceControl(props: {
     readonly queryData: typeof query.data;
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ readonly scope: string; readonly message: string } | null>(null);
+  const [error, setError] = useState<{ readonly scope: string; readonly message: string } | null>(
+    null,
+  );
   const inFlight = useRef(false);
   const request = workerSourceProvisionRequest(props.environmentId, props.instanceId);
   // A successful grant can arrive before the refreshed connection list. The next
@@ -41,7 +43,13 @@ export function NativeWorkerSourceControl(props: {
     typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
 
   const connect = async () => {
-    if (!request || !provision || props.unavailable || inFlight.current || source?.status === "ready")
+    if (
+      !request ||
+      !provision ||
+      props.unavailable ||
+      inFlight.current ||
+      source?.status === "ready"
+    )
       return;
     const requestedScope = scope;
     const queryData = query.data;
@@ -91,15 +99,25 @@ export function NativeWorkerSourceControl(props: {
       data-workjet-worker-source-instance-id={source?.instanceId}
     >
       {source?.status === "ready" ? (
-        <span role="status" className="text-emerald-500">Workers connected</span>
+        <span role="status" className="text-emerald-500">
+          Workers connected
+        </span>
       ) : (
         <>
           <button
             type="button"
             aria-label="Connect workers for this project"
             className="rounded-md border px-2.5 py-1.5 disabled:opacity-50"
-            disabled={props.unavailable || busy || request === null || provision === undefined || query.isPending}
-            onClick={() => { void connect(); }}
+            disabled={
+              props.unavailable ||
+              busy ||
+              request === null ||
+              provision === undefined ||
+              query.isPending
+            }
+            onClick={() => {
+              void connect();
+            }}
           >
             {busy ? "Connecting workers…" : "Connect workers"}
           </button>
@@ -114,7 +132,11 @@ export function NativeWorkerSourceControl(props: {
           ) : null}
         </>
       )}
-      {error?.scope === scope ? <span role="alert" className="text-amber-500">{error.message}</span> : null}
+      {error?.scope === scope ? (
+        <span role="alert" className="text-amber-500">
+          {error.message}
+        </span>
+      ) : null}
     </div>
   );
 }

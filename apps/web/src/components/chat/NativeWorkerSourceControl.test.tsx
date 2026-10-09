@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EnvironmentId, WorkjetConnectionId, type WorkjetConnectionSummary } from "@workjet/contracts";
+import {
+  EnvironmentId,
+  WorkjetConnectionId,
+  type WorkjetConnectionSummary,
+} from "@workjet/contracts";
 import { NativeWorkerSourceControl } from "./NativeWorkerSourceControl";
 
 const state = vi.hoisted(() => ({
@@ -57,7 +61,11 @@ describe("worker connection in the native project supervisor", () => {
     expect(html).not.toContain(`data-workjet-worker-source-instance-id="${tenant}"`);
   });
   it("does not report decision-hub grants or another tenant as connected workers", () => {
-    state.data = { connections: [{ ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) }] };
+    state.data = {
+      connections: [
+        { ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) },
+      ],
+    };
     expect(render()).not.toContain("Workers connected");
     state.data = { connections: [connection] };
     expect(render({ instanceId: "managed:foreign" })).not.toContain("Workers connected");

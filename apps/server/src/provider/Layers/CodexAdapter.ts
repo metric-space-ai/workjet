@@ -1736,6 +1736,13 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           }
         }
         if (workerSource) {
+          if (workerSource.harness !== "codex-cli") {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Worker harness differs from the source permit.",
+            });
+          }
           yield* Effect.tryPromise({
             try: () => workerSource.admit(),
             catch: () =>
@@ -1753,6 +1760,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               TMPDIR: process.env.TMPDIR,
               LANG: process.env.LANG,
               WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
+              WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
             }
           : options?.resolveSessionEnvironment
             ? yield* options.resolveSessionEnvironment({ model: selectedModel })

@@ -2,6 +2,7 @@
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
 import { Schema } from "effect";
+import { WorkjetComputerInventory, type RemoteWorkerHarness } from "@workjet/contracts";
 
 const Route = Schema.Struct({
   sourceEnvironmentId: Schema.NonEmptyString,
@@ -15,6 +16,68 @@ export type WorkerSourceHarnessRoute = typeof Route.Type;
 const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Schema.Boolean) });
 const Reply = Schema.Struct({ requestJson: Schema.String });
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
+const MessagesResponse = Schema.Struct({
+  id: Schema.String,
+  type: Schema.Literal("message"),
+  role: Schema.Literal("assistant"),
+  model: Schema.String,
+  content: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+  stop_reason: Schema.NullOr(Schema.String),
+  stop_sequence: Schema.optional(Schema.NullOr(Schema.String)),
+  usage: Schema.Record(Schema.String, Schema.Unknown),
+});
+
+/** Keep the gateway's Messages blocks, tool IDs, signatures and usage intact. */
+function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void {
+  const message = Schema.decodeUnknownSync(MessagesResponse)(body);
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+  const event = (type: string, data: Record<string, unknown>) =>
+    res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+  event("message_start", {
+    message: {
+      ...message,
+      content: [],
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { ...message.usage, output_tokens: 0 },
+    },
+  });
+  for (const [index, block] of message.content.entries()) {
+    const { text, input, thinking, signature, ...metadata } = block;
+    event("content_block_start", {
+      index,
+      content_block:
+        block.type === "text"
+          ? { ...metadata, text: "" }
+          : block.type === "tool_use"
+            ? { ...metadata, input: {} }
+            : block.type === "thinking"
+              ? { ...metadata, thinking: "", signature: "" }
+              : block,
+    });
+    if (block.type === "text" && typeof text === "string")
+      event("content_block_delta", { index, delta: { type: "text_delta", text } });
+    if (block.type === "tool_use")
+      event("content_block_delta", {
+        index,
+        delta: { type: "input_json_delta", partial_json: JSON.stringify(input) },
+      });
+    if (block.type === "thinking") {
+      if (typeof thinking === "string")
+        event("content_block_delta", { index, delta: { type: "thinking_delta", thinking } });
+      if (typeof signature === "string")
+        event("content_block_delta", { index, delta: { type: "signature_delta", signature } });
+    }
+    event("content_block_stop", { index });
+  }
+  event("message_delta", {
+    delta: { stop_reason: message.stop_reason, stop_sequence: message.stop_sequence ?? null },
+    usage: message.usage,
+  });
+  event("message_stop", {});
+  res.end();
+}
+
 export interface WorkerSourceHarness {
   readonly isRevoked: () => boolean;
   readonly identity: Readonly<
@@ -27,6 +90,7 @@ export interface WorkerSourceHarness {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
+  readonly harness: RemoteWorkerHarness;
   readonly revoke: () => Promise<void>;
   readonly retire: () => Promise<void>;
 }
@@ -42,10 +106,11 @@ export async function installWorkerSourceRoute(
     readonly targetEnvironmentId: string;
     readonly requestDigest: string;
     readonly modelId: string;
+    readonly harness?: RemoteWorkerHarness;
   },
 ): Promise<WorkerSourceHarness> {
   const route = Object.freeze(Schema.decodeUnknownSync(Route)(input));
-  const pin = Object.freeze({ ...installation });
+  const pin = Object.freeze({ ...installation, harness: installation.harness ?? "codex-cli" });
   if (
     threadId !== route.requestId ||
     route.targetEnvironmentId !== pin.targetEnvironmentId ||
@@ -69,7 +134,8 @@ export async function installWorkerSourceRoute(
       original.requestDigest !== route.requestDigest ||
       original.capability !== route.capability ||
       original.port !== route.port ||
-      existing.model !== pin.modelId
+      existing.model !== pin.modelId ||
+      existing.harness !== pin.harness
     )
       throw new Error("Worker source route substitution or revocation");
     await existing.admit();
@@ -80,7 +146,7 @@ export async function installWorkerSourceRoute(
   let revoked = false;
   let busy = false;
   const source = async (
-    operation: "admit" | "infer" | "retire",
+    operation: "admit" | "infer" | "retire" | "computers",
     payload: unknown,
     signal: AbortSignal,
   ) => {
@@ -101,11 +167,20 @@ export async function installWorkerSourceRoute(
     return response.json() as Promise<unknown>;
   };
   const server: NodeHttp.Server = NodeHttp.createServer(async (req, res) => {
-    if (revoked || req.headers.authorization !== `Bearer ${apiKey}`) {
+    const messages = pin.harness === "claude-code";
+    const authenticated =
+      req.headers.authorization !== undefined
+        ? req.headers.authorization === `Bearer ${apiKey}`
+        : messages && req.headers["x-api-key"] === apiKey;
+    if (revoked || !authenticated) {
       res.writeHead(403).end();
       return;
     }
-    if (req.method !== "POST" || req.url !== "/v1/responses") {
+    const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
+    if (
+      !inventory &&
+      (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses"))
+    ) {
       res.writeHead(404).end();
       return;
     }
@@ -125,6 +200,19 @@ export async function installWorkerSourceRoute(
     };
     res.on("close", disconnect);
     try {
+      if (inventory) {
+        await source("admit", {}, controller.signal);
+        const response = Schema.decodeUnknownSync(WorkjetComputerInventory)(
+          await source("computers", {}, controller.signal),
+        );
+        if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
+        const body = JSON.stringify(response);
+        if (Buffer.byteLength(body) > 64 * 1024) throw new Error("Worker inventory too large");
+        res
+          .writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
+          .end(body);
+        return;
+      }
       const chunks: Buffer[] = [];
       let size = 0;
       for await (const chunk of req) {
@@ -145,9 +233,16 @@ export async function installWorkerSourceRoute(
           controller.signal,
         ),
       );
-      const result = Schema.decodeUnknownSync(Response)(JSON.parse(reply.requestJson));
+      const result = JSON.parse(reply.requestJson);
+      if (messages) {
+        const message = Schema.decodeUnknownSync(MessagesResponse)(result);
+        if (message.model !== pin.modelId)
+          throw new Error("Worker response model differs from source permit");
+      } else Schema.decodeUnknownSync(Response)(result);
       if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
-      if (request.stream) {
+      if (request.stream && messages) {
+        writeMessagesStream(res, result);
+      } else if (request.stream) {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
         const event = (type: string, data: Record<string, unknown>) =>
           res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
@@ -203,6 +298,7 @@ export async function installWorkerSourceRoute(
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     apiKey,
     model: pin.modelId,
+    harness: pin.harness,
     retire: async () => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);

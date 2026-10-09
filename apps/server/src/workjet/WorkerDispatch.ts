@@ -64,6 +64,8 @@ export interface WorkerDispatchResult {
   readonly computerId?: WorkjetComputerId;
   readonly branch: string;
   readonly worktreePath: string;
+  readonly harness?: RemoteWorkerRequest["harness"];
+  readonly hostname?: string | undefined;
   readonly parent: WorkjetParentThreadReference;
   readonly modelSelection: ModelSelection;
   readonly enabledCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
@@ -128,7 +130,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       case "computer-unavailable":
         return "The selected worker computer is unavailable in native settings.";
       case "worker-profile-unavailable":
-        return "Select one configured Codex worker profile for the target computer with an explicit model and account route.";
+        return "Select one configured worker profile for the target computer with an explicit harness, model and account route.";
       case "remote-dispatch-unavailable":
         return "The registered remote environment connection is unavailable.";
       case "remote-dispatch-pending":
@@ -307,7 +309,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         configuration?.workerProfiles.filter(
           (profile) =>
             profile.computerId === computerId &&
-            profile.harness === "codex-cli" &&
+            (profile.harness === "codex-cli" || profile.harness === "claude-code") &&
             (input.workerProfileId === undefined || profile.id === input.workerProfileId),
         ) ?? [];
       const profile = profiles.length === 1 ? profiles[0] : undefined;
@@ -356,6 +358,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           saved.value.request.parent.threadId !== parent.id ||
           saved.value.request.computerId !== computerId ||
           saved.value.request.workerProfileId !== profile.id ||
+          (saved.value.request.harness ?? "codex-cli") !== profile.harness ||
           saved.value.request.llmRouteId !== profile.llmRouteId ||
           saved.value.request.modelSelection.model !== profile.modelId ||
           saved.value.request.enabledCapabilityIds.some(
@@ -418,6 +421,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           targetEnvironmentId,
           computerId,
           workerProfileId: profile.id,
+          ...(profile.harness === "claude-code" ? { harness: profile.harness } : {}),
           llmRouteId: profile.llmRouteId,
           parent: { environmentId: invocation.environmentId, threadId: parent.id },
           ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),

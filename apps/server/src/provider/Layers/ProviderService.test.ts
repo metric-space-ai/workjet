@@ -260,7 +260,9 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
   );
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
     provider,
-    ...(provider === CODEX_DRIVER ? { nativeGoal: { get: nativeGoalGet, set: nativeGoalSet } } : {}),
+    ...(provider === CODEX_DRIVER
+      ? { nativeGoal: { get: nativeGoalGet, set: nativeGoalSet } }
+      : {}),
     capabilities: {
       sessionModelSwitch: "in-session",
     },

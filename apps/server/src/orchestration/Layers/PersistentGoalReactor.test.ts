@@ -15,6 +15,7 @@ import {
 } from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -83,6 +84,7 @@ const harness = Effect.fn("test.goalHarness")(function* (
   let sequence = 0;
   const starts: OrchestrationCommand[] = [];
   const events = yield* PubSub.unbounded<OrchestrationEvent>();
+  const crypto = yield* Crypto.Crypto;
   const receipts = new Map<string, number>();
   const signals = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
   const readModel = (): OrchestrationReadModel => ({
@@ -104,16 +106,24 @@ const harness = Effect.fn("test.goalHarness")(function* (
     streamDomainEvents: Stream.fromPubSub(events),
     readEvents: () => Stream.empty,
     latestSequence: Effect.sync(() => sequence),
-    runTurnStartIfActive: <A, E, R>(threadId: ThreadId, action: Effect.Effect<A, E, R>,
-      revision?: number | { readonly revision: number; readonly status: "active" | "paused" | "blocked" | "complete" }) =>
+    runTurnStartIfActive: <A, E, R>(
+      threadId: ThreadId,
+      action: Effect.Effect<A, E, R>,
+      revision?:
+        | number
+        | {
+            readonly revision: number;
+            readonly status: "active" | "paused" | "blocked" | "complete";
+          },
+    ) =>
       Effect.gen(function* () {
         const config = current.workjetConfig;
         if (
           threadId !== current.id ||
           config.schemaVersion !== 2 ||
           config.goal?.status !== (typeof revision === "object" ? revision.status : "active") ||
-          (revision !== undefined && config.goal.revision !==
-            (typeof revision === "object" ? revision.revision : revision))
+          (revision !== undefined &&
+            config.goal.revision !== (typeof revision === "object" ? revision.revision : revision))
         )
           return false;
         yield* action;
@@ -137,7 +147,7 @@ const harness = Effect.fn("test.goalHarness")(function* (
           yield* Deferred.succeed(signals[starts.length - 1]!, undefined);
       }
       return { sequence };
-    }),
+    }, Effect.provideService(Crypto.Crypto, crypto), Effect.orDie),
   } as OrchestrationEngineService["Service"];
   const query = {
     getThreadShellById: () => Effect.sync(() => Option.some(current)),

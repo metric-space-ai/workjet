@@ -14,8 +14,10 @@ use super::user_id_cache::{ClaudeIdentityKvStore, ClaudeIdentityStoreError};
 use crate::internal::home::hash_key_part;
 use crate::sdk::api::handlers::header_filter::HeaderMap;
 
-pub const DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT: &str = "claude-cli/2.1.220 (external, cli)";
-pub const DEFAULT_CLAUDE_FINGERPRINT_PACKAGE_VERSION: &str = "0.94.0";
+// Match CTOX's current protocol profile; Anthropic rejected 2.1.220 on 2026-10-09.
+pub const DEFAULT_CLAUDE_CLI_VERSION: &str = "2.1.280";
+pub const DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT: &str = "claude-cli/2.1.280 (external, cli)";
+pub const DEFAULT_CLAUDE_FINGERPRINT_PACKAGE_VERSION: &str = "0.112.1";
 pub const DEFAULT_CLAUDE_FINGERPRINT_RUNTIME_VERSION: &str = "v26.3.0";
 pub const DEFAULT_CLAUDE_FINGERPRINT_OS: &str = "MacOS";
 pub const DEFAULT_CLAUDE_FINGERPRINT_ARCH: &str = "arm64";
@@ -336,7 +338,7 @@ pub fn apply_claude_device_profile_headers(headers: &mut HeaderMap, profile: &Cl
 pub fn default_claude_version(defaults: &ClaudeHeaderDefaults) -> String {
     parse_claude_cli_version(&default_claude_device_profile(defaults).user_agent)
         .map(|version| format!("{}.{}.{}", version.major, version.minor, version.patch))
-        .unwrap_or_else(|| "2.1.220".to_owned())
+        .unwrap_or_else(|| DEFAULT_CLAUDE_CLI_VERSION.to_owned())
 }
 
 pub fn apply_claude_default_device_profile_headers(

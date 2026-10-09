@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 use super::claude_client_detection::detect_claude_code_request;
-use super::claude_device_profile::ClaudeHeaderDefaults;
+use super::claude_device_profile::{
+    ClaudeHeaderDefaults, DEFAULT_CLAUDE_CLI_VERSION, DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT,
+};
 use crate::sdk::api::handlers::header_filter::HeaderMap;
 
 const VALID_USER_ID: &str = r#"{"device_id":"0000000000000000000000000000000000000000000000000000000000000000","account_uuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","session_id":"11111111-2222-4333-8444-555555555555"}"#;
@@ -26,7 +28,7 @@ fn confirmed_headers(user_agent: &str) -> HeaderMap {
 #[test]
 fn requires_all_message_signals_and_allows_count_tokens_without_metadata() {
     let defaults = ClaudeHeaderDefaults::default();
-    let headers = confirmed_headers("claude-cli/2.1.220 (external, cli)");
+    let headers = confirmed_headers(DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT);
     let detection =
         detect_claude_code_request(Some(&headers), &payload(VALID_USER_ID), false, &defaults);
     assert!(detection.confirmed && detection.strong_signals && detection.native_client);
@@ -76,7 +78,8 @@ fn classifies_native_and_non_native_entrypoints() {
         ("claude-desktop", "claude-desktop", false),
         ("copied-client", "", false),
     ] {
-        let user_agent = format!("claude-cli/2.1.220 (external, {entrypoint})");
+        let user_agent =
+            format!("claude-cli/{DEFAULT_CLAUDE_CLI_VERSION} (external, {entrypoint})");
         let detection = detect_claude_code_request(
             Some(&confirmed_headers(&user_agent)),
             &payload(VALID_USER_ID),
@@ -94,13 +97,13 @@ fn classifies_native_and_non_native_entrypoints() {
 #[test]
 fn rejects_malformed_or_missing_signals() {
     let defaults = ClaudeHeaderDefaults::default();
-    let mut headers = confirmed_headers("claude-cli/2.1.220 (external, cli)");
+    let mut headers = confirmed_headers(DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT);
     headers.remove("X-App");
     assert!(
         !detect_claude_code_request(Some(&headers), &payload(VALID_USER_ID), false, &defaults)
             .confirmed
     );
-    let headers = confirmed_headers("claude-cli/2.1.220 (external, cli)");
+    let headers = confirmed_headers(DEFAULT_CLAUDE_FINGERPRINT_USER_AGENT);
     assert!(
         !detect_claude_code_request(Some(&headers), &payload("user_legacy"), false, &defaults)
             .confirmed

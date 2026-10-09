@@ -15,10 +15,13 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { forkParked } from "../../serverActivation.ts";
 import { workerGoalContinuationText } from "../../workjet/workerGoal.ts";
 
-export class PersistentGoalReactor extends Context.Service<PersistentGoalReactor, {
-  readonly start: () => Effect.Effect<void, never, import("effect/Scope").Scope>;
-  readonly drain: Effect.Effect<void>;
-}>()("workjet/orchestration/PersistentGoalReactor") {}
+export class PersistentGoalReactor extends Context.Service<
+  PersistentGoalReactor,
+  {
+    readonly start: () => Effect.Effect<void, never, import("effect/Scope").Scope>;
+    readonly drain: Effect.Effect<void>;
+  }
+>()("workjet/orchestration/Layers/PersistentGoalReactor") {}
 
 export const makePersistentGoalReactor = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
@@ -30,52 +33,96 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
     if (Option.isNone(found)) return;
     const thread = found.value;
     const config = thread.workjetConfig;
-    if (thread.deletedAt != null || thread.archivedAt !== null || config.schemaVersion !== 2 ||
-      config.team?.role !== "specialist" || !config.goal) return;
+    if (
+      thread.deletedAt != null ||
+      thread.archivedAt !== null ||
+      config.schemaVersion !== 2 ||
+      config.team?.role !== "specialist" ||
+      !config.goal
+    )
+      return;
     const goal = config.goal;
     if (goal.status !== "active") {
-      if (providers.nativeGoal && (yield* providers.listSessions()).some((session) => session.threadId === thread.id)) {
-        const native = yield* providers.nativeGoal.get(thread.id).pipe(Effect.timeout("10 seconds"));
+      if (
+        providers.nativeGoal &&
+        (yield* providers.listSessions()).some((session) => session.threadId === thread.id)
+      ) {
+        const native = yield* providers.nativeGoal
+          .get(thread.id)
+          .pipe(Effect.timeout("10 seconds"));
         if (native !== undefined && native?.status !== goal.status) {
-          yield* providers.nativeGoal.set(thread.id, goal.objective, goal.status).pipe(Effect.timeout("10 seconds"));
+          yield* providers.nativeGoal
+            .set(thread.id, goal.objective, goal.status)
+            .pipe(Effect.timeout("10 seconds"));
         }
       }
       return;
     }
-    if (thread.session?.status === "running" || thread.session?.status === "starting" ||
-      thread.hasPendingApprovals || thread.hasPendingUserInput) return;
+    if (
+      thread.session?.status === "running" ||
+      thread.session?.status === "starting" ||
+      thread.hasPendingApprovals ||
+      thread.hasPendingUserInput
+    )
+      return;
     const now = DateTime.formatIso(yield* DateTime.now);
-    if (thread.session?.status === "error" || thread.latestTurn?.state === "error" || thread.latestTurn?.state === "interrupted") {
+    if (
+      thread.session?.status === "error" ||
+      thread.latestTurn?.state === "error" ||
+      thread.latestTurn?.state === "interrupted"
+    ) {
       yield* engine.dispatch({
-        type: "thread.goal.set", commandId: CommandId.make(`server:goal-error:${thread.id}:${goal.revision}`),
-        threadId: thread.id, status: "blocked", expectedRevision: goal.revision,
-        reason: thread.session?.lastError ?? "The provider turn failed or was interrupted. Resolve it before resuming the goal.",
+        type: "thread.goal.set",
+        commandId: CommandId.make(`server:goal-error:${thread.id}:${goal.revision}`),
+        threadId: thread.id,
+        status: "blocked",
+        expectedRevision: goal.revision,
+        reason:
+          thread.session?.lastError ??
+          "The provider turn failed or was interrupted. Resolve it before resuming the goal.",
         createdAt: now,
       });
       return;
     }
     if (providers.nativeGoal && thread.session !== null) {
-      const nativeResult = yield* providers.nativeGoal.get(thread.id).pipe(Effect.timeout("10 seconds"), Effect.result);
+      const nativeResult = yield* providers.nativeGoal
+        .get(thread.id)
+        .pipe(Effect.timeout("10 seconds"), Effect.result);
       if (Result.isFailure(nativeResult)) {
         yield* engine.dispatch({
-          type: "thread.goal.set", commandId: CommandId.make(`server:goal-native-error:${thread.id}:${goal.revision}`),
-          threadId: thread.id, status: "blocked", expectedRevision: goal.revision,
-          reason: "Native goal control is unavailable on this harness connection. Inspect the provider error before resuming.",
+          type: "thread.goal.set",
+          commandId: CommandId.make(`server:goal-native-error:${thread.id}:${goal.revision}`),
+          threadId: thread.id,
+          status: "blocked",
+          expectedRevision: goal.revision,
+          reason:
+            "Native goal control is unavailable on this harness connection. Inspect the provider error before resuming.",
           createdAt: now,
         });
         return;
       }
       const native = nativeResult.success;
       if (native !== undefined) {
-        const ownerRestart = goal.pendingContinuation?.commandId.startsWith("server:goal-start:") &&
+        const ownerRestart =
+          goal.pendingContinuation?.commandId.startsWith("server:goal-start:") &&
           (thread.latestTurn === null || thread.latestTurn.turnId === goal.lastCompletedTurnId);
         if (native === null || native.objective !== goal.objective || ownerRestart) {
-          yield* providers.nativeGoal.set(thread.id, goal.objective, "active").pipe(Effect.timeout("10 seconds"));
+          yield* providers.nativeGoal
+            .set(thread.id, goal.objective, "active")
+            .pipe(Effect.timeout("10 seconds"));
         } else if (native.status !== "active") {
           yield* engine.dispatch({
-            type: "thread.goal.set", commandId: CommandId.make(`server:goal-native-state:${thread.id}:${goal.revision}`),
-            threadId: thread.id, status: native.status === "complete" ? "complete" : native.status === "paused" ? "paused" : "blocked",
-            expectedRevision: goal.revision, reason: `Codex native goal reports ${native.status} for the retained objective.`,
+            type: "thread.goal.set",
+            commandId: CommandId.make(`server:goal-native-state:${thread.id}:${goal.revision}`),
+            threadId: thread.id,
+            status:
+              native.status === "complete"
+                ? "complete"
+                : native.status === "paused"
+                  ? "paused"
+                  : "blocked",
+            expectedRevision: goal.revision,
+            reason: `Codex native goal reports ${native.status} for the retained objective.`,
             createdAt: now,
           });
           return;
@@ -83,50 +130,92 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
       }
     }
     const latest = thread.latestTurn;
-    if (latest?.state === "completed" && latest.completedAt !== null && latest.turnId !== goal.lastCompletedTurnId) {
+    if (
+      latest?.state === "completed" &&
+      latest.completedAt !== null &&
+      latest.turnId !== goal.lastCompletedTurnId
+    ) {
       yield* engine.dispatch({
         type: "thread.goal.advance",
-        commandId: CommandId.make(`server:goal-advance:${thread.id}:${goal.revision}:${latest.turnId}`),
-        threadId: thread.id, completedTurnId: latest.turnId, expectedRevision: goal.revision, createdAt: now,
+        commandId: CommandId.make(
+          `server:goal-advance:${thread.id}:${goal.revision}:${latest.turnId}`,
+        ),
+        threadId: thread.id,
+        completedTurnId: latest.turnId,
+        expectedRevision: goal.revision,
+        createdAt: now,
       });
       return;
     }
     const pending = goal.pendingContinuation;
     if (!pending) return;
-    yield* engine.dispatch({
-      type: "thread.turn.start", commandId: pending.commandId, threadId: thread.id,
-      goalRevision: goal.revision,
-      message: { messageId: pending.messageId, role: "user", text: workerGoalContinuationText(goal), attachments: [] },
-      runtimeMode: thread.runtimeMode, interactionMode: thread.interactionMode, createdAt: pending.createdAt,
-    }, { deferWhileBusy: true });
+    yield* engine.dispatch(
+      {
+        type: "thread.turn.start",
+        commandId: pending.commandId,
+        threadId: thread.id,
+        goalRevision: goal.revision,
+        message: {
+          messageId: pending.messageId,
+          role: "user",
+          text: workerGoalContinuationText(goal),
+          attachments: [],
+        },
+        runtimeMode: thread.runtimeMode,
+        interactionMode: thread.interactionMode,
+        createdAt: pending.createdAt,
+      },
+      { deferWhileBusy: true },
+    );
   });
 
-  const worker = yield* makeDrainableWorker((threadId: ThreadId) => reconcile(threadId).pipe(
-    Effect.catch((error) => Effect.logDebug("persistent goal reconciliation deferred", { threadId, error })),
-  ));
+  const worker = yield* makeDrainableWorker((threadId: ThreadId) =>
+    reconcile(threadId).pipe(
+      Effect.catch((error) =>
+        Effect.logDebug("persistent goal reconciliation deferred", { threadId, error }),
+      ),
+    ),
+  );
   const reconcileSaved = Effect.fn("PersistentGoalReactor.reconcileSaved")(function* () {
     const snapshot = yield* query.getCommandReadModel();
     for (const thread of snapshot.threads) {
-      if (thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.goal?.status === "active") {
+      if (
+        thread.workjetConfig.schemaVersion === 2 &&
+        thread.workjetConfig.goal?.status === "active"
+      ) {
         yield* worker.enqueue(thread.id);
       }
     }
   });
   const start = Effect.fn("PersistentGoalReactor.start")(function* () {
-    yield* forkParked(Stream.runForEach(engine.streamDomainEvents, (event) => {
-      if (event.aggregateKind !== "thread" || ![
-        "thread.session-set", "thread.workjet-config-set", "thread.activity-appended",
-        "thread.unarchived", "thread.turn-diff-completed",
-      ].includes(event.type)) return Effect.void;
-      return worker.enqueue(event.aggregateId as ThreadId);
-    }));
+    yield* forkParked(
+      Stream.runForEach(engine.streamDomainEvents, (event) => {
+        if (
+          event.aggregateKind !== "thread" ||
+          ![
+            "thread.session-set",
+            "thread.workjet-config-set",
+            "thread.activity-appended",
+            "thread.unarchived",
+            "thread.turn-diff-completed",
+          ].includes(event.type)
+        )
+          return Effect.void;
+        return worker.enqueue(event.aggregateId as ThreadId);
+      }),
+    );
     // Recovery reads only the lightweight command snapshot, never transcript bodies.
-    yield* forkParked(reconcileSaved().pipe(
-      Effect.catch((error) => Effect.logWarning("persistent goal recovery failed", { error })),
-      Effect.repeat(Schedule.spaced("30 seconds")),
-    ));
+    yield* forkParked(
+      reconcileSaved().pipe(
+        Effect.catch((error) => Effect.logWarning("persistent goal recovery failed", { error })),
+        Effect.repeat(Schedule.spaced("30 seconds")),
+      ),
+    );
   });
   return { start, drain: worker.drain };
 });
 
-export const PersistentGoalReactorLive = Layer.effect(PersistentGoalReactor, makePersistentGoalReactor);
+export const PersistentGoalReactorLive = Layer.effect(
+  PersistentGoalReactor,
+  makePersistentGoalReactor,
+);

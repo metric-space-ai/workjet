@@ -911,10 +911,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
       const continuationInput = yield* withImportedHistoryContext(input, routed.adapter.provider);
       const binding = yield* directory.getBinding(input.threadId);
-      const config = Option.isSome(binding) ? readPersistedWorkjetConfig(binding.value.runtimePayload) : undefined;
-      if (config?.schemaVersion === 2 && config.team?.role === "specialist" && config.goal?.status === "active" && routed.adapter.nativeGoal) {
+      const config = Option.isSome(binding)
+        ? readPersistedWorkjetConfig(binding.value.runtimePayload)
+        : undefined;
+      if (
+        config?.schemaVersion === 2 &&
+        config.team?.role === "specialist" &&
+        config.goal?.status === "active" &&
+        routed.adapter.nativeGoal
+      ) {
         const native = yield* routed.adapter.nativeGoal.get(input.threadId);
-        if (native === null) yield* routed.adapter.nativeGoal.set(input.threadId, config.goal.objective, "active");
+        if (native === null)
+          yield* routed.adapter.nativeGoal.set(input.threadId, config.goal.objective, "active");
       }
       const turn = yield* routed.adapter.sendTurn(continuationInput);
       yield* directory.upsert({
@@ -1317,21 +1325,38 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   return {
     nativeGoal: {
-      get: (threadId) => Effect.gen(function* () {
-        const binding = yield* directory.getBinding(threadId);
-        if (Option.isNone(binding)) return undefined;
-        const instanceId = yield* requireBindingInstanceId("ProviderService.nativeGoal.get", binding.value);
-        const adapter = yield* registry.getByInstance(instanceId);
-        if (!adapter.nativeGoal) return undefined;
-        const routed = yield* resolveRoutableSession({ threadId, operation: "ProviderService.nativeGoal.get", allowRecovery: true });
-        return yield* routed.adapter.nativeGoal!.get(threadId);
-      }),
-      set: (threadId, objective, status) => Effect.gen(function* () {
-        const routed = yield* resolveRoutableSession({ threadId, operation: "ProviderService.nativeGoal.set", allowRecovery: false });
-        if (!routed.isActive) return;
-        if (!routed.adapter.nativeGoal) return yield* toValidationError("ProviderService.nativeGoal.set", "This harness does not expose native goal controls.");
-        yield* routed.adapter.nativeGoal.set(threadId, objective, status);
-      }),
+      get: (threadId) =>
+        Effect.gen(function* () {
+          const binding = yield* directory.getBinding(threadId);
+          if (Option.isNone(binding)) return undefined;
+          const instanceId = yield* requireBindingInstanceId(
+            "ProviderService.nativeGoal.get",
+            binding.value,
+          );
+          const adapter = yield* registry.getByInstance(instanceId);
+          if (!adapter.nativeGoal) return undefined;
+          const routed = yield* resolveRoutableSession({
+            threadId,
+            operation: "ProviderService.nativeGoal.get",
+            allowRecovery: true,
+          });
+          return yield* routed.adapter.nativeGoal!.get(threadId);
+        }),
+      set: (threadId, objective, status) =>
+        Effect.gen(function* () {
+          const routed = yield* resolveRoutableSession({
+            threadId,
+            operation: "ProviderService.nativeGoal.set",
+            allowRecovery: false,
+          });
+          if (!routed.isActive) return;
+          if (!routed.adapter.nativeGoal)
+            return yield* toValidationError(
+              "ProviderService.nativeGoal.set",
+              "This harness does not expose native goal controls.",
+            );
+          yield* routed.adapter.nativeGoal.set(threadId, objective, status);
+        }),
     },
     startSession,
     sendTurn,

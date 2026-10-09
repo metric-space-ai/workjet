@@ -75,6 +75,9 @@ describe("RPC authorization scopes", () => {
   });
 
   it("separates model check observation from inference operations", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayAccountModels)).toBe(
+      AuthOrchestrationReadScope,
+    );
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayModelChecks)).toBe(
       AuthOrchestrationReadScope,
     );

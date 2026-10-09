@@ -1,0 +1,15 @@
+# Persistent worker goals
+
+Workjet adds the same team-role instructions through its managed MCP/session prompt for every implemented provider driver. A persistent parent is represented by `team.role = specialist`; a supervisor and a one-shot worker retain their existing execution path.
+
+On the first real parent turn, Workjet saves an active goal from the configured team objective. Existing imported histories do not start on upgrade. Owners can set, replace, pause or resume the objective with the authorized `thread.goal.set` orchestration command. The optional `expectedRevision` provides a compare-and-set fence. Interrupt and unconditional session stop pause the goal atomically.
+
+The goal is saved in the thread's version-2 Workjet config and orchestration journal: objective, status, revision, continuation count, last completed turn, pending continuation identifiers, reason and update time. Session status and the retained pending continuation describe whether the loop is waiting, running or ready to dispatch. Config edits preserve the goal; downgrading to a config format that cannot retain it is rejected.
+
+After a successful turn, the server reactor saves a continuation before dispatching another turn. Command/message IDs are stable, the engine persists receipts, and a provider-start fence prevents an obsolete continuation from starting after an Owner stop. Restart recovery uses the lightweight command snapshot and never reads complete imported histories. Pending approval or user-input requests hold the loop. Provider failures are recorded as blocked with a reason.
+
+Codex uses its app-server `thread/goal/get` and `thread/goal/set` protocol. Other implemented drivers use the same server continuation loop. A provider exposing native controls must actually support them; failures are explicit, never a successful simulated native goal. An Owner stop does not recreate a closed provider session.
+
+The registered `workjet_update_goal` MCP tool lets the current persistent parent report complete or blocked with a verified result or concrete blocker. It cannot resume, select a foreign thread or override an Owner stop. Reports use the current persisted revision, so a racing stop rejects a stale report. Turn completion alone never completes the goal.
+
+Supervisor scheduling and one-shot archival remain separate responsibilities. Pi availability discovery currently has no corresponding server provider driver; its real persistent-worker acceptance remains unsupported until that driver exists. Unit tests exercise protocol routing, durable decisions, multiple automatic turns, recovery IDs, owner-stop races and MCP scope enforcement. They do not substitute for installed Molecularity acceptance with real harnesses and models.

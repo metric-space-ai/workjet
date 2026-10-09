@@ -29,10 +29,15 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
-        Layer.provideMerge(Layer.succeed(PersistentGoalReactor, {
-          start: () => { started.push("persistent-goal-reactor"); return Effect.void; },
-          drain: Effect.void,
-        })),
+        Layer.provideMerge(
+          Layer.succeed(PersistentGoalReactor, {
+            start: () => {
+              started.push("persistent-goal-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(ProviderRuntimeIngestionService, {
             start: () => {

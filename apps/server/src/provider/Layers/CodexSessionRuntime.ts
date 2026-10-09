@@ -136,8 +136,14 @@ export interface CodexThreadSnapshot {
 }
 
 export interface CodexSessionRuntimeShape {
-  readonly getNativeGoal?: Effect.Effect<EffectCodexSchema.V2ThreadGoalGetResponse["goal"], CodexSessionRuntimeError>;
-  readonly setNativeGoal?: (objective: string, status: "active" | "paused" | "blocked" | "complete") => Effect.Effect<void, CodexSessionRuntimeError>;
+  readonly getNativeGoal?: Effect.Effect<
+    EffectCodexSchema.V2ThreadGoalGetResponse["goal"],
+    CodexSessionRuntimeError
+  >;
+  readonly setNativeGoal?: (
+    objective: string,
+    status: "active" | "paused" | "blocked" | "complete",
+  ) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly start: () => Effect.Effect<ProviderSession, CodexSessionRuntimeError>;
   readonly getSession: Effect.Effect<ProviderSession>;
   readonly sendTurn: (
@@ -1800,10 +1806,11 @@ export const makeCodexSessionRuntime = (
         const response = yield* client.request("thread/goal/get", { threadId });
         return response.goal ?? null;
       }),
-      setNativeGoal: (objective, status) => Effect.gen(function* () {
-        const threadId = yield* readProviderThreadId;
-        yield* client.request("thread/goal/set", { threadId, objective, status });
-      }),
+      setNativeGoal: (objective, status) =>
+        Effect.gen(function* () {
+          const threadId = yield* readProviderThreadId;
+          yield* client.request("thread/goal/set", { threadId, objective, status });
+        }),
       sendTurn: (input) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;

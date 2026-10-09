@@ -1,5 +1,12 @@
 import * as Schema from "effect/Schema";
-import { CommandId, IsoDateTime, MessageId, NonNegativeInt, TrimmedNonEmptyString, TurnId } from "./baseSchemas.ts";
+import {
+  CommandId,
+  IsoDateTime,
+  MessageId,
+  NonNegativeInt,
+  TrimmedNonEmptyString,
+  TurnId,
+} from "./baseSchemas.ts";
 
 export const WorkjetGoalStatus = Schema.Literals(["active", "paused", "blocked", "complete"]);
 export type WorkjetGoalStatus = typeof WorkjetGoalStatus.Type;

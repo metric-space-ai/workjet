@@ -1,20 +1,42 @@
-import { CommandId, MessageId, type ThreadId, type TurnId, type WorkjetThreadGoal } from "@workjet/contracts";
+import {
+  CommandId,
+  MessageId,
+  type ThreadId,
+  type TurnId,
+  type WorkjetThreadGoal,
+} from "@workjet/contracts";
 
 export function initialWorkerGoal(objective: string, updatedAt: string): WorkjetThreadGoal {
   return {
-    objective, status: "active", revision: 0, continuationCount: 0,
-    lastCompletedTurnId: null, pendingContinuation: null, reason: null, updatedAt,
+    objective,
+    status: "active",
+    revision: 0,
+    continuationCount: 0,
+    lastCompletedTurnId: null,
+    pendingContinuation: null,
+    reason: null,
+    updatedAt,
   };
 }
 
 export function prepareGoalContinuation(
-  threadId: ThreadId, goal: WorkjetThreadGoal, completedTurnId: TurnId, createdAt: string,
+  threadId: ThreadId,
+  goal: WorkjetThreadGoal,
+  completedTurnId: TurnId,
+  createdAt: string,
 ): WorkjetThreadGoal {
   const key = `server:goal:${threadId}:${goal.revision}:${completedTurnId}`;
   return {
-    ...goal, revision: goal.revision + 1, continuationCount: goal.continuationCount + 1,
-    lastCompletedTurnId: completedTurnId, updatedAt: createdAt,
-    pendingContinuation: { commandId: CommandId.make(key), messageId: MessageId.make(key), createdAt },
+    ...goal,
+    revision: goal.revision + 1,
+    continuationCount: goal.continuationCount + 1,
+    lastCompletedTurnId: completedTurnId,
+    updatedAt: createdAt,
+    pendingContinuation: {
+      commandId: CommandId.make(key),
+      messageId: MessageId.make(key),
+      createdAt,
+    },
   };
 }
 

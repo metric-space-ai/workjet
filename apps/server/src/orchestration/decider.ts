@@ -244,14 +244,33 @@ const pauseGoalForOwnerStop = Effect.fn("pauseGoalForOwnerStop")(function* (
 ) {
   const config = thread.workjetConfig;
   if (config.schemaVersion !== 2 || config.goal?.status !== "active") return event;
-  return [{
-    ...(yield* withEventBase({ aggregateKind: "thread", aggregateId: thread.id, occurredAt: command.createdAt, commandId: command.commandId })),
-    type: "thread.workjet-config-set" as const,
-    payload: { threadId: thread.id, workjetConfig: { ...config, goal: {
-      ...config.goal, status: "paused" as const, revision: config.goal.revision + 1,
-      pendingContinuation: null, reason: "Explicit Owner stop.", updatedAt: command.createdAt,
-    } }, updatedAt: command.createdAt },
-  }, event];
+  return [
+    {
+      ...(yield* withEventBase({
+        aggregateKind: "thread",
+        aggregateId: thread.id,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+      })),
+      type: "thread.workjet-config-set" as const,
+      payload: {
+        threadId: thread.id,
+        workjetConfig: {
+          ...config,
+          goal: {
+            ...config.goal,
+            status: "paused" as const,
+            revision: config.goal.revision + 1,
+            pendingContinuation: null,
+            reason: "Explicit Owner stop.",
+            updatedAt: command.createdAt,
+          },
+        },
+        updatedAt: command.createdAt,
+      },
+    },
+    event,
+  ];
 });
 
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
@@ -1079,41 +1098,93 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     case "thread.goal.advance": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
       const config = thread.workjetConfig;
-      if (config.schemaVersion !== 2 || config.team?.role !== "specialist" || thread.archivedAt !== null || thread.deletedAt !== null) {
-        return yield* new OrchestrationCommandInvariantError({ commandType: command.type, detail: "Goals belong to active persistent workers." });
+      if (
+        config.schemaVersion !== 2 ||
+        config.team?.role !== "specialist" ||
+        thread.archivedAt !== null ||
+        thread.deletedAt !== null
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Goals belong to active persistent workers.",
+        });
       }
       const previous = config.goal;
-      if (command.expectedRevision !== undefined && command.expectedRevision !== previous?.revision) {
-        return yield* new OrchestrationCommandInvariantError({ commandType: command.type, detail: "The goal changed; refresh before updating it." });
+      if (
+        command.expectedRevision !== undefined &&
+        command.expectedRevision !== previous?.revision
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "The goal changed; refresh before updating it.",
+        });
       }
       let goal: WorkjetThreadGoal;
       if (command.type === "thread.goal.advance") {
-        if (!previous || previous.status !== "active" || previous.lastCompletedTurnId === command.completedTurnId ||
-          thread.latestTurn?.turnId !== command.completedTurnId || thread.latestTurn.completedAt === null ||
-          thread.latestTurn.state !== "completed" || hasOpenBlockingRequest(thread)) {
-          return yield* new OrchestrationCommandInvariantError({ commandType: command.type, detail: "Only a new successfully completed turn may continue an active goal." });
+        if (
+          !previous ||
+          previous.status !== "active" ||
+          previous.lastCompletedTurnId === command.completedTurnId ||
+          thread.latestTurn?.turnId !== command.completedTurnId ||
+          thread.latestTurn.completedAt === null ||
+          thread.latestTurn.state !== "completed" ||
+          hasOpenBlockingRequest(thread)
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Only a new successfully completed turn may continue an active goal.",
+          });
         }
-        goal = prepareGoalContinuation(thread.id, previous, command.completedTurnId, command.createdAt);
+        goal = prepareGoalContinuation(
+          thread.id,
+          previous,
+          command.completedTurnId,
+          command.createdAt,
+        );
       } else {
         if ((command.status === "complete" || command.status === "blocked") && !command.reason) {
-          return yield* new OrchestrationCommandInvariantError({ commandType: command.type, detail: "Completion needs verified results; a blocker needs the exact missing decision." });
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Completion needs verified results; a blocker needs the exact missing decision.",
+          });
         }
         const base = previous ?? initialWorkerGoal(config.team.goal, command.createdAt);
         const revision = previous ? previous.revision + 1 : 0;
-        goal = { ...base, objective: command.objective ?? base.objective, status: command.status,
-          revision, updatedAt: command.createdAt, reason: command.reason ?? null,
-          lastCompletedTurnId: command.status === "active" ? thread.latestTurn?.turnId ?? base.lastCompletedTurnId : base.lastCompletedTurnId,
-          pendingContinuation: command.status === "active" ? {
-            commandId: CommandId.make(`server:goal-start:${thread.id}:${revision}`),
-            messageId: MessageId.make(`server:goal-start:${thread.id}:${revision}`),
-            createdAt: command.createdAt,
-          } : null,
+        goal = {
+          ...base,
+          objective: command.objective ?? base.objective,
+          status: command.status,
+          revision,
+          updatedAt: command.createdAt,
+          reason: command.reason ?? null,
+          lastCompletedTurnId:
+            command.status === "active"
+              ? (thread.latestTurn?.turnId ?? base.lastCompletedTurnId)
+              : base.lastCompletedTurnId,
+          pendingContinuation:
+            command.status === "active"
+              ? {
+                  commandId: CommandId.make(`server:goal-start:${thread.id}:${revision}`),
+                  messageId: MessageId.make(`server:goal-start:${thread.id}:${revision}`),
+                  createdAt: command.createdAt,
+                }
+              : null,
         };
       }
       return {
-        ...(yield* withEventBase({ aggregateKind: "thread", aggregateId: command.threadId, occurredAt: command.createdAt, commandId: command.commandId })),
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
         type: "thread.workjet-config-set",
-        payload: { threadId: command.threadId, workjetConfig: { ...config, goal }, updatedAt: command.createdAt },
+        payload: {
+          threadId: command.threadId,
+          workjetConfig: { ...config, goal },
+          updatedAt: command.createdAt,
+        },
       };
     }
 
@@ -1133,9 +1204,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: "Native supervisor submission must belong to this Code thread.",
         });
       }
-      if (thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.goal && command.workjetConfig.schemaVersion !== 2) {
+      if (
+        thread.workjetConfig.schemaVersion === 2 &&
+        thread.workjetConfig.goal &&
+        command.workjetConfig.schemaVersion !== 2
+      ) {
         return yield* new OrchestrationCommandInvariantError({
-          commandType: command.type, detail: "Persistent goal state cannot be discarded by a legacy settings update.",
+          commandType: command.type,
+          detail: "Persistent goal state cannot be discarded by a legacy settings update.",
         });
       }
       const retainedPr = retainWorkjetWorkerPullRequest(
@@ -1175,9 +1251,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.workjet-config-set",
         payload: {
           threadId: command.threadId,
-          workjetConfig: thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.goal && retained.config.schemaVersion === 2
-            ? { ...retained.config, goal: thread.workjetConfig.goal }
-            : retained.config,
+          workjetConfig:
+            thread.workjetConfig.schemaVersion === 2 &&
+            thread.workjetConfig.goal &&
+            retained.config.schemaVersion === 2
+              ? { ...retained.config, goal: thread.workjetConfig.goal }
+              : retained.config,
           updatedAt: occurredAt,
         },
       };
@@ -1205,9 +1284,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (command.goalRevision !== undefined) {
         const config = targetThread.workjetConfig;
         const goal = config.schemaVersion === 2 ? config.goal : undefined;
-        if (config.schemaVersion !== 2 || config.team?.role !== "specialist" || goal?.status !== "active" ||
-          goal.revision !== command.goalRevision || goal.pendingContinuation?.commandId !== command.commandId) {
-          return yield* new OrchestrationCommandInvariantError({ commandType: command.type, detail: "Goal continuation was stopped or superseded." });
+        if (
+          config.schemaVersion !== 2 ||
+          config.team?.role !== "specialist" ||
+          goal?.status !== "active" ||
+          goal.revision !== command.goalRevision ||
+          goal.pendingContinuation?.commandId !== command.commandId
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Goal continuation was stopped or superseded.",
+          });
         }
       }
       const sourceThread = sourceProposedPlan
@@ -1283,11 +1370,27 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       // thread is the user re-engaging, so the return ticket is spent.
       const lifecycleResetEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
       const config = targetThread.workjetConfig;
-      if (config.schemaVersion === 2 && config.team?.role === "specialist" && config.goal === undefined) {
+      if (
+        config.schemaVersion === 2 &&
+        config.team?.role === "specialist" &&
+        config.goal === undefined
+      ) {
         lifecycleResetEvents.push({
-          ...(yield* withEventBase({ aggregateKind: "thread", aggregateId: command.threadId, occurredAt: command.createdAt, commandId: command.commandId })),
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
           type: "thread.workjet-config-set",
-          payload: { threadId: command.threadId, workjetConfig: { ...config, goal: initialWorkerGoal(config.team.goal, command.createdAt) }, updatedAt: command.createdAt },
+          payload: {
+            threadId: command.threadId,
+            workjetConfig: {
+              ...config,
+              goal: initialWorkerGoal(config.team.goal, command.createdAt),
+            },
+            updatedAt: command.createdAt,
+          },
         });
       }
       if (targetThread.settledOverride !== null) {
@@ -1561,7 +1664,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
         },
       };
-      return command.onlyIfSettled === true ? event : yield* pauseGoalForOwnerStop(thread, command, event);
+      return command.onlyIfSettled === true
+        ? event
+        : yield* pauseGoalForOwnerStop(thread, command, event);
     }
 
     case "thread.session.set": {

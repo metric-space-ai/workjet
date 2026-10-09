@@ -61,13 +61,22 @@ export function resolveThreadCapabilityContext(
     promptCapabilityIds: Object.freeze(promptManifests.map((manifest) => manifest.id)),
     compiledManagedPrompt: compileCapabilityPrompt({
       role: workjetConfig.role,
-      ...(team ? { team: workjetConfig.schemaVersion === 2 && workjetConfig.goal
-      ? { ...team, goal: workjetConfig.goal.objective } : team } : {}),
+      ...(team
+        ? {
+            team:
+              workjetConfig.schemaVersion === 2 && workjetConfig.goal
+                ? { ...team, goal: workjetConfig.goal.objective }
+                : team,
+          }
+        : {}),
       managedInstructions: [
         globalManagedInstructions.trim(),
         workjetConfig.managedInstructions.trim(),
         ...(workjetConfig.schemaVersion === 2 && workjetConfig.goal
-          ? [`Durable Workjet goal status: ${workjetConfig.goal.status}. ${workjetConfig.goal.reason ?? ""} Do not reactivate a paused goal; only an explicit Owner resume may do that.`] : []),
+          ? [
+              `Durable Workjet goal status: ${workjetConfig.goal.status}. ${workjetConfig.goal.reason ?? ""} Do not reactivate a paused goal; only an explicit Owner resume may do that.`,
+            ]
+          : []),
       ]
         .filter((value) => value.length > 0)
         .join("\n\n"),

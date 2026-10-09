@@ -2,6 +2,8 @@ import { EnvironmentId, ThreadId } from "@workjet/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { browserBusinessOsLaunchUrl } from "../crossMode/browserBusinessOsLaunch";
+import { openInstanceSetup } from "../instanceSetup";
+
 import { readActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
@@ -174,15 +176,10 @@ function BrowserBusinessOsEnvironmentNavigation({
         </span>
       ) : null}
       {!connections.isPending && rows.length === 0 ? (
-        <a
-          href="https://ctox.dev/workjet-pair"
-          target="_blank"
-          rel="noopener noreferrer"
-          referrerPolicy="no-referrer"
-          className="text-xs underline"
-        >
-          Instanz verbinden
-        </a>
+        <Button size="sm" variant="ghost" onClick={() => openInstanceSetup("connect")}>
+          Connect instance
+        </Button>
+
       ) : null}
     </div>
   );

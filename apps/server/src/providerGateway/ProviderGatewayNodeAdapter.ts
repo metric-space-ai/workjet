@@ -8,6 +8,7 @@ import * as NodePath from "node:path";
 import type { WorkjetGatewayModelBinding } from "@workjet/contracts";
 import { discoverKimiConnection } from "./KimiConnection.ts";
 import { discoverZaiConnection } from "./ZaiConnection.ts";
+import { discoverApiKeyModels } from "./ApiKeyModelConnection.ts";
 import { readPublicModelCatalog } from "./LiveProviderCatalog.ts";
 import { discoverClaudeModels } from "./ClaudeConnection.ts";
 
@@ -124,6 +125,7 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
   discoverClaudeModels,
   discoverKimiConnection,
   discoverZaiConnection,
+  discoverApiKeyModels,
   fingerprint: (value) => NodeCrypto.createHash("sha256").update(value).digest("hex"),
   providerModelCheck: async (endpoint, provider, accountId, modelId, signal) => {
     const response = await fetch(new URL("/v1/responses", endpoint), {

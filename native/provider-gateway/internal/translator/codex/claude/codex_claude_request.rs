@@ -435,7 +435,10 @@ fn reasoning_effort(root: &Map<String, Value>) -> String {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .map(str::to_ascii_lowercase)
+            .map(|effort| match effort.to_ascii_lowercase().as_str() {
+                "max" => "xhigh".to_owned(),
+                effort => effort.to_owned(),
+            })
             .unwrap_or_else(|| "xhigh".into()),
         "disabled" => convert_budget_to_level(0)
             .map(|level| level.as_str().to_owned())

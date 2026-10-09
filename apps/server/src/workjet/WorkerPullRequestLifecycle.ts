@@ -47,7 +47,10 @@ export const make = Effect.gen(function* () {
   ) {
     if (!executionStopped) {
       const stopped = yield* provider.stopSession({ threadId: thread.id });
-      if (stopped === undefined || !stopped.terminated) return;
+      if (stopped === undefined) {
+        const sessions = yield* provider.listSessions();
+        if (sessions.some((session) => session.threadId === thread.id)) return;
+      } else if (!stopped.terminated) return;
       if (!(yield* terminals.closeForCleanup({ threadId: thread.id }))) return;
       const harness = readWorkerSourceHarness(thread.id);
       if (harness) yield* Effect.promise(() => harness.retire());

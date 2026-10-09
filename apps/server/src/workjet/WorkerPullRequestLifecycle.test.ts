@@ -78,6 +78,8 @@ function harness() {
   } as unknown as OrchestrationThread;
   let candidates: ReadonlyArray<ChangeRequest> = [request];
   let terminated = true;
+  let stopMissing = false;
+  let liveSession = false;
   let terminalClosed = true;
   let stops = 0;
   let nativeHead = "a".repeat(40);
@@ -121,10 +123,11 @@ function harness() {
       resolveCommit: () => Effect.succeed({ commitSha: nativeHead }),
     } as unknown as GitVcsDriver["Service"]),
     Effect.provideService(ProviderService, {
+      listSessions: () => Effect.succeed(liveSession ? [{ threadId: id }] : []),
       stopSession: () =>
         Effect.sync(() => {
           stops += 1;
-          return { terminated, method: "cooperative", pids: [] };
+          return stopMissing ? undefined : { terminated, method: "cooperative", pids: [] };
         }),
     } as unknown as ProviderService["Service"]),
     Effect.provideService(TerminalManager, {
@@ -152,6 +155,10 @@ function harness() {
     setCandidates: (value: ReadonlyArray<ChangeRequest>) => {
       candidates = value;
     },
+    setAbsentStop: (active: boolean) => {
+      stopMissing = true;
+      liveSession = active;
+    },
     setStopped: (value: boolean) => {
       terminated = value;
     },
@@ -162,6 +169,19 @@ function harness() {
 }
 
 describe("native worker PR reconciler", () => {
+  it.effect("recovers an absent stopped session but refuses an unconfirmed live session", () => database(
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const h = harness();
+      h.setAbsentStop(true);
+      const service = yield* h.service;
+      yield* service.runCycle;
+      assert.equal(h.thread().archivedAt, null);
+      h.setAbsentStop(false);
+      yield* service.runCycle;
+      assert.equal(h.thread().archivedAt, h.thread().updatedAt);
+    }),
+  ));
   it.effect("waits for committed binding and title rather than using the stale thread", () => database(
     Effect.gen(function* () {
       yield* runMigrations();

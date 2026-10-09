@@ -1018,6 +1018,150 @@ describe("CtoxGuestManager", () => {
     },
   );
 
+  it.effect("creates a hidden guest for project control before Ops has ever opened", () => {
+    const harness = makeGuestHarness();
+    const response = {
+      action: "project.list" as const,
+      projects: [],
+      count: 0,
+      truncated: false as const,
+    };
+    harness.setLoadURLImplementation(async (url, emit) => {
+      harness.views
+        .at(-1)
+        ?.executeJavaScript.mockResolvedValue({ status: "completed", result: response });
+      queueMicrotask(() => emit("did-frame-navigate", {}, url, 200, "OK", true, 1, 1));
+    });
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "completed",
+          response,
+        },
+      );
+      yield* manager.exitBusinessOsMode;
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "completed",
+          response,
+        },
+      );
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.addChildView).not.toHaveBeenCalled();
+      expect(harness.views[0]?.setBounds).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("opens a Jour fixe from a cold hidden guest and recreates a destroyed guest", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const fixture = yield* Schema.decodeUnknownEffect(WorkjetJourFixeMeeting)(
+        jourFixeFixture.valid_cases.find((item) => item.type === "Meeting")!.value,
+      );
+      const request = {
+        action: "project.jour_fixe.meeting.read" as const,
+        commandId: CommandId.make("read-meeting"),
+        projectId: ProjectId.make("project-1"),
+        meetingId: "meeting-1",
+      };
+      const response = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        contract: "ctox.workjet.jour_fixe.v1" as const,
+        meeting: fixture,
+      };
+      harness.setLoadURLImplementation(async (url, emit) => {
+        harness.views
+          .at(-1)
+          ?.executeJavaScript.mockResolvedValue({ status: "completed", result: response });
+        queueMicrotask(() => emit("did-frame-navigate", {}, url, 200, "OK", true, 1, 1));
+      });
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
+      harness.views[0]!.destroy();
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
+      expect(harness.createView).toHaveBeenCalledTimes(2);
+      expect(harness.addChildView).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("does not create a command guest for an unregistered instance", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(
+        yield* manager.requestProjectControl("managed:unregistered", { action: "project.list" }),
+        {
+          _tag: "failed",
+          code: "not_active",
+        },
+      );
+      expect(harness.createView).not.toHaveBeenCalled();
+      expect(harness.launch).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("cleans up a command guest after a real main-frame navigation failure", () => {
+    const harness = makeGuestHarness();
+    harness.setLoadURLImplementation(async (url, emit) => {
+      queueMicrotask(() => emit("did-fail-load", {}, -105, "ERR_NAME_NOT_RESOLVED", url, true));
+    });
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "failed",
+          code: "guest_failed",
+        },
+      );
+      expect(harness.views[0]?.close).toHaveBeenCalledOnce();
+      expect(harness.views[0]?.executeJavaScript).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it("retains safe exception facts without disclosing launch URLs or request data", () => {
+    const error = Object.assign(
+      new Error("Unknown Workjet action at https://private.invalid/?token=secret"),
+      { code: "ERR_FAILED" },
+    );
+    assert.deepEqual(CtoxGuestManager.describeCtoxGuestFailure(error), {
+      name: "Error",
+      code: "ERR_FAILED",
+      reason: "unsupported_action",
+    });
+    assert.deepEqual(
+      CtoxGuestManager.describeCtoxGuestFailure({ code: "token=secret", message: "private" }),
+      {
+        name: "object",
+        code: null,
+        reason: "exception",
+      },
+    );
+    for (const [message, reason] of [
+      ["Unsupported Workjet project control action: diagnostic.unsupported", "unsupported_action"],
+      ["Invalid Workjet project owner_user_id.", "owner_session_not_ready"],
+      ["Workjet project control is not ready.", "project_control_not_ready"],
+      ["Workjet supervisor control is not ready.", "supervisor_control_not_ready"],
+    ] as const) {
+      assert.deepEqual(CtoxGuestManager.describeCtoxGuestFailure(new Error(message)), {
+        name: "Error",
+        code: null,
+        reason,
+      });
+    }
+  });
+
   it.effect("pools idempotently without attaching and activation adopts the pooled guest", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
@@ -2467,49 +2611,53 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
-  it.effect("uses only an existing warm guest for project control", () => {
-    const harness = makeGuestHarness();
-    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+  it.effect(
+    "reuses the demand guest for project control and rejects unregistered instances",
+    () => {
+      const harness = makeGuestHarness();
+      const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
 
-    return Effect.gen(function* () {
-      const manager = yield* CtoxGuestManager.CtoxGuestManager;
-      assert.deepEqual(
-        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
-        {
-          _tag: "failed",
-          code: "not_active",
-        },
-      );
-      expect(harness.views).toHaveLength(0);
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          {
+            _tag: "failed",
+            code: "guest_failed",
+          },
+        );
+        expect(harness.views).toHaveLength(1);
+        expect(harness.addChildView).not.toHaveBeenCalled();
 
-      yield* manager.enterBusinessOsMode;
-      yield* manager.activate(descriptor.id, bounds);
-      yield* manager.exitBusinessOsMode;
-      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: unknown) => {
-        const source = String(expression);
-        if (!source.includes("workjetProjectControl")) return undefined;
-        expect(source).toContain('"action":"project.list"');
-        expect(source).not.toContain("fetch(");
-        return {
-          status: "completed",
-          result: { action: "project.list", projects: [], count: 0, truncated: false },
-        };
-      });
+        yield* manager.enterBusinessOsMode;
+        yield* manager.activate(descriptor.id, bounds);
+        yield* manager.exitBusinessOsMode;
+        harness.views[0]?.executeJavaScript.mockImplementation(async (expression: unknown) => {
+          const source = String(expression);
+          if (!source.includes("workjetProjectControl")) return undefined;
+          expect(source).toContain('"action":"project.list"');
+          expect(source).not.toContain("fetch(");
+          return {
+            status: "completed",
+            result: { action: "project.list", projects: [], count: 0, truncated: false },
+          };
+        });
 
-      assert.deepEqual(
-        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
-        {
-          _tag: "completed",
-          response: { action: "project.list", projects: [], count: 0, truncated: false },
-        },
-      );
-      assert.deepEqual(
-        yield* manager.requestProjectControl("managed:other", { action: "project.list" }),
-        { _tag: "failed", code: "not_active" },
-      );
-      expect(harness.views).toHaveLength(1);
-    }).pipe(Effect.provide(harness.layer));
-  });
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          {
+            _tag: "completed",
+            response: { action: "project.list", projects: [], count: 0, truncated: false },
+          },
+        );
+        assert.deepEqual(
+          yield* manager.requestProjectControl("managed:other", { action: "project.list" }),
+          { _tag: "failed", code: "not_active" },
+        );
+        expect(harness.views).toHaveLength(1);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
 
   for (const touch of ["ensurePooled", "activate"] as const) {
     it.effect(`keeps an in-flight supervisor bind valid after a warm ${touch}`, () => {
@@ -2565,7 +2713,12 @@ describe("CtoxGuestManager", () => {
     const harness = makeGuestHarness();
     const entered = Promise.withResolvers<void>();
     const pending = Promise.withResolvers<unknown>();
-    const response = { action: "project.list" as const, projects: [], count: 0, truncated: false };
+    const response = {
+      action: "project.list" as const,
+      projects: [],
+      count: 0,
+      truncated: false as const,
+    };
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* manager.enterBusinessOsMode;

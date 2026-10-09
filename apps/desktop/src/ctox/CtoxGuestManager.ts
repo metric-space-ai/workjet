@@ -811,10 +811,48 @@ function isSuccessfulCtoxNavigationCommit(
   }
 }
 
+/** Native diagnostics never contain launch URLs, pairing material or request bodies. */
+export function describeCtoxGuestFailure(error: unknown): {
+  readonly name: string;
+  readonly code: string | number | null;
+  readonly reason: string;
+} {
+  const value = typeof error === "object" && error !== null ? error : undefined;
+  const rawCode = value === undefined ? undefined : (value as { code?: unknown }).code;
+  const code =
+    typeof rawCode === "number" && Number.isSafeInteger(rawCode)
+      ? rawCode
+      : typeof rawCode === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(rawCode)
+        ? rawCode
+        : null;
+  const message = error instanceof Error ? error.message : "";
+  return {
+    name:
+      error instanceof Error
+        ? ["Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError"].includes(error.name)
+          ? error.name
+          : "Error"
+        : typeof error,
+    code,
+    reason: /(?:unsupported|unknown)\s+(?:workjet\s+)?(?:project[- ]control\s+)?action/i.test(
+      message,
+    )
+      ? "unsupported_action"
+      : message === "Invalid Workjet project owner_user_id."
+        ? "owner_session_not_ready"
+        : message === "Workjet project control is not ready."
+          ? "project_control_not_ready"
+          : message === "Workjet supervisor control is not ready."
+            ? "supervisor_control_not_ready"
+            : "exception",
+  };
+}
+
 function waitForGuestNavigationCommit(
   webContents: WebContents,
   launchUrl: string,
   launchOrigin: string,
+  onFailure?: (failure: Readonly<Record<string, string | number | null>>) => void,
 ): Effect.Effect<boolean> {
   let cleanup = (): void => undefined;
   return Effect.tryPromise({
@@ -837,24 +875,32 @@ function waitForGuestNavigationCommit(
           isMainFrame: boolean,
         ): void => {
           if (!isMainFrame) return;
-          finish(isSuccessfulCtoxNavigationCommit(url, launchOrigin, httpResponseCode));
+          const committed = isSuccessfulCtoxNavigationCommit(url, launchOrigin, httpResponseCode);
+          finish(committed, {
+            reason: isAllowedCtoxTopFrameNavigation(url, launchOrigin)
+              ? "http_status"
+              : "unexpected_origin",
+            httpResponseCode,
+          });
         };
         const onDidFailLoad = (
           _event: unknown,
-          _errorCode: number,
+          errorCode: number,
           _errorDescription: string,
           _validatedUrl: string,
           isMainFrame: boolean,
         ): void => {
-          if (isMainFrame) finish(false);
+          if (isMainFrame) finish(false, { reason: "did_fail_load", errorCode });
         };
         const onWillNavigate = (
           _event: { readonly preventDefault: () => void },
           url: string,
         ): void => {
-          if (!isAllowedCtoxTopFrameNavigation(url, launchOrigin)) finish(false);
+          if (!isAllowedCtoxTopFrameNavigation(url, launchOrigin)) {
+            finish(false, { reason: "blocked_navigation" });
+          }
         };
-        const onDestroyed = (): void => finish(false);
+        const onDestroyed = (): void => finish(false, { reason: "destroyed" });
         cleanup = (): void => {
           if (timeout !== undefined) clearTimeout(timeout);
           removeListener("did-frame-navigate", onDidFrameNavigate as never);
@@ -862,9 +908,13 @@ function waitForGuestNavigationCommit(
           removeListener("will-navigate", onWillNavigate as never);
           removeListener("destroyed", onDestroyed as never);
         };
-        const finish = (committed: boolean): void => {
+        const finish = (
+          committed: boolean,
+          failure?: Readonly<Record<string, string | number | null>>,
+        ): void => {
           if (settled) return;
           settled = true;
+          if (!committed) onFailure?.(failure ?? { reason: "unknown" });
           cleanup();
           resolve(committed);
         };
@@ -873,7 +923,7 @@ function waitForGuestNavigationCommit(
           // Electron navigation callbacks own this timer and clear it together
           // with their listeners when navigation settles or the view dies.
           // @effect-diagnostics-next-line globalTimers:off
-          timeout = setTimeout(() => finish(false), 30_000);
+          timeout = setTimeout(() => finish(false, { reason: "navigation_timeout" }), 30_000);
           webContents.on("did-frame-navigate", onDidFrameNavigate as never);
           webContents.on("did-fail-load", onDidFailLoad as never);
           webContents.on("will-navigate", onWillNavigate as never);
@@ -881,10 +931,11 @@ function waitForGuestNavigationCommit(
           const loading = webContents.loadURL(launchUrl);
           void loading.then(
             () => undefined,
-            () => finish(false),
+            (error: unknown) =>
+              finish(false, { ...describeCtoxGuestFailure(error), reason: "load_url" }),
           );
-        } catch {
-          finish(false);
+        } catch (error) {
+          finish(false, { ...describeCtoxGuestFailure(error), reason: "navigation_setup" });
         }
       }),
     catch: () => undefined,
@@ -1083,6 +1134,10 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       existingSession?: Session,
       shouldAttach = true,
     ) {
+      const diagnose = (
+        stage: string,
+        details: Readonly<Record<string, string | number | null>> = {},
+      ) => Effect.logWarning("CTOX guest preparation failed", { instanceId, stage, ...details });
       let releaseLaunch: (() => void) | undefined;
       let awaitLaunchRelease: Effect.Effect<void> = Effect.void;
       let reservedLease: CtoxGuestLease | undefined;
@@ -1108,6 +1163,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (descriptor === undefined) {
           const managedState =
             discovery._tag === "ready" ? (discovery.managedState ?? "ready") : discovery._tag;
+          if (managedState === "failed") yield* diagnose("discovery");
           return managedState === "failed"
             ? ([{ _tag: "failed", code: "guest_failed" }, undefined] as const)
             : ([{ _tag: "revoked" }, undefined] as const);
@@ -1210,6 +1266,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return [{ _tag: "revoked" }, undefined] as const;
         }
         if (Option.isNone(launch)) {
+          yield* diagnose("launch");
           return abandonLaunch({ _tag: "failed", code: "launch_failed" });
         }
         const resolvedSession =
@@ -1217,16 +1274,21 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             ? yield* sessions.instance(authoritativeDescriptor).pipe(Effect.option)
             : Option.some(existingSession);
         if (Option.isNone(resolvedSession)) {
+          yield* diagnose("session");
           return abandonLaunch({ _tag: "failed", code: "guest_failed" });
         }
         const mainWindow = yield* electronWindow.main;
         if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) {
+          yield* diagnose("host_window");
           return abandonLaunch({ _tag: "failed", code: "guest_failed" });
         }
 
         const lease = budget.reserve(shouldAttach);
         reservedLease = lease;
-        if (lease === undefined) return abandonLaunch({ _tag: "failed", code: "guest_failed" });
+        if (lease === undefined) {
+          yield* diagnose("renderer_budget");
+          return abandonLaunch({ _tag: "failed", code: "guest_failed" });
+        }
         const view = (options.createView ?? createGuestView)({
           session: resolvedSession.value,
           preload: preloadPath,
@@ -1235,6 +1297,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           nodeIntegration: false,
         });
         if (view === undefined) {
+          yield* diagnose("create_view");
           lease.release();
           return abandonLaunch({ _tag: "failed", code: "guest_failed" });
         }
@@ -1259,6 +1322,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
         };
         if (!installRequestGuard(resolvedSession.value, launch.value.launchOrigin)) {
+          yield* diagnose("request_guard");
           return failView();
         }
 
@@ -1321,15 +1385,25 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           webContents.ipc.on(CTOX_SESSION_TRANSFER_POST_CHANNEL, (_event, ...args) => {
             decodeAndEmitSessionTransferEvent(instanceId, args.length === 1 ? args[0] : undefined);
           });
-        } catch {
+        } catch (error) {
+          yield* diagnose("guest_handlers", describeCtoxGuestFailure(error));
           return failView();
         }
-        if (shouldAttach && !attachGuest(mainWindow.value, view, bounds)) return failView();
+        if (shouldAttach && !attachGuest(mainWindow.value, view, bounds)) {
+          yield* diagnose("attach");
+          return failView();
+        }
 
+        let navigationFailure: Readonly<Record<string, string | number | null>> = {
+          reason: "unknown",
+        };
         const committed = yield* waitForGuestNavigationCommit(
           webContents,
           launch.value.launchUrl,
           launch.value.launchOrigin,
+          (failure) => {
+            navigationFailure = failure;
+          },
         ).pipe(
           Effect.onInterrupt(() =>
             Effect.sync(() => {
@@ -1338,6 +1412,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           ),
         );
         if (!committed) {
+          yield* diagnose("navigation_commit", navigationFailure);
           destroyGuest(active);
           return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
         }
@@ -1887,6 +1962,21 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         CtoxWorkjetProjectControlResult,
         never
       > {
+        // Project control is required by native Dev chats and the meeting room,
+        // even when the Ops surface has never been shown in this window.
+        const prepared = yield* ensurePooled(instanceId);
+        if (prepared._tag !== "ready") {
+          yield* Effect.logWarning("CTOX project control preparation failed", {
+            instanceId,
+            action: request.action,
+            stage: "prepare",
+            code: prepared._tag === "failed" ? prepared.code : "revoked",
+          });
+          return {
+            _tag: "failed",
+            code: prepared._tag === "failed" ? prepared.code : "not_active",
+          };
+        }
         const state = yield* SynchronizedRef.get(stateRef);
         const guest = state.pool.get(instanceId);
         if (guest === undefined || guest.view.webContents.isDestroyed()) {
@@ -1900,12 +1990,27 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               buildGuestProjectControlExpression(request),
               true,
             ),
-          catch: () => undefined,
+          catch: (error) => describeCtoxGuestFailure(error),
         }).pipe(
+          Effect.tapError((failure) =>
+            Effect.logWarning("CTOX project control execution failed", {
+              instanceId,
+              action: request.action,
+              stage: "execute",
+              ...failure,
+            }),
+          ),
           Effect.orElseSucceed(() => undefined),
           Effect.timeoutOption("30 seconds"),
         );
-        if (Option.isNone(pending)) return { _tag: "failed", code: "timeout" };
+        if (Option.isNone(pending)) {
+          yield* Effect.logWarning("CTOX project control timed out", {
+            instanceId,
+            action: request.action,
+            stage: "execute",
+          });
+          return { _tag: "failed", code: "timeout" };
+        }
         const current = yield* SynchronizedRef.get(stateRef);
         // Warm reuse changes pool metadata, not the renderer that produced this receipt.
         // A replacement or destroyed view still fences the old response.
@@ -1921,9 +2026,22 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             ? (raw as { readonly status?: unknown }).status
             : undefined;
         if (status === "authentication_required" || status === "unsupported") {
+          yield* Effect.logWarning("CTOX project control bridge unavailable", {
+            instanceId,
+            action: request.action,
+            stage: "bridge",
+            code: status,
+          });
           return { _tag: "failed", code: status };
         }
         if (typeof raw !== "object" || raw === null || status !== "completed") {
+          yield* Effect.logWarning("CTOX project control response invalid", {
+            instanceId,
+            action: request.action,
+            stage: "response",
+            status: status === "failed" ? "failed" : "invalid",
+            ...describeCtoxGuestFailure(raw),
+          });
           return { _tag: "failed", code: "guest_failed" };
         }
         const response = (raw as { readonly result?: unknown }).result;

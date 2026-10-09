@@ -1,4 +1,33 @@
 import { normalizeWorkjetThreadConfig, type WorkjetThreadConfig } from "./workjet.ts";
+import type { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
+
+function supervisorObservationError(
+  previous: WorkjetSupervisorJournal,
+  next: WorkjetSupervisorJournal,
+): string | null {
+  const a = previous.intent;
+  const b = next.intent;
+  if (a.instanceId !== b.instanceId || a.projectId !== b.projectId || a.threadId !== b.threadId)
+    return "This thread keeps its original native supervisor binding.";
+  if (a.commandId !== b.commandId || a.goal !== b.goal || a.createdAt !== b.createdAt)
+    return "A native supervisor retry must keep its saved command and payload.";
+  if (
+    (previous.submission === "awaiting-receipt" &&
+      next.submission !== "awaiting-receipt" &&
+      next.submission !== "confirmed") ||
+    (previous.submission === "confirmed" && next.submission !== "confirmed")
+  )
+    return "A native supervisor submission cannot erase its dispatch or receipt.";
+  if (
+    previous.turn &&
+    next.turn &&
+    (previous.turn.commandId !== next.turn.commandId ||
+      (previous.turn.taskId !== null && previous.turn.taskId !== next.turn.taskId) ||
+      previous.turn.attempt > next.turn.attempt)
+  )
+    return "Native supervisor observation must retain its task and execution identity.";
+  return null;
+}
 
 /** Disabling tools revokes access, but does not erase a thread's instance identity. */
 export function retainWorkjetCtoxBinding(
@@ -12,51 +41,63 @@ export function retainWorkjetCtoxBinding(
   if (previousSupervisor && nextSupervisor) {
     const a = previousSupervisor.intent;
     const b = nextSupervisor.intent;
-    if (a.instanceId !== b.instanceId || a.projectId !== b.projectId || a.threadId !== b.threadId) {
-      return { config: next, error: "This thread keeps its original native supervisor binding." };
+    const unchangedPrevious = after.ctoxSupervisorPreviousTurns?.some(
+      (entry) => JSON.stringify(entry) === JSON.stringify(previousSupervisor),
+    );
+    if (a.commandId !== b.commandId) {
+      if (a.instanceId !== b.instanceId || a.projectId !== b.projectId || a.threadId !== b.threadId)
+        return { config: next, error: "This thread keeps its original native supervisor binding." };
+      if (
+        previousSupervisor.submission !== "not-submitted" &&
+        !previousSupervisor.turn?.terminal &&
+        !(previousSupervisor.submission === "confirmed" && unchangedPrevious)
+      )
+        return {
+          config: next,
+          error:
+            "The existing native supervisor submission is still unresolved. Resume that saved command before starting another turn.",
+        };
+    } else {
+      const error = supervisorObservationError(previousSupervisor, nextSupervisor);
+      if (error) return { config: next, error };
     }
+  }
+  const previousTurns = before.ctoxSupervisorPreviousTurns ?? [];
+  const requestedTurns = after.ctoxSupervisorPreviousTurns ?? previousTurns;
+  const seen = new Set<string>();
+  for (const entry of requestedTurns) {
     if (
-      a.commandId !== b.commandId &&
-      previousSupervisor.submission !== "not-submitted" &&
-      !previousSupervisor.turn?.terminal
-    ) {
+      seen.has(entry.intent.commandId) ||
+      entry.intent.commandId === nextSupervisor?.intent.commandId
+    )
+      return { config: next, error: "Supervisor task history contains a duplicate command." };
+    seen.add(entry.intent.commandId);
+    if (
+      nextSupervisor &&
+      (entry.intent.instanceId !== nextSupervisor.intent.instanceId ||
+        entry.intent.projectId !== nextSupervisor.intent.projectId ||
+        entry.intent.threadId !== nextSupervisor.intent.threadId)
+    )
+      return { config: next, error: "Supervisor task history belongs to another project." };
+    const previous =
+      previousTurns.find((item) => item.intent.commandId === entry.intent.commandId) ??
+      (previousSupervisor?.intent.commandId === entry.intent.commandId ? previousSupervisor : null);
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(entry))
       return {
         config: next,
-        error:
-          "The existing native supervisor submission is still unresolved. Resume that saved command before starting another turn.",
+        error: "Keep the original Supervisor receipt when retaining a previous task.",
       };
-    }
-    if (a.commandId === b.commandId) {
-      if (a.goal !== b.goal || a.createdAt !== b.createdAt) {
-        return {
-          config: next,
-          error: "A native supervisor retry must keep its saved command and payload.",
-        };
-      }
-      if (
-        (previousSupervisor.submission === "awaiting-receipt" &&
-          nextSupervisor.submission !== "awaiting-receipt" &&
-          nextSupervisor.submission !== "confirmed") ||
-        (previousSupervisor.submission === "confirmed" && nextSupervisor.submission !== "confirmed")
-      ) {
-        return {
-          config: next,
-          error: "A native supervisor submission cannot erase its dispatch or receipt.",
-        };
-      }
-      if (
-        previousSupervisor.turn &&
-        nextSupervisor.turn &&
-        (previousSupervisor.turn.commandId !== nextSupervisor.turn.commandId ||
-          (previousSupervisor.turn.taskId !== null &&
-            previousSupervisor.turn.taskId !== nextSupervisor.turn.taskId) ||
-          previousSupervisor.turn.attempt > nextSupervisor.turn.attempt)
-      ) {
-        return {
-          config: next,
-          error: "Native supervisor observation must retain its task and execution identity.",
-        };
-      }
+  }
+  for (const entry of previousTurns) {
+    const observed =
+      nextSupervisor?.intent.commandId === entry.intent.commandId
+        ? nextSupervisor
+        : requestedTurns.find((item) => item.intent.commandId === entry.intent.commandId);
+    if (!observed && entry.submission !== "not-submitted" && !entry.turn?.terminal)
+      return { config: next, error: "An active Supervisor task cannot be removed from history." };
+    if (observed) {
+      const error = supervisorObservationError(entry, observed);
+      if (error) return { config: next, error };
     }
   }
   const original = before.capabilityBindings.find(
@@ -112,10 +153,13 @@ export function retainWorkjetCtoxBinding(
   // instance binding, so a later command cannot erase or retarget it.
   const retainedChat =
     originalChat && !requestedChat ? { ...after, ctoxCrewChat: originalChat } : next;
+  const retainedHistory = requestedTurns.length
+    ? { ...normalizeWorkjetThreadConfig(retainedChat), ctoxSupervisorPreviousTurns: requestedTurns }
+    : retainedChat;
   const retainedSupervisor =
     previousSupervisor && !nextSupervisor
-      ? { ...normalizeWorkjetThreadConfig(retainedChat), ctoxSupervisorTurn: previousSupervisor }
-      : retainedChat;
+      ? { ...normalizeWorkjetThreadConfig(retainedHistory), ctoxSupervisorTurn: previousSupervisor }
+      : retainedHistory;
   return {
     config:
       original && !binding

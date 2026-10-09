@@ -987,6 +987,9 @@ const WorkjetThreadConfigV2BaseFields = {
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
   ctoxCrewChat: Schema.optionalKey(WorkjetThreadCtoxCrewChat),
   ctoxSupervisorTurn: Schema.optionalKey(WorkjetSupervisorJournal),
+  ctoxSupervisorPreviousTurns: Schema.optionalKey(
+    Schema.Array(WorkjetSupervisorJournal).check(Schema.isMaxLength(64)),
+  ),
   ctoxProject: Schema.optionalKey(WorkjetThreadCtoxProject),
   ctoxSession: Schema.optionalKey(Schema.NullOr(WorkjetThreadCtoxSession)).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),

@@ -119,6 +119,76 @@ describe("native supervisor composer authority", () => {
       }),
     ).rejects.toThrow("identity changed");
   });
+  it("retains a confirmed running task when sending or selecting another request", async () => {
+    const running: WorkjetSupervisorJournal = {
+      ...journal,
+      submission: "confirmed",
+      turn: {
+        commandId: "first-native-command",
+        taskId: "first-native-task",
+        threadId,
+        threadKey: `business-os/threads/${threadId}`,
+        executionPhase: "running",
+        status: "accepted",
+        queueStatus: "running",
+        attempt: 1,
+        terminal: false,
+        result: "**Retained answer**",
+        resultTruncated: false,
+        errorCode: null,
+        errorMessage: null,
+      },
+    };
+    const second = {
+      ...journal,
+      intent: { ...journal.intent, commandId: CommandId.make("follow-up") },
+    };
+    const next = await persistSupervisorJournal({
+      config: { ...config, ctoxSupervisorTurn: running },
+      journal: second,
+      dispatch: async () => ({ _tag: "Success" }),
+    });
+    expect(next).toMatchObject({
+      ctoxSupervisorTurn: second,
+      ctoxSupervisorPreviousTurns: [running],
+    });
+    const confirmedSecond: WorkjetSupervisorJournal = {
+      ...second,
+      submission: "confirmed",
+      turn: { ...running.turn!, commandId: "second-native-command", taskId: "second-native-task" },
+    };
+    const confirmedConfig = await persistSupervisorJournal({
+      config: next,
+      journal: confirmedSecond,
+      dispatch: async () => ({ _tag: "Success" }),
+    });
+    const restored = await persistSupervisorJournal({
+      config: confirmedConfig,
+      journal: running,
+      dispatch: async () => ({ _tag: "Success" }),
+    });
+    expect(restored).toMatchObject({
+      ctoxSupervisorTurn: running,
+      ctoxSupervisorPreviousTurns: [confirmedSecond],
+    });
+  });
+  it("never replaces an uncertain dispatch with another command", async () => {
+    let dispatched = false;
+    await expect(
+      persistSupervisorJournal({
+        config: { ...config, ctoxSupervisorTurn: { ...journal, submission: "awaiting-receipt" } },
+        journal: {
+          ...journal,
+          intent: { ...journal.intent, commandId: CommandId.make("second-command") },
+        },
+        dispatch: async () => {
+          dispatched = true;
+          return { _tag: "Success" };
+        },
+      }),
+    ).rejects.toThrow("previous CTOX receipt");
+    expect(dispatched).toBe(false);
+  });
   it("extracts a correlated public reply from the native result object and serialized envelope", () => {
     const turn = { commandId: "native-command", taskId: "native-task", attempt: 1 };
     const result = {

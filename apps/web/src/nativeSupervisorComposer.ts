@@ -110,7 +110,34 @@ export async function persistSupervisorJournal(input: {
     config.team.threadId !== journal.intent.threadId
   )
     throw new Error("Supervisor identity changed; message not sent.");
-  const next = { ...config, ctoxSupervisorTurn: journal };
+  const previous = config.ctoxSupervisorTurn;
+  const previousTurns = [...(config.ctoxSupervisorPreviousTurns ?? [])].filter(
+    (entry) => entry.intent.commandId !== journal.intent.commandId,
+  );
+  if (previous && previous.intent.commandId !== journal.intent.commandId) {
+    if (canResumeSupervisorJournal(previous, null) && previous.submission !== "confirmed")
+      throw new Error("Wait for the previous CTOX receipt before sending another message.");
+    const index = previousTurns.findIndex(
+      (entry) => entry.intent.commandId === previous.intent.commandId,
+    );
+    if (index < 0) previousTurns.push(previous);
+    else previousTurns[index] = previous;
+  }
+  const active = previousTurns.filter((entry) => canResumeSupervisorJournal(entry, null));
+  if (active.length > 64)
+    throw new Error(
+      "Too many active requests. Finish or cancel a task before sending another message.",
+    );
+  const settled = previousTurns.filter((entry) => !canResumeSupervisorJournal(entry, null));
+  const available = 64 - active.length;
+  const retained = [...(available > 0 ? settled.slice(-available) : []), ...active];
+  const next = {
+    ...config,
+    ...(retained.length || config.ctoxSupervisorPreviousTurns
+      ? { ctoxSupervisorPreviousTurns: retained }
+      : {}),
+    ctoxSupervisorTurn: journal,
+  };
   const result = await input.dispatch(next);
   if (result._tag !== "Success")
     throw new Error("Could not save the supervisor request; message not sent.");

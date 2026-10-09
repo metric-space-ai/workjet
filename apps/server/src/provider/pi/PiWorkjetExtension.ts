@@ -5,12 +5,13 @@ export default async function(pi) {
   const authorization = process.env.WORKJET_PI_MCP_AUTHORIZATION;
   if (!endpoint || !authorization) return;
   let sessionId;
+  let protocolVersion;
   let requestId = 0;
   async function request(method, params, signal) {
     const id = ++requestId;
     const response = await fetch(endpoint, {
       method: "POST", signal,
-      headers: { Authorization: authorization, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}) },
+      headers: { Authorization: authorization, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}), ...(protocolVersion ? { "MCP-Protocol-Version": protocolVersion } : {}) },
       body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
     });
     if (!response.ok) throw new Error("Workjet MCP " + method + " returned HTTP " + response.status);
@@ -38,10 +39,12 @@ export default async function(pi) {
     if (reply.error) throw new Error(reply.error.message || "Workjet MCP request failed");
     return reply.result;
   }
-  await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "workjet-pi", version: "1" } }, AbortSignal.timeout(30000));
+  const handshake = await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "workjet-pi", version: "1" } }, AbortSignal.timeout(30000));
+  protocolVersion = handshake.protocolVersion;
+  if (typeof protocolVersion !== "string") throw new Error("Workjet MCP did not negotiate a protocol version.");
   const initialized = await fetch(endpoint, {
     method: "POST", signal: AbortSignal.timeout(30000),
-    headers: { Authorization: authorization, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}) },
+    headers: { Authorization: authorization, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}), ...(protocolVersion ? { "MCP-Protocol-Version": protocolVersion } : {}) },
     body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
   });
   if (!initialized.ok) throw new Error("Workjet MCP initialization returned HTTP " + initialized.status);
@@ -58,7 +61,7 @@ export default async function(pi) {
     });
   }
   pi.on("session_shutdown", async () => {
-    if (sessionId) await fetch(endpoint, { method: "DELETE", signal: AbortSignal.timeout(5000), headers: { Authorization: authorization, "Mcp-Session-Id": sessionId } }).catch(() => undefined);
+    if (sessionId) await fetch(endpoint, { method: "DELETE", signal: AbortSignal.timeout(5000), headers: { Authorization: authorization, "Mcp-Session-Id": sessionId, "MCP-Protocol-Version": protocolVersion } }).catch(() => undefined);
   });
 }
 `;

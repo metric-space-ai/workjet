@@ -11,6 +11,8 @@ export interface JourFixeCanvasStageProps {
   readonly mode: "present" | "edit";
   /** Edit mode only: the slide's scene after each change. */
   readonly onSceneChange: (scene: CanvasScene) => void;
+  /** Edit mode only: reads the editor's scene immediately (see `SlideCanvas`). */
+  readonly captureRef: { current: (() => CanvasScene | null) | null };
 }
 
 const RUNTIME_BASE = `${import.meta.env.BASE_URL}vendor/excalidraw/`;
@@ -24,6 +26,7 @@ export default function JourFixeCanvasStage({
   slideId,
   mode,
   onSceneChange,
+  captureRef,
 }: JourFixeCanvasStageProps) {
   const [runtime, setRuntime] = useState<CanvasRuntime | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -61,6 +64,7 @@ export default function JourFixeCanvasStage({
           theme="light"
           langCode="en"
           onSceneChange={onSceneChange}
+          captureRef={captureRef}
           className="absolute inset-0"
         />
       ) : (

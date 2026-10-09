@@ -39,6 +39,12 @@ export type SlideCanvasProps = {
   langCode?: string;
   /** Edit mode only: a valid `learnordie.excalidraw.v1` scene after each user edit (debounced). */
   onSceneChange?: (scene: CanvasScene) => void;
+  /**
+   * Edit mode only: receives a function that reads the editor's scene right now, including the
+   * last stroke and open text that the debounced `onSceneChange` has not reported yet. It returns
+   * `null` when the scene equals the slide's stored scene. Call it when the user saves.
+   */
+  captureRef?: { current: (() => CanvasScene | null) | null };
   className?: string;
 };
 
@@ -72,6 +78,7 @@ export function SlideCanvas({
   theme,
   langCode = "en",
   onSceneChange,
+  captureRef,
   className,
 }: SlideCanvasProps) {
   // Stored native scenes are authoritative; older slides are migrated on the fly.
@@ -85,13 +92,13 @@ export function SlideCanvas({
   const emittedRef = useRef<string[]>([]);
   const apiRef = useRef<CanvasImperativeAPI | null>(null);
   const mountRef = useRef<{ mount: CanvasMount; props: Record<string, unknown> } | null>(null);
-  const latestRef = useRef({ slide, theme, langCode, onSceneChange });
+  const latestRef = useRef({ slide, theme, langCode, onSceneChange, captureRef });
   const [ready, setReady] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const messages = runtime.messages;
 
   useEffect(() => {
-    latestRef.current = { slide, theme, langCode, onSceneChange };
+    latestRef.current = { slide, theme, langCode, onSceneChange, captureRef };
   });
 
   // Track the scene the editor shows. A new slide replaces it; a changed scene for the same
@@ -233,6 +240,8 @@ export function SlideCanvas({
           viewBackgroundColor: source.backgroundColor,
           // New text uses the handwriting font family 1 (Virgil), like migrated slides.
           currentItemFontFamily: 1,
+          // Readable on a 1600 × 900 slide; Excalidraw's default (20) is a footnote there.
+          currentItemFontSize: 36,
           currentItemStrokeColor: "#243f43",
           currentItemRoughness: 1,
           gridSize: null,
@@ -311,8 +320,22 @@ export function SlideCanvas({
     } else {
       for (const type of edits) outer.addEventListener(type, markEdited, { capture: true });
     }
+    const capture = latestRef.current.captureRef;
+    if (capture && !present) {
+      capture.current = () => {
+        if (disposed || !api) return null;
+        const next = toCanvasScene(
+          source,
+          api.getSceneElements(),
+          api.getAppState(),
+          api.getFiles(),
+        );
+        return canvasFingerprint(next) === propFingerprintRef.current ? null : next;
+      };
+    }
 
     return () => {
+      if (capture && !present) capture.current = null;
       // Deliver a pending edit before the editor goes away (mode or slide switch, unmount).
       if (changeTimer) emit(true);
       disposed = true;

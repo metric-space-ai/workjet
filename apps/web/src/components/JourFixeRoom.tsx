@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   CheckIcon,
@@ -37,6 +37,7 @@ import {
 
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
 import type { SlideDocument } from "@workjet/slide-engine/schema";
+import { PresentationSlideChangedError } from "../lib/jourFixePresentation";
 
 // The canvas, its 3D scenes and the Excalidraw runtime load only when a meeting has a presentation.
 const JourFixeCanvasStage = lazy(() => import("./JourFixeCanvasStage"));
@@ -131,9 +132,19 @@ function JourFixeRoomContent({
   const [draft, setDraft] = useState<JourFixeCommentDraft | null>(null);
   const [placingComment, setPlacingComment] = useState(false);
   const [canvasEditing, setCanvasEditing] = useState(false);
+  const [editingSlideId, setEditingSlideId] = useState<string | null>(null);
+  const captureRef = useRef<(() => CanvasScene | null) | null>(null);
   const [pendingScene, setPendingScene] = useState<CanvasScene | null>(null);
   const [savingSlide, setSavingSlide] = useState(false);
   const [slideSaveError, setSlideSaveError] = useState<string | null>(null);
+  const shownSlideId = slide?.id;
+  useEffect(() => {
+    if (canvasEditing && editingSlideId !== shownSlideId) {
+      setCanvasEditing(false);
+      setEditingSlideId(null);
+      setPendingScene(null);
+    }
+  }, [canvasEditing, editingSlideId, shownSlideId]);
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState("");
   const [visibleTurns, setVisibleTurns] = useState(100);
@@ -184,6 +195,7 @@ function JourFixeRoomContent({
     setSlideId(id);
     // Unsaved canvas edits belong to the slide they were made on.
     setCanvasEditing(false);
+    setEditingSlideId(null);
     setPendingScene(null);
     setSlideSaveError(null);
     setPlacingComment(false);
@@ -457,6 +469,7 @@ function JourFixeRoomContent({
                         disabled={savingSlide}
                         onClick={() => {
                           setCanvasEditing(false);
+                          setEditingSlideId(null);
                           setPendingScene(null);
                           setSlideSaveError(null);
                         }}
@@ -466,18 +479,34 @@ function JourFixeRoomContent({
                       </Button>
                       <Button
                         size="sm"
-                        disabled={savingSlide || pendingScene === null}
+                        disabled={savingSlide}
                         onClick={() => {
-                          if (!pendingScene || savingSlide) return;
+                          if (savingSlide || !editingSlideId) return;
+                          // Read the editor now: the debounced change may not include the last
+                          // stroke or the text that is still being typed.
+                          const scene = captureRef.current?.() ?? pendingScene;
+                          const target = editingSlideId;
+                          if (!scene) {
+                            setCanvasEditing(false);
+                            setEditingSlideId(null);
+                            return;
+                          }
                           setSavingSlide(true);
                           setSlideSaveError(null);
-                          presentation.onSave(slide.id, pendingScene).then(
+                          presentation.onSave(target, scene).then(
                             () => {
                               setCanvasEditing(false);
+                              setEditingSlideId(null);
                               setPendingScene(null);
                               setSavingSlide(false);
                             },
                             (reason: unknown) => {
+                              if (reason instanceof PresentationSlideChangedError) {
+                                // The newer slide is shown; this edit cannot be applied to it.
+                                setCanvasEditing(false);
+                                setEditingSlideId(null);
+                                setPendingScene(null);
+                              }
                               setSlideSaveError(
                                 reason instanceof Error
                                   ? reason.message
@@ -515,6 +544,7 @@ function JourFixeRoomContent({
                           disabled={busy || placingComment}
                           onClick={() => {
                             setCanvasEditing(true);
+                            setEditingSlideId(slide.id);
                             setPendingScene(null);
                             setSlideSaveError(null);
                           }}
@@ -542,11 +572,18 @@ function JourFixeRoomContent({
                       </p>
                     }
                   >
+                    {savingSlide && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 z-30 cursor-wait bg-white/30"
+                      />
+                    )}
                     <JourFixeCanvasStage
                       document={presentation.document}
                       slideId={slide.id}
-                      mode={canvasEditing ? "edit" : "present"}
+                      mode={canvasEditing && editingSlideId === slide.id ? "edit" : "present"}
                       onSceneChange={setPendingScene}
+                      captureRef={captureRef}
                     />
                   </Suspense>
                 ) : (

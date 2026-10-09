@@ -3,6 +3,7 @@ import type { ProjectId, WorkjetJourFixeReadResponse } from "@workjet/contracts"
 import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
 import {
+  PresentationSlideChangedError,
   readJourFixePresentation,
   saveJourFixePresentationCanvas,
   type JourFixePresentation,
@@ -45,7 +46,10 @@ function NativeJourFixeRoomContent({
   const [result, setResult] = useState<WorkjetJourFixeReadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [presentation, setPresentation] = useState<JourFixePresentation | null>(null);
+  const [presentationReload, setPresentationReload] = useState(0);
   const meetingId = result?.meeting?.id;
+  const deckRevision = result?.meeting?.deck_revision;
+  const meetingState = result?.meeting?.state;
   useEffect(() => {
     if (!meetingId) return;
     let cancelled = false;
@@ -65,31 +69,51 @@ function NativeJourFixeRoomContent({
     return () => {
       cancelled = true;
     };
-  }, [instanceId, projectId, meetingId]);
+  }, [instanceId, projectId, meetingId, deckRevision, meetingState, presentationReload]);
   const savePresentationSlide = useCallback(
     async (slideId: string, scene: CanvasScene) => {
       if (!presentation) throw new Error("This meeting has no presentation.");
+      const base = presentation;
       try {
-        await saveJourFixePresentationCanvas(
-          instanceId,
-          projectId,
-          presentation.manifest,
-          slideId,
-          scene,
-        );
-      } finally {
-        // Show the stored revision, also after a conflict with a newer one.
+        await saveJourFixePresentationCanvas(instanceId, projectId, base.manifest, slideId, scene);
+      } catch (reason) {
+        // A newer revision rejects the save. If it did not touch this slide, store the
+        // edit on top of it; otherwise show the newer slide and say the edit was not kept.
         const fresh = await readJourFixePresentation(
           instanceId,
           projectId,
-          presentation.manifest.meeting_id,
+          base.manifest.meeting_id,
         );
-        if (active.current) setPresentation(fresh);
+        if (!fresh || fresh.manifest.revision === base.manifest.revision) throw reason;
+        const before = JSON.stringify(base.document.slides.find((item) => item.id === slideId));
+        const after = JSON.stringify(fresh.document.slides.find((item) => item.id === slideId));
+        if (before !== after) {
+          if (active.current) setPresentation(fresh);
+          throw new PresentationSlideChangedError();
+        }
+        await saveJourFixePresentationCanvas(instanceId, projectId, fresh.manifest, slideId, scene);
+      }
+      try {
+        const stored = await readJourFixePresentation(
+          instanceId,
+          projectId,
+          base.manifest.meeting_id,
+        );
+        if (active.current) setPresentation(stored);
+      } catch (reason) {
+        // The slide is stored; only the refreshed view is missing.
+        if (active.current)
+          setError(
+            reason instanceof Error
+              ? `The slide is saved, but the presentation could not be reloaded: ${reason.message}`
+              : "The slide is saved, but the presentation could not be reloaded.",
+          );
       }
     },
     [instanceId, projectId, presentation],
   );
   const refresh = async () => {
+    setPresentationReload((count) => count + 1);
     const value = await session.read(result?.meeting?.id);
     setResult(value);
     setError(null);
@@ -202,7 +226,7 @@ function NativeJourFixeRoomContent({
           ? {
               presentation: {
                 document: presentation.document,
-                editable: !["cancelled", "failed"].includes(meeting.state),
+                editable: ["preparing", "ready", "live", "review"].includes(meeting.state),
                 onSave: savePresentationSlide,
               },
             }

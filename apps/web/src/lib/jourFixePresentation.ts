@@ -9,13 +9,34 @@ import {
 import { validateSlideDocument, type SlideDocument } from "@workjet/slide-engine/schema";
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
 import { requestWorkjetProjectControl } from "../workjetProjectControl";
-import { newCommandId, randomUUID } from "./utils";
+import { newCommandId } from "./utils";
 
 type Control = typeof requestWorkjetProjectControl;
 
 export interface JourFixePresentation {
   readonly manifest: WorkjetPresentationManifest;
   readonly document: SlideDocument;
+}
+
+/** The slide was changed elsewhere since editing started; the edit was not stored. */
+export class PresentationSlideChangedError extends Error {
+  constructor() {
+    super("This slide was changed elsewhere in the meantime, so your change was not saved.");
+    this.name = "PresentationSlideChangedError";
+  }
+}
+
+/**
+ * Same revision, slide and scene give the same operation id, so a retried save
+ * (for example after a timed-out desktop call) replays instead of writing twice.
+ */
+export async function presentationSaveOperationId(
+  manifest: WorkjetPresentationManifest,
+  slideId: string,
+  sceneJson: string,
+): Promise<string> {
+  const text = `${manifest.presentation_id}\n${manifest.revision}\n${slideId}\n${sceneJson}`;
+  return `canvas-${(await sha256Hex(new TextEncoder().encode(text))).slice(0, 48)}`;
 }
 
 export interface JourFixePresentationSave {
@@ -122,18 +143,19 @@ export async function saveJourFixePresentationCanvas(
   slideId: string,
   scene: CanvasScene,
   control: Control = requestWorkjetProjectControl,
-  operationId: string = randomUUID(),
+  operationId?: string,
 ): Promise<JourFixePresentationSave> {
+  const sceneJson = JSON.stringify(scene);
   const answer = await confirmed(control, instanceId, {
     action: "project.presentation.canvas.save",
     commandId: newCommandId(),
     projectId,
     meetingId: manifest.meeting_id,
-    operationId,
+    operationId: operationId ?? (await presentationSaveOperationId(manifest, slideId, sceneJson)),
     presentationId: manifest.presentation_id,
     expectedRevision: manifest.revision,
     slideId,
-    sceneJson: JSON.stringify(scene),
+    sceneJson,
   });
   if (answer.action !== "project.presentation.canvas.save") throw new Error("Unexpected answer.");
   return { mutation: answer.mutation, manifest: answer.presentation };

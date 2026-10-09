@@ -6,7 +6,11 @@ import type {
   WorkjetPresentationManifest,
 } from "@workjet/contracts";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
-import { readJourFixePresentation, saveJourFixePresentationCanvas } from "./jourFixePresentation";
+import {
+  presentationSaveOperationId,
+  readJourFixePresentation,
+  saveJourFixePresentationCanvas,
+} from "./jourFixePresentation";
 
 const projectId = "project" as ProjectId;
 const bytes = new TextEncoder().encode(JSON.stringify(jourFixeDeck));
@@ -178,5 +182,19 @@ describe("Jour fixe presentation transport", () => {
     expect(request?.action === "project.presentation.canvas.save" && request.expectedRevision).toBe(
       2,
     );
+  });
+  it("gives a retried save of the same scene the same operation id", async () => {
+    const stored = await manifest();
+    const first = await presentationSaveOperationId(stored, "titel", '{"elements":[]}');
+    const again = await presentationSaveOperationId(stored, "titel", '{"elements":[]}');
+    const other = await presentationSaveOperationId(stored, "titel", '{"elements":[1]}');
+    const newer = await presentationSaveOperationId(
+      { ...stored, revision: stored.revision + 1 },
+      "titel",
+      '{"elements":[]}',
+    );
+    expect(again).toBe(first);
+    expect(other).not.toBe(first);
+    expect(newer).not.toBe(first);
   });
 });

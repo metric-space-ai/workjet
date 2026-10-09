@@ -30,8 +30,8 @@ use workjet_provider_gateway::internal::runtime::executor::{
     CodexSubscriptionAuth, CodexSubscriptionResponsesExecutor, SystemAntigravityAuthClock,
 };
 use workjet_provider_gateway::sdk::api::handlers::claude::code_handlers::{
-    claude_models_response, ClaudeMessagesAntigravityHandler, ClaudeMessagesClaudeHandler,
-    ClaudeMessagesHttpResponse, ClaudeMessagesRouteHandler,
+    ClaudeMessagesAntigravityHandler, ClaudeMessagesClaudeHandler, ClaudeMessagesHttpResponse,
+    ClaudeMessagesRouteHandler,
 };
 use workjet_provider_gateway::sdk::api::handlers::claude::responses_bridge::ClaudeMessagesProviderRouter;
 use zeroize::Zeroizing;
@@ -545,9 +545,79 @@ pub fn build_provider_routes(
         responses,
         messages: Some(messages),
         auxiliary,
-        models: claude_models_response(&model_catalog(config), false),
+        models: shared_models_response(&model_catalog(config)),
         account_state: state,
     }))
+}
+
+/// Publish real account model IDs as well as the existing Claude wire aliases.
+/// Grok validates session/set_model against this shared endpoint's exact IDs.
+fn shared_models_response(available: &[ClaudeModel]) -> ClaudeMessagesHttpResponse {
+    let mut response = workjet_provider_gateway::internal::client::claude::models::build_response(
+        available, false,
+    );
+    let known: BTreeSet<String> = response
+        .data
+        .iter()
+        .filter_map(|model| {
+            model
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect();
+    for model in available {
+        if model
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| !known.contains(id))
+        {
+            response.data.push(model.clone());
+        }
+    }
+    response.last_id = response
+        .data
+        .last()
+        .and_then(|model| model.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    ClaudeMessagesHttpResponse::json(
+        200,
+        serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec()),
+    )
+}
+
+#[test]
+fn shared_catalog_preserves_aliases_and_publishes_real_model_ids() {
+    let available = vec![
+        serde_json::json!({"id":"claude-opus-5-5","display_name":"claude-opus-5-5","providers":["claude"]}).as_object().unwrap().clone(),
+        serde_json::json!({"id":"gpt-6.1-sol","display_name":"gpt-6.1-sol","providers":["codex"]}).as_object().unwrap().clone(),
+    ];
+    let response = shared_models_response(&available);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let data = body["data"].as_array().unwrap();
+    let ids: BTreeSet<&str> = data
+        .iter()
+        .map(|model| model["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), data.len());
+    assert!(ids.contains("claude-opus-5-5"));
+    assert!(ids.contains("gpt-6.1-sol"));
+    assert!(ids.contains(
+        workjet_provider_gateway::internal::client::claude::models::ensure_claude_model_id_prefix(
+            "gpt-6.1-sol"
+        )
+        .as_str()
+    ));
+    assert_eq!(
+        data.iter()
+            .find(|model| model["id"] == "gpt-6.1-sol")
+            .unwrap()["providers"],
+        serde_json::json!(["codex"])
+    );
+    assert_eq!(body["has_more"], false);
+    assert_eq!(body["last_id"], data.last().unwrap()["id"]);
 }
 
 fn model_catalog(config: &ValidatedRuntimeConfig) -> Vec<ClaudeModel> {

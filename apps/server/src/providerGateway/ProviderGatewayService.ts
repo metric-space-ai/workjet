@@ -1659,6 +1659,32 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return { schemaVersion: 1, observedAtMs, providers };
     };
 
+    /** User edits and legacy repairs share the account's authenticated model evidence. */
+    const repairClaudeAccountModels = async (
+      account: GatewayAccount,
+      deadline: AbortSignal,
+    ): Promise<GatewayAccount> => {
+      if (
+        deadline.aborted ||
+        account.provider !== "claude" ||
+        platform.discoverClaudeModels === undefined ||
+        !account.models.some((id) => id.startsWith("claude-") && /\.(?=\d)/.test(id))
+      )
+        return account;
+      const secret = await runPromise(
+        secrets.get(secretStoreName(account.accessTokenSecret)),
+      ).catch(() => Option.none<Uint8Array>());
+      if (Option.isNone(secret)) return account;
+      const token = new TextDecoder().decode(secret.value);
+      if (!isAcceptableApiKey(token)) return account;
+      const available = await platform
+        .discoverClaudeModels(token.trim(), deadline)
+        .catch(() => undefined);
+      if (available === undefined || deadline.aborted) return account;
+      const models = repairClaudeModelIds(account.models, available);
+      return JSON.stringify(models) === JSON.stringify(account.models) ? account : { ...account, models };
+    };
+
     /**
      * Rewrites the pool configuration and reloads the host.
      *
@@ -1682,9 +1708,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       ) {
         throw safeError("invalid-configuration");
       }
-      const accounts = existing.accounts.map((account) => {
+      const accounts: Array<GatewayAccount> = [];
+      const deadline = AbortSignal.timeout(8_000);
+      for (const account of existing.accounts) {
         const update = updates.get(account.id);
-        return update === undefined
+        const next = update === undefined
           ? account
           : {
               ...account,
@@ -1696,7 +1724,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
               // distinct from an empty array clearing it.
               ...(update.models === undefined ? {} : { models: [...update.models] }),
             };
-      });
+        accounts.push(
+          update?.models !== undefined
+            ? await repairClaudeAccountModels(next, deadline)
+            : next,
+        );
+      }
       const candidate = {
         schemaVersion: 1,
         defaultProvider: existing.defaultProvider,
@@ -1861,23 +1894,14 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         if (
           deadline.aborted ||
           account.provider !== "claude" ||
-          !account.enabled ||
           !("accessTokenSecret" in account) ||
           (accountId !== undefined && account.id !== accountId) ||
           !account.models.some((id) => id.startsWith("claude-") && /\.(?=\d)/.test(id))
         )
           continue;
-        const secret = await runPromise(
-          secrets.get(secretStoreName(account.accessTokenSecret)),
-        ).catch(() => Option.none<Uint8Array>());
-        if (Option.isNone(secret)) continue;
-        const token = new TextDecoder().decode(secret.value);
-        if (!isAcceptableApiKey(token)) continue;
-        const available = await platform.discoverClaudeModels(token.trim(), deadline);
-        if (available === undefined || deadline.aborted) continue;
-        const models = repairClaudeModelIds(account.models, available);
-        if (JSON.stringify(models) === JSON.stringify(account.models)) continue;
-        accounts[index] = { ...account, models };
+        const repaired = await repairClaudeAccountModels(account, deadline);
+        if (repaired === account) continue;
+        accounts[index] = repaired;
         changed = true;
       }
       if (!changed) return;

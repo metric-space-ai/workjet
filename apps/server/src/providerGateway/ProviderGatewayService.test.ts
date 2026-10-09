@@ -1402,7 +1402,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
   );
 
   it.each(["observed", "unavailable", "disabled", "other-account"] as const)(
-    "repairs Claude spelling on Check all only for its enabled live account (%s)",
+    "repairs Claude spelling from its live account without enabling it (%s)",
     async (mode) => {
       const harness = apiKeyHarness();
       const model = "claude-opus-5-5";
@@ -1446,11 +1446,75 @@ describe("ProviderGatewayService · API-key accounts", () => {
         }),
       );
       expect(JSON.parse(document).accounts).toEqual([
-        { ...account, models: [mode === "observed" ? model : legacy] },
+        { ...account, models: [mode === "observed" || mode === "disabled" ? model : legacy] },
       ]);
-      expect(discoveries).toBe(mode === "disabled" || mode === "other-account" ? 0 : 1);
+      expect(discoveries).toBe(mode === "other-account" ? 0 : 1);
       expect(harness.storedSecrets.size).toBe(0);
       expect(document).not.toContain("provider-secret");
+    },
+  );
+
+  it.each(["enabled", "disabled"] as const)(
+    "repairs a Claude model edit before persistence without changing the %s account",
+    async (mode) => {
+      for (const discovery of ["live", "unavailable", "other-model", "failed"] as const) {
+        const harness = apiKeyHarness();
+        // Authenticated account GET /models evidence, 2026-10-08.
+        const model = "claude-opus-5-5";
+        const legacy = model.replace(/-(\d+)$/, ".$1");
+        const account = {
+          id: "claude-existing",
+          provider: "claude",
+          label: "Existing account",
+          enabled: mode === "enabled",
+          priority: 7,
+          weight: 1,
+          models: [model],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "existing-access" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "existing-refresh" },
+        };
+        let document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
+        let discoveries = 0;
+        const writer = harness.platform.writePrivateText;
+        harness.platform = {
+          ...harness.platform,
+          discoverClaudeModels: async (_token, signal) => {
+            discoveries += 1;
+            expect(signal?.aborted).toBe(false);
+            if (discovery === "failed") throw new Error("transport failed");
+            return discovery === "unavailable"
+              ? undefined
+              : discovery === "other-model" ? ["claude-sonnet-5-5"] : [model];
+          },
+          readText: async (path) => {
+            if (path.endsWith("model-checks.json"))
+              throw Object.assign(new Error("missing"), { code: "ENOENT" });
+            return document;
+          },
+          writePrivateText: async (path, value) => {
+            await writer(path, value);
+            if (path.endsWith("/provider-gateway.json")) document = value;
+          },
+        };
+        const result = await runWithSecrets(harness, (gateway) =>
+          gateway.updateRouting({
+            strategy: "fill-first",
+            accounts: [{
+              accountId: WorkjetGatewayAccountId.make(account.id),
+              enabled: account.enabled,
+              priority: account.priority,
+              weight: account.weight,
+              models: [legacy],
+            }],
+          }),
+        );
+        const expected = discovery === "live" ? model : legacy;
+        expect(JSON.parse(document).accounts).toEqual([{ ...account, models: [expected] }]);
+        expect(result.catalog.accounts[0]?.modelIds).toEqual([expected]);
+        expect(discoveries).toBe(1);
+        expect(harness.storedSecrets.size).toBe(0);
+        expect(document).not.toContain("provider-secret");
+      }
     },
   );
 

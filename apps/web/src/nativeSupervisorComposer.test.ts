@@ -119,6 +119,41 @@ describe("native supervisor composer authority", () => {
       }),
     ).rejects.toThrow("identity changed");
   });
+  it("extracts a correlated public reply from the native result object and serialized envelope", () => {
+    const turn = { commandId: "native-command", taskId: "native-task", attempt: 1 };
+    const result = {
+      command_id: turn.commandId,
+      execution_task_id: turn.taskId,
+      attempt: turn.attempt,
+      status: "succeeded",
+      user_reply: "The project has three verified next steps.",
+      writebacks: [],
+    };
+    expect(nativeSupervisorResultText(result, turn)).toBe(result.user_reply);
+    expect(nativeSupervisorResultText(JSON.stringify(result), turn)).toBe(result.user_reply);
+  });
+  it("never presents another task or attempt's reply as this turn's answer", () => {
+    const turn = { commandId: "native-command", taskId: "native-task", attempt: 1 };
+    const result = {
+      command_id: turn.commandId,
+      execution_task_id: turn.taskId,
+      attempt: turn.attempt,
+      user_reply: "Foreign reply",
+    };
+    for (const mismatch of [
+      { command_id: "another-command" },
+      { execution_task_id: "another-task" },
+      { attempt: 2 },
+    ]) {
+      expect(nativeSupervisorResultText({ ...result, ...mismatch }, turn)).toBe(
+        "The result belongs to a different Supervisor turn.",
+      );
+    }
+    expect(nativeSupervisorResultText("ordinary reply", turn)).toBe("ordinary reply");
+    expect(nativeSupervisorResultText('{"user_reply":"ordinary JSON"}', turn)).toBe(
+      '{"user_reply":"ordinary JSON"}',
+    );
+  });
   it("shows only the received result, without constructing a provider event", () => {
     expect(nativeSupervisorResultText(null)).toBe("");
     expect(nativeSupervisorResultText("Actual native result")).toBe("Actual native result");

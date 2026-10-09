@@ -117,10 +117,42 @@ export async function persistSupervisorJournal(input: {
   return next;
 }
 
-export function nativeSupervisorResultText(result: unknown): string {
+/** Display the public reply of a result correlated to the persisted native turn. */
+export function nativeSupervisorResultText(
+  result: unknown,
+  expected?: {
+    readonly commandId: string;
+    readonly taskId: string | null;
+    readonly attempt: number;
+  },
+): string {
   if (result === null || result === undefined) return "";
-  if (typeof result === "string") return result;
-  return JSON.stringify(result, null, 2) ?? "";
+  let envelope: unknown = result;
+  if (typeof result === "string") {
+    try {
+      envelope = JSON.parse(result);
+    } catch {
+      return result;
+    }
+  }
+  if (expected && envelope && typeof envelope === "object" && !Array.isArray(envelope)) {
+    const value = envelope as Record<string, unknown>;
+    if (
+      typeof value.command_id === "string" &&
+      typeof value.execution_task_id === "string" &&
+      typeof value.attempt === "number" &&
+      typeof value.user_reply === "string"
+    ) {
+      if (
+        value.command_id !== expected.commandId ||
+        value.execution_task_id !== expected.taskId ||
+        value.attempt !== expected.attempt
+      )
+        return "The result belongs to a different Supervisor turn.";
+      return value.user_reply;
+    }
+  }
+  return typeof result === "string" ? result : (JSON.stringify(result, null, 2) ?? "");
 }
 
 /** A lost receipt is recovered with its saved command; refusals need user action. */

@@ -79,6 +79,18 @@ export interface ModelsManagementState {
     accounts: ReadonlyArray<WorkjetGatewayAccountSummary>,
     models: ReadonlyArray<string>,
   ) => Promise<boolean>;
+  readonly onEditProviderModels?: (
+    provider: WorkjetGatewayProvider,
+    models: ReadonlyArray<string>,
+  ) => Promise<boolean>;
+  readonly modelSuggestions?: Readonly<
+    Partial<Record<WorkjetGatewayProvider, ReadonlyArray<string>>>
+  >;
+  readonly onExcludeModel?: (
+    account: WorkjetGatewayAccountSummary,
+    model: string,
+    excluded: boolean,
+  ) => Promise<boolean>;
   readonly onDeleteAccount: (accountId: string) => Promise<boolean>;
   readonly onRelogin: (provider: WorkjetGatewayOauthProvider, accountId: string) => void;
   readonly onSaveApiKey: (
@@ -100,6 +112,7 @@ function InlineField({
   onSave,
   className,
   action,
+  failureMessage,
 }: {
   readonly value: string;
   readonly label: string;
@@ -108,6 +121,7 @@ function InlineField({
   readonly onSave: (value: string) => Promise<boolean>;
   readonly className?: string;
   readonly action?: string;
+  readonly failureMessage?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const [failed, setFailed] = useState(false);
@@ -191,7 +205,7 @@ function InlineField({
       )}
       {failed && (
         <span role="alert" className="text-xs text-destructive">
-          Not saved. Check your entry and press Enter to try again.
+          {failureMessage ?? "Not saved. Check your entry and press Enter to try again."}
         </span>
       )}
     </div>
@@ -292,6 +306,7 @@ export function WorkjetModelsKeyForm({
 }) {
   const [key, setKey] = useState("");
   const [label, setLabel] = useState(account?.label ?? WORKJET_GATEWAY_PROVIDER_LABELS[provider]);
+  const sharedModels = state.onEditProviderModels !== undefined;
   const [modelText, setModelText] = useState(provider === "kimi" ? "" : models.join(", "));
   const [error, setError] = useState<string | null>(null);
   const apiKeyError =
@@ -306,7 +321,9 @@ export function WorkjetModelsKeyForm({
       className="grid min-w-0 gap-2 border-t border-border/50 py-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,2fr)_auto]"
       onSubmit={(event) => {
         event.preventDefault();
-        const parsed = parseModels(modelText);
+        // Discover this key's own plan before intersecting shared provider models.
+        const selectedModels = provider === "kimi" ? [] : (account?.modelIds ?? models);
+        const parsed = sharedModels ? selectedModels : parseModels(modelText);
         if (
           !key.trim() ||
           !label.trim() ||
@@ -373,7 +390,7 @@ export function WorkjetModelsKeyForm({
           <XIcon className="size-4" />
         </Button>
       </div>
-      {!account && (
+      {!account && !sharedModels && (
         <label className="col-span-full grid gap-1 text-xs text-muted-foreground">
           Models
           <input
@@ -522,7 +539,14 @@ function AccountRow({
           )}
         </div>
         <div role="cell" className="min-w-0">
-          <WorkjetModelsCell account={account} state={state} />
+          <WorkjetModelsCell
+            account={account}
+            state={state}
+            models={
+              state.catalog?.providerModels?.find((entry) => entry.provider === account.provider)
+                ?.modelIds
+            }
+          />
         </div>
         <div role="cell" className="min-w-0">
           <AccountLimits health={health} />
@@ -745,6 +769,79 @@ function LoginMessage({
   );
 }
 
+function ProviderModelsField({
+  provider,
+  models,
+  state,
+}: {
+  readonly provider: WorkjetGatewayProvider;
+  readonly models: ReadonlyArray<string>;
+  readonly state: ModelsManagementState;
+}) {
+  const suggestions = state.modelSuggestions?.[provider] ?? [];
+  const [suggestionError, setSuggestionError] = useState(false);
+  return (
+    <div className="flex min-w-0 items-start gap-1">
+      <div className="min-w-0 flex-1">
+        <InlineField
+          value={models.join(", ")}
+          multiline
+          label={"Models for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+          action={"models.provider." + provider + ".models"}
+          failureMessage="Not saved. Use model IDs from the live catalog and press Enter to retry."
+          disabled={state.mutationBusy}
+          className="font-mono text-[11px]"
+          onSave={async (value) => {
+            const parsed = parseModels(value);
+            return parsed !== null && !!(await state.onEditProviderModels?.(provider, parsed));
+          }}
+        />
+      </div>
+      {suggestionError && (
+        <span role="alert" className="text-xs text-destructive">
+          Not saved. Refresh the live catalog and try again.
+        </span>
+      )}
+      {suggestions.length > 0 && (
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={"Model suggestions for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+                disabled={state.mutationBusy}
+              />
+            }
+          >
+            <PlusIcon className="size-3" />
+          </PopoverTrigger>
+          <PopoverPopup align="start" viewportClassName="max-h-64 overflow-y-auto p-1">
+            {suggestions
+              .filter((id) => !models.includes(id))
+              .map((id) => (
+                <button
+                  type="button"
+                  key={id}
+                  className="block w-full px-2 py-1 text-left font-mono text-xs hover:bg-accent"
+                  disabled={state.mutationBusy}
+                  onClick={() => {
+                    setSuggestionError(false);
+                    void state
+                      .onEditProviderModels?.(provider, [...models, id])
+                      .then((saved) => setSuggestionError(!saved));
+                  }}
+                >
+                  {id}
+                </button>
+              ))}
+          </PopoverPopup>
+        </Popover>
+      )}
+    </div>
+  );
+}
+
 export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & ModelsManagementState) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [adding, setAdding] = useState<WorkjetGatewayProvider | null>(null);
@@ -895,7 +992,9 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           </div>
           {providers.map((provider) => {
             const providerAccounts = accounts.filter((account) => account.provider === provider);
-            const models = [...new Set(providerAccounts.flatMap((account) => account.modelIds))];
+            const models = state.catalog?.providerModels?.find(
+              (entry) => entry.provider === provider,
+            )?.modelIds ?? [...new Set(providerAccounts.flatMap((account) => account.modelIds))];
             const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
             const title = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
             const loginHere =
@@ -903,23 +1002,28 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
               state.login.status !== "idle" &&
               state.login.provider === provider &&
               state.loginAccountId === null;
-            const grouped = providerAccounts.length > 1;
+            const grouped = state.onEditProviderModels !== undefined || providerAccounts.length > 1;
             return (
               <div key={provider} data-provider={provider}>
                 {(grouped || providerAccounts.length === 0) && (
-                  <div className="flex items-center gap-1.5 border-b border-border/50 pt-2 pb-1">
-                    <Icon className="size-4" />
-                    <h3 className="text-xs font-medium">{title}</h3>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={`Add account to ${title}`}
-                      data-workjet-action={`models.provider.${provider}.add-account`}
-                      disabled={state.mutationBusy}
-                      onClick={() => startAdd(provider)}
-                    >
-                      <PlusIcon className="size-3" />
-                    </Button>
+                  <div className={cn(MODELS_TABLE_COLUMNS, "border-b border-border/50 py-2")}>
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="size-4" />
+                      <h3 className="text-xs font-medium">{title}</h3>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`Add account to ${title}`}
+                        data-workjet-action={`models.provider.${provider}.add-account`}
+                        disabled={state.mutationBusy}
+                        onClick={() => startAdd(provider)}
+                      >
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
+                    {state.onEditProviderModels && (
+                      <ProviderModelsField provider={provider} models={models} state={state} />
+                    )}
                   </div>
                 )}
                 {providerAccounts.map((account) => (

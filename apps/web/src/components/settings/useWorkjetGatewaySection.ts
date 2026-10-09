@@ -8,6 +8,7 @@ import type {
   WorkjetGatewayCatalog,
   WorkjetGatewayApiKeyProvider,
   WorkjetGatewayOauthProvider,
+  WorkjetGatewayProvider,
   WorkjetGatewayUpdateRoutingInput,
 } from "@workjet/contracts";
 import { WorkjetGatewayAccountId } from "@workjet/contracts";
@@ -400,6 +401,7 @@ export function useWorkjetGatewaySection(
         readonly label?: string;
         readonly enabled?: boolean;
         readonly models?: ReadonlyArray<string>;
+        readonly excludedModels?: ReadonlyArray<string>;
       },
     ): Promise<boolean> => {
       const strategy = (editedCatalog ?? catalogQuery.data)?.routingStrategy;
@@ -425,6 +427,9 @@ export function useWorkjetGatewaySection(
               weight: account.weight,
               ...(patch.label !== undefined ? { label: patch.label } : {}),
               ...(patch.models !== undefined ? { models: patch.models } : {}),
+              ...(patch.excludedModels !== undefined
+                ? { excludedModels: patch.excludedModels }
+                : {}),
             })),
           },
         });
@@ -437,6 +442,39 @@ export function useWorkjetGatewaySection(
             ...Object.fromEntries(accounts.map((account) => [account.id, message])),
           }));
           setRouting({ status: "failed", message });
+          return false;
+        }
+        setEditedCatalog(result.value.catalog);
+        setRouting({ status: "completed" });
+        refresh();
+        return true;
+      } finally {
+        routingRef.current = false;
+      }
+    },
+    [environmentId, refresh, updateRouting, editedCatalog, catalogQuery.data],
+  );
+
+  const editProviderModels = useCallback(
+    async (provider: WorkjetGatewayProvider, models: ReadonlyArray<string>): Promise<boolean> => {
+      const catalog = editedCatalog ?? catalogQuery.data;
+      if (environmentId === null || routingRef.current || catalog == null) return false;
+      routingRef.current = true;
+      setRouting({ status: "saving" });
+      try {
+        const result = await updateRouting({
+          environmentId,
+          input: {
+            strategy: catalog.routingStrategy,
+            accounts: [],
+            providers: [{ provider, modelIds: models }],
+          },
+        });
+        if (result._tag === "Failure") {
+          setRouting({
+            status: "failed",
+            message: "Provider models were not saved. Use IDs from the live catalog and try again.",
+          });
           return false;
         }
         setEditedCatalog(result.value.catalog);
@@ -686,6 +724,19 @@ export function useWorkjetGatewaySection(
     onRelogin: addAccount,
     onEditAccount: (account, patch) => editAccounts([account], patch),
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
+    onEditProviderModels: editProviderModels,
+    modelSuggestions: Object.fromEntries(
+      (modelsQuery.data?.providers ?? []).map((entry) => [
+        entry.provider,
+        entry.models.filter((model) => model.source === "gateway-catalog").map((model) => model.id),
+      ]),
+    ),
+    onExcludeModel: (account, model, excluded) =>
+      editAccounts([account], {
+        excludedModels: excluded
+          ? [...new Set([...(account.excludedModelIds ?? []), model])]
+          : (account.excludedModelIds ?? []).filter((id) => id !== model),
+      }),
     loginAccountId,
     accountErrors,
     modelChecks: checksQuery.data?.checks ?? [],

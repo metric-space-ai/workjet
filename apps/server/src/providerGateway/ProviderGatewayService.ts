@@ -72,6 +72,13 @@ import {
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
 import { decodeLiveProviderModels } from "./LiveProviderCatalog.ts";
 import {
+  applyProviderModelSelection,
+  projectProviderModelSelection,
+  providerModelSelections,
+  reconcileAccountModelRepairs,
+  retainProviderModelSelection,
+} from "./ProviderModelSelection.ts";
+import {
   decodeGatewayGrants,
   emptyGatewayGrants,
   removeGatewayAccountGrants,
@@ -1186,16 +1193,22 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }
         createdIds.push(id);
       }
-      const candidate = {
-        schemaVersion: 1,
-        defaultProvider: existing?.defaultProvider ?? claimed[0]?.provider ?? "claude",
+      const candidate = retainProviderModelSelection(
+        {
+          schemaVersion: 1,
+          defaultProvider: existing?.defaultProvider ?? claimed[0]?.provider ?? "claude",
+          accounts,
+          ...(existing?.providerModels === undefined
+            ? {}
+            : { providerModels: existing.providerModels }),
+          pools: existing?.pools ?? [],
+          routes: existing?.routes ?? [],
+          routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
+          ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
+          ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+        },
         accounts,
-        pools: existing?.pools ?? [],
-        routes: existing?.routes ?? [],
-        routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
-        ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
-        ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
-      };
+      );
       const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));
       if (decoded === undefined) throw safeError("invalid-configuration");
       // Validate the entire configuration and snapshot existing secrets before
@@ -1412,6 +1425,13 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
               accounts.find((account) => account.provider === input.provider)?.models ??
               []),
         apiKeySecret,
+        ...(replacement?.excludedModels === undefined
+          ? {}
+          : { excludedModels: replacement.excludedModels }),
+        ...(replacement?.legacyModelIds === undefined
+          ? {}
+          : { legacyModelIds: replacement.legacyModelIds }),
+        ...(kimiConnection === undefined ? {} : { availableModelIds: kimiConnection.models }),
         ...(kimiConnection !== undefined
           ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl, kimiPlan: kimiConnection.plan }
           : zaiConnection !== undefined
@@ -1423,18 +1443,24 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
       if (replacement === undefined) accounts.push(nextAccount);
       else accounts[accounts.indexOf(replacement)] = nextAccount;
-      const candidate = {
-        schemaVersion: 1,
-        // The first account of any kind also becomes the default provider, so
-        // a gateway whose only account is an API-key account still routes.
-        defaultProvider: existing?.accounts.length ? existing.defaultProvider : input.provider,
+      const candidate = retainProviderModelSelection(
+        {
+          schemaVersion: 1,
+          // The first account of any kind also becomes the default provider, so
+          // a gateway whose only account is an API-key account still routes.
+          defaultProvider: existing?.accounts.length ? existing.defaultProvider : input.provider,
+          accounts,
+          ...(existing?.providerModels === undefined
+            ? {}
+            : { providerModels: existing.providerModels }),
+          pools: existing?.pools ?? [],
+          routes: existing?.routes ?? [],
+          routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
+          ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
+          ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+        },
         accounts,
-        pools: existing?.pools ?? [],
-        routes: existing?.routes ?? [],
-        routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
-        ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
-        ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
-      };
+      );
       const serialized = `${JSON.stringify(candidate, null, 2)}\n`;
       // Belt and braces: the configuration document must never contain the key.
       if (
@@ -1511,6 +1537,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         schemaVersion: 1,
         defaultProvider,
         accounts,
+        ...(existing.providerModels === undefined
+          ? {}
+          : { providerModels: existing.providerModels }),
         pools,
         routes,
         routingStrategy: existing.routingStrategy,
@@ -1634,8 +1663,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         const accounts = configuration.accounts.filter(
           (account) => account.provider === provider && account.enabled,
         );
-        if (accounts.length === 0) continue;
         const liveModels = decodeLiveProviderModels(liveCatalog, provider, platform.now());
+        if (accounts.length === 0 && liveModels === undefined) continue;
         const models: Array<WorkjetGatewayDiscoveredModel> = (liveModels ?? []).map((id) => ({
           id,
           displayName: id,
@@ -1696,10 +1725,80 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
      * strategy or a membership. That is the same path the OAuth claim and the
      * API-key add already take: write the file, then stop and start the host.
      */
+    const prepareProviderSelection = async (
+      configuration: ProviderGatewayConfiguration,
+      updates: NonNullable<WorkjetGatewayUpdateRoutingInput["providers"]>,
+    ): Promise<ProviderGatewayConfiguration> => {
+      if (updates.length === 0) return applyProviderModelSelection(configuration, []);
+      if (new Set(updates.map((update) => update.provider)).size !== updates.length)
+        throw safeError("invalid-configuration");
+      const selected = providerModelSelections(configuration);
+      const publicCatalog = await platform.publicModelCatalog?.().catch(() => undefined);
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(8_000);
+      for (const [index, account] of accounts.entries()) {
+        if (deadline.aborted || !updates.some((update) => update.provider === account.provider))
+          continue;
+        if (account.provider === "claude" && platform.discoverClaudeModels !== undefined) {
+          const secret = await runPromise(
+            secrets.get(secretStoreName(account.accessTokenSecret)),
+          ).catch(() => Option.none<Uint8Array>());
+          if (Option.isNone(secret)) continue;
+          const models = await platform
+            .discoverClaudeModels(new TextDecoder().decode(secret.value), deadline)
+            .catch(() => undefined);
+          if (models !== undefined && !deadline.aborted)
+            accounts[index] = { ...account, availableModelIds: models };
+        } else if (
+          account.provider === "kimi" &&
+          isApiKeyAccount(account) &&
+          platform.discoverKimiConnection !== undefined
+        ) {
+          const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
+            () => Option.none<Uint8Array>(),
+          );
+          if (Option.isNone(secret)) continue;
+          const connection = await platform
+            .discoverKimiConnection(
+              new TextDecoder().decode(secret.value),
+              account.upstreamBaseUrl,
+              deadline,
+            )
+            .catch(() => undefined);
+          if (connection !== undefined && !deadline.aborted)
+            accounts[index] = {
+              ...account,
+              availableModelIds: connection.models,
+              upstreamBaseUrl: connection.upstreamBaseUrl,
+              kimiPlan: connection.plan,
+            };
+        }
+      }
+      for (const update of updates) {
+        const known = new Set(
+          selected.find((entry) => entry.provider === update.provider)?.modelIds ?? [],
+        );
+        const live = new Set([
+          ...(decodeLiveProviderModels(publicCatalog, update.provider, platform.now()) ?? []),
+          ...accounts
+            .filter((account) => account.provider === update.provider)
+            .flatMap((account) => account.availableModelIds ?? []),
+        ]);
+        if (update.modelIds.some((id) => !known.has(id) && !live.has(id)))
+          throw safeError("invalid-configuration");
+      }
+      return applyProviderModelSelection({ ...configuration, accounts }, updates);
+    };
+
     const runUpdateRouting = async (
       input: WorkjetGatewayUpdateRoutingInput,
     ): Promise<WorkjetGatewayUpdateRoutingResult> => {
       const existing = await loadConfiguration();
+      const draft =
+        input.providers !== undefined ||
+        input.accounts.some((update) => update.excludedModels !== undefined)
+          ? await prepareProviderSelection(existing, input.providers ?? [])
+          : existing;
       const updates = new Map(input.accounts.map((update) => [String(update.accountId), update]));
       // An edit naming an account that does not exist is a stale client, not a
       // no-op: refuse it instead of silently applying the rest.
@@ -1712,8 +1811,18 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       }
       const accounts: Array<GatewayAccount> = [];
       const deadline = AbortSignal.timeout(8_000);
-      for (const account of existing.accounts) {
+      for (const account of draft.accounts) {
         const update = updates.get(account.id);
+        const selection = draft.providerModels?.find(
+          (entry) => entry.provider === account.provider,
+        );
+        if (
+          selection !== undefined &&
+          update?.models?.some((id) => !selection.modelIds.includes(id))
+        )
+          throw safeError("invalid-configuration");
+        if (update?.excludedModels !== undefined && selection === undefined)
+          throw safeError("invalid-configuration");
         const next =
           update === undefined
             ? account
@@ -1726,21 +1835,28 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
                 // Omitted means "not editing this list", which must stay
                 // distinct from an empty array clearing it.
                 ...(update.models === undefined ? {} : { models: [...update.models] }),
+                ...(update.excludedModels !== undefined
+                  ? { excludedModels: [...new Set(update.excludedModels)] }
+                  : selection !== undefined && update.models !== undefined
+                    ? {
+                        excludedModels: [
+                          ...(account.excludedModels ?? []).filter(
+                            (id) => !selection.modelIds.includes(id),
+                          ),
+                          ...selection.modelIds.filter((id) => !update.models!.includes(id)),
+                        ],
+                      }
+                    : {}),
               };
         accounts.push(
           update?.models !== undefined ? await repairClaudeAccountModels(next, deadline) : next,
         );
       }
-      const candidate = {
-        schemaVersion: 1,
-        defaultProvider: existing.defaultProvider,
+      const candidate = projectProviderModelSelection({
+        ...draft,
         accounts,
-        pools: existing.pools,
-        routes: existing.routes,
         routingStrategy: input.strategy,
-        ...(existing.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
-        ...(existing.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
-      };
+      });
       const serialized = `${JSON.stringify(candidate, null, 2)}\n`;
       // Disabling the default provider's last enabled account would produce a
       // configuration the host refuses to start on; decoding catches that here
@@ -1754,14 +1870,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const reloadRequired =
         input.strategy !== existing.routingStrategy ||
         existing.accounts.some((account) => {
-          const update = updates.get(account.id);
+          const next = decoded.accounts.find((candidate) => candidate.id === account.id)!;
           return (
-            update !== undefined &&
-            (update.enabled !== account.enabled ||
-              update.priority !== account.priority ||
-              update.weight !== account.weight ||
-              (update.models !== undefined &&
-                JSON.stringify(update.models) !== JSON.stringify(account.models)))
+            next.enabled !== account.enabled ||
+            next.priority !== account.priority ||
+            next.weight !== account.weight ||
+            JSON.stringify(next.models) !== JSON.stringify(account.models) ||
+            (isApiKeyAccount(next) &&
+              isApiKeyAccount(account) &&
+              next.upstreamBaseUrl !== account.upstreamBaseUrl)
           );
         });
       // Display-name edits do not interrupt an in-flight inference stream.
@@ -1812,13 +1929,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         if (
           account.upstreamBaseUrl === connection.upstreamBaseUrl &&
           account.kimiPlan === connection.plan &&
-          JSON.stringify(account.models) === JSON.stringify(models)
+          JSON.stringify(account.models) === JSON.stringify(models) &&
+          JSON.stringify(account.availableModelIds) === JSON.stringify(connection.models)
         )
           continue;
         accounts[index] = {
           ...account,
           upstreamBaseUrl: connection.upstreamBaseUrl,
           kimiPlan: connection.plan,
+          availableModelIds: connection.models,
           models,
         };
         changed = true;
@@ -1827,7 +1946,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       await modelChecks.cancel();
       await platform.writePrivateText(
         configurationPath,
-        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+        `${JSON.stringify(projectProviderModelSelection({ ...configuration, accounts }), null, 2)}\n`,
       );
       await stopSingleFlight();
       await startSingleFlight();
@@ -1909,7 +2028,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       await modelChecks.cancel();
       await platform.writePrivateText(
         configurationPath,
-        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+        `${JSON.stringify(reconcileAccountModelRepairs(configuration, accounts), null, 2)}\n`,
       );
       await stopSingleFlight();
       await startSingleFlight();

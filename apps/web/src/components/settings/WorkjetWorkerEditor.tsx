@@ -293,6 +293,7 @@ export function WorkjetWorkerEditor({
   gatewayEnvironmentId = null,
   nativeAccounts = [],
   nativeModelsBusy = false,
+  nativeModelsError,
   onRefreshNativeModels,
   onValidateNativeModel,
   onSave,
@@ -312,6 +313,7 @@ export function WorkjetWorkerEditor({
   readonly gatewayAccounts?: ReadonlyArray<WorkjetGatewayAccountSummary>;
   readonly nativeAccounts?: readonly WorkjetNativeProviderAccount[];
   readonly nativeModelsBusy?: boolean;
+  readonly nativeModelsError?: string | undefined;
   readonly onRefreshNativeModels?: (account: WorkjetNativeProviderAccount) => void;
   readonly onValidateNativeModel?: (
     account: WorkjetNativeProviderAccount,
@@ -590,10 +592,10 @@ export function WorkjetWorkerEditor({
                 </SelectPopup>
               </Select>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span role="status">
-                  {chosenNativeAccount?.modelCatalog.fresh
+                <span role={nativeModelsError ? "alert" : "status"} className={nativeModelsError ? "text-destructive" : undefined}>
+                  {nativeModelsError ?? (chosenNativeAccount?.modelCatalog.fresh
                     ? "Live instance account models. Execution availability is checked by CTOX."
-                    : "Refresh this instance account in Settings → Models before choosing a model."}
+                    : "Refresh this instance account in Settings → Models before choosing a model.")}
                 </span>
                 {onRefreshNativeModels && chosenNativeAccount && (
                   <Button

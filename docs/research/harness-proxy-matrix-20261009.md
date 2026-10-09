@@ -20,6 +20,8 @@ The repair rewrites individual data lines within complete frames, preserves LF/C
 
 Focused Rust regressions cover event-prefixed frames, data-only frames, LF/CRLF separators, unchanged non-tool events and opaque arguments, plus the actual account pool/provider executor with upstream fragments of seven bytes and twenty successive calls for each of `Bash`, `Read` and `exec_command`. The transport echoes the actual outbound alias. These are deterministic bridge tests, not real-model acceptance.
 
+A further account-pinned HTTP probe found that Claude's adaptive `output_config.effort:"max"` is forwarded unchanged as Responses `reasoning.effort:"max"`. The actual Grok account rejects it with upstream HTTP 400; the converter's default `xhigh` and explicit `high` are accepted. The repair maps Claude `max` to Responses `xhigh` in `codex_claude_request.rs:438`, with a focused converter regression. [Sanitized HTTP evidence](harness-proxy-evidence/xai-protocol-probes-20261009.json) also records successful function-result string/array replay and ordinary streaming tool declarations. These probes execute no local tools and do not count as native matrix passes; the native Claude/Grok failure still needs a retest.
+
 ## Routing inventory
 
 - Workjet's portable Rust gateway is `native/provider-gateway`; its environment host is `native/provider-gateway-workjet-host`. Desktop packaging pins host **0.1.1** at source `9b2c23c2d000c5f50715b3e0bb6ff9e4bf500dba`. A source fix requires a newly published host artifact and updated pin before a desktop release can contain it.

@@ -1,0 +1,69 @@
+{
+  "observedAt": "2026-10-09T23:27:46Z",
+  "environment": "Isolated Workjet 0.0.69 RC with the earlier streaming-name and catalog-routing repairs",
+  "model": "grok-4.7",
+  "provider": "xai",
+  "accountSelection": "Exactly one enabled configured account advertising this model; account ID omitted",
+  "acceptanceLevel": "HTTP protocol probes only; no native harness or local tool execution",
+  "results": [
+    {
+      "case": "initial-function",
+      "status": 200,
+      "upstream": 200,
+      "outputTypes": [
+        "reasoning",
+        "function_call"
+      ]
+    },
+    {
+      "case": "function-output-string",
+      "status": 200,
+      "upstream": 200,
+      "outputTypes": [
+        "reasoning",
+        "message"
+      ]
+    },
+    {
+      "case": "function-output-content-array",
+      "status": 200,
+      "upstream": 200,
+      "outputTypes": [
+        "reasoning",
+        "message"
+      ]
+    },
+    {
+      "case": "responses-function-stream",
+      "status": 200,
+      "terminal": "response.completed",
+      "toolName": "echo_marker",
+      "errors": []
+    },
+    {
+      "case": "messages-function-stream",
+      "status": 200,
+      "terminal": "message_stop",
+      "toolName": "echo_marker",
+      "errors": []
+    },
+    {
+      "case": "adaptive-default",
+      "status": 200,
+      "upstream": 200
+    },
+    {
+      "case": "adaptive-high",
+      "status": 200,
+      "upstream": 200
+    },
+    {
+      "case": "adaptive-max",
+      "status": 502,
+      "upstream": 400,
+      "errorClass": "network-provider",
+      "error": "xAI upstream rejected the request"
+    }
+  ],
+  "interpretation": "The account works with ordinary functions and both output forms. Claude maximum effort needs protocol translation. These observations do not establish the cause of the earlier native Claude/Grok failure or a 20-call matrix pass."
+}

@@ -1241,7 +1241,7 @@ const makeWsRpcLayer = (
               const sourceStatus = yield* gitWorkflow.status({ cwd });
               const { branch, resuming } = validateManualWorkerSource(thread, shell.threads, sourceStatus);
               if (!resuming) {
-                const baseRef = thread.branch ?? sourceStatus.refName;
+                const baseRef = bootstrap?.prepareWorktree?.baseBranch ?? thread.branch ?? sourceStatus.refName;
                 if (!baseRef) return yield* Effect.fail(new Error("Select a published base branch before starting this worker."));
                 const pinnedBase = yield* gitVcsDriver.resolveCommit({ cwd, revision: baseRef });
                 const publishedBase = yield* gitWorkflow.resolveRemoteTrackingCommit({ cwd, refName: baseRef, fallbackRemoteName: "origin" });

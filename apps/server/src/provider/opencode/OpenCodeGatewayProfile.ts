@@ -28,5 +28,5 @@ export function openCodeGatewayConfiguration(endpoint: string, catalog: WorkjetG
     };
     provider.models[route.model] = { name: model.displayName };
   }
-  return Schema.encodeSync(Schema.UnknownFromJsonString)({ ...configuration, provider: { ...providers, ...gatewayProviders }, ...(configuration.enabled_providers === undefined ? {} : { enabled_providers: [...new Set([...Schema.decodeUnknownSync(Schema.Array(Schema.String))(configuration.enabled_providers), ...Object.keys(gatewayProviders)])] }) });
+  return Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))({ ...configuration, provider: { ...providers, ...gatewayProviders }, ...(configuration.enabled_providers === undefined ? {} : { enabled_providers: [...new Set([...Schema.decodeUnknownSync(Schema.Array(Schema.String))(configuration.enabled_providers), ...Object.keys(gatewayProviders)])] }) });
 }

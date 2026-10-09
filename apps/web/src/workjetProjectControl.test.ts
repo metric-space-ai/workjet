@@ -60,13 +60,15 @@ describe("listWorkjetProjects", () => {
       await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
       expect(request).toHaveBeenCalledTimes(2);
       expect(request).toHaveBeenNthCalledWith(2, "managed:selected", {
-        action: "project.list", includeConfiguration: true,
+        action: "project.list",
+        includeConfiguration: true,
       });
     },
   );
 
   it("keeps a bounded legacy fallback for shells without either additive flag", async () => {
-    const request = vi.fn<WorkjetProjectControlPort>()
+    const request = vi
+      .fn<WorkjetProjectControlPort>()
       .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
       .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
       .mockResolvedValueOnce(result);

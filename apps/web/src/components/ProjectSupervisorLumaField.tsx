@@ -25,15 +25,22 @@ export function ProjectSupervisorLumaField(props: LumaFieldProps) {
           input: {},
         }),
   );
-  const matches = scope.phase === "ready"
-    ? (connections.data?.connections ?? []).filter((connection) =>
-        connection.status === "ready" &&
-        ctoxConnectionMatchesSelectedInstance(connection, scope.presentationInstanceId),
-      )
-    : [];
-  const connection = matches.length === 1 ? matches[0] : matches.find((entry) =>
-    entry.connectionId === `ctox-dev:${scope.presentationInstanceId?.replace(/^managed:/, "")}`,
-  );
+  const matches =
+    scope.phase === "ready"
+      ? (connections.data?.connections ?? []).filter(
+          (connection) =>
+            connection.status === "ready" &&
+            ctoxConnectionMatchesSelectedInstance(connection, scope.presentationInstanceId),
+        )
+      : [];
+  const connection =
+    matches.length === 1
+      ? matches[0]
+      : matches.find(
+          (entry) =>
+            entry.connectionId ===
+            `ctox-dev:${scope.presentationInstanceId?.replace(/^managed:/, "")}`,
+        );
   const snapshot = useEnvironmentQuery(
     connection === undefined || environment === null || scope.phase !== "ready"
       ? null
@@ -42,35 +49,63 @@ export function ProjectSupervisorLumaField(props: LumaFieldProps) {
           input: { connectionId: connection.connectionId, instanceId: connection.instanceId },
         }),
   );
-  const phase = scope.phase === "resolving" || connections.isPending || snapshot.isPending
-    ? "loading"
-    : scope.phase === "ready" && connection !== undefined && snapshot.data !== null
-      ? "ready"
-      : "unavailable";
-  return <ProjectSupervisorLumaSelect {...props} phase={phase}
-    profiles={phase === "ready" ? snapshot.data?.configuration?.workerProfiles ?? [] : []} />;
+  const phase =
+    scope.phase === "resolving" || connections.isPending || snapshot.isPending
+      ? "loading"
+      : scope.phase === "ready" && connection !== undefined && snapshot.data !== null
+        ? "ready"
+        : "unavailable";
+  return (
+    <ProjectSupervisorLumaSelect
+      {...props}
+      phase={phase}
+      profiles={phase === "ready" ? (snapshot.data?.configuration?.workerProfiles ?? []) : []}
+    />
+  );
 }
 
-export function ProjectSupervisorLumaSelect({ id, value, onChange, disabled, phase, profiles }: LumaFieldProps & {
+export function ProjectSupervisorLumaSelect({
+  id,
+  value,
+  onChange,
+  disabled,
+  phase,
+  profiles,
+}: LumaFieldProps & {
   readonly phase: "loading" | "ready" | "unavailable";
   readonly profiles: readonly WorkjetWorkerProfile[];
 }) {
   const selected = profiles.find((profile) => profile.id === value);
   return (
     <div className="grid min-w-0 gap-1">
-      <select id={id} aria-label="Supervisor Luma" className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-        value={value ?? ""} disabled={disabled || phase !== "ready"}
-        onChange={(event) => onChange(event.target.value || null)}>
+      <select
+        id={id}
+        aria-label="Supervisor Luma"
+        className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+        value={value ?? ""}
+        disabled={disabled || phase !== "ready"}
+        onChange={(event) => onChange(event.target.value || null)}
+      >
         <option value="">Current instance default</option>
-        {value !== null && selected === undefined && <option value={value}>Saved Luma unavailable · {value}</option>}
-        {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+        {value !== null && selected === undefined && (
+          <option value={value}>Saved Luma unavailable · {value}</option>
+        )}
+        {profiles.map((profile) => (
+          <option key={profile.id} value={profile.id}>
+            {profile.name}
+          </option>
+        ))}
       </select>
       <span className="break-words text-xs text-muted-foreground" role="status">
-        {phase === "loading" ? "Loading instance Lumas…"
-          : phase === "unavailable" ? "Instance Lumas are unavailable. The saved selection is retained."
-          : selected ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
-          : value !== null ? "The saved Luma is not in this instance’s current configuration."
-          : "Uses the existing instance default. Choose a Luma in Settings to configure its route."}
+        {phase === "loading"
+          ? "Loading instance Lumas…"
+          : phase === "unavailable"
+            ? "Instance Lumas are unavailable. The saved selection is retained."
+            : selected
+              ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
+              : value !== null
+                ? "The saved Luma is not in this instance’s current configuration."
+                : "Uses the existing instance default. Choose a Luma in Settings to configure its route."}
       </span>
     </div>
   );

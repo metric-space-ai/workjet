@@ -334,8 +334,7 @@ export function resolveProjectTeamModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   preferred?: ModelSelection | null,
 ): ModelSelection | null {
-  const concrete = (model: ServerProviderModel) =>
-    !model.isLegacy && !/[*?]/.test(model.slug);
+  const concrete = (model: ServerProviderModel) => !model.isLegacy && !/[*?]/.test(model.slug);
   const candidates = deriveProviderInstanceEntries(providers).filter(
     (entry) => entry.status !== "error" && entry.models.some(concrete),
   );
@@ -348,7 +347,8 @@ export function resolveProjectTeamModelSelection(
       : null;
   }
   const entry = resolveSelectableProviderInstanceEntry(candidates, undefined);
-  const model = entry?.models.find((model) => concrete(model) && model.isDefault) ??
+  const model =
+    entry?.models.find((model) => concrete(model) && model.isDefault) ??
     entry?.models.find(concrete);
   return entry && model ? { instanceId: entry.instanceId, model: model.slug } : null;
 }

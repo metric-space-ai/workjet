@@ -38,8 +38,9 @@ describe("CTOX project configuration contract", () => {
       const read = Schema.decodeUnknownSync(CtoxWorkjetProjectProjection, {
         onExcessProperty: "error",
       });
-      expect(read({ id: request.projectId, title: request.title, workingCopies: [], supervisorLumaId }))
-        .toMatchObject({ supervisorLumaId });
+      expect(
+        read({ id: request.projectId, title: request.title, workingCopies: [], supervisorLumaId }),
+      ).toMatchObject({ supervisorLumaId });
     }
     for (const supervisorLumaId of ["", "x".repeat(161), "bad\u0000id", 1]) {
       expect(() => decode({ ...request, supervisorLumaId })).toThrow();
@@ -47,8 +48,9 @@ describe("CTOX project configuration contract", () => {
   });
 
   it("negotiates optional configuration with a boolean flag", () => {
-    expect(decode({ action: "project.list", includeConfiguration: true, includeSupervisorLuma: true }))
-      .toEqual({ action: "project.list", includeConfiguration: true, includeSupervisorLuma: true });
+    expect(
+      decode({ action: "project.list", includeConfiguration: true, includeSupervisorLuma: true }),
+    ).toEqual({ action: "project.list", includeConfiguration: true, includeSupervisorLuma: true });
     expect(() => decode({ action: "project.list", includeSupervisorLuma: "true" })).toThrow();
     expect(decode({ action: "project.list", includeConfiguration: true })).toEqual({
       action: "project.list",

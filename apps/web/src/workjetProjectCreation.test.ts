@@ -47,7 +47,7 @@ describe("runWorkjetProjectCreation", () => {
       expect(port).toHaveBeenNthCalledWith(1, instanceId, {
         action: "project.list",
         includeConfiguration: true,
-      includeSupervisorLuma: true,
+        includeSupervisorLuma: true,
       });
     },
   );
@@ -197,7 +197,7 @@ describe("runWorkjetProjectCreation", () => {
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });
 
-  it("creates with the stable id when an older core cannot list projects", async () => {
+  it("creates with the stable id when an older shell lacks the Luma projection", async () => {
     const phases: string[] = [];
     const port = vi
       .fn()
@@ -222,7 +222,9 @@ describe("runWorkjetProjectCreation", () => {
       includeConfiguration: true,
       includeSupervisorLuma: true,
     });
-    expect(port).toHaveBeenNthCalledWith(2, instanceId, { action: "project.list" });
+    expect(port).toHaveBeenNthCalledWith(2, instanceId, {
+      action: "project.list", includeConfiguration: true,
+    });
     expect(port).toHaveBeenNthCalledWith(3, instanceId, request);
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });

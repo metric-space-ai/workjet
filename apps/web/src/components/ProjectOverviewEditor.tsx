@@ -221,14 +221,23 @@ export function ProjectOverviewEditor({
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-luma`}>
               Supervisor Luma
             </label>
-            {renderLumaField ? renderLumaField({
-              id: `${id}-supervisor-luma`, value: supervisorLumaId,
-              onChange: setSupervisorLumaId, disabled: state.pending,
-            }) : <ProjectSupervisorLumaSelect
-              id={`${id}-supervisor-luma`} value={supervisorLumaId}
-              onChange={setSupervisorLumaId} disabled={state.pending}
-              phase="unavailable" profiles={[]}
-            />}
+            {renderLumaField ? (
+              renderLumaField({
+                id: `${id}-supervisor-luma`,
+                value: supervisorLumaId,
+                onChange: setSupervisorLumaId,
+                disabled: state.pending,
+              })
+            ) : (
+              <ProjectSupervisorLumaSelect
+                id={`${id}-supervisor-luma`}
+                value={supervisorLumaId}
+                onChange={setSupervisorLumaId}
+                disabled={state.pending}
+                phase="unavailable"
+                profiles={[]}
+              />
+            )}
             <span className="text-xs text-muted-foreground">Jour fixe</span>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2">
               <select

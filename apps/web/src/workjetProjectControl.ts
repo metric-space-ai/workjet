@@ -74,7 +74,9 @@ export async function listWorkjetProjects(
     (configured.code === "unsupported" || configured.code === "guest_failed")
   ) {
     configured = await requestWorkjetProjectControl(
-      instanceId, { action: "project.list", includeConfiguration: true }, port,
+      instanceId,
+      { action: "project.list", includeConfiguration: true },
+      port,
     );
   }
   // Pre-configuration shells retain their legacy projection.

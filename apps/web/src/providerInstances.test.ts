@@ -76,12 +76,23 @@ describe("resolveProjectTeamModelSelection", () => {
     });
     const preferred = { instanceId: account.instanceId, model: account.models[0]!.slug };
     expect(resolveProjectTeamModelSelection([account], preferred)).toEqual(preferred);
-    expect(resolveProjectTeamModelSelection([account], {
-      ...preferred, instanceId: ProviderInstanceId.make("deleted_account"),
-    })).toBeNull();
-    expect(resolveProjectTeamModelSelection([{
-      ...account, models: [model("claude-*", true)],
-    }], preferred)).toBeNull();
+    expect(
+      resolveProjectTeamModelSelection([account], {
+        ...preferred,
+        instanceId: ProviderInstanceId.make("deleted_account"),
+      }),
+    ).toBeNull();
+    expect(
+      resolveProjectTeamModelSelection(
+        [
+          {
+            ...account,
+            models: [model("claude-*", true)],
+          },
+        ],
+        preferred,
+      ),
+    ).toBeNull();
   });
 
   it("does not substitute another account when the explicit route becomes unavailable", () => {
@@ -91,10 +102,17 @@ describe("resolveProjectTeamModelSelection", () => {
       enabled: false,
       models: [model("gpt-6.1-sol")],
     });
-    const fallback = { ...account, instanceId: ProviderInstanceId.make("codex_team"), enabled: true };
-    expect(resolveProjectTeamModelSelection([account, fallback], {
-      instanceId: account.instanceId, model: account.models[0]!.slug,
-    })).toBeNull();
+    const fallback = {
+      ...account,
+      instanceId: ProviderInstanceId.make("codex_team"),
+      enabled: true,
+    };
+    expect(
+      resolveProjectTeamModelSelection([account, fallback], {
+        instanceId: account.instanceId,
+        model: account.models[0]!.slug,
+      }),
+    ).toBeNull();
   });
 
   it("rejects disabled, unavailable, errored and legacy catalog models", () => {
@@ -121,7 +139,11 @@ describe("resolveProjectTeamModelSelection", () => {
       status: "warning",
       models: [model("gpt-6.1-sol")],
     });
-    const ready = { ...account, instanceId: ProviderInstanceId.make("codex_team"), status: "ready" as const };
+    const ready = {
+      ...account,
+      instanceId: ProviderInstanceId.make("codex_team"),
+      status: "ready" as const,
+    };
     expect(resolveProjectTeamModelSelection([account, ready])?.instanceId).toBe(ready.instanceId);
   });
 });

@@ -63,7 +63,8 @@ export const reconcileNativeWorkerFailure = Effect.fn(
   return Option.some<NativeSupervisorWorkerCompletion>({
     schemaVersion: 1,
     status: "failed",
-    reason: error.reason,
+    // Preserve the installed native completion vocabulary for opt-in failures.
+    reason: error.reason === "execution-policy-invalid" ? "capability-escalation" : error.reason,
   });
 });
 

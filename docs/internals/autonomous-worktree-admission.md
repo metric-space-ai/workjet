@@ -14,6 +14,21 @@ Absence preserves existing behavior. This is a policy reference, not a permit,
 a path grant, an approval bypass or a source of computer/account identity.
 The Owner project setting and its propagation are owned by Main.
 
+The dispatcher copies this reference from the server's saved parent into local
+worker configuration and the immutable `RemoteWorkerRequest.executionPolicy`.
+It accepts a reference only for that parent's project and saved team membership.
+The remote receiver preserves it in the target worker configuration, and rejects
+a foreign project or missing team role before storing a request or touching Git.
+Changed, removed or newly added policy references reject a retry of an older
+remote request. Reconciliation of an already recorded native result starts no
+new worker. The source reports invalid references as `execution-policy-invalid`;
+the existing native completion contract uses `capability-escalation`.
+The request digest includes the reference; an older
+receiver stripping the field cannot claim the same source request identity.
+No policy is accepted from the worker-dispatch MCP input. These checks preserve
+the policy at the provider boundary; they do not verify native current policy
+or supply a sandbox permit.
+
 The common provider boundary currently **rejects this mode for every harness**.
 No supported autonomous-worktree policy mode is advertised. In particular,
 `full-access`, Codex's `workspace-write`, Claude's `acceptEdits`, and a

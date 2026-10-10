@@ -46,7 +46,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { usePrimarySettings } from "../../hooks/useSettings";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import { workjetComputerMembership } from "../../workjetComputerMembership";
+import { includeSavedComputers } from "../../workjetComputerCatalog";
+import { workjetEnvironmentTargetOptions } from "../settings/workjetEnvironmentTargetOptions";
 import { createPortal } from "react-dom";
 import type { ComputerEditorState } from "./ComposerWorkjetTargetControls";
 import {
@@ -115,7 +122,6 @@ import { ComposerBar } from "./ComposerBar";
 import { ComposerDictationButton } from "./ComposerDictationButton";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import {
-  COMPOSER_COMPUTER_LOCKED_REASON,
   ComposerComputerControl,
   ComposerManualTargetControls,
   ComposerSystemPromptControl,
@@ -537,6 +543,7 @@ export interface ChatComposerProps {
   selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
   /** Moves a draft to another environment; the caller guards started threads. */
   onDraftEnvironmentChange?: ((environmentId: EnvironmentId) => void) | undefined;
+  computerChangeDisabledReason?: string | null;
   onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
   /** Routes to Settings → Workjet; the composer never hosts a second surface. */
   onOpenWorkjetSettings: () => void;
@@ -628,6 +635,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     workjetManagedInstructions,
     selectableEnvironmentIds,
     onDraftEnvironmentChange,
+    computerChangeDisabledReason,
     onWorkjetRoleChange,
     onOpenWorkjetSettings,
     focusComposer,
@@ -908,23 +916,45 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * optional chain: the one at the footer never had one either.
    */
   const businessOsCodeScope = useBusinessOsCodeScope();
+  const navigate = useNavigate();
+  const primaryWorkjet = usePrimarySettings((primary) => primary.workjet);
+  const { environments: computerEnvironments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const membership = useSyncExternalStore(
+    workjetComputerMembership.subscribe,
+    workjetComputerMembership.getSnapshot,
+    workjetComputerMembership.getSnapshot,
+  );
+  const nativeComputers =
+    membership.instanceId === businessOsCodeScope.presentationInstanceId
+      ? membership.computers
+      : [];
   const workjetComputers = useMemo(
     () =>
-      settings.workjet.computers.filter((computer) =>
-        businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId),
-      ),
-    [businessOsCodeScope, settings.workjet.computers],
+      includeSavedComputers(
+        primaryWorkjet,
+        workjetEnvironmentTargetOptions(computerEnvironments),
+        primaryEnvironmentId,
+      ).computers,
+    [computerEnvironments, primaryEnvironmentId, primaryWorkjet],
   );
   const scopedComputerIds = useMemo(
-    () => new Set(workjetComputers.map((computer) => computer.id)),
-    [workjetComputers],
+    () =>
+      new Set(
+        workjetComputers
+          .filter((computer) =>
+            businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId),
+          )
+          .map((computer) => computer.id),
+      ),
+    [businessOsCodeScope, workjetComputers],
   );
   const workjetWorkers = useMemo(
     () =>
-      settings.workjet.workerProfiles.filter((worker) => scopedComputerIds.has(worker.computerId)),
-    [scopedComputerIds, settings.workjet.workerProfiles],
+      primaryWorkjet.workerProfiles.filter((worker) => scopedComputerIds.has(worker.computerId)),
+    [scopedComputerIds, primaryWorkjet.workerProfiles],
   );
-  const workjetLlmRoutes = settings.workjet.llmRoutes;
+  const workjetLlmRoutes = primaryWorkjet.llmRoutes;
   // Persisted with the draft (F1): the worker's model lands in the shared
   // per-instance selection, so a component-local worker choice that dies on
   // unmount left the bar in "Manual" WITH the worker's model — a corrupted
@@ -1113,7 +1143,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // environment selector uses. Only drafts move — a started thread's
       // session owns its environment. An unresolvable computer changes
       // nothing; the Computer control shows the mismatch instead of lying.
-      if (!composerTargetIsThread && onDraftEnvironmentChange !== undefined) {
+      if (onDraftEnvironmentChange !== undefined) {
         const workerEnvironmentId = workjetComputers.find(
           (computer) => computer.id === worker.computerId,
         )?.environmentId;
@@ -1179,11 +1209,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * live session between machines is a separate project.
    */
   const composerComputerDisabledReason =
-    composerTargetIsThread || routeKind === "server"
-      ? COMPOSER_COMPUTER_LOCKED_REASON
-      : onDraftEnvironmentChange === undefined
-        ? "This draft cannot change its environment here."
-        : null;
+    computerChangeDisabledReason ??
+    (onDraftEnvironmentChange === undefined ? "Computer selection is unavailable here." : null);
   const workerBoundComputer =
     selectedWorkjetWorker === null
       ? null
@@ -1210,15 +1237,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           : null;
   const handleSelectComposerComputer = useCallback(
     (computerId: string) => {
-      if (composerTargetIsThread || onDraftEnvironmentChange === undefined) return;
+      if (composerComputerDisabledReason || onDraftEnvironmentChange === undefined) return;
       const computer = workjetComputers.find((candidate) => candidate.id === computerId);
       if (computer === undefined) return;
+      if (!businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId))
+        return;
+      if (
+        computerEnvironments.find(
+          (environment) => environment.environmentId === computer.environmentId,
+        )?.connection.phase !== "connected"
+      )
+        return;
       if (computer.environmentId === environmentId) return;
       if (!selectableEnvironmentIds.includes(computer.environmentId)) return;
       onDraftEnvironmentChange(computer.environmentId);
     },
     [
-      composerTargetIsThread,
+      composerComputerDisabledReason,
+      businessOsCodeScope,
+      computerEnvironments,
       environmentId,
       onDraftEnvironmentChange,
       selectableEnvironmentIds,
@@ -1227,6 +1264,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   useEffect(() => {
     if (
+      composerTargetIsThread ||
       composerComputerResolution.source !== "selected" ||
       composerComputerResolution.computer === null
     ) {
@@ -1236,6 +1274,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [
     composerComputerResolution.computer,
     composerComputerResolution.source,
+    composerTargetIsThread,
     handleSelectComposerComputer,
   ]);
 
@@ -4059,6 +4098,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           key={environmentId}
                           editor={{ state: computerEditorState, update: setComputerEditorState }}
                           computers={workjetComputers}
+                          registeredComputers={nativeComputers}
+                          computerAvailability={Object.fromEntries(
+                            workjetComputers.map((computer) => {
+                              const connection = computerEnvironments.find(
+                                (environment) =>
+                                  environment.environmentId === computer.environmentId,
+                              )?.connection;
+                              const status =
+                                connection?.phase === "connected"
+                                  ? "Online"
+                                  : connection?.phase === "offline"
+                                    ? "Offline"
+                                    : "Not connected";
+                              const reason = !businessOsCodeScopeContainsEnvironment(
+                                businessOsCodeScope,
+                                computer.environmentId,
+                              )
+                                ? "This computer has no coding route in the selected Business OS."
+                                : connection?.phase !== "connected"
+                                  ? (connection?.error ?? status)
+                                  : !selectableEnvironmentIds.includes(computer.environmentId) &&
+                                      computer.environmentId !== environmentId
+                                    ? `Project checkout missing on ${computer.label}.`
+                                    : null;
+                              return [computer.id, { status, reason }];
+                            }),
+                          )}
                           selectedComputerId={composerSelectedComputerId}
                           activeEnvironmentId={environmentId}
                           selectableEnvironmentIds={selectableEnvironmentIds}
@@ -4066,7 +4132,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           mismatchNote={composerComputerMismatchNote}
                           onSelectComputer={handleSelectComposerComputer}
                           onAddComputer={() => {
-                            window.location.hash = "#/settings/computers";
+                            void navigate({ to: "/settings/computers" });
                           }}
                         />
                       </>

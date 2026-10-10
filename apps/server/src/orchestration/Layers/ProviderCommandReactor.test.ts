@@ -19,6 +19,7 @@ import { createModelSelection } from "@workjet/shared/model";
 import {
   ApprovalRequestId,
   CommandId,
+  EnvironmentId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
@@ -3527,6 +3528,78 @@ describe("ProviderCommandReactor", () => {
       expect(thread?.session?.runtimeMode).toBe("full-access");
     }),
   );
+
+  it("uses copied computer history in a fresh session on the destination checkout", async () => {
+    const harness = await createHarness({ initialProviderSession: true });
+    const now = "2026-01-01T00:00:00.000Z";
+    const messages = [
+      {
+        messageId: asMessageId("source-computer-user"),
+        role: "user" as const,
+        text: "Remember our deployment decision.",
+        createdAt: now,
+      },
+      {
+        messageId: asMessageId("source-computer-assistant"),
+        role: "assistant" as const,
+        text: "The decision is recorded.",
+        createdAt: now,
+      },
+    ];
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.continuation.import",
+        commandId: CommandId.make("destination-copy"),
+        threadId: ThreadId.make("thread-1"),
+        sourceEnvironmentId: EnvironmentId.make("source-computer"),
+        sourceLabel: "Source computer",
+        createThread: {
+          projectId: asProjectId("project-1"),
+          title: "Thread",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+        },
+        messages,
+        createdAt: now,
+      }),
+    );
+    await harness.drain();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("destination-hostname"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("destination-current"),
+          role: "user",
+          text: "Run hostname in this checkout.",
+          attachments: [],
+        },
+        interactionMode: "default",
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+    expect(harness.startSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      resumePolicy: "fresh",
+      historyContinuation: {
+        messageIds: messages.map((message) => message.messageId),
+        pending: true,
+      },
+    });
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: "Run hostname in this checkout.",
+      importedHistory: messages.map(({ messageId: id, role, text }) => ({ id, role, text })),
+    });
+  });
 
   it("keeps native Greppy history complete without reporting text-prompt trimming", async () => {
     const harness = await createHarness({ initialProviderSession: true });

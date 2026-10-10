@@ -1,5 +1,6 @@
 import {
   CommandId,
+  EnvironmentId,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   ProjectId,
@@ -101,6 +102,99 @@ const freshReadModel: OrchestrationReadModel = {
   ],
 };
 it.layer(NodeServices.layer)("static history import decider", (it) => {
+  it.effect("copies a complete transcript atomically across multiple import batches", () =>
+    Effect.gen(function* () {
+      const messages = Array.from({ length: 450 }, (_, index) => ({
+        messageId: MessageId.make(`copied-${index}`),
+        role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+        text: `Recorded decision ${index}`,
+        createdAt: NOW,
+      }));
+      const result = yield* decideOrchestrationCommand({
+        readModel: freshReadModel,
+        command: {
+          type: "thread.continuation.import",
+          commandId: CommandId.make("computer-copy"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages,
+          createdAt: NOW,
+        },
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(
+        events
+          .filter((event) => event.type === "thread.message-sent")
+          .map((event) => event.payload.messageId),
+      ).toEqual(messages.map((message) => message.messageId));
+      expect(events.at(-1)).toMatchObject({
+        type: "thread.activity-appended",
+        payload: {
+          activity: {
+            kind: "provider.history.transfer",
+            payload: {
+              historyContinuation: {
+                pending: true,
+                messageIds: messages.map((message) => message.messageId),
+              },
+            },
+          },
+        },
+      });
+      expect(
+        events.some(
+          (event) =>
+            event.type === "thread.turn-start-requested" || event.type === "thread.session-set",
+        ),
+      ).toBe(false);
+    }),
+  );
+
+  it.effect("rejects conflicting destination history without emitting replacement events", () =>
+    Effect.gen(function* () {
+      const target = {
+        ...readModel,
+        threads: [
+          {
+            ...readModel.threads[0]!,
+            messages: [
+              {
+                id: MESSAGE_ID,
+                role: "user" as const,
+                text: "Newer destination decision",
+                attachments: [],
+                turnId: null,
+                streaming: false,
+                createdAt: NOW,
+                updatedAt: NOW,
+              },
+            ],
+          },
+        ],
+      };
+      const failure = yield* decideOrchestrationCommand({
+        readModel: target,
+        command: {
+          type: "thread.continuation.import",
+          commandId: CommandId.make("conflicting-copy"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages: bootstrapCommand.messages,
+          createdAt: NOW,
+        },
+      }).pipe(Effect.flip);
+      expect(failure).toMatchObject({
+        _tag: "OrchestrationCommandInvariantError",
+        detail: expect.stringContaining("conflicting conversation history"),
+      });
+      expect(target.threads[0]!.messages[0]!.text).toBe("Newer destination decision");
+    }),
+  );
+
   it.effect("emits messages without starting a provider turn or session", () =>
     Effect.gen(function* () {
       const result = yield* decideOrchestrationCommand({

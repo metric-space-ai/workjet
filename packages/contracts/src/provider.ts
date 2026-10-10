@@ -56,6 +56,7 @@ export type ProviderSession = typeof ProviderSession.Type;
 export const ProviderHistoryContinuation = Schema.Struct({
   messageIds: Schema.Array(MessageId),
   pending: Schema.Boolean,
+  transferId: Schema.optional(EventId),
 });
 export type ProviderHistoryContinuation = typeof ProviderHistoryContinuation.Type;
 

@@ -95,6 +95,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { threadHasQueuedTurnStart } from "./orchestration/decider.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as WorkjetCrossModeCtoxClient from "./workjet/crossmode/WorkjetCrossModeCtoxClient.ts";
@@ -1567,6 +1568,44 @@ const makeWsRpcLayer = (
               ? workerBroker.value.respond(input)
               : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
             { "rpc.aggregate": "worker-dispatch" },
+          ),
+
+        [ORCHESTRATION_WS_METHODS.getThreadContinuation]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadContinuation,
+            Effect.gen(function* () {
+              const snapshot = yield* projectionSnapshotQuery.getThreadDetailSnapshot(
+                input.threadId,
+              );
+              if (Option.isNone(snapshot))
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "The source conversation was not found.",
+                });
+              const thread = snapshot.value.thread;
+              const exportedAt = yield* nowIso;
+              if (
+                thread.deletedAt !== null ||
+                thread.session?.status === "starting" ||
+                thread.session?.status === "running" ||
+                thread.messages.some((message) => message.streaming) ||
+                threadHasQueuedTurnStart(thread, exportedAt)
+              )
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "Finish the source turn before switching computers.",
+                });
+              return snapshot.value;
+            }).pipe(
+              Effect.mapError((cause) =>
+                cause instanceof OrchestrationGetSnapshotError
+                  ? cause
+                  : new OrchestrationGetSnapshotError({
+                      message:
+                        "Could not read the complete source conversation. No history was copied.",
+                      cause,
+                    }),
+              ),
+            ),
+            { "rpc.aggregate": "thread" },
           ),
 
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>

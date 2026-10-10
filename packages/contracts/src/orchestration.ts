@@ -34,6 +34,7 @@ export const ORCHESTRATION_WS_METHODS = {
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   getArchivedTeamWorkerDetail: "orchestration.getArchivedTeamWorkerDetail",
+  getThreadContinuation: "orchestration.getThreadContinuation",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
@@ -900,6 +901,25 @@ const ThreadTurnStartBootstrap = Schema.Struct({
 
 export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
 
+/** A portable transcript; provider sessions, grants and source filesystem paths stay local. */
+const ThreadContinuationImportCommand = Schema.Struct({
+  type: Schema.Literal("thread.continuation.import"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createThread: ThreadBootstrapCreateThread,
+  sourceEnvironmentId: EnvironmentId,
+  sourceLabel: TrimmedNonEmptyString,
+  messages: Schema.Array(
+    Schema.Struct({
+      messageId: MessageId,
+      role: Schema.Literals(["user", "assistant"]),
+      text: Schema.String,
+      createdAt: IsoDateTime,
+    }),
+  ),
+  createdAt: IsoDateTime,
+});
+
 export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
   // Server continuations use the goal revision as an admission fence.
@@ -990,6 +1010,7 @@ const ThreadSessionStopCommand = Schema.Struct({
 });
 
 const DispatchableClientOrchestrationCommand = Schema.Union([
+  ThreadContinuationImportCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1020,6 +1041,7 @@ export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
 
 export const ClientOrchestrationCommand = Schema.Union([
+  ThreadContinuationImportCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1793,6 +1815,10 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedErrorClass
 }
 
 export const OrchestrationRpcSchemas = {
+  getThreadContinuation: {
+    input: Schema.Struct({ threadId: ThreadId }),
+    output: OrchestrationThreadDetailSnapshot,
+  },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,

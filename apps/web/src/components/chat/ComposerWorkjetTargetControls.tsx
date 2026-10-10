@@ -18,6 +18,7 @@
  */
 import type {
   EnvironmentId,
+  CtoxWorkjetComputerProjection,
   WorkjetComputer,
   WorkjetGatewayModelSummary,
   WorkjetGatewayProvider,
@@ -172,6 +173,10 @@ export interface ComposerComputerControlProps {
     readonly update: (update: (current: ComputerEditorState) => ComputerEditorState) => void;
   };
   readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly registeredComputers?: ReadonlyArray<CtoxWorkjetComputerProjection>;
+  readonly computerAvailability?: Readonly<
+    Record<string, { readonly status: string; readonly reason: string | null }>
+  >;
   /** The computer whose environment the composer currently targets, if any. */
   readonly selectedComputerId: string | null;
   readonly activeEnvironmentId: EnvironmentId;
@@ -218,6 +223,7 @@ export function ComposerComputerChoiceList(
         );
         const reason =
           (props.busy ? "Saving computer settings…" : props.disabledReason) ??
+          props.computerAvailability?.[computer.id]?.reason ??
           (projectAvailable ? null : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT);
         return (
           <div key={computer.id} className="flex min-w-0 items-center gap-1 rounded-md">
@@ -235,9 +241,10 @@ export function ComposerComputerChoiceList(
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{computer.label}</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {projectAvailable
-                    ? workjetComputerKindLabel(computer.presentationKind)
-                    : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
+                  {props.computerAvailability?.[computer.id]?.status
+                    ? `${props.computerAvailability[computer.id]!.status} · `
+                    : ""}
+                  {reason ?? workjetComputerKindLabel(computer.presentationKind)}
                 </span>
               </span>
               {computer.id === props.selectedComputerId ? (
@@ -257,6 +264,22 @@ export function ComposerComputerChoiceList(
           </div>
         );
       })}
+      {props.registeredComputers
+        ?.filter((computer) => !props.computers.some((configured) => configured.id === computer.id))
+        .map((computer) => (
+          <button
+            key={`native-${computer.id}`}
+            type="button"
+            disabled
+            title={`No coding connection is registered for ${computer.displayName}. Open Settings → Computers to configure one.`}
+            className="block w-full rounded-md px-2 py-2 text-left text-sm disabled:opacity-50"
+          >
+            <span className="block font-medium">{computer.displayName}</span>
+            <span className="block text-xs text-muted-foreground">
+              Connection not observed · No coding connection
+            </span>
+          </button>
+        ))}
       {props.onAddComputer ? (
         <Button
           type="button"

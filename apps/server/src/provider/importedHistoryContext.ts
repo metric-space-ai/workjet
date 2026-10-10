@@ -14,10 +14,14 @@ import { ProviderAdapterRequestError } from "./Errors.ts";
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const decodeHistoryContinuation = Schema.decodeUnknownOption(ProviderHistoryContinuation);
 
-export function readHistoryContinuation(payload: unknown): ProviderHistoryContinuation | undefined {
-  if (typeof payload !== "object" || payload === null || !("historyContinuation" in payload))
-    return undefined;
-  return Option.getOrUndefined(decodeHistoryContinuation(payload.historyContinuation));
+export function readHistoryContinuation(
+  payload: unknown,
+  field: "historyContinuation" | "computerContinuation" = "historyContinuation",
+): ProviderHistoryContinuation | undefined {
+  if (typeof payload !== "object" || payload === null || !(field in payload)) return undefined;
+  return Option.getOrUndefined(
+    decodeHistoryContinuation((payload as Readonly<Record<string, unknown>>)[field]),
+  );
 }
 
 export const IMPORTED_HISTORY_CONTEXT_NOTICE =

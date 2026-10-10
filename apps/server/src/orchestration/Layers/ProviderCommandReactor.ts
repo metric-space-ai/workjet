@@ -104,6 +104,7 @@ type ProviderIntentEvent = Extract<
   {
     type:
       | "thread.meta-updated"
+      | "thread.activity-appended"
       | "thread.runtime-mode-set"
       | "thread.turn-start-requested"
       | "thread.turn-interrupt-requested"
@@ -623,25 +624,44 @@ const make = Effect.gen(function* () {
       activeSession !== undefined &&
       (activeSession.providerInstanceId !== desiredInstanceId ||
         activeSession.model !== desiredModelSelection.model);
+    const persistedBinding = Option.isSome(providerSessionDirectory)
+      ? Option.getOrUndefined(yield* providerSessionDirectory.value.getBinding(threadId))
+      : undefined;
+    const persistedContinuation = readHistoryContinuation(persistedBinding?.runtimePayload);
+    const transferredContinuation =
+      readHistoryContinuation(persistedBinding?.runtimePayload, "computerContinuation") ??
+      readHistoryContinuation(
+        thread.activities.findLast((activity) => activity.kind === "provider.history.transfer")
+          ?.payload,
+      );
+    const newHistoryTransfer =
+      transferredContinuation !== undefined &&
+      transferredContinuation.transferId !== persistedContinuation?.transferId;
     const freshSession =
+      newHistoryTransfer ||
       targetChanged ||
       (activeSession === undefined &&
         thread.session !== null &&
         (thread.workjetConfig.schemaVersion !== 2 ||
           thread.workjetConfig.ctoxCrewChat === undefined));
-    const historyContinuation: ProviderHistoryContinuation | undefined = freshSession
-      ? {
-          messageIds: thread.messages
-            .filter(
-              (message) =>
-                message.id !== options?.currentMessageId &&
-                !message.streaming &&
-                (message.role === "user" || message.role === "assistant"),
-            )
-            .map((message) => message.id),
-          pending: true,
-        }
-      : undefined;
+    const historyContinuation: ProviderHistoryContinuation | undefined = newHistoryTransfer
+      ? transferredContinuation
+      : freshSession
+        ? {
+            messageIds: thread.messages
+              .filter(
+                (message) =>
+                  message.id !== options?.currentMessageId &&
+                  !message.streaming &&
+                  (message.role === "user" || message.role === "assistant"),
+              )
+              .map((message) => message.id),
+            pending: true,
+            ...(persistedContinuation?.transferId
+              ? { transferId: persistedContinuation.transferId }
+              : {}),
+          }
+        : undefined;
     const project = yield* resolveProject(thread.projectId);
     let effectiveCwd = resolveThreadWorkspaceCwd({
       thread,
@@ -1749,6 +1769,27 @@ const make = Effect.gen(function* () {
       eventType: event.type,
     });
     switch (event.type) {
+      case "thread.activity-appended": {
+        if (
+          event.payload.activity.kind !== "provider.history.transfer" ||
+          Option.isNone(providerSessionDirectory)
+        )
+          return;
+        const continuation = readHistoryContinuation(event.payload.activity.payload);
+        const thread = yield* resolveThread(event.payload.threadId);
+        if (!continuation || !thread) return;
+        const directory = providerSessionDirectory.value;
+        const binding = Option.getOrUndefined(yield* directory.getBinding(thread.id));
+        const info = yield* providerService.getInstanceInfo(thread.modelSelection.instanceId);
+        yield* directory.upsert({
+          ...binding,
+          threadId: thread.id,
+          provider: info.driverKind,
+          providerInstanceId: thread.modelSelection.instanceId,
+          runtimePayload: { computerContinuation: continuation },
+        });
+        return;
+      }
       case "thread.meta-updated":
         yield* threadTitleRegenerationWorker.enqueue(event);
         return;
@@ -2119,6 +2160,8 @@ const make = Effect.gen(function* () {
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
         (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
+        (event.type === "thread.activity-appended" &&
+          event.payload.activity.kind === "provider.history.transfer") ||
         event.type === "thread.runtime-mode-set" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||

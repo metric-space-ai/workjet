@@ -86,6 +86,35 @@ describe("computer popup selection and details", () => {
     detailComputerId: null,
   };
 
+  it("lists registered network computers and concrete connection or checkout reasons", () => {
+    const markup = renderToStaticMarkup(
+      ComposerComputerChoiceList({
+        ...base,
+        onSelectComputer: () => undefined,
+        onOpenDetails: () => undefined,
+        computerAvailability: {
+          local: { status: "Online", reason: null },
+          remote: { status: "Offline", reason: "gpu3 is offline." },
+        },
+        registeredComputers: [
+          {
+            id: "native-gpu1",
+            displayName: "gpu1-a6000",
+            hostingMode: "self_hosted",
+            status: "assigned",
+            capabilities: [],
+          },
+        ],
+      }),
+    );
+    expect(markup).toContain("Online");
+    expect(markup).toContain("Offline");
+    expect(markup).toContain("gpu3 is offline.");
+    expect(markup).toContain("gpu1-a6000");
+    expect(markup).toContain("No coding connection");
+    expect(markup).not.toContain("Moving a started session");
+  });
+
   it("keeps a save in progress visible and blocks reopening after a responsive remount", () => {
     const markup = renderToStaticMarkup(
       <ComposerComputerControlView

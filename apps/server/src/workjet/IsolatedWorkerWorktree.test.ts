@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeSqliteClient from "@effect/sql-sqlite-node/SqliteClient";
+import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
 import { GitCommandError } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -76,6 +76,16 @@ const fixture = Effect.gen(function* () {
         adminIno: String(Option.getOrThrow(admin.ino)),
       };
     });
+  const storedReceipt = () =>
+    Effect.gen(function* () {
+      return Option.getOrThrow(yield* (yield* Store.IsolatedWorkerWorktreeStore).get("worker-one"));
+    }).pipe(
+      Effect.provide(
+        Store.layer.pipe(
+          Layer.provide(NodeSqliteClient.layer({ filename: path.join(root, "state.sqlite") })),
+        ),
+      ),
+    );
   const native = Layer.mock(NativeWorkerWorktreeRemover)({
     capture: (cwd, kind) => {
       assert.equal(kind, "isolated");
@@ -87,9 +97,7 @@ const fixture = Effect.gen(function* () {
       Effect.gen(function* () {
         state.publishes++;
         assert.deepEqual(yield* capture(captured.worktreePath), captured);
-        const receipt = Option.getOrThrow(
-          yield* (yield* Store.IsolatedWorkerWorktreeStore).get("worker-one"),
-        );
+        const receipt = yield* storedReceipt();
         assert.deepEqual(receipt.custody, captured);
         if (state.beforePublish) {
           state.beforePublish = false;
@@ -144,7 +152,7 @@ const fixture = Effect.gen(function* () {
     );
   const allocate = () =>
     Effect.gen(function* () {
-      yield* runMigrations();
+      yield* runMigrations().pipe(Effect.orDie);
       return yield* (yield* IsolatedWorkerWorktree).allocate(intent);
     }).pipe(Effect.provide(runtime()));
   const receipt = () =>
@@ -169,7 +177,10 @@ const fixture = Effect.gen(function* () {
   };
 });
 const test = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.scoped, Effect.provide(processLayer), Effect.provide(NodeServices.layer));
+  effect.pipe(
+    Effect.scoped,
+    Effect.provide(processLayer.pipe(Layer.provideMerge(NodeServices.layer))),
+  );
 
 it.effect(
   "seeds a private Git history without other branches, source configuration or alternates",
@@ -321,4 +332,45 @@ it.effect("keeps a missing original capture as a failure instead of creating a n
       assert.equal(h.state.publishes, 1);
     }),
   ),
+);
+
+it.effect(
+  "ignores inherited Git redirects, config injection and external templates during preparation",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const h = yield* fixture;
+        const variables = {
+          GIT_DIR: h.path.join(h.source, ".git"),
+          GIT_WORK_TREE: h.source,
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "filter.external.smudge",
+          GIT_CONFIG_VALUE_0: "false",
+          GIT_TEMPLATE_DIR: h.source,
+        };
+        const captured = yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            const previous = Object.fromEntries(
+              Object.keys(variables).map((key) => [key, process.env[key]]),
+            );
+            Object.assign(process.env, variables);
+            return previous;
+          }),
+          () => h.allocate(),
+          (previous) =>
+            Effect.sync(() => {
+              for (const [key, value] of Object.entries(previous)) {
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+              }
+            }),
+        );
+        assert.equal(captured.worktreePath, h.intent.destination);
+        assert.equal(
+          yield* h.fs.readFileString(h.path.join(captured.worktreePath, "visible.txt")),
+          "approved\n",
+        );
+        assert.equal((yield* h.git(h.source, ["show-ref"])).stdout, h.initialRefs);
+      }),
+    ),
 );

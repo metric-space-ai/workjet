@@ -2,7 +2,7 @@
 
 ## Result and scope
 
-**9/12 minimum live cells pass** as of 2026-10-10 02:45 UTC. Claude Code, Codex CLI and Grok CLI / Grok Build each execute twenty strictly sequential native tools with Claude Opus, GPT Sol and Grok. OpenCode's three cells are running next. Additional Greppy, MiniMax Code, Pi and universal remote worker acceptance remain open.
+**12/12 minimum live cells pass** as of 2026-10-10 03:49 UTC. Claude Code, Codex CLI, Grok CLI / Grok Build and OpenCode each execute twenty strictly sequential native tools with Claude Opus, GPT Sol and Grok. Additional Greppy, MiniMax Code, Pi and universal remote worker acceptance remain open.
 
 Michael requested every harness through Workjet's existing Rust CLIProxyAPI, using models from real connected accounts. Work is confined to the durable `~/.local/state/workjet-launchpads/harness-proxy-fix` clone, based on `519aaba16528e4534dd948ac3e3cd184c099083b`. The supervisor merges; this thread has made no merge or installed-app replacement.
 
@@ -44,7 +44,7 @@ Keeping a connected model when switching routed harnesses is intentional (`apps/
 | Claude Code | Pass 20/20; restart continuation 20/20 | Pass 20/20 | Pass 20/20 |
 | Codex CLI | Pass 20/20 | Pass 20/20 | Pass 20/20 |
 | Grok CLI / Grok Build | Pass 20/20 | Pass 20/20 | Pass 20/20 |
-| OpenCode | Pass 20/20 | Pass 20/20 | Running |
+| OpenCode | Pass 20/20 | Pass 20/20 | Pass 20/20 |
 
 The evidence checks actual native calls and matching results, strict sequential execution, exact numbered printf output, success status and no tool errors. Every harness uses the real account-backed Rust host. No HTTP-only or mocked result counts as a live cell.
 

@@ -7542,7 +7542,7 @@ function ChatViewContent(props: ChatViewProps) {
                                     ? "Finish the current turn before switching computers."
                                     : activeThread?.workjetConfig.schemaVersion === 2 &&
                                         activeThread.workjetConfig.ctoxCrewChat !== undefined
-                                      ? "Choose this native Luma's computer in Business OS configuration."
+                                      ? "Choose this Luma's computer in Business OS configuration."
                                       : null
                               }
                               onWorkjetRoleChange={handleWorkjetRoleChange}

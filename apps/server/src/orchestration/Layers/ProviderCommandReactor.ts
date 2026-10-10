@@ -754,6 +754,7 @@ const make = Effect.gen(function* () {
         !Equal.equals(previousModelSelection, requestedModelSelection);
 
       if (
+        !newHistoryTransfer &&
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&

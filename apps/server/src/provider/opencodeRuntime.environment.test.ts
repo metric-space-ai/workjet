@@ -7,6 +7,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Layer from "effect/Layer";
+import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import { OpenCodeRuntime, OpenCodeRuntimeLive } from "./opencodeRuntime.ts";
 
 const fixture = `#!/usr/bin/env node
@@ -32,17 +34,23 @@ const observeSpawnedConfiguration = (environment?: NodeJS.ProcessEnv) =>
         binaryPath,
         ...(environment === undefined ? {} : { environment }),
       });
-      const response = yield* Effect.promise(() => fetch(server.url).then((r) => r.text()));
+      const http = yield* HttpClient.HttpClient;
+      const response = yield* http.get(server.url).pipe(Effect.flatMap((response) => response.text));
       const parsed = yield* Schema.decodeUnknownEffect(
         Schema.fromJsonString(Schema.Struct({ configuration: Schema.String })),
       )(response);
       return parsed.configuration;
-    }).pipe(Effect.provide(OpenCodeRuntimeLive), Effect.provide(NodeServices.layer)),
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(OpenCodeRuntimeLive.pipe(Layer.provide(NodeServices.layer)), FetchHttpClient.layer),
+      ),
+    ),
   );
 
 it.effect("passes explicit gateway model configuration to the native child", () =>
   Effect.gen(function* () {
-    const configuration = '{"provider":{"workjet-gateway-claude":{"npm":"@ai-sdk/openai","models":{"claude-opus-5-5":{"name":"Opus"}}}}}';
+    const configuration =
+      '{"provider":{"workjet-gateway-claude":{"npm":"@ai-sdk/openai","models":{"claude-opus-5-5":{"name":"Opus"}}}}}';
     const observed = yield* observeSpawnedConfiguration({
       ...process.env,
       OPENCODE_CONFIG_CONTENT: configuration,

@@ -38,7 +38,6 @@ export function isCurrentGithubLinuxSshReceipt(receipt: Record<string, unknown>,
     !current ||
     receipt.host !== "github-actions" ||
     owner !== current.owner ||
-
     receipt.task !== "ssh-server-linux-x64"
   )
     return false;
@@ -49,7 +48,10 @@ export function isCurrentGithubLinuxSshReceipt(receipt: Record<string, unknown>,
   if (typeof producerAttempt !== "string" || !/^[1-9][0-9]*$/u.test(producerAttempt)) return false;
   const attempt = Number(producerAttempt);
   if (!Number.isSafeInteger(attempt) || attempt > Number(current.github.runAttempt)) return false;
-  if (receipt.owner !== `github-actions:${current.github.repositoryId}:${current.github.runId}:${producerAttempt}`)
+  if (
+    receipt.owner !==
+    `github-actions:${current.github.repositoryId}:${current.github.runId}:${producerAttempt}`
+  )
     return false;
   return Object.entries(current.github).every(
     ([name, value]) => name === "runAttempt" || fields[name] === value,

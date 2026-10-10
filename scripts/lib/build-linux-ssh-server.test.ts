@@ -182,8 +182,12 @@ it("stages an earlier same-run producer on a packaging-job retry", () =>
     await NodeFSP.writeFile(receiptPath, JSON.stringify(earlier));
     const result = await stagePrebuiltLinuxSshServer(options);
     NodeAssert.equal(result.archiveSha256, receipt.workjetArchiveSha256);
-    await NodeFSP.writeFile(receiptPath, JSON.stringify({
-      ...earlier, workjetSourceCommit: "wrong",
-    }));
+    await NodeFSP.writeFile(
+      receiptPath,
+      JSON.stringify({
+        ...earlier,
+        workjetSourceCommit: "wrong",
+      }),
+    );
     await NodeAssert.rejects(stagePrebuiltLinuxSshServer(options), /mismatch/);
   }));

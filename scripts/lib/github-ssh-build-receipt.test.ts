@@ -85,9 +85,19 @@ it("reuses a same-run producer from an earlier attempt on a failed-job retry", (
     github: { ...identity.github, runAttempt: "1" },
   };
   NodeAssert.equal(isCurrentGithubLinuxSshReceipt(receipt, identity.owner), true);
-  NodeAssert.equal(isCurrentGithubLinuxSshReceipt({ ...receipt, owner: identity.owner }, identity.owner), false);
-  NodeAssert.equal(isCurrentGithubLinuxSshReceipt({
-    ...receipt, owner: "github-actions:12345:67890:3",
-    github: { ...identity.github, runAttempt: "3" },
-  }, identity.owner), false);
+  NodeAssert.equal(
+    isCurrentGithubLinuxSshReceipt({ ...receipt, owner: identity.owner }, identity.owner),
+    false,
+  );
+  NodeAssert.equal(
+    isCurrentGithubLinuxSshReceipt(
+      {
+        ...receipt,
+        owner: "github-actions:12345:67890:3",
+        github: { ...identity.github, runAttempt: "3" },
+      },
+      identity.owner,
+    ),
+    false,
+  );
 });

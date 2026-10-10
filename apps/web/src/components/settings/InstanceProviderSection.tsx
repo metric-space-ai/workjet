@@ -70,10 +70,14 @@ export function InstanceProviderSection({
   readonly providers: ReturnType<typeof useInstanceProviders>;
 }) {
   const language = workjetUiLanguage();
+  // Grok has its own admitted control channel. An older instance can support
+  // that login while its general account-management channel is unavailable.
+  const unsupportedProviders =
+    providers.connectionFailure?.code === "unsupported" ? providers.connectionFailure : undefined;
   const failure =
-    providers.connectionFailure ??
+    (unsupportedProviders ? undefined : providers.connectionFailure) ??
     grok.connectionFailure ??
-    (providers.error && !providers.errorAccountId
+    (!unsupportedProviders && providers.error && !providers.errorAccountId
       ? { _tag: "failed" as const, code: "guest_failed" as const }
       : undefined);
   return (
@@ -98,7 +102,29 @@ export function InstanceProviderSection({
       ) : (
         <>
           {grok.row}
-          <NativeProviderRowsView label={label} state={providers} />
+          {unsupportedProviders ? (
+            <div
+              role="status"
+              className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs text-muted-foreground"
+              data-workjet-provider-management-unavailable=""
+            >
+              <span>
+                {describeWorkjetProjectControlFailure(unsupportedProviders, null, language)}
+              </span>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={providers.busy}
+                onClick={() => {
+                  void providers.run({ action: "instance.providers.read" });
+                }}
+              >
+                {language === "de" ? "Konten erneut laden" : "Refresh accounts"}
+              </Button>
+            </div>
+          ) : (
+            <NativeProviderRowsView label={label} state={providers} />
+          )}
         </>
       )}
     </div>

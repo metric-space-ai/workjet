@@ -61,6 +61,12 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
  */
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "posthog-consent",
+    title: "Send usage analytics to PostHog",
+    to: "/settings/general",
+    searchAliases: ["telemetry", "privacy", "consent", "us.i.posthog.com"],
+  },
+  {
     id: "color-scheme",
     title: "Color scheme",
     to: "/settings/appearance",

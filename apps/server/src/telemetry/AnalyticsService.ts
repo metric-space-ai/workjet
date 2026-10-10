@@ -20,6 +20,7 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -35,7 +36,8 @@ const TelemetryEnvConfig = Config.all({
   posthogHost: Config.string("WORKJET_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
-  enabled: Config.boolean("WORKJET_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+  // The legacy environment flag can veto consent, but can never grant it.
+  enabled: Config.boolean("WORKJET_TELEMETRY_ENABLED").pipe(Config.option),
   flushBatchSize: Config.number("WORKJET_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.number("WORKJET_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
@@ -70,7 +72,15 @@ export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
-  const identifier = yield* getTelemetryIdentifier;
+  const settings = yield* ServerSettingsService;
+  const hasConsent = settings.getSettings.pipe(
+    Effect.map(
+      (current) => current.posthogConsent && !Option.contains(telemetryConfig.enabled, false),
+    ),
+    Effect.orElseSucceed(() => false),
+  );
+  // Do not inspect provider identities until the user opts in.
+  let identifier: string | null | undefined;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
@@ -106,7 +116,9 @@ export const make = Effect.gen(function* () {
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
-    if (!telemetryConfig.enabled || !identifier) return;
+    if (!(yield* hasConsent)) return;
+    identifier ??= yield* getTelemetryIdentifier;
+    if (!identifier) return;
 
     const payload = {
       api_key: telemetryConfig.posthogKey,
@@ -134,6 +146,10 @@ export const make = Effect.gen(function* () {
   });
 
   const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
+    if (!(yield* hasConsent)) {
+      yield* Ref.set(bufferRef, []);
+      return;
+    }
     while (true) {
       const batch = yield* Ref.modify(bufferRef, (current) => {
         if (current.length === 0) {
@@ -160,7 +176,7 @@ export const make = Effect.gen(function* () {
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties) {
-      if (!telemetryConfig.enabled || !identifier) return;
+      if (!(yield* hasConsent)) return;
 
       const enqueueResult = yield* enqueueBufferedEvent(event, properties);
       if (enqueueResult.dropped) {

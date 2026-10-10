@@ -1199,6 +1199,24 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("preserves a classified native request timeout through the project bridge", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      harness.views[0]!.executeJavaScript.mockRejectedValueOnce(
+        new Error("Native request ctox.workjet.project.v1 exceeded 28000ms"),
+      );
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "failed", code: "guest_failed",
+          diagnostic: { stage: "execute", reason: "request_timeout" },
+        },
+      );
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it("retains safe exception facts without disclosing launch URLs or request data", () => {
     const error = Object.assign(
       new Error("Unknown Workjet action at https://private.invalid/?token=secret"),
@@ -1222,6 +1240,9 @@ describe("CtoxGuestManager", () => {
       ["Invalid Workjet project owner_user_id.", "owner_session_not_ready"],
       ["Workjet project control is not ready.", "project_control_not_ready"],
       ["Workjet supervisor control is not ready.", "supervisor_control_not_ready"],
+      ["Native WebRTC peer is not connected", "peer_unavailable"],
+      ["Native request ctox.workjet.project.v1 exceeded 28000ms", "request_timeout"],
+      ["Failed to fetch", "network_unavailable"],
     ] as const) {
       assert.deepEqual(CtoxGuestManager.describeCtoxGuestFailure(new Error(message)), {
         name: "Error",

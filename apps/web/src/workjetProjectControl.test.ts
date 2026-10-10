@@ -32,6 +32,12 @@ describe("project instance failure display", () => {
       "The connected CTOX instance does not support this action. Update its Business OS shell.",
     );
   });
+  it("explains a classified data-plane timeout without showing guest exception text", () => {
+    expect(describeWorkjetProjectControlFailure({
+      _tag: "failed", code: "guest_failed",
+      diagnostic: { stage: "execute", reason: "request_timeout" },
+    })).toBe("The CTOX data request timed out. Retry connection.");
+  });
 });
 
 describe("listWorkjetProjects", () => {
@@ -92,6 +98,18 @@ describe("listWorkjetProjects", () => {
     const result = { _tag: "failed", code: "authentication_required" } as const;
     const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
     await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledOnce();
+  });
+});
+
+describe("classified project list failures", () => {
+  it("does not repeat a known peer failure as two legacy queries", async () => {
+    const failure = {
+      _tag: "failed", code: "guest_failed",
+      diagnostic: { stage: "execute", reason: "peer_unavailable" },
+    } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
     expect(request).toHaveBeenCalledOnce();
   });
 });

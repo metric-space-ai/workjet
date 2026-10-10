@@ -209,6 +209,7 @@ export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = 
       });
       const adapter = yield* makeMiniMaxAdapter(effective, {
         instanceId,
+        dispatchPromptInBackground: routeViaGateway,
         resolveSessionEnvironment,
       });
       const unsupported = (

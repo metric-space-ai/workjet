@@ -137,6 +137,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   config: MiniMaxSettings,
   options: {
     readonly instanceId: ProviderInstanceId;
+    readonly dispatchPromptInBackground?: boolean;
     readonly protocolLogging?: AcpSessionRuntimeOptions["protocolLogging"];
     readonly resolveSessionEnvironment: (
       model?: string,
@@ -701,7 +702,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           return { ctx, turnId, model };
         }),
       );
-      return yield* Effect.gen(function* () {
+      const completePrompt = Effect.gen(function* () {
         const selection = input.modelSelection;
         yield* withDeadline(
           "session/set_config_option",
@@ -760,6 +761,11 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           ),
         ),
       );
+      if (options.dispatchPromptInBackground) {
+        yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(ctx.scope));
+        return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
+      }
+      return yield* completePrompt;
     });
   const adapter = {
     provider: PROVIDER,

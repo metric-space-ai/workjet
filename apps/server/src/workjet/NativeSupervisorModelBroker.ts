@@ -102,7 +102,10 @@ export interface NativeSupervisorModelBroker {
 }
 
 function respond(response: NodeHttp.ServerResponse, status: number, message: string) {
-  if (response.headersSent) { response.destroy(); return; }
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
   response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
   response.end(JSON.stringify({ type: "error", error: { type: "api_error", message } }));
 }
@@ -153,13 +156,23 @@ async function waitDrain(response: NodeHttp.ServerResponse, signal: AbortSignal)
   signal.throwIfAborted();
   await new Promise<void>((resolve, reject) => {
     const clear = () => {
-      response.off("drain", drained); response.off("close", stopped);
-      response.off("error", stopped); signal.removeEventListener("abort", stopped);
+      response.off("drain", drained);
+      response.off("close", stopped);
+      response.off("error", stopped);
+      signal.removeEventListener("abort", stopped);
     };
-    const drained = () => { clear(); resolve(); };
-    const stopped = () => { clear(); reject(failure("client-disconnected")); };
-    response.once("drain", drained); response.once("close", stopped);
-    response.once("error", stopped); signal.addEventListener("abort", stopped, { once: true });
+    const drained = () => {
+      clear();
+      resolve();
+    };
+    const stopped = () => {
+      clear();
+      reject(failure("client-disconnected"));
+    };
+    response.once("drain", drained);
+    response.once("close", stopped);
+    response.once("error", stopped);
+    signal.addEventListener("abort", stopped, { once: true });
   });
 }
 async function readBody(request: NodeHttp.IncomingMessage) {
@@ -347,8 +360,7 @@ export async function openNativeSupervisorModelBroker(
           });
           response.flushHeaders();
         }
-        if (!response.write(bytes))
-          await waitDrain(response, controller.signal);
+        if (!response.write(bytes)) await waitDrain(response, controller.signal);
         // No sequence is advanced while the same retained frame is pending.
         sequence++;
       }

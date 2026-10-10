@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Isolated loopback/native-protocol fixtures, never real SDK/model/authority evidence.
 import * as NodeHttp from "node:http";
 import * as NodeStream from "node:stream";
+import type * as NodeStreamWeb from "node:stream/web";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { expect, it } from "@effect/vitest";
@@ -81,30 +82,43 @@ const fixture = Effect.fn("NativeSupervisorModelBroker.fixture")(function* (
 });
 // This owned Node client exercises exact byte-stream/disconnect semantics of the
 // SDK-only loopback fixture; it never calls a tenant or provider HTTP endpoint.
-function rawRequest(url: string, options: { method: string; headers?: Record<string, string>; body: string }) {
+function rawRequest(
+  url: string,
+  options: { method: string; headers?: Record<string, string>; body: string },
+) {
   return new Promise<{
-    status: number; headers: { get: (name: string) => string | null };
-    body: { getReader: () => ReturnType<ReturnType<typeof NodeStream.Readable.toWeb>["getReader"]> };
+    status: number;
+    headers: { get: (name: string) => string | null };
+    body: {
+      getReader: () => NodeStreamWeb.ReadableStreamDefaultReader<Uint8Array>;
+    };
     text: () => Promise<string>;
   }>((resolve, reject) => {
-    const request = NodeHttp.request(url, {
-      method: options.method,
-      headers: { "content-length": Buffer.byteLength(options.body), ...options.headers },
-    }, response => {
-      resolve({
-        status: response.statusCode ?? 0,
-        headers: { get: name => {
-          const value = response.headers[name];
-          return typeof value === "string" ? value : value?.join(", ") ?? null;
-        } },
-        body: { getReader: () => NodeStream.Readable.toWeb(response).getReader() },
-        text: async () => {
-          const chunks: Array<Buffer> = [];
-          for await (const chunk of response) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          return Buffer.concat(chunks).toString("utf8");
-        },
-      });
-    });
+    const request = NodeHttp.request(
+      url,
+      {
+        method: options.method,
+        headers: { "content-length": Buffer.byteLength(options.body), ...options.headers },
+      },
+      (response) => {
+        resolve({
+          status: response.statusCode ?? 0,
+          headers: {
+            get: (name) => {
+              const value = response.headers[name];
+              return typeof value === "string" ? value : (value?.join(", ") ?? null);
+            },
+          },
+          body: { getReader: () => NodeStream.Readable.toWeb(response).getReader() },
+          text: async () => {
+            const chunks: Array<Buffer> = [];
+            for await (const chunk of response)
+              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            return Buffer.concat(chunks).toString("utf8");
+          },
+        });
+      },
+    );
     request.once("error", reject);
     request.end(options.body);
   });

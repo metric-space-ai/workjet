@@ -40,7 +40,11 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("confirmed to-do list of the last regular meeting");
     expect(prompt).not.toContain("Your durable parent thread");
     expect(prompt).toContain("action project");
-    expect(prompt).toContain("do not maintain their own mini-kanban");
+    expect(prompt).toContain("Do not maintain your own mini-kanban");
+    expect(prompt).toContain("Take times, counts and status from measurements or logs");
+    expect(prompt).toContain("self-contained order");
+    expect(prompt).toContain("Verify the installed/deployed result afterwards");
+    expect(prompt).not.toContain("action update");
     expect(prompt).not.toContain("Stop after submission");
   });
 
@@ -49,7 +53,11 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("Your durable parent thread is supervisor.");
     expect(prompt).toContain("Perform substantive work yourself");
     expect(prompt).toContain("before any other work");
-    expect(prompt).toContain("workjet_worker_kanban with action update");
+    expect(prompt).toContain("workjet_worker_kanban with action update exactly once");
+    expect(prompt).toContain("as a slide-engine document");
+    expect(prompt).toContain("owner, evidence, commit/PR link and next trigger");
+    expect(prompt).toContain("registry and open PRs");
+    expect(prompt).toContain("Compaction is not completion");
     expect(prompt).toContain(
       "A completed turn, a partial result, a queued build or a pull request does not by itself complete the goal",
     );
@@ -66,5 +74,11 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("Stop after submission");
     expect(prompt).toContain("Workjet owns automatic archival");
     expect(prompt).not.toContain("workjet_worker_kanban");
+    expect(prompt).not.toMatch(/kanban|goal-loop/i);
+    expect(prompt).toContain("Do not merge your own pull request");
+    expect(prompt).toContain(
+      "do not wait for the pull request to be merged or perform post-submission rework",
+    );
+    expect(prompt).not.toContain("keep all rework in that same pull request");
   });
 });

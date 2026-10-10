@@ -54,7 +54,10 @@ describe("resolveThreadCapabilityContext", () => {
     } as const satisfies WorkjetThreadConfig;
     const context = resolveThreadCapabilityContext(config);
     expect(context.compiledManagedPrompt).toContain("Open exactly one pull request");
-    expect(context.compiledManagedPrompt).toContain("keep all rework in that same pull request");
+    expect(context.compiledManagedPrompt).toContain(
+      "do not wait for the pull request to be merged or perform post-submission rework",
+    );
+    expect(context.compiledManagedPrompt).not.toMatch(/kanban|goal-loop/i);
     expect(context.compiledManagedPrompt).toContain("Stop after submission");
     expect(context.compiledManagedPrompt).not.toContain(
       "merged or closed and execution is stopped",

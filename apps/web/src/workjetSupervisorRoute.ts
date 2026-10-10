@@ -10,6 +10,7 @@ import {
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
+import { randomUUID } from "./lib/utils";
 
 export type SupervisorRouteState =
   | { readonly phase: "ready"; readonly route: SupervisorRouteDisplay }
@@ -30,7 +31,7 @@ export async function readSupervisorRoute(
     if (signal.aborted) return { phase: "unavailable", code: "canceled" };
     const request = {
       action,
-      commandId: CommandId.make(`supervisor-route-${crypto.randomUUID()}`),
+      commandId: CommandId.make(`supervisor-route-${randomUUID()}`),
       projectId: scope.projectId,
       threadId: scope.threadId,
     };

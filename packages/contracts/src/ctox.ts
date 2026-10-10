@@ -5,7 +5,11 @@ import {
 } from "./workjetNativeProviders.ts";
 export * from "./workjetNativeProviders.ts";
 import * as Schema from "effect/Schema";
-import { WorkjetSupervisorRouteRequests, WorkjetSupervisorRouteResponses, isWorkjetSupervisorRouteReceiptForRequest } from "./workjetSupervisorRoute.ts";
+import {
+  WorkjetSupervisorRouteRequests,
+  WorkjetSupervisorRouteResponses,
+  isWorkjetSupervisorRouteReceiptForRequest,
+} from "./workjetSupervisorRoute.ts";
 export * from "./workjetSupervisorRoute.ts";
 import { WorkjetInstanceGrokRequests, WorkjetInstanceGrokResponse } from "./workjetInstanceGrok.ts";
 export * from "./workjetInstanceGrok.ts";
@@ -1021,8 +1025,15 @@ export function isWorkjetSupervisorReceiptForRequest(
   response: CtoxWorkjetProjectControlResponse,
 ): boolean {
   if (!request.action.startsWith("project.supervisor.")) return true;
-  if (request.action === "project.supervisor.route.capabilities.v1" || request.action === "project.supervisor.route.read.v1") {
-    if (response.action !== "project.supervisor.route.capabilities.v1" && response.action !== "project.supervisor.route.read.v1") return false;
+  if (
+    request.action === "project.supervisor.route.capabilities.v1" ||
+    request.action === "project.supervisor.route.read.v1"
+  ) {
+    if (
+      response.action !== "project.supervisor.route.capabilities.v1" &&
+      response.action !== "project.supervisor.route.read.v1"
+    )
+      return false;
     return isWorkjetSupervisorRouteReceiptForRequest(request, response);
   }
   if (!("binding" in response) || !("threadId" in request) || !("commandId" in response))

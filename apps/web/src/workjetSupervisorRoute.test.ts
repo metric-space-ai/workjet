@@ -54,6 +54,7 @@ describe("Supervisor route reader", () => {
       "project.supervisor.route.read.v1",
     ]);
     expect(state.phase).toBe("ready");
+    if (route.configured === null) throw new Error("Pinned route fixture must include a configured Luma");
     expect(supervisorRouteLabel(state).model).toContain(
       `Configured · ${route.configured.harness} · ${route.configured.model}`,
     );

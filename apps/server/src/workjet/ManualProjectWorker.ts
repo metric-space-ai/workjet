@@ -1,4 +1,5 @@
 import {
+  canCoordinateWorkjet,
   normalizeWorkjetThreadConfig,
   type EnvironmentId,
   type OrchestrationThreadShell,
@@ -11,30 +12,31 @@ export class ManualProjectWorkerSetupError extends Schema.TaggedErrorClass<Manua
   { message: Schema.String },
 ) {}
 
-/** Standalone chats have no project supervisor and keep their ordinary behavior. */
+/** Only explicitly commissioned, unprepared workers enter the isolated-worker bootstrap. */
 export function manualProjectWorkerParent(
   thread: OrchestrationThreadShell,
   threads: readonly OrchestrationThreadShell[],
-  registeredProject = false,
 ): OrchestrationThreadShell | undefined {
   const config = normalizeWorkjetThreadConfig(thread.workjetConfig);
-  if (config.role === "worker" || config.team) return;
+  // Project affiliation and a user-selected checkout do not commission a worker.
+  // Dispatched team workers already own their WorkerDispatch checkout.
+  if (config.role !== "worker" || config.team) return;
   const parents = threads.filter(
     (candidate) =>
+      candidate.id === config.parent.threadId &&
       candidate.id !== thread.id &&
       candidate.projectId === thread.projectId &&
       candidate.archivedAt === null &&
       candidate.deletedAt == null &&
-      candidate.workjetConfig.schemaVersion === 2 &&
-      candidate.workjetConfig.team?.role === "supervisor",
+      canCoordinateWorkjet(candidate.workjetConfig),
   );
-  if (parents.length === 0 && registeredProject)
+  if (parents.length === 0)
     throw new Error(
-      "The registered project has no available supervisor. Restore its supervisor before starting a One-Shot Worker.",
+      "The One-Shot Worker's coordinating parent is unavailable. Restore its parent before starting the worker.",
     );
   if (parents.length > 1)
     throw new Error(
-      "Project has multiple supervisors; resolve ownership before starting this worker.",
+      "Worker parent ownership is ambiguous; resolve ownership before starting this worker.",
     );
   if (parents[0] && thread.latestTurn !== null)
     throw new Error(

@@ -1075,9 +1075,27 @@ const makeWsRpcLayer = (
                       threadId: command.threadId,
                     }),
                   ),
-                  Effect.ignoreCause({ log: true }),
+                  Effect.as(true),
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("bootstrap thread cleanup failed", { cause }).pipe(
+                      Effect.as(false),
+                    ),
+                  ),
                 )
-              : Effect.void;
+              : bootstrap?.createThread && !createdThread
+                ? projectionSnapshotQuery.getCommandReadModel().pipe(
+                    Effect.map((snapshot) =>
+                      snapshot.threads.some(
+                        (thread) =>
+                          thread.id === command.threadId &&
+                          thread.projectId === bootstrap.createThread!.projectId &&
+                          thread.deletedAt !== null &&
+                          thread.latestTurn === null,
+                      ),
+                    ),
+                    Effect.catchCause(() => Effect.succeed(false)),
+                  )
+                : Effect.succeed(false);
 
           const recordSetupScriptLaunchFailure = (input: {
             readonly error: ProjectSetupScriptRunner.ProjectSetupScriptRunnerError;
@@ -1253,14 +1271,7 @@ const makeWsRpcLayer = (
             const shell = yield* projectionSnapshotQuery.getShellSnapshot();
             const thread = shell.threads.find((candidate) => candidate.id === command.threadId);
             const manualParent = thread
-              ? manualProjectWorkerParent(
-                  thread,
-                  shell.threads,
-                  shell.projects.some(
-                    (project) =>
-                      project.id === thread.projectId && project.ctoxRegistration != null,
-                  ),
-                )
+              ? manualProjectWorkerParent(thread, shell.threads)
               : undefined;
             if (thread && manualParent) {
               const project = shell.projects.find((candidate) => candidate.id === thread.projectId);
@@ -1438,7 +1449,19 @@ const makeWsRpcLayer = (
               if (Cause.hasInterruptsOnly(cause)) {
                 return Effect.fail(dispatchError);
               }
-              return cleanupCreatedThread().pipe(Effect.flatMap(() => Effect.fail(dispatchError)));
+              return cleanupCreatedThread().pipe(
+                Effect.flatMap((deleted) =>
+                  Effect.fail(
+                    deleted
+                      ? new OrchestrationDispatchCommandError({
+                          message: dispatchError.message,
+                          cause,
+                          rolledBackThreadId: command.threadId,
+                        })
+                      : dispatchError,
+                  ),
+                ),
+              );
             }),
           );
         });

@@ -37,19 +37,68 @@ const supervisor = {
     },
   },
 } as OrchestrationThreadShell;
+const commissioned = {
+  ...thread,
+  workjetConfig: {
+    ...DEFAULT_WORKJET_THREAD_CONFIG,
+    role: "worker",
+    parent: { environmentId: EnvironmentId.make("local"), threadId: supervisor.id },
+  },
+} as OrchestrationThreadShell;
 describe("manual project worker qualification", () => {
-  it("keeps standalone chats unchanged and uses only the actual project supervisor", () => {
-    expect(manualProjectWorkerParent(thread, [thread])).toBeUndefined();
-    expect(
-      manualProjectWorkerParent(thread, [
-        thread,
-        { ...supervisor, projectId: ProjectId.make("other") },
-      ]),
-    ).toBeUndefined();
-    expect(manualProjectWorkerParent(thread, [thread, supervisor])).toBe(supervisor);
-    expect(manualProjectWorkerParent(supervisor, [thread, supervisor])).toBeUndefined();
+  it("keeps ordinary project threads ordinary regardless of checkout or supervisor availability", () => {
+    for (const checkout of [null, "/user/work"]) {
+      const ordinary = { ...thread, worktreePath: checkout };
+      expect(manualProjectWorkerParent(ordinary, [supervisor])).toBeUndefined();
+      expect(manualProjectWorkerParent(ordinary, [])).toBeUndefined();
+      expect(
+        manualProjectWorkerParent(ordinary, [
+          supervisor,
+          { ...supervisor, id: ThreadId.make("duplicate") },
+        ]),
+      ).toBeUndefined();
+    }
   });
-  it("excludes specialists and workers", () => {
+  it("keeps ordinary Luma instructions and historical chats out of worker preparation", () => {
+    const luma = {
+      ...thread,
+      worktreePath: "/user/luma",
+      workjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        managedInstructions: "Review the project",
+      },
+    };
+    expect(manualProjectWorkerParent(luma, [supervisor])).toBeUndefined();
+    const used = { ...thread, latestTurn: {} } as OrchestrationThreadShell;
+    expect(manualProjectWorkerParent(used, [supervisor])).toBeUndefined();
+  });
+  it("prepares only an explicit One-Shot Worker for its named coordinating parent", () => {
+    expect(manualProjectWorkerParent(commissioned, [supervisor])).toBe(supervisor);
+    const specialist = {
+      ...supervisor,
+      workjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        team: {
+          role: "specialist",
+          domain: "review",
+          projectId,
+          threadId: supervisor.id,
+          parentThreadId: ThreadId.make("specialist-supervisor"),
+          goal: "Review",
+          createdAt: thread.createdAt,
+        },
+      },
+    } as OrchestrationThreadShell;
+    expect(manualProjectWorkerParent(commissioned, [specialist])).toBe(specialist);
+    expect(() => manualProjectWorkerParent(commissioned, [])).toThrow("parent is unavailable");
+    expect(() =>
+      manualProjectWorkerParent(commissioned, [
+        { ...supervisor, id: ThreadId.make("another-supervisor") },
+      ]),
+    ).toThrow("parent is unavailable");
+  });
+  it("excludes supervisors, persistent workers and already-dispatched team workers", () => {
+    expect(manualProjectWorkerParent(supervisor, [supervisor])).toBeUndefined();
     const config = manualProjectWorkerConfig(
       thread,
       supervisor,
@@ -59,50 +108,24 @@ describe("manual project worker qualification", () => {
     expect(
       manualProjectWorkerParent({ ...thread, workjetConfig: config }, [supervisor]),
     ).toBeUndefined();
-    const specialist = {
-      ...thread,
-      workjetConfig: {
-        ...DEFAULT_WORKJET_THREAD_CONFIG,
-        team: {
-          role: "specialist",
-          projectId,
-          threadId: thread.id,
-          parentThreadId: supervisor.id,
-          domain: "review",
-          goal: "Review",
-          createdAt: thread.createdAt,
-        },
-      },
-    } as OrchestrationThreadShell;
-    expect(manualProjectWorkerParent(specialist, [supervisor])).toBeUndefined();
   });
-  it("fails visibly rather than reusing a historical shared checkout", () => {
-    const used = { ...thread, latestTurn: {} } as OrchestrationThreadShell;
-    expect(() => manualProjectWorkerParent(used, [supervisor])).toThrow(
-      "explicit isolated-worker migration",
-    );
-    expect(manualProjectWorkerParent(used, [])).toBeUndefined();
-  });
-  it("requires a real available supervisor for a registered project", () => {
-    expect(() => manualProjectWorkerParent(thread, [], true)).toThrow("no available supervisor");
+  it("does not migrate historical explicit workers or reuse an unavailable parent", () => {
     expect(() =>
-      manualProjectWorkerParent(thread, [{ ...supervisor, archivedAt: thread.createdAt }], true),
-    ).toThrow("no available supervisor");
-    expect(manualProjectWorkerParent(thread, [supervisor], true)).toBe(supervisor);
-    expect(manualProjectWorkerParent(thread, [], false)).toBeUndefined();
-  });
-  it("rejects ambiguous supervisors", () => {
-    expect(() =>
-      manualProjectWorkerParent(thread, [
+      manualProjectWorkerParent({ ...commissioned, latestTurn: {} } as OrchestrationThreadShell, [
         supervisor,
-        { ...supervisor, id: ThreadId.make("duplicate") },
       ]),
-    ).toThrow("multiple supervisors");
+    ).toThrow("explicit isolated-worker migration");
+    expect(() =>
+      manualProjectWorkerParent(commissioned, [{ ...supervisor, archivedAt: thread.createdAt }]),
+    ).toThrow("parent is unavailable");
   });
-  it("retains capabilities and establishes retry-stable native ownership", () => {
+  it("retains capabilities and establishes retry-stable native worker ownership", () => {
     const original = {
-      ...thread,
-      workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, managedInstructions: "Keep task" },
+      ...commissioned,
+      workjetConfig: {
+        ...commissioned.workjetConfig,
+        managedInstructions: "Keep task",
+      },
     };
     const config = manualProjectWorkerConfig(
       original,

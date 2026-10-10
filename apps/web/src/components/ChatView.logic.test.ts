@@ -1,5 +1,6 @@
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  OrchestrationDispatchCommandError,
   EnvironmentId,
   MessageId,
   ProjectId,
@@ -33,12 +34,47 @@ import {
   startNewThreadForProject,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
+  isRolledBackBootstrapError,
+  resolveLocalThreadError,
 } from "./ChatView.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("bootstrap retry and composer errors", () => {
+  it("rotates only the exact thread explicitly confirmed rolled back by the server", () => {
+    const error = new OrchestrationDispatchCommandError({
+      message: "worktree exploded",
+      rolledBackThreadId: threadId,
+    });
+    expect(isRolledBackBootstrapError(error, threadId)).toBe(true);
+    expect(isRolledBackBootstrapError(error, ThreadId.make("other"))).toBe(false);
+    expect(
+      isRolledBackBootstrapError(
+        new OrchestrationDispatchCommandError({ message: "Worker checkout preserved" }),
+        threadId,
+      ),
+    ).toBe(false);
+    expect(isRolledBackBootstrapError(new Error("Connection lost"), threadId)).toBe(false);
+  });
+  it("keeps a server rejection visible when a draft promotes and rolls back", () => {
+    const draft = { message: "Existing checkout ownership is ambiguous", at: 1 };
+    expect(resolveLocalThreadError(draft, undefined)).toBe(draft.message);
+    const server = { message: "Worktree creation failed", at: 2 };
+    expect(resolveLocalThreadError(draft, server)).toBe(server.message);
+    expect(resolveLocalThreadError(server, undefined)).toBe(server.message);
+  });
+  it("keeps an explicit dismissal or next-send clear newer than an old error", () => {
+    expect(
+      resolveLocalThreadError({ message: null, at: 3 }, { message: "Old failure", at: 2 }),
+    ).toBeNull();
+    expect(
+      resolveLocalThreadError({ message: "Old failure", at: 1 }, { message: null, at: 2 }),
+    ).toBeNull();
+  });
+});
 
 describe("first-turn CTOX session registration", () => {
   it("awaits session registration before creating the thread", async () => {

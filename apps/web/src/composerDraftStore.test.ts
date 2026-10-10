@@ -1314,6 +1314,46 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)).toBeUndefined();
   });
 
+  it("retries a rolled-back thread with a new ID in the same draft and preserves its selections and content", () => {
+    const store = useComposerDraftStore.getState();
+    const nextThreadId = ThreadId.make("bootstrap-retry");
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      branch: "feature/selected",
+      worktreePath: "/user/selected",
+      envMode: "worktree",
+      startFromOrigin: true,
+    });
+    store.setPrompt(draftId, "Retry my original task");
+    store.setWorkjetWorkerSelection(draftId, "selected-luma", null);
+    store.markDraftThreadPromoting(draftId);
+    const before = store.getDraftThread(draftId)!;
+    const content = store.getComposerDraft(draftId);
+    expect(store.retryRolledBackDraftThread(draftId, threadId, nextThreadId)).toBe(true);
+    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toEqual({
+      ...before,
+      threadId: nextThreadId,
+      promotedTo: null,
+    });
+    expect(useComposerDraftStore.getState().getComposerDraft(draftId)).toEqual(content);
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)?.threadId).toBe(
+      nextThreadId,
+    );
+    const options = useComposerDraftStore.persist.getOptions();
+    const persisted = options.partialize!(useComposerDraftStore.getState());
+    const restored = options.merge!(persisted, useComposerDraftStore.getInitialState());
+    expect(restored.draftThreadsByThreadKey[draftId]?.threadId).toBe(nextThreadId);
+  });
+  it("ignores stale rollback responses and does not replace a different draft attempt", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    expect(
+      store.retryRolledBackDraftThread(draftId, ThreadId.make("stale"), ThreadId.make("new")),
+    ).toBe(false);
+    expect(store.retryRolledBackDraftThread(draftId, threadId, threadId)).toBe(false);
+    expect(store.getDraftThread(draftId)?.threadId).toBe(threadId);
+  });
+
   it("updates branch context on an existing draft thread", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, {

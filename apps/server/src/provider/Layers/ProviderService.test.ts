@@ -19,7 +19,6 @@ import {
   MessageId,
   ProjectId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,

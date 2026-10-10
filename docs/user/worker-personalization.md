@@ -29,6 +29,11 @@ the worker connection is ready. Ordinary supervisor messages remain available in
 Connect from the desktop app. If the connection is unavailable later, choose **Connect workers** again;
 existing Business OS permissions still apply.
 
+New Persistent Workers inherit the project's instructions and enabled tools, but start with their own
+goal and conversation state. Supervisor task receipts, private chats, sessions and completed work do not
+become worker tasks. When you reconnect the same CTOX instance, existing project workers move to its
+ready worker connection automatically; their own goals and task history stay intact.
+
 ## Persistent Worker goals
 
 A Persistent Worker keeps its assignment visible above its conversation, including imported threads.

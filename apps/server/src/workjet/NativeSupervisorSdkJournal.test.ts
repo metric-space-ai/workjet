@@ -96,3 +96,20 @@ it.effect("sink failure cannot become a successful observed drain", () =>
     expect(journal.currentSdkSessionId()).toBeUndefined();
   }).pipe(Effect.scoped),
 );
+
+it.effect("abort bounds a sink that has not returned after the captured child/query have closed", () =>
+  Effect.gen(function* () {
+    const never = new Promise<void>(() => {});
+    const journal = new NativeSupervisorSdkJournal(() => never);
+    const fixture = yield* fixtureChild();
+    journal.captureOwnedSdkChild(fixture.child);
+    void journal.sdkStreamJoined().catch(() => {});
+    void journal.sdkQueryCloseReturned().catch(() => {});
+    fixture.finish();
+    yield* Effect.promise(() => fixture.closed);
+    const abort = new AbortController();
+    const pending = journal.drain(abort.signal).then(() => "unexpected-success", () => "aborted");
+    abort.abort(new Error("fixture-sink-deadline"));
+    expect(yield* Effect.promise(() => pending)).toBe("aborted");
+  }).pipe(Effect.scoped),
+);

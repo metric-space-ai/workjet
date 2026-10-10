@@ -120,6 +120,13 @@ export class NativeSupervisorSdkJournal {
       changed();
     });
     signal.throwIfAborted();
-    await this.tail;
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => { signal.removeEventListener("abort", abort); reject(signal.reason); };
+      signal.addEventListener("abort", abort, { once: true });
+      this.tail.then(
+        () => { signal.removeEventListener("abort", abort); resolve(); },
+        cause => { signal.removeEventListener("abort", abort); reject(cause); },
+      );
+    });
   }
 }

@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
+import type { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
 /**
@@ -296,8 +297,6 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly getContextUsage?: () => Promise<SDKControlGetContextUsageResponse>;
   readonly close: () => void;
 }
-
-import type { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 
 export interface ClaudeAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;

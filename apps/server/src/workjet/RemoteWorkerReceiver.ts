@@ -228,12 +228,21 @@ export const make = Effect.gen(function* () {
     // native provider instance ID whose empty target binding cannot execute.
     let runtimeModelSelection = request.modelSelection;
     const sourceHarness = readWorkerSourceHarness(request.requestId);
-    if (request.harness !== undefined && request.harness !== "codex-cli" && sourceHarness === undefined)
+    if (
+      request.harness !== undefined &&
+      request.harness !== "codex-cli" &&
+      sourceHarness === undefined
+    )
       return yield* failure("source-unavailable");
     if (sourceHarness !== undefined) {
-      if (sourceHarness.harness !== (request.harness ?? "codex-cli")) return yield* failure("source-unavailable");
-      if (sourceHarness.harness !== "codex-cli" && sourceHarness.harness !== "claude-code" &&
-          sourceHarness.nativeProfile?.harness !== sourceHarness.harness) return yield* failure("source-unavailable");
+      if (sourceHarness.harness !== (request.harness ?? "codex-cli"))
+        return yield* failure("source-unavailable");
+      if (
+        sourceHarness.harness !== "codex-cli" &&
+        sourceHarness.harness !== "claude-code" &&
+        sourceHarness.nativeProfile?.harness !== sourceHarness.harness
+      )
+        return yield* failure("source-unavailable");
       if (Option.isNone(providerInstances)) return yield* failure("computer-unavailable");
       const selected = remoteWorkerRuntimeSelection(
         request,

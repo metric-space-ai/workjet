@@ -211,15 +211,11 @@ export async function installWorkerSourceRoute(
       return;
     }
     const requestPath = new URL(req.url || "/", "http://127.0.0.1").pathname;
-    // Keep legacy Claude routes pinned to Messages; native profiles opt into protocol translation.
-    if (messages && pin.nativeProfile === undefined && requestPath === "/v1/responses") {
-      res.writeHead(404).end();
-      return;
-    }
+    const legacyMessages = messages && pin.nativeProfile === undefined;
     const protocol =
-      requestPath === "/v1/messages" && (!messages || pin.nativeProfile !== undefined)
+      requestPath === "/v1/messages" && !legacyMessages
         ? nativeProtocols["/v1/messages"]
-        : requestPath === "/v1/chat/completions"
+        : requestPath === "/v1/chat/completions" && !legacyMessages
           ? nativeProtocols["/v1/chat/completions"]
           : undefined;
     const inventory = req.method === "GET" && requestPath === "/v1/workjet/computers";
@@ -228,7 +224,7 @@ export async function installWorkerSourceRoute(
       !inventory &&
       !models &&
       (req.method !== "POST" ||
-        (requestPath !== "/v1/responses" &&
+        ((legacyMessages || requestPath !== "/v1/responses") &&
           !(messages && requestPath === "/v1/messages") &&
           protocol === undefined))
     ) {

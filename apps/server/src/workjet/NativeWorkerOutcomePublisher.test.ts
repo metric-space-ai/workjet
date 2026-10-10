@@ -88,3 +88,14 @@ it.effect("refreshes a retained open PR to terminal without a live target and re
     assert.equal(refreshes, 3);
     assert.deepEqual(f.reports, ["merged", "merged"]);
   }));
+
+it.effect("re-reads source authority after provider observation and refuses a binding swap", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    f.changeReceipt({ ...persisted, state: "open" });
+    const publisher = makeNativeWorkerOutcomePublisher({ ...f.dependencies,
+      refresh: () => Effect.sync(() => { f.revoke(); return persisted; }),
+    });
+    yield* publisher.run(registered);
+    assert.deepEqual(f.reports, []);
+  }));

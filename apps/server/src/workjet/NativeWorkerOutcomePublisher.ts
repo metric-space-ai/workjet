@@ -49,6 +49,13 @@ export function makeNativeWorkerOutcomePublisher(dependencies: {
         if (!matched) return;
         const observed = receipt.state === "open" ? yield* dependencies.refresh(receipt, startup) : receipt;
         const outcome = yield* terminalReceiptFrom(observed, startup);
+        // Provider lookup can yield while the source binding changes. Re-read before native publication.
+        const latest = yield* dependencies.currentSource(saved.value);
+        if (latest.scope.connectionId !== current.scope.connectionId ||
+            latest.scope.instanceId !== current.scope.instanceId ||
+            latest.source.projectId !== current.source.projectId ||
+            latest.source.sourceEnvironmentId !== current.source.sourceEnvironmentId ||
+            latest.source.sourceSupervisorThreadId !== current.source.sourceSupervisorThreadId) return;
         const key = `${matched.source.scope.connectionId}/${matched.registration.registrationId}/${matched.registration.revision}/${receipt.threadId}/${observed.headOid}/${observed.state}`;
         if (accepted.has(key)) return;
         yield* dependencies.report(matched, startup, outcome);

@@ -35,7 +35,7 @@ export const retainRemoteWorkerOutcome = Effect.fn("retainRemoteWorkerOutcome")(
   const model = yield* query.getCommandReadModel().pipe(Effect.mapError(fail));
   const parent = model.threads.find((thread) => thread.id === request.parent.threadId);
   const project = model.projects.find((candidate) => candidate.id === request.project.id);
-  if (!parent || parent.deletedAt !== null || parent.archivedAt !== null ||
+  if (!parent || parent.deletedAt !== null ||
       parent.projectId !== request.project.id || !project || project.deletedAt !== null ||
       project.workspaceRoot === null) return yield* fail();
   const provider = yield* (yield* SourceControlProviderRegistry)
@@ -50,6 +50,8 @@ export const retainRemoteWorkerOutcome = Effect.fn("retainRemoteWorkerOutcome")(
       pr.isCrossRepository !== false)
     return yield* fail();
   const store = yield* WorkerPullRequestStore;
+  const previous = yield* store.get(request.requestId).pipe(Effect.mapError(fail));
+  if (Option.isSome(previous) && previous.value.headOid !== notice.headOid) return yield* fail();
   if (!(yield* store.observe({
     threadId: request.requestId, worktreePath: startup.worktreePath, branchRef: startup.branch,
     provider: pr.provider, prNumber: pr.number, prUrl: pr.url,

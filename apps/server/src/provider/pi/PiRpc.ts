@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -94,7 +94,7 @@ export const makePiRpc = Effect.fn("makePiRpc")(function* (input: {
     type: string,
     fields: Record<string, unknown> = {},
   ) {
-    const id = randomUUID();
+    const id = NodeCrypto.randomUUID();
     const reply = yield* Deferred.make<unknown, ProviderAdapterRequestError>();
     pending.set(id, reply);
     return yield* Effect.gen(function* () {

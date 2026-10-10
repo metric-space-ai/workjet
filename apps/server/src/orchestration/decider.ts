@@ -1201,9 +1201,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             detail: "A stale or foreign turn cannot supply goal producer evidence.",
           });
         }
-        const retained = previous.lastExecution?.turnId === observed.turnId
-          ? previous.lastExecution
-          : undefined;
+        const retained =
+          previous.lastExecution?.turnId === observed.turnId &&
+          previous.lastExecution.providerInstanceId === observed.providerInstanceId &&
+          previous.lastExecution.provider === observed.provider
+            ? previous.lastExecution
+            : undefined;
         const lastExecution = {
           ...observed,
           ...(retained && retained.state !== "running" && observed.state === "running"

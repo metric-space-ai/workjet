@@ -45,6 +45,10 @@ describe("goal producer observations", () => {
     const next = goalExecutionObservation({ ...start, turnId: TurnId.make("next-turn") }, completed);
     expect(next?.author).toBeNull();
     expect(next?.state).toBe("running");
+    const moved = goalExecutionObservation({
+      ...start, providerInstanceId: ProviderInstanceId.make("different-instance"),
+    }, completed);
+    expect(moved?.author).toBeNull();
   });
   it("does not infer authorship from other metadata, times, missing identity or duplicated snapshots", () => {
     expect(goalExecutionObservation({ ...author, raw: { source: "acp.jsonrpc", payload: {} } })).toBeUndefined();

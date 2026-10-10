@@ -13,7 +13,12 @@ export function goalExecutionObservation(
   previous?: WorkjetGoalExecution,
 ): WorkjetGoalExecution | undefined {
   if (!event.turnId || !event.providerInstanceId) return undefined;
-  const retained = previous?.turnId === event.turnId ? previous : undefined;
+  const retained =
+    previous?.turnId === event.turnId &&
+    previous.providerInstanceId === event.providerInstanceId &&
+    previous.provider === event.provider
+      ? previous
+      : undefined;
   let state: WorkjetGoalExecution["state"];
   let author = retained?.author ?? null;
   if (event.type === "turn.started") state = "running";

@@ -17,7 +17,9 @@ export const WorkjetUpdateGoalInput = Schema.Union([
   Schema.Struct({
     status: Schema.Literals(["complete", "blocked"]),
     reason: Schema.String.check(
-      Schema.makeFilter((text) => text.trim().length > 0 || "A verified result or exact blocker is required."),
+      Schema.makeFilter(
+        (text) => text.trim().length > 0 || "A verified result or exact blocker is required.",
+      ),
       Schema.isMaxLength(8000),
     ),
   }),
@@ -28,7 +30,9 @@ export const WorkjetUpdateGoalInput = Schema.Union([
       Schema.makeFilter((text) => text.trim().length > 0 || "An objective is required."),
       Schema.isMaxLength(4096),
     ),
-    expectedRevision: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
+    expectedRevision: Schema.optional(
+      Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+    ),
   }),
 ]);
 const ResultSchema = Schema.Struct({
@@ -64,12 +68,17 @@ export const updateCurrentWorkerGoal = Effect.fn("workjet.updateCurrentWorkerGoa
     const targetConfig = Option.isSome(target) ? target.value.workjetConfig : undefined;
     const targetTeam = targetConfig?.schemaVersion === 2 ? targetConfig.team : undefined;
     if (
-      Option.isNone(supervisor) || supervisor.value.deletedAt != null ||
-      supervisor.value.archivedAt !== null || callerTeam?.role !== "supervisor" ||
+      Option.isNone(supervisor) ||
+      supervisor.value.deletedAt != null ||
+      supervisor.value.archivedAt !== null ||
+      callerTeam?.role !== "supervisor" ||
       callerTeam.threadId !== invocation.threadId ||
       callerTeam.projectId !== supervisor.value.projectId ||
-      Option.isNone(target) || target.value.deletedAt != null || target.value.archivedAt !== null ||
-      targetTeam?.role !== "specialist" || targetTeam.threadId !== target.value.id ||
+      Option.isNone(target) ||
+      target.value.deletedAt != null ||
+      target.value.archivedAt !== null ||
+      targetTeam?.role !== "specialist" ||
+      targetTeam.threadId !== target.value.id ||
       target.value.projectId !== supervisor.value.projectId ||
       targetTeam.projectId !== supervisor.value.projectId ||
       targetTeam.parentThreadId !== invocation.threadId
@@ -80,7 +89,9 @@ export const updateCurrentWorkerGoal = Effect.fn("workjet.updateCurrentWorkerGoa
     }
     const previous = targetConfig?.schemaVersion === 2 ? targetConfig.goal : undefined;
     if (input.expectedRevision !== undefined && input.expectedRevision !== previous?.revision) {
-      return yield* new McpSchema.InvalidParams({ message: "The goal changed; read its current revision." });
+      return yield* new McpSchema.InvalidParams({
+        message: "The goal changed; read its current revision.",
+      });
     }
     // Assignment never resumes an Owner-stopped loop or erases its reason.
     const status = previous?.status ?? "active";
@@ -89,7 +100,9 @@ export const updateCurrentWorkerGoal = Effect.fn("workjet.updateCurrentWorkerGoa
       type: "thread.goal.assign",
       supervisorThreadId: invocation.threadId,
       commandId: CommandId.make(`server:supervisor-goal:${yield* crypto.randomUUIDv4}`),
-      threadId: target.value.id, status, objective: input.objective.trim(),
+      threadId: target.value.id,
+      status,
+      objective: input.objective.trim(),
       ...(previous ? { expectedRevision: previous.revision } : {}),
       ...(previous?.reason ? { reason: previous.reason } : {}),
       createdAt: DateTime.formatIso(yield* DateTime.now),

@@ -30,9 +30,9 @@ import type {
 
 export type BlockRendererProps = {
   block: SlideBlock;
-  assets?: SlideAssetCollection;
-  renderAsset?: SlideAssetRenderer;
-  resolveAssetUrl?: SlideAssetUrlResolver;
+  assets?: SlideAssetCollection | undefined;
+  renderAsset?: SlideAssetRenderer | undefined;
+  resolveAssetUrl?: SlideAssetUrlResolver | undefined;
 };
 
 const blockSpacingStyle: CSSProperties = {
@@ -537,10 +537,10 @@ function FigureBlockRenderer({
   renderAsset,
   resolveAssetUrl
 }: {
-  assets?: SlideAssetCollection;
+  assets?: SlideAssetCollection | undefined;
   block: FigureBlock;
-  renderAsset?: SlideAssetRenderer;
-  resolveAssetUrl?: SlideAssetUrlResolver;
+  renderAsset?: SlideAssetRenderer | undefined;
+  resolveAssetUrl?: SlideAssetUrlResolver | undefined;
 }) {
   const asset = resolveAsset(assets, block.assetId);
   const customAsset = asset ? renderAsset?.(asset, block) : undefined;
@@ -704,7 +704,7 @@ function ComparisonBlockRenderer({ block }: { block: ComparisonBlock }) {
   );
 }
 
-function ComparisonSide({ title, body, items }: { title: string; body?: string; items?: string[] }) {
+function ComparisonSide({ title, body, items }: { title: string; body?: string | undefined; items?: string[] | undefined }) {
   return (
     <div style={comparisonSideStyle}>
       <h3 style={processTitleStyle}>{title}</h3>
@@ -789,7 +789,7 @@ function normalizeChartData(data: ChartBlock["data"]) {
   const labels = Array.isArray(data?.labels) ? data.labels.map((item) => String(item)) : [];
   const values = Array.isArray(data?.values) ? data.values.map((item) => Number(item)) : [];
   const pairs = labels
-    .map((label, index) => ({ label, value: Number.isFinite(values[index]) ? values[index] : 0 }))
+    .map((label, index) => ({ label, value: Number.isFinite(values[index]) ? (values[index] ?? 0) : 0 }))
     .filter((item) => item.label.trim().length > 0)
     .slice(0, 8);
   const fallback = [

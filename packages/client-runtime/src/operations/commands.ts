@@ -275,13 +275,17 @@ export const setThreadInteractionMode: (input: SetThreadInteractionModeInput) =>
     });
   });
 
-export const setThreadGoal: (input: SetThreadGoalInput) => CommandEffect =
-  Effect.fn("EnvironmentCommands.setThreadGoal")(function* (input) {
-    const metadata = yield* timestampedCommandMetadata(input);
-    return yield* dispatch({
-      ...input, type: "thread.goal.set", commandId: metadata.commandId, createdAt: metadata.createdAt,
-    });
+export const setThreadGoal: (input: SetThreadGoalInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.setThreadGoal",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.goal.set",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
   });
+});
 
 export const setThreadWorkjetConfig: (input: SetThreadWorkjetConfigInput) => CommandEffect =
   Effect.fn("EnvironmentCommands.setThreadWorkjetConfig")(function* (input) {

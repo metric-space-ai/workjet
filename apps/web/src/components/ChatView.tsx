@@ -7111,13 +7111,17 @@ function ChatViewContent(props: ChatViewProps) {
           hasPendingApprovals={pendingApprovals.length > 0}
           hasPendingUserInput={pendingUserInputs.length > 0}
           disabled={activeEnvironmentUnavailable || threadDetailLoading}
-          onChangeGoal={activeServerThread ? async (change) => {
-            const result = await setThreadGoal({
-              environmentId: activeServerThread.environmentId,
-              input: { threadId: activeServerThread.id, ...change },
-            });
-            return result._tag === "Success";
-          } : undefined}
+          onChangeGoal={
+            activeServerThread
+              ? async (change) => {
+                  const result = await setThreadGoal({
+                    environmentId: activeServerThread.environmentId,
+                    input: { threadId: activeServerThread.id, ...change },
+                  });
+                  return result._tag === "Success";
+                }
+              : undefined
+          }
         />
         {nativeSupervisorThread ? (
           <ThreadErrorBanner

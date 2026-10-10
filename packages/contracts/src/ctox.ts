@@ -1027,11 +1027,15 @@ export function isWorkjetSupervisorReceiptForRequest(
   if (!request.action.startsWith("project.supervisor.")) return true;
   if (
     request.action === "project.supervisor.route.capabilities.v1" ||
-    request.action === "project.supervisor.route.read.v1"
+    request.action === "project.supervisor.route.read.v1" ||
+    request.action === "project.supervisor.route.capabilities.v2" ||
+    request.action === "project.supervisor.route.read.v2"
   ) {
     if (
       response.action !== "project.supervisor.route.capabilities.v1" &&
-      response.action !== "project.supervisor.route.read.v1"
+      response.action !== "project.supervisor.route.read.v1" &&
+      response.action !== "project.supervisor.route.capabilities.v2" &&
+      response.action !== "project.supervisor.route.read.v2"
     )
       return false;
     return isWorkjetSupervisorRouteReceiptForRequest(request, response);

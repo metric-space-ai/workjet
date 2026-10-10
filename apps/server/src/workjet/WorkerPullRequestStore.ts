@@ -113,7 +113,16 @@ export const make = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.markExecutionStopped")),
       Effect.asVoid,
     );
-  return { get, observe, markExecutionStopped };
+  const listStopped = (afterThreadId: string) =>
+    sql<WorkerPullRequestReceipt>`
+      SELECT thread_id AS "threadId", worktree_path AS "worktreePath",
+        branch_ref AS "branchRef", provider, pr_number AS "prNumber", pr_url AS "prUrl",
+        head_oid AS "headOid", state, execution_stopped AS "executionStopped"
+      FROM workjet_worker_pull_requests
+      WHERE execution_stopped = 1 AND thread_id > ${afterThreadId}
+      ORDER BY thread_id LIMIT 16
+    `.pipe(Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.listStopped")));
+  return { get, observe, markExecutionStopped, listStopped };
 });
 
 export class WorkerPullRequestStore extends Context.Service<

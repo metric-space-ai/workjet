@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn namespace_custom_tools_are_remembered_and_ordinary_functions_remain_untouched() {
-        let prepared=prepare_xai_responses_body(br#"{\"tools\":[{\"type\":\"namespace\",\"name\":\"functions\",\"tools\":[{\"type\":\"custom\",\"name\":\"exec\",\"format\":{\"type\":\"text\"}},{\"type\":\"function\",\"name\":\"exec_command\",\"parameters\":{\"type\":\"object\"}}]}],\"input\":[]}"#,XaiRequestPolicy {model:"grok-4.7",..Default::default()}).unwrap();
+        let prepared=prepare_xai_responses_body(br#"{"tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec","format":{"type":"text"}},{"type":"function","name":"exec_command","parameters":{"type":"object"}}]}],"input":[]}"#,XaiRequestPolicy {model:"grok-4.7",..Default::default()}).unwrap();
         assert_eq!(
             prepared.custom_tools,
             BTreeSet::from(["functions__exec".into()])

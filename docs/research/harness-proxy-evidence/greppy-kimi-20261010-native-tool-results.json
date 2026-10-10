@@ -31,11 +31,7 @@
       "number": 1,
       "callId": "tool_gKdKYeS6ILdiY47YE6hl0u4n",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_01\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_01\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_01\n",
       "exitCode": 0
     },
@@ -43,11 +39,7 @@
       "number": 2,
       "callId": "tool_b4Ns0jYWOPAFL38LHpEDzUAI",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_02\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_02\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_02\n",
       "exitCode": 0
     },
@@ -55,11 +47,7 @@
       "number": 3,
       "callId": "tool_VbI6ugyvybeal6ZT7O9by8Il",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_03\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_03\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_03\n",
       "exitCode": 0
     },
@@ -67,11 +55,7 @@
       "number": 4,
       "callId": "tool_pWlis0SBCLIx0vDArpqdmc3j",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_04\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_04\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_04\n",
       "exitCode": 0
     },
@@ -79,11 +63,7 @@
       "number": 5,
       "callId": "tool_tjxGKVNIbr6ZsHfLxH0IMexY",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_05\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_05\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_05\n",
       "exitCode": 0
     },
@@ -91,11 +71,7 @@
       "number": 6,
       "callId": "tool_o7iP96BpMotiRLluN1VNgTdK",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_06\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_06\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_06\n",
       "exitCode": 0
     },
@@ -103,11 +79,7 @@
       "number": 7,
       "callId": "tool_gNI27t3XB53IybxL5jADQsfj",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_07\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_07\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_07\n",
       "exitCode": 0
     },
@@ -115,11 +87,7 @@
       "number": 8,
       "callId": "tool_ILZzztYQy4QkDwvF5y60ourq",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_08\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_08\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_08\n",
       "exitCode": 0
     },
@@ -127,11 +95,7 @@
       "number": 9,
       "callId": "tool_JBIoHyhVDWuFhzVjwJB9u3mF",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_09\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_09\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_09\n",
       "exitCode": 0
     },
@@ -139,11 +103,7 @@
       "number": 10,
       "callId": "tool_jMn6KJIeSME00S5bsZIuA6Ca",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_10\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_10\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_10\n",
       "exitCode": 0
     },
@@ -151,11 +111,7 @@
       "number": 11,
       "callId": "tool_6H9Z1nhE3v2JdQqgoO4elITY",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_11\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_11\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_11\n",
       "exitCode": 0
     },
@@ -163,11 +119,7 @@
       "number": 12,
       "callId": "tool_YhXK30YuGaBc89RRAmvACdMk",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_12\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_12\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_12\n",
       "exitCode": 0
     },
@@ -175,11 +127,7 @@
       "number": 13,
       "callId": "tool_Nhr5SUKIMssaMDQaphZWXmfD",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_13\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_13\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_13\n",
       "exitCode": 0
     },
@@ -187,11 +135,7 @@
       "number": 14,
       "callId": "tool_K47e289XH6xXeeah9p1reCz7",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_14\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_14\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_14\n",
       "exitCode": 0
     },
@@ -199,11 +143,7 @@
       "number": 15,
       "callId": "tool_Irt0vBKtkcSpmGFUEaano4JN",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_15\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_15\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_15\n",
       "exitCode": 0
     },
@@ -211,11 +151,7 @@
       "number": 16,
       "callId": "tool_BIc5NvlFtDg5ZxDB7YsrcyKX",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_16\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_16\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_16\n",
       "exitCode": 0
     },
@@ -223,11 +159,7 @@
       "number": 17,
       "callId": "tool_Awe0SaSQvXXhl2UEykkrcpUp",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_17\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_17\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_17\n",
       "exitCode": 0
     },
@@ -235,11 +167,7 @@
       "number": 18,
       "callId": "tool_j8CtxI0bY51kU7ULHNrMq1a5",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_18\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_18\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_18\n",
       "exitCode": 0
     },
@@ -247,11 +175,7 @@
       "number": 19,
       "callId": "tool_jRmsZQhtq6eCofZJy3AObrWJ",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_19\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_19\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_19\n",
       "exitCode": 0
     },
@@ -259,11 +183,7 @@
       "number": 20,
       "callId": "tool_gQNFPgq1cOKp4uiDACjcR973",
       "tool": "greppy",
-      "arguments": [
-        "bash-smart",
-        "--",
-        "printf 'PROXY_MATRIX_20\\n'"
-      ],
+      "arguments": ["bash-smart", "--", "printf 'PROXY_MATRIX_20\\n'"],
       "output": "ok \u2014 exit 0\nPROXY_MATRIX_20\n",
       "exitCode": 0
     }

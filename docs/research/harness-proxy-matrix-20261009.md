@@ -61,15 +61,15 @@ Keeping a connected model when switching routed harnesses is intentional (`apps/
 
 The evidence checks actual native calls and matching results, strict sequential execution, exact numbered printf output, success status and no tool errors. Every harness uses the real account-backed Rust host. No HTTP-only or mocked result counts as a live cell.
 
-| Harness | kimi-for-coding | glm-5.3-flash | MiniMax provider |
-| --- | --- | --- | --- |
-| Claude Code | Pass 20/20 | Upstream 503 before tools | Not run; account unavailable |
-| Codex CLI | Pass 20/20 | Pass 20/20 at recorded time | Not run; account unavailable |
-| Grok CLI / Grok Build | Pass 20/20 | Not run after account failure | Not run; account unavailable |
-| OpenCode | Pass 20/20 | Not run after account failure | Not run; account unavailable |
-| Greppy | Pass 20/20 | Not run after account failure | Not run; account unavailable |
-| MiniMax Code | Pass 20/20 | Not run after account failure | Not run; account unavailable |
-| Pi | Pass 20/20 | Not run after account failure | Not run; account unavailable |
+| Harness               | kimi-for-coding | glm-5.3-flash                 | MiniMax provider             |
+| --------------------- | --------------- | ----------------------------- | ---------------------------- |
+| Claude Code           | Pass 20/20      | Upstream 503 before tools     | Not run; account unavailable |
+| Codex CLI             | Pass 20/20      | Pass 20/20 at recorded time   | Not run; account unavailable |
+| Grok CLI / Grok Build | Pass 20/20      | Not run after account failure | Not run; account unavailable |
+| OpenCode              | Pass 20/20      | Not run after account failure | Not run; account unavailable |
+| Greppy                | Pass 20/20      | Not run after account failure | Not run; account unavailable |
+| MiniMax Code          | Pass 20/20      | Not run after account failure | Not run; account unavailable |
+| Pi                    | Pass 20/20      | Not run after account failure | Not run; account unavailable |
 
 The MiniMax column identifies the provider family, not an invented model ID. Its available-account probe returned 503. The required core-model cells and additional Kimi cells use exact IDs returned by connected real accounts. The MiniMax Code harness is distinct from the currently unavailable MiniMax model-provider account.
 

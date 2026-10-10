@@ -1636,12 +1636,12 @@ impl ClaudeSubscriptionAccountPool {
 
         while !remaining.is_empty() {
             let selected = match self.router.select_for_request(
-                    "claude",
-                    Some(model),
-                    self.clock.now_ms(),
-                    &remaining,
-                    &body,
-                ) {
+                "claude",
+                Some(model),
+                self.clock.now_ms(),
+                &remaining,
+                &body,
+            ) {
                 Ok(selected) => selected,
                 // Preserve the prior upstream result when no eligible fallback remains.
                 Err(AccountRoutingError::Selection(
@@ -1716,12 +1716,12 @@ impl ClaudeSubscriptionAccountPool {
 
         while !remaining.is_empty() {
             let selected = match self.router.select_for_request(
-                    "claude",
-                    Some(model),
-                    self.clock.now_ms(),
-                    &remaining,
-                    &body,
-                ) {
+                "claude",
+                Some(model),
+                self.clock.now_ms(),
+                &remaining,
+                &body,
+            ) {
                 Ok(selected) => selected,
                 Err(AccountRoutingError::Selection(
                     AccountSelectionError::NotFound

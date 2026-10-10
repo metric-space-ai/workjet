@@ -35,19 +35,24 @@ const observeSpawnedConfiguration = (environment?: NodeJS.ProcessEnv) =>
         ...(environment === undefined ? {} : { environment }),
       });
       const http = yield* HttpClient.HttpClient;
-      const response = yield* http.get(server.url).pipe(Effect.flatMap((response) => response.text));
+      const response = yield* http
+        .get(server.url)
+        .pipe(Effect.flatMap((response) => response.text));
       const parsed = yield* Schema.decodeUnknownEffect(
         Schema.fromJsonString(Schema.Struct({ configuration: Schema.String })),
       )(response);
       return parsed.configuration;
     }).pipe(
       Effect.provide(
-        Layer.mergeAll(OpenCodeRuntimeLive.pipe(Layer.provide(NodeServices.layer)), FetchHttpClient.layer),
+        Layer.mergeAll(
+          OpenCodeRuntimeLive.pipe(Layer.provide(NodeServices.layer)),
+          FetchHttpClient.layer,
+        ),
       ),
     ),
   );
 
-it.effect("passes explicit gateway model configuration to the native child", () =>
+it.live("passes explicit gateway model configuration to the native child", () =>
   Effect.gen(function* () {
     const configuration =
       '{"provider":{"workjet-gateway-claude":{"npm":"@ai-sdk/openai","models":{"claude-opus-5-5":{"name":"Opus"}}}}}';
@@ -59,7 +64,7 @@ it.effect("passes explicit gateway model configuration to the native child", () 
   }),
 );
 
-it.effect("retains the empty legacy default when no environment is supplied", () =>
+it.live("retains the empty legacy default when no environment is supplied", () =>
   Effect.gen(function* () {
     const observed = yield* observeSpawnedConfiguration();
     NodeAssert.equal(observed, "{}");

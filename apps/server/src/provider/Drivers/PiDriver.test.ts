@@ -96,14 +96,16 @@ it.effect("loads MCP tools on a fresh admitted Source start without a target-loc
             };
           } else if (message.method === "tools/list") {
             result = {
-              tools: [{
-                name: "workjet_fixture_echo",
-                inputSchema: {
-                  type: "object",
-                  properties: { command: { type: "string" } },
-                  required: ["command"],
+              tools: [
+                {
+                  name: "workjet_fixture_echo",
+                  inputSchema: {
+                    type: "object",
+                    properties: { command: { type: "string" } },
+                    required: ["command"],
+                  },
                 },
-              }],
+              ],
             };
           } else {
             expect(message.method).toBe("tools/call");
@@ -111,37 +113,46 @@ it.effect("loads MCP tools on a fresh admitted Source start without a target-loc
             calls.push(message.params!);
             result = { content: [{ type: "text", text: message.params?.arguments?.command }] };
           }
-          response.writeHead(200, { "content-type": "application/json" }).end(
-            JSON.stringify({ jsonrpc: "2.0", id: message.id, result }),
-          );
+          response
+            .writeHead(200, { "content-type": "application/json" })
+            .end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
         });
         await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
         return server;
       }),
-      (server) => Effect.promise(async () => {
-        server.closeAllConnections();
-        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-      }),
+      (server) =>
+        Effect.promise(async () => {
+          server.closeAllConnections();
+          await new Promise<void>((resolve, reject) =>
+            server.close((error) => (error ? reject(error) : resolve())),
+          );
+        }),
     );
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("No Source fixture listener.");
     const sourceDirectory = NodePath.join(directory, "original-source-profile");
     yield* Effect.promise(() => NodeFSP.mkdir(sourceDirectory, { mode: 0o700 }));
     const route = yield* Effect.acquireRelease(
-      Effect.promise(() => installWorkerSourceRoute(threadId, {
-        sourceEnvironmentId: "original-source",
-        targetEnvironmentId: "target-worker",
-        requestId: threadId,
-        requestDigest: "pi-source-digest",
-        capability: "admission-capability",
-        port: address.port,
-      }, {
-        targetEnvironmentId: "target-worker",
-        requestDigest: "pi-source-digest",
-        modelId: modelSelection.model,
-        harness: "pi-code",
-        nativeProfile: { harness: "pi-code", directory: sourceDirectory },
-      })),
+      Effect.promise(() =>
+        installWorkerSourceRoute(
+          threadId,
+          {
+            sourceEnvironmentId: "original-source",
+            targetEnvironmentId: "target-worker",
+            requestId: threadId,
+            requestDigest: "pi-source-digest",
+            capability: "admission-capability",
+            port: address.port,
+          },
+          {
+            targetEnvironmentId: "target-worker",
+            requestDigest: "pi-source-digest",
+            modelId: modelSelection.model,
+            harness: "pi-code",
+            nativeProfile: { harness: "pi-code", directory: sourceDirectory },
+          },
+        ),
+      ),
       (route) => Effect.promise(() => route.revoke()),
     );
     const initialAdmissions = admissions;
@@ -158,51 +169,129 @@ it.effect("loads MCP tools on a fresh admitted Source start without a target-loc
     yield* Effect.addFinalizer(() => Effect.sync(() => clearMcpProviderSession(threadId)));
     yield* Effect.gen(function* () {
       const config = yield* ServerConfig;
-      const profileDirectory = NodePath.join(config.stateDir, "harness-gateway-profiles", "pi", instanceId);
-      expect(yield* Effect.promise(() => NodeFSP.access(profileDirectory).then(() => true, () => false))).toBe(false);
+      const profileDirectory = NodePath.join(
+        config.stateDir,
+        "harness-gateway-profiles",
+        "pi",
+        instanceId,
+      );
+      expect(
+        yield* Effect.promise(() =>
+          NodeFSP.access(profileDirectory).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      ).toBe(false);
       const provider = yield* PiDriver.create({
         instanceId,
         displayName: undefined,
-        environment: [{ name: "WORKJET_PI_TEST_TARGET_SECRET", value: "target-private", sensitive: true }],
+        environment: [
+          { name: "WORKJET_PI_TEST_TARGET_SECRET", value: "target-private", sensitive: true },
+        ],
         enabled: true,
         routeViaGateway: false,
         config: { ...PiDriver.defaultConfig(), binaryPath: executable },
       });
       const extensionPath = NodePath.join(profileDirectory, "workjet-extension.mjs");
-      expect(yield* Effect.promise(() => NodeFSP.readFile(extensionPath, "utf8"))).toBe(PI_WORKJET_EXTENSION);
+      expect(yield* Effect.promise(() => NodeFSP.readFile(extensionPath, "utf8"))).toBe(
+        PI_WORKJET_EXTENSION,
+      );
       expect((yield* Effect.promise(() => NodeFSP.stat(extensionPath))).mode & 0o777).toBe(0o600);
       const completed = yield* provider.adapter.streamEvents.pipe(
         Stream.filter((event) => event.type === "item.completed"),
-        Stream.take(20), Stream.runCollect, Effect.forkChild({ startImmediately: true }),
+        Stream.take(20),
+        Stream.runCollect,
+        Effect.forkChild({ startImmediately: true }),
       );
       yield* provider.adapter.startSession({
-        threadId, cwd: directory, runtimeMode: "full-access", modelSelection,
+        threadId,
+        cwd: directory,
+        runtimeMode: "full-access",
+        modelSelection,
         workjetConfig: {
           ...DEFAULT_WORKJET_THREAD_CONFIG,
           role: "worker",
-          parent: { environmentId: EnvironmentId.make("original-source"), threadId: ThreadId.make("parent") },
+          parent: {
+            environmentId: EnvironmentId.make("original-source"),
+            threadId: ThreadId.make("parent"),
+          },
         },
       });
-      const startup = decodeStartup(yield* Effect.promise(() => NodeFSP.readFile(NodePath.join(sourceDirectory, "sessions", "fixture-startup.json"), "utf8")));
-      expect(startup).toEqual({ extensionPath, loadedTools: ["workjet_fixture_echo"], agentDirectory: sourceDirectory, sourceIsolated: true, targetSecretPresent: false });
+      const startup = decodeStartup(
+        yield* Effect.promise(() =>
+          NodeFSP.readFile(
+            NodePath.join(sourceDirectory, "sessions", "fixture-startup.json"),
+            "utf8",
+          ),
+        ),
+      );
+      expect(startup).toEqual({
+        extensionPath,
+        loadedTools: ["workjet_fixture_echo"],
+        agentDirectory: sourceDirectory,
+        sourceIsolated: true,
+        targetSecretPresent: false,
+      });
       yield* provider.adapter.sendTurn({ threadId, input: "RUN_WORKJET_MCP", modelSelection });
       const results = yield* Fiber.join(completed);
       expect(results).toHaveLength(20);
-      expect(results.every((event) => event.type === "item.completed" && event.payload.status === "completed")).toBe(true);
-      expect(calls).toEqual(Array.from({ length: 20 }, (_, index) => ({ name: "workjet_fixture_echo", arguments: { command: `result-${index + 1}` } })));
+      expect(
+        results.every(
+          (event) => event.type === "item.completed" && event.payload.status === "completed",
+        ),
+      ).toBe(true);
+      expect(calls).toEqual(
+        Array.from({ length: 20 }, (_, index) => ({
+          name: "workjet_fixture_echo",
+          arguments: { command: `result-${index + 1}` },
+        })),
+      );
       expect(admissions - initialAdmissions).toBe(2);
-      expect(yield* Effect.promise(() => NodeFSP.access(NodePath.join(profileDirectory, "models.json")).then(() => true, () => false))).toBe(false);
+      expect(
+        yield* Effect.promise(() =>
+          NodeFSP.access(NodePath.join(profileDirectory, "models.json")).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      ).toBe(false);
       expect((yield* provider.adapter.stopSession(threadId))?.terminated).toBe(true);
       expect(route.nativeProfile?.environment.PI_CODING_AGENT_DIR).toBe(sourceDirectory);
-    }).pipe(Effect.provide(Layer.mergeAll(
-      configLayerTest(directory, NodePath.join(directory, "server-state")),
-      settingsLayerTest(),
-      Layer.mock(BackgroundPolicy, { shouldRunScopeWork: () => Effect.succeed(false) }),
-      Layer.mock(ProviderGatewayService, {
-        catalog: () => Effect.succeed({ schemaVersion: 1, accounts: [], pools: [], routes: [], models: [], routingStrategy: "round-robin", providerPools: [] }),
-        status: () => Effect.succeed({ schemaVersion: 1, phase: "stopped", pid: null, providerEndpoint: null, managementEndpoint: null, failureReason: null, configuredAccountCount: 0, configuredModelCount: 0 }),
-      }),
-      Layer.mock(ServerEnvironment, { getEnvironmentId: Effect.succeed(EnvironmentId.make("target-worker")) }),
-    )));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          configLayerTest(directory, NodePath.join(directory, "server-state")),
+          settingsLayerTest(),
+          Layer.mock(BackgroundPolicy, { shouldRunScopeWork: () => Effect.succeed(false) }),
+          Layer.mock(ProviderGatewayService, {
+            catalog: () =>
+              Effect.succeed({
+                schemaVersion: 1,
+                accounts: [],
+                pools: [],
+                routes: [],
+                models: [],
+                routingStrategy: "round-robin",
+                providerPools: [],
+              }),
+            status: () =>
+              Effect.succeed({
+                schemaVersion: 1,
+                phase: "stopped",
+                pid: null,
+                providerEndpoint: null,
+                managementEndpoint: null,
+                failureReason: null,
+                configuredAccountCount: 0,
+                configuredModelCount: 0,
+              }),
+          }),
+          Layer.mock(ServerEnvironment, {
+            getEnvironmentId: Effect.succeed(EnvironmentId.make("target-worker")),
+          }),
+        ),
+      ),
+    );
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

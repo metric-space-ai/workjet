@@ -110,9 +110,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
           .pipe(Effect.mapError((cause) => fail(cause.message)));
         yield* profileLock.withPermit(
           Effect.gen(function* () {
-            for (const [filename, content] of [
-              ["models.json", encoded],
-            ] as const) {
+            for (const [filename, content] of [["models.json", encoded]] as const) {
               const staged = path.join(agentDirectory, `${filename}.workjet-stage`);
               yield* fs.writeFileString(staged, content).pipe(
                 Effect.andThen(fs.rename(staged, path.join(agentDirectory, filename))),
@@ -127,9 +125,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       const stagedExtension = `${extensionPath}.workjet-stage`;
       // Source-admitted sessions bypass local model resolution but load this static extension.
       yield* fs.makeDirectory(agentDirectory, { recursive: true, mode: 0o700 }).pipe(
-        Effect.andThen(
-          fs.writeFileString(stagedExtension, PI_WORKJET_EXTENSION, { mode: 0o600 }),
-        ),
+        Effect.andThen(fs.writeFileString(stagedExtension, PI_WORKJET_EXTENSION, { mode: 0o600 })),
         Effect.andThen(fs.rename(stagedExtension, extensionPath)),
         Effect.mapError(
           (cause) =>

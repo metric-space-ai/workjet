@@ -5,8 +5,13 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { it } from "@effect/vitest";
+import { afterEach, beforeEach, it } from "@effect/vitest";
+import { vi } from "vitest";
 import { stagePrebuiltLinuxSshServer } from "./build-linux-ssh-server.ts";
+
+// These fixtures represent an admitted local gpu3 build, including when the suite runs on CI.
+beforeEach(() => vi.stubEnv("GITHUB_ACTIONS", "false"));
+afterEach(() => vi.unstubAllEnvs());
 
 const archiveName = "workjet-server-linux-x64.tgz";
 const hash = (bytes: string | Uint8Array) =>

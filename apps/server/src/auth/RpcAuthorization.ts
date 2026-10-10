@@ -72,6 +72,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetWorktreesInspect]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayCatalog]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayAccountModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayScopedCatalog]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayBindModel]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayInfer]: AuthOrchestrationOperateScope,

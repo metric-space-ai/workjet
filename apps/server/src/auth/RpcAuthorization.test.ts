@@ -109,6 +109,9 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayScopedCatalog)).toBe(
       AuthOrchestrationReadScope,
     );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayAccountModels)).toBe(
+      AuthOrchestrationReadScope,
+    );
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewaySetGrant)).toBe(
       AuthOrchestrationOperateScope,
     );

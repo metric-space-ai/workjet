@@ -39,7 +39,7 @@ import * as SchemaIssue from "effect/SchemaIssue";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
-import { withImportedHistoryContext } from "../importedHistoryContext.ts";
+import { readHistoryContinuation, withImportedHistoryContext } from "../importedHistoryContext.ts";
 import {
   requireEnforcedExecutionPolicy,
   requirePersistedEnforcedExecutionPolicy,
@@ -750,6 +750,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...parsed,
           threadId,
           provider: resolvedProvider,
+          ...(parsed.resumePolicy === "fresh" ? { resumeCursor: undefined } : {}),
         };
         if (!instanceInfo.enabled) {
           return yield* toValidationError(
@@ -759,10 +760,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
         const effectiveResumeCursor =
-          input.resumeCursor ??
-          (persistedBinding?.providerInstanceId === resolvedInstanceId
-            ? persistedBinding.resumeCursor
-            : undefined);
+          input.resumePolicy === "fresh"
+            ? undefined
+            : (input.resumeCursor ??
+              (persistedBinding?.providerInstanceId === resolvedInstanceId
+                ? persistedBinding.resumeCursor
+                : undefined));
         const effectiveCwd =
           input.cwd ??
           (persistedBinding?.providerInstanceId === resolvedInstanceId
@@ -830,6 +833,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           modelSelection: input.modelSelection,
           workjetConfig: input.workjetConfig,
         });
+        if (input.historyContinuation !== undefined) {
+          yield* directory.upsert({
+            threadId,
+            provider: resolvedProvider,
+            providerInstanceId: resolvedInstanceId,
+            resumeCursor: sessionWithInstance.resumeCursor ?? null,
+            runtimePayload: { historyContinuation: input.historyContinuation },
+          });
+        }
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,
           runtimeMode: input.runtimeMode,
@@ -952,6 +964,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         if (native === null)
           yield* routed.adapter.nativeGoal.set(input.threadId, config.goal.objective, "active");
       }
+      const historyContinuation = Option.isSome(binding)
+        ? readHistoryContinuation(binding.value.runtimePayload)
+        : undefined;
       const turn = yield* routed.adapter.sendTurn(continuationInput);
       yield* directory.upsert({
         threadId: input.threadId,
@@ -962,6 +977,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         runtimePayload: {
           ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
           activeTurnId: turn.turnId,
+          ...(historyContinuation !== undefined
+            ? { historyContinuation: { ...historyContinuation, pending: false } }
+            : {}),
           lastRuntimeEvent: "provider.sendTurn",
           lastRuntimeEventAt: yield* nowIso,
         },

@@ -53,6 +53,12 @@ export const ProviderSession = Schema.Struct({
 });
 export type ProviderSession = typeof ProviderSession.Type;
 
+export const ProviderHistoryContinuation = Schema.Struct({
+  messageIds: Schema.Array(MessageId),
+  pending: Schema.Boolean,
+});
+export type ProviderHistoryContinuation = typeof ProviderHistoryContinuation.Type;
+
 export const ProviderSessionStartInput = Schema.Struct({
   threadId: ThreadId,
   provider: Schema.optional(ProviderDriverKind),
@@ -61,8 +67,9 @@ export const ProviderSessionStartInput = Schema.Struct({
   cwd: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   resumeCursor: Schema.optional(Schema.Unknown),
-  /** A claimed native attempt must fail rather than start a new conversation. */
-  resumePolicy: Schema.optional(Schema.Literal("require-existing")),
+  /** Native attempts require their session; explicit target changes start fresh. */
+  resumePolicy: Schema.optional(Schema.Literals(["require-existing", "fresh"])),
+  historyContinuation: Schema.optional(ProviderHistoryContinuation),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,

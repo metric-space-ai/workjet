@@ -134,6 +134,51 @@ const fixture = Effect.gen(function* () {
     quarantineCaptured: (captured, reference) =>
       Effect.gen(function* () {
         assert.deepEqual(captured, published);
+        const expectedProof = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
+          schemaVersion: 1,
+          kind: "isolated",
+          reason: "rejected-dispatch",
+          originalWorktreePath: destination,
+          originalAdminPath: captured.adminPath,
+          recoveryWorktreePath: recovery,
+          recoveryAdminPath: path.join(recovery, ".git"),
+          originalHeadOid: reference.headOid,
+          originalBranchRef: reference.branchRef,
+          worktreeIdentity: {
+            dev: Number(captured.worktreeDev),
+            ino: Number(captured.worktreeIno),
+          },
+          adminIdentity: { dev: Number(captured.adminDev), ino: Number(captured.adminIno) },
+          automaticContentDeletion: false,
+        });
+        const result = {
+          originalWorktreePath: destination,
+          originalAdminPath: captured.adminPath,
+          recoveryWorktreePath: recovery,
+          recoveryAdminPath: path.join(recovery, ".git"),
+          recoveryLocationStatus: "verified" as const,
+        };
+        if (!(yield* fs.exists(destination))) {
+          const observed = yield* capture(recovery).pipe(Effect.option);
+          const proof = yield* fs
+            .readFileString(path.join(recovery, ".git", "workjet-rollback-receipt.json"))
+            .pipe(Effect.option);
+          const progress = yield* fs
+            .readFileString(path.join(recovery, ".git", "workjet-rollback-progress.jsonl"))
+            .pipe(Effect.option);
+          if (
+            Option.isNone(observed) ||
+            observed.value.worktreeIno !== captured.worktreeIno ||
+            observed.value.adminIno !== captured.adminIno ||
+            Option.isNone(proof) ||
+            proof.value !== expectedProof ||
+            Option.isNone(progress) ||
+            progress.value.trim().split("\n").at(-1) !==
+              '{"phase":"checkout-and-admin-quarantined"}'
+          )
+            return yield* new NativeWorkerWorktreeRemovalError({ reason: "identity" });
+          return result;
+        }
         const observed = yield* capture(destination).pipe(Effect.option);
         if (
           Option.isNone(observed) ||
@@ -143,23 +188,7 @@ const fixture = Effect.gen(function* () {
           return yield* new NativeWorkerWorktreeRemovalError({ reason: "identity" });
         yield* fs.writeFileString(
           path.join(destination, ".git", "workjet-rollback-receipt.json"),
-          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
-            schemaVersion: 1,
-            kind: "isolated",
-            reason: "rejected-dispatch",
-            originalWorktreePath: destination,
-            originalAdminPath: captured.adminPath,
-            recoveryWorktreePath: recovery,
-            recoveryAdminPath: path.join(recovery, ".git"),
-            originalHeadOid: reference.headOid,
-            originalBranchRef: reference.branchRef,
-            worktreeIdentity: {
-              dev: Number(captured.worktreeDev),
-              ino: Number(captured.worktreeIno),
-            },
-            adminIdentity: { dev: Number(captured.adminDev), ino: Number(captured.adminIno) },
-            automaticContentDeletion: false,
-          }),
+          expectedProof,
         );
         yield* fs.writeFileString(
           path.join(destination, ".git", "workjet-rollback-progress.jsonl"),
@@ -171,14 +200,9 @@ const fixture = Effect.gen(function* () {
           state.loseAck = false;
           return yield* new NativeWorkerWorktreeRemovalError({ reason: "failed" });
         }
-        return {
-          originalWorktreePath: destination,
-          originalAdminPath: captured.adminPath,
-          recoveryWorktreePath: recovery,
-          recoveryAdminPath: path.join(recovery, ".git"),
-          recoveryLocationStatus: "verified" as const,
-        };
+        return result;
       }).pipe(Effect.mapError(() => new NativeWorkerWorktreeRemovalError({ reason: "failed" }))),
+
     removeCaptured: () =>
       Effect.die("Private repositories must be retained, not recursively removed"),
   });

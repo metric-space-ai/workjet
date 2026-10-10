@@ -380,54 +380,19 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
         // authoritative merged-PR evidence remains in the SQL cleanup receipt.
         if (matching === null)
           return { status: "skipped", reason: "safe-removal-unavailable" } as const;
-        const nativeProof = yield* Effect.gen(function* () {
-          const readBounded = (name: string) =>
-            Effect.gen(function* () {
-              const file = path.join(recoveryPath, ".git", name);
-              const info = yield* fs.stat(file);
-              if (info.size > 65536n) return yield* Effect.fail("oversized-receipt");
-              return yield* fs.readFileString(file);
-            });
-          const proof = yield* Schema.decodeUnknownEffect(
-            Schema.fromJsonString(
-              Schema.Struct({
-                schemaVersion: Schema.Literal(1),
-                kind: Schema.Literal("isolated"),
-                originalWorktreePath: Schema.String,
-                originalAdminPath: Schema.String,
-                recoveryWorktreePath: Schema.String,
-                recoveryAdminPath: Schema.String,
-                originalHeadOid: Schema.String,
-                originalBranchRef: Schema.String,
-                worktreeIdentity: Schema.Struct({ dev: Schema.Number, ino: Schema.Number }),
-                adminIdentity: Schema.Struct({ dev: Schema.Number, ino: Schema.Number }),
-                automaticContentDeletion: Schema.Literal(false),
-              }),
-            ),
-          )(yield* readBounded("workjet-rollback-receipt.json"));
-          const progress = yield* readBounded("workjet-rollback-progress.jsonl");
-          const terminal = yield* Schema.decodeUnknownEffect(
-            Schema.fromJsonString(
-              Schema.Struct({
-                phase: Schema.Literal("checkout-and-admin-quarantined"),
-              }),
-            ),
-          )(progress.trim().split("\n").at(-1));
-          return (
-            terminal.phase === "checkout-and-admin-quarantined" &&
-            proof.originalWorktreePath === worktreePath &&
-            proof.originalAdminPath === captured.adminPath &&
-            proof.recoveryWorktreePath === recoveryPath &&
-            proof.recoveryAdminPath === path.join(recoveryPath, ".git") &&
-            proof.originalHeadOid === head &&
-            proof.originalBranchRef === workerRefName &&
-            String(proof.worktreeIdentity.dev) === captured.worktreeDev &&
-            String(proof.worktreeIdentity.ino) === captured.worktreeIno &&
-            String(proof.adminIdentity.dev) === captured.adminDev &&
-            String(proof.adminIdentity.ino) === captured.adminIno
-          );
-        }).pipe(Effect.orElseSucceed(() => false));
-        if (!nativeProof) return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+        const nativeProof = yield* nativeRemover
+          .quarantineCaptured(captured, {
+            headOid: head,
+            branchRef: workerRefName,
+          })
+          .pipe(Effect.option);
+        if (
+          Option.isNone(nativeProof) ||
+          nativeProof.value.recoveryWorktreePath !== recoveryPath ||
+          nativeProof.value.recoveryAdminPath !== path.join(recoveryPath, ".git") ||
+          nativeProof.value.recoveryLocationStatus !== "verified"
+        )
+          return { status: "skipped", reason: "safe-removal-unavailable" } as const;
         if (
           (yield* cleanHead) !== head ||
           (yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => true)))

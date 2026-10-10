@@ -44,6 +44,7 @@ import {
   withoutGoalObservations,
 } from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
+import { withoutForeignSupervisorStateAtCreation } from "../workjet/workjetSupervisorState.ts";
 import {
   requireProjectTeamLifecycle,
   requireProjectTeamOwnership,
@@ -538,7 +539,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
-          workjetConfig: withoutGoalObservations(command.workjetConfig),
+          workjetConfig: withoutGoalObservations(
+            withoutForeignSupervisorStateAtCreation(command.workjetConfig, command.threadId),
+          ),
           branch: command.branch,
           worktreePath: command.worktreePath,
           createdAt: command.createdAt,
@@ -1284,7 +1287,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     case "thread.goal.assign":
     case "thread.goal.advance": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
-      const config = thread.workjetConfig;
+      const config = withoutInheritedWorkjetSupervisorJournals(thread.workjetConfig);
       if (
         config.schemaVersion !== 2 ||
         config.team?.role !== "specialist" ||

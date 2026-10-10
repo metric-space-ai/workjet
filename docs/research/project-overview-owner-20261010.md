@@ -48,7 +48,28 @@ separate disruptions, four explained metrics, right-column order and collapsed
 diagnostics. Unavailable values intentionally differ from the example values
 in the mock.
 
-Final screenshots and lane results are recorded after the bounded check ends.
+- [Before: installed 0.0.76](project-overview-owner-20261010/before-v0.0.76.png).
+- [1440 px](project-overview-owner-20261010/overview-1440.png).
+- [420 px](project-overview-owner-20261010/overview-420.png).
+- [Recorded viewport measurements](project-overview-owner-20261010/screenshots.json).
+
+Visual run `workjet-project-overview-owner-20261010T232846Z` passed on
+`ffce9e6ae6fe6f7d7c3e8c5ce9e99d0e70a8cf9c`, whose product code is identical
+to the tested product source below. Both widths have four metrics, three real
+worker goals, the requested section order and collapsed diagnostics.
+Document widths equal viewport widths (1440 and 420), with no horizontal
+overflow. At 1440 px the meeting/decision/link cards form the right column; at
+420 px they follow the main content. Prompts, technical routes and inactive
+test one-shots are absent from the primary content.
+
+The pending Pinball question cannot be loaded without its thread-detail
+connection in this isolated browser. Its question body and answer actions are
+therefore not visually accepted here. Native reads, the connected sidebar and
+actions need installed-app verification; this evidence does not claim them.
+
+All captured browser and Vite process groups stopped at the terminal cleanup.
+Temporary entry files and the browser profile were removed. The daily app and
+its data were unchanged.
 
 ## Verification
 

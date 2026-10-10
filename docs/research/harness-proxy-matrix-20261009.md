@@ -56,7 +56,7 @@ The isolated RC has its own database and native harness homes. Private credentia
 
 ## Checks and remaining owner actions
 
-Linux checks run through the shared gpu3 build lane, two workers. The composed candidate passes server/web typechecks, forty focused tests and server/web bundles (run `20261010T021624Z`, clean `6b17cd3b3`). An earlier composed run passes 258 tests in 23 files. The original streaming repair passes 88 executor tests; routing passes 4/4; converter passes 10/10; informational effort handling passes 79 adapter tests plus targeted format/lint. Final new xAI, ACP and empty-text regressions remain queued. Receipts and logs are preserved durably in `~/.codex/task-evidence/harness-proxy/receipts/`.
+Linux checks run through the shared gpu3 build lane, two workers. The composed candidate passes server/web typechecks, forty focused tests and server/web bundles (run `20261010T021624Z`, clean `6b17cd3b3`). An earlier composed run passes 258 tests in 23 files. The original streaming repair passes 88 executor tests; routing passes 4/4; converter passes 10/10; informational effort handling passes 79 adapter tests plus targeted format/lint. The final native run (20261010T022110Z, clean 916102115) passes 100 xAI tests, six converter tests including maximum effort and twenty-call history, and ten Claude executor tests. New ACP, Pi, OpenCode child-environment and empty-text regressions remain queued. Receipts and logs are preserved durably in `~/.codex/task-evidence/harness-proxy/receipts/`.
 
 The inherited Mac packaging CI failure is `Mac packaging requires --gpu-build-owner <thread-id>`; Workjet Main owns its repair. The guard is preserved. No PR is claimed CI-green while that required job fails.
 

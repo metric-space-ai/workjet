@@ -17,6 +17,7 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
+  ProjectId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -914,6 +915,83 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("rejects autonomous-worktree before any provider launch, including full access", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      for (const [driver, adapter] of [
+        [CODEX_DRIVER, routing.codex],
+        [CLAUDE_AGENT_DRIVER, routing.claude],
+        [CURSOR_DRIVER, routing.cursor],
+      ] as const) {
+        adapter.startSession.mockClear();
+        const threadId = asThreadId(`autonomous-${driver}`);
+        const result = yield* Effect.result(
+          provider.startSession(threadId, {
+            threadId,
+            provider: driver,
+            providerInstanceId: ProviderInstanceId.make(String(driver)),
+            cwd: "/tmp/project",
+            runtimeMode: "full-access",
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              schemaVersion: 2,
+              executionPolicy: {
+                mode: "autonomous-worktree",
+                projectId: ProjectId.make("policy-project"),
+                revision: 3,
+              },
+            },
+          }),
+        );
+        assert.equal(result._tag, "Failure");
+        if (result._tag === "Failure") {
+          assert.equal(result.failure._tag, "ProviderValidationError");
+          assert.match(String(result.failure), /Full access is not an alternative/);
+        }
+        assert.equal(adapter.startSession.mock.calls.length, 0);
+      }
+    }),
+  );
+
+  it.effect("does not adopt, restart or send from a persisted unsupported policy", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const threadId = asThreadId("autonomous-persisted");
+      routing.codex.startSession.mockClear();
+      routing.codex.sendTurn.mockClear();
+      yield* directory.upsert({
+        threadId,
+        provider: CODEX_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        runtimeMode: "full-access",
+        status: "stopped",
+        resumeCursor: { opaque: "original-session" },
+        runtimePayload: {
+          // An unreadable future schema must not fall back to unrestricted defaults.
+          workjetConfig: {
+            schemaVersion: 999,
+            executionPolicy: { mode: "autonomous-worktree", revision: 3 },
+          },
+        },
+      });
+      const result = yield* Effect.result(provider.sendTurn({ threadId, input: "Continue." }));
+      assert.equal(result._tag, "Failure");
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+      assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
+      const replacement = yield* Effect.result(
+        provider.startSession(threadId, {
+          threadId,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "full-access",
+        }),
+      );
+      assert.equal(replacement._tag, "Failure");
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+    }),
+  );
+
+
   it.effect("native goal inspection and stop never recover a closed Owner session", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

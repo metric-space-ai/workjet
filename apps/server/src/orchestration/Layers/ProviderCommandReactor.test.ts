@@ -3528,6 +3528,64 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  it("keeps native Greppy history complete without reporting text-prompt trimming", async () => {
+    const harness = await createHarness({ initialProviderSession: true });
+    const threadId = ThreadId.make("thread-1");
+    const now = "2026-01-01T00:00:00.000Z";
+    const messages = [
+      {
+        messageId: asMessageId("long-source-user"),
+        role: "user" as const,
+        text: "Prior decision ".repeat(20_000),
+        createdAt: now,
+      },
+      {
+        messageId: asMessageId("long-source-answer"),
+        role: "assistant" as const,
+        text: "Recorded outcome",
+        createdAt: now,
+      },
+    ];
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.history.import",
+        commandId: CommandId.make("long-switch-history"),
+        threadId,
+        messages,
+        createdAt: now,
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("long-greppy-switch"),
+        threadId,
+        message: {
+          messageId: asMessageId("long-switch-current"),
+          role: "user",
+          text: "Continue",
+          attachments: [],
+        },
+        modelSelection: { instanceId: ProviderInstanceId.make("greppy"), model: "fixture-model" },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      importedHistory: messages.map(({ messageId: id, role, text }) => ({ id, role, text })),
+    });
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId)!;
+    const note = thread.activities.find((activity) => activity.kind === "provider.history.context");
+    expect(note?.payload).toMatchObject({
+      detail: expect.stringContaining("2 messages via native history import"),
+    });
+    expect(JSON.stringify(note)).not.toContain("not sent");
+    expect(JSON.stringify(note)).not.toContain("as excerpts");
+  });
+
   it.each([false, true])(
     "carries every completed turn through Claude → Codex → Claude (stopped=%s)",
     async (stopped) => {

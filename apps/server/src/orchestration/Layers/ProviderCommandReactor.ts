@@ -874,7 +874,10 @@ const make = Effect.gen(function* () {
       importedHistory.length > 0 &&
       (continuation?.pending || activeSession?.provider !== "greppy")
     ) {
-      const fit = buildImportedHistoryPrompt(importedHistory, normalizedInput);
+      const fit =
+        activeSession?.provider === "greppy"
+          ? undefined
+          : buildImportedHistoryPrompt(importedHistory, normalizedInput);
       if (!fit && activeSession?.provider !== "greppy")
         return yield* new ProviderAdapterRequestError({
           provider: activeSession?.provider ?? "unknown",
@@ -882,7 +885,12 @@ const make = Effect.gen(function* () {
           detail:
             "The current request is too long to send with conversation history. No turn was sent. Shorten the request and try again.",
         });
-      const fitDetail = fit ? describeImportedHistoryFit(fit) : "";
+      const fitDetail =
+        activeSession?.provider === "greppy"
+          ? `Previous context: ${importedHistory.length} messages via native history import.`
+          : fit
+            ? describeImportedHistoryFit(fit)
+            : "";
       yield* orchestrationEngine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("imported-context:" + input.requestId),

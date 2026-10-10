@@ -16,12 +16,15 @@ import { ComposerControl } from "./ComposerControl";
 
 export function NativeSupervisorRouteControls(props: {
   readonly scope: NativeSupervisorScope | null;
+  readonly workerSourceBinding?:
+    | { readonly connectionId: string; readonly instanceId?: string }
+    | undefined;
   readonly disabled: boolean;
   readonly routeTitle: string;
   readonly onSavingChange: (saving: boolean) => void;
 }) {
   const registry = useWorkjetProjectRegistry(props.scope?.instanceId ?? null);
-  const lumas = useProjectSupervisorLumas();
+  const lumas = useProjectSupervisorLumas(props.workerSourceBinding);
   const navigate = useNavigate();
   const project = registry.projects.find((entry) => entry.id === props.scope?.projectId);
   const [saving, setSaving] = useState(false);

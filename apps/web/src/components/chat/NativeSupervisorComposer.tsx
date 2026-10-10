@@ -913,6 +913,13 @@ export function NativeSupervisorComposer(props: {
             <NativeSupervisorRouteControls
               key={JSON.stringify(props.scope)}
               scope={props.scope}
+              workerSourceBinding={
+                props.config.schemaVersion === 2
+                  ? props.config.capabilityBindings.find(
+                      (binding) => binding.capabilityId === "ctox-business-os",
+                    )?.target
+                  : undefined
+              }
               disabled={disabled || busy || inputting || pending}
               routeTitle={routeLabel.title}
               onSavingChange={setRouteSaving}

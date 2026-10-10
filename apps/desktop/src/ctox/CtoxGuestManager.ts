@@ -495,7 +495,7 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
             ? "supervisor_control_not_ready"
             : message === "Native WebRTC peer is not connected" || code === "PEER_UNAVAILABLE"
               ? "peer_unavailable"
-              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT"
+              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT" || code === "WORKJET_PROJECT_TIMEOUT" || code === "projection_delayed"
                 ? "request_timeout"
                 : message === "Failed to fetch" || message === "fetch failed"
                   ? "network_unavailable"
@@ -2171,7 +2171,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             action: request.action,
             stage: "response",
             status: status === "failed" ? "failed" : "invalid",
-            ...describeCtoxGuestFailure(raw),
+            ...(Option.isSome(reason)
+              ? { reason: reason.value.reason }
+              : describeCtoxGuestFailure(raw)),
           });
           return {
             _tag: "failed",
@@ -2242,7 +2244,25 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         )
           return { _tag: "failed", code: "guest_failed" };
         return { _tag: "completed", response: decoded.value };
-      });
+      }).pipe(
+        Effect.tap((result) =>
+          Effect.annotateCurrentSpan({
+            outcome: result._tag,
+            ...(result._tag === "failed"
+              ? { reason: result.diagnostic?.reason ?? result.code }
+              : {}),
+          }),
+        ),
+        Effect.withSpan("CtoxGuestManager.requestProjectControl", {
+          attributes: {
+            instanceId,
+            action: request.action,
+            ...("projectId" in request ? { projectId: request.projectId } : {}),
+            ...("threadId" in request ? { threadId: request.threadId } : {}),
+            ...("commandId" in request ? { commandId: request.commandId } : {}),
+          },
+        }),
+      );
 
     const requestSessionControl = (
       instanceId: string,

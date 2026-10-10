@@ -365,3 +365,20 @@ it.effect("keeps a newly authorized source usable after a late rejection of the 
     assert.equal(checks, 1);
   }),
 );
+
+it.effect("shares discovery across parents but rechecks current credentials and readiness", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    yield* f.client.register(scope, source);
+    yield* f.client.register(scope, source);
+    assert.equal(f.probes.length, 1);
+    assert.equal(f.calls.length, 2);
+    f.rotate();
+    yield* f.client.register(scope, source);
+    assert.equal(f.probes.length, 2);
+    f.disconnect();
+    assert.equal((yield* f.client.register(scope, source).pipe(Effect.result))._tag, "Failure");
+    assert.equal(f.calls.length, 3);
+    assert.equal(f.probes.length, 2);
+  }),
+);

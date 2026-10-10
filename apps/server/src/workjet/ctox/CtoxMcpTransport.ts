@@ -53,9 +53,48 @@ export const isCtoxMcpResponseWithinLimit = (body: string): boolean =>
 
 const JsonRpcEnvelope = Schema.Struct({
   result: Schema.optional(Schema.Unknown),
-  error: Schema.optional(Schema.Struct({ code: Schema.optional(Schema.Number) })),
+  error: Schema.optional(
+    Schema.Struct({
+      code: Schema.optional(Schema.Number),
+      message: Schema.optional(Schema.String),
+      data: Schema.optional(Schema.Struct({ code: Schema.optional(Schema.String) })),
+    }),
+  ),
 });
 const decodeEnvelope = Schema.decodeUnknownEffect(Schema.fromJsonString(JsonRpcEnvelope));
+const nativeErrorCodes = new Set([
+  "not_authenticated",
+  "not_authorized",
+  "module_not_found",
+  "entity_not_found",
+  "record_not_found",
+  "action_not_allowed",
+  "confirmation_required",
+  "sync_not_ready",
+  "runtime_unavailable",
+  "validation_failed",
+  "external_effect_blocked",
+  "channel_disabled",
+  "permission_denied",
+  "response_too_large",
+  "rate_limited",
+  "internal_error",
+  "method_not_found",
+]);
+const nativeWorkerErrors = new Map<string, string>([
+  ["source supervisor is not registered natively", "native-supervisor-unregistered"],
+  ["native supervisor history missing", "native-supervisor-history-missing"],
+  ["source supervisor belongs to another project", "native-project-mismatch"],
+  ["native supervisor provenance changed", "native-supervisor-provenance-changed"],
+  ["native worker dispatch policy denied", "native-policy-denied"],
+  ["source replacement needs exact revision", "source-revision-conflict"],
+]);
+const safeRemoteFailureReason = (error: NonNullable<typeof JsonRpcEnvelope.Type.error>) => {
+  const known = error.message === undefined ? undefined : nativeWorkerErrors.get(error.message);
+  if (known !== undefined) return known;
+  const code = error.data?.code;
+  return code !== undefined && nativeErrorCodes.has(code) ? code : "remote-error";
+};
 const ServerInfo = Schema.Struct({ serverInfo: Schema.Struct({ name: Schema.String }) });
 const ToolList = Schema.Struct({
   tools: Schema.Array(
@@ -67,10 +106,16 @@ const ToolList = Schema.Struct({
 });
 const ToolInputSchema = Schema.Struct({ properties: Schema.Record(Schema.String, Schema.Unknown) });
 const StringArgumentSchema = Schema.Struct({ type: Schema.Literal("string") });
+const decodeServerInfo = Schema.decodeUnknownEffect(ServerInfo);
+const decodeToolList = Schema.decodeUnknownEffect(ToolList);
+const isToolInputSchema = Schema.is(ToolInputSchema);
+const isStringArgumentSchema = Schema.is(StringArgumentSchema);
 export const CtoxMcpToolResult = Schema.Struct({
   isError: Schema.optional(Schema.Boolean),
   structuredContent: Schema.optional(Schema.Unknown),
 });
+
+const decodeToolResult = Schema.decodeUnknownEffect(CtoxMcpToolResult);
 
 /** Server-side transport only. Callers own tool schemas, authorization and run binding. */
 export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
@@ -94,8 +139,17 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
         HttpClientRequest.bearerToken(target.token),
       );
       const response = yield* httpClient.execute(request);
+      yield* Effect.annotateCurrentSpan({ httpStatus: response.status });
       if (response.status === 401) return yield* failure("authentication-required");
       if (response.status < 200 || response.status >= 300) {
+        yield* Effect.annotateCurrentSpan({
+          failureReason:
+            response.status === 429
+              ? "rate-limited"
+              : response.status === 403
+                ? "permission-denied"
+                : "http-unavailable",
+        });
         return yield* failure("connection-unavailable");
       }
       const body = yield* response.text;
@@ -106,6 +160,14 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
         envelope.value.error !== undefined ||
         envelope.value.result === undefined
       ) {
+        if (Option.isSome(envelope) && envelope.value.error !== undefined) {
+          yield* Effect.annotateCurrentSpan({
+            ...(envelope.value.error.code === undefined
+              ? {}
+              : { jsonRpcCode: envelope.value.error.code }),
+            failureReason: safeRemoteFailureReason(envelope.value.error),
+          });
+        }
         return yield* failure("remote-response-invalid");
       }
       return envelope.value.result;
@@ -113,42 +175,57 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
       Effect.scoped,
       Effect.timeout(timeout),
       Effect.catchTags({
-        TimeoutError: () => Effect.fail(failure("connection-unavailable")),
-        HttpClientError: () => Effect.fail(failure("connection-unavailable")),
+        TimeoutError: () =>
+          Effect.annotateCurrentSpan({ failureReason: "request-timeout" }).pipe(
+            Effect.andThen(Effect.fail(failure("connection-unavailable"))),
+          ),
+        HttpClientError: () =>
+          Effect.annotateCurrentSpan({ failureReason: "transport-error" }).pipe(
+            Effect.andThen(Effect.fail(failure("connection-unavailable"))),
+          ),
       }),
+      Effect.tapError((error) => Effect.annotateCurrentSpan({ reason: error.reason })),
+      Effect.withSpan("CtoxMcpTransport.call", { attributes: { method } }),
     );
 
-  const probe = Effect.fn("CtoxMcpTransport.probe")(function* (
-    target: CtoxMcpTarget,
-    requiredTools: ReadonlyArray<string>,
-    requiredStringArguments: Readonly<Record<string, ReadonlyArray<string>>> = {},
-  ) {
-    const initialized = yield* call(target, "initialize");
-    const info = yield* Schema.decodeUnknownEffect(ServerInfo)(initialized).pipe(Effect.option);
-    if (Option.isNone(info) || info.value.serverInfo.name !== CTOX_MCP_SERVER_NAME) {
-      return yield* failure("remote-identity-mismatch");
-    }
-    const listed = yield* call(target, "tools/list", {});
-    const tools = yield* Schema.decodeUnknownEffect(ToolList)(listed).pipe(Effect.option);
-    if (Option.isNone(tools)) return yield* failure("remote-response-invalid");
-    const names = new Set(tools.value.tools.map(({ name }) => name));
-    if (requiredTools.some((tool) => !names.has(tool))) {
-      return yield* failure("remote-tools-missing");
-    }
-    // Legacy daemons can ignore unknown fields. A retry key is only meaningful
-    // when the selected operation advertises the corresponding contract.
-    for (const [name, argumentNames] of Object.entries(requiredStringArguments)) {
-      const inputSchema = tools.value.tools.find((tool) => tool.name === name)?.inputSchema;
-      if (!Schema.is(ToolInputSchema)(inputSchema)) return yield* failure("remote-tools-missing");
-      if (
-        argumentNames.some(
-          (argument) => !Schema.is(StringArgumentSchema)(inputSchema.properties[argument]),
-        )
-      ) {
+  const probe = Effect.fn("CtoxMcpTransport.probe")(
+    function* (
+      target: CtoxMcpTarget,
+      requiredTools: ReadonlyArray<string>,
+      requiredStringArguments: Readonly<Record<string, ReadonlyArray<string>>> = {},
+    ) {
+      yield* Effect.annotateCurrentSpan({ requiredTools: [...requiredTools] });
+      const initialized = yield* call(target, "initialize");
+      const info = yield* decodeServerInfo(initialized).pipe(Effect.option);
+      if (Option.isNone(info) || info.value.serverInfo.name !== CTOX_MCP_SERVER_NAME) {
+        return yield* failure("remote-identity-mismatch");
+      }
+      const listed = yield* call(target, "tools/list", {});
+      const tools = yield* decodeToolList(listed).pipe(Effect.option);
+      if (Option.isNone(tools)) return yield* failure("remote-response-invalid");
+      const names = new Set(tools.value.tools.map(({ name }) => name));
+      if (requiredTools.some((tool) => !names.has(tool))) {
+        yield* Effect.annotateCurrentSpan({
+          missingTools: requiredTools.filter((tool) => !names.has(tool)),
+        });
         return yield* failure("remote-tools-missing");
       }
-    }
-  });
+      // Legacy daemons can ignore unknown fields. A retry key is only meaningful
+      // when the selected operation advertises the corresponding contract.
+      for (const [name, argumentNames] of Object.entries(requiredStringArguments)) {
+        const inputSchema = tools.value.tools.find((tool) => tool.name === name)?.inputSchema;
+        if (!isToolInputSchema(inputSchema)) return yield* failure("remote-tools-missing");
+        if (
+          argumentNames.some(
+            (argument) => !isStringArgumentSchema(inputSchema.properties[argument]),
+          )
+        ) {
+          return yield* failure("remote-tools-missing");
+        }
+      }
+    },
+    Effect.tapError((error) => Effect.annotateCurrentSpan({ reason: error.reason })),
+  );
 
   const callTool = (
     target: CtoxMcpTarget,
@@ -158,9 +235,7 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
   ) =>
     call(target, "tools/call", { name, arguments: arguments_ }, timeout).pipe(
       Effect.flatMap((result) =>
-        Schema.decodeUnknownEffect(CtoxMcpToolResult)(result).pipe(
-          Effect.mapError(() => failure("remote-response-invalid")),
-        ),
+        decodeToolResult(result).pipe(Effect.mapError(() => failure("remote-response-invalid"))),
       ),
     );
 

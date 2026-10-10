@@ -15,11 +15,18 @@ const state = vi.hoisted(() => ({
   isPending: false,
   refresh: vi.fn(),
   effects: [] as Array<() => void>,
+  connect: null as { current: (renew?: boolean) => Promise<void> } | null,
 }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useEffect: (effect: () => void) => {
     state.effects.push(effect);
+  },
+  useRef: (value: unknown) => {
+    const ref = { current: value };
+    if (typeof value === "function")
+      state.connect = ref as { current: (renew?: boolean) => Promise<void> };
+    return ref;
   },
 }));
 vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => state }));
@@ -51,6 +58,7 @@ beforeEach(() => {
   state.data = { connections: [] };
   state.isPending = false;
   state.effects = [];
+  state.connect = null;
   state.refresh.mockClear();
   provision.mockClear();
   vi.mocked(props.bindConnection).mockClear();
@@ -59,6 +67,45 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("automatic supervisor worker connection", () => {
+  it("renews a ready source only on the explicit user action and saves the issued binding", async () => {
+    state.data = { connections: [connection] };
+    const replacement = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    provision.mockResolvedValueOnce({ _tag: "completed", connection: replacement });
+    const html = render({ config: boundConfig });
+    expect(html).toContain('aria-label="Renew worker access"');
+    state.effects.forEach((effect) => effect());
+    expect(provision).not.toHaveBeenCalled();
+    await state.connect!.current(true);
+    expect(provision).toHaveBeenCalledExactlyOnceWith({
+      environmentId: props.environmentId,
+      purpose: "worker_source",
+      target: { _tag: "ctox_dev", tenantId: tenant },
+    });
+    expect(props.bindConnection).toHaveBeenCalledExactlyOnceWith(replacement);
+    expect(state.refresh).toHaveBeenCalledTimes(1);
+    expect(state.data.connections).toEqual([connection]);
+  });
+
+  it("does not renew an unavailable environment or bind an issued foreign instance", async () => {
+    state.data = { connections: [connection] };
+    render({ config: boundConfig, unavailable: true });
+    await state.connect!.current(true);
+    expect(provision).not.toHaveBeenCalled();
+    provision.mockResolvedValueOnce({
+      _tag: "completed",
+      connection: { ...connection, instanceId: "foreign.ctox.dev" },
+    });
+    render({ config: boundConfig });
+    await state.connect!.current(true);
+    expect(provision).toHaveBeenCalledTimes(1);
+    expect(props.bindConnection).not.toHaveBeenCalled();
+  });
+
   it("keeps an already-ready binding when another grant exists", () => {
     state.data = {
       connections: [

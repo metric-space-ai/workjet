@@ -163,7 +163,11 @@ it.effect("retains the immutable source policy in the target provider configurat
     expect(h.commands).toHaveLength(2);
     expect(h.worktreeCalls).toHaveLength(0);
     expect(h.isolatedCalls).toHaveLength(1);
-    expect(h.rollbackCustodies[0]).toMatchObject({ kind: "isolated", worktreePath: workerPath, adminPath: workerPath + "/.git" });
+    expect(h.rollbackCustodies[0]).toMatchObject({
+      kind: "isolated",
+      worktreePath: workerPath,
+      adminPath: workerPath + "/.git",
+    });
     expect(h.isolatedCalls[0]).toMatchObject({
       projectId: request.project.id,
       repositoryKey: request.project.repository.canonicalKey,
@@ -174,17 +178,28 @@ it.effect("retains the immutable source policy in the target provider configurat
   }),
 );
 
-it.effect("does not create an isolated worker if its original rollback custody cannot be verified", () => Effect.gen(function* () {
-  const h = harness({ failRollback: true });
-  const receiver = yield* h.receiver;
-  const failure = yield* Effect.flip(receiver.receive({
-    ...request, executionPolicy: { mode: "autonomous-worktree", projectId: request.project.id, revision: 7 },
-  }));
-  expect(failure.reason).toBe("worktree-failed");
-  expect(h.commands).toHaveLength(0);
-  expect(h.isolatedCalls).toHaveLength(1);
-  expect(h.worktreeCalls).toHaveLength(0);
-}));
+it.effect(
+  "does not create an isolated worker if its original rollback custody cannot be verified",
+  () =>
+    Effect.gen(function* () {
+      const h = harness({ failRollback: true });
+      const receiver = yield* h.receiver;
+      const failure = yield* Effect.flip(
+        receiver.receive({
+          ...request,
+          executionPolicy: {
+            mode: "autonomous-worktree",
+            projectId: request.project.id,
+            revision: 7,
+          },
+        }),
+      );
+      expect(failure.reason).toBe("worktree-failed");
+      expect(h.commands).toHaveLength(0);
+      expect(h.isolatedCalls).toHaveLength(1);
+      expect(h.worktreeCalls).toHaveLength(0);
+    }),
+);
 
 it.effect("rejects foreign or unteamed policies before storing or touching a repository", () =>
   Effect.gen(function* () {
@@ -389,7 +404,8 @@ const harness = (
   const rollback = WorkerDispatchRollback.of({
     prepare: (input) =>
       Effect.gen(function* () {
-        if (options.failRollback) return yield* new WorkerDispatchRollbackError({ reason: "changed" });
+        if (options.failRollback)
+          return yield* new WorkerDispatchRollbackError({ reason: "changed" });
         rollbackCustodies.push(input.custody);
         rollbackPrepares.push(registeredPath!);
         return Effect.sync(() => {

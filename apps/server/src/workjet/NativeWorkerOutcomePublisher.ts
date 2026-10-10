@@ -8,6 +8,7 @@ import type { RegisteredNativeWorkerSource, NativeSupervisorWorkerSource } from 
 import { terminalReceiptFrom, type NativeWorkerTerminalReceipt } from "./NativeWorkerOutcome.ts";
 
 export function makeNativeWorkerOutcomePublisher(dependencies: {
+  readonly now: Effect.Effect<number>;
   readonly listStopped: (after: string) => Effect.Effect<ReadonlyArray<WorkerPullRequestReceipt>, RemoteWorkerDispatchError>;
   readonly readStartup: (id: ThreadId) => Effect.Effect<Option.Option<RemoteWorkerReceipt>, RemoteWorkerDispatchError>;
   readonly refresh: (receipt: WorkerPullRequestReceipt, startup: RemoteWorkerResult) => Effect.Effect<WorkerPullRequestReceipt, RemoteWorkerDispatchError>;
@@ -16,6 +17,7 @@ export function makeNativeWorkerOutcomePublisher(dependencies: {
 }) {
   let cursor = "";
   const accepted = new Set<string>();
+  const nextObservation = new Map<string, number>();
   const run = Effect.fn("NativeWorkerOutcomePublisher.run")(function* (
     sources: ReadonlyArray<RegisteredNativeWorkerSource>,
   ) {
@@ -47,6 +49,15 @@ export function makeNativeWorkerOutcomePublisher(dependencies: {
           registration.sourceEnvironmentId === request.parent.environmentId &&
           registration.sourceSupervisorThreadId === request.parent.threadId);
         if (!matched) return;
+        const now = yield* dependencies.now;
+        if (receipt.state === "open" && (nextObservation.get(receipt.threadId) ?? 0) > now) return;
+        if (receipt.state === "open") {
+          nextObservation.set(receipt.threadId, now + 60_000);
+          if (nextObservation.size > 1024) {
+            const oldest = nextObservation.keys().next().value;
+            if (oldest !== undefined) nextObservation.delete(oldest);
+          }
+        }
         const observed = receipt.state === "open" ? yield* dependencies.refresh(receipt, startup) : receipt;
         const outcome = yield* terminalReceiptFrom(observed, startup);
         // Provider lookup can yield while the source binding changes. Re-read before native publication.

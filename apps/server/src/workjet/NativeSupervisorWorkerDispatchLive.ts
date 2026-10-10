@@ -118,6 +118,7 @@ export const make = Effect.gen(function* () {
   });
 
   const outcomes = makeNativeWorkerOutcomePublisher({
+    now: Clock.currentTimeMillis,
     listStopped: (after) => pullRequests.listStopped(after).pipe(Effect.mapError(failure)),
     readStartup: broker.read,
     refresh: (receipt, startup) => Effect.gen(function* () {

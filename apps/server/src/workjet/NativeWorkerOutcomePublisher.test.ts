@@ -14,6 +14,7 @@ function fixture() {
   let hasStartup = true;
   let acknowledgement = startup;
   let lostAck = false;
+  let now = 0;
   const reports: string[] = [];
   const dependencies = {
     listStopped: (after: string) => Effect.succeed(after === "" ? [receipt] : []),
@@ -31,6 +32,7 @@ function fixture() {
   };
   return { dependencies, reports, changeReceipt: (value: WorkerPullRequestReceipt) => { receipt = value; },
     revoke: () => { current = { ...source, scope: { ...source.scope, instanceId: "replacement" } }; },
+    advance: () => { now += 60_000; },
     changeStartup: (value: RemoteWorkerResult) => { acknowledgement = value; },
     noStartup: () => { hasStartup = false; }, loseAck: () => { lostAck = true; },
   };
@@ -84,6 +86,10 @@ it.effect("refreshes a retained open PR to terminal without a live target and re
     yield* publisher.run(registered);
     assert.deepEqual(f.reports, []);
     state = "merged";
+    // The existing five-second dispatch cycle does not spam GitHub while a submitted PR stays open.
+    yield* publisher.run(registered); yield* publisher.run(registered);
+    assert.equal(refreshes, 1);
+    f.advance();
     yield* publisher.run(registered); yield* publisher.run(registered);
     assert.deepEqual(f.reports, ["merged"]);
     yield* makeNativeWorkerOutcomePublisher(dependencies).run(registered);

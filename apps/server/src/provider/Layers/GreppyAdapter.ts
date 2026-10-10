@@ -221,7 +221,8 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
         const previous = sessions.get(input.threadId);
         if (previous) yield* stop(previous);
         const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
-        const environment = sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
+        const environment =
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
         if (plainHttpEndpoint(environment.GREPPY_ENDPOINT || config.endpoint) === null) {
           return yield* requestError(
             "startSession",

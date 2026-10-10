@@ -337,13 +337,23 @@ export const make = (
     const spawnCommand = yield* resolveSpawnCommand(
       options.spawn.command,
       options.spawn.args,
-      options.spawn.env ? { env: options.spawn.env, extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true" } : {},
+      options.spawn.env
+        ? {
+            env: options.spawn.env,
+            extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
+          }
+        : {},
     );
     const child = yield* spawner
       .spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           ...(options.spawn.cwd ? { cwd: options.spawn.cwd } : {}),
-          ...(options.spawn.env ? { env: options.spawn.env, extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true" } : {}),
+          ...(options.spawn.env
+            ? {
+                env: options.spawn.env,
+                extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
+              }
+            : {}),
           shell: spawnCommand.shell,
         }),
       )

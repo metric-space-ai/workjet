@@ -690,9 +690,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           // Resolved per session start so gateway-routed instances observe the
           // gateway's current status rather than a value frozen at construction.
           const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
-          const sessionEnvironment = sourceProfile?.environment ?? (options?.resolveSessionEnvironment
-            ? yield* options.resolveSessionEnvironment()
-            : options?.environment);
+          const sessionEnvironment =
+            sourceProfile?.environment ??
+            (options?.resolveSessionEnvironment
+              ? yield* options.resolveSessionEnvironment()
+              : options?.environment);
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
             ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),

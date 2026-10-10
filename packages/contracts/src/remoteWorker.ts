@@ -18,7 +18,15 @@ import {
 
 /** Prepared by the source server from its live orchestrator, relayed by an
  * authenticated client connection. Never contains source paths or credentials. */
-export const RemoteWorkerHarness = Schema.Literals(["codex-cli", "claude-code", "grok-cli", "opencode", "greppy", "minimax-code", "pi-code"]);
+export const RemoteWorkerHarness = Schema.Literals([
+  "codex-cli",
+  "claude-code",
+  "grok-cli",
+  "opencode",
+  "greppy",
+  "minimax-code",
+  "pi-code",
+]);
 export type RemoteWorkerHarness = typeof RemoteWorkerHarness.Type;
 export const RemoteWorkerRequest = Schema.Struct({
   schemaVersion: Schema.Literal(1),

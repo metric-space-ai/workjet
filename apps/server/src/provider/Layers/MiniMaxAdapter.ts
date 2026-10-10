@@ -295,8 +295,11 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
             "A saved MiniMax Code session cursor is required. Workjet will not create a replacement session.",
           );
         const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
-        const environment = sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment());
-        const runtimeConfig = sourceProfile ? { ...config, dataDirectory: sourceProfile.directory } : config;
+        const environment =
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment());
+        const runtimeConfig = sourceProfile
+          ? { ...config, dataDirectory: sourceProfile.directory }
+          : config;
         const profileKey = NodeCrypto.createHash("sha256")
           .update(
             encodeProfileKey([

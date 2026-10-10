@@ -89,6 +89,16 @@ export const seedTransferBudgetHistory = Effect.fn("TransferBudget.seedHistory")
     createdAt: turnTimestamp(0),
   });
 
+  // Keep the measured history fixed while the normal persistent-goal reactor remains installed.
+  yield* harness.engine.dispatch({
+    type: "thread.goal.set",
+    commandId: CommandId.make(`transfer:${provider}:goal-pause`),
+    threadId: TRANSFER_THREAD_ID,
+    status: "paused",
+    reason: "Measure only the explicitly replayed transfer turns.",
+    createdAt: turnTimestamp(0),
+  });
+
   for (let turnIndex = 0; turnIndex < TRANSFER_HISTORY_TURN_COUNT; turnIndex += 1) {
     const response = makeRecordedTransferTurn(provider, turnIndex);
     if (turnIndex === 0) {

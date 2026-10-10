@@ -1557,11 +1557,10 @@ mod tests {
                         }
                     });
                 }
-                Ok(ClaudeMessagesStreamResponse::new(
-                    self.status,
-                    None,
-                    receiver,
-                ))
+                Ok(
+                    ClaudeMessagesStreamResponse::new(self.status, None, receiver)
+                        .with_error_body(self.body.clone()),
+                )
             })
         }
     }
@@ -2370,6 +2369,50 @@ mod tests {
         assert!(start < delta && delta < stop);
         assert!(!text.contains("event: response.created"));
         assert!(!text.contains("antigravity-access-secret"));
+    }
+
+    #[tokio::test]
+    async fn claude_subscription_stream_rejection_preserves_http_status_and_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let message = "messages: text content blocks must be non-empty";
+        let error_body = serde_json::to_vec(&serde_json::json!({
+            "type":"error",
+            "error":{"type":"invalid_request_error","message":message}
+        }))
+        .unwrap();
+        let (pool, transport) = claude_pool_with_response(400, error_body);
+        let handler = Arc::new(
+            crate::sdk::api::handlers::claude::code_handlers::ClaudeMessagesClaudeHandler::new(
+                pool,
+            ),
+        );
+        let server = tokio::spawn(async move {
+            serve_one_messages_connection(&listener, &handler)
+                .await
+                .unwrap();
+        });
+        let body = br#"{"model":"claude-opus-5-5","stream":true,"messages":[{"role":"user","content":"Hi"}]}"#;
+        let mut client = TcpStream::connect(address).await.unwrap();
+        let request = format!(
+            "POST /v1/messages HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        client.write_all(request.as_bytes()).await.unwrap();
+        client.write_all(body).await.unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        server.await.unwrap();
+        let text = String::from_utf8(response).unwrap();
+        assert!(text.starts_with("HTTP/1.1 400 Bad Request\r\n"), "{text}");
+        assert!(text.contains("Content-Type: application/json\r\n"));
+        assert!(!text.contains("text/event-stream"));
+        let (_, body) = text.split_once("\r\n\r\n").unwrap();
+        let error: Value = serde_json::from_str(body).unwrap();
+        assert_eq!(error["type"], "error");
+        assert_eq!(error["error"]["type"], "invalid_request_error");
+        assert_eq!(error["error"]["message"], message);
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

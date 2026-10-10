@@ -25,6 +25,7 @@ export function goalExecutionObservation(
   else if (event.type === "turn.completed") state = event.payload.state;
   else if (
     event.type === "thread.metadata.updated" &&
+    event.provider === "claudeAgent" &&
     event.raw?.source === "claude.sdk.message" &&
     event.raw.method === "claude/assistant/model"
   ) {

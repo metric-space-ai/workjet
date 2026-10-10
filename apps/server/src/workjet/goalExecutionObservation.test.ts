@@ -53,6 +53,7 @@ describe("goal producer observations", () => {
   it("does not infer authorship from other metadata, times, missing identity or duplicated snapshots", () => {
     expect(goalExecutionObservation({ ...author, raw: { source: "acp.jsonrpc", payload: {} } })).toBeUndefined();
     expect(goalExecutionObservation({ ...start, providerInstanceId: undefined })).toBeUndefined();
+    expect(goalExecutionObservation({ ...author, provider: ProviderDriverKind.make("codex") })).toBeUndefined();
     expect(goalExecutionObservation(author, goalExecutionObservation(author))).toBeUndefined();
     expect(goalExecutionObservation({ ...base, type: "turn.plan.updated", payload: { plan: [] } })).toBeUndefined();
   });

@@ -114,6 +114,8 @@ import { RepositoryIdentityResolver } from "../project/RepositoryIdentityResolve
 import { GitVcsDriver, type ExecuteGitInput } from "../vcs/GitVcsDriver.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { RemoteWorkerStore, type RemoteWorkerReceipt } from "./RemoteWorkerStore.ts";
+import { IsolatedWorkerWorktree } from "./IsolatedWorkerWorktree.ts";
+import type { IsolatedWorkerWorktreeIntent } from "./IsolatedWorkerWorktreeStore.ts";
 import {
   make,
   RemoteWorkerAdmission,
@@ -121,7 +123,7 @@ import {
   remoteWorkerRuntimeSelection,
   remoteWorkerRepositoryUrl,
 } from "./RemoteWorkerReceiver.ts";
-import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
+import { WorkerDispatchRollback, WorkerDispatchRollbackError } from "./WorkerDispatchRollback.ts";
 import { requireEnforcedExecutionPolicy } from "../provider/executionPolicy.ts";
 
 it.effect("retains the immutable source policy in the target provider configuration", () =>
@@ -159,9 +161,30 @@ it.effect("retains the immutable source policy in the target provider configurat
       )).reason,
     ).toBe("request-conflict");
     expect(h.commands).toHaveLength(2);
-    expect(h.worktreeCalls).toHaveLength(1);
+    expect(h.worktreeCalls).toHaveLength(0);
+    expect(h.isolatedCalls).toHaveLength(1);
+    expect(h.rollbackCustodies[0]).toMatchObject({ kind: "isolated", worktreePath: workerPath, adminPath: workerPath + "/.git" });
+    expect(h.isolatedCalls[0]).toMatchObject({
+      projectId: request.project.id,
+      repositoryKey: request.project.repository.canonicalKey,
+      revision: request.revision,
+      destination: workerPath,
+      branch: "workjet/worker/" + request.requestId,
+    });
   }),
 );
+
+it.effect("does not create an isolated worker if its original rollback custody cannot be verified", () => Effect.gen(function* () {
+  const h = harness({ failRollback: true });
+  const receiver = yield* h.receiver;
+  const failure = yield* Effect.flip(receiver.receive({
+    ...request, executionPolicy: { mode: "autonomous-worktree", projectId: request.project.id, revision: 7 },
+  }));
+  expect(failure.reason).toBe("worktree-failed");
+  expect(h.commands).toHaveLength(0);
+  expect(h.isolatedCalls).toHaveLength(1);
+  expect(h.worktreeCalls).toHaveLength(0);
+}));
 
 it.effect("rejects foreign or unteamed policies before storing or touching a repository", () =>
   Effect.gen(function* () {
@@ -232,6 +255,7 @@ const harness = (
   options: {
     missingProject?: boolean;
     missingAdmission?: boolean;
+    failRollback?: boolean;
     wrongRepository?: boolean;
     outsideWorker?: boolean;
     failStep?: "create" | "turn" | "delete";
@@ -248,6 +272,8 @@ const harness = (
   let checkoutDirty = false;
   let worktreeFailures = options.failWorktreeOnce ? 1 : 0;
   const rollbackPrepares: string[] = [];
+  const rollbackCustodies: Array<unknown> = [];
+  const isolatedCalls: IsolatedWorkerWorktreeIntent[] = [];
   let threadExists = false;
   let completeFailures = options.failCompleteOnce ? 1 : 0;
   const commandReceipts = new Map<string, OrchestrationCommandReceipt>();
@@ -361,8 +387,10 @@ const harness = (
       }),
   } as unknown as GitWorkflowService["Service"];
   const rollback = WorkerDispatchRollback.of({
-    prepare: () =>
-      Effect.sync(() => {
+    prepare: (input) =>
+      Effect.gen(function* () {
+        if (options.failRollback) return yield* new WorkerDispatchRollbackError({ reason: "changed" });
+        rollbackCustodies.push(input.custody);
         rollbackPrepares.push(registeredPath!);
         return Effect.sync(() => {
           rollbackCalls.push(registeredPath!);
@@ -387,6 +415,22 @@ const harness = (
     Layer.succeed(GitWorkflowService, workflow),
     Layer.succeed(RemoteWorkerStore, store),
     Layer.succeed(WorkerDispatchRollback, rollback),
+    Layer.succeed(IsolatedWorkerWorktree, {
+      allocate: (intent) =>
+        Effect.sync(() => {
+          isolatedCalls.push(intent);
+          registeredPath = workerPath;
+          return {
+            kind: "isolated" as const,
+            worktreePath: workerPath,
+            adminPath: workerPath + "/.git",
+            worktreeDev: "1",
+            worktreeIno: "2",
+            adminDev: "1",
+            adminIno: "3",
+          };
+        }),
+    }),
     Layer.succeed(OrchestrationCommandReceiptRepository, {
       getByCommandId: ({ commandId }) =>
         Effect.succeed(Option.fromUndefinedOr(commandReceipts.get(commandId))),
@@ -433,6 +477,8 @@ const harness = (
     worktreeCalls,
     rollbackCalls,
     rollbackPrepares,
+    isolatedCalls,
+    rollbackCustodies,
     commandReceipts,
     receipt: () => saved,
     changeCheckout: (change: { head?: string; dirty?: boolean; path?: string }) => {

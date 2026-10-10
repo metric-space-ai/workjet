@@ -31,6 +31,9 @@ import { RepositoryIdentityResolver } from "../project/RepositoryIdentityResolve
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { RemoteWorkerStore } from "./RemoteWorkerStore.ts";
+import { IsolatedWorkerWorktree } from "./IsolatedWorkerWorktree.ts";
+import { remoteWorkerRequestDigest } from "./ctox/CtoxRemoteWorkerAdmission.ts";
+import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
 import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
@@ -127,6 +130,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const rollback = yield* WorkerDispatchRollback;
   const admission = yield* Effect.serviceOption(RemoteWorkerAdmission);
+  const isolatedWorktrees = yield* Effect.serviceOption(IsolatedWorkerWorktree);
   const providerInstances = yield* Effect.serviceOption(ProviderInstanceRegistry);
   const mutex = yield* Semaphore.make(1);
   const targetEnvironmentId = yield* environment.getEnvironmentId;
@@ -358,52 +362,88 @@ export const make = Effect.gen(function* () {
       })
     )
       return yield* failure("worktree-failed");
-    const list = yield* runGit(cwd, ["worktree", "list", "--porcelain"]);
-    if (list.stdoutTruncated) return yield* failure("worktree-failed");
-    const registered = list.stdout
-      .split("\n\n")
-      .filter((entry) => entry.split("\n").includes("branch refs/heads/" + branch));
-    if (registered.length > 1) return yield* failure("worktree-failed");
-    const registeredPath = registered[0]
-      ?.split("\n")
-      .find((line) => line.startsWith("worktree "))
-      ?.slice(9);
-    if (saved.worktreePath === null) {
-      // An existing UUID-shaped branch is not a receipt of ownership. Reserve
-      // the server-derived path only while neither branch nor checkout exists.
-      const ref = yield* git
-        .execute({
-          operation: "RemoteWorkerReceiver.reserve",
-          cwd,
-          args: ["show-ref", "--verify", "--quiet", "refs/heads/" + branch],
-          allowNonZeroExit: true,
+    let worktreePath: string;
+    let custody: CapturedWorkerWorktree | undefined;
+    if (request.executionPolicy?.mode === "autonomous-worktree") {
+      if (Option.isNone(isolatedWorktrees)) return yield* failure("worktree-failed");
+      if (saved.worktreePath !== null && saved.worktreePath !== expectedPath)
+        return yield* failure("worktree-failed");
+      yield* fs
+        .makeDirectory(path.dirname(expectedPath), { recursive: true })
+        .pipe(Effect.mapError(() => failure("worktree-failed")));
+      custody = yield* isolatedWorktrees.value
+        .allocate({
+          workerId: request.requestId,
+          projectId: request.project.id,
+          repositoryKey: request.project.repository.canonicalKey,
+          repositoryUrl: url,
+          sourceCwd: cwd,
+          revision: request.revision,
+          branch,
+          destination: expectedPath,
+          authorityDigest: yield* remoteWorkerRequestDigest(request),
         })
         .pipe(Effect.mapError(() => failure("worktree-failed")));
-      if (
-        registeredPath !== undefined ||
-        ref.exitCode !== 1 ||
-        (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
-      )
+      worktreePath = custody.worktreePath;
+      if (worktreePath !== expectedPath || custody.kind !== "isolated")
         return yield* failure("worktree-failed");
       yield* store
-        .recordWorktree(request.requestId, expectedPath)
+        .recordWorktree(request.requestId, worktreePath)
         .pipe(Effect.mapError(() => failure("worktree-failed")));
-    } else if (
-      saved.worktreePath !== expectedPath ||
-      (registeredPath !== undefined && registeredPath !== saved.worktreePath)
-    ) {
-      return yield* failure("worktree-failed");
-    }
-    let worktreePath = registeredPath;
-    if (!worktreePath) {
-      if (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
+    } else {
+      const list = yield* runGit(cwd, ["worktree", "list", "--porcelain"]);
+      if (list.stdoutTruncated) return yield* failure("worktree-failed");
+      const registered = list.stdout
+        .split("\n\n")
+        .filter((entry) => entry.split("\n").includes("branch refs/heads/" + branch));
+      if (registered.length > 1) return yield* failure("worktree-failed");
+      const registeredPath = registered[0]
+        ?.split("\n")
+        .find((line) => line.startsWith("worktree "))
+        ?.slice(9);
+      if (saved.worktreePath === null) {
+        // An existing UUID-shaped branch is not a receipt of ownership. Reserve
+        // the server-derived path only while neither branch nor checkout exists.
+        const ref = yield* git
+          .execute({
+            operation: "RemoteWorkerReceiver.reserve",
+            cwd,
+            args: ["show-ref", "--verify", "--quiet", "refs/heads/" + branch],
+            allowNonZeroExit: true,
+          })
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+        if (
+          registeredPath !== undefined ||
+          ref.exitCode !== 1 ||
+          (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
+        )
+          return yield* failure("worktree-failed");
+        yield* store
+          .recordWorktree(request.requestId, expectedPath)
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+      } else if (
+        saved.worktreePath !== expectedPath ||
+        (registeredPath !== undefined && registeredPath !== saved.worktreePath)
+      ) {
         return yield* failure("worktree-failed");
-      const created = yield* workflow
-        .createWorktree({ cwd, path: expectedPath, refName: request.revision, newRefName: branch })
-        .pipe(Effect.mapError(() => failure("worktree-failed")));
-      worktreePath = created.worktree.path;
-      if (created.worktree.refName !== branch || worktreePath !== expectedPath)
-        return yield* failure("worktree-failed");
+      }
+      let linkedPath = registeredPath;
+      if (!linkedPath) {
+        if (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))
+          return yield* failure("worktree-failed");
+        const created = yield* workflow
+          .createWorktree({
+            cwd,
+            path: expectedPath,
+            refName: request.revision,
+            newRefName: branch,
+          })
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+        linkedPath = created.worktree.path;
+        if (created.worktree.refName !== branch || linkedPath !== expectedPath)
+          return yield* failure("worktree-failed");
+      }
+      worktreePath = linkedPath;
     }
     const workerRealPath = yield* fs
       .realPath(worktreePath)
@@ -435,8 +475,9 @@ export const make = Effect.gen(function* () {
     // restart. Check both sides of the native rollback's inode/HEAD capture.
     yield* verifyUnstartedCheckout();
     const prepared = yield* rollback
-      .prepare({ cwd, worktreePath, branchRef: branch })
+      .prepare({ cwd, worktreePath, branchRef: branch, ...(custody ? { custody } : {}) })
       .pipe(Effect.option);
+    if (custody && Option.isNone(prepared)) return yield* failure("worktree-failed");
     yield* verifyUnstartedCheckout();
     const result: RemoteWorkerResult = {
       schemaVersion: 1,

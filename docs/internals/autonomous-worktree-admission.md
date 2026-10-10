@@ -109,6 +109,16 @@ retained. Rejected-start rollback receives the same original custody; accepted
 create/turn receipts still reconcile without a second worker. Requests without
 the policy retain the existing linked-worktree path.
 
+Local delegation uses the same private-repository allocator. The source-server
+broker derives the repository from the saved project, checks the current remote,
+requires a clean tracked/untracked checkout and resolves the parent's exact commit.
+Ignored dependency and cache files are not copied. It chooses the destination through
+server worktree storage and hashes the saved project/team policy, parent, signed task
+digest, model selection, capabilities and runtime modes into the immutable allocation
+intent. This digest detects substitutions; it does not grant native execution authority.
+A missing allocator or unavailable original rollback capture fails before thread
+creation. Policy-free local workers retain the existing linked-worktree path.
+
 This allocation and custody receipt is a prerequisite, not a sandbox witness,
 an enrolled native Parent or an enabled provider policy. Every autonomous-worktree
 provider mode remains unsupported; whole execution containment, native authority

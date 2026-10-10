@@ -3724,8 +3724,8 @@ export default function Sidebar() {
                     setActiveSearchResultIndex(0);
                   }}
                   onKeyDown={handleThreadSearchKeyDown}
-                  placeholder="Search"
-                  aria-label="Search threads"
+                  placeholder={overviewText.search}
+                  aria-label={overviewText.searchThreads}
                   role="combobox"
                   aria-autocomplete="list"
                   aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
@@ -3747,7 +3747,7 @@ export default function Sidebar() {
                     size="icon-xs"
                     variant="ghost"
                     className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                    aria-label="Clear thread search"
+                    aria-label={overviewText.clearSearch}
                     onClick={() => {
                       clearThreadSearch();
                       threadSearchInputRef.current?.focus();
@@ -3767,7 +3767,7 @@ export default function Sidebar() {
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
                         disabled={isSidebarNewThreadDisabled(sidebarAvailableProjectCount)}
-                        aria-label="New thread"
+                        aria-label={overviewText.newThread}
                       />
                     }
                   >
@@ -3782,20 +3782,20 @@ export default function Sidebar() {
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel
-                            ? `New thread (${newThreadShortcutLabel})`
-                            : "New thread"}
+                            ? `${overviewText.newThread} (${newThreadShortcutLabel})`
+                            : overviewText.newThread}
                         </span>
                         <span className="text-muted-foreground">
-                          New thread in current project: Shift+click
+                          {overviewText.newThreadInProject}
                           {newThreadInProjectShortcutLabel
                             ? ` (${newThreadInProjectShortcutLabel})`
                             : ""}
                         </span>
                       </span>
                     ) : newThreadShortcutLabel ? (
-                      `New thread (${newThreadShortcutLabel})`
+                      `${overviewText.newThread} (${newThreadShortcutLabel})`
                     ) : (
-                      "New thread"
+                      overviewText.newThread
                     )}
                   </TooltipPopup>
                 </Tooltip>
@@ -3823,11 +3823,13 @@ export default function Sidebar() {
               }}
             >
               <FolderIcon aria-hidden className="size-4 shrink-0" />
-              <span>All projects</span>
+              <span>{overviewText.allProjects}</span>
             </SidebarMenuButton>
             {projectGroups.length > 0 || workjetProjects.length > 0 ? (
               <div className="space-y-1">
-                <p className="px-2 text-[11px] text-sidebar-muted-foreground">Project</p>
+                <p className="px-2 text-[11px] text-sidebar-muted-foreground">
+                  {overviewText.project}
+                </p>
                 <div className="flex items-center gap-1">
                   <Menu
                     open={projectScopeMenuOpen}
@@ -3901,7 +3903,7 @@ export default function Sidebar() {
                     <SidebarMenuButton
                       type="button"
                       size="icon"
-                      aria-label={`Project settings for ${scopedProjectGroup.displayName}`}
+                      aria-label={`${overviewText.projectSettingsFor} ${scopedProjectGroup.displayName}`}
                       onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
                     >
                       <SettingsIcon aria-hidden className="size-4" />
@@ -3910,7 +3912,7 @@ export default function Sidebar() {
                   <SidebarMenuButton
                     type="button"
                     size="icon"
-                    aria-label="New project"
+                    aria-label={overviewText.newProject}
                     data-workjet-action="project.add.sidebar.persistent"
                     onClick={openAddProjectCommandPalette}
                   >
@@ -3950,7 +3952,7 @@ export default function Sidebar() {
                 <ul
                   id="sidebar-thread-search-results"
                   role="listbox"
-                  aria-label="Thread search results"
+                  aria-label={overviewText.searchResults}
                   className="flex flex-col gap-px"
                 >
                   {threadSearchResults.map((thread, index) => {
@@ -3991,7 +3993,7 @@ export default function Sidebar() {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No threads found
+                {overviewText.noThreads}
               </p>
             )
           ) : null}
@@ -4327,7 +4329,10 @@ export default function Sidebar() {
                       className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                     >
                       <PlusIcon aria-hidden className="size-4 shrink-0" />
-                      Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more
+                      {overviewText.showMore.replace(
+                        "{count}",
+                        String(Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)),
+                      )}
                     </button>
                   </li>
                 ) : null}

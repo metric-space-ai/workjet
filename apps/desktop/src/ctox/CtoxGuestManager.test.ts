@@ -1231,9 +1231,9 @@ describe("CtoxGuestManager", () => {
         ["Native request ctox.workjet.project.v1 exceeded 28000ms", "request_timeout"],
         ["Failed to fetch", "network_unavailable"],
       ] as const) {
-        const context = NodeVM.createContext({});
+        const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          `globalThis.workjetProjectControl = async () => { throw new Error(${JSON.stringify(message)}); };`,
+          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
@@ -1260,9 +1260,9 @@ describe("CtoxGuestManager", () => {
         ["Unsupported Workjet project control action: project.list", "unsupported"],
         ["Private failure https://private.invalid/?token=secret", "guest_failed"],
       ] as const) {
-        const context = NodeVM.createContext({});
+        const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          `globalThis.workjetProjectControl = async () => { throw new Error(${JSON.stringify(message)}); };`,
+          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
@@ -1272,10 +1272,10 @@ describe("CtoxGuestManager", () => {
             throw new Error("Script failed to execute");
           }
         });
-        const result = yield* manager.requestProjectControl(descriptor.id, { action: "project.list" });
+        const result = yield* manager.requestProjectControl(descriptor.id, {
+          action: "project.list",
+        });
         assert.deepEqual(result, { _tag: "failed", code: expectedCode });
-        expect(JSON.stringify(result)).not.toContain("private.invalid");
-        expect(JSON.stringify(result)).not.toContain("secret");
       }
     }).pipe(Effect.provide(harness.layer));
   });

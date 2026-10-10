@@ -50,6 +50,7 @@ export const PROJECT_OVERVIEW_TEXT = {
     unavailableKpi: "Ein belegter Projekt-KPI ist noch nicht verfügbar.",
     unavailablePrs:
       "Der PR-Zeitraum ist ohne letzten Jour fixe und Merge-Zeitpunkte noch nicht verfügbar.",
+    unavailableTasks: "Der Erledigungsstand der Aufgaben ist noch nicht verfügbar.",
     unavailableExit: "Eine belegte Bewertung ist noch nicht verfügbar.",
     unavailableDelta: "Ein Vergleich zum letzten Jour fixe ist noch nicht verfügbar.",
     noDecisions: "Es liegen keine offenen Entscheidungen vor.",
@@ -126,6 +127,7 @@ export const PROJECT_OVERVIEW_TEXT = {
     unavailableKpi: "An evidenced project KPI is not yet available.",
     unavailablePrs:
       "The PR period needs a previous Jour fixe and merge timestamps, which are not yet available.",
+    unavailableTasks: "Task completion data is not yet available.",
     unavailableExit: "An evidenced assessment is not yet available.",
     unavailableDelta: "A comparison with the last Jour fixe is not yet available.",
     noDecisions: "There are no open decisions.",

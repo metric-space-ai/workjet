@@ -58,6 +58,8 @@ export function buildProjectOwnerOverview(input: {
   readonly meeting?: WorkjetJourFixeMeeting | null;
   readonly kpis?: PromptedProjectKpis | null;
   readonly pullRequests?: readonly ProjectOverviewPr[];
+  readonly openTaskCount?: number | null;
+  readonly now?: number;
 }) {
   const { project, language } = input;
   const text = PROJECT_OVERVIEW_TEXT[language];
@@ -97,11 +99,16 @@ export function buildProjectOwnerOverview(input: {
             ]
           : [];
       });
-  const lastMeeting = meeting?.state === "confirmed" ? meeting : null;
+  const lastMeeting =
+    meeting?.state === "confirmed" && meeting.scheduled_at_ms <= (input.now ?? Date.now())
+      ? meeting
+      : null;
   const prs = [...new Map((input.pullRequests ?? []).map((pr) => [pr.url, pr])).values()];
   const merged = prs.filter((pr) => pr.state === "merged");
   const prsSince =
     lastMeeting &&
+    input.pullRequests !== undefined &&
+    merged.length > 0 &&
     merged.every((pr) => pr.mergedAt != null && Number.isFinite(Date.parse(pr.mergedAt)))
       ? merged.filter((pr) => Date.parse(pr.mergedAt!) >= lastMeeting.scheduled_at_ms).length
       : null;
@@ -144,12 +151,8 @@ export function buildProjectOwnerOverview(input: {
     {
       id: "tasks",
       label: text.openTasks,
-      value: goals.length > 0 ? String(goals.length) : null,
-      explanation: confirmed
-        ? text.confirmedGoals
-        : goals.length > 0
-          ? text.workerGoals
-          : text.noGoals,
+      value: input.openTaskCount == null ? null : String(input.openTaskCount),
+      explanation: input.openTaskCount == null ? text.unavailableTasks : text.unavailableDelta,
     },
     {
       id: "exit",
@@ -185,6 +188,7 @@ export function buildProjectOwnerOverview(input: {
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
     .slice(0, 10);
   return {
+    projectId: project.id,
     title: project.title,
     summary:
       project.configuration?.info?.summary?.trim() ||
@@ -206,11 +210,12 @@ export function buildProjectOwnerOverview(input: {
     history,
     lastMeeting,
     recurring: project.configuration?.jourFixe ?? null,
+    supervisorLumaId: project.configuration?.supervisorLumaId ?? null,
     ownerDecisions: confirmed?.confirmed_at_ms
       ? [
           language === "de"
-            ? "Du hast die To-do-Liste des letzten Jour fixe bestätigt."
-            : "You confirmed the last Jour fixe's to-do list.",
+            ? "Du hast die To-do-Liste des Jour fixe bestätigt."
+            : "You confirmed the Jour fixe's to-do list.",
         ]
       : [],
     links: [

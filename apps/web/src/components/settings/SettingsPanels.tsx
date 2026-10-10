@@ -1816,6 +1816,32 @@ export function GeneralSettingsPanel() {
         }}
       />
       <SettingsSection title="General">
+        <SettingsRow
+          title={settings.interfaceLanguage === "en" ? "Project language" : "Projektsprache"}
+          description={
+            settings.interfaceLanguage === "en"
+              ? "Language of the project overview and its navigation."
+              : "Sprache der Projektübersicht und ihrer Navigation."
+          }
+          control={
+            <Select
+              value={settings.interfaceLanguage}
+              onValueChange={(value) => {
+                if (value === "system" || value === "de" || value === "en")
+                  updateClientSettings({ interfaceLanguage: value });
+              }}
+            >
+              <SelectTrigger aria-label="Projektsprache" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="system">System</SelectItem>
+                <SelectItem value="de">Deutsch</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
         {isElectron ? (
           <SettingsRow
             title="Dev and Ops introduction"

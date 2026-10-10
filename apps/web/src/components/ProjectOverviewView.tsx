@@ -3,12 +3,6 @@ import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { projectOverviewWorkerState, type ProjectOwnerOverview } from "../projectOverviewModel";
 
-const dots = {
-  running: "bg-amber-400",
-  waiting: "bg-muted-foreground",
-  asks: "bg-primary",
-  disrupted: "bg-red-400",
-} as const;
 export function ProjectOverviewView(props: {
   readonly data: ProjectOwnerOverview;
   readonly onOpenChat: (ref: ScopedThreadRef) => void;
@@ -16,6 +10,7 @@ export function ProjectOverviewView(props: {
   readonly decisions?: ReactNode;
   readonly connectionError?: boolean;
   readonly diagnosis?: ReactNode;
+  readonly actions?: ReactNode;
 }) {
   const { data, onOpenChat } = props;
   const { text, language } = data;
@@ -32,13 +27,14 @@ export function ProjectOverviewView(props: {
   return (
     <main
       className="mx-auto grid w-full max-w-[1320px] min-w-0 items-start gap-5 p-4 text-sm sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
-      data-workjet-project-overview=""
+      data-workjet-project-overview={data.projectId}
       lang={language}
     >
       <div className="min-w-0 space-y-5">
         <header>
           <h1 className="break-words text-[22px] font-semibold tracking-tight">{data.title}</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{data.summary}</p>
+          {props.actions}
         </header>
         <dl
           className="grid min-w-0 grid-cols-2 gap-2 xl:grid-cols-4"
@@ -228,11 +224,7 @@ export function ProjectOverviewView(props: {
                       {native
                         ? text.nativeRoute
                         : thread.session
-                          ? [
-                              thread.session.providerName,
-                              thread.session.providerInstanceId,
-                              thread.session.modelSelection?.model,
-                            ]
+                          ? [thread.session.providerName, thread.session.providerInstanceId]
                               .filter(Boolean)
                               .join(" · ")
                           : text.noSession}
@@ -240,12 +232,12 @@ export function ProjectOverviewView(props: {
                     <dt>{text.saved}</dt>
                     <dd className="break-words [overflow-wrap:anywhere]">
                       {native
-                        ? text.nativeRoute
+                        ? (data.supervisorLumaId ?? text.unknown)
                         : thread.modelSelection.instanceId + " · " + thread.modelSelection.model}
                     </dd>
                     <dt>{text.computer}</dt>
                     <dd className="break-words [overflow-wrap:anywhere]">{thread.environmentId}</dd>
-                    <dt>{text.connection}</dt>
+                    <dt>{text.status}</dt>
                     <dd>{text[state]}</dd>
                   </dl>
                   <details className="mt-2">

@@ -13,7 +13,12 @@ const Uuid = Schema.String.check(
 );
 const Page = Schema.Struct({
   schema: Schema.Literal("ctox.workjet.supervisor.confirmed_goal_page.v1"),
-  state: Schema.Literals(["page", "snapshot_changed", "snapshot_unavailable", "capacity_unavailable"]),
+  state: Schema.Literals([
+    "page",
+    "snapshot_changed",
+    "snapshot_unavailable",
+    "capacity_unavailable",
+  ]),
   project_id: Id,
   supervisor_thread_id: Id,
   snapshot_id: Uuid,
@@ -24,9 +29,9 @@ const Page = Schema.Struct({
   json_fragment: Schema.String.check(Schema.isMaxLength(FRAGMENT_BYTES)),
   captured_at_ms: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   document_complete: Schema.Boolean,
-  next_cursor: Schema.optional(Schema.NullOr(
-    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
-  )),
+  next_cursor: Schema.optional(
+    Schema.NullOr(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))),
+  ),
 });
 const Goal = Schema.Struct({
   goal: Schema.Struct({
@@ -71,10 +76,12 @@ export function createNativeSupervisorConfirmedGoalReader(options: {
       let first: typeof Page.Type | undefined;
       for (let count = 0; count < MAX_PAGES; count++) {
         if (closed) throw new Error("Original confirmed-goal reader is closed.");
-        const page = await decodePage(await options.requestPage(
-          count === 0 ? firstOperationId : NodeCrypto.randomUUID(),
-          JSON.stringify(cursor === undefined ? {} : { cursor }),
-        ));
+        const page = await decodePage(
+          await options.requestPage(
+            count === 0 ? firstOperationId : NodeCrypto.randomUUID(),
+            JSON.stringify(cursor === undefined ? {} : { cursor }),
+          ),
+        );
         checkScope(page.project_id, page.supervisor_thread_id);
         if (page.snapshot_id !== firstOperationId)
           throw new Error("Original confirmed-goal snapshot identity differs.");
@@ -87,21 +94,32 @@ export function createNativeSupervisorConfirmedGoalReader(options: {
           captured_at_ms: page.captured_at_ms,
         };
         if (page.state !== "page") {
-          if (page.byte_length !== 0 || page.json_fragment !== "" ||
-              page.byte_offset !== 0 || page.document_complete || page.next_cursor != null)
+          if (
+            page.byte_length !== 0 ||
+            page.json_fragment !== "" ||
+            page.byte_offset !== 0 ||
+            page.document_complete ||
+            page.next_cursor != null
+          )
             throw new Error("Original confirmed-goal unavailable framing differs.");
           return { ...metadata, state: page.state, snapshot_verified: false };
         }
         first ??= page;
-        if (page.document_sha256 !== first.document_sha256 ||
-            page.document_bytes !== first.document_bytes ||
-            page.captured_at_ms !== first.captured_at_ms)
+        if (
+          page.document_sha256 !== first.document_sha256 ||
+          page.document_bytes !== first.document_bytes ||
+          page.captured_at_ms !== first.captured_at_ms
+        )
           throw new Error("Original confirmed-goal snapshot witness differs.");
         const bytes = Buffer.from(page.json_fragment, "utf8");
         // An isolated surrogate is not a lossless native UTF-8 fragment.
-        if (bytes.toString("utf8") !== page.json_fragment ||
-            page.byte_offset !== offset || page.byte_length !== bytes.length ||
-            offset + bytes.length > page.document_bytes || bytes.length === 0)
+        if (
+          bytes.toString("utf8") !== page.json_fragment ||
+          page.byte_offset !== offset ||
+          page.byte_length !== bytes.length ||
+          offset + bytes.length > page.document_bytes ||
+          bytes.length === 0
+        )
           throw new Error("Original confirmed-goal fragment is not contiguous UTF-8.");
         fragments.push(bytes);
         offset += bytes.length;
@@ -115,7 +133,10 @@ export function createNativeSupervisorConfirmedGoalReader(options: {
         if (page.next_cursor != null || offset !== page.document_bytes)
           throw new Error("Original confirmed-goal snapshot EOF differs.");
         const documentBytes = Buffer.concat(fragments);
-        if (NodeCrypto.createHash("sha256").update(documentBytes).digest("hex") !== page.document_sha256)
+        if (
+          NodeCrypto.createHash("sha256").update(documentBytes).digest("hex") !==
+          page.document_sha256
+        )
           throw new Error("Original confirmed-goal snapshot digest differs.");
         const document = await decodeDocument(JSON.parse(documentBytes.toString("utf8")));
         checkScope(document.project_id, document.supervisor_thread_id);
@@ -133,7 +154,9 @@ export function createNativeSupervisorConfirmedGoalReader(options: {
           selected_item_index: index < 0 || index >= goal.items.length ? null : index,
         };
         const context = {
-          ...metadata, state: "verified", snapshot_verified: true,
+          ...metadata,
+          state: "verified",
+          snapshot_verified: true,
           context_state: reference.selected_item_index === null ? "no_item" : "available",
           confirmed_goal: {
             ...reference,
@@ -145,7 +168,9 @@ export function createNativeSupervisorConfirmedGoalReader(options: {
         // Retain the exact document; report an oversized selected context
         // explicitly instead of silently truncating an Owner's acceptance.
         return {
-          ...metadata, state: "verified", snapshot_verified: true,
+          ...metadata,
+          state: "verified",
+          snapshot_verified: true,
           context_state: "item_exceeds_model_budget",
           confirmed_goal: reference,
         };

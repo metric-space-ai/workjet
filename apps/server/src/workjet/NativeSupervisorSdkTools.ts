@@ -82,30 +82,41 @@ export function createNativeSupervisorSdkTools(options: {
     }
     return fault;
   };
-  const requestTool = async (nativeTool: NativeTool, operationId: string, argumentsJson: string) => {
+  const requestTool = async (
+    nativeTool: NativeTool,
+    operationId: string,
+    argumentsJson: string,
+  ) => {
     if (fault || retired || !options.currentSdkSessionId()) throw fail();
-    const reply = await decodeReply(await request(NodeCrypto.randomUUID(), {
-      version: 1,
-      action: "tool_call",
-      offer_id: options.offerId,
-      controller_id: options.controllerId,
-      operation_id: operationId,
-      native_tool: nativeTool,
-      tool_arguments_json: argumentsJson,
-    }));
-    if (reply.operation_id !== operationId || reply.native_tool !== nativeTool ||
-        Buffer.byteLength(JSON.stringify(reply)) > 65536) throw fail();
+    const reply = await decodeReply(
+      await request(NodeCrypto.randomUUID(), {
+        version: 1,
+        action: "tool_call",
+        offer_id: options.offerId,
+        controller_id: options.controllerId,
+        operation_id: operationId,
+        native_tool: nativeTool,
+        tool_arguments_json: argumentsJson,
+      }),
+    );
+    if (
+      reply.operation_id !== operationId ||
+      reply.native_tool !== nativeTool ||
+      Buffer.byteLength(JSON.stringify(reply)) > 65536
+    )
+      throw fail();
     return reply.result;
   };
   if (options.includeConfirmedGoalRead === true && options.goalScope === undefined)
     throw new Error("Original native confirmed-goal offer scope is missing.");
-  const goalReader = options.includeConfirmedGoalRead === true && options.goalScope !== undefined
-    ? createNativeSupervisorConfirmedGoalReader({
-        ...options.goalScope,
-        requestPage: (operationId, argumentsJson) =>
-          requestTool("confirmed_goal_read", operationId, argumentsJson),
-      })
-    : undefined;
+  const goalReader =
+    options.includeConfirmedGoalRead === true && options.goalScope !== undefined
+      ? createNativeSupervisorConfirmedGoalReader({
+          ...options.goalScope,
+          requestPage: (operationId, argumentsJson) =>
+            requestTool("confirmed_goal_read", operationId, argumentsJson),
+        })
+      : undefined;
   let goalReads = Promise.resolve();
   const deny = {
     hookSpecificOutput: {
@@ -187,20 +198,25 @@ export function createNativeSupervisorSdkTools(options: {
       captured.argumentsJson !== JSON.stringify(args)
     )
       return unavailable;
-    captured.response ??= captured.nativeTool === "confirmed_goal_read"
-      ? (() => {
-          const read = goalReads.then(async () => {
-            const local = await decodeGoalArguments(input);
-            if (!goalReader) throw fail();
-            return JSON.stringify(await goalReader.read(captured.operationId, local.item_index));
-          });
-          // Serial reads keep one full snapshot outside model history. A
-          // protocol failure still retires this original bridge; no retry.
-          goalReads = read.then(() => {}, () => {});
-          return read;
-        })()
-      : requestTool(captured.nativeTool, captured.operationId, captured.argumentsJson)
-          .then((result) => JSON.stringify(result));
+    captured.response ??=
+      captured.nativeTool === "confirmed_goal_read"
+        ? (() => {
+            const read = goalReads.then(async () => {
+              const local = await decodeGoalArguments(input);
+              if (!goalReader) throw fail();
+              return JSON.stringify(await goalReader.read(captured.operationId, local.item_index));
+            });
+            // Serial reads keep one full snapshot outside model history. A
+            // protocol failure still retires this original bridge; no retry.
+            goalReads = read.then(
+              () => {},
+              () => {},
+            );
+            return read;
+          })()
+        : requestTool(captured.nativeTool, captured.operationId, captured.argumentsJson).then(
+            (result) => JSON.stringify(result),
+          );
     try {
       const text = await captured.response;
       return { content: [{ type: "text" as const, text }] };
@@ -227,7 +243,10 @@ export function createNativeSupervisorSdkTools(options: {
       ? tool(
           "confirmed_goal_read",
           "Read the verified Owner-confirmed goal reference/status and one actual item/step. Native pages stay outside model history. Omit item_index for the first unfinished step, or select an index 0..99. Snapshot EOF is not work completion; oversized context is reported explicitly.",
-          { item_index: z.number().int().min(0).max(99).optional(), [NONCE]: z.string().uuid().optional() },
+          {
+            item_index: z.number().int().min(0).max(99).optional(),
+            [NONCE]: z.string().uuid().optional(),
+          },
           (input) => execute("confirmed_goal_read", input),
           { alwaysLoad: true },
         )

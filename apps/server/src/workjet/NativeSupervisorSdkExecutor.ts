@@ -168,12 +168,14 @@ export async function runNextNativeSupervisorSdkTurn(options: {
     transport: options.source,
     currentSdkSessionId: () => journal.currentSdkSessionId(),
     includeConfirmedGoalRead,
-    ...(includeConfirmedGoalRead ? {
-      goalScope: {
-        projectId: offer.route.project_id,
-        supervisorThreadId: offer.route.supervisor_thread_id,
-      },
-    } : {}),
+    ...(includeConfirmedGoalRead
+      ? {
+          goalScope: {
+            projectId: offer.route.project_id,
+            supervisorThreadId: offer.route.supervisor_thread_id,
+          },
+        }
+      : {}),
   });
   let broker: Awaited<ReturnType<typeof openNativeSupervisorModelBroker>>;
   try {

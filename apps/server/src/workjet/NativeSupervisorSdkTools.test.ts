@@ -47,9 +47,14 @@ function fixture(
     transport,
     currentSdkSessionId: () => "fixture-sdk-session",
     includeConfirmedGoalRead,
-    ...(includeConfirmedGoalRead ? { goalScope: {
-      projectId: "fixture-project", supervisorThreadId: "fixture-supervisor",
-    } } : {}),
+    ...(includeConfirmedGoalRead
+      ? {
+          goalScope: {
+            projectId: "fixture-project",
+            supervisorThreadId: "fixture-supervisor",
+          },
+        }
+      : {}),
   });
   owned.push(bridge);
   // Capture the actual registered handler; erase only the SDK generic-schema inference in this fixture.
@@ -226,11 +231,17 @@ it.each([
   expect(text?.type).toBe("text");
   if (text?.type !== "text") throw new Error("Expected actual SDK text result");
   expect(JSON.parse(text.text)).toMatchObject({
-    state: "verified", snapshot_verified: true,
-    confirmed_goal: result.confirmed_goal === null ? null : {
-      goal: result.confirmed_goal.goal, status: result.confirmed_goal.status,
-      item: result.confirmed_goal.items[0], step: result.confirmed_goal.steps[0],
-    },
+    state: "verified",
+    snapshot_verified: true,
+    confirmed_goal:
+      result.confirmed_goal === null
+        ? null
+        : {
+            goal: result.confirmed_goal.goal,
+            status: result.confirmed_goal.status,
+            item: result.confirmed_goal.items[0],
+            step: result.confirmed_goal.steps[0],
+          },
   });
   await goalHandler!(admitted!, { toolUseID: "untrusted-extra" });
   expect(await before({ ...input, tool_input: admitted })).toMatchObject({
@@ -341,30 +352,42 @@ it("shares the existing 32-call budget across both native tools", async () => {
 
 it("keeps all native pages outside one actual SDK tool result and deduplicates that hook", async () => {
   const goal = {
-    goal: { goal_id: "fixture-goal", revision: 1 }, status: "active",
+    goal: { goal_id: "fixture-goal", revision: 1 },
+    status: "active",
     items: [{ acceptance: '🧭é"\\\n'.repeat(80_000) }, { title: "Actual second item" }],
     steps: [{ status: "running" }, { status: "pending" }],
   };
   let snapshotId: string | undefined;
   const { before, hook, goalHandler, handler, transport } = fixture(async (_id, operation) => {
-    if (operation.native_tool === "worker_dispatch") return {
-      version: 1, state: "tool_result", operation_id: operation.operation_id,
-      native_tool: "worker_dispatch", result: { intent: { intentId: "actual-fixture-intent" } },
-      execution_ready: false,
-    };
+    if (operation.native_tool === "worker_dispatch")
+      return {
+        version: 1,
+        state: "tool_result",
+        operation_id: operation.operation_id,
+        native_tool: "worker_dispatch",
+        result: { intent: { intentId: "actual-fixture-intent" } },
+        execution_ready: false,
+      };
     snapshotId ??= String(operation.operation_id);
     const { cursor } = JSON.parse(String(operation.tool_arguments_json)) as { cursor?: string };
     return {
-      version: 1, state: "tool_result", operation_id: operation.operation_id,
+      version: 1,
+      state: "tool_result",
+      operation_id: operation.operation_id,
       native_tool: "confirmed_goal_read",
       result: goalPage(goalDocument(goal), snapshotId, cursor ? Number(cursor.split(":")[1]) : 0),
       execution_ready: false,
     };
   }, true);
-  const input = updatedInput(await before(hook({
-    tool_name: "mcp__workjet_native__confirmed_goal_read",
-    tool_use_id: "one-observed-large-goal-read", tool_input: { item_index: 1 },
-  })));
+  const input = updatedInput(
+    await before(
+      hook({
+        tool_name: "mcp__workjet_native__confirmed_goal_read",
+        tool_use_id: "one-observed-large-goal-read",
+        tool_input: { item_index: 1 },
+      }),
+    ),
+  );
   const result = await goalHandler!(input!, {});
   expect(result).not.toHaveProperty("isError");
   expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(8192);
@@ -380,21 +403,39 @@ it("keeps all native pages outside one actual SDK tool result and deduplicates t
   expect(await handler(workerInput!, {})).not.toHaveProperty("isError");
 });
 it.each(["snapshot_changed", "snapshot_unavailable", "capacity_unavailable"])(
-  "does not retire worker dispatch after explicit goal %s", async (state) => {
-    const { before, hook, goalHandler, handler, transport } = fixture(async (_id, operation) => ({
-      version: 1, state: "tool_result", operation_id: operation.operation_id,
-      native_tool: operation.native_tool,
-      result: operation.native_tool === "confirmed_goal_read" ? {
-        ...goalPage(goalDocument(), String(operation.operation_id)), state,
-        byte_offset: 0, byte_length: 0, json_fragment: "",
-        document_complete: false, next_cursor: null,
-      } : { intent: { intentId: "actual-fixture-intent" } },
-      execution_ready: false,
-    }), true);
-    const input = updatedInput(await before(hook({
-      tool_name: "mcp__workjet_native__confirmed_goal_read",
-      tool_use_id: "unavailable-goal", tool_input: {},
-    })));
+  "does not retire worker dispatch after explicit goal %s",
+  async (state) => {
+    const { before, hook, goalHandler, handler, transport } = fixture(
+      async (_id, operation) => ({
+        version: 1,
+        state: "tool_result",
+        operation_id: operation.operation_id,
+        native_tool: operation.native_tool,
+        result:
+          operation.native_tool === "confirmed_goal_read"
+            ? {
+                ...goalPage(goalDocument(), String(operation.operation_id)),
+                state,
+                byte_offset: 0,
+                byte_length: 0,
+                json_fragment: "",
+                document_complete: false,
+                next_cursor: null,
+              }
+            : { intent: { intentId: "actual-fixture-intent" } },
+        execution_ready: false,
+      }),
+      true,
+    );
+    const input = updatedInput(
+      await before(
+        hook({
+          tool_name: "mcp__workjet_native__confirmed_goal_read",
+          tool_use_id: "unavailable-goal",
+          tool_input: {},
+        }),
+      ),
+    );
     expect(await goalHandler!(input!, {})).not.toHaveProperty("isError");
     expect(transport.request).toHaveBeenCalledTimes(1);
     const workerInput = updatedInput(await before(hook({ tool_use_id: "after-unavailable-goal" })));
@@ -402,12 +443,20 @@ it.each(["snapshot_changed", "snapshot_unavailable", "capacity_unavailable"])(
     expect(transport.request).toHaveBeenCalledTimes(2);
   },
 );
-it.each([{ item_index: -1 }, { item_index: 100 }, { item_index: 0.5 }, { cursor: "model-selected-cursor" }])(
-  "denies malformed local context input before native access: %o", async (tool_input) => {
-    const { before, hook, transport } = fixture(undefined, true);
-    expect(await before(hook({
-      tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input,
-    }))).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
-    expect(transport.request).not.toHaveBeenCalled();
-  },
-);
+it.each([
+  { item_index: -1 },
+  { item_index: 100 },
+  { item_index: 0.5 },
+  { cursor: "model-selected-cursor" },
+])("denies malformed local context input before native access: %o", async (tool_input) => {
+  const { before, hook, transport } = fixture(undefined, true);
+  expect(
+    await before(
+      hook({
+        tool_name: "mcp__workjet_native__confirmed_goal_read",
+        tool_input,
+      }),
+    ),
+  ).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+  expect(transport.request).not.toHaveBeenCalled();
+});

@@ -73,14 +73,19 @@ export const WorkjetGatewayAdmissionInput = Schema.Struct({
   permit: WorkjetRemoteWorkerPermit,
 });
 export type WorkjetGatewayAdmissionInput = typeof WorkjetGatewayAdmissionInput.Type;
+export const WorkjetGatewayInferenceProtocol = Schema.Literals(["responses", "messages", "chat-completions"]);
+export type WorkjetGatewayInferenceProtocol = typeof WorkjetGatewayInferenceProtocol.Type;
 export const WorkjetGatewayInferenceInput = Schema.Struct({
   ...WorkjetGatewayAdmissionInput.fields,
-  // Responses protocol, non-streaming, bounded UTF-8 JSON. No URL or header injection.
+  /** Absent retains the original non-streaming Responses worker contract. */
+  protocol: Schema.optionalKey(WorkjetGatewayInferenceProtocol),
+  // Bounded native protocol body. No URL or header injection.
   requestJson: Schema.String.check(Schema.isMaxLength(256 * 1024)),
 });
 export type WorkjetGatewayInferenceInput = typeof WorkjetGatewayInferenceInput.Type;
 export const WorkjetGatewayInferenceResult = Schema.Struct({
   requestJson: Schema.String.check(Schema.isMaxLength(1024 * 1024)),
+  contentType: Schema.optionalKey(Schema.Literals(["application/json", "text/event-stream"])),
 });
 export type WorkjetGatewayInferenceResult = typeof WorkjetGatewayInferenceResult.Type;
 

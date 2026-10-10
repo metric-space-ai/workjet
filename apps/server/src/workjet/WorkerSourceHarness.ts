@@ -15,7 +15,8 @@ const Route = Schema.Struct({
 });
 export type WorkerSourceHarnessRoute = typeof Route.Type;
 const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Schema.Boolean) });
-const Reply = Schema.Struct({ requestJson: Schema.String });
+const Reply = Schema.Struct({ requestJson: Schema.String, contentType: Schema.optionalKey(Schema.Literals(["application/json", "text/event-stream"])) });
+const nativeProtocols = { "/v1/messages": "messages", "/v1/chat/completions": "chat-completions" } as const;
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
 const MessagesResponse = Schema.Struct({
   id: Schema.String,
@@ -185,11 +186,9 @@ export async function installWorkerSourceRoute(
       res.writeHead(404).end();
       return;
     }
+    const protocol = req.url === "/v1/messages" && !messages ? nativeProtocols["/v1/messages"] : req.url === "/v1/chat/completions" ? nativeProtocols["/v1/chat/completions"] : undefined;
     const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
-    if (
-      !inventory &&
-      (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses"))
-    ) {
+    if (!inventory && (req.method !== "POST" || (req.url !== "/v1/responses" && !(messages && req.url === "/v1/messages") && protocol === undefined))) {
       res.writeHead(404).end();
       return;
     }
@@ -237,18 +236,25 @@ export async function installWorkerSourceRoute(
         await source(
           "infer",
           {
-            requestJson: JSON.stringify({ ...(json as Record<string, unknown>), stream: false }),
+            ...(protocol === undefined ? {} : { protocol }),
+            requestJson: protocol === undefined ? JSON.stringify({ ...(json as Record<string, unknown>), stream: false }) : JSON.stringify(json),
           },
           controller.signal,
         ),
       );
+      if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
+      if (protocol !== undefined) {
+        const expected = request.stream ? "text/event-stream" : "application/json";
+        if (reply.contentType !== expected || Buffer.byteLength(reply.requestJson) > 1024 * 1024)
+          throw new Error("Invalid native worker response");
+        res.writeHead(200, { "content-type": expected, "cache-control": "no-store" }).end(reply.requestJson);
+        return;
+      }
       const result = JSON.parse(reply.requestJson);
       if (messages) {
         const message = Schema.decodeUnknownSync(MessagesResponse)(result);
-        if (message.model !== pin.modelId)
-          throw new Error("Worker response model differs from source permit");
+        if (message.model !== pin.modelId) throw new Error("Worker response model differs from source permit");
       } else Schema.decodeUnknownSync(Response)(result);
-      if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
       if (request.stream && messages) {
         writeMessagesStream(res, result);
       } else if (request.stream) {

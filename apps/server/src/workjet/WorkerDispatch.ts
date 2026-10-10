@@ -43,6 +43,7 @@ import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
 import { WorkerDispatchRollback, type WorkerDispatchRecovery } from "./WorkerDispatchRollback.ts";
+import { workerSourceDriver } from "./WorkerSourceNativeProfile.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
 
 export interface WorkerDispatchInput {
@@ -309,7 +310,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         configuration?.workerProfiles.filter(
           (profile) =>
             profile.computerId === computerId &&
-            (profile.harness === "codex-cli" || profile.harness === "claude-code") &&
+            workerSourceDriver(profile.harness) !== undefined &&
             (input.workerProfileId === undefined || profile.id === input.workerProfileId),
         ) ?? [];
       const profile = profiles.length === 1 ? profiles[0] : undefined;
@@ -421,7 +422,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           targetEnvironmentId,
           computerId,
           workerProfileId: profile.id,
-          ...(profile.harness === "claude-code" ? { harness: profile.harness } : {}),
+          ...(profile.harness === "codex-cli" ? {} : { harness: profile.harness }),
           llmRouteId: profile.llmRouteId,
           parent: { environmentId: invocation.environmentId, threadId: parent.id },
           ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),

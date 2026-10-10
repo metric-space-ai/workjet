@@ -1,7 +1,8 @@
-it.effect("dispatches a remote Claude profile with its own immutable harness and model", () =>
+for (const requestedHarness of ["claude-code", "grok-cli", "opencode", "minimax-code", "greppy", "pi-code"] as const) {
+it.effect(`dispatches remote ${requestedHarness} with its immutable harness and model`, () =>
   Effect.gen(function* () {
     const harness = makeHarness({ remoteSource: true, remoteReplyLost: true });
-    const profile = { ...remoteProfile, harness: "claude-code" as const };
+    const profile = { ...remoteProfile, harness: requestedHarness };
     const configuration = {
       computers: [remoteComputer],
       workerProfiles: [profile],
@@ -43,6 +44,7 @@ it.effect("dispatches a remote Claude profile with its own immutable harness and
     expect(harness.commands).toEqual([]);
   }),
 );
+}
 it.effect(
   "uses the native intent as the first remote worker ID and reconciles it after source restart",
   () =>

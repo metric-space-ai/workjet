@@ -5,6 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { query, type SDKMessage, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import { DEFAULT_MODEL } from "@workjet/contracts";
+import * as Schema from "effect/Schema";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { runNextNativeSupervisorSdkTurn } from "./NativeSupervisorSdkExecutor.ts";
 import type { NativeSupervisorSourceTransport } from "./NativeSupervisorSourceTransport.ts";
@@ -109,6 +110,7 @@ async function fixture(change?: (operation: Record<string, unknown>) => unknown)
 }
 function sdkFixture(
   mode: "result" | "missing-result" | "foreign-parent" | "await-stop" = "result",
+  checkChildEnvironment = false,
 ) {
   let started!: () => void;
   const startedPromise = new Promise<void>((resolve) => {
@@ -121,18 +123,61 @@ function sdkFixture(
       throw new Error("Private SDK environment/lifetime missing.");
     const child = options.spawnClaudeCodeProcess({
       command: process.execPath,
-      args: ["-e", "process.stdin.resume();"],
+      args: [
+        "-e",
+        checkChildEnvironment
+          ? 'process.stdout.write(JSON.stringify({keys:Object.keys(process.env).sort(),home:process.env.HOME,config:process.env.CLAUDE_CONFIG_DIR})+"\\n");process.stdin.resume();'
+          : "process.stdin.resume();",
+      ],
       cwd: options.cwd ?? "",
-      env: options.env,
+      env: checkChildEnvironment
+        ? {
+            ...options.env,
+            HOME: "/fixture-ambient-home",
+            CLAUDE_CONFIG_DIR: "/fixture-ambient-config",
+            WORKJET_FIXTURE_AMBIENT: "fixture-value",
+            CLAUDE_CODE_ENTRYPOINT: "sdk-ts",
+            CLAUDE_AGENT_SDK_VERSION: "0.3.170",
+          }
+        : options.env,
       signal: options.abortController?.signal,
     });
     children.push(child);
+    const environmentReadback = checkChildEnvironment
+      ? new Promise<string>((resolve) => {
+          let output = "";
+          child.stdout.on("data", (chunk: Buffer) => {
+            output += chunk.toString();
+            if (output.includes("\n")) resolve(output.trim());
+          });
+        })
+      : undefined;
     const session = "fixture-original-sdk-session";
     let finish!: () => void;
     const stopped = new Promise<void>((resolve) => {
       finish = resolve;
     });
     const stream = (async function* () {
+      if (environmentReadback) {
+        const readback = Schema.decodeUnknownSync(
+          Schema.fromJsonString(
+            Schema.Struct({
+              keys: Schema.Array(Schema.String),
+              home: Schema.String,
+              config: Schema.String,
+            }),
+          ),
+        )(await environmentReadback);
+        expect(readback.keys).toEqual(
+          [
+            ...Object.keys(options.env!),
+            "CLAUDE_CODE_ENTRYPOINT",
+            "CLAUDE_AGENT_SDK_VERSION",
+          ].sort(),
+        );
+        expect(readback.home).toBe(options.env!.HOME);
+        expect(readback.config).toBe(options.env!.CLAUDE_CONFIG_DIR);
+      }
       yield {
         type: "system",
         subtype: "init",
@@ -210,7 +255,7 @@ it("reads and claims the same native offer and joins actual SDK child/query/jour
 });
 it("replaces the complete child environment and exposes only the native tool bridge", async () => {
   const { options } = await fixture();
-  sdkFixture();
+  sdkFixture("result", true);
   await runNextNativeSupervisorSdkTurn(options);
   const config = vi.mocked(query).mock.calls[0]?.[0].options;
   expect(config).toMatchObject({

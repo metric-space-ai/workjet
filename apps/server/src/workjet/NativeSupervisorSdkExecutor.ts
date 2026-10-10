@@ -169,6 +169,15 @@ export async function runNextNativeSupervisorSdkTurn(options: {
     await NodeFSP.rm(directory, { recursive: true, force: true });
     throw cause;
   }
+  const sdkEnvironment = {
+    PATH: `${NodePath.dirname(process.execPath)}:/usr/bin:/bin`,
+    HOME: directory,
+    TMPDIR: tmp,
+    CLAUDE_CONFIG_DIR: config,
+    ANTHROPIC_BASE_URL: broker.baseUrl,
+    ANTHROPIC_API_KEY: broker.authToken,
+    LANG: "en_US.UTF-8",
+  };
   const children: Array<{ child: NodeChildProcess.ChildProcess; closed: Promise<void> }> = [];
   const abortController = new AbortController();
   let inputFinished!: () => void;
@@ -197,9 +206,20 @@ export async function runNextNativeSupervisorSdkTurn(options: {
     await inputEnd;
   };
   const spawn = (spawnOptions: SpawnOptions): SpawnedProcess => {
+    const sdkVersion = spawnOptions.env.CLAUDE_AGENT_SDK_VERSION;
+    if (sdkVersion !== undefined && !/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(sdkVersion))
+      throw new Error("Original SDK protocol version marker is invalid.");
     const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
       cwd: directory,
-      env: spawnOptions.env,
+      // Enforce the retained private map at the actual child boundary. Only
+      // SDK protocol markers may be added; no profile/account/tracing inheritance.
+      env: {
+        ...sdkEnvironment,
+        ...(spawnOptions.env.CLAUDE_CODE_ENTRYPOINT === "sdk-ts"
+          ? { CLAUDE_CODE_ENTRYPOINT: "sdk-ts" }
+          : {}),
+        ...(sdkVersion === undefined ? {} : { CLAUDE_AGENT_SDK_VERSION: sdkVersion }),
+      },
       signal: spawnOptions.signal,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -291,16 +311,8 @@ export async function runNextNativeSupervisorSdkTurn(options: {
         includePartialMessages: true,
         abortController,
         spawnClaudeCodeProcess: spawn,
-        // Entire replacement env: no HOME/config/account/plugin/gateway inheritance.
-        env: {
-          PATH: `${NodePath.dirname(process.execPath)}:/usr/bin:/bin`,
-          HOME: directory,
-          TMPDIR: tmp,
-          CLAUDE_CONFIG_DIR: config,
-          ANTHROPIC_BASE_URL: broker.baseUrl,
-          ANTHROPIC_API_KEY: broker.authToken,
-          LANG: "en_US.UTF-8",
-        },
+        // Give the SDK a copy; its child callback retains the original private map.
+        env: { ...sdkEnvironment },
       },
     });
     const actualRuntime = runtime;

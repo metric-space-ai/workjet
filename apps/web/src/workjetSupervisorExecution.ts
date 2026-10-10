@@ -65,12 +65,15 @@ export async function readWorkjetSupervisorExecutionPage(
   return result;
 }
 
-/** Opt into native assistant chunks; an older reader may still return ordinary task history. */
+/** Opt into persisted native chunks; compatibility reads retain the same command and attempt. */
 export async function readWorkjetSupervisorPublicExecutionPage(
   saved: WorkjetSupervisorJournal,
   observationId: CommandId,
   journal: WorkjetSupervisorJournalPort,
-  pageRequest: WorkjetSupervisorExecutionPageRequest = { include_public_text: true },
+  pageRequest: WorkjetSupervisorExecutionPageRequest = {
+    include_public_text: true,
+    include_native_message_text: true,
+  },
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   const result = await readWorkjetSupervisorExecutionPage(
@@ -80,6 +83,22 @@ export async function readWorkjetSupervisorPublicExecutionPage(
     pageRequest,
     port,
   );
+  if (
+    result._tag !== "failed" ||
+    !["unsupported", "guest_failed", "invalid_input"].includes(result.code) ||
+    (pageRequest.include_public_text !== true && pageRequest.include_native_message_text !== true)
+  )
+    return result;
+  if (pageRequest.include_native_message_text === true) {
+    const { include_native_message_text: _nativeOptIn, ...publicRequest } = pageRequest;
+    return readWorkjetSupervisorPublicExecutionPage(
+      saved,
+      CommandId.make(`${observationId}:public`),
+      journal,
+      publicRequest,
+      port,
+    );
+  }
   if (
     pageRequest.include_public_text !== true ||
     result._tag !== "failed" ||

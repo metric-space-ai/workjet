@@ -7311,7 +7311,15 @@ function ChatViewContent(props: ChatViewProps) {
                                         presentationInstanceId,
                                         connection,
                                       );
-                                      if (!nextConfig) return false;
+                                      if (!nextConfig)
+                                        return {
+                                          _tag: "failed",
+                                          error: {
+                                            _tag: "OrchestrationCommandInvariantError",
+                                            detail:
+                                              "Select an authorized worker connection for this project's instance.",
+                                          },
+                                        };
                                       const result = await setThreadWorkjetConfig({
                                         environmentId: activeServerThread.environmentId,
                                         input: {
@@ -7328,7 +7336,12 @@ function ChatViewContent(props: ChatViewProps) {
                                           },
                                         }));
                                       }
-                                      return result._tag === "Success";
+                                      return result._tag === "Success"
+                                        ? { _tag: "saved" }
+                                        : {
+                                            _tag: "failed",
+                                            error: squashAtomCommandFailure(result),
+                                          };
                                     }}
                                     unavailable={
                                       activeEnvironmentUnavailable ||

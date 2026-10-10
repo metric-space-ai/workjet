@@ -20,6 +20,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import { requireOneShotIsolation } from "./oneShotIsolation.ts";
 import type * as PlatformError from "effect/PlatformError";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
@@ -34,7 +35,11 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-import { initialWorkerGoal, prepareGoalContinuation } from "../workjet/workerGoal.ts";
+import {
+  initialWorkerGoal,
+  prepareGoalContinuation,
+  withoutGoalObservations,
+} from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
 import {
   requireProjectTeamLifecycle,
@@ -530,7 +535,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
-          workjetConfig: command.workjetConfig,
+          workjetConfig: withoutGoalObservations(command.workjetConfig),
           branch: command.branch,
           worktreePath: command.worktreePath,
           createdAt: command.createdAt,
@@ -601,7 +606,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (workerPullRequestTerminal) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "This worker's pull request is complete. Start a new worker for new work.",
+          detail: "This worker has submitted its pull request. Start a new worker for new work.",
         });
       }
       const thread = yield* requireThreadArchived({
@@ -983,6 +988,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const workerConfig =
+        thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.role === "worker"
+          ? thread.workjetConfig
+          : undefined;
+      if (
+        workerConfig &&
+        ((command.branch !== undefined && command.branch !== thread.branch) ||
+          (command.worktreePath !== undefined && command.worktreePath !== thread.worktreePath))
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "A One-Shot Worker's assigned checkout and branch are immutable.",
+        });
+      const workerModel = command.modelSelection?.model ?? thread.modelSelection.model;
+      const workerPrefix = thread.title.match(/^(\[Worker[1-9]\d*@.*\]): /)?.[1];
+      const title = workerConfig?.pullRequest
+        ? `#${workerConfig.pullRequest.number}: ${workerModel}`
+        : workerConfig && workerPrefix
+          ? `${workerPrefix}: ${workerModel}`
+          : workerConfig &&
+              command.title !== undefined &&
+              !/^\[Worker[1-9]\d*@.*\]: /s.test(command.title)
+            ? thread.title
+            : command.title;
       const branch =
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
@@ -1000,8 +1029,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.meta-updated",
         payload: {
           threadId: command.threadId,
-          ...(command.title !== undefined ? { title: command.title } : {}),
-          ...(command.regenerateTitle === true
+          ...(title !== undefined ? { title } : {}),
+          ...(command.regenerateTitle === true && !workerConfig
             ? {
                 regenerateTitle: true as const,
                 previousTitle: thread.title,
@@ -1030,7 +1059,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      const requestIsCurrent = thread.titleRegeneration?.requestId === command.requestId;
+      const requestIsCurrent =
+        thread.workjetConfig.role !== "worker" &&
+        thread.titleRegeneration?.requestId === command.requestId;
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1157,6 +1188,91 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             },
           },
           updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.goal.execution-observed":
+    case "thread.goal.executor-observed": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const config = thread.workjetConfig;
+      if (
+        config.schemaVersion !== 2 ||
+        config.team?.role !== "specialist" ||
+        !config.goal ||
+        thread.archivedAt !== null ||
+        thread.deletedAt !== null
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Producer observations belong to active persistent worker threads.",
+        });
+      }
+      const previous = config.goal;
+      const instanceId =
+        command.type === "thread.goal.execution-observed"
+          ? command.execution.providerInstanceId
+          : command.executor.providerInstanceId;
+      if (thread.session?.providerInstanceId !== instanceId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "The observed producer is not this thread's current provider session.",
+        });
+      }
+      let goal: WorkjetThreadGoal;
+      let observedAt: string;
+      if (command.type === "thread.goal.execution-observed") {
+        const observed = command.execution;
+        if (
+          thread.latestTurn?.turnId !== observed.turnId ||
+          thread.session.providerName !== observed.provider
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "A stale or foreign turn cannot supply goal producer evidence.",
+          });
+        }
+        const retained =
+          previous.lastExecution?.turnId === observed.turnId &&
+          previous.lastExecution.providerInstanceId === observed.providerInstanceId &&
+          previous.lastExecution.provider === observed.provider
+            ? previous.lastExecution
+            : undefined;
+        const lastExecution = {
+          ...observed,
+          ...(retained && retained.state !== "running" && observed.state === "running"
+            ? {
+                state: retained.state,
+                sourceEventId: retained.sourceEventId,
+                observedAt: retained.observedAt,
+              }
+            : {}),
+          author: observed.author ?? retained?.author ?? null,
+        };
+        observedAt = observed.observedAt;
+        goal = { ...previous, lastExecution };
+      } else {
+        if (previous.revision !== command.expectedRevision) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The goal changed before its executor observation.",
+          });
+        }
+        observedAt = command.executor.observedAt;
+        goal = { ...previous, executor: command.executor };
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: observedAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.workjet-config-set",
+        payload: {
+          threadId: command.threadId,
+          workjetConfig: { ...config, goal },
+          updatedAt: observedAt,
         },
       };
     }
@@ -1323,7 +1439,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             thread.workjetConfig.goal &&
             retained.config.schemaVersion === 2
               ? { ...retained.config, goal: thread.workjetConfig.goal }
-              : retained.config,
+              : withoutGoalObservations(retained.config),
           updatedAt: occurredAt,
         },
       };
@@ -1333,7 +1449,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (workerPullRequestTerminal) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "This worker's pull request is complete. Start a new worker for new work.",
+          detail: "This worker has submitted its pull request. Start a new worker for new work.",
         });
       }
       const targetThread = yield* requireThread({
@@ -1347,6 +1463,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Deleted thread '${command.threadId}' cannot start another turn.`,
         });
       }
+      yield* requireOneShotIsolation(targetThread, readModel);
       const sourceProposedPlan = command.sourceProposedPlan;
       if (command.goalRevision !== undefined) {
         const config = targetThread.workjetConfig;

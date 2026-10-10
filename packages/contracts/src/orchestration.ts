@@ -24,7 +24,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "./workjet.ts";
-import { WorkjetWorkerKanban } from "./workjetGoal.ts";
+import { WorkjetWorkerKanban, WorkjetGoalExecution, WorkjetGoalExecutor } from "./workjetGoal.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -839,6 +839,21 @@ const ThreadWorkerKanbanSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadGoalExecutionObservedCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.execution-observed"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  execution: WorkjetGoalExecution,
+});
+
+const ThreadGoalExecutorObservedCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.executor-observed"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  expectedRevision: NonNegativeInt,
+  executor: WorkjetGoalExecutor,
+});
+
 const ThreadGoalAdvanceCommand = Schema.Struct({
   type: Schema.Literal("thread.goal.advance"),
   commandId: CommandId,
@@ -1127,6 +1142,8 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadGoalExecutionObservedCommand,
+  ThreadGoalExecutorObservedCommand,
   ThreadGoalAdvanceCommand,
   ThreadWorkerKanbanSetCommand,
   ThreadSessionSetCommand,

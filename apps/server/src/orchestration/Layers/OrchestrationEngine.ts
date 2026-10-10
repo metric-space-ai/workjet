@@ -124,7 +124,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     turnStartFence.withPermits(1)(
       Effect.gen(function* () {
         const thread = commandReadModel.threads.find((item) => item.id === threadId);
-        if (!thread || thread.deletedAt !== null) return false;
+        if (!thread || thread.deletedAt !== null || thread.archivedAt !== null) return false;
         if (goalRevision !== undefined) {
           const goal =
             thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined;
@@ -139,10 +139,36 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           )
             return false;
         }
+        if (thread.workjetConfig.role === "worker") {
+          const submitted = yield* sql<{ readonly threadId: string }>`
+            SELECT thread_id AS "threadId" FROM workjet_worker_pull_requests
+            WHERE thread_id = ${thread.id} AND worktree_path = ${thread.worktreePath}
+              AND branch_ref = ${thread.branch} LIMIT 1
+          `.pipe(Effect.orDie);
+          if (submitted.length > 0) return false;
+        }
         yield* start;
         return true;
       }),
     );
+
+  const runWorkerRetirementIfSubmitted: OrchestrationEngineShape["runWorkerRetirementIfSubmitted"] =
+    (threadId, stop) =>
+      turnStartFence.withPermits(1)(
+        Effect.gen(function* () {
+          const thread = commandReadModel.threads.find((item) => item.id === threadId);
+          if (!thread || thread.deletedAt !== null || thread.workjetConfig.role !== "worker")
+            return false;
+          const receipts = yield* sql<WorkerPullRequestReceipt>`
+          SELECT thread_id AS "threadId", worktree_path AS "worktreePath",
+            branch_ref AS "branchRef", provider, pr_number AS "prNumber", pr_url AS "prUrl",
+            head_oid AS "headOid", state, execution_stopped AS "executionStopped"
+          FROM workjet_worker_pull_requests WHERE thread_id = ${thread.id} LIMIT 1
+        `.pipe(Effect.orDie);
+          if (!receipts.some((receipt) => receiptMatchesThread(receipt, thread))) return false;
+          return yield* stop;
+        }),
+      );
 
   const projectEventsOntoReadModel = (
     baseReadModel: OrchestrationReadModel,
@@ -327,7 +353,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 branch_ref AS "branchRef", provider, pr_number AS "prNumber", pr_url AS "prUrl",
                 head_oid AS "headOid", state, execution_stopped AS "executionStopped"
               FROM workjet_worker_pull_requests WHERE thread_id = ${thread.id}
-                AND state IN ('merged', 'closed') LIMIT 1
+                LIMIT 1
             `;
             workerPullRequestTerminal = receipts.length === 1;
             workerExecutionStopped = receipts.some(
@@ -653,6 +679,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     readEvents,
     dispatch,
     runTurnStartIfActive,
+    runWorkerRetirementIfSubmitted,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (wsServer, ProviderRuntimeIngestion, CheckpointReactor, etc.)
     // each independently receive all domain events.

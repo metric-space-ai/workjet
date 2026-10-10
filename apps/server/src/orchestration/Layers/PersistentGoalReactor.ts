@@ -91,6 +91,7 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
       });
       return;
     }
+    let goalControl: "provider-native" | "workjet-emulated" = "workjet-emulated";
     if (providers.nativeGoal && thread.session !== null) {
       let nativeResult: Result.Result<ProviderNativeGoal | null | undefined, unknown> | undefined;
       const admitted = yield* engine.runTurnStartIfActive(
@@ -132,6 +133,7 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
         return;
       }
       const native = nativeResult.success;
+      if (native !== undefined) goalControl = "provider-native";
       if (native !== undefined) {
         const ownerRestart =
           goal.pendingContinuation?.commandId.startsWith("server:goal-start:") &&
@@ -159,6 +161,28 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
           return;
         }
       }
+    }
+    const instanceId = thread.session?.providerInstanceId;
+    if (
+      instanceId !== undefined &&
+      (goal.executor?.providerInstanceId !== instanceId ||
+        goal.executor.goalControl !== goalControl)
+    ) {
+      yield* engine.dispatch({
+        type: "thread.goal.executor-observed",
+        commandId: CommandId.make(
+          `server:goal-executor:${thread.id}:${goal.revision}:${instanceId}:${goalControl}`,
+        ),
+        threadId: thread.id,
+        expectedRevision: goal.revision,
+        executor: {
+          implementation: "workjet-persistent-goal-reactor.v1",
+          goalControl,
+          providerInstanceId: instanceId,
+          observedAt: now,
+        },
+      });
+      return;
     }
     const latest = thread.latestTurn;
     if (

@@ -58,6 +58,7 @@ import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegi
 import { TextGeneration, type TextGenerationShape } from "../../textGeneration/TextGeneration.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
+import { persistentThreadConfigForTest } from "../persistentThreadTestFixture.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
@@ -466,6 +467,7 @@ describe("ProviderCommandReactor", () => {
         return {
           readEvents: engine.readEvents,
           runTurnStartIfActive: engine.runTurnStartIfActive,
+          runWorkerRetirementIfSubmitted: engine.runWorkerRetirementIfSubmitted,
           dispatch: (command) => {
             if (command.type === "thread.title.regeneration.complete") {
               titleRegenerationCompletionDispatchAttempts += 1;
@@ -547,6 +549,12 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       }),
     );
+    const threadWorkjetConfig = persistentThreadConfigForTest(
+      await runEffect(snapshotQuery.getSnapshot()),
+      asProjectId("project-1"),
+      ThreadId.make("thread-1"),
+      input?.threadWorkjetConfig,
+    );
     await Effect.runPromise(
       engine.dispatch({
         type: "thread.create",
@@ -556,7 +564,7 @@ describe("ProviderCommandReactor", () => {
         title: "Thread",
         modelSelection: modelSelection,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: input?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: threadWorkjetConfig,
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -573,7 +581,11 @@ describe("ProviderCommandReactor", () => {
           title: "Thread 2",
           modelSelection: modelSelection,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          workjetConfig: persistentThreadConfigForTest(
+            await runEffect(snapshotQuery.getSnapshot()),
+            asProjectId("project-1"),
+            ThreadId.make("thread-2"),
+          ),
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
@@ -646,6 +658,7 @@ describe("ProviderCommandReactor", () => {
       generateBranchName,
       generateThreadTitle,
       runtimeSessions,
+      threadWorkjetConfig,
       stateDir,
       drain,
       runEffect,
@@ -775,7 +788,7 @@ describe("ProviderCommandReactor", () => {
         model: "gpt-5-codex",
       },
       runtimeMode: "approval-required",
-      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+      workjetConfig: harness.threadWorkjetConfig,
     });
 
     const readModel = await harness.readModel();
@@ -855,7 +868,11 @@ describe("ProviderCommandReactor", () => {
           title: id,
           modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5-codex"),
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          workjetConfig: persistentThreadConfigForTest(
+            await harness.readModel(),
+            asProjectId(projectId),
+            ThreadId.make(id),
+          ),
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
@@ -1685,7 +1702,7 @@ describe("ProviderCommandReactor", () => {
       managedInstructions: "Coordinate the configured capabilities.",
       enabledCapabilityIds: ["greppy"],
     } as const satisfies WorkjetThreadConfig;
-    const restartedWorkjetConfig = {
+    const restartedSettings = {
       schemaVersion: 1,
       role: "standard",
       parent: null,
@@ -1693,6 +1710,12 @@ describe("ProviderCommandReactor", () => {
       enabledCapabilityIds: ["web-search", "web-stack-browser"],
     } as const satisfies WorkjetThreadConfig;
     const harness = await createHarness({ threadWorkjetConfig: initialWorkjetConfig });
+    const restartedWorkjetConfig = persistentThreadConfigForTest(
+      await harness.readModel(),
+      asProjectId("project-1"),
+      ThreadId.make("thread-1"),
+      restartedSettings,
+    );
     const now = "2026-01-01T00:00:00.000Z";
 
     await Effect.runPromise(
@@ -1714,7 +1737,7 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      workjetConfig: initialWorkjetConfig,
+      workjetConfig: harness.threadWorkjetConfig,
     });
 
     await Effect.runPromise(

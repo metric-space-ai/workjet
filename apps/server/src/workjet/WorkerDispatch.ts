@@ -1,5 +1,6 @@
 import * as NodeUtil from "node:util";
 import {
+  canCoordinateWorkjet,
   CommandId,
   MessageId,
   ThreadId,
@@ -21,6 +22,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import type { SqlError } from "effect/unstable/sql/SqlError";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -45,6 +47,7 @@ import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
 import { WorkerDispatchRollback, type WorkerDispatchRecovery } from "./WorkerDispatchRollback.ts";
 import { workerSourceDriver } from "./WorkerSourceNativeProfile.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
+import { makeWorkerOrdinal } from "./WorkerOrdinal.ts";
 
 export interface WorkerDispatchInput {
   readonly task: string;
@@ -123,7 +126,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       case "parent-unavailable":
         return "The parent thread is unavailable for worker dispatch.";
       case "parent-not-orchestrator":
-        return "The parent thread is no longer an orchestrator.";
+        return "Only a Supervisor or Persistent Worker may commission one-shot workers.";
       case "duplicate-capabilities":
         return "Worker capability selections must not contain duplicates.";
       case "capability-escalation":
@@ -170,6 +173,10 @@ export class WorkerDispatch extends Context.Service<WorkerDispatch, WorkerDispat
 export interface WorkerDispatchSources {
   readonly randomUUID: Effect.Effect<string>;
   readonly nowIso: Effect.Effect<string>;
+  readonly nextWorkerOrdinal: (
+    parent: WorkjetParentThreadReference,
+    workerId: ThreadId,
+  ) => Effect.Effect<number, SqlError>;
 }
 
 const DEFAULT_TITLE_MAX_LENGTH = 120;
@@ -181,10 +188,9 @@ const DEFAULT_TITLE_MAX_LENGTH = 120;
  */
 export const WORKER_REF_PREFIX = "workjet/worker/";
 
-export const deriveWorkerTitle = (task: string): string => {
-  const normalized = task.trim().replace(/\s+/g, " ");
-  if (normalized.length <= DEFAULT_TITLE_MAX_LENGTH) return normalized;
-  return `${normalized.slice(0, DEFAULT_TITLE_MAX_LENGTH - 3).trimEnd()}...`;
+export const deriveWorkerTitle = (ordinal: number, parentTitle: string, model: string): string => {
+  const parent = parentTitle.trim().replace(/\s+/g, " ").slice(0, DEFAULT_TITLE_MAX_LENGTH);
+  return `[Worker${ordinal}@${parent}]: ${model}`;
 };
 
 const failure = (reason: WorkerDispatchFailureReason, recovery?: Partial<WorkerDispatchRecovery>) =>
@@ -214,10 +220,6 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   ) => Effect.Effect<WorkerDispatchResult, WorkerDispatchError> = Effect.fn(
     "WorkerDispatch.dispatch",
   )(function* (invocation, input, trustedInitialRequestId) {
-    if (invocation.workjetRole !== "orchestrator") {
-      return yield* failure("role-not-authorized");
-    }
-
     const parentOption = yield* query
       .getThreadDetailById(invocation.threadId)
       .pipe(Effect.mapError(() => failure("parent-unavailable")));
@@ -225,7 +227,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     if (!parent || parent.deletedAt !== null || parent.archivedAt != null) {
       return yield* failure("parent-unavailable");
     }
-    if (parent.workjetConfig.role !== "orchestrator") {
+    if (!canCoordinateWorkjet(parent.workjetConfig)) {
       return yield* failure("parent-not-orchestrator");
     }
     const parentTeam =
@@ -367,8 +369,6 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           ) ||
           saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
           saved.value.request.task !== input.task ||
-          (input.title !== undefined &&
-            saved.value.request.title !== (input.title.trim() || deriveWorkerTitle(input.task))) ||
           (input.modelSelection !== undefined &&
             !NodeUtil.isDeepStrictEqual(
               yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(
@@ -410,6 +410,13 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             maxOutputBytes: 128,
           })
           .pipe(Effect.mapError(() => failure("remote-dispatch-failed")))).stdout.trim();
+        const requestId = trustedInitialRequestId ?? ThreadId.make(yield* sources.randomUUID);
+        const ordinal = yield* sources
+          .nextWorkerOrdinal(
+            { environmentId: invocation.environmentId, threadId: parent.id },
+            requestId,
+          )
+          .pipe(Effect.mapError(() => failure("create-failed")));
         const createdAt = yield* sources.nowIso;
         const { rootPath: _sourcePath, ...repository } = project.repositoryIdentity;
         const remoteUrl = repository.locator.remoteUrl.replace(
@@ -418,7 +425,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         );
         request = yield* Schema.decodeUnknownEffect(RemoteWorkerRequest)({
           schemaVersion: 1,
-          requestId: trustedInitialRequestId ?? ThreadId.make(yield* sources.randomUUID),
+          requestId,
           targetEnvironmentId,
           computerId,
           workerProfileId: profile.id,
@@ -440,7 +447,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           },
           revision,
           task: input.task,
-          title: input.title?.trim() || deriveWorkerTitle(input.task),
+          title: deriveWorkerTitle(ordinal, parent.title, modelSelection.model),
           modelSelection,
           runtimeMode: parent.runtimeMode,
           interactionMode: parent.interactionMode,
@@ -489,7 +496,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     const turnStartCommandId = CommandId.make(yield* sources.randomUUID);
     const messageId = MessageId.make(yield* sources.randomUUID);
     const createdAt = yield* sources.nowIso;
-    const title = input.title?.trim() || deriveWorkerTitle(input.task);
+    const ordinal = yield* sources
+      .nextWorkerOrdinal(parentReference, workerThreadId)
+      .pipe(Effect.mapError(() => failure("create-failed")));
+    const title = deriveWorkerTitle(ordinal, parent.title, modelSelection.model);
     let preparedDelegation: OrchestrationDispatchOptions["workerDelegation"];
     if (parentTeam) {
       if (Option.isNone(snapshotStore) || Option.isNone(meshIdentity)) {
@@ -844,7 +854,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
 
 export const makeWorkerDispatch = Effect.fn("WorkerDispatch.make")(function* () {
   const crypto = yield* Crypto.Crypto;
+  const nextWorkerOrdinal = yield* makeWorkerOrdinal;
   return yield* makeWorkerDispatchWithSources({
+    nextWorkerOrdinal,
     randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
     nowIso: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
   });

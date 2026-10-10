@@ -467,9 +467,13 @@ const RemoteWorkerComputerEnrollmentLayerLive = RemoteWorkerComputerEnrollmentLi
 const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
   Layer.provide(
     RemoteWorkerSourceOperationsLive.layer.pipe(
+      Layer.provide(SourceControlProviderRegistryLayerLive),
+      Layer.provide(VcsProcess.layer),
       Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
       Layer.provide(CtoxThreadBindingSourceLayerLive),
       Layer.provide(RemoteWorkerAuthorityStore.layer),
+      Layer.provide(WorkerPullRequestStore.layer),
+      Layer.provide(RemoteWorkerBrokerLayerLive),
       Layer.provide(DecisionHubConnectionRegistryLive),
     ),
   ),
@@ -497,6 +501,9 @@ const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
   Layer.provide(WorkjetSnapshotStoreLive),
 );
 const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.pipe(
+  Layer.provide(SourceControlProviderRegistryLayerLive),
+  Layer.provide(VcsProcess.layer),
+  Layer.provide(WorkerPullRequestStore.layer),
   Layer.provide(WorkerDispatchLayerLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(CtoxThreadBindingSourceLayerLive),

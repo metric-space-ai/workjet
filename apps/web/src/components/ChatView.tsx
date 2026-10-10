@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  canCoordinateWorkjet,
   hideSessionInitialization,
   type CtoxAppModuleId,
   type CtoxManagedInstanceId,
@@ -1681,7 +1682,8 @@ function ChatViewContent(props: ChatViewProps) {
   // "Send to worker" exists only on an ORCHESTRATOR thread. That is the same
   // boundary the server enforces on the RPC, restated in the UI so a worker or
   // standard thread is never offered an action it would be refused.
-  const workjetIsOrchestratorThread = visibleWorkjetConfig?.role === "orchestrator";
+  const workjetIsOrchestratorThread =
+    visibleWorkjetConfig !== null && canCoordinateWorkjet(visibleWorkjetConfig);
   const [workjetSendDraft, setWorkjetSendDraft] =
     useState<WorkjetSendDraft>(EMPTY_WORKJET_SEND_DRAFT);
   const [workjetSendOutcome, setWorkjetSendOutcome] = useState<WorkjetSendOutcome | null>(null);

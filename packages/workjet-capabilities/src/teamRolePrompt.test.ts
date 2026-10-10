@@ -70,7 +70,8 @@ describe("project team role prompts", () => {
     const prompt = compile(teams[2]!);
     expect(prompt).toContain("Your durable parent thread is parent.");
     expect(prompt).toContain("Do not commission or spawn other workers");
-    expect(prompt).toContain("Open exactly one pull request");
+    expect(prompt).toContain("Open exactly one pull request for this package");
+    expect(prompt).toContain("End this run by submitting the pull request");
     expect(prompt).toContain("Stop after submission");
     expect(prompt).toContain("Workjet owns automatic archival");
     expect(prompt).not.toContain("workjet_worker_kanban");

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
+  canCoordinateWorkjet,
   RemoteWorkerDispatchError,
   WorkjetGatewayAdmissionInput,
   WorkjetGatewayInferenceInput,
@@ -31,6 +32,12 @@ import { makeRemoteWorkerSourceAuthority } from "./RemoteWorkerSourceAuthority.t
 import { RemoteWorkerSourceOperations } from "./RemoteWorkerConnectionBootstrap.ts";
 import { RemoteWorkerComputerEnrollment } from "./RemoteWorkerComputerEnrollment.ts";
 import { computerInventory } from "./computerInventory.ts";
+import { reportRemoteWorkerSubmission } from "./WorkerSubmission.ts";
+import { retainRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
+import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
+import { WorkerPullRequestStore } from "./WorkerPullRequestStore.ts";
+import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { makeCtoxLumaConfigurationClient } from "./ctox/CtoxLumaConfigurationClient.ts";
 import { makeCtoxLumaConfigurationRpc } from "./ctox/CtoxLumaConfigurationRpc.ts";
 
@@ -42,6 +49,10 @@ const InferPayload = Schema.Struct({
 
 export const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment;
+  const broker = yield* RemoteWorkerBroker;
+  const pullRequests = yield* WorkerPullRequestStore;
+  const engine = yield* OrchestrationEngineService;
+  const sourceControl = yield* Effect.serviceOption(SourceControlProviderRegistry);
   const settings = yield* ServerSettingsService;
   const query = yield* ProjectionSnapshotQuery;
   const bindings = yield* CtoxThreadBindingSource;
@@ -76,7 +87,7 @@ export const make = Effect.gen(function* () {
       parent.deletedAt !== null ||
       parent.archivedAt !== null ||
       parent.projectId !== request.project.id ||
-      parent.workjetConfig.role !== "orchestrator" ||
+      !canCoordinateWorkjet(parent.workjetConfig) ||
       request.enabledCapabilityIds.some(
         (id) => !parent.workjetConfig.enabledCapabilityIds.includes(id),
       )
@@ -166,6 +177,29 @@ export const make = Effect.gen(function* () {
       Effect.runPromise(
         Effect.gen(function* () {
           if (operation === "retire") {
+            if (payload && typeof payload === "object" && "pullRequest" in payload) {
+              if (Option.isNone(sourceControl)) return yield* failure();
+              yield* reportRemoteWorkerSubmission(request, payload).pipe(
+                Effect.provideService(ServerEnvironment, environment),
+                Effect.provideService(ProjectionSnapshotQuery, query),
+                Effect.provideService(OrchestrationEngineService, engine),
+                Effect.provideService(SourceControlProviderRegistry, sourceControl.value),
+              );
+              if (
+                typeof payload === "object" &&
+                payload !== null &&
+                "pullRequest" in payload &&
+                (payload.pullRequest as { provider?: unknown })?.provider === "github"
+              ) {
+                // Retirement is cleanup; current source authority is re-read by the native publisher.
+                yield* retainRemoteWorkerOutcome(request, payload).pipe(
+                  Effect.provideService(ProjectionSnapshotQuery, query),
+                  Effect.provideService(RemoteWorkerBroker, broker),
+                  Effect.provideService(WorkerPullRequestStore, pullRequests),
+                  Effect.provideService(SourceControlProviderRegistry, sourceControl.value),
+                );
+              }
+            }
             yield* authority.revoke(request);
             return { retired: true };
           }

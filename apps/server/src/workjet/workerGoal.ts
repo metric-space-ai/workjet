@@ -4,7 +4,18 @@ import {
   type ThreadId,
   type TurnId,
   type WorkjetThreadGoal,
+  type WorkjetThreadConfig,
 } from "@workjet/contracts";
+
+/** Client settings/creates carry intent, never producer or verifier witnesses. */
+export function withoutGoalObservations(config: WorkjetThreadConfig): WorkjetThreadConfig {
+  if (config.schemaVersion !== 2 || !config.goal) return config;
+  const goal = { ...config.goal };
+  delete goal.lastExecution;
+  delete goal.executor;
+  goal.lastVerifiedProgress = null;
+  return { ...config, goal };
+}
 
 export function initialWorkerGoal(objective: string, updatedAt: string): WorkjetThreadGoal {
   return {
@@ -13,6 +24,7 @@ export function initialWorkerGoal(objective: string, updatedAt: string): Workjet
     revision: 0,
     continuationCount: 0,
     lastCompletedTurnId: null,
+    lastVerifiedProgress: null,
     pendingContinuation: null,
     reason: null,
     updatedAt,

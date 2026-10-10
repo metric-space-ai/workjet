@@ -9,6 +9,62 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
+it("sends verified submission details and retains the source route after a failed retirement", async () => {
+  const notices: unknown[] = [];
+  let fail = true;
+  const server = NodeHttp.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString());
+    notices.push(body.payload);
+    res.setHeader("content-type", "application/json");
+    if (fail) {
+      res.writeHead(503);
+      res.end("{}");
+    } else res.end(JSON.stringify({ retired: true }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  cleanups.push(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("listener");
+  const harness = await installWorkerSourceRoute(
+    "retirement-retry",
+    {
+      sourceEnvironmentId: "source",
+      targetEnvironmentId: "target",
+      requestId: "retirement-retry",
+      requestDigest: "immutable-digest",
+      capability: "worker-source-capability",
+      port: address.port,
+    },
+    { targetEnvironmentId: "target", requestDigest: "immutable-digest", modelId: "gpt-6.1-sol" },
+  );
+  cleanups.push(harness.revoke);
+  const notice = {
+    pullRequest: {
+      provider: "github" as const,
+      number: 305,
+      url: "https://github.com/metric-space-ai/workjet/pull/305",
+      branch: "workjet/worker/retirement-retry",
+    },
+    headOid: "a".repeat(40),
+  };
+  let stopped = false;
+  const persistStopped = async () => {
+    stopped = true;
+  };
+  await expect(harness.retire(notice, persistStopped)).rejects.toThrow();
+  expect(harness.isRevoked()).toBe(false);
+  expect(stopped).toBe(false);
+  fail = false;
+  await harness.retire(notice, persistStopped);
+  expect(harness.isRevoked()).toBe(true);
+  expect(stopped).toBe(true);
+  expect(notices).toEqual([notice, notice, notice]);
+});
 it("pins worker identity and model and routes HTTP through source authority without target credentials", async () => {
   const operations: string[] = [];
   const server = NodeHttp.createServer(async (req, res) => {

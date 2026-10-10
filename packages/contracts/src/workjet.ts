@@ -285,6 +285,7 @@ export const WorkjetWorkerProfile = Schema.Struct({
   llmRouteId: WorkjetLlmRouteId,
   modelId: TrimmedNonEmptyString,
   reasoning: WorkjetReasoningSelection,
+  /** Read-only legacy compatibility; Lumas do not grant a thread coordination rights. */
   role: Schema.Literals(["standard", "orchestrator"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("standard" as const)),
   ),
@@ -1060,8 +1061,28 @@ export type WorkjetThreadConfig = typeof WorkjetThreadConfig.Type;
 
 export type WorkjetThreadConfigV2 = Extract<WorkjetThreadConfig, { readonly schemaVersion: 2 }>;
 
+/** Coordination is a project team responsibility, never a Luma setting. */
+export function canCoordinateWorkjet(config: WorkjetThreadConfig): boolean {
+  const team = config.schemaVersion === 2 ? config.team : undefined;
+  return team?.role === "supervisor" || team?.role === "specialist";
+}
+
+/** Legacy role values remain readable; provider credentials derive their role from team membership. */
+export function workjetExecutionRole(config: WorkjetThreadConfig): WorkjetThreadRole {
+  if (canCoordinateWorkjet(config)) return "orchestrator";
+  if (config.role === "worker" || (config.schemaVersion === 2 && config.team?.role === "worker"))
+    return "worker";
+  return "standard";
+}
+
 export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): WorkjetThreadConfigV2 {
-  if (config.schemaVersion === 2) return config;
+  if (config.schemaVersion === 2) {
+    // Lossless migration: retain team IDs, instructions, bindings and history references.
+    // The old explicit switch cannot grant or remove a team's coordination rights.
+    if (canCoordinateWorkjet(config) && config.role === "orchestrator")
+      return { ...config, role: "standard", parent: null };
+    return config;
+  }
   if (config.role === "worker") {
     return {
       schemaVersion: 2,

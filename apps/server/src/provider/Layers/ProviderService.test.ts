@@ -1396,13 +1396,21 @@ routing.layer("ProviderServiceLive routing", (it) => {
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       const mcp = makeCapturingMcpRegistry();
-      const workjetConfig = {
-        schemaVersion: 1,
-        role: "orchestrator",
-        parent: null,
+      const workjetConfig = (threadId: ThreadId): WorkjetThreadConfig => ({
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        schemaVersion: 2,
+        role: "standard",
         managedInstructions: "Use the enabled repository search capability.",
         enabledCapabilityIds: ["greppy"],
-      } as const satisfies WorkjetThreadConfig;
+        team: {
+          role: "supervisor",
+          threadId,
+          projectId: ProjectId.make("mcp-cwd-project"),
+          parentThreadId: null,
+          goal: "Coordinate the retained project conversation.",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      });
 
       yield* McpSessionRegistry.__testing
         .withActive(
@@ -1415,13 +1423,13 @@ routing.layer("ProviderServiceLive routing", (it) => {
               threadId: resumedThread,
               cwd: "/workspace/fresh-effective",
               runtimeMode: "full-access",
-              workjetConfig,
+              workjetConfig: workjetConfig(resumedThread),
             });
             assert.equal(mcp.requests.at(-1)?.cwd, "/workspace/fresh-effective");
             assert.equal(mcp.requests.at(-1)?.threadCapabilityContext.workjetRole, "orchestrator");
             assert.match(
               mcp.requests.at(-1)?.threadCapabilityContext.compiledManagedPrompt ?? "",
-              /## Workjet Role: Orchestrator/,
+              /## Workjet Role: Supervisor/,
             );
             assert.equal(
               McpProviderSession.readMcpProviderSession(resumedThread)?.cwd,
@@ -1447,7 +1455,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
               threadId: adoptedThread,
               cwd: "/workspace/persisted-before-adoption",
               runtimeMode: "full-access",
-              workjetConfig,
+              workjetConfig: workjetConfig(adoptedThread),
             });
             routing.codex.updateSession(adoptedThread, (session) => ({
               ...session,

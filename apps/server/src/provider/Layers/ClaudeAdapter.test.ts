@@ -15,6 +15,9 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  DEFAULT_MODEL,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  ProjectId,
   EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
@@ -3103,6 +3106,88 @@ describe("ClaudeAdapterLive", () => {
         String(assistantCompletions[0]?.itemId),
         String(assistantCompletions[1]?.itemId),
       );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("emits the actual assistant model only for the persistent Parent's own turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const events = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        runtimeMode: "full-access",
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          schemaVersion: 2,
+          role: "orchestrator",
+          team: {
+            projectId: ProjectId.make("parent-project"),
+            threadId: THREAD_ID,
+            role: "specialist",
+            parentThreadId: ThreadId.make("supervisor"),
+            domain: "harness",
+            goal: "Deliver the bounded result.",
+            createdAt: "2026-10-10T03:00:00.000Z",
+          },
+        },
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "Perform the bounded work.",
+        attachments: [],
+      });
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-parent",
+        uuid: "subagent-snapshot",
+        parent_tool_use_id: "child-tool",
+        message: {
+          id: "child-message",
+          model: DEFAULT_MODEL,
+          content: [{ type: "text", text: "child" }],
+        },
+      } as unknown as SDKMessage);
+      const assistant = {
+        type: "assistant",
+        session_id: "sdk-parent",
+        uuid: "parent-snapshot",
+        parent_tool_use_id: null,
+        message: {
+          id: "parent-message",
+          model: DEFAULT_MODEL,
+          content: [{ type: "text", text: "done" }],
+        },
+      } as unknown as SDKMessage;
+      harness.query.emit(assistant);
+      harness.query.emit(assistant);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-parent",
+        uuid: "parent-result",
+      } as unknown as SDKMessage);
+      const actual = Array.from(yield* Fiber.join(events)).filter(
+        (event) =>
+          event.type === "thread.metadata.updated" &&
+          event.raw?.method === "claude/assistant/model",
+      );
+      assert.equal(actual.length, 1);
+      assert.equal(actual[0]?.turnId, turn.turnId);
+      assert.equal(actual[0]?.providerInstanceId, ProviderInstanceId.make("claudeAgent"));
+      assert.deepEqual(actual[0]?.payload, { metadata: { workjetAuthorModel: DEFAULT_MODEL } });
+      assert.equal(actual[0]?.raw?.source, "claude.sdk.message");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

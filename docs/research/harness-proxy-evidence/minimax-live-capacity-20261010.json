@@ -1,0 +1,12 @@
+{
+  "recordedAt": "2026-10-10T03:11:40.224Z",
+  "model": "MiniMax-M3",
+  "httpStatus": 503,
+  "upstreamStatus": null,
+  "errorClass": null,
+  "error": {
+    "message": "no API-key account is currently available for this model",
+    "type": "server_error"
+  },
+  "hasOutput": false
+}

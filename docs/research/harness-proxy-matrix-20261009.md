@@ -18,7 +18,7 @@ The actual Codex/Grok request exposed further xAI incompatibilities. The Workjet
 
 Grok's ACP prompt returns when the whole turn finishes, while Workjet requires its dispatch receipt within thirty seconds. Routed Grok, Greppy and MiniMax now use an optional scoped background prompt path in [PR #319](https://github.com/metric-space-ai/workjet/pull/319). Cancellation, overlap protection and terminal events retain their behavior. The Grok path is loaded in the tested candidate; the newer Greppy/MiniMax changes await their bundle and final regressions.
 
-Greppy's native second request contains an empty assistant text block. An account-pinned replay returns upstream 400, `messages: text content blocks must be non-empty`. Removing only that block returns 200: [sanitized ablation](harness-proxy-evidence/greppy-empty-text-ablation-20261010.json). [PR #325](https://github.com/metric-space-ai/workjet/pull/325) removes empty text in the existing Claude sanitizer while preserving other content, inputs, IDs and results, with twenty-call growing-history coverage. The current stream writer also masks upstream failure as HTTP 200 with an empty stream (`internal/api/server.rs:993`); native error propagation remains open.
+Greppy's native second request contains an empty assistant text block. An account-pinned replay returns upstream 400, `messages: text content blocks must be non-empty`. Removing only that block returns 200: [sanitized ablation](harness-proxy-evidence/greppy-empty-text-ablation-20261010.json). [PR #325](https://github.com/metric-space-ai/workjet/pull/325) removes only empty text, including when a live model lacks static metadata, while preserving opaque thinking, tool inputs, IDs and results. Five regressions pass, including twenty growing histories through the actual preparation path with absent metadata. The [unchanged captured native request](harness-proxy-evidence/greppy-patched-replay-20261010.json) now returns upstream 200 and a complete correctly named tool stream. [PR #328](https://github.com/metric-space-ai/workjet/pull/328) preserves upstream rejection before committing SSE; its real TCP regression and a [live negative replay](harness-proxy-evidence/claude-stream-rejection-20261010.json) return the real 400 instead of HTTP 200 with an empty stream.
 
 The Claude `per_turn_effort_changed` notice is informational. [PR #289](https://github.com/metric-space-ai/workjet/pull/289) handles it without a red unknown-system warning; it is separate from tool-name leakage.
 
@@ -44,7 +44,7 @@ Keeping a connected model when switching routed harnesses is intentional (`apps/
 | Claude Code | Pass 20/20; restart continuation 20/20 | Pass 20/20 | Pass 20/20 |
 | Codex CLI | Pass 20/20 | Pass 20/20 | Pass 20/20 |
 | Grok CLI / Grok Build | Pass 20/20 | Pass 20/20 | Pass 20/20 |
-| OpenCode | Pending | Pending | Pending |
+| OpenCode | Pass 20/20 | Pass 20/20 | Running |
 
 The evidence checks actual native calls and matching results, strict sequential execution, exact numbered printf output, success status and no tool errors. Every harness uses the real account-backed Rust host. No HTTP-only or mocked result counts as a live cell.
 
@@ -60,6 +60,6 @@ Linux checks run through the shared gpu3 build lane, two workers. The composed c
 
 The inherited Mac packaging CI failure is `Mac packaging requires --gpu-build-owner <thread-id>`; Workjet Main owns its repair. The guard is preserved. No PR is claimed CI-green while that required job fails.
 
-Greppy 0.4.1's ACP agent rejects every nonempty `mcpServers` list with -32602, despite advertised stdio MCP support. Its upstream owner has the immutable report; Workjet's managed-MCP guard remains. Native Greppy tool-loop acceptance awaits the patched host. MiniMax Code and Pi native acceptance and the integrated UI pass remain open. MiniMax-provider weekly quota is exhausted: its owner must replenish capacity for that provider; MiniMax Code can be tested against healthy connected providers.
+Greppy 0.4.1's ACP agent rejects every nonempty `mcpServers` list with -32602, despite advertised stdio MCP support. Its upstream owner has the immutable report; Workjet's managed-MCP guard remains. Native Greppy tool-loop acceptance awaits the patched host. MiniMax Code and Pi native acceptance and the integrated UI pass remain open. A fresh [MiniMax probe](harness-proxy-evidence/minimax-live-capacity-20261010.json) returns 503, no API-key account currently available; it does not establish a current quota error. Its owner must restore account availability. Actual live-list models [GLM](harness-proxy-evidence/zai-live-capacity-20261010.json) and [Kimi](harness-proxy-evidence/kimi-live-capacity-20261010.json) both return upstream 200 with model output.
 
 The supervisor owns merges and coordinated publication/pinning/installation. This task preserves the Monday supervisor execution path through optional/additive changes, private profiles and no installed-profile edits.

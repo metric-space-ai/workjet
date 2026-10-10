@@ -594,10 +594,14 @@ export function WorkjetWorkerEditor({
                 </SelectPopup>
               </Select>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span role={nativeModelsError ? "alert" : "status"} className={nativeModelsError ? "text-destructive" : undefined}>
-                  {nativeModelsError ?? (chosenNativeAccount?.modelCatalog.fresh
-                    ? "Live instance account models. Execution availability is checked by CTOX."
-                    : "Refresh this instance account in Settings → Models before choosing a model.")}
+                <span
+                  role={nativeModelsError ? "alert" : "status"}
+                  className={nativeModelsError ? "text-destructive" : undefined}
+                >
+                  {nativeModelsError ??
+                    (chosenNativeAccount?.modelCatalog.fresh
+                      ? "Live instance account models. Execution availability is checked by CTOX."
+                      : "Refresh this instance account in Settings → Models before choosing a model.")}
                 </span>
                 {onRefreshNativeModels && chosenNativeAccount && (
                   <Button

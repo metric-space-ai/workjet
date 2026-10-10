@@ -214,19 +214,25 @@ const WorkjetLlmRoutePersisted = Schema.Union([WorkjetLlmRoute, WorkjetLlmRouteV
       encode: (
         route: typeof WorkjetLlmRoute.Encoded,
       ): Effect.Effect<WorkjetLlmRoutePersistedInput> =>
-        Effect.succeed(route.gatewayAccountId !== undefined ? {
-          id: WorkjetLlmRouteId.make(route.id),
-          label: route.label,
-          gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId),
-          ...(route.nativeAccountReference === undefined ? {} : {
-            nativeAccountReference: route.nativeAccountReference,
-          }),
-        } : {
-          id: WorkjetLlmRouteId.make(route.id),
-          label: route.label,
-          // The canonical union requires this field when no gateway ID exists.
-          nativeAccountReference: route.nativeAccountReference!,
-        }),
+        Effect.succeed(
+          route.gatewayAccountId !== undefined
+            ? {
+                id: WorkjetLlmRouteId.make(route.id),
+                label: route.label,
+                gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId),
+                ...(route.nativeAccountReference === undefined
+                  ? {}
+                  : {
+                      nativeAccountReference: route.nativeAccountReference,
+                    }),
+              }
+            : {
+                id: WorkjetLlmRouteId.make(route.id),
+                label: route.label,
+                // The canonical union requires this field when no gateway ID exists.
+                nativeAccountReference: route.nativeAccountReference!,
+              },
+        ),
     }),
   ),
 );

@@ -31,8 +31,9 @@ export function createWorkjetLlmRouteDraft(input: {
     gatewayAccountId: input.route
       ? (input.route.gatewayAccountId ?? "")
       : (input.accounts[0]?.id ?? ""),
-    ...(input.route?.nativeAccountReference === undefined ? {} :
-      { nativeAccountReference: input.route.nativeAccountReference }),
+    ...(input.route?.nativeAccountReference === undefined
+      ? {}
+      : { nativeAccountReference: input.route.nativeAccountReference }),
   };
 }
 
@@ -40,10 +41,14 @@ export function saveWorkjetLlmRouteDraft(draft: WorkjetLlmRouteDraft): WorkjetLl
   const label = draft.label.trim();
   if (!label) throw new Error("Enter an LLM route label.");
   const base = { id: WorkjetLlmRouteId.make(draft.id), label };
-  if (draft.gatewayAccountId) return {
-    ...base, gatewayAccountId: WorkjetGatewayAccountId.make(draft.gatewayAccountId),
-    ...(draft.nativeAccountReference === undefined ? {} : { nativeAccountReference: draft.nativeAccountReference }),
-  };
+  if (draft.gatewayAccountId)
+    return {
+      ...base,
+      gatewayAccountId: WorkjetGatewayAccountId.make(draft.gatewayAccountId),
+      ...(draft.nativeAccountReference === undefined
+        ? {}
+        : { nativeAccountReference: draft.nativeAccountReference }),
+    };
   if (draft.nativeAccountReference !== undefined)
     return { ...base, nativeAccountReference: draft.nativeAccountReference };
   throw new Error("Choose a provider-gateway account.");
@@ -101,8 +106,11 @@ export function WorkjetLlmRouteEditor({
           <Select
             value={draft.gatewayAccountId || null}
             onValueChange={(value) => {
-              setDraft((current) => current.gatewayAccountId === (value ?? "")
-                ? current : { id: current.id, label: current.label, gatewayAccountId: value ?? "" });
+              setDraft((current) =>
+                current.gatewayAccountId === (value ?? "")
+                  ? current
+                  : { id: current.id, label: current.label, gatewayAccountId: value ?? "" },
+              );
               setError(null);
             }}
           >
@@ -148,7 +156,11 @@ export function WorkjetLlmRouteEditor({
         <Button type="button" size="sm" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={entries.length === 0 && draft.nativeAccountReference === undefined}>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={entries.length === 0 && draft.nativeAccountReference === undefined}
+        >
           Save route
         </Button>
       </div>

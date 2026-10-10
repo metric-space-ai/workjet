@@ -71,10 +71,17 @@ describe("native Claude Luma editor", () => {
     );
     expect(markup).toContain("claude-opus-5-5");
     expect(markup).toContain("CTOX");
-    const failedRefresh = renderToStaticMarkup(<WorkjetWorkerEditor draftScopeKey="native-error"
-      computers={[]} routes={nativeLumaRoutes([], registry, "Welsch")} nativeAccounts={registry.accounts}
-      nativeModelsError="The instance connection was interrupted."
-      onSave={() => undefined} onCancel={() => undefined} />);
+    const failedRefresh = renderToStaticMarkup(
+      <WorkjetWorkerEditor
+        draftScopeKey="native-error"
+        computers={[]}
+        routes={nativeLumaRoutes([], registry, "Welsch")}
+        nativeAccounts={registry.accounts}
+        nativeModelsError="The instance connection was interrupted."
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
     expect(failedRefresh).toContain('role="alert"');
     expect(failedRefresh).toContain("The instance connection was interrupted.");
     expect(failedRefresh).not.toContain("Live instance account models.");

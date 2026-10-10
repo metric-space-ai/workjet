@@ -26,15 +26,18 @@ export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNative
   if (!source) return undefined;
   if (source.isRevoked() || source.model !== input.modelSelection?.model)
     return yield* failure("Foreign worker source model differs from its permit or the route is revoked.");
+  const native = "nativeProfile" in source ? source.nativeProfile : undefined;
+  if (!native || typeof native !== "object" || !("harness" in native) ||
+      !("directory" in native) || typeof native.directory !== "string")
+    return yield* failure("Foreign worker source harness profile is unavailable or mismatched.");
+  const directory = native.directory;
+  const harness = yield* Schema.decodeUnknownEffect(WorkjetHarness)(native.harness).pipe(
+    Effect.mapError(() => failure("Foreign worker source harness profile is unavailable or mismatched.")),
+  );
+  if (workerSourceDriver(harness) !== provider || ("harness" in source && source.harness !== harness))
+    return yield* failure("Foreign worker source harness profile is unavailable or mismatched.");
   const profile = yield* Effect.try({
-    try: () => {
-      const native = "nativeProfile" in source ? source.nativeProfile : undefined;
-      if (!native || typeof native !== "object" || !("harness" in native) ||
-          !("directory" in native) || typeof native.directory !== "string") throw new Error();
-      const harness = Schema.decodeUnknownSync(WorkjetHarness)(native.harness);
-      if (workerSourceDriver(harness) !== provider || ("harness" in source && source.harness !== harness)) throw new Error();
-      return workerSourceNativeProfile({ harness, model: source.model, baseUrl: source.baseUrl, apiKey: source.apiKey, directory: native.directory });
-    },
+    try: () => workerSourceNativeProfile({ harness, model: source.model, baseUrl: source.baseUrl, apiKey: source.apiKey, directory }),
     catch: () => failure("Foreign worker source harness profile is unavailable or mismatched."),
   });
   yield* Effect.tryPromise({
@@ -46,6 +49,7 @@ export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNative
     const value = process.env[name];
     if (value !== undefined) runtime[name] = value;
   }
-  return { ...profile, environment: { ...runtime, ...profile.environment,
-    WORKJET_WORKER_SOURCE_URL: source.baseUrl, WORKJET_WORKER_SOURCE_KEY: source.apiKey } };
+  const environment: NodeJS.ProcessEnv = { ...runtime, ...profile.environment,
+    WORKJET_WORKER_SOURCE_URL: source.baseUrl, WORKJET_WORKER_SOURCE_KEY: source.apiKey };
+  return { ...profile, environment };
 });

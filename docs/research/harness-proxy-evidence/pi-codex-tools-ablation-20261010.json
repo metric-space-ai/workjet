@@ -1,0 +1,18 @@
+{
+  "recordedAt": "2026-10-10T04:02:31.416Z",
+  "model": "gpt-6.1-sol",
+  "outcomes": [
+    {
+      "variant": "no-guide",
+      "httpStatus": 200,
+      "hasTool": true,
+      "responseBytes": 125099
+    },
+    {
+      "variant": "boxed-guide",
+      "httpStatus": 200,
+      "hasTool": true,
+      "responseBytes": 126404
+    }
+  ]
+}

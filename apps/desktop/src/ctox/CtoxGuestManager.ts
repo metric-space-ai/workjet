@@ -117,7 +117,9 @@ const decodeWorkjetDeviceWebRtcResponse = Schema.decodeUnknownEffect(WorkjetDevi
 const decodeWorkjetProjectControlResponse = Schema.decodeUnknownEffect(
   CtoxWorkjetProjectControlResponse,
 );
-const decodeWorkjetProjectControlDiagnostic = Schema.decodeUnknownEffect(CtoxWorkjetProjectControlDiagnostic);
+const decodeWorkjetProjectControlDiagnostic = Schema.decodeUnknownEffect(
+  CtoxWorkjetProjectControlDiagnostic,
+);
 const decodeWorkjetSessionControlResponse = Schema.decodeUnknownEffect(
   CtoxWorkjetSessionControlResponse,
 );
@@ -2104,7 +2106,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             typeof raw === "object" && raw !== null
               ? (raw as { readonly diagnostic?: unknown }).diagnostic
               : undefined;
-          const reason = yield* decodeWorkjetProjectControlDiagnostic(diagnostic).pipe(Effect.option);
+          const reason = yield* decodeWorkjetProjectControlDiagnostic(diagnostic).pipe(
+            Effect.option,
+          );
           yield* Effect.logWarning("CTOX project control response invalid", {
             instanceId,
             action: request.action,

@@ -2538,6 +2538,48 @@ describe("CtoxGuestManager", () => {
   );
 
   it.effect(
+    "passes a native pairing binding through the selected computer assignment guest",
+    () => {
+      const harness = makeGuestHarness();
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.enterBusinessOsMode;
+        yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+        const request = {
+          action: "computer.assign",
+          commandId: CommandId.make("native-binding-assignment"),
+          computerId: "registered-source-computer",
+          deviceBindingId: "native-device-proof",
+          displayName: "Source computer",
+          hostingMode: "workstation",
+          capabilities: [],
+          selfHostedColocation: false,
+        } as const;
+        const response = {
+          action: "computer.assign",
+          computer: {
+            id: request.computerId,
+            displayName: request.displayName,
+            hostingMode: request.hostingMode,
+            status: "assigned",
+            capabilities: [],
+            selfHostedColocation: false,
+          },
+        } as const;
+        const control = vi.fn().mockResolvedValue(response);
+        harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+          NodeVM.runInNewContext(expression, { workjetComputerControl: control }),
+        );
+        assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, request), {
+          _tag: "completed",
+          response,
+        });
+        expect(control).toHaveBeenCalledExactlyOnceWith(request);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
     "binds endpoint confirmations to the exact computer, endpoint and requested state",
     () => {
       const harness = makeGuestHarness();

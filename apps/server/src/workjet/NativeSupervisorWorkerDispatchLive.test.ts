@@ -1,6 +1,8 @@
 import { assert, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  ProjectId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   ProviderInstanceId,
   ThreadId,
   WorkjetComputerId,
@@ -9,7 +11,10 @@ import {
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { reconcileNativeWorkerFailure } from "./NativeSupervisorWorkerDispatchLive.ts";
+import {
+  reconcileNativeWorkerFailure,
+  isNativeSupervisorWorkerSource,
+} from "./NativeSupervisorWorkerDispatchLive.ts";
 const intentId = ThreadId.make("00000000-0000-4000-8000-000000000001");
 const response: RemoteWorkerResponse = {
   requestId: intentId,
@@ -91,6 +96,53 @@ it.effect("never fabricates completion when the broker cannot establish the prev
     assert.deepEqual(
       terminal,
       Option.some({ schemaVersion: 1, status: "failed", reason: "computer-unavailable" }),
+    );
+  }),
+);
+
+it.effect("enumerates only live supervisors, leaving ordinary chats out of source failures", () =>
+  Effect.sync(() => {
+    const team = {
+      role: "supervisor" as const,
+      parentThreadId: null,
+      projectId: ProjectId.make("project"),
+      threadId: ThreadId.make("supervisor"),
+      goal: "Coordinate the project",
+      createdAt: "2026-10-10T00:00:00.000Z",
+    };
+    const parent = {
+      deletedAt: null,
+      archivedAt: null,
+      workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, team },
+    };
+    assert.isTrue(isNativeSupervisorWorkerSource(parent));
+    assert.isFalse(isNativeSupervisorWorkerSource({ ...parent, archivedAt: team.createdAt }));
+    assert.isFalse(isNativeSupervisorWorkerSource({ ...parent, deletedAt: team.createdAt }));
+    assert.isFalse(
+      isNativeSupervisorWorkerSource({ ...parent, workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG }),
+    );
+    assert.isFalse(
+      isNativeSupervisorWorkerSource({
+        ...parent,
+        workjetConfig: {
+          ...parent.workjetConfig,
+          team: {
+            ...team,
+            role: "specialist",
+            parentThreadId: team.threadId,
+            domain: "Implementation",
+          },
+        },
+      }),
+    );
+    assert.isFalse(
+      isNativeSupervisorWorkerSource({
+        ...parent,
+        workjetConfig: {
+          ...parent.workjetConfig,
+          team: { ...team, role: "worker", parentThreadId: team.threadId, packageId: "package" },
+        },
+      }),
     );
   }),
 );

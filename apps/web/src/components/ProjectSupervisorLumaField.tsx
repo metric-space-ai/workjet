@@ -3,7 +3,7 @@ import { useBusinessOsCodeScope } from "../businessOsCodeScope";
 import { usePrimaryEnvironment } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
-import { ctoxConnectionMatchesSelectedInstance } from "../workjetCtoxConnections";
+import { lumaConnectionForInstance } from "../workjetCtoxConnections";
 import { workjetHarnessDisplayLabel } from "./settings/WorkjetWorkerEditor";
 
 export type LumaFieldProps = {
@@ -14,7 +14,10 @@ export type LumaFieldProps = {
 };
 
 /** The local server is only transport; profiles belong to the selected native instance. */
-export function useProjectSupervisorLumas(): {
+export function useProjectSupervisorLumas(boundSource?: {
+  readonly connectionId: string;
+  readonly instanceId?: string;
+}): {
   readonly instanceId: string | null;
   readonly instanceName: string | null;
   readonly phase: "loading" | "ready" | "unavailable";
@@ -30,22 +33,14 @@ export function useProjectSupervisorLumas(): {
           input: {},
         }),
   );
-  const matches =
-    scope.phase === "ready"
-      ? (connections.data?.connections ?? []).filter(
-          (connection) =>
-            connection.status === "ready" &&
-            ctoxConnectionMatchesSelectedInstance(connection, scope.presentationInstanceId),
-        )
-      : [];
   const connection =
-    matches.length === 1
-      ? matches[0]
-      : matches.find(
-          (entry) =>
-            entry.connectionId ===
-            `ctox-dev:${scope.presentationInstanceId?.replace(/^managed:/, "")}`,
-        );
+    scope.phase === "ready"
+      ? lumaConnectionForInstance(
+          connections.data?.connections ?? [],
+          scope.presentationInstanceId,
+          boundSource,
+        )
+      : undefined;
   const snapshot = useEnvironmentQuery(
     connection === undefined || environment === null || scope.phase !== "ready"
       ? null

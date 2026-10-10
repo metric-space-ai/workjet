@@ -6,6 +6,8 @@ import * as Schema from "effect/Schema";
 export const WORKJET_WORKER_SOURCE_TOOLS = [
   "business_os.remote_worker_admission",
   "business_os.workjet_worker_dispatch",
+  "business_os.luma_configuration_read",
+  "business_os.luma_configuration_update",
 ] as const;
 type AccountFetch = (url: string, init?: RequestInit) => Promise<Response>;
 const Uuid = Schema.String.check(
@@ -97,7 +99,7 @@ export async function issueWorkjetWorkerSourceGrant(
           label: "Workjet worker source",
           expiresInDays: 1,
           scopes: {
-            allowReads: false,
+            allowReads: true,
             allowWrites: true,
             allowApprovals: false,
             allowExternalEffects: false,

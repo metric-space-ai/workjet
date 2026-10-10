@@ -74,17 +74,17 @@ export function NativeWorkerSourceControl(props: {
   const provision =
     typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
 
-  const connect = async () => {
+  const connect = async (renew = false) => {
     if (
       !request ||
       props.unavailable ||
       query.isPending ||
       inFlight.current ||
-      bound ||
+      (bound && !renew) ||
       selectionError
     )
       return;
-    if (!ready && !provision) {
+    if ((!ready || renew) && !provision) {
       setError({ scope, message: "Open Workjet desktop to connect this project's workers." });
       return;
     }
@@ -94,7 +94,7 @@ export function NativeWorkerSourceControl(props: {
     setBusy(true);
     setError(null);
     try {
-      let accepted = ready ? source : undefined;
+      let accepted = ready && !renew ? source : undefined;
       if (!accepted && provision) {
         const result = await provision(request);
         if (currentContext.current.scope !== requestedScope) return;
@@ -167,22 +167,25 @@ export function NativeWorkerSourceControl(props: {
     void connectRef.current();
   }, [scope, props.unavailable, query.isPending, busy, bound, selectionError, request === null]);
 
-  const currentError = bound
-    ? null
-    : (selectionError ??
-      (error?.scope === scope ? error.message : null) ??
-      (!query.isPending && source !== undefined && !ready
-        ? source.status === "needs_auth"
-          ? "Worker connection needs authorization. Reconnect project workers."
-          : "The worker connection is unavailable. Reconnect project workers."
-        : !query.isPending &&
-            ready &&
-            props.config.schemaVersion === 2 &&
-            props.config.capabilityBindings.some(
-              (binding) => binding.capabilityId === "ctox-business-os",
-            )
-          ? "A replacement worker connection is ready. Reconnect this thread to use it."
-          : null));
+  const currentError =
+    error?.scope === scope
+      ? error.message
+      : bound
+        ? null
+        : (selectionError ??
+          (error?.scope === scope ? error.message : null) ??
+          (!query.isPending && source !== undefined && !ready
+            ? source.status === "needs_auth"
+              ? "Worker connection needs authorization. Reconnect project workers."
+              : "The worker connection is unavailable. Reconnect project workers."
+            : !query.isPending &&
+                ready &&
+                props.config.schemaVersion === 2 &&
+                props.config.capabilityBindings.some(
+                  (binding) => binding.capabilityId === "ctox-business-os",
+                )
+              ? "A replacement worker connection is ready. Reconnect this thread to use it."
+              : null));
   return (
     <span
       className="inline-flex shrink-0 items-center text-xs"
@@ -200,9 +203,20 @@ export function NativeWorkerSourceControl(props: {
           title={currentError}
           className="rounded border px-2 py-1 text-amber-500 disabled:opacity-50"
           disabled={props.unavailable || busy || query.isPending || request === null}
-          onClick={() => void connectRef.current()}
+          onClick={() => void connectRef.current(bound)}
         >
           Erneut verbinden
+        </button>
+      ) : bound && provision ? (
+        <button
+          type="button"
+          aria-label="Renew worker access"
+          title="Authorize the current worker tools through your Business OS account. Existing connections are retained."
+          className="rounded border px-2 py-1 disabled:opacity-50"
+          disabled={props.unavailable || busy || query.isPending || request === null}
+          onClick={() => void connectRef.current(true)}
+        >
+          {busy ? "Renewing worker access…" : "Renew worker access"}
         </button>
       ) : null}
     </span>

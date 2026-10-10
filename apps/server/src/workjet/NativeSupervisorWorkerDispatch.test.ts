@@ -195,3 +195,68 @@ it.effect(
       assert.deepEqual(f.dispatched, []);
     }),
 );
+
+it.effect("backs off a failed shared scope while other instance workers keep polling", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    let now = 0;
+    const attempts: string[] = [];
+    let otherPolls = 0;
+    const other = {
+      ...source,
+      scope: { ...source.scope, connectionId: WorkjetConnectionId.make("other") },
+    };
+    const service = makeNativeSupervisorWorkerDispatch({
+      ...f.dependencies,
+      now: Effect.sync(() => now),
+      sources: Effect.succeed([
+        source,
+        {
+          ...source,
+          source: { ...source.source, sourceSupervisorThreadId: ThreadId.make("second") },
+        },
+        other,
+      ]),
+      register: (value) => {
+        attempts.push(value.scope.connectionId);
+        return value.scope.connectionId === source.scope.connectionId
+          ? Effect.fail(failure())
+          : Effect.succeed({ ...registration, ...value.source });
+      },
+      poll: () => {
+        otherPolls++;
+        return Effect.succeed([]);
+      },
+    });
+    yield* service.runCycle;
+    yield* service.runCycle;
+    now = 59_999;
+    yield* service.runCycle;
+    assert.deepEqual(attempts, ["native", "other"]);
+    assert.equal(otherPolls, 3);
+    now = 60_000;
+    yield* service.runCycle;
+    assert.deepEqual(attempts, ["native", "other", "native"]);
+  }),
+);
+it.effect("backs off a failed poll without delaying completion ACK retries", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    let now = 0;
+    let polls = 0;
+    const service = makeNativeSupervisorWorkerDispatch({
+      ...f.dependencies,
+      now: Effect.sync(() => now),
+      poll: () => {
+        polls++;
+        return Effect.fail(failure());
+      },
+    });
+    yield* service.runCycle;
+    yield* service.runCycle;
+    assert.equal(polls, 1);
+    now = 60_000;
+    yield* service.runCycle;
+    assert.equal(polls, 2);
+  }),
+);

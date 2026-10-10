@@ -1238,11 +1238,12 @@ describe("CtoxGuestManager", () => {
         ["Workjet supervisor control is not ready.", "supervisor_control_not_ready"],
         ["Native WebRTC peer is not connected", "peer_unavailable"],
         ["Native request ctox.workjet.project.v1 exceeded 28000ms", "request_timeout"],
+        ["projection delayed", "request_timeout"],
         ["Failed to fetch", "network_unavailable"],
       ] as const) {
         const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
+          "globalThis.workjetProjectControl = async () => { const error = new Error(fixtureMessage); if (fixtureMessage === 'projection delayed') error.code = 'projection_delayed'; throw error; };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
@@ -1271,7 +1272,7 @@ describe("CtoxGuestManager", () => {
       ] as const) {
         const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
+          "globalThis.workjetProjectControl = async () => { const error = new Error(fixtureMessage); if (fixtureMessage === 'projection delayed') error.code = 'projection_delayed'; throw error; };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {

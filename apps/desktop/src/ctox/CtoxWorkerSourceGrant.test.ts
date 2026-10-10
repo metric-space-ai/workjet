@@ -11,7 +11,6 @@ import {
   issueWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
   workerSourceGrantIdentity,
-  WORKJET_WORKER_SOURCE_TOOLS,
 } from "./CtoxWorkerSourceGrant.ts";
 
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -27,7 +26,7 @@ const payload = {
 const reply = (body: unknown = payload) => Response.json(body);
 
 describe("additional Workjet worker source client", () => {
-  it("uses the authenticated owner API with exactly two write tools and a one-day grant", async () => {
+  it("requests only worker dispatch and Luma configuration tools with a one-day grant", async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => reply());
     const result = await issueWorkjetWorkerSourceGrant(fetch, tenant);
     const [url, init] = fetch.mock.calls[0]!;
@@ -38,14 +37,19 @@ describe("additional Workjet worker source client", () => {
       label: "Workjet worker source",
       expiresInDays: 1,
       scopes: {
-        allowReads: false,
+        allowReads: true,
         allowWrites: true,
         allowApprovals: false,
         allowExternalEffects: false,
         rateLimitPerMinute: 30,
         allowedModules: ["ctox"],
         allowedCollections: ["__ctox_no_access__"],
-        allowedTools: [...WORKJET_WORKER_SOURCE_TOOLS],
+        allowedTools: [
+          "business_os.remote_worker_admission",
+          "business_os.workjet_worker_dispatch",
+          "business_os.luma_configuration_read",
+          "business_os.luma_configuration_update",
+        ],
         deniedTools: [],
       },
     });

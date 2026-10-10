@@ -195,7 +195,7 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         ...(routeViaGateway ? { resolveSessionModel } : {}),
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
-      const textGeneration = yield* makeOpenCodeTextGeneration(effectiveConfig, processEnv);
+      const textGeneration = yield* makeOpenCodeTextGeneration(effectiveConfig, processEnv, routeViaGateway ? { resolveEnvironment: resolveSessionEnvironment, resolveModel: resolveSessionModel } : undefined);
 
       const checkProvider = (routeViaGateway
         ? resolveSessionEnvironment().pipe(Effect.flatMap(env => checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, env)))

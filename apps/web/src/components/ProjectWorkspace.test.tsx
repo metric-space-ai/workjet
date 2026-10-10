@@ -17,6 +17,7 @@ import { ProjectOverviewQuestion } from "./ProjectOverviewDecisions";
 import {
   buildProjectOwnerOverview,
   isRunningProjectOneShot,
+  projectGoalSentence,
   projectOverviewWorkerState,
 } from "../projectOverviewModel";
 import { projectOverviewLanguage } from "../projectOverviewText";
@@ -114,6 +115,29 @@ const markup = (threads: readonly EnvironmentThreadShell[], language: "de" | "en
   );
 
 describe("owner project overview", () => {
+  it("keeps the goal sentence separate from handoff paths and technical directions", () => {
+    expect(
+      projectGoalSentence(
+        "1) Molecularity auf gpu3 baubar machen (Linux, Vulkan 1.4; glslc fehlt). Ergebnisse als PRs.",
+      ),
+    ).toBe("Molecularity auf gpu3 baubar machen.");
+    expect(
+      projectGoalSentence(
+        "Übergabe docs/HANDOFF.md, Aufgaben 2 und 4: XPBD gegen Zentral-Differenzen vergleichen (V2/V4), dann Bruch xpbd1_fracture_v1.rs prüfen. Ergebnisse als PRs.",
+      ),
+    ).toBe("XPBD gegen Zentral-Differenzen vergleichen, dann Bruch prüfen.");
+    const full = "Molecularity bauen (glslc fehlt).";
+    const thread = {
+      ...specialist,
+      workjetConfig: {
+        ...specialist.workjetConfig,
+        team: { ...specialist.workjetConfig.team!, goal: full },
+      },
+    } as EnvironmentThreadShell;
+    const html = markup([supervisor, thread]);
+    expect(overview([thread]).goals[0]?.title).toBe("Molecularity bauen.");
+    expect(html).toContain(full);
+  });
   it("counts durable goal statuses without treating completed turns as completed goals", () => {
     const goal = {
       objective: "Verify the fracture cases.",

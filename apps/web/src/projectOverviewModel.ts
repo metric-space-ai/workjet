@@ -53,7 +53,11 @@ export function projectGoalSentence(goal: string): string {
   const normalized = paragraph
     .replace(/^#+\s*/u, "")
     .replace(/^\d+[.)]\s*/u, "")
+    .replace(/^(?:Übergabe|Handoff)\s+[^:]+\.(?:md|txt)[^:]*:\s*/iu, "")
+    .replace(/\([^)]*\)/gu, "")
+    .replace(/\b[\w./-]+\.(?:md|rs|tsx?|jsx?|json|ya?ml|sh|py)\b/gu, "")
     .replace(/\s+/gu, " ")
+    .replace(/\s+([,.])/gu, "$1")
     .trim();
   return (
     new Intl.Segmenter(undefined, { granularity: "sentence" })

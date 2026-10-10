@@ -247,7 +247,9 @@ export function ProjectOverviewView(props: {
                       {text.prompt}
                     </summary>
                     <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                      {config.schemaVersion === 2 ? config.team?.goal : null}
+                      {config.schemaVersion === 2
+                        ? (config.goal?.objective ?? config.team?.goal)
+                        : null}
                     </p>
                     <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                       {config.managedInstructions}

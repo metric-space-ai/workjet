@@ -9,6 +9,14 @@ import {
 } from "@workjet/contracts";
 import { NativeSupervisorComposer } from "./NativeSupervisorComposer";
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("../ProjectSupervisorLumaField", () => ({
+  useProjectSupervisorLumas: () => ({
+    instanceId: null,
+    phase: "unavailable",
+    profiles: [],
+    instanceName: null,
+  }),
+}));
 
 const threadId = ThreadId.make("e28290b0-7b0a-4d19-a242-f27041fadb84");
 const projectId = ProjectId.make("71462c13-b395-402f-b6c8-788b405783e7");

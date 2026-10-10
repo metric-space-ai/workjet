@@ -10,28 +10,19 @@
       "case": "initial-function",
       "status": 200,
       "upstream": 200,
-      "outputTypes": [
-        "reasoning",
-        "function_call"
-      ]
+      "outputTypes": ["reasoning", "function_call"]
     },
     {
       "case": "function-output-string",
       "status": 200,
       "upstream": 200,
-      "outputTypes": [
-        "reasoning",
-        "message"
-      ]
+      "outputTypes": ["reasoning", "message"]
     },
     {
       "case": "function-output-content-array",
       "status": 200,
       "upstream": 200,
-      "outputTypes": [
-        "reasoning",
-        "message"
-      ]
+      "outputTypes": ["reasoning", "message"]
     },
     {
       "case": "responses-function-stream",

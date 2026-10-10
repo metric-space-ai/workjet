@@ -31,13 +31,13 @@ or revision is rejected. Each transcription/synthesis has a distinct requestId
 which cannot be reused once it ends/cancels. At most2048 completed operations
 per child. Status has a separate correlation ID.
 
-| Command | Additional fields and behavior |
-| --- | --- |
-| status | Real device/locale/assets and installed de-DE enhanced/premium voices. No microphone, model execution, asset download or SFSpeechRecognizer authorization. |
-| begin | One German streaming utterance. Optional installAssets:true explicitly permits OS-managed model asset setup; omitted/false returns assets_missing. Wait for ready before append. Setup is separate from utterance timing. |
-| append | sequence0..n, audioBase64:20ms monoPCM16 little-endian,16kHz,320samples/640bytes. Last shorter nonempty even frame allowed. AVAudioConverter explicitly resamples and flushes at end. |
-| end | Finish input, finalize analyzer, drain results, emit one final candidate. Main waits for final plus verified native receipt before onCommitted/termination. |
-| cancel | Idempotent request cancellation, discards late results. Owner close/instance switch uses this instead of end. |
+| Command    | Additional fields and behavior                                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| status     | Real device/locale/assets and installed de-DE enhanced/premium voices. No microphone, model execution, asset download or SFSpeechRecognizer authorization.                                                                                  |
+| begin      | One German streaming utterance. Optional installAssets:true explicitly permits OS-managed model asset setup; omitted/false returns assets_missing. Wait for ready before append. Setup is separate from utterance timing.                   |
+| append     | sequence0..n, audioBase64:20ms monoPCM16 little-endian,16kHz,320samples/640bytes. Last shorter nonempty even frame allowed. AVAudioConverter explicitly resamples and flushes at end.                                                       |
+| end        | Finish input, finalize analyzer, drain results, emit one final candidate. Main waits for final plus verified native receipt before onCommitted/termination.                                                                                 |
+| cancel     | Idempotent request cancellation, discards late results. Owner close/instance switch uses this instead of end.                                                                                                                               |
 | synthesize | Authorized text <=4096UTF-8bytes, optional slideId. Main resolves exact authorized slide/answer text. Use existing de-DE premium, else enhanced voice; neither available gives voice_missing. No default/personal/cloud voice substitution. |
 
 SpeechAnalyzer/SpeechTranscriber use progressive local results. No
@@ -50,12 +50,12 @@ permission/capture/VAD; helper receives PCM and never opens a capture device.
 Each valid event echoes all scope/request fields above plus helperMs.
 Main rejects another child, scope, generation or retired request.
 Crew's local-candidate receipt proves authenticated Owner persistence in that
-exact live room/deck/request, with provider_verified:false. Main separately
+exact live room/deck/request, with `provider_verified:false`. Main separately
 validates the signed helper. The existing gateway-only VerifiedTranscriptFinal
 cannot be minted from helper JSON; text append is also insufficient because it
 lacks the local request/deck binding. Main uses the native
 ctox.workjet.jour_fixe.transcript.local_candidate command through the paired
-Shell's project.jour_fixe.transcript.local_candidate action. The native biz_
+Shell's project.jour_fixe.transcript.local_candidate action. The native `biz_`
 instance comes from trusted Shell.syncConfig; operationId/requestId bind one
 final emission, with expectedRevision/deckRevision and exact text SHA in the
 completed localCandidate receipt. Source contract availability is not installed
@@ -72,20 +72,20 @@ Its authenticated_owner_local_audio provenance has provider_verified:false;
 synthesis_duration_ms=0 is not a timing measurement. Keep actual helper/UI
 latency separately. Every slide needs real authorized audio before ready/live.
 See CTOX docs/workjet-jour-fixe-local-transcript.md and
- docs/workjet-jour-fixe-local-narration.md for the native DTOs.
+docs/workjet-jour-fixe-local-narration.md for the native DTOs.
 
-| Event | Payload |
-| --- | --- |
-| status | capabilities:available,germanSupported,germanInstalled,germanVoices[],audioProcessedOnDevice:true. Voices have identifier/language/quality. |
-| ready | Analyzer loaded/prepared; now feed audio. |
-| appended | sequence acknowledgement; Main honors pipe backpressure and caps unacknowledged frames at32. |
-| partial | Revisable text,candidateOnly:true; not a receipt. |
-| final | Aggregate text,candidateOnly:true,endToFinalMs. Main still needs Crew's authorized receipt. Empty is a real no-speech result, not invented text. |
-| audio | sequence,audioBase64,sampleRate,channels:1,format:s16le,firstAudioMs. Ordered decoded PCM. |
-| audio_end | bytes,sampleRate,channels:1,format:s16le,firstAudioMs,actual voice. Main validates sequence/size/format and builds a PCM16 WAV Blob. No file URL. |
-| cancelled | Discard subsequent request output. |
-| error | Classified code; discard incomplete narration. |
-| protocol_error | No trustworthy input scope. Main closes child and settles pending requests. |
+| Event          | Payload                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| status         | capabilities:available,germanSupported,germanInstalled,germanVoices[],audioProcessedOnDevice:true. Voices have identifier/language/quality.       |
+| ready          | Analyzer loaded/prepared; now feed audio.                                                                                                         |
+| appended       | sequence acknowledgement; Main honors pipe backpressure and caps unacknowledged frames at32.                                                      |
+| partial        | Revisable text,candidateOnly:true; not a receipt.                                                                                                 |
+| final          | Aggregate text,candidateOnly:true,endToFinalMs. Main still needs Crew's authorized receipt. Empty is a real no-speech result, not invented text.  |
+| audio          | sequence,audioBase64,sampleRate,channels:1,format:s16le,firstAudioMs. Ordered decoded PCM.                                                        |
+| audio_end      | bytes,sampleRate,channels:1,format:s16le,firstAudioMs,actual voice. Main validates sequence/size/format and builds a PCM16 WAV Blob. No file URL. |
+| cancelled      | Discard subsequent request output.                                                                                                                |
+| error          | Classified code; discard incomplete narration.                                                                                                    |
+| protocol_error | No trustworthy input scope. Main closes child and settles pending requests.                                                                       |
 
 16KiB/line;4096decoded bytes/output PCM chunk; PCM+44byte WAV <=32MiB;
 utterance<=14s; command/analysis/native-audio queues each<=32; native TTS
@@ -142,7 +142,7 @@ No third-party dependencies. Mac-only compilation/tests use the shared gate:
 Scratch/module caches use gate artifact paths. Main signs/packages using its
 normal release path; this source acquires no signing identity and edits no live
 installation. Installed evidence (including failures):
-~/.codex/task-evidence/teilziele/20-speech-*.json.
+~/.codex/task-evidence/teilziele/20-speech-\*.json.
 
 The same gated check can append `--probe` for a bounded helper-only run. It
 synthesizes a known German sentence, then feeds its PCM at20ms intervals with
@@ -153,6 +153,7 @@ acceptance. `probe.py --install-assets` explicitly allows OS-managed German
 STT asset setup; use it through the gate only, after confirming root capacity.
 
 Official API sources:
+
 - https://developer.apple.com/documentation/speech/speechanalyzer
 - https://developer.apple.com/documentation/speech/speechtranscriber
 - https://developer.apple.com/documentation/speech/assetinventory

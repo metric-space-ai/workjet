@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import type {
   CtoxGuestBounds,
+  CtoxGuestPreparationDiagnostic,
   CtoxGuestLifecycleState,
   CtoxHostThemeInput,
   CtoxManagedActionResult,
@@ -43,6 +44,10 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { CTOX_GUEST_STATE_CHANNEL, CTOX_SESSION_TRANSFER_EVENT_CHANNEL } from "../ipc/channels.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
+import {
+  guestPreparationDiagnostic,
+  recordGuestPreparationFailure,
+} from "./CtoxGuestDiagnostics.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import { CtoxGuestBudget, type CtoxGuestLease } from "./CtoxGuestBudget.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
@@ -1178,10 +1183,17 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       existingSession?: Session,
       shouldAttach = true,
     ) {
+      let preparation: CtoxGuestPreparationDiagnostic | undefined;
       const diagnose = (
-        stage: string,
+        stage: CtoxGuestPreparationDiagnostic["stage"],
         details: Readonly<Record<string, string | number | null>> = {},
-      ) => Effect.logWarning("Business OS preparation failed", { instanceId, stage, ...details });
+      ) => {
+        preparation = guestPreparationDiagnostic(stage, {
+          ...(preparation?.stage === stage ? preparation : {}),
+          ...details,
+        });
+        return recordGuestPreparationFailure(instanceId, preparation);
+      };
       let releaseLaunch: (() => void) | undefined;
       let awaitLaunchRelease: Effect.Effect<void> = Effect.void;
       let reservedLease: CtoxGuestLease | undefined;
@@ -1336,7 +1348,10 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }
         const resolvedSession =
           existingSession === undefined
-            ? yield* sessions.instance(authoritativeDescriptor).pipe(Effect.option)
+            ? yield* sessions.instance(authoritativeDescriptor).pipe(
+                Effect.tapError((error) => diagnose("session", describeCtoxGuestFailure(error))),
+                Effect.option,
+              )
             : Option.some(existingSession);
         if (Option.isNone(resolvedSession)) {
           yield* diagnose("session");
@@ -1490,11 +1505,22 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             }),
           ),
         );
-        if (webContents.isDestroyed()) return failView();
+        if (webContents.isDestroyed()) {
+          yield* diagnose("session_events", { reason: "destroyed" });
+          return failView();
+        }
         lease.ready();
         adopted = true;
         return [{ _tag: "ready", instanceId }, active] as const;
       }).pipe(
+        Effect.map(
+          ([result, guest]): readonly [CtoxManagedGuestResult, ActiveGuest | undefined] => [
+            result._tag === "failed" && preparation !== undefined
+              ? { ...result, preparation }
+              : result,
+            guest,
+          ],
+        ),
         Effect.ensuring(
           Effect.gen(function* () {
             if (adopted) return;
@@ -2058,6 +2084,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             code: prepared._tag === "failed" ? prepared.code : "not_active",
             ...(prepared._tag === "failed" && prepared.discovery !== undefined
               ? { discovery: prepared.discovery }
+              : {}),
+            ...(prepared._tag === "failed" && prepared.preparation !== undefined
+              ? { preparation: prepared.preparation }
               : {}),
           };
         }

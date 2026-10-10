@@ -389,3 +389,174 @@ it.effect(
       assert.equal(h.calls.length, 2);
     }),
 );
+
+it.effect(
+  "retains the exact project policy throughout native issue, claim, renewal and revocation",
+  () =>
+    Effect.gen(function* () {
+      const policy = {
+        mode: "autonomous-worktree" as const,
+        projectId: request.project.id,
+        revision: 4,
+      };
+      const scopedRequest = { ...request, executionPolicy: policy };
+      const binding = {
+        ...(yield* bindingFor),
+        requestDigest: yield* remoteWorkerRequestDigest(scopedRequest),
+        executionPolicy: policy,
+      };
+      const h = harness(binding);
+      const issued = yield* h.client.execute(scope, scopedRequest, binding, "issue");
+      const claimed = yield* h.client.execute(
+        scope,
+        scopedRequest,
+        binding,
+        "claim",
+        issued.permitId,
+        request.requestId,
+      );
+      yield* h.client.execute(
+        scope,
+        scopedRequest,
+        binding,
+        "revalidate",
+        claimed.permitId,
+        request.requestId,
+      );
+      const renewed = yield* h.client.execute(
+        scope,
+        scopedRequest,
+        binding,
+        "renew",
+        claimed.permitId,
+        request.requestId,
+        1,
+      );
+      h.revokeAccount();
+      const revoked = yield* h.client.execute(
+        scope,
+        scopedRequest,
+        binding,
+        "revoke",
+        renewed.permitId,
+        request.requestId,
+      );
+      assert.equal(revoked.state, "revoked");
+      assert.deepEqual(revoked.binding.executionPolicy, policy);
+      assert.equal(h.calls.length, 5);
+      for (const call of h.calls) assert.deepEqual(call.binding, binding);
+    }),
+);
+it.effect(
+  "rejects policy stripping, substitution and unsolicited policy before native or account access",
+  () =>
+    Effect.gen(function* () {
+      const policy = {
+        mode: "autonomous-worktree" as const,
+        projectId: request.project.id,
+        revision: 4,
+      };
+      const scopedRequest = { ...request, executionPolicy: policy };
+      const original = yield* bindingFor;
+      const binding = {
+        ...original,
+        requestDigest: yield* remoteWorkerRequestDigest(scopedRequest),
+        executionPolicy: policy,
+      };
+      const { executionPolicy: _policy, ...unscoped } = binding;
+      const h = harness(binding);
+      for (const actual of [
+        unscoped,
+        { ...binding, executionPolicy: { ...policy, revision: 5 } },
+        {
+          ...binding,
+          executionPolicy: { ...policy, projectId: ProjectId.make("foreign-project") },
+        },
+      ]) {
+        assert.equal(
+          (yield* Effect.flip(h.client.execute(scope, scopedRequest, actual, "issue"))).reason,
+          "invalid-request",
+        );
+      }
+      const unsolicited = { ...original, executionPolicy: policy };
+      assert.equal(
+        (yield* Effect.flip(h.client.execute(scope, request, unsolicited, "issue"))).reason,
+        "invalid-request",
+      );
+      assert.equal(h.calls.length, 0);
+      assert.equal(h.sourceTargets.length, 0);
+      assert.equal(h.grantTargets.length, 0);
+    }),
+);
+it.effect(
+  "rejects a downgraded or changed native policy receipt without losing its comparison field",
+  () =>
+    Effect.gen(function* () {
+      const policy = {
+        mode: "autonomous-worktree" as const,
+        projectId: request.project.id,
+        revision: 4,
+      };
+      const scopedRequest = { ...request, executionPolicy: policy };
+      const binding = {
+        ...(yield* bindingFor),
+        requestDigest: yield* remoteWorkerRequestDigest(scopedRequest),
+        executionPolicy: policy,
+      };
+      const h = harness(binding);
+      const { executionPolicy: _policy, ...unscoped } = binding;
+      for (const actual of [
+        unscoped,
+        { ...binding, executionPolicy: { ...policy, revision: 5 } },
+        {
+          ...binding,
+          executionPolicy: { ...policy, projectId: ProjectId.make("foreign-project") },
+        },
+      ]) {
+        h.setReceipt(receiptFor(actual));
+        assert.equal(
+          (yield* Effect.flip(h.client.execute(scope, scopedRequest, binding, "issue"))).reason,
+          "invalid-request",
+        );
+      }
+      h.setReceipt(receiptFor(binding));
+      assert.deepEqual(
+        (yield* h.client.execute(scope, scopedRequest, binding, "issue")).binding.executionPolicy,
+        policy,
+      );
+    }),
+);
+it.effect("keeps the policy and execution identity after a lost native claim reply", () =>
+  Effect.gen(function* () {
+    const policy = {
+      mode: "autonomous-worktree" as const,
+      projectId: request.project.id,
+      revision: 4,
+    };
+    const scopedRequest = { ...request, executionPolicy: policy };
+    const binding = {
+      ...(yield* bindingFor),
+      requestDigest: yield* remoteWorkerRequestDigest(scopedRequest),
+      executionPolicy: policy,
+    };
+    const h = harness(binding);
+    h.loseNextResponse();
+    assert.equal(
+      (yield* Effect.flip(
+        h.client.execute(scope, scopedRequest, binding, "claim", "permit", request.requestId),
+      )).reason,
+      "source-unavailable",
+    );
+    const claimed = yield* h.client.execute(
+      scope,
+      scopedRequest,
+      binding,
+      "claim",
+      "permit",
+      request.requestId,
+    );
+    assert.equal(claimed.executionId, request.requestId);
+    assert.deepEqual(claimed.binding.executionPolicy, policy);
+    assert.deepEqual(h.calls[0], h.calls[1]);
+  }),
+);

@@ -1,4 +1,5 @@
-import { NativeProviderRows } from "./NativeProviderRows";
+import { InstanceProviderSection } from "./InstanceProviderSection";
+import { useInstanceProviders } from "./useInstanceProviders";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@workjet/client-runtime/connection";
 import { safeErrorLogAttributes } from "@workjet/client-runtime/errors";
@@ -391,6 +392,7 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
       : undefined;
   const label = instance?.displayName ?? "CTOX instance";
   const grok = useInstanceGrokAccount(instanceId, label);
+  const providers = useInstanceProviders(instanceId);
   return (
     <section aria-label="LLM providers" className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -414,8 +416,7 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
               Actions
             </span>
           </div>
-          {grok.row}
-          <NativeProviderRows instanceId={instanceId} label={label} />
+          <InstanceProviderSection label={label} grok={grok} providers={providers} />
         </div>
       </div>
     </section>
@@ -436,11 +437,14 @@ function InstanceGatewayModels({
       : undefined;
   const label = instance?.displayName ?? "CTOX instance";
   const instanceGrok = useInstanceGrokAccount(instanceId, label);
+  const providers = useInstanceProviders(instanceId);
   return (
     <WorkjetModelsProviders
       {...gateway}
       instanceGrok={instanceGrok}
-      nativeProviderRows={<NativeProviderRows instanceId={instanceId} label={label} />}
+      nativeProviderRows={
+        <InstanceProviderSection label={label} grok={instanceGrok} providers={providers} />
+      }
     />
   );
 }

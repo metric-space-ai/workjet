@@ -9,6 +9,10 @@ import * as Schema from "effect/Schema";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopObservability from "./DesktopObservability.ts";
+import {
+  guestPreparationDiagnostic,
+  recordGuestPreparationFailure,
+} from "../ctox/CtoxGuestDiagnostics.ts";
 
 const DesktopBackendChildLogRecord = Schema.Struct({
   message: Schema.String,
@@ -63,6 +67,48 @@ const makeEnvironmentLayer = (baseDir: string, isDevelopment = true) =>
   );
 
 describe("DesktopObservability", () => {
+  it.effect("persists safe guest preparation facts without an existing caller span", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "workjet-guest-diagnostic-",
+      });
+      const environmentLayer = makeEnvironmentLayer(baseDir);
+      const tracePath = yield* Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        return environment.path.join(environment.logDir, "desktop.trace.ndjson");
+      }).pipe(Effect.provide(environmentLayer));
+      yield* Effect.scoped(
+        recordGuestPreparationFailure(
+          "managed:welsch",
+          guestPreparationDiagnostic("navigation_commit", {
+            reason: "did_fail_load",
+            errorCode: -102,
+            message: "private https://host/?token=secret",
+            token: "secret",
+          }),
+        ).pipe(
+          Effect.provide(DesktopObservability.layer.pipe(Layer.provideMerge(environmentLayer))),
+        ),
+      );
+      const contents = yield* fileSystem.readFileString(tracePath);
+      const records = contents
+        .trim()
+        .split("\n")
+        .map((line) => decodeTraceRecordLine(line));
+      const record = records.find((entry) => entry.name === "ctox.guest.preparation.failed");
+      assert.deepEqual(record?.attributes, {
+        component: "CtoxGuestManager",
+        instanceId: "managed:welsch",
+        stage: "navigation_commit",
+        reason: "did_fail_load",
+        errorCode: -102,
+      });
+      assert.isFalse(contents.includes("token"));
+      assert.isFalse(contents.includes("secret"));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeHttpClient.layerUndici))),
+  );
+
   it("advances a retained output offset instead of repeatedly copying a full head chunk", () => {
     const maxBufferedBytes = 1024 * 1024;
     const initial = DesktopObservability.appendBoundedOutputChunk(

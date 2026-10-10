@@ -23,6 +23,7 @@ export interface WorkjetProjectRegistrySnapshot {
   readonly projects: readonly CtoxWorkjetProjectProjection[];
   readonly selectedProjectId: string | null;
   readonly refreshFailed?: boolean;
+  readonly lastUpdatedAt?: number | undefined;
   readonly refreshError?: Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>;
 }
 
@@ -30,13 +31,14 @@ const EMPTY_PROJECTS: readonly CtoxWorkjetProjectProjection[] = Object.freeze([]
 const WORKJET_PROJECT_REGISTRY_STORAGE_PREFIX = "workjet:project-registry:v1:";
 const REFRESH_PROJECT_REGISTRY_EVENT = "workjet:refresh-project-registry";
 
-/** User-driven refresh; the synchronizer coalesces requests and owns cancellation. */
+/** A confirmed project change wakes the coalesced, automatically recovering synchronizer. */
 export function refreshWorkjetProjectRegistry(instanceId: string | null): void {
   if (instanceId !== null)
     window.dispatchEvent(new CustomEvent(REFRESH_PROJECT_REGISTRY_EVENT, { detail: instanceId }));
 }
 const PersistedWorkjetProjectRegistry = Schema.Struct({
   version: Schema.Literal(1),
+  lastUpdatedAt: Schema.optionalKey(Schema.Number),
   selectedProjectId: Schema.NullOr(ProjectId),
   projects: Schema.Array(CtoxWorkjetProjectProjection).check(Schema.isMaxLength(10_000)),
 });
@@ -80,6 +82,7 @@ function readPersistedSnapshot(
       presentationInstanceId,
       phase: "ready",
       projects: Object.freeze([...persisted.projects]),
+      lastUpdatedAt: persisted.lastUpdatedAt,
       selectedProjectId,
     });
   } catch {
@@ -99,6 +102,7 @@ function persistSnapshot(next: WorkjetProjectRegistrySnapshot): void {
       registryStorageKey(next.presentationInstanceId),
       JSON.stringify({
         version: 1,
+        lastUpdatedAt: next.lastUpdatedAt,
         projects: next.projects,
         selectedProjectId: next.selectedProjectId,
       }),
@@ -136,6 +140,7 @@ export function mergeWorkjetProjectProjection(
 ): WorkjetProjectRegistrySnapshot {
   if (current.presentationInstanceId !== presentationInstanceId) return current;
   return {
+    ...current,
     presentationInstanceId,
     phase: "ready",
     projects: [...current.projects.filter((candidate) => candidate.id !== project.id), project],
@@ -310,6 +315,7 @@ export function applyWorkjetProjectRegistryResult(
     presentationInstanceId,
     phase: "ready",
     projects: result.response.projects,
+    lastUpdatedAt: Date.now(),
     selectedProjectId: resolveSelectedWorkjetProjectId(
       result.response.projects,
       current.selectedProjectId,
@@ -331,6 +337,7 @@ export function WorkjetProjectRegistrySynchronizer() {
         (result) => {
           if (cancelled) return;
           applyWorkjetProjectRegistryResult(presentationInstanceId, result);
+          return result._tag === "completed" && result.response.action === "project.list";
         },
         () => {
           if (!cancelled) {
@@ -339,6 +346,7 @@ export function WorkjetProjectRegistrySynchronizer() {
               code: "guest_failed",
             });
           }
+          return false;
         },
       ),
     );
@@ -355,6 +363,7 @@ export function WorkjetProjectRegistrySynchronizer() {
     };
     const unsubscribeHostContext = subscribeActiveWorkjetHostContext(refresh);
     window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
     window.addEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);
     refresh();
     return () => {
@@ -363,6 +372,7 @@ export function WorkjetProjectRegistrySynchronizer() {
       unsubscribeGuest();
       unsubscribeHostContext();
       window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
       window.removeEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);
     };
   }, [presentationInstanceId]);

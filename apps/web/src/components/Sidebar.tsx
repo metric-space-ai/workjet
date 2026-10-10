@@ -338,7 +338,11 @@ function SidebarThreadTooltip({
             <div className="flex min-w-0 items-center gap-2">
               <ProviderInstanceIcon
                 driverKind={driverKind}
-                displayName={thread.session?.providerName ?? modelInstanceId}
+                displayName={
+                  thread.session?.providerInstanceId === modelInstanceId
+                    ? (thread.session.providerName ?? modelInstanceId)
+                    : modelInstanceId
+                }
                 iconClassName="size-3 shrink-0 grayscale opacity-60"
               />
               <div className="min-w-0 truncate text-foreground/75">{modelLabel}</div>
@@ -881,7 +885,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     onChangeRequestState(threadKey, prState);
   }, [onChangeRequestState, prState, threadKey]);
 
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(
@@ -1519,7 +1523,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   <span className="inline-flex shrink-0 items-center opacity-60">
                     <ProviderInstanceIcon
                       driverKind={driverKind}
-                      displayName={thread.session?.providerName ?? modelInstanceId}
+                      displayName={
+                        thread.session?.providerInstanceId === modelInstanceId
+                          ? (thread.session.providerName ?? modelInstanceId)
+                          : modelInstanceId
+                      }
                       iconClassName="size-3.5"
                     />
                   </span>
@@ -1575,7 +1583,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     activeThreadBranch: thread.branch,
     currentGitBranch: gitStatus.data?.refName ?? null,
   });
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const driverKind = providerEntry?.driverKind ?? null;
   const selectedModel = providerEntry?.models.find(

@@ -96,7 +96,7 @@ describe("native Supervisor Luma selection", () => {
       .mockResolvedValue({ _tag: "failed", code: "authentication_required" });
     expect(await saveSupervisorLuma(input(port))).toEqual({
       phase: "failed",
-      error: "Sign in to ctox.dev to reconnect this project's instance.",
+      error: "Sign in to ctox.dev to reconnect this instance.",
     });
   });
 

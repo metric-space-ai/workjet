@@ -14,6 +14,33 @@ Absence preserves existing behavior. This is a policy reference, not a permit,
 a path grant, an approval bypass or a source of computer/account identity.
 The Owner project setting and its propagation are owned by Main.
 
+The dispatcher copies this reference from the server's saved parent into local
+worker configuration and the immutable `RemoteWorkerRequest.executionPolicy`.
+It accepts a reference only for that parent's project and saved team membership.
+The remote receiver preserves it in the target worker configuration, and rejects
+a foreign project or missing team role before storing a request or touching Git.
+Changed, removed or newly added policy references reject a retry of an older
+remote request. Reconciliation of an already recorded native result starts no
+new worker. The source reports invalid references as `execution-policy-invalid`;
+the existing native completion contract uses `capability-escalation`.
+The request digest includes the reference; an older
+receiver stripping the field cannot claim the same source request identity.
+No policy is accepted from the worker-dispatch MCP input. These checks preserve
+the policy at the provider boundary; they do not verify native current policy
+or supply a sandbox permit.
+
+The source copies the same reference into
+`RemoteWorkerNativeBinding.executionPolicy`. Native issue, claim, revalidation
+and renewal receive that immutable reference. The client rejects a missing,
+added, foreign-project or changed reference before resolving account grants
+or contacting native, and rejects a native receipt that omits or substitutes
+it. The persisted intent and receipt retain the reference across recovery;
+revocation still uses the original binding after an account grant is removed.
+An older native that rejects the new optional binding cannot admit this mode.
+The native producer must additionally verify current Owner policy/revision and
+actual enrolled team provenance at every usage. Echoing the reference alone
+does not supply that authority, a sandbox witness or a supported policy mode.
+
 The common provider boundary currently **rejects this mode for every harness**.
 No supported autonomous-worktree policy mode is advertised. In particular,
 `full-access`, Codex's `workspace-write`, Claude's `acceptEdits`, and a
@@ -44,3 +71,28 @@ access to credential directories.
 Installed G2 acceptance remains open. This change prevents a premature project
 setting from silently turning into host-wide access; it does not claim that an
 autonomous worker has been accepted.
+
+## Isolated Git metadata custody
+
+An executor confined to its workspace cannot use a linked worktree's shared
+Git administration directory outside that workspace. The native helper now
+supports publication and rejected-start quarantine of a prepared checkout
+whose own `.git` directory is inside it. Publication requires the captured
+directory and Git metadata identities, stays beside the prepared checkout,
+and never replaces an existing destination, including an empty directory.
+Symlink ancestors, replaced identities, `commondir`, and object alternates
+are rejected. The caller must persist the capture before publication and
+verify that same capture on recovery; a path alone does not prove custody.
+
+The default linked-worktree capture and automatic removal are unchanged:
+they never adopt a standalone/manual repository. Isolated captures require
+an explicit kind and cannot use automatic recursive removal. On a rejected
+start, the rollback API can receive the original persisted custody; it
+quarantines checkout and private Git metadata together, records recovery
+locations, retains late writes, and never deletes a ref from the source
+project. A failed native response reports candidate recovery paths only.
+
+This is a prerequisite for isolated allocation and its durable receipt, not
+a sandbox witness or an enabled provider policy. Remote allocation still uses
+the existing linked-worktree path until that integration is complete. Every
+autonomous-worktree provider mode remains unsupported.

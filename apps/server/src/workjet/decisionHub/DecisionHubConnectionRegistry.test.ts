@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   WorkjetConnectionId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  normalizeWorkjetThreadConfig,
+  rotateWorkjetCtoxWorkerSource,
   WorkjetDecisionHubConnectionError,
   type WorkjetDecisionHubProvisionInput,
 } from "@workjet/contracts";
@@ -13,6 +16,7 @@ import migration55 from "../../persistence/Migrations/055_WorkjetDecisionHub.ts"
 import migration59 from "../../persistence/Migrations/059_WorkjetCtoxConnectionBindings.ts";
 import { DecisionHubMcpClient } from "./DecisionHubMcpClient.ts";
 import { DecisionHubConnectionRegistry, layer } from "./DecisionHubConnectionRegistry.ts";
+import { makeCtoxLumaConfigurationRpc } from "../ctox/CtoxLumaConfigurationRpc.ts";
 
 const input: WorkjetDecisionHubProvisionInput = {
   connectionId: WorkjetConnectionId.make("ctox-connection-a"),
@@ -95,6 +99,81 @@ const otherInstance = {
 };
 
 describe("durable CTOX connection identity", () => {
+  it.effect(
+    "blocks Luma reads on needs_auth credentials and reads with the unique rotated grant",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* fixture;
+        const registry = yield* test.open;
+        const tenant = "322084e5-8239-48d7-b3c5-c5178fbe5822";
+        const prior = {
+          ...input,
+          connectionId: WorkjetConnectionId.make(
+            `ctox-dev-worker-source:${tenant}:c1728006-7dcd-4c64-a0b7-e800251eb9a1`,
+          ),
+        };
+        const next = {
+          ...input,
+          connectionId: WorkjetConnectionId.make(
+            `ctox-dev-worker-source:${tenant}:41e130aa-2b02-46fe-953d-37e74a97f05a`,
+          ),
+          token: "authorized-successor-test-token",
+        };
+        yield* registry.provision(prior);
+        test.rejectAuthentication();
+        yield* registry.probe(prior.connectionId);
+        test.authorize();
+        let clientReads = 0;
+        const rpc = makeCtoxLumaConfigurationRpc({
+          connections: registry,
+          client: {
+            read: (target) =>
+              Effect.sync(() => {
+                expect(target.token).toBe(next.token);
+                clientReads++;
+                return { revision: 1, configuration: null, updatedAtMs: 1 };
+              }),
+            save: () => Effect.die("No Luma write expected"),
+          },
+        });
+        expect((yield* Effect.flip(rpc.read(prior))).reason).toBe("connection-unavailable");
+        expect(clientReads).toBe(0);
+        yield* registry.provision(next);
+        expect((yield* rpc.read(prior)).revision).toBe(1);
+        expect(clientReads).toBe(1);
+        const config = {
+          ...normalizeWorkjetThreadConfig(DEFAULT_WORKJET_THREAD_CONFIG),
+          enabledCapabilityIds: ["ctox-business-os"] as const,
+          capabilityBindings: [
+            {
+              capabilityId: "ctox-business-os" as const,
+              target: {
+                kind: "ctox-connection" as const,
+                connectionId: prior.connectionId,
+                instanceId: prior.instanceId,
+              },
+            },
+          ],
+        };
+        const rotated = rotateWorkjetCtoxWorkerSource(config, yield* registry.list);
+        expect(rotated.changed).toBe(true);
+        const scope = normalizeWorkjetThreadConfig(rotated.config).capabilityBindings[0]!.target;
+        expect(
+          (yield* rpc.read({ connectionId: scope.connectionId, instanceId: scope.instanceId! }))
+            .revision,
+        ).toBe(1);
+        expect(clientReads).toBe(2);
+        yield* registry.provision({
+          ...next,
+          connectionId: WorkjetConnectionId.make(
+            `ctox-dev-worker-source:${tenant}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
+          ),
+        });
+        expect((yield* Effect.flip(rpc.read(prior))).reason).toBe("connection-unavailable");
+        expect(clientReads).toBe(2);
+      }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
   it.effect("checks ready connection liveness without mutating its persisted status", () =>
     Effect.gen(function* () {
       const test = yield* fixture;

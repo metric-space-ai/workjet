@@ -65,6 +65,66 @@ const makeNeverFinishingProcess = (stderr = "") => {
 };
 
 describe("ssh command", () => {
+  it.effect("preserves binary and UTF-8 stdin across bounded chunks and closes the input", () =>
+    Effect.gen(function* () {
+      const backing = Uint8Array.from({ length: 200_000 }, (_, index) => index % 256);
+      for (const input of [
+        backing.subarray(19, backing.length - 13),
+        "hello π🦕\n".repeat(18_000),
+      ]) {
+        const expected = typeof input === "string" ? encoder.encode(input) : input;
+        const observed: Uint8Array[] = [];
+        const spawner = ChildProcessSpawner.make((command) =>
+          Effect.gen(function* () {
+            if (command._tag !== "StandardCommand")
+              throw new Error("standard SSH command required");
+            const stdin = command.options.stdin;
+            if (
+              !stdin ||
+              typeof stdin !== "object" ||
+              !("stream" in stdin) ||
+              !Stream.isStream(stdin.stream)
+            )
+              throw new Error("streamed SSH input required");
+            assert.equal(stdin.endOnDone, true);
+            const chunks = yield* Stream.runCollect(stdin.stream);
+            for (const chunk of chunks) {
+              if (!(chunk instanceof Uint8Array)) throw new Error("binary SSH chunk required");
+              assert.isAtMost(chunk.byteLength, 64 * 1024);
+              observed.push(chunk);
+            }
+            return ChildProcessSpawner.makeHandle({
+              pid: ChildProcessSpawner.ProcessId(123),
+              stdout: Stream.make(encoder.encode("ok")),
+              stderr: Stream.empty,
+              all: Stream.empty,
+              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+              isRunning: Effect.succeed(false),
+              kill: () => Effect.void,
+              stdin: Sink.drain,
+              getInputFd: () => Sink.drain,
+              getOutputFd: () => Stream.empty,
+              unref: Effect.succeed(Effect.void),
+            });
+          }),
+        );
+        const result = yield* runSshCommand(
+          { alias: "fixture", hostname: "fixture", username: null, port: null },
+          { stdin: input },
+        ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+        assert.equal(result.stdout, "ok");
+        const actual = new Uint8Array(observed.reduce((sum, chunk) => sum + chunk.byteLength, 0));
+        let offset = 0;
+        for (const chunk of observed) {
+          actual.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        assert.deepEqual(actual, expected);
+        assert.isAbove(observed.length, 1);
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("parses resolved ssh config output into a target", () =>
     Effect.sync(() => {
       assert.deepEqual(

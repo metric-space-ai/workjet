@@ -1,5 +1,108 @@
-import { normalizeWorkjetThreadConfig, type WorkjetThreadConfig } from "./workjet.ts";
+import {
+  normalizeWorkjetThreadConfig,
+  type WorkjetConnectionSummary,
+  type WorkjetThreadConfig,
+} from "./workjet.ts";
 import type { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
+import * as Schema from "effect/Schema";
+
+const GrantUuid = Schema.String.check(
+  Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i),
+);
+const decodeGrantUuid = Schema.decodeUnknownOption(GrantUuid);
+
+/** Same identity grammar as the desktop worker-source grant issuer. */
+export function ctoxWorkerSourceTenantId(connectionId: string): string | undefined {
+  const match = /^ctox-dev-worker-source:([^:]+):([^:]+)$/.exec(connectionId);
+  if (!match) return undefined;
+  const tenant = decodeGrantUuid(match[1]);
+  const token = decodeGrantUuid(match[2]);
+  return tenant._tag === "Some" && token._tag === "Some" ? tenant.value : undefined;
+}
+
+export function isWorkjetCtoxCredentialRotation(
+  previous: { readonly connectionId: string; readonly instanceId?: string },
+  next: { readonly connectionId: string; readonly instanceId?: string },
+): boolean {
+  const tenantId = ctoxWorkerSourceTenantId(previous.connectionId);
+  // Tokens identify credentials, not authority. Only ctox.dev worker-source
+  // grants for the same tenant AND immutable native instance may rotate;
+  // local connections, foreign tenants and instance retargeting remain forbidden.
+  return (
+    tenantId !== undefined &&
+    tenantId === ctoxWorkerSourceTenantId(next.connectionId) &&
+    previous.instanceId !== undefined &&
+    previous.instanceId === next.instanceId
+  );
+}
+
+export function workjetCtoxWorkerSourceSuccessor(
+  connections: readonly WorkjetConnectionSummary[],
+  target: { readonly connectionId: string; readonly instanceId?: string },
+): { readonly connection?: WorkjetConnectionSummary; readonly error: string | null } {
+  const original = connections.find((entry) => entry.connectionId === target.connectionId);
+  if (
+    !original ||
+    original.source !== "ctox_dev" ||
+    original.status === "ready" ||
+    original.instanceId !== target.instanceId ||
+    !ctoxWorkerSourceTenantId(original.connectionId)
+  )
+    return { error: null };
+  const candidates = connections.filter(
+    (entry) =>
+      entry.source === "ctox_dev" &&
+      entry.status === "ready" &&
+      isWorkjetCtoxCredentialRotation(target, entry),
+  );
+  if (candidates.length > 1)
+    return {
+      error:
+        "Multiple authorized worker connections match this instance. Remove the unused connection in Settings before reconnecting.",
+    };
+  return candidates[0] ? { connection: candidates[0], error: null } : { error: null };
+}
+
+/** Rotate only credential references, retaining disabled tools, journals and receipts. */
+export function rotateWorkjetCtoxWorkerSource(
+  config: WorkjetThreadConfig,
+  connections: readonly WorkjetConnectionSummary[],
+): {
+  readonly config: WorkjetThreadConfig;
+  readonly changed: boolean;
+  readonly error: string | null;
+} {
+  const normalized = normalizeWorkjetThreadConfig(config);
+  let changed = false;
+  let error: string | null = null;
+  const capabilityBindings = normalized.capabilityBindings.map((binding) => {
+    if (binding.capabilityId !== "ctox-business-os") return binding;
+    const result = workjetCtoxWorkerSourceSuccessor(connections, binding.target);
+    error ??= result.error;
+    if (!result.connection) return binding;
+    changed = true;
+    return {
+      ...binding,
+      target: { ...binding.target, connectionId: result.connection.connectionId },
+    };
+  });
+  let ctoxCrewChat = normalized.ctoxCrewChat;
+  if (ctoxCrewChat) {
+    const result = workjetCtoxWorkerSourceSuccessor(connections, ctoxCrewChat);
+    error ??= result.error;
+    if (result.connection) {
+      changed = true;
+      ctoxCrewChat = { ...ctoxCrewChat, connectionId: result.connection.connectionId };
+    }
+  }
+  if (error || !changed) return { config, changed: false, error };
+  const retained = retainWorkjetCtoxBinding(config, {
+    ...normalized,
+    capabilityBindings,
+    ...(ctoxCrewChat ? { ctoxCrewChat } : {}),
+  });
+  return { ...retained, changed: retained.error === null };
+}
 
 function supervisorObservationError(
   previous: WorkjetSupervisorJournal,
@@ -130,7 +233,8 @@ export function retainWorkjetCtoxBinding(
     originalChat &&
     requestedChat &&
     (originalChat.instanceId !== requestedChat.instanceId ||
-      originalChat.connectionId !== requestedChat.connectionId ||
+      (originalChat.connectionId !== requestedChat.connectionId &&
+        !isWorkjetCtoxCredentialRotation(originalChat, requestedChat)) ||
       originalChat.chatId !== requestedChat.chatId)
   ) {
     return {
@@ -145,13 +249,14 @@ export function retainWorkjetCtoxBinding(
   if (
     original &&
     binding &&
-    (original.target.connectionId !== binding.target.connectionId ||
+    ((original.target.connectionId !== binding.target.connectionId &&
+      !isWorkjetCtoxCredentialRotation(original.target, binding.target)) ||
       original.target.instanceId !== binding.target.instanceId)
   ) {
     return {
       config: next,
       error:
-        "This thread keeps its original CTOX instance. Start a new thread to use another connection.",
+        "This thread keeps its original CTOX instance and tenant. Select a worker connection for that instance.",
     };
   }
   const instanceId = original?.target.instanceId ?? binding?.target.instanceId;

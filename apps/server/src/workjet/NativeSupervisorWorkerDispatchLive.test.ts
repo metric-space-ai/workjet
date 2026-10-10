@@ -61,6 +61,20 @@ it.effect(
       assert.deepEqual(result, Option.some(response.outcome.result));
     }),
 );
+it.effect("reports invalid project policy through the existing native failure contract", () =>
+  Effect.gen(function* () {
+    const result = yield* reconcileNativeWorkerFailure(
+      () => Effect.succeed(Option.none()),
+      intentId,
+      { reason: "execution-policy-invalid" },
+    );
+    assert.deepEqual(
+      result,
+      Option.some({ schemaVersion: 1, status: "failed", reason: "capability-escalation" }),
+    );
+  }),
+);
+
 it.effect("never fabricates completion when the broker cannot establish the previous outcome", () =>
   Effect.gen(function* () {
     const result = yield* reconcileNativeWorkerFailure(

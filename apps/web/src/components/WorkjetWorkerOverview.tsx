@@ -18,8 +18,7 @@ export interface WorkerOverviewRow {
   /** Model id from the thread's model selection (always present). */
   readonly model: string;
   /**
-   * Provider/harness binding from the live session, when the worker has one.
-   * `null` when no session is bound yet — omitted honestly rather than guessed.
+   * Saved provider/harness for the next turn. A matching session may supply its display name.
    */
   readonly providerName: string | null;
   /**
@@ -86,7 +85,10 @@ export function buildWorkerOverviewRows(
       threadId: worker.id,
       title: worker.title,
       model: worker.modelSelection.model,
-      providerName: worker.session?.providerName ?? null,
+      providerName:
+        worker.session?.providerInstanceId === worker.modelSelection.instanceId
+          ? (worker.session.providerName ?? worker.modelSelection.instanceId)
+          : worker.modelSelection.instanceId,
       environmentLabel: worker.environmentId,
       turnState: resolveWorkerTurnState(worker),
     }),

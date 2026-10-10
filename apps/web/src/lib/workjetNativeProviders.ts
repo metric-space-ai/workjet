@@ -8,7 +8,7 @@ import {
 import * as Schema from "effect/Schema";
 import { newCommandId } from "./utils";
 import {
-  describeWorkjetProjectControlFailure,
+  WorkjetProjectControlError,
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
@@ -77,8 +77,7 @@ export async function requestInstanceProviders(
       }),
     ]);
     signal.throwIfAborted();
-    if (result._tag !== "completed")
-      throw new NativeProviderFailure(describeWorkjetProjectControlFailure(result, instanceId));
+    if (result._tag !== "completed") throw new WorkjetProjectControlError(result, instanceId);
     const response = decode(result.response);
     if (response.action !== input.action || response.operationId !== operationId)
       throw new NativeProviderFailure(
@@ -104,7 +103,8 @@ export async function requestInstanceProviders(
     return response.registry;
   } catch (error) {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-    if (error instanceof NativeProviderFailure) throw error;
+    if (error instanceof NativeProviderFailure || error instanceof WorkjetProjectControlError)
+      throw error;
     throw new NativeProviderFailure(
       "Instance account control is unavailable. Check its connection, Owner/Admin access and installed CTOX version.",
     );

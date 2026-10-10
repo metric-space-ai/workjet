@@ -9,6 +9,7 @@ import {
   WorkjetGatewayCredentialRef,
   WorkjetGatewayModelRef,
   WorkjetGatewayProviderRef,
+  WorkjetExecutionPolicy,
   type WorkjetGatewayGrantTarget,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
@@ -32,6 +33,7 @@ export const RemoteWorkerNativeBinding = Schema.Struct({
   repositoryUrl: Id,
   repositoryHead: Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)),
   workspaceKey: Id,
+  executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
   credentialRef: WorkjetGatewayCredentialRef,
   providerRef: WorkjetGatewayProviderRef,
   modelRef: WorkjetGatewayModelRef,
@@ -107,6 +109,9 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
       binding.sourceSupervisorThreadId !== request.parent.threadId ||
       binding.sourceInstanceId !== scope.instanceId ||
       binding.projectId !== request.project.id ||
+      !NodeUtil.isDeepStrictEqual(binding.executionPolicy, request.executionPolicy) ||
+      (binding.executionPolicy !== undefined &&
+        binding.executionPolicy.projectId !== binding.projectId) ||
       binding.targetEnvironmentId !== request.targetEnvironmentId ||
       binding.repositoryHead !== request.revision ||
       binding.modelRef.modelId !== request.modelSelection.model ||

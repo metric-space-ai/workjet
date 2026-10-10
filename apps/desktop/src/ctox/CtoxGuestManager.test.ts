@@ -786,6 +786,7 @@ describe("CtoxGuestWindows", () => {
         assert.deepEqual(yield* hosts[4]!.invoke(manager.activate(descriptor.id, bounds)), {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "renderer_budget", reason: "unknown" },
         });
         expect(harness.views).toHaveLength(4);
         yield* hosts[1]!.invoke(manager.exitBusinessOsMode);
@@ -899,6 +900,7 @@ describe("CtoxGuestWindows admission and native destruction", () => {
           assert.deepEqual(yield* a.invoke(manager.ensurePooled(instances[4]!.id)), {
             _tag: "failed",
             code: "guest_failed",
+            preparation: { stage: "renderer_budget", reason: "unknown" },
           });
           expect(old.close).toHaveBeenCalledOnce();
           expect(harness.views).toHaveLength(4);
@@ -1034,6 +1036,7 @@ describe("CtoxGuestManager", () => {
         {
           _tag: "failed",
           code: "authentication_required",
+          preparation: { stage: "discovery", reason: "unknown" },
         },
       );
       expect(harness.views).toHaveLength(0);
@@ -1061,6 +1064,7 @@ describe("CtoxGuestManager", () => {
             _tag: "failed",
             code: "guest_failed",
             discovery: { code: "http_error", httpStatus: 503 },
+            preparation: { stage: "discovery", reason: "unknown", httpStatus: 503 },
           },
         );
         expect(harness.views).toHaveLength(0);
@@ -1174,6 +1178,7 @@ describe("CtoxGuestManager", () => {
         {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "navigation_commit", reason: "did_fail_load", errorCode: -105 },
         },
       );
       expect(harness.views[0]?.close).toHaveBeenCalledOnce();
@@ -1471,6 +1476,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "did_fail_load", errorCode: -102 },
       });
       expect(harness.views[0]?.close).toHaveBeenCalledOnce();
       expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
@@ -1497,6 +1503,7 @@ describe("CtoxGuestManager", () => {
         assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "navigation_commit", reason: "load_url" },
         });
         yield* Effect.promise(() => new Promise((resolve) => setImmediate(resolve)));
         expect(unhandled).toEqual([]);
@@ -1525,6 +1532,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "navigation_setup" },
       });
       expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
       expect(harness.views[0]?.close).toHaveBeenCalledOnce();
@@ -1552,6 +1560,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "destroyed" },
       });
       expect(harness.views[0]?.close).not.toHaveBeenCalled();
       expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
@@ -1849,6 +1858,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "load_url" },
       });
       yield* Effect.promise(() =>
         vi.waitFor(() =>
@@ -2101,6 +2111,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* manager.activate(sshDescriptor.id, bounds), {
         _tag: "failed",
         code: "launch_failed",
+        preparation: { stage: "launch", reason: "unknown" },
       });
       // No half-open state: the tunnels opened for this attempt are gone.
       expect(harness.closeForwards).toHaveBeenCalledTimes(1);

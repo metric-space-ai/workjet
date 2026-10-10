@@ -31,6 +31,26 @@ function transport(answer: unknown) {
 }
 
 describe("instance Luma native transport", () => {
+  it.effect(
+    "a remote permission failure on a fresh target is independent of config-save invariants",
+    () =>
+      Effect.gen(function* () {
+        let calls = 0;
+        const http = HttpClient.make((request) =>
+          Effect.sync(() => {
+            calls++;
+            return HttpClientResponse.fromWeb(request, new Response(null, { status: 403 }));
+          }),
+        );
+        const client = makeCtoxLumaConfigurationClient(http);
+        const failure = yield* Effect.flip(
+          client.read({ ...target, token: "fresh-authorized-fixture-token" }),
+        );
+        expect(failure.reason).toBe("connection-unavailable");
+        expect(calls).toBe(1);
+      }),
+  );
+
   it.effect("retains the target and original revision, and never retries a stale update", () =>
     Effect.gen(function* () {
       const test = transport({ ok: false, conflict: true, revision: 2 });

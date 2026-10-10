@@ -181,7 +181,7 @@ describe("native upstream Supervisor message reconstruction", () => {
     const events = [nativeEvent("one"), nativeEvent("two", { offset: 4, text: "!" })];
     const reply = reconstructSupervisorNativeMessageReplies("attempt", events)[0];
     expect(reply).toMatchObject({
-      source: "native-message",
+      source: "provider-message",
       executionKey: "execution",
       modelOperationId: "operation",
       nativeMessageId: "message",

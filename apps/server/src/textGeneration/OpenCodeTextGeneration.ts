@@ -409,11 +409,11 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     const environmentKey = routing
       ? createHash("sha256")
           .update(
-            Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(
+            yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
               Object.entries(commandEnvironment)
                 .filter(([, value]) => value !== undefined)
                 .sort(([a], [b]) => a.localeCompare(b)),
-            ),
+            ).pipe(Effect.mapError(routeError)),
           )
           .digest("hex")
       : "static";

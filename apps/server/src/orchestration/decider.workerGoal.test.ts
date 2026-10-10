@@ -188,6 +188,96 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       expect((yield* apply(withGoal("paused"), command).pipe(Effect.result))._tag).toBe("Failure");
     }),
   );
+  it.effect("keeps one board snapshot per iteration, including after goal reload", () =>
+    Effect.gen(function* () {
+      const command = {
+        type: "thread.worker-kanban.set",
+        commandId: CommandId.make("initial-board"),
+        threadId: id,
+        kanban: {
+          goalRevision: 0,
+          iteration: 0,
+          updatedAt: NOW,
+          cards: [{ id: "verify", title: "Verify the outcome", status: "doing" }],
+        },
+        createdAt: NOW,
+      } as const satisfies OrchestrationCommand;
+      const saved = yield* apply(withGoal(), command);
+      const cfg = saved.threads[0]!.workjetConfig;
+      if (cfg.schemaVersion !== 2 || !cfg.goal) throw new Error("missing saved goal");
+      const reloaded = {
+        ...saved,
+        threads: [
+          {
+            ...saved.threads[0]!,
+            workjetConfig: { ...cfg, goal: yield* decodeGoalJson(yield* encodeGoalJson(cfg.goal)) },
+          },
+        ],
+      };
+      for (const cards of [
+        command.kanban.cards,
+        [
+          {
+            ...command.kanban.cards[0],
+            status: "done" as const,
+            evidence: "A later claimed result",
+          },
+        ],
+      ]) {
+        const duplicate = yield* apply(reloaded, {
+          ...command,
+          commandId: CommandId.make("second-board-command"),
+          kanban: { ...command.kanban, cards },
+        }).pipe(Effect.result);
+        expect(duplicate._tag).toBe("Failure");
+      }
+      // The next real completed turn advances both the revision and iteration.
+      const completedId = TurnId.make("completed-parent-turn");
+      const completed = {
+        ...reloaded,
+        threads: [
+          {
+            ...reloaded.threads[0]!,
+            latestTurn: {
+              turnId: completedId,
+              state: "completed",
+              requestedAt: NOW,
+              startedAt: NOW,
+              completedAt: NOW,
+              assistantMessageId: MessageId.make("result"),
+            },
+          },
+        ],
+      } satisfies OrchestrationReadModel;
+      const advanced = yield* apply(completed, {
+        type: "thread.goal.advance",
+        commandId: CommandId.make("next-iteration"),
+        threadId: id,
+        expectedRevision: 0,
+        completedTurnId: completedId,
+        createdAt: NOW,
+      });
+      const next = yield* apply(advanced, {
+        ...command,
+        commandId: CommandId.make("next-board"),
+        kanban: { ...command.kanban, goalRevision: 1, iteration: 1 },
+      });
+      const nextCfg = next.threads[0]!.workjetConfig;
+      expect(nextCfg.schemaVersion === 2 && nextCfg.goal?.kanban?.iteration).toBe(1);
+      // Explicit Owner replacement starts a new goal revision even at this iteration.
+      const replaced = yield* apply(next, {
+        ...control("active"),
+        objective: "Verify the corrected Owner outcome.",
+      });
+      const final = yield* apply(replaced, {
+        ...command,
+        commandId: CommandId.make("replacement-board"),
+        kanban: { ...command.kanban, goalRevision: 2, iteration: 1 },
+      });
+      const finalCfg = final.threads[0]!.workjetConfig;
+      expect(finalCfg.schemaVersion === 2 && finalCfg.goal?.kanban?.goalRevision).toBe(2);
+    }),
+  );
   it.effect("keeps paused goals paused on ordinary Owner messages", () =>
     Effect.gen(function* () {
       const result = yield* apply(withGoal("paused"), turn);

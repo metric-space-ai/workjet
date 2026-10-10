@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import {
   EventId,
@@ -110,7 +110,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
       provider: PROVIDER,
       providerInstanceId: input.instanceId,
       threadId,
-      eventId: EventId.make(randomUUID()),
+      eventId: EventId.make(NodeCrypto.randomUUID()),
       createdAt: yield* now,
     } as ProviderRuntimeEvent);
   });
@@ -257,9 +257,15 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
         const model = inputStart.modelSelection.model;
         const sourceProfile = yield* admitWorkerSourceNativeProfile(inputStart, PROVIDER);
         const selected = sourceProfile
-          ? { provider: sourceProfile.provider ?? "workjet-source", model: sourceProfile.model, environment: sourceProfile.environment }
+          ? {
+              provider: sourceProfile.provider ?? "workjet-source",
+              model: sourceProfile.model,
+              environment: sourceProfile.environment,
+            }
           : yield* input.resolveModel(model);
-        const sessionDirectory = sourceProfile ? path.join(sourceProfile.directory, "sessions") : input.sessionDirectory;
+        const sessionDirectory = sourceProfile
+          ? path.join(sourceProfile.directory, "sessions")
+          : input.sessionDirectory;
         const decoded = decodeResume(inputStart.resumeCursor);
         if (inputStart.resumeCursor !== undefined && Option.isNone(decoded))
           return yield* error("startSession", "This is not a resumable Pi RPC session.");
@@ -390,8 +396,10 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
       if (!model || (turn.modelSelection && turn.modelSelection.instanceId !== input.instanceId))
         return yield* error("sendTurn", "Choose a gateway model for this Pi instance.");
       if (ctx.sourceStartInput) {
-        yield* admitWorkerSourceNativeProfile({ ...ctx.sourceStartInput,
-          modelSelection: { instanceId: input.instanceId, model } }, PROVIDER);
+        yield* admitWorkerSourceNativeProfile(
+          { ...ctx.sourceStartInput, modelSelection: { instanceId: input.instanceId, model } },
+          PROVIDER,
+        );
       }
       if (model !== ctx.session.model) {
         const selected = yield* input.resolveModel(model);
@@ -400,7 +408,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
           modelId: selected.model,
         });
       }
-      const turnId = TurnId.make(randomUUID());
+      const turnId = TurnId.make(NodeCrypto.randomUUID());
       const finished = yield* Deferred.make<void>();
       ctx.turnId = turnId;
       ctx.finished = finished;

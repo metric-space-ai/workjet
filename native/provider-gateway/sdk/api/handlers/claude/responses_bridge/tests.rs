@@ -10,6 +10,39 @@ use crate::sdk::pluginapi::{
 };
 use serde_json::json;
 use std::{collections::BTreeMap, sync::Mutex};
+
+#[tokio::test]
+async fn messages_without_system_do_not_send_empty_system_to_api_providers() {
+    for provider in ["kimi", "zai", "xai", "minimax"] {
+        let client = client(
+            json!({
+                "id":"completion", "object":"chat.completion", "model":"kimi-for-coding",
+                "choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}
+            }),
+            vec![],
+        );
+        let router = router(client.clone(), provider);
+        let mut body: Value = serde_json::from_slice(&message(false)).unwrap();
+        body["model"] = json!("kimi-for-coding");
+        body.as_object_mut().unwrap().remove("system");
+        let result = buffered(
+            router
+                .handle_provider_route(Some(provider), &serde_json::to_vec(&body).unwrap())
+                .await,
+        );
+        assert_eq!(result.status(), 200);
+        let requests = client.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let wire: Value = serde_json::from_slice(&requests[0].body).unwrap();
+        let messages = wire["messages"].as_array().unwrap();
+        assert!(!messages.is_empty());
+        assert!(messages
+            .iter()
+            .all(|item| item["role"] != "system" || item["content"] != ""));
+        assert!(messages.iter().any(|item| item["role"] == "user"));
+    }
+}
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;
 

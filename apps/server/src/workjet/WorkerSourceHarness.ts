@@ -180,6 +180,11 @@ export async function installWorkerSourceRoute(
       res.writeHead(403).end();
       return;
     }
+    // Legacy Claude routes pin Messages; adding native routes must not change that boundary.
+    if (messages && req.url === "/v1/responses") {
+      res.writeHead(404).end();
+      return;
+    }
     const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
     if (
       !inventory &&

@@ -591,6 +591,7 @@ export function workjetComputerKindLabel(kind: string): string {
 }
 
 export interface ComposerManualTargetControlsProps {
+  readonly disabledReason?: string | null | undefined;
   /** Provider instance ids this turn may actually target. */
   readonly configuredInstanceIds: ReadonlySet<string>;
   /** Enabled driver families, including families represented only by named profiles. */
@@ -680,6 +681,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
       <Tooltip>
         <Select
           value={props.selectedHarness ?? NO_HARNESS_VALUE}
+          disabled={Boolean(props.disabledReason)}
           onValueChange={(value) => {
             if (typeof value !== "string" || value === NO_HARNESS_VALUE) return;
             props.onSelectHarness(value as WorkjetHarness);
@@ -722,9 +724,10 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           </SelectPopup>
         </Select>
         <TooltipPopup side="top">
-          {nativeModels
-            ? "This harness runs models advertised by its native profile on the selected computer."
-            : "Harness — the agent runtime that drives the turn. Any harness combines with any model."}
+          {props.disabledReason ??
+            (nativeModels
+              ? "This harness runs models advertised by its native profile on the selected computer."
+              : "Harness — the agent runtime that drives the turn. Any harness combines with any model.")}
         </TooltipPopup>
       </Tooltip>
 
@@ -737,12 +740,14 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             className="min-w-0 max-w-56"
             aria-label="Model"
             type="button"
+            disabled={Boolean(props.disabledReason)}
             title={
-              nativeModels
+              props.disabledReason ??
+              (nativeModels
                 ? "Models reported by this harness on the selected computer."
                 : configuredModels
                   ? "Configured for this harness; choose a model or enter its ID."
-                  : "Served by the Workjet gateway; choose a catalog model or enter its ID."
+                  : "Served by the Workjet gateway; choose a catalog model or enter its ID.")
             }
           >
             <ComposerControlIcon icon={CpuIcon} />

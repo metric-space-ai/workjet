@@ -50,6 +50,8 @@ function makeShell(overrides: {
   title: string;
   workjetConfig: WorkjetThreadConfig;
   model?: string;
+  instanceId?: string;
+  sessionProviderInstanceId?: string;
   providerName?: string | null;
   latestTurnState?: "running" | "interrupted" | "completed" | "error" | null;
   sessionStatus?: "idle" | "starting" | "running" | "ready" | "interrupted" | "stopped" | "error";
@@ -58,7 +60,10 @@ function makeShell(overrides: {
     id: overrides.id as ThreadId,
     environmentId: envA,
     title: overrides.title,
-    modelSelection: { instanceId: "openai-1", model: overrides.model ?? "gpt-5.6" },
+    modelSelection: {
+      instanceId: overrides.instanceId ?? "openai-1",
+      model: overrides.model ?? "gpt-5.6",
+    },
     workjetConfig: overrides.workjetConfig,
     latestTurn:
       overrides.latestTurnState == null
@@ -78,6 +83,8 @@ function makeShell(overrides: {
             threadId: overrides.id,
             status: overrides.sessionStatus ?? "idle",
             providerName: overrides.providerName ?? null,
+            providerInstanceId:
+              overrides.sessionProviderInstanceId ?? overrides.instanceId ?? "openai-1",
             activeTurnId: null,
             lastError: null,
             updatedAt: "2026-08-19T00:00:00.000Z",
@@ -111,6 +118,33 @@ describe("WorkjetWorkerOverview", () => {
     id: "orch-1",
     title: "Orchestrator",
     workjetConfig: orchestratorConfig(),
+  });
+
+  it("shows the saved next-turn route when a worker's old session names another harness", () => {
+    const worker = makeShell({
+      id: "worker-saved-route",
+      title: "Persistent worker",
+      workjetConfig: workerConfig(orchestratorId),
+      instanceId: "grok",
+      model: "grok-4.7",
+      sessionProviderInstanceId: "codex",
+      providerName: "Codex CLI",
+      sessionStatus: "idle",
+    });
+    expect(buildWorkerOverviewRows([worker], envA, orchestratorId)[0]).toMatchObject({
+      providerName: "grok",
+      model: "grok-4.7",
+    });
+    const markup = renderToStaticMarkup(
+      <WorkjetWorkerOverview
+        environmentId={envA}
+        orchestratorThreadId={orchestratorId}
+        threads={[orchestrator, worker]}
+        onOpenWorker={vi.fn()}
+      />,
+    );
+    expect(markup).toContain("grok · grok-4.7");
+    expect(markup).not.toContain("Codex CLI");
   });
 
   it("renders its worker children with model, provider, and turn state", () => {

@@ -203,6 +203,7 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
+import { createComposerModelSelectionWriter } from "../composerModelSelection";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { preventRepeatedTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
@@ -1292,6 +1293,18 @@ function ChatViewContent(props: ChatViewProps) {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const [modelSelectionSaving, setModelSelectionSaving] = useState(false);
+  const modelSelectionWriter = useMemo(
+    () =>
+      createComposerModelSelectionWriter(async (ref, modelSelection) => {
+        const result = await updateThreadMetadata({
+          environmentId: ref.environmentId,
+          input: { threadId: ref.threadId, modelSelection },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      }, setModelSelectionSaving),
+    [updateThreadMetadata],
+  );
   const switchGitRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const setThreadRuntimeMode = useAtomCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
@@ -2499,7 +2512,9 @@ function ChatViewContent(props: ChatViewProps) {
     [openOrReuseProjectDraftThread],
   );
 
-  const selectedProviderByThreadId = composerActiveProvider ?? null;
+  const selectedProviderByThreadId = isServerThread
+    ? (activeThread?.modelSelection.instanceId ?? null)
+    : (composerActiveProvider ?? null);
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
@@ -3142,8 +3157,8 @@ function ChatViewContent(props: ChatViewProps) {
       ?.instanceId ?? null;
   const activeProviderInstanceId =
     selectedProviderInstanceId ??
-    activeThread?.session?.providerInstanceId ??
     activeThread?.modelSelection.instanceId ??
+    activeThread?.session?.providerInstanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
   const activeProviderStatus = useMemo(() => {
@@ -3226,6 +3241,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen]);
 
   const envLocked =
+    modelSelectionSaving ||
     computerContinuationBusy ||
     activeThread?.session?.status === "starting" ||
     activeThread?.session?.status === "running";
@@ -3235,7 +3251,8 @@ function ChatViewContent(props: ChatViewProps) {
   // project in that environment while keeping the same logical project.
   const onEnvironmentChange = useCallback(
     async (nextEnvironmentId: EnvironmentId) => {
-      if (envLocked || nextEnvironmentId === environmentId) return;
+      if (envLocked || modelSelectionWriter.isPending() || nextEnvironmentId === environmentId)
+        return;
       const target = logicalProjectEnvironments.find(
         (env) => env.environmentId === nextEnvironmentId,
       );
@@ -3320,6 +3337,7 @@ function ChatViewContent(props: ChatViewProps) {
       envLocked,
       importThreadContinuation,
       logicalProjectEnvironments,
+      modelSelectionWriter,
       navigate,
       readThreadContinuation,
       routeThreadRef,
@@ -5721,6 +5739,7 @@ function ChatViewContent(props: ChatViewProps) {
     };
     if (
       !activeThread ||
+      modelSelectionWriter.isPending() ||
       isSendBusy ||
       isConnecting ||
       threadDetailLoading ||
@@ -6798,10 +6817,16 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
-  const getModelDisabledReason = useCallback(() => null, []);
+  const getModelDisabledReason = useCallback(
+    () =>
+      visibleWorkjetConfig?.ctoxCrewChat !== undefined || nativeSupervisorThread
+        ? "This route is managed by the project's instance."
+        : null,
+    [nativeSupervisorThread, visibleWorkjetConfig?.ctoxCrewChat],
+  );
   const onProviderModelSelect = useCallback(
-    (instanceId: ProviderInstanceId, model: string) => {
-      if (!activeThread) return;
+    async (instanceId: ProviderInstanceId, model: string): Promise<boolean> => {
+      if (!activeThread || getModelDisabledReason() !== null) return false;
       const resolvedModel = resolveAppModelSelectionForInstance(
         instanceId,
         settings,
@@ -6810,21 +6835,37 @@ function ChatViewContent(props: ChatViewProps) {
       );
       if (!resolvedModel) {
         scheduleComposerFocus();
-        return;
+        return false;
       }
       const nextModelSelection: ModelSelection = {
         instanceId,
         model: resolvedModel,
       };
-      setComposerDraftModelSelection(
-        scopeThreadRef(activeThread.environmentId, activeThread.id),
-        nextModelSelection,
-      );
+      const ref = scopeThreadRef(activeThread.environmentId, activeThread.id);
+      if (isServerThread) {
+        try {
+          await modelSelectionWriter.save(ref, nextModelSelection);
+        } catch (error) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not save thread selection",
+              description: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          return false;
+        }
+      }
+      setComposerDraftModelSelection(ref, nextModelSelection);
       setStickyComposerModelSelection(nextModelSelection);
       scheduleComposerFocus();
+      return true;
     },
     [
       activeThread,
+      getModelDisabledReason,
+      isServerThread,
+      modelSelectionWriter,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
@@ -7437,8 +7478,14 @@ function ChatViewContent(props: ChatViewProps) {
                                 }
                                 phase={phase}
                                 isConnecting={isConnecting}
-                                isSendBusy={isSendBusy}
-                                sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
+                                isSendBusy={isSendBusy || modelSelectionSaving}
+                                sendDisabledReason={
+                                  modelSelectionSaving
+                                    ? "Saving selection"
+                                    : threadDetailLoading
+                                      ? "Messages loading"
+                                      : null
+                                }
                                 isPreparingWorktree={isPreparingWorktree}
                                 environmentUnavailable={activeEnvironmentUnavailableState}
                                 activePendingApproval={activePendingApproval}

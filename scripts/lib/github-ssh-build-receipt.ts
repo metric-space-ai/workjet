@@ -18,7 +18,12 @@ export function githubSshBuildIdentity(
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(github.workflowSha ?? "") || !github.serverUrl)
     throw new Error("Missing GitHub SSH artifact provenance: source or server.");
   const server = new URL(github.serverUrl);
-  if (server.protocol !== "https:" || server.username || server.password || server.origin !== github.serverUrl)
+  if (
+    server.protocol !== "https:" ||
+    server.username ||
+    server.password ||
+    server.origin !== github.serverUrl
+  )
     throw new Error("Invalid GitHub SSH artifact server.");
   return {
     owner: `github-actions:${github.repositoryId}:${github.runId}:${github.runAttempt}`,
@@ -26,16 +31,27 @@ export function githubSshBuildIdentity(
   };
 }
 
-/** Accept only artifacts downloaded from this same repository/run/attempt. */
-export function isCurrentGithubLinuxSshReceipt(
-  receipt: Record<string, unknown>,
-  owner: string,
-) {
+/** A failed-job retry may reuse a verified producer from an earlier attempt of this run. */
+export function isCurrentGithubLinuxSshReceipt(receipt: Record<string, unknown>, owner: string) {
   const current = githubSshBuildIdentity();
-  if (!current || receipt.host !== "github-actions" || owner !== current.owner || receipt.owner !== owner || receipt.task !== "ssh-server-linux-x64")
+  if (
+    !current ||
+    receipt.host !== "github-actions" ||
+    owner !== current.owner ||
+
+    receipt.task !== "ssh-server-linux-x64"
+  )
     return false;
   const github = receipt.github;
   if (typeof github !== "object" || github === null || Array.isArray(github)) return false;
   const fields = github as Record<string, unknown>;
-  return Object.entries(current.github).every(([name, value]) => fields[name] === value);
+  const producerAttempt = fields.runAttempt;
+  if (typeof producerAttempt !== "string" || !/^[1-9][0-9]*$/u.test(producerAttempt)) return false;
+  const attempt = Number(producerAttempt);
+  if (!Number.isSafeInteger(attempt) || attempt > Number(current.github.runAttempt)) return false;
+  if (receipt.owner !== `github-actions:${current.github.repositoryId}:${current.github.runId}:${producerAttempt}`)
+    return false;
+  return Object.entries(current.github).every(
+    ([name, value]) => name === "runAttempt" || fields[name] === value,
+  );
 }

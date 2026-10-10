@@ -29,7 +29,10 @@ const program = Effect.gen(function* () {
     const root = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
     const ciBuild = githubSshBuildIdentity();
     const source = ciBuild
-      ? NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+      ? NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim()
       : undefined;
     const options = parseSshServerBuildArguments(process.argv.slice(2));
     const output = NodePath.resolve(
@@ -213,7 +216,10 @@ const program = Effect.gen(function* () {
       );
       console.log(`Packaged verified SSH server: ${filename}`);
       if (ciBuild) {
-        const currentSource = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+        const currentSource = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+        }).trim();
         const currentLock = NodeCrypto.createHash("sha256")
           .update(await NodeFSP.readFile(NodePath.join(root, "pnpm-lock.yaml")))
           .digest("hex");
@@ -221,16 +227,20 @@ const program = Effect.gen(function* () {
           throw new Error("SSH server source changed during its CI build.");
         await NodeFSP.writeFile(
           NodePath.join(output, `${filename}.build-receipt.json`),
-          JSON.stringify({
-            exit: 0,
-            host: "github-actions",
-            owner: ciBuild.owner,
-            task: `ssh-server-${platform}`,
-            github: ciBuild.github,
-            workjetSourceCommit: source,
-            workjetLockSha256: lockSha256,
-            workjetArchiveSha256: digest,
-          }, null, 2) + "\n",
+          JSON.stringify(
+            {
+              exit: 0,
+              host: "github-actions",
+              owner: ciBuild.owner,
+              task: `ssh-server-${platform}`,
+              github: ciBuild.github,
+              workjetSourceCommit: source,
+              workjetLockSha256: lockSha256,
+              workjetArchiveSha256: digest,
+            },
+            null,
+            2,
+          ) + "\n",
         );
       }
     } finally {

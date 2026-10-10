@@ -38,8 +38,11 @@ export async function stagePrebuiltLinuxSshServer(input: {
   const hash = await fileDigest(archive);
   if (
     receipt.exit !== 0 ||
-    !((receipt.host === "gpu3" && process.env.GITHUB_ACTIONS !== "true") || isCurrentGithubLinuxSshReceipt(receipt, input.owner)) ||
-    receipt.owner !== input.owner ||
+    !(
+      (receipt.host === "gpu3" && process.env.GITHUB_ACTIONS !== "true" && receipt.owner === input.owner) ||
+      isCurrentGithubLinuxSshReceipt(receipt, input.owner)
+    ) ||
+
     receipt.workjetSourceCommit !== source ||
     receipt.workjetLockSha256 !==
       (await fileDigest(NodePath.join(input.repoRoot, "pnpm-lock.yaml"))) ||

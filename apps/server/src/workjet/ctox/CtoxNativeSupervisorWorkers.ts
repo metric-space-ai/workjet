@@ -8,6 +8,9 @@ import {
   NativeSupervisorWorkerCompletion,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as NodeUtil from "node:util";
+import { NativeWorkerTerminalReceipt } from "../NativeWorkerOutcome.ts";
+import type { RemoteWorkerResult } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -24,6 +27,12 @@ const CompleteReceipt = Schema.Struct({
   registrationId: Schema.String,
   revision: Schema.Int,
   intentId: Schema.String,
+});
+const OutcomeAcknowledgement = Schema.Struct({
+  provenance: Schema.Literal("authenticated_source_report"),
+  accepted_at_ms: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  registration_revision: Schema.Int,
+  receipt: NativeWorkerTerminalReceipt,
 });
 const decodeRegistration = Schema.decodeUnknownEffect(NativeSupervisorSourceRegistration);
 const decodePoll = Schema.decodeUnknownEffect(PollReceipt);
@@ -82,6 +91,31 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       if (receipt.intents.some((intent) => intent.sourceEnvironmentId !== sourceEnvironmentId))
         return yield* failure();
       return receipt.intents;
+    }),
+    reportOutcome: Effect.fn("CtoxNativeSupervisorWorkers.reportOutcome")(function* (
+      scope: RemoteWorkerNativeScope,
+      registration: NativeSupervisorSourceRegistration,
+      startup: RemoteWorkerResult,
+      outcome: NativeWorkerTerminalReceipt,
+    ) {
+      const receipt = yield* Schema.decodeUnknownEffect(NativeWorkerTerminalReceipt)(outcome).pipe(Effect.mapError(failure));
+      if (registration.state !== "active" || registration.sourceInstanceId !== scope.instanceId ||
+          startup.parent.environmentId !== registration.sourceEnvironmentId ||
+          startup.parent.threadId !== registration.sourceSupervisorThreadId ||
+          startup.workerThreadId !== receipt.worker_thread_id ||
+          startup.environmentId !== receipt.environment_id ||
+          startup.computerId !== receipt.computer_id || startup.branch !== receipt.branch)
+        return yield* failure();
+      const acknowledged = yield* invoke(scope, {
+        action: "report_outcome",
+        registration_id: registration.registrationId,
+        revision: registration.revision,
+        intent_id: startup.workerThreadId,
+        receipt: yield* Schema.encodeEffect(NativeWorkerTerminalReceipt)(receipt).pipe(Effect.mapError(failure)),
+      }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(OutcomeAcknowledgement)), Effect.mapError(failure));
+      if (acknowledged.registration_revision !== registration.revision ||
+          !NodeUtil.isDeepStrictEqual(acknowledged.receipt, receipt)) return yield* failure();
+      return acknowledged.accepted_at_ms;
     }),
     complete: Effect.fn("CtoxNativeSupervisorWorkers.complete")(function* (
       scope: RemoteWorkerNativeScope,

@@ -30,6 +30,10 @@ import { makeRemoteWorkerSourceAuthority } from "./RemoteWorkerSourceAuthority.t
 import { RemoteWorkerSourceOperations } from "./RemoteWorkerConnectionBootstrap.ts";
 import { RemoteWorkerComputerEnrollment } from "./RemoteWorkerComputerEnrollment.ts";
 import { computerInventory } from "./computerInventory.ts";
+import { retainRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
+import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
+import { WorkerPullRequestStore } from "./WorkerPullRequestStore.ts";
+import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { makeCtoxLumaConfigurationClient } from "./ctox/CtoxLumaConfigurationClient.ts";
 import { makeCtoxLumaConfigurationRpc } from "./ctox/CtoxLumaConfigurationRpc.ts";
 
@@ -42,6 +46,9 @@ export const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment;
   const settings = yield* ServerSettingsService;
   const query = yield* ProjectionSnapshotQuery;
+  const broker = yield* RemoteWorkerBroker;
+  const pullRequests = yield* WorkerPullRequestStore;
+  const sourceControl = yield* SourceControlProviderRegistry;
   const bindings = yield* CtoxThreadBindingSource;
   const connections = yield* DecisionHubConnectionRegistry;
   const gateway = yield* ProviderGatewayService;
@@ -164,6 +171,15 @@ export const make = Effect.gen(function* () {
       Effect.runPromise(
         Effect.gen(function* () {
           if (operation === "retire") {
+            if (payload && typeof payload === "object" && "outcome" in payload) {
+              yield* currentSource(request);
+              yield* retainRemoteWorkerOutcome(request, payload).pipe(
+                Effect.provideService(ProjectionSnapshotQuery, query),
+                Effect.provideService(RemoteWorkerBroker, broker),
+                Effect.provideService(WorkerPullRequestStore, pullRequests),
+                Effect.provideService(SourceControlProviderRegistry, sourceControl),
+              );
+            }
             yield* authority.revoke(request);
             return { retired: true };
           }

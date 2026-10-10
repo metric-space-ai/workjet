@@ -13,7 +13,14 @@ export interface NativeSupervisorWorkerSource {
   readonly source: NativeSupervisorSource;
   readonly scope: RemoteWorkerNativeScope;
 }
+export interface RegisteredNativeWorkerSource {
+  readonly source: NativeSupervisorWorkerSource;
+  readonly registration: NativeSupervisorSourceRegistration;
+}
 interface Dependencies {
+  readonly reportOutcomes?: (
+    sources: ReadonlyArray<RegisteredNativeWorkerSource>,
+  ) => Effect.Effect<void, RemoteWorkerDispatchError>;
   readonly sources: Effect.Effect<
     ReadonlyArray<NativeSupervisorWorkerSource>,
     RemoteWorkerDispatchError
@@ -92,6 +99,13 @@ export function makeNativeSupervisorWorkerDispatch(dependencies: Dependencies) {
             yield* dependencies.complete(scope, registration, intent, result.value);
         }
       }).pipe(Effect.ignore);
+    if (dependencies.reportOutcomes) {
+      const current = sources.flatMap((source) => {
+        const registration = registered.get(key(source));
+        return registration === undefined ? [] : [{ source, registration }];
+      });
+      yield* dependencies.reportOutcomes(current).pipe(Effect.ignore);
+    }
   });
   return { runCycle };
 }

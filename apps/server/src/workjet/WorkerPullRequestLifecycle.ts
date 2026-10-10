@@ -20,6 +20,8 @@ import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import { forkParked } from "../serverActivation.ts";
 import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
+import { RemoteWorkerStore } from "./RemoteWorkerStore.ts";
+import { terminalReceiptFrom } from "./NativeWorkerOutcome.ts";
 import {
   WorkerPullRequestStore,
   sameWorkerPullRequest,
@@ -37,6 +39,7 @@ export const make = Effect.gen(function* () {
   const provider = yield* ProviderService;
   const terminals = yield* TerminalManager;
   const store = yield* WorkerPullRequestStore;
+  const remoteReceipts = yield* Effect.serviceOption(RemoteWorkerStore);
   const mutex = yield* Semaphore.make(1);
   let cursor = 0;
 
@@ -57,7 +60,19 @@ export const make = Effect.gen(function* () {
       threadId: thread.id,
     });
     const harness = readWorkerSourceHarness(thread.id);
-    if (harness) yield* Effect.promise(() => harness.retire());
+    if (harness) {
+      if (Option.isNone(remoteReceipts)) return;
+      const saved = yield* remoteReceipts.value.get("inbound", thread.id);
+      const receipt = yield* store.get(thread.id);
+      if (Option.isNone(saved) || Option.isNone(receipt) ||
+          saved.value.response?.outcome.status !== "dispatched") return;
+      if (receipt.value.provider !== "github") {
+        yield* Effect.promise(() => harness.retire());
+        return;
+      }
+      const outcome = yield* terminalReceiptFrom(receipt.value, saved.value.response.outcome.result);
+      yield* Effect.promise(() => harness.retire(outcome));
+    }
   });
 
   const reconcile = Effect.fn("WorkerPullRequestLifecycle.reconcile")(function* (

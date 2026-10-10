@@ -30,6 +30,8 @@ import {
 } from "./NativeSupervisorWorkerDispatch.ts";
 import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
 import { WorkerDispatch, type WorkerDispatchError } from "./WorkerDispatch.ts";
+import { WorkerPullRequestStore } from "./WorkerPullRequestStore.ts";
+import { makeNativeWorkerOutcomePublisher } from "./NativeWorkerOutcomePublisher.ts";
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const encodeResult = Schema.encodeEffect(RemoteWorkerResult);
@@ -72,6 +74,7 @@ export const make = Effect.gen(function* () {
   const connections = yield* DecisionHubConnectionRegistry;
   const workers = yield* WorkerDispatch;
   const broker = yield* RemoteWorkerBroker;
+  const pullRequests = yield* WorkerPullRequestStore;
   const native = makeCtoxNativeSupervisorWorkers({
     connections,
     transport: makeCtoxMcpTransport(yield* HttpClient.HttpClient),
@@ -110,7 +113,21 @@ export const make = Effect.gen(function* () {
     return { parent, source };
   });
 
+  const outcomes = makeNativeWorkerOutcomePublisher({
+    listStopped: (after) => pullRequests.listStopped(after).pipe(Effect.mapError(failure)),
+    readStartup: broker.read,
+    currentSource: (worker) => Effect.gen(function* () {
+      const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
+      const parent = model.threads.find((thread) => thread.id === worker.request.parent.threadId);
+      if (!parent || parent.projectId !== worker.request.project.id ||
+          worker.request.parent.environmentId !== (yield* environment.getEnvironmentId)) return yield* failure();
+      return yield* sourceFor(parent);
+    }),
+    report: ({ source, registration }, startup, receipt) =>
+      native.reportOutcome(source.scope, registration, startup, receipt),
+  });
   return makeNativeSupervisorWorkerDispatch({
+    reportOutcomes: outcomes.run,
     sources: Effect.gen(function* () {
       const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
       const sources: NativeSupervisorWorkerSource[] = [];

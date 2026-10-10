@@ -470,6 +470,8 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
       Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
       Layer.provide(CtoxThreadBindingSourceLayerLive),
       Layer.provide(RemoteWorkerAuthorityStore.layer),
+      Layer.provide(WorkerPullRequestStore.layer),
+      Layer.provide(RemoteWorkerBrokerLayerLive),
       Layer.provide(DecisionHubConnectionRegistryLive),
     ),
   ),
@@ -497,6 +499,7 @@ const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
   Layer.provide(WorkjetSnapshotStoreLive),
 );
 const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.pipe(
+  Layer.provide(WorkerPullRequestStore.layer),
   Layer.provide(WorkerDispatchLayerLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(CtoxThreadBindingSourceLayerLive),
@@ -505,7 +508,7 @@ const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.
 
 const RuntimeCoreFoundationLive = Layer.mergeAll(
   ReactorLayerLive,
-  WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
+  WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer), Layer.provide(RemoteWorkerStore.layer)),
 ).pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(WorktreeStorageLayerLive),

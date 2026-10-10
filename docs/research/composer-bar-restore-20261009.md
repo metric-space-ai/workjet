@@ -44,3 +44,29 @@ The UI dependencies live in `/Volumes/tmp/dev-artifacts/workjet/composer-bar-res
 - Browser stories: Enter/Shift+Enter/Cmd+Enter, draft persistence after navigation/reload, selector state, auto-connect/retry, missing speech configuration, microphone stop and late-result cancellation. Capture console/network findings.
 
 Initial environment limitations were gpu3/gpu4 SSH timeouts and an occupied Mac gate. gpu3 became reachable and now runs the checks. A stale earlier gpu1 run was canceled while still queued, using its captured systemd unit/PID. No gate was bypassed and no competing compiler was started.
+
+## Candidate and acceptance status — 2026-10-10
+
+The supervisor merged PR #292 as `dda7af8c646953bdbf6c98fdfd3a9fcb0e5a2f16` at 00:31:35 UTC. This task did not merge it. Follow-up PR https://github.com/metric-space-ai/workjet/pull/317 corrects the microphone's missing-backend navigation: use the active router for browser history and Electron hash history, rather than assigning a desktop-only hash URL. Its focused navigation regression checks the route and verifies that no microphone starts. Main's #310/#311 configuration changes are retained.
+
+Canonical macOS ARM64 candidate `0.0.71-rc.composer.1` was packaged successfully from #292 head `cceb5c71dcd8105ea32d0073154628e24387c067`:
+`/Volumes/OneTB/dev-artifacts/workjet/composer-bar-rc/rc/Workjet-0.0.71-rc.composer.1-arm64.zip`.
+The canonical Linux companion archive receipt is `workjet-linux-ssh-a2a80181aff0-20261009T234227Z.receipt.json`, SHA-256 `19c716ebcc55be56625d0251139de008d0e82d702a65b9c8f89f6bf7c17cb6b0`. The candidate contains the verified bundled shell and portable server archives; it was unsigned and was never installed over Michael's app. This candidate predates #317 and is not represented as a build of the follow-up head.
+
+The isolated desktop profile reached the app, but initial bootstrap and reopening raised the native alert: “Could not encrypt credential for the saved local Desktop session.” The alert blocked the renderer automation endpoint. No composer acceptance passed. Main received the exact error and reproduction profile; the root cause has not been established. Screenshot:
+`/Users/michaelwelsch/.codex/task-evidence/composer-bar-restore-20261009/screenshots/isolated-session-encryption-error.png`.
+
+| Requested evidence                              | Status                                            |
+| ----------------------------------------------- | ------------------------------------------------- |
+| Normal / supervisor / parent at 1400 and 900 px | Pending running-app access                        |
+| Luma / Manual / gear open                       | Pending running-app access                        |
+| Dictation running and final draft text          | Pending native/shell delivery of CTOX #553        |
+| Real supervisor answer and persistence          | Not claimed from isolated-profile or unit results |
+
+CTOX https://github.com/metric-space-ai/ctox/pull/553 implements the matching standalone request/response contract. Its shell validates `commandId`, `streamId`, `sequence`, `pcmBase64` and `afterSequence`; configured speech remains native-owned. It is a delivery dependency, not proof of installed transcription.
+
+The isolated app processes were closed. The isolated Node service was stopped through its own packaged `service stop --base-dir` command. `service uninstall` returned launchctl exit 3 after the stop; its exact owned, unloaded LaunchAgent was then backed up under the evidence directory and removed. No live Workjet process or service was signaled. The source clone and both PRs are durable; the candidate/profile remain disposable reproduction artifacts. Successful check receipts and the screenshot are copied under `~/.codex/task-evidence/composer-bar-restore-20261009/`.
+
+GitHub Actions run `38005803722` finished successfully on #292 head `cceb5c71dcd8105ea32d0073154628e24387c067`: Check, Test, Mobile Native Static Analysis and Release Smoke are green. #317 has separate final-source checks; it is not covered by that earlier run. An obsolete queued rebase check was explicitly canceled using its captured owned runner/process group after #292 merged; no build had begun and no resource from another task was stopped.
+
+Main's open PR https://github.com/metric-space-ai/workjet/pull/316 supplies configured supervisor route facts from CTOX #550 inside the existing bar; its contract explicitly distinguishes configured values from verified execution. It overlaps #317 only at the display-only supervisor tooltip. No #284 submit/input or Main routing logic was changed here; preserve Main's scoped route consumer when composing these changes.

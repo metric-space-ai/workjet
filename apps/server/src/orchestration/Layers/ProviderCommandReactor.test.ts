@@ -3533,6 +3533,92 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  it.each(["same", "instructions", "tools"] as const)(
+    "applies ordinary Luma instructions with history only when the session config changes (%s)",
+    async (choice) => {
+      const changed = choice !== "same";
+      const threadId = ThreadId.make("thread-1");
+      const previousConfig = {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        managedInstructions: "Review the implementation.",
+      };
+      const nextConfig =
+        choice === "instructions"
+          ? { ...previousConfig, managedInstructions: "Implement the reviewed change." }
+          : choice === "tools"
+            ? { ...previousConfig, enabledCapabilityIds: ["greppy"] as const }
+            : previousConfig;
+      const harness = await createHarness({
+        initialProviderSession: true,
+        initialProviderSessionCwd: "/destination-checkout",
+        projectWorkspaceRoot: "/destination-checkout",
+        threadWorkjetConfig: nextConfig,
+        providerBinding: {
+          threadId,
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimePayload: { workjetConfig: previousConfig },
+        },
+      });
+      const now = "2026-01-01T00:00:00.000Z";
+      const messages = [
+        {
+          messageId: asMessageId("luma-prior-user"),
+          role: "user" as const,
+          text: "The decision was to keep the existing checkout.",
+          createdAt: now,
+        },
+        {
+          messageId: asMessageId("luma-prior-answer"),
+          role: "assistant" as const,
+          text: "I have recorded that decision.",
+          createdAt: now,
+        },
+      ];
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.history.import",
+          commandId: CommandId.make("luma-choice-history"),
+          threadId,
+          messages,
+          createdAt: now,
+        }),
+      );
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("luma-choice-next"),
+          threadId,
+          message: {
+            messageId: asMessageId("luma-choice-current"),
+            role: "user",
+            text: "Continue with the selected Luma.",
+            attachments: [],
+          },
+          interactionMode: "default",
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        }),
+      );
+      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+      await harness.drain();
+      expect(harness.startSession).toHaveBeenCalledTimes(changed ? 2 : 1);
+      if (changed) {
+        expect(harness.startSession.mock.calls.at(-1)?.[1]).toMatchObject({
+          resumePolicy: "fresh",
+          workjetConfig: nextConfig,
+          historyContinuation: {
+            pending: true,
+            messageIds: messages.map((message) => message.messageId),
+          },
+        });
+        expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+          importedHistory: messages.map(({ messageId: id, role, text }) => ({ id, role, text })),
+        });
+      }
+    },
+  );
+
   it.each([undefined, "/destination-checkout"])(
     "uses copied computer history in a fresh session on the destination checkout (existing cwd=%s)",
     async (initialProviderSessionCwd) => {

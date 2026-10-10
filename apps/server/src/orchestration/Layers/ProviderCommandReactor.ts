@@ -14,7 +14,9 @@ import {
   type RuntimeMode,
   type TurnId,
   type WorkjetCtoxCrewRequest,
+  WorkjetThreadConfig,
 } from "@workjet/contracts";
+import * as NodeUtil from "node:util";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@workjet/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -66,6 +68,7 @@ import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.
 import { ctoxCrewResumeIdentity } from "../../workjet/ctox/CtoxCrewResumeIdentity.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const decodeWorkjetThreadConfig = Schema.decodeUnknownOption(WorkjetThreadConfig);
 
 /** Schedule one owned retry when a durable terminal report needs a later projection or native response. */
 export const reconcileCrewTerminalOutboxWithRetry = (admission: CtoxCrewTurnAdmission["Service"]) =>
@@ -627,6 +630,37 @@ const make = Effect.gen(function* () {
     const persistedBinding = Option.isSome(providerSessionDirectory)
       ? Option.getOrUndefined(yield* providerSessionDirectory.value.getBinding(threadId))
       : undefined;
+    const bindingPayload = persistedBinding?.runtimePayload;
+    const previousWorkjetConfig = decodeWorkjetThreadConfig(
+      typeof bindingPayload === "object" &&
+        bindingPayload !== null &&
+        !Array.isArray(bindingPayload) &&
+        "workjetConfig" in bindingPayload
+        ? bindingPayload.workjetConfig
+        : undefined,
+    );
+    const currentWorkjetConfig = decodeWorkjetThreadConfig(thread.workjetConfig);
+    const ordinaryConfigChanged =
+      (thread.workjetConfig.schemaVersion !== 2 ||
+        thread.workjetConfig.ctoxCrewChat === undefined) &&
+      Option.isSome(previousWorkjetConfig) &&
+      Option.isSome(currentWorkjetConfig) &&
+      !NodeUtil.isDeepStrictEqual(
+        [
+          previousWorkjetConfig.value.managedInstructions,
+          previousWorkjetConfig.value.enabledCapabilityIds,
+          previousWorkjetConfig.value.schemaVersion === 2
+            ? previousWorkjetConfig.value.capabilityBindings
+            : [],
+        ],
+        [
+          currentWorkjetConfig.value.managedInstructions,
+          currentWorkjetConfig.value.enabledCapabilityIds,
+          currentWorkjetConfig.value.schemaVersion === 2
+            ? currentWorkjetConfig.value.capabilityBindings
+            : [],
+        ],
+      );
     const persistedContinuation = readHistoryContinuation(persistedBinding?.runtimePayload);
     const transferredContinuation =
       readHistoryContinuation(
@@ -639,6 +673,7 @@ const make = Effect.gen(function* () {
     const freshSession =
       newHistoryTransfer ||
       targetChanged ||
+      ordinaryConfigChanged ||
       (activeSession === undefined &&
         thread.session !== null &&
         (thread.workjetConfig.schemaVersion !== 2 ||
@@ -755,6 +790,7 @@ const make = Effect.gen(function* () {
 
       if (
         !newHistoryTransfer &&
+        !ordinaryConfigChanged &&
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&

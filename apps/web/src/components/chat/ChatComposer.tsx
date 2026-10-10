@@ -531,7 +531,7 @@ export interface ChatComposerProps {
         readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
       }) => void)
     | undefined;
-  workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
+  workjetEnabledCapabilityIds?: WorkjetThreadConfig["enabledCapabilityIds"] | undefined;
   workjetCapabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding> | undefined;
   /** The thread's managed instructions, `null` on a draft thread. */
   workjetManagedInstructions: string | null;
@@ -541,7 +541,7 @@ export interface ChatComposerProps {
    * this project. Device pairing is a separate Business OS relation.
    */
   selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
-  /** Moves a draft to another environment; the caller guards started threads. */
+  /** Moves a draft or copies a settled conversation's history to another computer. */
   onDraftEnvironmentChange?: ((environmentId: EnvironmentId) => void) | undefined;
   computerChangeDisabledReason?: string | null;
   onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
@@ -978,9 +978,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * Worker mode hides the manual controls. A worker BUNDLES harness, model
    * and effort, so showing pickers beside it displays two sources of truth
    * for one decision — the operator called that mix a farce, correctly. The
-   * pickers return the moment Manual is chosen. Mid-session switching stays
-   * gated on the session-ownership migration (correction -1); this governs
-   * the draft, where the next turn is composed.
+   * pickers return the moment Manual is chosen. A settled conversation uses
+   * its completed history when the next turn needs another provider session.
    */
   const workerModeActive = selectedWorkjetWorkerId !== null;
   const selectedWorkjetWorker =
@@ -1012,8 +1011,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const [draftManagedInstructions, setDraftManagedInstructions] = useState<string | null>(null);
   /**
-   * Apply the selected worker's EXTRAS and TASK TEXT once the draft becomes a
-   * server thread — one dispatch, because the caller's in-flight guard drops
+   * Apply the selected worker's EXTRAS and TASK TEXT when the draft becomes a
+   * server thread or its Luma choice changes — one dispatch, because the caller drops
    * concurrent config changes. A manual draft with a locally edited system
    * prompt takes the same path with only `managedInstructions` set. The ref
    * guards against re-applying on every render and against overriding what
@@ -1023,7 +1022,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTargetIsThread =
     typeof composerDraftTarget === "object" && composerDraftTarget !== null;
   useEffect(() => {
-    if (!composerTargetIsThread || onWorkjetConfigApply === undefined) return;
+    if (!composerTargetIsThread || onWorkjetConfigApply === undefined || workjetCapabilityBusy)
+      return;
     const worker =
       selectedWorkjetWorkerId === null
         ? undefined
@@ -1031,6 +1031,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     let payload: {
       readonly capabilityIds?: ReadonlyArray<string>;
       readonly managedInstructions?: string;
+      readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
     };
     if (worker !== undefined) {
       // Model rules travel with every worker on this model (the Swift app's
@@ -1043,18 +1044,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           draftWorkerCapabilityIds ??
           composerDraft.workjetConfig?.enabledCapabilityIds ??
           worker.capabilityIds,
+        capabilityBindings: worker.capabilityBindings,
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,
           workers: workjetWorkers,
           graph: primaryWorkjet.workerGraph,
         }),
       };
+    } else if (composerDraft.workjetConfig !== null) {
+      const config = composerDraft.workjetConfig;
+      payload = {
+        capabilityIds: config.enabledCapabilityIds,
+        managedInstructions: draftManagedInstructions ?? config.managedInstructions,
+        capabilityBindings: config.schemaVersion === 2 ? config.capabilityBindings : [],
+      };
     } else if (draftManagedInstructions !== null) {
       payload = { managedInstructions: draftManagedInstructions };
     } else {
       return;
     }
-    const targetKey = JSON.stringify(composerDraftTarget);
+    const targetKey = JSON.stringify([composerDraftTarget, selectedWorkjetWorkerId]);
     if (appliedWorkerCapabilitiesRef.current === targetKey) return;
     appliedWorkerCapabilitiesRef.current = targetKey;
     onWorkjetConfigApply(payload);
@@ -1065,6 +1074,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftManagedInstructions,
     draftWorkerCapabilityIds,
     onWorkjetConfigApply,
+    workjetCapabilityBusy,
     selectedWorkjetWorkerId,
     primaryWorkjet.modelPrompts,
     primaryWorkjet.workerGraph,
@@ -1090,8 +1100,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // the newly chosen worker, and a worker carries its own task text.
       setDraftWorkerCapabilityIds(null);
       if (workerId !== null && selectedWorkjetWorkerId === null) {
-        manualInstructionsReturnRef.current = draftManagedInstructions;
-        manualWorkjetConfigReturnRef.current = draftWorkjetConfig;
+        manualInstructionsReturnRef.current =
+          draftManagedInstructions ?? workjetManagedInstructions;
+        manualWorkjetConfigReturnRef.current =
+          composerTargetIsThread && composerDraft.workjetConfig === null
+            ? normalizeWorkjetThreadConfig({
+                ...draftWorkjetConfig,
+                managedInstructions: workjetManagedInstructions ?? "",
+                enabledCapabilityIds: workjetEnabledCapabilityIds ?? [],
+                capabilityBindings: workjetCapabilityBindings ?? [],
+              })
+            : draftWorkjetConfig;
       }
       setDraftManagedInstructions(workerId === null ? manualInstructionsReturnRef.current : null);
       if (workerId === null) {
@@ -1139,9 +1158,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
 
       // Apply the worker's COMPUTER: a worker names where it runs, so a
-      // draft moves to that computer's environment through the same path the
-      // environment selector uses. Only drafts move — a started thread's
-      // session owns its environment. An unresolvable computer changes
+      // conversation moves through the same history-continuation path the
+      // environment selector uses. An unresolvable computer changes
       // nothing; the Computer control shows the mismatch instead of lying.
       if (onDraftEnvironmentChange !== undefined) {
         const workerEnvironmentId = workjetComputers.find(
@@ -1196,9 +1214,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setWorkjetWorkerSelection,
       workjetComputers,
       workjetWorkers,
+      workjetManagedInstructions,
+      workjetEnabledCapabilityIds,
+      workjetCapabilityBindings,
+      composerDraft.workjetConfig,
       primaryWorkjet.modelPrompts,
       primaryWorkjet.workerGraph,
-      draftWorkjetConfig,
     ],
   );
 

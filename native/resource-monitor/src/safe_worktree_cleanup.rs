@@ -499,6 +499,178 @@ mod unix {
         Ok(())
     }
 
+    struct IsolatedRepository {
+        parent: OwnedFd,
+        name: CString,
+        worktree: OwnedFd,
+        admin: OwnedFd,
+    }
+
+    fn reject_shared_metadata(admin: &OwnedFd) -> io::Result<()> {
+        let absent = |parent: &OwnedFd, name: &CStr| -> io::Result<()> {
+            let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+            if unsafe {
+                libc::fstatat(
+                    parent.as_raw_fd(),
+                    name.as_ptr(),
+                    stat.as_mut_ptr(),
+                    libc::AT_SYMLINK_NOFOLLOW,
+                )
+            } == 0
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "shared Git metadata is not isolated",
+                ));
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() != io::ErrorKind::NotFound {
+                return Err(error);
+            }
+            Ok(())
+        };
+        absent(admin, c"commondir")?;
+        let objects = open_dir_at(admin, c"objects")?;
+        let info = open_dir_at(&objects, c"info")?;
+        absent(&info, c"alternates")
+    }
+
+    fn open_isolated_repository(
+        worktree_path: &Path,
+        worktree_identity: (u64, u64),
+        admin_path: &Path,
+        admin_identity: (u64, u64),
+    ) -> io::Result<IsolatedRepository> {
+        if admin_path != worktree_path.join(".git") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Git metadata must be inside the isolated worktree",
+            ));
+        }
+        let (parent, name) = parent_and_name(worktree_path)?;
+        let worktree = open_dir_at(&parent, &name)?;
+        let admin = open_dir_at(&worktree, c".git")?;
+        if identity(&worktree)? != worktree_identity || identity(&admin)? != admin_identity {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "isolated worktree identity changed",
+            ));
+        }
+        require_same_device(&worktree, worktree_identity.0)?;
+        require_same_device(&admin, worktree_identity.0)?;
+        reject_shared_metadata(&admin)?;
+        Ok(IsolatedRepository {
+            parent,
+            name,
+            worktree,
+            admin,
+        })
+    }
+
+    pub(super) fn publish_isolated_with_hook(
+        worktree_path: &Path,
+        worktree_identity: (u64, u64),
+        admin_path: &Path,
+        admin_identity: (u64, u64),
+        destination: &Path,
+        before_move: impl FnOnce(),
+    ) -> io::Result<()> {
+        // Publication is one no-replace rename beside the prepared checkout.
+        // The caller persists these identities before issuing this operation.
+        if worktree_path.parent() != destination.parent() || worktree_path == destination {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "publication must stay in the same parent",
+            ));
+        }
+        let source =
+            open_isolated_repository(worktree_path, worktree_identity, admin_path, admin_identity)?;
+        let (destination_parent, destination_name) = parent_and_name(destination)?;
+        if identity(&source.parent)? != identity(&destination_parent)? {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "publication parent changed",
+            ));
+        }
+        before_move();
+        require_named_identity(&source.parent, &source.name, worktree_identity)?;
+        require_named_identity(&source.worktree, c".git", admin_identity)?;
+        reject_shared_metadata(&source.admin)?;
+        sync_directory(&source.admin)?;
+        sync_directory(&source.worktree)?;
+        rename_exclusive(
+            &source.parent,
+            &source.name,
+            &destination_parent,
+            &destination_name,
+        )?;
+        require_named_identity(&destination_parent, &destination_name, worktree_identity)?;
+        require_named_identity(&source.worktree, c".git", admin_identity)?;
+        sync_directory(&destination_parent)
+    }
+
+    pub(super) fn quarantine_isolated_with_hook(
+        worktree_path: &Path,
+        worktree_identity: (u64, u64),
+        admin_path: &Path,
+        admin_identity: (u64, u64),
+        head_oid: &str,
+        branch_ref: &str,
+        before_move: impl FnOnce(),
+    ) -> io::Result<()> {
+        let source =
+            open_isolated_repository(worktree_path, worktree_identity, admin_path, admin_identity)?;
+        let mut recovery_name = worktree_path.file_name().unwrap().to_os_string();
+        recovery_name.push(format!(".workjet-rejected-{}", worktree_identity.1));
+        let recovery_worktree = worktree_path.with_file_name(&recovery_name);
+        let recovery_admin = recovery_worktree.join(".git");
+        let recovery_name = c_name(&recovery_name)?;
+        let receipt = serde_json::json!({
+            "schemaVersion": 1, "kind": "isolated", "reason": "rejected-dispatch",
+            "originalWorktreePath": worktree_path, "originalAdminPath": admin_path,
+            "recoveryWorktreePath": recovery_worktree, "recoveryAdminPath": recovery_admin,
+            "originalHeadOid": head_oid, "originalBranchRef": branch_ref,
+            "worktreeIdentity": { "dev": worktree_identity.0, "ino": worktree_identity.1 },
+            "adminIdentity": { "dev": admin_identity.0, "ino": admin_identity.1 },
+            "automaticContentDeletion": false,
+        });
+        let create_receipt = |name: &CStr| -> io::Result<std::fs::File> {
+            opened_fd(unsafe {
+                libc::openat(
+                    source.admin.as_raw_fd(),
+                    name.as_ptr(),
+                    libc::O_WRONLY
+                        | libc::O_CREAT
+                        | libc::O_EXCL
+                        | libc::O_NOFOLLOW
+                        | libc::O_CLOEXEC,
+                    0o600,
+                )
+            })
+            .map(std::fs::File::from)
+        };
+        let mut receipt_file = create_receipt(c"workjet-rollback-receipt.json")?;
+        receipt_file.write_all(serde_json::to_string(&receipt)?.as_bytes())?;
+        receipt_file.sync_all()?;
+        let mut progress = create_receipt(c"workjet-rollback-progress.jsonl")?;
+        writeln!(progress, "{}", serde_json::json!({ "phase": "prepared" }))?;
+        progress.sync_all()?;
+        sync_directory(&source.admin)?;
+        before_move();
+        require_named_identity(&source.parent, &source.name, worktree_identity)?;
+        require_named_identity(&source.worktree, c".git", admin_identity)?;
+        rename_exclusive(&source.parent, &source.name, &source.parent, &recovery_name)?;
+        require_named_identity(&source.parent, &recovery_name, worktree_identity)?;
+        require_named_identity(&source.worktree, c".git", admin_identity)?;
+        sync_directory(&source.parent)?;
+        writeln!(
+            progress,
+            "{}",
+            serde_json::json!({ "phase": "checkout-and-admin-quarantined" })
+        )?;
+        progress.sync_all()
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -515,6 +687,237 @@ mod unix {
             ));
             std::fs::create_dir_all(&path).unwrap();
             path
+        }
+
+        fn isolated_fixture(
+            label: &str,
+        ) -> (
+            std::path::PathBuf,
+            std::path::PathBuf,
+            (u64, u64),
+            (u64, u64),
+        ) {
+            let root = fixture(label);
+            let worker = root.join("prepared");
+            std::fs::create_dir_all(worker.join(".git/objects/info")).unwrap();
+            std::fs::write(worker.join("tracked"), "original").unwrap();
+            let wt = std::fs::metadata(&worker).unwrap();
+            let ad = std::fs::metadata(worker.join(".git")).unwrap();
+            (root, worker, (wt.dev(), wt.ino()), (ad.dev(), ad.ino()))
+        }
+
+        #[test]
+        fn isolated_publication_preserves_both_identities_and_never_replaces_destination() {
+            let (root, worker, wt, ad) = isolated_fixture("publish-private");
+            let destination = root.join("published");
+            std::fs::create_dir(&destination).unwrap();
+            std::fs::write(destination.join("foreign"), "retained").unwrap();
+            assert!(
+                publish_isolated_with_hook(
+                    &worker,
+                    wt,
+                    &worker.join(".git"),
+                    ad,
+                    &destination,
+                    || ()
+                )
+                .is_err()
+            );
+            assert_eq!(
+                std::fs::read_to_string(destination.join("foreign")).unwrap(),
+                "retained"
+            );
+            assert!(worker.join("tracked").exists());
+            std::fs::remove_file(destination.join("foreign")).unwrap();
+            assert!(
+                publish_isolated_with_hook(
+                    &worker,
+                    wt,
+                    &worker.join(".git"),
+                    ad,
+                    &destination,
+                    || ()
+                )
+                .is_err()
+            );
+            std::fs::remove_dir(&destination).unwrap();
+            publish_isolated_with_hook(&worker, wt, &worker.join(".git"), ad, &destination, || ())
+                .unwrap();
+            let actual = std::fs::metadata(&destination).unwrap();
+            let actual_admin = std::fs::metadata(destination.join(".git")).unwrap();
+            assert_eq!((actual.dev(), actual.ino()), wt);
+            assert_eq!((actual_admin.dev(), actual_admin.ino()), ad);
+            assert!(!worker.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[test]
+        fn isolated_publication_rejects_replaced_root_or_admin() {
+            for replace_admin in [false, true] {
+                let (root, worker, wt, ad) = isolated_fixture("publish-swap");
+                let destination = root.join("published");
+                let swap = if replace_admin {
+                    worker.join(".git")
+                } else {
+                    worker.clone()
+                };
+                let retained = root.join("retained");
+                assert!(
+                    publish_isolated_with_hook(
+                        &worker,
+                        wt,
+                        &worker.join(".git"),
+                        ad,
+                        &destination,
+                        || {
+                            std::fs::rename(&swap, &retained).unwrap();
+                            std::fs::create_dir(&swap).unwrap();
+                            std::fs::write(swap.join("foreign"), "retained").unwrap();
+                        }
+                    )
+                    .is_err()
+                );
+                assert!(!destination.exists());
+                assert!(retained.exists());
+                assert_eq!(
+                    std::fs::read_to_string(swap.join("foreign")).unwrap(),
+                    "retained"
+                );
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+
+        #[test]
+        fn isolated_operations_reject_shared_metadata_and_symlinks() {
+            for shared in ["commondir", "objects/info/alternates"] {
+                let (root, worker, wt, ad) = isolated_fixture("publish-shared");
+                std::fs::write(worker.join(".git").join(shared), "/outside").unwrap();
+                assert!(
+                    publish_isolated_with_hook(
+                        &worker,
+                        wt,
+                        &worker.join(".git"),
+                        ad,
+                        &root.join("published"),
+                        || ()
+                    )
+                    .is_err()
+                );
+                assert!(
+                    quarantine_isolated_with_hook(
+                        &worker,
+                        wt,
+                        &worker.join(".git"),
+                        ad,
+                        "head",
+                        "ref",
+                        || ()
+                    )
+                    .is_err()
+                );
+                assert!(worker.join("tracked").exists());
+                std::fs::remove_dir_all(root).unwrap();
+            }
+            let (root, worker, wt, ad) = isolated_fixture("publish-symlink");
+            let retained = root.join("retained");
+            std::fs::rename(worker.join(".git"), &retained).unwrap();
+            symlink(&retained, worker.join(".git")).unwrap();
+            assert!(
+                publish_isolated_with_hook(
+                    &worker,
+                    wt,
+                    &worker.join(".git"),
+                    ad,
+                    &root.join("published"),
+                    || ()
+                )
+                .is_err()
+            );
+            assert!(
+                quarantine_isolated_with_hook(
+                    &worker,
+                    wt,
+                    &worker.join(".git"),
+                    ad,
+                    "head",
+                    "ref",
+                    || ()
+                )
+                .is_err()
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[test]
+        fn isolated_quarantine_keeps_git_and_late_writes_together() {
+            let (root, worker, wt, ad) = isolated_fixture("private-late-write");
+            let mut editor = std::fs::OpenOptions::new()
+                .append(true)
+                .open(worker.join("tracked"))
+                .unwrap();
+            let recovery = root.join(format!("prepared.workjet-rejected-{}", wt.1));
+            quarantine_isolated_with_hook(
+                &worker,
+                wt,
+                &worker.join(".git"),
+                ad,
+                "original-commit",
+                "workjet/worker/one",
+                || {
+                    std::fs::write(worker.join("late"), "late writer").unwrap();
+                },
+            )
+            .unwrap();
+            editor.write_all(b" after rename").unwrap();
+            assert_eq!(
+                std::fs::read_to_string(recovery.join("tracked")).unwrap(),
+                "original after rename"
+            );
+            assert_eq!(
+                std::fs::read_to_string(recovery.join("late")).unwrap(),
+                "late writer"
+            );
+            let receipt: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(recovery.join(".git/workjet-rollback-receipt.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                receipt["recoveryAdminPath"],
+                recovery.join(".git").to_str().unwrap()
+            );
+            assert_eq!(receipt["automaticContentDeletion"], false);
+            assert!(!worker.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[test]
+        fn isolated_quarantine_collision_keeps_original_and_foreign_data() {
+            let (root, worker, wt, ad) = isolated_fixture("private-collision");
+            let recovery = root.join(format!("prepared.workjet-rejected-{}", wt.1));
+            std::fs::create_dir(&recovery).unwrap();
+            std::fs::write(recovery.join("foreign"), "retained").unwrap();
+            assert!(
+                quarantine_isolated_with_hook(
+                    &worker,
+                    wt,
+                    &worker.join(".git"),
+                    ad,
+                    "head",
+                    "ref",
+                    || ()
+                )
+                .is_err()
+            );
+            assert_eq!(
+                std::fs::read_to_string(recovery.join("foreign")).unwrap(),
+                "retained"
+            );
+            assert_eq!(
+                std::fs::read_to_string(worker.join("tracked")).unwrap(),
+                "original"
+            );
+            assert!(worker.join(".git/workjet-rollback-receipt.json").exists());
+            std::fs::remove_dir_all(root).unwrap();
         }
 
         #[test]
@@ -966,5 +1369,72 @@ pub fn quarantine_rejected_worktree(
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "worktree quarantine is unavailable on this platform",
+    ))
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn publish_isolated_worktree(
+    worktree_path: &Path,
+    worktree_identity: (u64, u64),
+    admin_path: &Path,
+    admin_identity: (u64, u64),
+    destination: &Path,
+) -> io::Result<()> {
+    unix::publish_isolated_with_hook(
+        worktree_path,
+        worktree_identity,
+        admin_path,
+        admin_identity,
+        destination,
+        || (),
+    )
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub fn publish_isolated_worktree(
+    _worktree_path: &Path,
+    _worktree_identity: (u64, u64),
+    _admin_path: &Path,
+    _admin_identity: (u64, u64),
+    _destination: &Path,
+) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "isolated worktree publication is unavailable on this platform",
+    ))
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn quarantine_isolated_worktree(
+    worktree_path: &Path,
+    worktree_identity: (u64, u64),
+    admin_path: &Path,
+    admin_identity: (u64, u64),
+    head_oid: &str,
+    branch_ref: &str,
+) -> io::Result<()> {
+    unix::quarantine_isolated_with_hook(
+        worktree_path,
+        worktree_identity,
+        admin_path,
+        admin_identity,
+        head_oid,
+        branch_ref,
+        || (),
+    )
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub fn quarantine_isolated_worktree(
+    _worktree_path: &Path,
+    _worktree_identity: (u64, u64),
+    _admin_path: &Path,
+    _admin_identity: (u64, u64),
+    _head_oid: &str,
+    _branch_ref: &str,
+) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "isolated worktree quarantine is unavailable on this platform",
     ))
 }

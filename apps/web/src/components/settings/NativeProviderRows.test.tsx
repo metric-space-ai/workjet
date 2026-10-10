@@ -70,6 +70,46 @@ function html(
   return renderToStaticMarkup(<NativeProviderRows instanceId="managed:welsch" label="Welsch" />);
 }
 describe("Native provider account rows", () => {
+  it.each([undefined, "guest_failed"])(
+    "does not claim an empty account list before a successful read (error: %s)",
+    (error) => {
+      vi.mocked(useInstanceProviders).mockReturnValue({
+        registry: undefined,
+        error,
+        errorAccountId: undefined,
+        busy: !error,
+        run: vi.fn(async () => undefined),
+        refresh: vi.fn(async () => undefined),
+      });
+      const rendered = renderToStaticMarkup(
+        <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
+      );
+      expect(rendered).toContain("Accounts not loaded");
+      expect(rendered).not.toContain("0 instance accounts");
+      if (error) expect(rendered).toContain(error);
+    },
+  );
+  it("shows zero accounts only after an actual empty registry reply", () => {
+    vi.mocked(useInstanceProviders).mockReturnValue({
+      registry: { ...registry, accounts: [] },
+      error: undefined,
+      errorAccountId: undefined,
+      busy: false,
+      run: vi.fn(async () => undefined),
+      refresh: vi.fn(async () => undefined),
+    });
+    const rendered = renderToStaticMarkup(
+      <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
+    );
+    expect(rendered).toContain("0 instance accounts");
+    expect(rendered).not.toContain("Accounts not loaded");
+  });
+  it("keeps previously observed accounts visible when refreshing fails", () => {
+    const rendered = html(registry.accounts[0]!, false, "guest_failed");
+    expect(rendered).toContain("1 instance accounts");
+    expect(rendered).toContain(`Account ${accountId.slice(0, 8)}`);
+    expect(rendered).not.toContain("Accounts not loaded");
+  });
   it("places the account toggle and permanent removal beside the full model name", () => {
     const rendered = html();
     expect(rendered).toContain('role="switch"');

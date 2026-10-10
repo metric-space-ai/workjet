@@ -195,7 +195,8 @@ export function useInstanceGrokAccount(
             )}
           </div>
           <span className="block break-words text-[11px] text-muted-foreground">
-            {label} · {state?.installed ? state.accountLabel : "OAuth subscription"}
+            {label} ·{" "}
+            {state ? (state.installed ? state.accountLabel : "OAuth subscription") : "Not loaded"}
           </span>
         </div>
         <div role="cell" className="flex min-w-0 flex-wrap gap-1">
@@ -274,13 +275,16 @@ export function useInstanceGrokAccount(
         <span
           role="cell"
           title={
-            state?.installed
-              ? "Subscription stored on this CTOX instance."
-              : "No subscription stored."
+            state
+              ? state.installed
+                ? "Subscription stored on this CTOX instance."
+                : "No subscription stored."
+              : "Account status unavailable. Refresh to retry."
           }
+          aria-label={state ? undefined : "Account status unavailable"}
           className="text-center text-xs text-muted-foreground"
         >
-          {state?.installed ? "✓" : "—"}
+          {state ? (state.installed ? "✓" : "—") : "◌"}
         </span>
         <div role="cell">
           {state?.installed ? (

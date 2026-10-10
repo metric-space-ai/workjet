@@ -36,7 +36,7 @@ const run = (value: ProviderSessionStartInput, driver: NonNullable<ReturnType<ty
       getDescriptor: Effect.die("unused descriptor"),
     }),
   ));
-async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "greppy-code" | "pi-code") {
+async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "greppy" | "pi-code") {
   let allowed = true;
   let admitted = 0;
   const server = NodeHttp.createServer(async (req, res) => {
@@ -71,7 +71,7 @@ async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "grep
   cleanups.push(route.revoke);
   return { route, value: input(thread), admitted: () => admitted, deny: () => { allowed = false; } };
 }
-for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy-code", "pi-code"] as const) {
+for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-code"] as const) {
   it(`admits ${harness} repeatedly without inheriting target accounts`, async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "target-anthropic-secret");
     vi.stubEnv("XAI_API_KEY", "target-xai-secret");

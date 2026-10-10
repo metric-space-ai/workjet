@@ -17,6 +17,7 @@ import {
   formatPercent,
   formatTokens,
   formatUsd,
+  formatUsageCost,
   makeWindow,
 } from "@workjet/shared/usageFormat";
 import { ScrollArea } from "../ui/scroll-area";
@@ -191,7 +192,7 @@ export function UsagePage() {
                       </span>
                       <span className="text-4xl font-semibold text-foreground tabular-nums">
                         {metric === "cost"
-                          ? `${formatUsd(merged.costUsd)}*`
+                          ? `${formatUsageCost(merged.costUsd, merged.costQuality.unpricedShare)}*`
                           : formatTokens(merged.totalTokens)}
                       </span>
                       <span className="text-xs text-muted-foreground">
@@ -203,6 +204,12 @@ export function UsagePage() {
 
                     {orderedProviders.map((provider) => {
                       const share = metric === "cost" ? provider.costShare : provider.tokenShare;
+                      const unpriced = merged.models.some(
+                        (model) =>
+                          model.provider === provider.provider && model.unpricedRecords > 0,
+                      )
+                        ? 1
+                        : 0;
                       return (
                         <div key={provider.provider} className="flex flex-col gap-1.5">
                           <div className="flex items-baseline justify-between">
@@ -212,7 +219,7 @@ export function UsagePage() {
                             </span>
                             <span className="text-sm text-foreground tabular-nums">
                               {metric === "cost"
-                                ? formatUsd(provider.costUsd)
+                                ? formatUsageCost(provider.costUsd, unpriced)
                                 : formatTokens(provider.totalTokens)}
                             </span>
                           </div>
@@ -228,7 +235,7 @@ export function UsagePage() {
                           <span className="text-xs text-muted-foreground">
                             {metric === "cost"
                               ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
-                              : `${formatPercent(share)} of tokens · ${formatUsd(provider.costUsd)}`}
+                              : `${formatPercent(share)} of tokens · ${formatUsageCost(provider.costUsd, unpriced)}`}
                           </span>
                         </div>
                       );
@@ -340,7 +347,7 @@ export function UsagePage() {
                         <tr className="border-b border-border text-left text-xs text-muted-foreground">
                           <th className="py-2 font-normal">Model</th>
                           <th className="py-2 text-right font-normal">Cost</th>
-                          <th className="py-2 text-right font-normal">Share</th>
+                          <th className="py-2 text-right font-normal">Share of known cost</th>
                           <th className="py-2 text-right font-normal">Tokens</th>
                         </tr>
                       </thead>
@@ -364,7 +371,7 @@ export function UsagePage() {
                                 </span>
                               </td>
                               <td className="py-2 text-right text-foreground tabular-nums">
-                                {formatUsd(model.costUsd)}
+                                {formatUsageCost(model.costUsd, model.unpricedRecords)}
                               </td>
                               <td className="py-2 text-right text-muted-foreground tabular-nums">
                                 {formatPercent(model.costShare)}

@@ -502,6 +502,7 @@ const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
 );
 const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.pipe(
   Layer.provide(SourceControlProviderRegistryLayerLive),
+  Layer.provide(VcsProcess.layer),
   Layer.provide(WorkerPullRequestStore.layer),
   Layer.provide(WorkerDispatchLayerLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),

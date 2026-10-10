@@ -35,6 +35,7 @@ import {
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
 import { initialWorkerGoal, prepareGoalContinuation } from "../workjet/workerGoal.ts";
+import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
 import {
   requireProjectTeamLifecycle,
   requireProjectTeamOwnership,
@@ -1113,6 +1114,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             "Only the current active persistent worker iteration may update a mini-kanban with unique card IDs.",
         });
       }
+      const slideDocument = yield* Effect.try({
+        try: () => createWorkerKanbanSlideDocument({
+          threadId: thread.id,
+          title: thread.title,
+          objective: config.goal.objective,
+          kanban: command.kanban,
+        }),
+        catch: () => new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "The mini-kanban could not be converted to a valid SlideDocument.",
+        }),
+      });
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1125,7 +1138,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: thread.id,
           workjetConfig: {
             ...config,
-            goal: { ...config.goal, kanban: command.kanban },
+            goal: {
+              ...config.goal,
+              kanban: { ...command.kanban, slideDocument },
+            },
           },
           updatedAt: command.createdAt,
         },

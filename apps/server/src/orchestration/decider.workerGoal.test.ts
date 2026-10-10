@@ -152,7 +152,35 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       };
       const result = yield* apply(model, command);
       const config = result.threads[0]!.workjetConfig;
-      expect(config.schemaVersion === 2 && config.goal?.kanban).toEqual(kanban);
+      if (config.schemaVersion !== 2 || !config.goal?.kanban?.slideDocument)
+        throw new Error("missing durable kanban document");
+      const { slideDocument, ...cards } = config.goal.kanban;
+      expect(cards).toEqual(kanban);
+      expect(slideDocument.schemaVersion).toBe("learnordie.slide.v1");
+      expect(
+        yield* Schema.decodeUnknownEffect(Schema.fromJsonString(WorkjetThreadGoal))(
+          yield* Schema.encodeEffect(Schema.fromJsonString(WorkjetThreadGoal))(config.goal),
+        ),
+      ).toEqual(config.goal);
+      // Old card-only journal records remain readable.
+      expect(
+        yield* Schema.decodeUnknownEffect(WorkjetThreadGoal)({ ...config.goal, kanban }),
+      ).toEqual({ ...config.goal, kanban });
+      // A caller cannot replace the canonical document or claim a verified outcome.
+      const spoofed = yield* apply(model, {
+        ...command,
+        kanban: {
+          ...kanban,
+          slideDocument: {
+            schemaVersion: "learnordie.slide.v1",
+            documentJson: '{"claimed":"verified"}',
+            sha256: "0".repeat(64),
+          },
+        },
+      });
+      const spoofedConfig = spoofed.threads[0]!.workjetConfig;
+      expect(spoofedConfig.schemaVersion === 2 && spoofedConfig.goal?.kanban?.slideDocument)
+        .toEqual(slideDocument);
       for (const next of [
         { ...kanban, iteration: 1 },
         { ...kanban, goalRevision: 1 },

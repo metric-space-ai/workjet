@@ -31,6 +31,7 @@
     "@metric-space-ai/workjet-capabilities": "workspace:*",
     "@opencode-ai/sdk": "^1.3.15",
     "@pierre/diffs": "catalog:",
+    "@workjet/slide-engine": "workspace:*",
     "@workjet/ssh": "workspace:*",
     "effect": "catalog:",
     "node-pty": "^1.1.0",

@@ -65,12 +65,15 @@ describe("persistent worker goal display", () => {
     (role) => {
       if (config.schemaVersion !== 2 || !config.team) throw new Error("Invalid fixture");
       const identity = {
-        projectId: config.team.projectId, threadId: config.team.threadId,
-        goal: config.team.goal, createdAt: config.team.createdAt,
+        projectId: config.team.projectId,
+        threadId: config.team.threadId,
+        goal: config.team.goal,
+        createdAt: config.team.createdAt,
       };
-      const team = role === "supervisor"
-        ? { ...identity, role, parentThreadId: null }
-        : { ...identity, role, parentThreadId: ThreadId.make("parent"), packageId: "one-pr" };
+      const team =
+        role === "supervisor"
+          ? { ...identity, role, parentThreadId: null }
+          : { ...identity, role, parentThreadId: ThreadId.make("parent"), packageId: "one-pr" };
       expect(html({ ...config, team })).toBe("");
     },
   );

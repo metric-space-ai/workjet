@@ -3642,20 +3642,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   });
 
   const observeNativeSdk = Effect.fn("observeNativeSdk")(function* (
-    context: ClaudeSessionContext, observe: (journal: NativeSupervisorSdkJournal) => Promise<void>,
+    context: ClaudeSessionContext,
+    observe: (journal: NativeSupervisorSdkJournal) => Promise<void>,
   ) {
-    if (context.sdkJournal) yield* Effect.tryPromise({
-      try: () => observe(context.sdkJournal!),
-      catch: cause => new ProviderAdapterProcessError({ provider: PROVIDER,
-        threadId: context.session.threadId, detail: "Original SDK observation could not be committed.", cause }),
-    });
+    if (context.sdkJournal)
+      yield* Effect.tryPromise({
+        try: () => observe(context.sdkJournal!),
+        catch: (cause) =>
+          new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: context.session.threadId,
+            detail: "Original SDK observation could not be committed.",
+            cause,
+          }),
+      });
   });
 
   const handleSdkMessage = Effect.fn("handleSdkMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
   ) {
-    yield* observeNativeSdk(context, journal => journal.observeSdkMessage(message, context.turnState?.turnId));
+    yield* observeNativeSdk(context, (journal) =>
+      journal.observeSdkMessage(message, context.turnState?.turnId),
+    );
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
 
@@ -3726,7 +3735,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ),
         ),
       ),
-      Effect.onExit(() => observeNativeSdk(context, journal => journal.sdkStreamJoined())),
+      Effect.onExit(() => observeNativeSdk(context, (journal) => journal.sdkStreamJoined())),
     );
 
   const handleStreamExit = Effect.fn("handleStreamExit")(function* (
@@ -3812,7 +3821,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           cause,
         }),
     }).pipe(
-      Effect.tap(() => observeNativeSdk(context, journal => journal.sdkQueryCloseReturned())),
+      Effect.tap(() => observeNativeSdk(context, (journal) => journal.sdkQueryCloseReturned())),
       Effect.catch((error) =>
         emitRuntimeError(context, "Failed to close Claude runtime query.", {
           errorTag: error._tag,
@@ -3883,15 +3892,25 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
       }
       if (options?.createNativeSupervisorSdkJournal && options.createQuery !== undefined) {
-        return yield* new ProviderAdapterValidationError({ provider: PROVIDER,
-          operation: "startSession", issue: "Original SDK observation requires the actual SDK child; a query override is unsupported." });
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue:
+            "Original SDK observation requires the actual SDK child; a query override is unsupported.",
+        });
       }
       const sdkJournal = options?.createNativeSupervisorSdkJournal
         ? yield* Effect.try({
-          try: () => options.createNativeSupervisorSdkJournal!(input.threadId),
-          catch: cause => new ProviderAdapterProcessError({ provider: PROVIDER,
-            threadId: input.threadId, detail: "Original SDK observer could not be created.", cause }),
-        }) : undefined;
+            try: () => options.createNativeSupervisorSdkJournal!(input.threadId),
+            catch: (cause) =>
+              new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId: input.threadId,
+                detail: "Original SDK observer could not be created.",
+                cause,
+              }),
+          })
+        : undefined;
       const workerSource = readWorkerSourceHarness(input.threadId);
       if (input.workjetConfig?.role === "worker") {
         const environment = yield* Effect.serviceOption(ServerEnvironment);
@@ -4815,7 +4834,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       boundInstanceId,
     });
 
-    yield* observeNativeSdk(context, journal => journal.turnSubmitted(turnId));
+    yield* observeNativeSdk(context, (journal) => journal.turnSubmitted(turnId));
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message,

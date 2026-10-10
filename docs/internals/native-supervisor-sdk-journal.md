@@ -5,6 +5,7 @@ ClaudeAdapterLiveOptions.createNativeSupervisorSdkJournal is a private Node-serv
 The adapter captures the ChildProcess object from its own actual SDK spawn callback, observes the actual system init before handling messages, records its actual sendTurn ID, and extracts parent assistant message.id/model/uuid and result uuid/session_id/subtype/is_error before the canonical result handler clears the current turn. Subagent assistant messages cannot supply the parent's model/message anchor. A changed or missing original SDK init/session fails the observed stream.
 
 The private NativeSupervisorSdkObservation v1 records use monotonic sequence 0 through 511 (512 records, matching the native private journal limit) and these kinds:
+
 - child-spawned: pid
 - child-closed: pid, exitCode, signal (the captured child's actual close event, including stdio closure)
 - sdk-init: sessionId, initId

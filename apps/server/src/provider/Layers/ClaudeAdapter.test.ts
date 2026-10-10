@@ -185,7 +185,9 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
-    ...(config?.createNativeSupervisorSdkJournal ? { createNativeSupervisorSdkJournal: config.createNativeSupervisorSdkJournal } : {}),
+    ...(config?.createNativeSupervisorSdkJournal
+      ? { createNativeSupervisorSdkJournal: config.createNativeSupervisorSdkJournal }
+      : {}),
     createQuery: (input) => {
       createInput = input;
       config?.onCreateQuery?.(input);
@@ -437,16 +439,26 @@ describe("ClaudeAdapter foreign worker source authority", () => {
 describe("ClaudeAdapterLive", () => {
   it.effect("rejects replaceable queries before constructing an original SDK journal", () => {
     let constructed = false;
-    const harness = makeHarness({ createNativeSupervisorSdkJournal: () => {
-      constructed = true;
-      return new NativeSupervisorSdkJournal(async () => {});
-    } });
+    const harness = makeHarness({
+      createNativeSupervisorSdkJournal: () => {
+        constructed = true;
+        return new NativeSupervisorSdkJournal(async () => {});
+      },
+    });
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
-      const error = yield* adapter.startSession({ threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"), runtimeMode: "auto-accept-edits" }).pipe(Effect.flip);
+      const error = yield* adapter
+        .startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "auto-accept-edits",
+        })
+        .pipe(Effect.flip);
       assert.instanceOf(error, ProviderAdapterValidationError);
-      assert.equal(error.issue, "Original SDK observation requires the actual SDK child; a query override is unsupported.");
+      assert.equal(
+        error.issue,
+        "Original SDK observation requires the actual SDK child; a query override is unsupported.",
+      );
       assert.isFalse(constructed);
       assert.isUndefined(harness.getLastCreateQueryInput());
     }).pipe(Effect.provide(harness.layer));

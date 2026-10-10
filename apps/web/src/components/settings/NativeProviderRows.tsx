@@ -89,7 +89,7 @@ function ModelCheckStatus({
   readonly check: () => void;
 }) {
   const title = !supported
-    ? "Native Hi checks are not yet available for this provider."
+    ? "Hi checks are not yet available for this provider on this CTOX instance."
     : probe
       ? (probe.status === "ok"
           ? "Hi check passed"

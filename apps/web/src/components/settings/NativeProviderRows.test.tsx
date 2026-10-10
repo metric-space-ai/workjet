@@ -111,7 +111,7 @@ describe("Native provider account rows", () => {
     expect(rendered).not.toContain("OAuth");
     expect(rendered).not.toContain('role="switch"');
     expect(control(rendered, "Check glm-5.3-flash")).toContain("disabled");
-    expect(rendered).toContain("Native Hi checks are not yet available for this provider");
+    expect(rendered).toContain("Hi checks are not yet available for this provider on this CTOX instance");
     expect(rendered).not.toContain("Model check passed");
     expect(control(rendered, "Permanently remove instance account native-api-fixture")).toContain(
       "disabled",

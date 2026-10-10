@@ -294,8 +294,10 @@ export function ProjectOverviewView(props: {
             <button
               type="button"
               onClick={props.onOpenJourFixe}
+              disabled={!props.onOpenJourFixe}
+              title={props.onOpenJourFixe ? undefined : text.meetingConnectionRequired}
               data-workjet-action="project.jour-fixe.open"
-              className="mt-3 rounded-md border border-border bg-primary px-3 py-1.5 text-xs text-primary-foreground"
+              className="mt-3 rounded-md border border-border bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50"
             >
               {text.join}
             </button>

@@ -1218,6 +1218,68 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("classifies renderer failures before Electron erases their details", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      for (const [message, reason] of [
+        ["Invalid Workjet project owner_user_id.", "owner_session_not_ready"],
+        ["Workjet project control is not ready.", "project_control_not_ready"],
+        ["Workjet supervisor control is not ready.", "supervisor_control_not_ready"],
+        ["Native WebRTC peer is not connected", "peer_unavailable"],
+        ["Native request ctox.workjet.project.v1 exceeded 28000ms", "request_timeout"],
+        ["Failed to fetch", "network_unavailable"],
+      ] as const) {
+        const context = NodeVM.createContext({});
+        NodeVM.runInContext(
+          `globalThis.workjetProjectControl = async () => { throw new Error(${JSON.stringify(message)}); };`,
+          context,
+        );
+        harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
+          try {
+            return await NodeVM.runInContext(expression, context);
+          } catch {
+            throw new Error("Script failed to execute");
+          }
+        });
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          { _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason } },
+        );
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("keeps unsupported and private renderer exceptions distinct", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      for (const [message, expectedCode] of [
+        ["Unsupported Workjet project control action: project.list", "unsupported"],
+        ["Private failure https://private.invalid/?token=secret", "guest_failed"],
+      ] as const) {
+        const context = NodeVM.createContext({});
+        NodeVM.runInContext(
+          `globalThis.workjetProjectControl = async () => { throw new Error(${JSON.stringify(message)}); };`,
+          context,
+        );
+        harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
+          try {
+            return await NodeVM.runInContext(expression, context);
+          } catch {
+            throw new Error("Script failed to execute");
+          }
+        });
+        const result = yield* manager.requestProjectControl(descriptor.id, { action: "project.list" });
+        assert.deepEqual(result, { _tag: "failed", code: expectedCode });
+        expect(JSON.stringify(result)).not.toContain("private.invalid");
+        expect(JSON.stringify(result)).not.toContain("secret");
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it("retains safe exception facts without disclosing launch URLs or request data", () => {
     const error = Object.assign(
       new Error("Unknown Workjet action at https://private.invalid/?token=secret"),

@@ -471,8 +471,35 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
     }
     return { status: "unsupported" };
   }
-  const result = await control(${JSON.stringify(request)});
-  return { status: "completed", result };
+  try {
+    const result = await control(${JSON.stringify(request)});
+    return { status: "completed", result };
+  } catch (error) {
+    // Electron erases a rejected renderer promise's error details.
+    // Only fixed reasons cross this boundary, never messages or request data.
+    const message = error instanceof Error ? error.message : "";
+    const code = error && typeof error === "object" ? error.code : undefined;
+    const reason = /(?:unsupported|unknown)\\s+(?:workjet\\s+)?(?:project[- ]control\\s+)?action/i.test(message)
+      ? "unsupported_action"
+      : message === "Invalid Workjet project owner_user_id."
+        ? "owner_session_not_ready"
+        : message === "Workjet project control is not ready."
+          ? "project_control_not_ready"
+          : message === "Workjet supervisor control is not ready."
+            ? "supervisor_control_not_ready"
+            : message === "Native WebRTC peer is not connected" || code === "PEER_UNAVAILABLE"
+              ? "peer_unavailable"
+              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT"
+                ? "request_timeout"
+                : message === "Failed to fetch" || message === "fetch failed"
+                  ? "network_unavailable"
+                  : undefined;
+    if (reason === "unsupported_action") return { status: "unsupported" };
+    return {
+      status: "failed",
+      ...(reason === undefined ? {} : { diagnostic: { stage: "execute", reason } }),
+    };
+  }
 })()`;
 }
 

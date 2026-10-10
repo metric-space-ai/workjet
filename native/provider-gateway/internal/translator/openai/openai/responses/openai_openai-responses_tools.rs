@@ -46,7 +46,11 @@ pub fn convert_responses_function_tool_to_openai_chat(
         chat_tool["function"]["description"] = Value::String(description);
     }
     if let Some(parameters) = responses_tool_parameters(tool) {
-        chat_tool["function"]["parameters"] = if needs_object_envelope(&parameters) { json!({"type":"object","properties":{"input":parameters},"required":["input"],"additionalProperties":false}) } else { parameters };
+        chat_tool["function"]["parameters"] = if needs_object_envelope(&parameters) {
+            json!({"type":"object","properties":{"input":parameters},"required":["input"],"additionalProperties":false})
+        } else {
+            parameters
+        };
     }
     Some(serde_json::to_vec(&chat_tool).expect("static tool JSON cannot fail"))
 }
@@ -255,17 +259,20 @@ fn collect_total_tool_count(tools: Option<&Value>) -> i64 {
     count
 }
 
-
 /// Some connected providers require a root object for function parameters.
 /// The original schema stays under input and is restored for the harness.
 pub fn needs_object_envelope(schema: &Value) -> bool {
     schema.get("type").is_some_and(|kind| kind != "object")
         || (schema.get("type").and_then(Value::as_str) != Some("object")
-            && ["anyOf", "oneOf", "allOf"].iter().any(|key| schema.get(*key).is_some()))
+            && ["anyOf", "oneOf", "allOf"]
+                .iter()
+                .any(|key| schema.get(*key).is_some()))
 }
 
 pub fn responses_boxed_function_names(request: &[u8]) -> HashSet<String> {
-    let Ok(root) = serde_json::from_slice::<Value>(request) else { return HashSet::new(); };
+    let Ok(root) = serde_json::from_slice::<Value>(request) else {
+        return HashSet::new();
+    };
     let mut names = HashSet::new();
     collect_boxed_names(root.get("tools"), "", &mut names);
     if let Some(input) = root.get("input").and_then(Value::as_array) {
@@ -279,13 +286,24 @@ pub fn responses_boxed_function_names(request: &[u8]) -> HashSet<String> {
 }
 
 fn collect_boxed_names(tools: Option<&Value>, namespace: &str, names: &mut HashSet<String>) {
-    let Some(tools) = tools.and_then(Value::as_array) else { return; };
+    let Some(tools) = tools.and_then(Value::as_array) else {
+        return;
+    };
     for tool in tools {
         match responses_tool_type(tool) {
-            "namespace" => collect_boxed_names(tool.get("tools"), tool.get("name").and_then(Value::as_str).unwrap_or(""), names),
+            "namespace" => collect_boxed_names(
+                tool.get("tools"),
+                tool.get("name").and_then(Value::as_str).unwrap_or(""),
+                names,
+            ),
             "" | "function" => {
-                if responses_tool_parameters(tool).is_some_and(|schema| needs_object_envelope(&schema)) {
-                    names.insert(qualify_responses_namespace_tool_name(namespace, &responses_tool_name(tool)));
+                if responses_tool_parameters(tool)
+                    .is_some_and(|schema| needs_object_envelope(&schema))
+                {
+                    names.insert(qualify_responses_namespace_tool_name(
+                        namespace,
+                        &responses_tool_name(tool),
+                    ));
                 }
             }
             _ => {}

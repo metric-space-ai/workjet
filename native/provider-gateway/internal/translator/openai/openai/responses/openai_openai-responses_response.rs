@@ -97,15 +97,24 @@ pub fn convert_openai_chat_completions_response_to_openai_responses(
         };
     if payload == b"[DONE]" {
         if st.started && !st.completed_emitted {
-            st.completed_emitted = true;
             let mut counter = st.sequence_number;
             let mut next_seq = || -> i64 {
                 counter += 1;
                 counter
             };
-            let event = build_responses_completed_event(st, request_for_namespace, &mut next_seq);
+            let mut output = Vec::new();
+            if st.func_names.iter().any(|(key, name)| {
+                st.boxed_function_names.contains(name)
+                    && !st.func_args_done.get(key).copied().unwrap_or(false)
+            }) {
+                finalize_choice(st, 0, request_for_namespace, &mut output, &mut next_seq);
+            }
+            if !st.completed_emitted {
+                st.completed_emitted = true;
+                output.push(build_responses_completed_event(st, request_for_namespace, &mut next_seq));
+            }
             st.sequence_number = counter;
-            return vec![event];
+            return output;
         }
         return Vec::new();
     }
@@ -784,7 +793,12 @@ fn emit_pending_function_args(
         return;
     }
     if st.func_item_custom.get(key).copied().unwrap_or(false)
-        || (st.func_names.get(key).is_some_and(|name| st.boxed_function_names.contains(name)) && !st.func_args_done.get(key).copied().unwrap_or(false)) {
+        || (st
+            .func_names
+            .get(key)
+            .is_some_and(|name| st.boxed_function_names.contains(name))
+            && !st.func_args_done.get(key).copied().unwrap_or(false))
+    {
         return;
     }
     let Some(args) = st.func_args_buf.get(key) else {
@@ -850,10 +864,19 @@ fn finalize_choice(
         for key in keys {
             emit_tool_item_force(st, &key, request_for_namespace, out, next_seq);
             if !st.func_args_done.get(&key).copied().unwrap_or(false)
-                && st.func_names.get(&key).is_some_and(|name| st.boxed_function_names.contains(name)) {
-                let Some(arguments) = tools::unwrap_boxed_function_arguments(st.func_args_buf.get(&key).map(String::as_str).unwrap_or("")) else {
+                && st
+                    .func_names
+                    .get(&key)
+                    .is_some_and(|name| st.boxed_function_names.contains(name))
+            {
+                let Some(arguments) = tools::unwrap_boxed_function_arguments(
+                    st.func_args_buf.get(&key).map(String::as_str).unwrap_or(""),
+                ) else {
                     let event = json!({"type":"response.failed","sequence_number":next_seq(),"response":{"status":"failed","error":{"code":"invalid_tool_input","message":"Provider returned invalid wrapped function input"}}});
-                    out.push(sse_event_data("response.failed", &serde_json::to_vec(&event).unwrap()));
+                    out.push(sse_event_data(
+                        "response.failed",
+                        &serde_json::to_vec(&event).unwrap(),
+                    ));
                     st.completed_emitted = true;
                     return;
                 };
@@ -1273,6 +1296,7 @@ pub fn convert_openai_chat_completions_response_to_openai_responses_non_stream(
             } else {
                 HashSet::new()
             };
+        let boxed_function_names = tools::responses_boxed_function_names(request_for_namespace);
         for (choice_index, choice) in choices.iter().enumerate() {
             if let Some(message) = choice.get("message") {
                 if let Some(content) = message.get("content") {
@@ -1310,12 +1334,16 @@ pub fn convert_openai_chat_completions_response_to_openai_responses_non_stream(
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string();
-                        let args = if tools::responses_boxed_function_names(request_for_namespace).contains(&name) {
-                            let Some(arguments) = tools::unwrap_boxed_function_arguments(&args) else {
+                        let args = if boxed_function_names.contains(&name)
+                        {
+                            let Some(arguments) = tools::unwrap_boxed_function_arguments(&args)
+                            else {
                                 return serde_json::to_vec(&json!({"error":{"code":"invalid_tool_input","message":"Provider returned invalid wrapped function input"}})).unwrap();
                             };
                             arguments
-                        } else { args };
+                        } else {
+                            args
+                        };
                         let is_custom_tool = custom_tool_names.contains(&name);
                         let item = if is_custom_tool {
                             json!({

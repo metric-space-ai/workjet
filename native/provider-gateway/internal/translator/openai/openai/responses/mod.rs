@@ -17,7 +17,6 @@ mod request_test;
 #[path = "openai_openai-responses_response_test.rs"]
 mod response_test;
 
-
 #[cfg(test)]
 mod object_tools_test;
 pub use init::register_openai_responses_chat_completions;

@@ -60,6 +60,7 @@ import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnecti
 import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
 import * as IsolatedWorkerWorktree from "./workjet/IsolatedWorkerWorktree.ts";
 import * as IsolatedWorkerWorktreeStore from "./workjet/IsolatedWorkerWorktreeStore.ts";
+import * as LocalWorkerWorktree from "./workjet/LocalWorkerWorktree.ts";
 import * as RemoteWorkerAuthorityStore from "./workjet/RemoteWorkerAuthorityStore.ts";
 import * as RemoteWorkerComputerEnrollmentLive from "./workjet/RemoteWorkerComputerEnrollmentLive.ts";
 import * as RemoteWorkerSourceOperationsLive from "./workjet/RemoteWorkerSourceOperationsLive.ts";
@@ -503,6 +504,10 @@ const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
 // A single service instance owns the stable native intent IDs and the normal
 // MCP dispatch path. Both entries share its durable broker and first-use lock.
 const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
+  Layer.provide(LocalWorkerWorktree.layer.pipe(
+    Layer.provide(IsolatedWorkerWorktreeLayerLive),
+    Layer.provide(WorktreeStorageLayerLive),
+  )),
   Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(WorkerDispatchRollbackLayerLive),

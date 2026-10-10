@@ -292,6 +292,8 @@ import {
   type WorkerDispatchSources,
 } from "./WorkerDispatch.ts";
 import { requireEnforcedExecutionPolicy } from "../provider/executionPolicy.ts";
+import { LocalWorkerWorktree, LocalWorkerWorktreeError, type LocalWorkerWorktreeInput } from "./LocalWorkerWorktree.ts";
+import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
 import { remoteWorkerRequestDigest } from "./ctox/CtoxRemoteWorkerAdmission.ts";
 
 it.effect("preserves the project policy at the local worker's provider boundary", () =>
@@ -325,6 +327,10 @@ it.effect("preserves the project policy at the local worker's provider boundary"
       const create = h.commands.find((command) => command.type === "thread.create");
       expect(create?.workjetConfig).toMatchObject({ schemaVersion: 2, executionPolicy });
       expect(create?.runtimeMode).toBe(parent.runtimeMode);
+      expect(h.worktreeCreates).toEqual([]);
+      expect(h.localAllocations).toHaveLength(1);
+      expect(h.localAllocations[0]?.context).toMatchObject({ executionPolicy, teamRole: role, parentThreadId: parent.id });
+      expect(h.rollbackCaptures[0]).toMatchObject({ kind: "isolated", worktreePath: workerPathFor(ids[0]), adminPath: workerPathFor(ids[0]) + "/.git" });
       const rejected = yield* Effect.flip(
         requireEnforcedExecutionPolicy(
           "startSession",
@@ -336,6 +342,22 @@ it.effect("preserves the project policy at the local worker's provider boundary"
     }
   }),
 );
+
+it.effect("fails before creating a policy worker when allocation or original rollback custody is unavailable", () => Effect.gen(function* () {
+  const currentParent = {
+    ...teamParent,
+    workjetConfig: { ...teamConfig, executionPolicy: { mode: "autonomous-worktree" as const, projectId: parent.projectId, revision: 7 } },
+  };
+  for (const options of [{ missingLocalAllocator: true }, { failLocalAllocate: true }, { badLocalCapture: true }, { failRollbackPrepare: true }]) {
+    const h = makeHarness({ currentParent, ...options });
+    const service = yield* h.service;
+    const error = yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation" }));
+    expect(error.reason).toBe("worktree-failed");
+    expect(h.commands).toEqual([]);
+    expect(h.worktreeCreates).toEqual([]);
+    expect(h.worktreeRemovals).toEqual([]);
+  }
+}));
 
 it.effect(
   "rejects policy references outside the saved parent project and team before side effects",
@@ -397,7 +419,8 @@ it.effect("does not recover an unscoped worker from matching team metadata alone
     expect(
       (yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation" }))).reason,
     ).toBe("rollback-failed");
-    expect(h.worktreeCreates).toHaveLength(1);
+    expect(h.worktreeCreates).toHaveLength(0);
+    expect(h.localAllocations).toHaveLength(1);
     expect(h.worktreeRemovals).toEqual([]);
   }),
 );
@@ -607,12 +630,18 @@ const makeHarness = (input?: {
   readonly failWorktreeRemove?: boolean;
   readonly failBranchDelete?: boolean;
   readonly missingDelegationStorage?: boolean;
+  readonly missingLocalAllocator?: boolean;
+  readonly failLocalAllocate?: boolean;
+  readonly badLocalCapture?: boolean;
+  readonly failRollbackPrepare?: boolean;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
   const remoteRequests: RemoteWorkerRequest[] = [];
   let loseRemoteReply = input?.remoteReplyLost ?? false;
   const dispatchOptions: Array<OrchestrationDispatchOptions | undefined> = [];
   const worktreeCreates: Array<WorktreeCreateRecord> = [];
+  const localAllocations: LocalWorkerWorktreeInput[] = [];
+  const rollbackCaptures: Array<CapturedWorkerWorktree | undefined> = [];
   const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
   const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
   let idIndex = 0;
@@ -867,7 +896,25 @@ const makeHarness = (input?: {
               ),
             ),
           );
+    const localSources = (effect: ReturnType<typeof makeWorkerDispatchWithSources>) =>
+      input?.missingLocalAllocator ? effect : effect.pipe(Effect.provideService(LocalWorkerWorktree, {
+        allocate: (allocation) => Effect.gen(function* () {
+          localAllocations.push(allocation);
+          if (input?.failLocalAllocate) return yield* new LocalWorkerWorktreeError({ reason: "allocation" });
+          const refName = "workjet/worker/" + allocation.context.workerThreadId;
+          const path = workerPathFor(allocation.context.workerThreadId);
+          return {
+            path, refName,
+            custody: {
+              kind: "isolated" as const, worktreePath: path,
+              adminPath: path + "/.git", worktreeDev: "1", worktreeIno: input?.badLocalCapture ? "foreign" : "2",
+              adminDev: "1", adminIno: "3",
+            },
+          };
+        }),
+      }));
     return yield* makeWorkerDispatchWithSources(sources).pipe(
+      localSources,
       remoteSources,
       delegationSources,
       Effect.provideService(OrchestrationEngineService, engine),
@@ -876,8 +923,11 @@ const makeHarness = (input?: {
       Effect.provideService(ProjectionSnapshotQuery, query),
       Effect.provideService(GitWorkflowService, gitWorkflow),
       Effect.provideService(WorkerDispatchRollback, {
-        prepare: (prepared) =>
-          Effect.succeed(
+        prepare: (prepared) => {
+          rollbackCaptures.push(prepared.custody);
+          if (input?.failRollbackPrepare || prepared.custody?.worktreeIno === "foreign")
+            return Effect.fail(new WorkerDispatchRollbackError({ reason: "changed" }));
+          return Effect.succeed(
             Effect.gen(function* () {
               worktreeRemovals.push({ cwd: prepared.cwd, path: prepared.worktreePath });
               if (input?.failWorktreeRemove) {
@@ -895,7 +945,8 @@ const makeHarness = (input?: {
                 recoveryAdminPath: "/repo/.git/workjet-rejected/worker-3",
               };
             }),
-          ),
+          );
+        },
       }),
     );
   }).pipe(Effect.provide(worktreeStorageLayer));
@@ -905,6 +956,8 @@ const makeHarness = (input?: {
     service,
     remoteRequests,
     worktreeCreates,
+    localAllocations,
+    rollbackCaptures,
     worktreeRemovals,
     branchDeletions,
   };

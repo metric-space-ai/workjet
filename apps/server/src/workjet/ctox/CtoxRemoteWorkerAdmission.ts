@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Hashes the immutable wire request; no credential material is transported.
 import * as NodeCrypto from "node:crypto";
+import { canonicalWorkerJson } from "../CanonicalWorkerJson.ts";
 import * as NodeUtil from "node:util";
 import {
   RemoteWorkerDispatchError,
@@ -67,22 +68,9 @@ export interface RemoteWorkerModelReferences {
 const failure = (reason: RemoteWorkerDispatchError["reason"]) =>
   new RemoteWorkerDispatchError({ reason });
 
-/** Key ordering cannot change a request identity. Array ordering remains part
- * of the immutable wire request, including the explicitly delegated grants. */
-const canonicalJson = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    return `{${Object.entries(value)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
-};
 export const remoteWorkerRequestDigest = (request: RemoteWorkerRequest) =>
   Schema.encodeEffect(RemoteWorkerRequest)(request).pipe(
-    Effect.map((wire) => NodeCrypto.createHash("sha256").update(canonicalJson(wire)).digest("hex")),
+    Effect.map((wire) => NodeCrypto.createHash("sha256").update(canonicalWorkerJson(wire)).digest("hex")),
     Effect.mapError(() => failure("invalid-request")),
   );
 

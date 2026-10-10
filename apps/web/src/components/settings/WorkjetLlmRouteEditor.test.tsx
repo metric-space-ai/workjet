@@ -26,6 +26,28 @@ const accounts: ReadonlyArray<WorkjetGatewayAccountSummary> = [
 ];
 
 describe("WorkjetLlmRouteEditor", () => {
+  it("keeps the native holding account when only the route label changes", () => {
+    const native = {
+      id: WorkjetLlmRouteId.make("native"),
+      label: "Native Claude",
+      nativeAccountReference: {
+        accountId: "196a89ba-ee86-4413-885c-04ca60e6f291",
+        holderInstanceId: "322084e5-8239-48d7-b3c5-c5178fbe5822",
+        accountRevision: 3,
+      },
+    };
+    const draft = createWorkjetLlmRouteDraft({ route: native, accounts });
+    expect(draft.gatewayAccountId).toBe("");
+    expect(saveWorkjetLlmRouteDraft({ ...draft, label: "Renamed Claude" })).toEqual({
+      ...native,
+      label: "Renamed Claude",
+    });
+    const paired = { ...native, gatewayAccountId: accounts[0]!.id };
+    expect(
+      saveWorkjetLlmRouteDraft(createWorkjetLlmRouteDraft({ route: paired, accounts })),
+    ).toEqual(paired);
+  });
+
   it("saves only a gateway-account reference without model or credentials", () => {
     const draft = createWorkjetLlmRouteDraft({ accounts, id: "route-work" });
     const saved = saveWorkjetLlmRouteDraft({ ...draft, label: " Codex production " });

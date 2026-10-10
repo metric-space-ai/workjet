@@ -13,7 +13,7 @@ import {
   type NativeSupervisorWorkerCompletion,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
-import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
+import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { makeCtoxNativeSupervisorWorkers } from "./CtoxNativeSupervisorWorkers.ts";
 const scope = { connectionId: WorkjetConnectionId.make("native"), instanceId: "managed:source" };
 const source = {
@@ -72,6 +72,7 @@ function fixture() {
   const client = makeCtoxNativeSupervisorWorkers({
     transport,
     connections: {
+      probe: () => Effect.die("No authentication rejection in this fixture"),
       resolveReadyTarget: (connectionId, instanceId) => {
         assert.equal(connectionId, scope.connectionId);
         assert.equal(instanceId, scope.instanceId);
@@ -197,5 +198,170 @@ it.effect("completes only the exact parent, worker intent and matching native AC
       intent_id: intent.intentId,
       result: dispatched,
     });
+  }),
+);
+
+it.effect(
+  "publishes only an exact current-source terminal receipt and verifies the immutable native ACK",
+  () =>
+    Effect.gen(function* () {
+      if (dispatched.status !== "dispatched")
+        return yield* Effect.die("dispatched fixture required");
+      const f = fixture();
+      const outcome: import("../NativeWorkerOutcome.ts").NativeWorkerTerminalReceipt = {
+        schema: "ctox.workjet.worker-outcome.v1",
+        worker_thread_id: intent.intentId,
+        environment_id: dispatched.environmentId,
+        computer_id: dispatched.computerId,
+        branch: dispatched.branch,
+        execution_stopped: true,
+        pull_request: {
+          provider: "github",
+          number: 7,
+          url: "https://github.com/owner/repo/pull/7",
+          head_oid: "a".repeat(40),
+          state: "merged",
+        },
+      };
+      const ack = {
+        provenance: "authenticated_source_report",
+        accepted_at_ms: 123,
+        registration_revision: registration.revision,
+        receipt: outcome,
+      };
+      f.reply(ack);
+      assert.equal(yield* f.client.reportOutcome(scope, registration, dispatched, outcome), 123);
+      assert.deepEqual(f.calls.at(-1)?.args, {
+        action: "report_outcome",
+        registration_id: registration.registrationId,
+        revision: registration.revision,
+        intent_id: intent.intentId,
+        receipt: outcome,
+      });
+      f.rotate();
+      yield* f.client.reportOutcome(scope, registration, dispatched, outcome);
+      assert.equal(f.calls.at(-1)?.token, "new-current-owner-token");
+      const count = f.calls.length;
+      for (const altered of [
+        { ...outcome, environment_id: "foreign" },
+        { ...outcome, computer_id: "foreign" },
+        { ...outcome, branch: "foreign" },
+        { ...outcome, worker_thread_id: "foreign" },
+      ])
+        assert.equal(
+          (yield* f.client
+            .reportOutcome(scope, registration, dispatched, altered)
+            .pipe(Effect.result))._tag,
+          "Failure",
+        );
+      assert.equal(f.calls.length, count);
+      for (const reply of [
+        { ...ack, registration_revision: 4 },
+        {
+          ...ack,
+          receipt: {
+            ...outcome,
+            pull_request: { ...outcome.pull_request, head_oid: "b".repeat(40) },
+          },
+        },
+      ]) {
+        f.reply(reply);
+        assert.equal(
+          (yield* f.client
+            .reportOutcome(scope, registration, dispatched, outcome)
+            .pipe(Effect.result))._tag,
+          "Failure",
+        );
+      }
+      f.disconnect();
+      const disconnected = f.calls.length;
+      assert.equal(
+        (yield* f.client
+          .reportOutcome(scope, registration, dispatched, outcome)
+          .pipe(Effect.result))._tag,
+        "Failure",
+      );
+      assert.equal(f.calls.length, disconnected);
+    }),
+);
+
+it.effect("retires a rejected shared source before registering the other project parents", () =>
+  Effect.gen(function* () {
+    let ready = true;
+    let requests = 0;
+    let authChecks = 0;
+    const client = makeCtoxNativeSupervisorWorkers({
+      connections: {
+        resolveReadyTarget: () =>
+          ready
+            ? Effect.succeed({ endpoint: "https://native.invalid/mcp", token: "rejected-token" })
+            : Effect.fail(
+                new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" }),
+              ),
+        probe: () =>
+          Effect.sync(() => {
+            authChecks++;
+            ready = false;
+            return {
+              connectionId: scope.connectionId,
+              instanceId: scope.instanceId,
+              displayName: "Project workers",
+              source: "ctox_dev" as const,
+              status: "needs_auth" as const,
+              reason: "authentication-required",
+            };
+          }),
+      },
+      transport: {
+        probe: () =>
+          Effect.suspend(() => {
+            requests++;
+            return Effect.fail(new CtoxMcpTransportError({ reason: "authentication-required" }));
+          }),
+        callTool: () => Effect.die("A rejected probe cannot call a worker tool"),
+      },
+    });
+    for (let index = 0; index < 12; index++) {
+      const result = yield* client
+        .register(scope, { ...source, sourceSupervisorThreadId: ThreadId.make("parent-" + index) })
+        .pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+    }
+    assert.equal(requests, 1);
+    assert.equal(authChecks, 1);
+  }),
+);
+
+it.effect("keeps a newly authorized source usable after a late rejection of the old token", () =>
+  Effect.gen(function* () {
+    let checks = 0;
+    const client = makeCtoxNativeSupervisorWorkers({
+      connections: {
+        resolveReadyTarget: () =>
+          Effect.succeed({ endpoint: "https://native.invalid/mcp", token: "current-token" }),
+        probe: () =>
+          Effect.sync(() => {
+            checks++;
+            return {
+              connectionId: scope.connectionId,
+              instanceId: scope.instanceId,
+              displayName: "Project workers",
+              source: "ctox_dev" as const,
+              status: "ready" as const,
+              reason: null,
+            };
+          }),
+      },
+      transport: {
+        probe: () => Effect.succeed(undefined),
+        callTool: () =>
+          checks === 0
+            ? Effect.fail(new CtoxMcpTransportError({ reason: "authentication-required" }))
+            : Effect.succeed({ structuredContent: registration }),
+      },
+    });
+    assert.equal((yield* client.register(scope, source).pipe(Effect.result))._tag, "Failure");
+    assert.deepEqual(yield* client.register(scope, source), registration);
+    assert.equal(checks, 1);
   }),
 );

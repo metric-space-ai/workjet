@@ -86,6 +86,36 @@ describe("computer popup selection and details", () => {
     detailComputerId: null,
   };
 
+  it("lists registered network computers and concrete connection or checkout reasons", () => {
+    const markup = renderToStaticMarkup(
+      ComposerComputerChoiceList({
+        ...base,
+        onSelectComputer: () => undefined,
+        onOpenDetails: () => undefined,
+        computerAvailability: {
+          local: { status: "Online", reason: null },
+          remote: { status: "Offline", reason: "gpu3 is offline." },
+        },
+        registeredComputers: [
+          {
+            id: "native-gpu1",
+            displayName: "gpu1-a6000",
+            hostingMode: "self_hosted",
+            status: "assigned",
+            capabilities: [],
+            selfHostedColocation: false,
+          },
+        ],
+      }),
+    );
+    expect(markup).toContain("Online");
+    expect(markup).toContain("Offline");
+    expect(markup).toContain("gpu3 is offline.");
+    expect(markup).toContain("gpu1-a6000");
+    expect(markup).toContain("No coding connection");
+    expect(markup).not.toContain("Moving a started session");
+  });
+
   it("keeps a save in progress visible and blocks reopening after a responsive remount", () => {
     const markup = renderToStaticMarkup(
       <ComposerComputerControlView
@@ -183,6 +213,7 @@ describe("harness ↔ provider-instance mapping", () => {
     expect(harnessForProviderInstanceId("opencode")).toBe("opencode");
     expect(harnessForProviderInstanceId("grok")).toBe("grok-cli");
     expect(harnessForProviderInstanceId("cursor")).toBe("cursor-agent");
+    expect(harnessForProviderInstanceId("pi", "pi")).toBe("pi-code");
   });
 
   it("maps named profiles by their actual driver and marks that family configured", () => {
@@ -199,8 +230,7 @@ describe("harness ↔ provider-instance mapping", () => {
 
   it("HIDES a harness this build has no instance for, and marks unconfigured ones", () => {
     const options = composerHarnessOptions(new Set(["claudeAgent"]));
-    // pi-code maps to no provider instance — it must not be listed at all.
-    expect(options.some((option) => option.id === "pi-code")).toBe(false);
+    expect(options.find((option) => option.id === "pi-code")?.configured).toBe(false);
     expect(options.find((option) => option.id === "claude-code")?.configured).toBe(true);
     expect(options.find((option) => option.id === "codex-cli")?.configured).toBe(false);
   });
@@ -208,6 +238,20 @@ describe("harness ↔ provider-instance mapping", () => {
 
 describe("gateway models per route", () => {
   const models = [model("m-openai", ["acc-openai"]), model("m-kimi", ["acc-kimi"])];
+
+  it("does not substitute source gateway models for a native-only account", () => {
+    expect(
+      gatewayModelsForRoute(models, {
+        id: WorkjetLlmRouteId.make("native-only"),
+        label: "Native Claude",
+        nativeAccountReference: {
+          accountId: "196a89ba-ee86-4413-885c-04ca60e6f291",
+          holderInstanceId: "322084e5-8239-48d7-b3c5-c5178fbe5822",
+          accountRevision: 3,
+        },
+      }),
+    ).toEqual([]);
+  });
 
   it("narrows the catalog to the selected route's account", () => {
     const scoped = gatewayModelsForRoute(models, route("r1", "OpenAI", "acc-openai"));
@@ -258,8 +302,11 @@ describe("the Computer control", () => {
       />,
     );
 
-    expect(markup).toContain("max-w-52");
+    expect(markup).toContain("max-w-full");
     expect(markup).toContain("min-w-0");
+    expect(markup).toContain("whitespace-normal");
+    expect(markup).toContain(`Computer ${"x".repeat(180)}`);
+    expect(markup).not.toContain("truncate");
   });
 
   it("separates project availability from device pairing", () => {

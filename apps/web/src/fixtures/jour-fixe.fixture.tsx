@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ProjectId } from "@workjet/contracts";
 import { JourFixeRoom } from "../components/JourFixeRoom";
+import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
+import { updateSlideCanvas } from "@workjet/slide-engine/excalidraw/scene";
+import type { SlideDocument } from "@workjet/slide-engine/schema";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import { ProjectCalendar } from "../components/ProjectCalendar";
 import { Button } from "../components/ui/button";
@@ -58,8 +61,20 @@ function syntheticNarration() {
     );
   return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
 }
+// `?presentation=1`: the first two slides carry a hand-drawn presentation; saves stay in memory.
+const withPresentation = new URLSearchParams(location.search).get("presentation") === "1";
+const fixturePresentation: SlideDocument = {
+  ...jourFixeDeck,
+  slides: [
+    { ...jourFixeDeck.slides[0]!, id: "slide-1" },
+    { ...jourFixeDeck.slides[1]!, id: "slide-fixture-2" },
+  ],
+};
+
 function Fixture() {
   const [view, setView] = useState<"overview" | "calendar" | "meeting">("overview");
+  const [presentation, setPresentation] = useState<SlideDocument>(fixturePresentation);
+  const [canvasSaveCount, setCanvasSaveCount] = useState(0);
   const [meeting, setMeeting] = useState<JourFixeRoomSnapshot>({
     ...contractMeeting,
     state: "live",
@@ -108,6 +123,9 @@ function Fixture() {
         <span className="mr-auto text-xs text-muted-foreground">
           Isolated fixture · {fixture.source.contract}
         </span>
+        {withPresentation && (
+          <output aria-label="Fixture canvas save count">{canvasSaveCount}</output>
+        )}
         <Button size="sm" variant="outline" onClick={() => setView("overview")}>
           Project overview
         </Button>
@@ -172,6 +190,18 @@ function Fixture() {
           projectTitle="Fixture project"
           meeting={meeting}
           onBack={() => setView("overview")}
+          {...(withPresentation
+            ? {
+                presentation: {
+                  document: presentation,
+                  editable: true,
+                  onSave: async (slideId, scene) => {
+                    setCanvasSaveCount((count) => count + 1);
+                    setPresentation(updateSlideCanvas(presentation, slideId, scene));
+                  },
+                },
+              }
+            : {})}
           audio={{
             meetingId: meeting.id,
             projectId: meeting.projectId,

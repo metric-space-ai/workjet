@@ -8,7 +8,8 @@ on:
       - main
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
+  # One running main build plus only the newest pending one; a PR push supersedes its previous run.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

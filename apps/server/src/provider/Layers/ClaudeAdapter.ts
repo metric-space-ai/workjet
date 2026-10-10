@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
+import type { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
 /**
@@ -82,6 +83,8 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import { readWorkerSourceHarness } from "../../workjet/WorkerSourceHarness.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
@@ -241,6 +244,9 @@ interface ClaudeTaskAgentState {
 
 interface ClaudeSessionContext {
   session: ProviderSession;
+  readonly observeGoalAuthor: boolean;
+  readonly sdkJournal: NativeSupervisorSdkJournal | undefined;
+  lastGoalAuthor: { readonly turnId: TurnId; readonly model: string } | undefined;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
   readonly processes: readonly ProviderTrackedProcess[];
@@ -320,6 +326,8 @@ export interface ClaudeAdapterLiveOptions {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
+  /** Private original-Source service only; never supplied by settings/RPC. */
+  readonly createNativeSupervisorSdkJournal?: (threadId: ThreadId) => NativeSupervisorSdkJournal;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
 }
@@ -3032,6 +3040,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (context.turnState) {
+      const authorModel = trimmedString(message.message.model);
+      if (
+        authorModel &&
+        context.observeGoalAuthor &&
+        (context.lastGoalAuthor?.turnId !== context.turnState.turnId ||
+          context.lastGoalAuthor.model !== authorModel)
+      ) {
+        const stamp = yield* makeEventStamp();
+        yield* offerRuntimeEvent({
+          type: "thread.metadata.updated",
+          eventId: stamp.eventId,
+          provider: PROVIDER,
+          createdAt: stamp.createdAt,
+          threadId: context.session.threadId,
+          turnId: asCanonicalTurnId(context.turnState.turnId),
+          payload: { metadata: { workjetAuthorModel: authorModel } },
+          ...(context.session.providerInstanceId !== undefined
+            ? { providerInstanceId: context.session.providerInstanceId }
+            : {}),
+          providerRefs: nativeProviderRefs(context),
+          raw: {
+            source: "claude.sdk.message",
+            method: "claude/assistant/model",
+            payload: { model: authorModel, messageId: message.uuid },
+          },
+        });
+        context.lastGoalAuthor = { turnId: context.turnState.turnId, model: authorModel };
+      }
       context.turnState.items.push(message.message);
       yield* backfillAssistantTextBlocksFromSnapshot(context, message);
     }
@@ -3185,6 +3221,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "background_tasks_changed":
       case "vcs_state_changed":
       case "code_change_published":
+      case "per_turn_effort_changed":
+        // Per-turn effort activation is an informational CLI state notice.
         return;
     }
 
@@ -3603,10 +3641,30 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  const observeNativeSdk = Effect.fn("observeNativeSdk")(function* (
+    context: ClaudeSessionContext,
+    observe: (journal: NativeSupervisorSdkJournal) => Promise<void>,
+  ) {
+    if (context.sdkJournal)
+      yield* Effect.tryPromise({
+        try: () => observe(context.sdkJournal!),
+        catch: (cause) =>
+          new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: context.session.threadId,
+            detail: "Original SDK observation could not be committed.",
+            cause,
+          }),
+      });
+  });
+
   const handleSdkMessage = Effect.fn("handleSdkMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
   ) {
+    yield* observeNativeSdk(context, (journal) =>
+      journal.observeSdkMessage(message, context.turnState?.turnId),
+    );
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
 
@@ -3677,6 +3735,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ),
         ),
       ),
+      Effect.onExit(() => observeNativeSdk(context, (journal) => journal.sdkStreamJoined())),
     );
 
   const handleStreamExit = Effect.fn("handleStreamExit")(function* (
@@ -3762,6 +3821,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           cause,
         }),
     }).pipe(
+      Effect.tap(() => observeNativeSdk(context, (journal) => journal.sdkQueryCloseReturned())),
       Effect.catch((error) =>
         emitRuntimeError(context, "Failed to close Claude runtime query.", {
           errorTag: error._tag,
@@ -3829,6 +3889,70 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           provider: PROVIDER,
           operation: "startSession",
           issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
+        });
+      }
+      if (options?.createNativeSupervisorSdkJournal && options.createQuery !== undefined) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue:
+            "Original SDK observation requires the actual SDK child; a query override is unsupported.",
+        });
+      }
+      const sdkJournal = options?.createNativeSupervisorSdkJournal
+        ? yield* Effect.try({
+            try: () => options.createNativeSupervisorSdkJournal!(input.threadId),
+            catch: (cause) =>
+              new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId: input.threadId,
+                detail: "Original SDK observer could not be created.",
+                cause,
+              }),
+          })
+        : undefined;
+      const workerSource = readWorkerSourceHarness(input.threadId);
+      if (input.workjetConfig?.role === "worker") {
+        const environment = yield* Effect.serviceOption(ServerEnvironment);
+        const localEnvironmentId = Option.isSome(environment)
+          ? yield* environment.value.getEnvironmentId
+          : undefined;
+        const foreign = input.workjetConfig.parent.environmentId !== localEnvironmentId;
+        if (
+          foreign &&
+          (!workerSource ||
+            workerSource.harness !== "claude-code" ||
+            workerSource.identity.sourceEnvironmentId !==
+              input.workjetConfig.parent.environmentId ||
+            workerSource.identity.targetEnvironmentId !== localEnvironmentId)
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue:
+              "Foreign worker source route is unavailable or mismatched; reconnect its source before restart.",
+          });
+        }
+      }
+      if (workerSource) {
+        if (
+          workerSource.harness !== "claude-code" ||
+          workerSource.model !== input.modelSelection?.model
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Worker harness or model differs from the source permit.",
+          });
+        }
+        yield* Effect.tryPromise({
+          try: () => workerSource.admit(),
+          catch: () =>
+            new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Foreign worker source admission failed or expired.",
+            }),
         });
       }
       const resumeState = readClaudeResumeState(input.resumeCursor);
@@ -4242,12 +4366,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
       const claudeBinaryPath = claudeSdkExecutablePath;
-      const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
+      const extraArgs = workerSource ? {} : parseCliArgs(claudeSettings.launchArgs).flags;
       const modelSelection =
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
-      const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
+      const apiModelId =
+        workerSource?.model ??
+        (modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined);
       const initialContextWindow = selectedClaudeContextWindow(modelSelection);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
@@ -4281,14 +4407,37 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // The resolver returns the per-instance merge only, so the Claude home
       // isolation (CLAUDE_CONFIG_DIR) is re-applied on top of it exactly as
       // it is for the construction-time environment.
-      const sessionEnvironment = options?.resolveSessionEnvironment
-        ? yield* makeClaudeEnvironment(
-            claudeSettings,
-            // The API model id is what actually travels on the wire, so it is
-            // the identity the gateway catalog has to be matched against.
-            yield* options.resolveSessionEnvironment({ model: apiModelId }),
-          ).pipe(Effect.provideService(Path.Path, path))
-        : claudeEnvironment;
+      const sessionEnvironment = workerSource
+        ? {
+            PATH: process.env.PATH,
+            HOME: process.env.HOME,
+            TMPDIR: process.env.TMPDIR,
+            LANG: process.env.LANG,
+            CLAUDE_CONFIG_DIR: path.join(
+              serverConfig.stateDir,
+              "worker-harnesses",
+              input.threadId,
+              "claude",
+            ),
+            ANTHROPIC_BASE_URL: workerSource.baseUrl.slice(0, -3),
+            ANTHROPIC_API_KEY: workerSource.apiKey,
+            WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
+            WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
+            ANTHROPIC_AUTH_TOKEN: undefined,
+            CLAUDE_CODE_OAUTH_TOKEN: undefined,
+            CLAUDE_CODE_USE_BEDROCK: undefined,
+            CLAUDE_CODE_USE_VERTEX: undefined,
+            CLAUDE_CODE_USE_FOUNDRY: undefined,
+            ANTHROPIC_CUSTOM_HEADERS: undefined,
+          }
+        : options?.resolveSessionEnvironment
+          ? yield* makeClaudeEnvironment(
+              claudeSettings,
+              // The API model id is what actually travels on the wire, so it is
+              // the identity the gateway catalog has to be matched against.
+              yield* options.resolveSessionEnvironment({ model: apiModelId }),
+            ).pipe(Effect.provideService(Path.Path, path))
+          : claudeEnvironment;
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an
@@ -4311,6 +4460,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         if (child.pid !== undefined) {
           const pid = child.pid;
+          sdkJournal?.captureOwnedSdkChild(child);
           processes.push({
             pid,
             isRunning: Effect.sync(() => child.exitCode === null && child.signalCode === null),
@@ -4332,7 +4482,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
         systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
-        settingSources: [...CLAUDE_SETTING_SOURCES],
+        settingSources: workerSource ? [] : [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
         ...(effectiveEffort
@@ -4442,6 +4592,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       const context: ClaudeSessionContext = {
         session,
+        observeGoalAuthor:
+          input.workjetConfig?.schemaVersion === 2 &&
+          input.workjetConfig.team?.role === "specialist",
+        lastGoalAuthor: undefined,
+        sdkJournal,
         promptQueue,
         query: queryRuntime,
         processes,
@@ -4679,6 +4834,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       boundInstanceId,
     });
 
+    yield* observeNativeSdk(context, (journal) => journal.turnSubmitted(turnId));
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message,

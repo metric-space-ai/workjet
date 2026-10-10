@@ -1,3 +1,4 @@
+import { NativeProviderRows } from "./NativeProviderRows";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@workjet/client-runtime/connection";
 import { safeErrorLogAttributes } from "@workjet/client-runtime/errors";
@@ -92,6 +93,8 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { WorkjetModelsProviders } from "./WorkjetModelsProviders";
+import { useInstanceGrokAccount } from "./useInstanceGrokAccount";
+import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { WorkjetModelsUsage } from "./WorkjetModelsUsage";
 import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
@@ -345,6 +348,9 @@ export function WorkjetGatewayAccountsSection({
 }: {
   readonly environmentId: EnvironmentId | null;
 }) {
+  const { selectedId } = useCtoxMode();
+  if (environmentId === null && selectedId)
+    return <InstanceOnlyModels key={selectedId} instanceId={selectedId} />;
   if (environmentId === null) {
     return (
       <SettingsSection title="Model access">
@@ -364,11 +370,78 @@ function ScopedWorkjetGatewayAccountsSection({
   readonly environmentId: EnvironmentId;
 }) {
   const gateway = useWorkjetGatewaySection(environmentId);
+  const { selectedId } = useCtoxMode();
   return (
     <>
-      <WorkjetModelsProviders {...gateway} />
+      {selectedId ? (
+        <InstanceGatewayModels key={selectedId} instanceId={selectedId} gateway={gateway} />
+      ) : (
+        <WorkjetModelsProviders {...gateway} />
+      )}
       <WorkjetModelsUsage environmentId={environmentId} />
     </>
+  );
+}
+
+function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
+  const { discovery } = useCtoxMode();
+  const instance =
+    discovery !== "loading" && discovery._tag === "ready"
+      ? discovery.instances.find((item) => item.id === instanceId)
+      : undefined;
+  const label = instance?.displayName ?? "CTOX instance";
+  const grok = useInstanceGrokAccount(instanceId, label);
+  return (
+    <section aria-label="LLM providers" className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">LLM providers</h2>
+        <Button size="sm" disabled={grok.checking || grok.installed} onClick={grok.start}>
+          <PlusIcon className="size-3.5" />
+          Add Grok Build account on {label}
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
+          <div
+            role="row"
+            className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
+          >
+            <span role="columnheader">Provider / account</span>
+            <span role="columnheader">Models</span>
+            <span role="columnheader">Limits</span>
+            <span role="columnheader">Active</span>
+            <span role="columnheader" className="sr-only">
+              Actions
+            </span>
+          </div>
+          {grok.row}
+          <NativeProviderRows instanceId={instanceId} label={label} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InstanceGatewayModels({
+  instanceId,
+  gateway,
+}: {
+  readonly instanceId: string;
+  readonly gateway: ReturnType<typeof useWorkjetGatewaySection>;
+}) {
+  const { discovery } = useCtoxMode();
+  const instance =
+    discovery !== "loading" && discovery._tag === "ready"
+      ? discovery.instances.find((item) => item.id === instanceId)
+      : undefined;
+  const label = instance?.displayName ?? "CTOX instance";
+  const instanceGrok = useInstanceGrokAccount(instanceId, label);
+  return (
+    <WorkjetModelsProviders
+      {...gateway}
+      instanceGrok={instanceGrok}
+      nativeProviderRows={<NativeProviderRows instanceId={instanceId} label={label} />}
+    />
   );
 }
 
@@ -462,10 +535,7 @@ export function EnvironmentProviderSettings({
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
-  // Live Workjet harness probe of the selected environment. Pi Code has no
-  // chat driver (no instance card), but it IS a harness runtime — Workjet
-  // workers run on it — so the page reports its real installed state instead
-  // of omitting it (operator: "pi code fehlt bei den harnesses").
+  // Report Pi's installed state before the operator adds a chat instance.
   const workjetHarnessProbe = useEnvironmentQuery(
     serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
@@ -1026,53 +1096,48 @@ export function EnvironmentProviderSettings({
               />
             );
           })}
-          {/* Pi Code has no chat-driver instance yet, but it IS a harness
-              runtime this app can run Workjet workers on — so it appears
-              here like the other runtimes: mark, status dot, version, and
-              the same "Installed · checked" line. */}
-          {/* Same silhouette as ProviderInstanceCard's shell — the bordered
-              card broke the list rhythm (Befund F12); missing toggle/chevron
-              stay deliberate, there is no chat driver to configure. */}
-          <div className="rounded-xl transition-colors hover:bg-muted/20">
-            <div className="px-3 py-3 sm:px-4">
-              <div className="flex items-center gap-2">
-                <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
-                  <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
-                  <span
-                    className={cn(
-                      "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
-                      // Green = probed available, muted = not probed yet,
-                      // red = probe answered "not available" — two greys made
-                      // failure indistinguishable from unknown (Befund K-B16).
-                      piCodeProbe?.availability === "available"
-                        ? "bg-emerald-500"
-                        : piCodeProbe === null
-                          ? "bg-muted-foreground/40"
-                          : "bg-red-500/80",
-                    )}
-                    aria-hidden
-                  />
-                </span>
-                <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
-                  Pi Code
-                </h3>
-                {piCodeProbe?.availability === "available" &&
-                "version" in piCodeProbe &&
-                piCodeProbe.version ? (
-                  <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
-                    v{piCodeProbe.version}
-                  </code>
-                ) : null}
+          {!serverProviders.some((provider) => provider.driver === "pi") ? (
+            <div className="rounded-xl transition-colors hover:bg-muted/20">
+              <div className="px-3 py-3 sm:px-4">
+                <div className="flex items-center gap-2">
+                  <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+                    <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
+                    <span
+                      className={cn(
+                        "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
+                        // Green = probed available, muted = not probed yet,
+                        // red = probe answered "not available" — two greys made
+                        // failure indistinguishable from unknown (Befund K-B16).
+                        piCodeProbe?.availability === "available"
+                          ? "bg-emerald-500"
+                          : piCodeProbe === null
+                            ? "bg-muted-foreground/40"
+                            : "bg-red-500/80",
+                      )}
+                      aria-hidden
+                    />
+                  </span>
+                  <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
+                    Pi Code
+                  </h3>
+                  {piCodeProbe?.availability === "available" &&
+                  "version" in piCodeProbe &&
+                  piCodeProbe.version ? (
+                    <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
+                      v{piCodeProbe.version}
+                    </code>
+                  ) : null}
+                </div>
+                <p className="mt-0.5 pl-7 text-xs text-muted-foreground">
+                  {piCodeProbe === null
+                    ? "Checking…"
+                    : piCodeProbe.availability === "available"
+                      ? "Installed · add a Pi Code instance to use it"
+                      : "Not installed on this machine"}
+                </p>
               </div>
-              <p className="mt-0.5 pl-7 text-xs text-muted-foreground">
-                {piCodeProbe === null
-                  ? "Checking…"
-                  : piCodeProbe.availability === "available"
-                    ? "Installed · available to Workjet Lumas"
-                    : "Not installed on this machine"}
-              </p>
             </div>
-          </div>
+          ) : null}
         </div>
       </SettingsSection>
 

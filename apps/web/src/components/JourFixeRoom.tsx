@@ -1,9 +1,12 @@
-import { useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   CheckIcon,
+  MessageSquarePlusIcon,
   MicIcon,
+  PencilIcon,
   PlusIcon,
+  SaveIcon,
   SendIcon,
   Trash2Icon,
   XIcon,
@@ -31,6 +34,14 @@ import {
   type JourFixeRoomSnapshot,
   type JourFixeTodo,
 } from "../lib/jourFixeRoom";
+
+import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
+import type { SlideDocument } from "@workjet/slide-engine/schema";
+import { PresentationSlideChangedError } from "../lib/jourFixePresentation";
+import { jourFixeShortcut } from "../lib/jourFixeShortcuts";
+
+// The canvas, its 3D scenes and the Excalidraw runtime load only when a meeting has a presentation.
+const JourFixeCanvasStage = lazy(() => import("./JourFixeCanvasStage"));
 
 const MEETING_MARKDOWN_COMPONENTS: Components = {
   img: () => null,
@@ -64,6 +75,16 @@ export interface JourFixeRoomProps {
   readonly onToggleMicrophone?: () => void;
   readonly microphoneActive?: boolean;
   readonly partialTranscript?: JourFixePartialTranscript | undefined;
+  /**
+   * The meeting's presentation. Slides whose id appears in it are shown as the hand-drawn
+   * canvas; the others keep the markdown stage. Saves store a new presentation revision and
+   * never change the deck revision that comments and narration are bound to.
+   */
+  readonly presentation?: {
+    readonly document: SlideDocument;
+    readonly editable: boolean;
+    readonly onSave: (slideId: string, scene: CanvasScene) => Promise<void>;
+  };
   /** Blob obtained through the selected instance's authorized file channel. */
   readonly audio?: {
     readonly meetingId: string;
@@ -71,6 +92,7 @@ export interface JourFixeRoomProps {
     readonly slideId: string;
     readonly deckRevision: number;
     readonly blobUrl: string;
+    readonly rate?: number;
   };
 }
 
@@ -95,21 +117,52 @@ function JourFixeRoomContent({
   microphoneActive = false,
   partialTranscript,
   audio,
+  presentation,
 }: JourFixeRoomProps) {
   const slides = [...meeting.slides].sort((a, b) => a.position - b.position);
   const [slideId, setSlideId] = useState(slides[0]?.id ?? "");
   const slide = slides.find((item) => item.id === slideId) ?? slides[0];
   const index = slide ? slides.indexOf(slide) : -1;
+  const canvasSlide =
+    slide !== undefined &&
+    presentation !== undefined &&
+    presentation.document.slides.some((item) => item.id === slide.id);
   const [panel, setPanel] = useState<"conversation" | "comments" | "agenda">("conversation");
   const [view, setView] = useState<"slides" | "review" | null>(null);
   const review =
     view === "review" || (view === null && ["review", "confirmed"].includes(meeting.state));
   const [draft, setDraft] = useState<JourFixeCommentDraft | null>(null);
+  const [placingComment, setPlacingComment] = useState(false);
+  const [canvasEditing, setCanvasEditing] = useState(false);
+  const [editingSlideId, setEditingSlideId] = useState<string | null>(null);
+  const captureRef = useRef<(() => CanvasScene | null) | null>(null);
+  // Retain the revision/operation captured when editing starts, even if a read refreshes props.
+  const saveEditRef = useRef<((slideId: string, scene: CanvasScene) => Promise<void>) | null>(null);
+  const [editDocument, setEditDocument] = useState<SlideDocument | null>(null);
+  const canvasEpochRef = useRef(0);
+  const [canvasEpoch, setCanvasEpoch] = useState(0);
+  const [pendingScene, setPendingScene] = useState<CanvasScene | null>(null);
+  const [savingSlide, setSavingSlide] = useState(false);
+  const [slideSaveError, setSlideSaveError] = useState<string | null>(null);
+  const shownSlideId = slide?.id;
+  useEffect(() => {
+    if (canvasEditing && editingSlideId !== shownSlideId) {
+      setCanvasEditing(false);
+      setEditingSlideId(null);
+      setPendingScene(null);
+    }
+  }, [canvasEditing, editingSlideId, shownSlideId]);
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState("");
   const [visibleTurns, setVisibleTurns] = useState(100);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  // Presenter mode: Auto plays every slide's narration in turn; keys and full screen as in
+  // learnordie's live presenter.
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  const playerControl = useRef<(() => void) | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const shortcutHandler = useRef<(event: KeyboardEvent) => void>(() => {});
   const [error, setError] = useState<string | null>(null);
   const [todoDraft, setTodoDraft] = useState<{
     revision: number;
@@ -151,10 +204,46 @@ function JourFixeRoomContent({
       setBusy(false);
     }
   }
+  function discardCanvasEdit() {
+    // Invalidate the old editor callback before its cleanup can flush a debounced edit.
+    canvasEpochRef.current += 1;
+    setCanvasEpoch(canvasEpochRef.current);
+    captureRef.current = null;
+    saveEditRef.current = null;
+    setEditDocument(null);
+    setCanvasEditing(false);
+    setEditingSlideId(null);
+    setPendingScene(null);
+    setSlideSaveError(null);
+  }
   function selectSlide(id: string) {
     setSlideId(id);
+    // Unsaved canvas edits belong to the slide they were made on.
+    discardCanvasEdit();
+    setPlacingComment(false);
     onSlideChange?.(id);
   }
+  function toggleFullscreen() {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void stage.requestFullscreen?.().catch(() => {});
+  }
+  shortcutHandler.current = (event) => {
+    const action = jourFixeShortcut(event, canvasEditing);
+    if (!action || !slide) return;
+    if (action === "next" && index < slides.length - 1) selectSlide(slides[index + 1]!.id);
+    else if (action === "previous" && index > 0) selectSlide(slides[index - 1]!.id);
+    else if (action === "togglePlayback") playerControl.current?.();
+    else if (action === "toggleFullscreen") toggleFullscreen();
+    else return;
+    event.preventDefault();
+  };
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => shortcutHandler.current(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
   function editTodos(items: readonly JourFixeTodo[]) {
     if (!canRevise || meeting.todos === undefined) return;
     setTodoDraft({ revision: meeting.todos.revision, items });
@@ -408,32 +497,167 @@ function JourFixeRoomContent({
             </div>
           ) : slide ? (
             <div className="space-y-3">
+              {canvasSlide && presentation && (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {slideSaveError && (
+                    <p role="alert" className="mr-auto text-xs text-red-500">
+                      {slideSaveError}
+                    </p>
+                  )}
+                  {canvasEditing ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={savingSlide}
+                        onClick={discardCanvasEdit}
+                      >
+                        <XIcon className="size-3" />
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={savingSlide}
+                        onClick={() => {
+                          if (savingSlide || !editingSlideId) return;
+                          // Read the editor now: the debounced change may not include the last
+                          // stroke or the text that is still being typed.
+                          const scene = captureRef.current?.() ?? pendingScene;
+                          const target = editingSlideId;
+                          if (!scene) {
+                            setCanvasEditing(false);
+                            setEditingSlideId(null);
+                            return;
+                          }
+                          setSavingSlide(true);
+                          setSlideSaveError(null);
+                          (saveEditRef.current ?? presentation.onSave)(target, scene).then(
+                            () => {
+                              setCanvasEditing(false);
+                              setEditingSlideId(null);
+                              setPendingScene(null);
+                              setSavingSlide(false);
+                            },
+                            (reason: unknown) => {
+                              if (reason instanceof PresentationSlideChangedError) {
+                                // The newer slide is shown; this edit cannot be applied to it.
+                                setCanvasEditing(false);
+                                setEditingSlideId(null);
+                                setPendingScene(null);
+                              }
+                              setSlideSaveError(
+                                reason instanceof Error
+                                  ? reason.message
+                                  : "The slide could not be saved.",
+                              );
+                              setSavingSlide(false);
+                            },
+                          );
+                        }}
+                      >
+                        <SaveIcon className="size-3" />
+                        {savingSlide ? "Saving…" : "Save slide"}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {onComment && editable && (
+                        <Button
+                          size="sm"
+                          variant={placingComment ? "default" : "outline"}
+                          aria-pressed={placingComment}
+                          disabled={busy}
+                          onClick={() => setPlacingComment((value) => !value)}
+                        >
+                          <MessageSquarePlusIcon className="size-3" />
+                          {placingComment
+                            ? "Click the slide to place the comment"
+                            : "Comment on slide"}
+                        </Button>
+                      )}
+                      {presentation.editable && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy || placingComment}
+                          onClick={() => {
+                            saveEditRef.current = presentation.onSave;
+                            setEditDocument(presentation.document);
+                            setCanvasEditing(true);
+                            setEditingSlideId(slide.id);
+                            setPendingScene(null);
+                            setSlideSaveError(null);
+                          }}
+                        >
+                          <PencilIcon className="size-3" />
+                          Edit slide
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
               <div
-                className="relative aspect-video overflow-hidden rounded-lg border border-border bg-[#f5f3ee] text-[#18181b]"
+                ref={stageRef}
+                className="relative aspect-video overflow-hidden rounded-lg border border-border bg-[#f5f3ee] text-[#18181b] [&:fullscreen]:rounded-none [&:fullscreen]:border-0"
                 data-workjet-meeting-stage=""
               >
-                <article className="absolute inset-0 overflow-auto p-[6%]">
-                  <p className="mb-2 text-[clamp(10px,1vw,13px)] tracking-wide text-[#71717a]">
-                    {index + 1} / {slides.length}
-                  </p>
-                  <h2 className="mb-5 text-[clamp(18px,2.5vw,32px)] leading-tight font-semibold tracking-tight">
-                    {slide.title}
-                  </h2>
-                  <div className="text-[clamp(11px,1.15vw,16px)] leading-relaxed [&_h2]:mt-3 [&_h2]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-3 [&_table]:w-full [&_td]:p-2 [&_th]:p-2 [&_th]:text-left">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      skipHtml
-                      components={MEETING_MARKDOWN_COMPONENTS}
-                    >
-                      {slide.markdown}
-                    </ReactMarkdown>
-                  </div>
-                </article>
-                {onComment && editable && (
+                {canvasSlide && presentation ? (
+                  <Suspense
+                    fallback={
+                      <p
+                        role="status"
+                        className="absolute inset-0 grid place-items-center text-sm text-[#52525b]"
+                      >
+                        Loading the slide…
+                      </p>
+                    }
+                  >
+                    {savingSlide && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 z-30 cursor-wait bg-white/30"
+                      />
+                    )}
+                    <JourFixeCanvasStage
+                      key={`${slide.id}:${canvasEpoch}`}
+                      document={
+                        canvasEditing
+                          ? (editDocument ?? presentation.document)
+                          : presentation.document
+                      }
+                      slideId={slide.id}
+                      mode={canvasEditing && editingSlideId === slide.id ? "edit" : "present"}
+                      onSceneChange={(scene) => {
+                        if (canvasEpochRef.current === canvasEpoch) setPendingScene(scene);
+                      }}
+                      captureRef={captureRef}
+                    />
+                  </Suspense>
+                ) : (
+                  <article className="absolute inset-0 overflow-auto p-[6%]">
+                    <p className="mb-2 text-[clamp(10px,1vw,13px)] tracking-wide text-[#71717a]">
+                      {index + 1} / {slides.length}
+                    </p>
+                    <h2 className="mb-5 text-[clamp(18px,2.5vw,32px)] leading-tight font-semibold tracking-tight">
+                      {slide.title}
+                    </h2>
+                    <div className="text-[clamp(11px,1.15vw,16px)] leading-relaxed [&_h2]:mt-3 [&_h2]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-3 [&_table]:w-full [&_td]:p-2 [&_th]:p-2 [&_th]:text-left">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        skipHtml
+                        components={MEETING_MARKDOWN_COMPONENTS}
+                      >
+                        {slide.markdown}
+                      </ReactMarkdown>
+                    </div>
+                  </article>
+                )}
+                {onComment && editable && (!canvasSlide || (placingComment && !canvasEditing)) && (
                   <button
                     type="button"
                     aria-label="Place a comment on the slide"
-                    className="absolute inset-0 cursor-crosshair focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-primary"
+                    className="absolute inset-0 z-10 cursor-crosshair focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-primary"
                     onClick={(event) => {
                       const bounds = event.currentTarget.getBoundingClientRect();
                       const point =
@@ -442,6 +666,7 @@ function JourFixeRoomContent({
                           : { x: event.clientX, y: event.clientY };
                       const anchor = jourFixeCommentAnchor(meeting, slide.id, point, bounds);
                       if (anchor) setDraft(anchor);
+                      setPlacingComment(false);
                     }}
                     disabled={busy}
                   />
@@ -451,7 +676,7 @@ function JourFixeRoomContent({
                     key={item.id}
                     type="button"
                     aria-label={`Comment ${number + 1}: ${item.text}`}
-                    className="absolute grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-primary text-xs text-primary-foreground ring-2 ring-primary/25"
+                    className="absolute z-10 grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-primary text-xs text-primary-foreground ring-2 ring-primary/25"
                     style={{ left: `${item.x * 100}%`, top: `${item.y * 100}%` }}
                     onClick={() => setPanel("comments")}
                   >
@@ -461,7 +686,7 @@ function JourFixeRoomContent({
                 {currentDraft?.slideId === slide.id && (
                   <>
                     <span
-                      className="pointer-events-none absolute grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-amber-400 text-xs text-black ring-2 ring-amber-400/30"
+                      className="pointer-events-none absolute z-10 grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-amber-400 text-xs text-black ring-2 ring-amber-400/30"
                       style={{ left: `${currentDraft.x * 100}%`, top: `${currentDraft.y * 100}%` }}
                     >
                       {comments.length + 1}
@@ -527,10 +752,15 @@ function JourFixeRoomContent({
               <JourFixePlayer
                 key={`${slide.id}:${meeting.deckRevision}`}
                 source={narration}
+                rate={narration ? audio?.rate : undefined}
                 hasPrevious={index > 0}
                 hasNext={index < slides.length - 1}
                 onPrevious={() => selectSlide(slides[index - 1]!.id)}
                 onNext={() => selectSlide(slides[index + 1]!.id)}
+                autoAdvance={autoAdvance}
+                onAutoAdvanceChange={setAutoAdvance}
+                controlRef={playerControl}
+                onFullscreen={toggleFullscreen}
               />
               <nav aria-label="Slides" className="flex gap-2 overflow-x-auto pb-1">
                 {slides.map((item, number) => (

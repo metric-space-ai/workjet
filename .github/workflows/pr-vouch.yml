@@ -72,7 +72,7 @@ jobs:
     if: ${{ needs.collect-targets.outputs.targets != '[]' }}
     runs-on: ubuntu-24.04
     concurrency:
-      group: pr-vouch-${{ matrix.target.number }}
+      group: pr-vouch-label-${{ matrix.target.number }}
       cancel-in-progress: true
     strategy:
       fail-fast: false

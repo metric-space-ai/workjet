@@ -1,6 +1,20 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import {
+  WorkjetCalendarTarget,
+  WorkjetCalendarAccounts,
+  WorkjetCalendarEventsInput,
+  WorkjetCalendarEvents,
+  WorkjetCalendarError,
+} from "./workjetCalendar.ts";
+import {
+  WorkjetLumaTarget,
+  WorkjetLumaSnapshot,
+  WorkjetLumaUpdateInput,
+  WorkjetLumaUpdateResult,
+  WorkjetLumaConfigurationError,
+} from "./workjetLumaConfiguration.ts";
 
 import {
   RemoteWorkerComputerEnrollmentInput,
@@ -233,6 +247,8 @@ import {
   WorkjetGatewayUsage,
   WorkjetGatewayUsageInput,
   WorkjetGatewayModelDiscovery,
+  WorkjetGatewayAccountModelsInput,
+  WorkjetGatewayAccountModels,
   WorkjetGatewayOauthPollInput,
   WorkjetGatewayOauthPollResult,
   WorkjetGatewayOauthSession,
@@ -388,7 +404,11 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetSettings: "server.getSettings",
+  workjetCalendarAccounts: "workjet.calendar.accounts",
+  workjetCalendarEvents: "workjet.calendar.events",
   serverUpdateSettings: "server.updateSettings",
+  workjetLumaRead: "workjet.luma.read",
+  workjetLumaUpdate: "workjet.luma.update",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -438,6 +458,7 @@ export const WS_METHODS = {
   workjetGatewayModelChecks: "workjet.providerGateway.modelChecks",
   workjetGatewayCheckModels: "workjet.providerGateway.checkModels",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
+  workjetGatewayAccountModels: "workjet.providerGateway.accountModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
 
   // ADDITIVE one-shot import of the legacy Swift Workjet configuration. The
@@ -602,12 +623,33 @@ export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
+export const WsWorkjetLumaReadRpc = Rpc.make(WS_METHODS.workjetLumaRead, {
+  payload: WorkjetLumaTarget,
+  success: WorkjetLumaSnapshot,
+  error: Schema.Union([WorkjetLumaConfigurationError, EnvironmentAuthorizationError]),
+});
+export const WsWorkjetLumaUpdateRpc = Rpc.make(WS_METHODS.workjetLumaUpdate, {
+  payload: WorkjetLumaUpdateInput,
+  success: WorkjetLumaUpdateResult,
+  error: Schema.Union([WorkjetLumaConfigurationError, EnvironmentAuthorizationError]),
+});
+
 export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
+export const WsWorkjetCalendarAccountsRpc = Rpc.make(WS_METHODS.workjetCalendarAccounts, {
+  payload: WorkjetCalendarTarget,
+  success: WorkjetCalendarAccounts,
+  error: Schema.Union([WorkjetCalendarError, EnvironmentAuthorizationError]),
+});
+export const WsWorkjetCalendarEventsRpc = Rpc.make(WS_METHODS.workjetCalendarEvents, {
+  payload: WorkjetCalendarEventsInput,
+  success: WorkjetCalendarEvents,
+  error: Schema.Union([WorkjetCalendarError, EnvironmentAuthorizationError]),
+});
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
   payload: Schema.Struct({}),
   success: SourceControlDiscoveryResult,
@@ -845,6 +887,11 @@ export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGate
 export const WsWorkjetGatewayModelChecksRpc = Rpc.make(WS_METHODS.workjetGatewayModelChecks, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayModelChecks,
+  error: WorkjetGatewayRpcError,
+});
+export const WsWorkjetGatewayAccountModelsRpc = Rpc.make(WS_METHODS.workjetGatewayAccountModels, {
+  payload: WorkjetGatewayAccountModelsInput,
+  success: WorkjetGatewayAccountModels,
   error: WorkjetGatewayRpcError,
 });
 export const WsWorkjetGatewayCheckModelsRpc = Rpc.make(WS_METHODS.workjetGatewayCheckModels, {
@@ -1599,6 +1646,15 @@ export const WsOrchestrationGetArchivedTeamWorkerDetailRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetThreadContinuationRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadContinuation,
+  {
+    payload: OrchestrationRpcSchemas.getThreadContinuation.input,
+    success: OrchestrationRpcSchemas.getThreadContinuation.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -1763,7 +1819,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
+  WsWorkjetCalendarAccountsRpc,
+  WsWorkjetCalendarEventsRpc,
   WsServerUpdateSettingsRpc,
+  WsWorkjetLumaReadRpc,
+  WsWorkjetLumaUpdateRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
@@ -1798,6 +1858,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayModelChecksRpc,
   WsWorkjetGatewayCheckModelsRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
+  WsWorkjetGatewayAccountModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetLegacyImportInspectRpc,
   WsWorkjetLegacyImportDecideRpc,
@@ -1903,6 +1964,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationGetArchivedTeamWorkerDetailRpc,
+  WsOrchestrationGetThreadContinuationRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );

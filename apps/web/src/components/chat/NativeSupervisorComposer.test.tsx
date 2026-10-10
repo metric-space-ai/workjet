@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
@@ -8,6 +8,15 @@ import {
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { NativeSupervisorComposer } from "./NativeSupervisorComposer";
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("../ProjectSupervisorLumaField", () => ({
+  useProjectSupervisorLumas: () => ({
+    instanceId: null,
+    phase: "unavailable",
+    profiles: [],
+    instanceName: null,
+  }),
+}));
 
 const threadId = ThreadId.make("e28290b0-7b0a-4d19-a242-f27041fadb84");
 const projectId = ProjectId.make("71462c13-b395-402f-b6c8-788b405783e7");
@@ -51,6 +60,127 @@ const config: WorkjetThreadConfig = {
 const saveConfig = async () => ({ _tag: "Success" });
 
 describe("native supervisor receipt display", () => {
+  it("places the full-width editor above the same attachment, route, gear, mic and send bar", () => {
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={config}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html.indexOf("<textarea")).toBeLessThan(html.indexOf("data-composer-bar="));
+    expect(html).toContain('data-composer-bar="true"');
+    expect(html).toContain('aria-label="Advanced settings"');
+    expect(html).toContain('aria-label="Dictate message"');
+    expect(html).toContain('aria-label="Supervisor message type"');
+    expect(html).not.toContain(">CTOX</span>");
+    expect(html).not.toContain(">Send</button>");
+  });
+  it("offers the existing account login for the managed project's discovery refusal", () => {
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={null}
+        config={DEFAULT_WORKJET_THREAD_CONFIG}
+        instanceId="managed:acceptance"
+        blockReason="Sign in to ctox.dev to reconnect this project's instance."
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain("Sign in to ctox.dev</button>");
+    expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
+  });
+
+  it.each(["not_active", "timeout"] as const)(
+    "keeps a restored legacy %s request pending before effects run",
+    (code) => {
+      const legacyConfig: WorkjetThreadConfig = {
+        ...config,
+        schemaVersion: 2,
+        ctoxSupervisorTurn: {
+          ...config.ctoxSupervisorTurn!,
+          submission: "not-submitted",
+          submissionError: code,
+          turn: null,
+        },
+      };
+      const html = renderToStaticMarkup(
+        <NativeSupervisorComposer
+          scope={scope}
+          config={legacyConfig}
+          instanceId={scope.instanceId}
+          blockReason={null}
+          unavailable={false}
+          saveConfig={saveConfig}
+        />,
+      );
+      expect(html).toContain("Real requested change");
+      expect(html).toContain("Waiting for CTOX receipt");
+      expect(html).not.toContain("Not sent");
+      expect(html).not.toContain("You can send a new request");
+      expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
+      expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
+    },
+  );
+  it("shows a pending receipt without asking for Owner confirmation", () => {
+    const pendingConfig: WorkjetThreadConfig = {
+      ...config,
+      schemaVersion: 2,
+      ctoxSupervisorTurn: {
+        ...config.ctoxSupervisorTurn!,
+        submission: "awaiting-receipt",
+        turn: null,
+      },
+    };
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={pendingConfig}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain("Waiting for CTOX receipt");
+    expect(html).not.toContain("Awaiting confirmation");
+    expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
+    expect(html).toContain("Refresh task");
+  });
+  it("keeps drafting available for a confirmed running task with an explicit separate-message action", () => {
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={{
+          ...config,
+          ctoxSupervisorTurn: {
+            ...config.ctoxSupervisorTurn!,
+            turn: {
+              ...config.ctoxSupervisorTurn!.turn!,
+              executionPhase: "running",
+              status: "accepted",
+              terminal: false,
+            },
+          },
+        }}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain("Continue anyway");
+    expect(html).toContain("Add context to task");
+    expect(html).toContain("Same-task context is unavailable on this connection.");
+    expect(html).toContain("starts a separate request");
+    expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
+    expect(html).toContain("Refresh task");
+    expect(html).toContain("Cancel");
+    expect(html).not.toContain("Approve");
+  });
   it("shows received native result and attempt without local provider controls", () => {
     const html = renderToStaticMarkup(
       <NativeSupervisorComposer

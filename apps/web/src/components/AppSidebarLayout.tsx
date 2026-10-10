@@ -53,6 +53,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { CtoxMainShell, CtoxModeProvider } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
+import { WorkjetModesIntroGate } from "./WorkjetModesIntroGate";
 import { WorkjetHeaderFrame } from "./WorkjetHeader";
 import { useSharedWorkjetHeader } from "./WorkjetHeaderSlots";
 import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
@@ -265,6 +266,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
     >
       <BusinessOsCodeScopeSynchronizer />
       <WorkjetProjectRegistrySynchronizer />
+      <WorkjetModesIntroGate />
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
         <WorkjetHeaderFrame mode={productMode} sidebarAvailable={!isCtoxShell}>
           {!isCtoxShell ? <ProjectProjectionRetention /> : null}

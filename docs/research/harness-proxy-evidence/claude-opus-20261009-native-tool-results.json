@@ -1,0 +1,192 @@
+{
+  "harness": "Claude Code",
+  "model": "claude-opus-5-5",
+  "variant": "Workjet 0.0.69 isolated server + patched native RC gateway",
+  "nativeSession": "b89c8298-142d-4344-aa04-cae5a118946d",
+  "workjetThread": "6de973a2-d74a-4615-9f92-a8887879abcc",
+  "pass": true,
+  "successfulToolCalls": 20,
+  "results": [
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "timestamp": "2026-10-09T21:38:30.618Z",
+      "toolUseId": "toolu_015UL5Guu5hfsnrtBRLBos9A",
+      "output": "PROXY_MATRIX_01",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:30.702Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "timestamp": "2026-10-09T21:38:33.202Z",
+      "toolUseId": "toolu_011aitrbCPjdaoztHQ2kthJB",
+      "output": "PROXY_MATRIX_02",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:33.231Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "timestamp": "2026-10-09T21:38:36.369Z",
+      "toolUseId": "toolu_01Hp5L3hzyVLTiUshNfbtDZ7",
+      "output": "PROXY_MATRIX_03",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:36.386Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "timestamp": "2026-10-09T21:38:38.737Z",
+      "toolUseId": "toolu_01D7XtxJqegWZ1FcFCrWEK3H",
+      "output": "PROXY_MATRIX_04",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:38.755Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "timestamp": "2026-10-09T21:38:41.342Z",
+      "toolUseId": "toolu_01X8gmTwtBahtGbkdPYJTqDy",
+      "output": "PROXY_MATRIX_05",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:41.367Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "timestamp": "2026-10-09T21:38:44.890Z",
+      "toolUseId": "toolu_01KfDc3gqWfNnWz53eraConk",
+      "output": "PROXY_MATRIX_06",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:44.909Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "timestamp": "2026-10-09T21:38:47.527Z",
+      "toolUseId": "toolu_01BrdmGK3TWytdn1VA7P6ERa",
+      "output": "PROXY_MATRIX_07",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:47.545Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "timestamp": "2026-10-09T21:38:49.990Z",
+      "toolUseId": "toolu_019hsDSX3xLtZUi4nocXbekM",
+      "output": "PROXY_MATRIX_08",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:50.009Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "timestamp": "2026-10-09T21:38:53.148Z",
+      "toolUseId": "toolu_01RqvqdVaVTwpWknbRoNCEGY",
+      "output": "PROXY_MATRIX_09",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:53.177Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "timestamp": "2026-10-09T21:38:55.860Z",
+      "toolUseId": "toolu_01GbMHn3VzEpMWKPfNCZ6b22",
+      "output": "PROXY_MATRIX_10",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:55.872Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "timestamp": "2026-10-09T21:38:58.496Z",
+      "toolUseId": "toolu_012nMmb2nzT3PXy6abfjQJMX",
+      "output": "PROXY_MATRIX_11",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:38:58.508Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "timestamp": "2026-10-09T21:39:01.228Z",
+      "toolUseId": "toolu_013Qib98TT9J5rFxrDpgux4M",
+      "output": "PROXY_MATRIX_12",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:01.246Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "timestamp": "2026-10-09T21:39:04.194Z",
+      "toolUseId": "toolu_01BWDtNhuhWmkjd1Et7ApWsA",
+      "output": "PROXY_MATRIX_13",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:04.215Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "timestamp": "2026-10-09T21:39:06.863Z",
+      "toolUseId": "toolu_01E7aU9pcoU1a2sGzhzve9WS",
+      "output": "PROXY_MATRIX_14",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:06.883Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "timestamp": "2026-10-09T21:39:09.556Z",
+      "toolUseId": "toolu_01F1rowWA32FxG921tcoYXQR",
+      "output": "PROXY_MATRIX_15",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:09.568Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "timestamp": "2026-10-09T21:39:12.827Z",
+      "toolUseId": "toolu_01CKPcm8Ts1ynNPmqu3KPJks",
+      "output": "PROXY_MATRIX_16",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:12.840Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "timestamp": "2026-10-09T21:39:16.198Z",
+      "toolUseId": "toolu_01MScKpQhNAdPTjUJFWuqQxw",
+      "output": "PROXY_MATRIX_17",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:16.210Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "timestamp": "2026-10-09T21:39:19.412Z",
+      "toolUseId": "toolu_01MwyqR4uZXGXstZ52LSZZwN",
+      "output": "PROXY_MATRIX_18",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:19.428Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "timestamp": "2026-10-09T21:39:22.194Z",
+      "toolUseId": "toolu_01QLG3j6aAjbpj8Ri7BoocWT",
+      "output": "PROXY_MATRIX_19",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:22.216Z"
+    },
+    {
+      "tool": "Bash",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "timestamp": "2026-10-09T21:39:24.861Z",
+      "toolUseId": "toolu_017jPy2ML9bnnoC8vjbi5YUD",
+      "output": "PROXY_MATRIX_20",
+      "isError": false,
+      "resultTimestamp": "2026-10-09T21:39:24.874Z"
+    }
+  ],
+  "observation": "Workjet activity subscription included calls 02\u201320; authoritative native history includes all 20 successful tool results."
+}

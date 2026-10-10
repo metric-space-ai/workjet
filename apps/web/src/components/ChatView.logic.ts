@@ -1,11 +1,9 @@
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  OrchestrationDispatchCommandError,
   type EnvironmentId,
-  isProviderDriverKind,
   ProjectId,
   type ModelSelection,
-  type ProviderDriverKind,
-  type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
   type ThreadId,
@@ -150,6 +148,20 @@ export function shouldWriteThreadErrorToCurrentServerThread(input: {
     input.activeServerThread.environmentId === input.routeThreadRef.environmentId &&
     input.activeServerThread.id === input.targetThreadId,
   );
+}
+
+export function isRolledBackBootstrapError(error: unknown, threadId: ThreadId): boolean {
+  return (
+    Schema.is(OrchestrationDispatchCommandError)(error) && error.rolledBackThreadId === threadId
+  );
+}
+
+/** Preserve the latest error through draft promotion and rollback. */
+export function resolveLocalThreadError(
+  draft: { readonly message: string | null; readonly at: number } | undefined,
+  server: { readonly message: string | null; readonly at: number } | undefined,
+): string | null {
+  return (server && (!draft || server.at > draft.at) ? server : draft)?.message ?? null;
 }
 
 export function buildThreadTurnInterruptInput(thread: Pick<Thread, "id" | "session">): {
@@ -382,79 +394,6 @@ export function threadHasStarted(thread: Thread | null | undefined): boolean {
   return Boolean(
     thread && (thread.latestTurn !== null || thread.messages.length > 0 || thread.session !== null),
   );
-}
-
-// `threadProvider` is the open branded driver kind carried by the session.
-// Unknown driver kinds degrade to `null` (i.e. "unlocked"), which is the safe
-// rollback / fork behavior — the routing layer is the right place to surface
-// "driver not installed" errors, not the lock state.
-//
-// `selectedProvider` takes the same open-string shape because the composer
-// now tracks the picker selection as a `ProviderInstanceId` (e.g.
-// `codex_personal`). Custom instance ids that don't directly match a
-// registered driver resolve to `null` here, which matches the existing
-// "unknown driver -> unlocked" semantics. Callers that want the lock to track
-// a custom instance's underlying driver kind should resolve the instance id
-// upstream and pass the correlated kind.
-export function deriveLockedProvider(input: {
-  thread: Thread | null | undefined;
-  selectedProvider: string | null;
-  threadProvider: string | null;
-}): ProviderDriverKind | null {
-  if (!threadHasStarted(input.thread)) {
-    return null;
-  }
-  const sessionProvider = input.thread?.session?.providerName ?? null;
-  if (sessionProvider && isProviderDriverKind(sessionProvider)) {
-    return sessionProvider;
-  }
-  const narrowedThreadProvider =
-    input.threadProvider && isProviderDriverKind(input.threadProvider)
-      ? input.threadProvider
-      : null;
-  const narrowedSelectedProvider =
-    input.selectedProvider && isProviderDriverKind(input.selectedProvider)
-      ? input.selectedProvider
-      : null;
-  return narrowedThreadProvider ?? narrowedSelectedProvider ?? null;
-}
-
-export function getStartedThreadModelChangeBlockReason(input: {
-  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "requiresNewThreadForModelChange">>;
-  hasStartedSession: boolean;
-  currentModelSelection: ModelSelection;
-  currentProviderInstanceId?: ModelSelection["instanceId"] | null | undefined;
-  nextModelSelection: ModelSelection;
-}): { title: string; description: string } | null {
-  if (!input.hasStartedSession) {
-    return null;
-  }
-  const currentModelSelection = {
-    ...input.currentModelSelection,
-    instanceId: input.currentProviderInstanceId ?? input.currentModelSelection.instanceId,
-  };
-  if (
-    currentModelSelection.instanceId === input.nextModelSelection.instanceId &&
-    currentModelSelection.model === input.nextModelSelection.model
-  ) {
-    return null;
-  }
-  const currentProvider = input.providers.find(
-    (snapshot) => snapshot.instanceId === currentModelSelection.instanceId,
-  );
-  const nextProvider = input.providers.find(
-    (snapshot) => snapshot.instanceId === input.nextModelSelection.instanceId,
-  );
-  if (
-    currentProvider?.requiresNewThreadForModelChange !== true &&
-    nextProvider?.requiresNewThreadForModelChange !== true
-  ) {
-    return null;
-  }
-  return {
-    title: "Start a new chat to change models",
-    description: "This provider does not allow switching models after a conversation has started.",
-  };
 }
 
 export async function waitForStartedServerThread(

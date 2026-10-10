@@ -49,9 +49,24 @@ fingerprint in their resume cursor and inject the current prompt exactly once
 per effective revision. Changing the managed prompt causes one new injection;
 resuming an unchanged session does not duplicate it.
 
-The full, versioned skill is exposed to every standard, orchestrator, and
-worker role through `workjet_collective_guide`. Tool visibility and server-side
+The coordination baseline is included directly in each managed prompt; it
+requires no preliminary guide tool call. Tool visibility and server-side
 authorization do not depend on the harness.
+
+## Project team roles
+
+A bound project team member supplies the role instructions before managed
+policy and capabilities, regardless of its harness or legacy settings role.
+The supervisor plans and commissions work, while persistent workers perform
+substantive implementation and own review and integration. Persistent workers
+retain their goal across turn boundaries and report verified completion or a
+concrete blocker. One-shot workers own one isolated package and one PR; their
+run ends at PR submission rather than waiting for merge.
+
+The prompt describes responsibilities. It does not schedule supervisor checks,
+mark goals complete, or archive threads. Those actions remain owned by their
+durable runtime services. Threads without project team metadata retain the
+existing role instructions.
 
 ## Manager
 

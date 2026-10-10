@@ -30,6 +30,7 @@ const fixture = Effect.gen(function* () {
   let writes = 0;
   let probes = 0;
   let reachable = true;
+  let authenticationRejected = false;
   const secretStore = ServerSecretStore.of({
     get: (name) =>
       Effect.sync(() => {
@@ -52,6 +53,10 @@ const fixture = Effect.gen(function* () {
     probe: () =>
       Effect.suspend(() => {
         probes++;
+        if (authenticationRejected)
+          return Effect.fail(
+            new WorkjetDecisionHubConnectionError({ reason: "authentication-required" }),
+          );
         return reachable
           ? Effect.void
           : Effect.fail(
@@ -70,6 +75,12 @@ const fixture = Effect.gen(function* () {
     open,
     writes: () => writes,
     probes: () => probes,
+    rejectAuthentication: () => {
+      authenticationRejected = true;
+    },
+    authorize: () => {
+      authenticationRejected = false;
+    },
     setReachable: (value: boolean) => {
       reachable = value;
     },
@@ -187,3 +198,31 @@ describe("durable CTOX connection identity", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 });
+
+it.effect("persists a rejected grant as needs_auth and restores only an authorized provision", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const registry = yield* test.open;
+    yield* registry.provision(input);
+    test.rejectAuthentication();
+    expect(yield* registry.probe(input.connectionId)).toMatchObject({
+      status: "needs_auth",
+      reason: "authentication-required",
+    });
+    const reopened = yield* test.open;
+    expect((yield* reopened.list)[0]?.status).toBe("needs_auth");
+    expect(
+      yield* Effect.flip(reopened.resolveReadyTarget(input.connectionId, input.instanceId)),
+    ).toMatchObject({ reason: "connection-unavailable" });
+    expect(
+      yield* Effect.flip(reopened.provision({ ...input, token: "new-test-token" })),
+    ).toMatchObject({ reason: "authentication-required" });
+    expect(test.writes()).toBe(1);
+    test.authorize();
+    yield* reopened.provision({ ...input, token: "new-test-token" });
+    expect((yield* reopened.list)[0]?.status).toBe("ready");
+    expect((yield* reopened.resolveReadyTarget(input.connectionId, input.instanceId)).token).toBe(
+      "new-test-token",
+    );
+  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+);

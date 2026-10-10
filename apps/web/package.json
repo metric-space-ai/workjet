@@ -1,6 +1,6 @@
 {
   "name": "@workjet/web",
-  "version": "0.0.57",
+  "version": "0.0.76",
   "private": true,
   "type": "module",
   "scripts": {
@@ -33,6 +33,7 @@
     "@workjet/client-runtime": "workspace:*",
     "@workjet/contracts": "workspace:*",
     "@workjet/shared": "workspace:*",
+    "@workjet/slide-engine": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "culori": "^4.0.2",
     "effect": "catalog:",

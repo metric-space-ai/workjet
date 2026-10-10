@@ -1,3 +1,4 @@
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import {
@@ -137,11 +138,11 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   config: MiniMaxSettings,
   options: {
     readonly instanceId: ProviderInstanceId;
+    readonly dispatchPromptInBackground?: boolean;
     readonly protocolLogging?: AcpSessionRuntimeOptions["protocolLogging"];
-    readonly resolveSessionEnvironment: () => Effect.Effect<
-      NodeJS.ProcessEnv,
-      ProviderAdapterError
-    >;
+    readonly resolveSessionEnvironment: (
+      model?: string,
+    ) => Effect.Effect<NodeJS.ProcessEnv, ProviderAdapterError>;
   },
 ) {
   const crypto = yield* Crypto.Crypto;
@@ -292,12 +293,17 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
             "startSession",
             "A saved MiniMax Code session cursor is required. Workjet will not create a replacement session.",
           );
-        const environment = yield* options.resolveSessionEnvironment();
+        const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+        const environment =
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
+        const runtimeConfig = sourceProfile
+          ? { ...config, dataDirectory: sourceProfile.directory }
+          : config;
         const profileKey = NodeCrypto.createHash("sha256")
           .update(
             encodeProfileKey([
               options.instanceId,
-              config.dataDirectory ||
+              runtimeConfig.dataDirectory ||
                 environment.MINIMAX_DATA_DIR ||
                 environment.MAVIS_DATA_DIR ||
                 "default",
@@ -322,7 +328,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         let childExit: ChildProcessSpawner.ChildProcessHandle["exitCode"] | undefined;
         let transferred = false;
         const acp = yield* makeMiniMaxAcpRuntime({
-          config,
+          config: runtimeConfig,
           environment,
           spawner,
           cwd: input.cwd,
@@ -702,7 +708,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           return { ctx, turnId, model };
         }),
       );
-      return yield* Effect.gen(function* () {
+      const completePrompt = Effect.gen(function* () {
         const selection = input.modelSelection;
         yield* withDeadline(
           "session/set_config_option",
@@ -761,6 +767,11 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           ),
         ),
       );
+      if (options.dispatchPromptInBackground) {
+        yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(ctx.scope));
+        return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
+      }
+      return yield* completePrompt;
     });
   const adapter = {
     provider: PROVIDER,

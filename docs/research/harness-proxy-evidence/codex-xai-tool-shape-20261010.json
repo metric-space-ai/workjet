@@ -1,0 +1,25 @@
+{
+  "observedAt": "2026-10-10T01:33:12.755Z",
+  "requestModel": "grok-4.7",
+  "results": [
+    {
+      "case": "guide-object-only",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "guide-wrapped",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "all-with-wrapped-guide-native-web",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    }
+  ],
+  "noLocalToolsExecuted": true
+}

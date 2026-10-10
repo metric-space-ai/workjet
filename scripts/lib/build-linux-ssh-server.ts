@@ -5,6 +5,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import { isCurrentGithubLinuxSshReceipt } from "./github-ssh-build-receipt.ts";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15"];
@@ -37,8 +38,12 @@ export async function stagePrebuiltLinuxSshServer(input: {
   const hash = await fileDigest(archive);
   if (
     receipt.exit !== 0 ||
-    receipt.host !== "gpu3" ||
-    receipt.owner !== input.owner ||
+    !(
+      (receipt.host === "gpu3" &&
+        process.env.GITHUB_ACTIONS !== "true" &&
+        receipt.owner === input.owner) ||
+      isCurrentGithubLinuxSshReceipt(receipt, input.owner)
+    ) ||
     receipt.workjetSourceCommit !== source ||
     receipt.workjetLockSha256 !==
       (await fileDigest(NodePath.join(input.repoRoot, "pnpm-lock.yaml"))) ||
@@ -69,6 +74,15 @@ export function linuxServerBuildTask(repoRoot: string) {
   );
 }
 
+/** Include linked web assets in the portable server input. */
+export async function archiveServerDist(inputArchive: string, serverDist: string) {
+  // The CLI build links client assets; their targets must travel to the other host.
+  await execFile("tar", ["-chzf", inputArchive, "-C", serverDist, "."], {
+    timeout: 120_000,
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+  });
+}
+
 /** Build native Linux dependencies on gpu3 around the fresh desktop server output. */
 export async function buildLinuxSshServer(input: {
   readonly repoRoot: string;
@@ -94,10 +108,7 @@ export async function buildLinuxSshServer(input: {
   let completed = false;
   try {
     await NodeFSP.mkdir(output);
-    await execFile("tar", ["-czf", inputArchive, "-C", input.serverDist, "."], {
-      timeout: 120_000,
-      env: { ...process.env, COPYFILE_DISABLE: "1" },
-    });
+    await archiveServerDist(inputArchive, input.serverDist);
     await execFile("ssh", [...SSH_OPTIONS, host, `mkdir -p ${remote}`]);
     await execFile("scp", [...SSH_OPTIONS, inputArchive, `${host}:${remote}/server-dist.tgz`]);
     const { stdout } = await execFile(

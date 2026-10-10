@@ -151,7 +151,7 @@ fn append_message(
                     "type":"function_call",
                     "call_id":shorten_call_id(part.get("id").and_then(Value::as_str).unwrap_or_default()),
                     "name":tool_names.get(&raw_name).cloned().unwrap_or_else(|| shorten_name(&raw_name)),
-                    "arguments":part.get("input").cloned().unwrap_or_else(|| json!({})),
+                    "arguments":part.get("input").cloned().unwrap_or_else(|| json!({})).to_string(),
                 }));
             }
             "tool_result" => {
@@ -435,7 +435,10 @@ fn reasoning_effort(root: &Map<String, Value>) -> String {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .map(str::to_ascii_lowercase)
+            .map(|effort| match effort.to_ascii_lowercase().as_str() {
+                "max" => "xhigh".to_owned(),
+                effort => effort.to_owned(),
+            })
             .unwrap_or_else(|| "xhigh".into()),
         "disabled" => convert_budget_to_level(0)
             .map(|level| level.as_str().to_owned())

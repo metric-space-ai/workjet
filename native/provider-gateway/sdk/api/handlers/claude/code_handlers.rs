@@ -42,7 +42,7 @@ impl ClaudeMessagesHttpResponse {
         &self.body
     }
 
-    pub(super) fn json(status: u16, body: Vec<u8>) -> Self {
+    pub fn json(status: u16, body: Vec<u8>) -> Self {
         Self {
             status,
             content_type: "application/json",
@@ -341,9 +341,21 @@ impl ClaudeMessagesClaudeHandler {
                 .execute_stream_configured(&request.model, body.to_vec())
                 .await;
             return match outcome {
-                Ok(outcome) => ClaudeMessagesRouteResponse::ClaudeStream(Box::new(
-                    ClaudeMessagesClaudeStream::new(outcome.into_outcome().into_response()),
-                )),
+                Ok(outcome) => {
+                    let outcome = outcome.into_outcome();
+                    let upstream = outcome.response();
+                    if !(200..300).contains(&upstream.status()) {
+                        return ClaudeMessagesRouteResponse::Buffered(
+                            ClaudeMessagesHttpResponse::error(
+                                upstream.status(),
+                                &String::from_utf8_lossy(upstream.error_body()),
+                            ),
+                        );
+                    }
+                    ClaudeMessagesRouteResponse::ClaudeStream(Box::new(
+                        ClaudeMessagesClaudeStream::new(outcome.into_response()),
+                    ))
+                }
                 Err(error) => {
                     ClaudeMessagesRouteResponse::Buffered(claude_pool_error_response(error))
                 }

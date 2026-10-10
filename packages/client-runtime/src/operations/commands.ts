@@ -32,6 +32,7 @@ export type CreateProjectInput = CommandInput<"project.create">;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
 export type CreateThreadInput = CommandInput<"thread.create">;
+export type ImportThreadContinuationInput = CommandInput<"thread.continuation.import">;
 export type DeleteThreadInput = CommandInput<"thread.delete">;
 export type ArchiveThreadInput = CommandInput<"thread.archive">;
 export type UnarchiveThreadInput = CommandInput<"thread.unarchive">;
@@ -130,6 +131,15 @@ export const createThread: (input: CreateThreadInput) => CommandEffect = Effect.
     createdAt: metadata.createdAt,
   });
 });
+
+export const importThreadContinuation: (input: ImportThreadContinuationInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.importThreadContinuation")(function* (input) {
+    return yield* dispatch({
+      ...input,
+      type: "thread.continuation.import",
+      ...(yield* timestampedCommandMetadata(input)),
+    });
+  });
 
 export const deleteThread: (input: DeleteThreadInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.deleteThread",

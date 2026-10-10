@@ -152,7 +152,7 @@ impl Observation {
                             .split_whitespace()
                             .nth(1)
                             .and_then(|s| s.parse::<u16>().ok())
-                            .map_or(true, |status| status >= 400);
+                            .is_none_or(|status| status >= 400);
                     }
                     self.header.clear();
                     self.headers_done = true;

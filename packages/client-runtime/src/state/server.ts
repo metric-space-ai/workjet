@@ -778,6 +778,37 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGreppyInspect,
     staleTimeMs: GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
   });
+  const calendarAccounts = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:calendar:accounts",
+    tag: WS_METHODS.workjetCalendarAccounts,
+    staleTimeMs: 300_000,
+  });
+  const calendarEvents = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:calendar:events",
+    tag: WS_METHODS.workjetCalendarEvents,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) =>
+        `${environmentId}:${input.target.instanceId}:${input.accountId}`,
+    },
+  });
+  const lumaConfiguration = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:luma:configuration",
+    tag: WS_METHODS.workjetLumaRead,
+    staleTimeMs: 10_000,
+  });
+  const updateLumaConfiguration = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:luma:update",
+    tag: WS_METHODS.workjetLumaUpdate,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) => `${environmentId}:${input.target.instanceId}`,
+    },
+    onSuccess: ({ environmentId, input }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(lumaConfiguration({ environmentId, input: input.target }));
+      }),
+  });
   const installGreppyRuntime = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:greppy:install",
     tag: WS_METHODS.workjetGreppyInstall,
@@ -838,6 +869,11 @@ export function createServerEnvironmentAtoms<R, E>(
     label: "environment-data:workjet:gateway:models",
     tag: WS_METHODS.workjetGatewayDiscoverModels,
     staleTimeMs: WORKJET_GATEWAY_MODELS_STALE_TIME_MS,
+  });
+  const workjetGatewayAccountModels = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:account-models",
+    tag: WS_METHODS.workjetGatewayAccountModels,
+    staleTimeMs: 30_000,
   });
   const workjetDecisionHubConnections = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:workjet:decision-hub:connections",
@@ -1201,8 +1237,13 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetGatewayModelChecks,
     checkWorkjetGatewayModels,
     workjetGatewayModels,
+    workjetGatewayAccountModels,
     workjetHarnessInspect,
+    lumaConfiguration,
+    updateLumaConfiguration,
     workjetDecisionHubConnections,
+    calendarAccounts,
+    calendarEvents,
     probeWorkjetDecisionHubConnection,
     disconnectWorkjetDecisionHubConnection,
     startWorkjetGateway,

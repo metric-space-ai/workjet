@@ -123,8 +123,8 @@ The pin has two states:
   licence to download something unverified; it makes the resolver report an
   unmet pin.
 
-The checked-in pin selects `provider-gateway-host-v0.1.1`, published from
-`main` commit `9b2c23c2d000c5f50715b3e0bb6ff9e4bf500dba`. Its manifest and all six
+The checked-in pin selects `provider-gateway-host-v0.1.2`, published from
+`main` commit `b731a990ae960e56bbb33e83306aca51ef57f7bb`. Its manifest and all six
 target digests come from the verified release workflow, not a dry-run build.
 
 CTOX pins the same way: it consumes the manifest and per-target digests from a

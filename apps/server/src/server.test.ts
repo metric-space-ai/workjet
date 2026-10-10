@@ -377,6 +377,8 @@ const providerGatewayTestLayer = Layer.succeed(
       Effect.succeed({ schemaVersion: 1, checks: [], pending: [], deferredCount: 0 }),
     discoverModels: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    accountModels: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     updateRouting: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
   }),
@@ -1531,6 +1533,60 @@ const NodeHttpServerTestWithWsDeflate = HttpServer.layerTestClient.pipe(
 );
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect("keeps worker connections available across authenticated WebSocket sessions", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      for (let connection = 0; connection < 2; connection++) {
+        const wsUrl = yield* getWsServerUrl("/ws");
+        yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const listed = yield* client[WS_METHODS.workjetDecisionHubListConnections]({});
+              assert.deepEqual(listed.connections, []);
+              const error = yield* Effect.flip(
+                client[WS_METHODS.workjetDecisionHubProbeConnection]({
+                  connectionId: WorkjetConnectionId.make("missing-worker-source"),
+                }),
+              );
+              assert.equal(error._tag, "WorkjetDecisionHubConnectionError");
+              if (error._tag === "WorkjetDecisionHubConnectionError") {
+                assert.equal(error.reason, "unknown-connection");
+              }
+            }),
+          ),
+        );
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps the remote worker broker available to authenticated WebSocket sessions", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const pending = yield* client[WS_METHODS.workjetWorkerRequests]({}).pipe(
+              Stream.take(1),
+              Stream.runCollect,
+            );
+            assert.deepEqual(Array.from(pending), [[]]);
+            const error = yield* Effect.flip(
+              client[WS_METHODS.workjetWorkerRespond]({
+                requestId: ThreadId.make("missing-worker-request"),
+                outcome: { status: "failed", reason: "invalid-request" },
+              }),
+            );
+            assert.equal(error._tag, "RemoteWorkerDispatchError");
+            if (error._tag === "RemoteWorkerDispatchError") {
+              assert.equal(error.reason, "invalid-request");
+            }
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("parks HTTP ingress until command readiness", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -8425,6 +8481,108 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  for (const variant of [
+    { label: "manual", config: DEFAULT_WORKJET_THREAD_CONFIG },
+    {
+      label: "Luma",
+      config: { ...DEFAULT_WORKJET_THREAD_CONFIG, managedInstructions: "Review this project" },
+    },
+  ]) {
+    it.effect(
+      `starts an ordinary ${variant.label} project thread in its selected checkout without commissioning a worker`,
+      () =>
+        Effect.gen(function* () {
+          const dispatchedCommands: OrchestrationCommand[] = [];
+          const id = ThreadId.make(`ordinary-${variant.label}`);
+          const createdAt = "2026-01-01T00:00:00.000Z";
+          const ordinary = makeDefaultOrchestrationThreadShell({
+            id,
+            worktreePath: "/user/selected-checkout",
+            branch: "user/branch",
+            workjetConfig: variant.config,
+          });
+          const supervisorId = ThreadId.make("project-supervisor");
+          const supervisor = makeDefaultOrchestrationThreadShell({
+            id: supervisorId,
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              team: {
+                role: "supervisor",
+                projectId: defaultProjectId,
+                threadId: supervisorId,
+                parentThreadId: null,
+                goal: "Own project",
+                createdAt,
+              },
+            },
+          });
+          const createWorktree = vi.fn(() => Effect.die("ordinary checkout must not be replaced"));
+          yield* buildAppUnderTest({
+            layers: {
+              gitVcsDriver: { createWorktree },
+              projectionSnapshotQuery: {
+                getShellSnapshot: () =>
+                  Effect.succeed({
+                    snapshotSequence: 0,
+                    projects: [],
+                    threads: [ordinary, supervisor],
+                    updatedAt: createdAt,
+                  }),
+              },
+              orchestrationEngine: {
+                dispatch: (command) =>
+                  Effect.sync(() => {
+                    dispatchedCommands.push(command);
+                    return { sequence: dispatchedCommands.length };
+                  }),
+              },
+            },
+          });
+          const wsUrl = yield* getWsServerUrl("/ws");
+          yield* Effect.scoped(
+            withWsRpcClient(wsUrl, (client) =>
+              client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+                type: "thread.turn.start",
+                commandId: CommandId.make(`start-${id}`),
+                threadId: id,
+                message: {
+                  messageId: MessageId.make(`message-${id}`),
+                  role: "user",
+                  text: "hello",
+                  attachments: [],
+                },
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                bootstrap: {
+                  createThread: {
+                    projectId: defaultProjectId,
+                    title: "Ordinary project thread",
+                    modelSelection: defaultModelSelection,
+                    runtimeMode: "full-access",
+                    interactionMode: "default",
+                    workjetConfig: variant.config,
+                    branch: ordinary.branch,
+                    worktreePath: ordinary.worktreePath,
+                    createdAt,
+                  },
+                },
+                createdAt,
+              }),
+            ),
+          );
+          assert.deepEqual(
+            dispatchedCommands.map((command) => command.type),
+            ["thread.create", "thread.turn.start"],
+          );
+          assert.equal(createWorktree.mock.calls.length, 0);
+          assertTrue(dispatchedCommands[0]?.type === "thread.create");
+          assert.deepEqual(dispatchedCommands[0].workjetConfig, variant.config);
+          assert.equal(dispatchedCommands[0].worktreePath, ordinary.worktreePath);
+        }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
+  }
+
   it.effect("cleans up created bootstrap threads when worktree creation defects", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
@@ -8493,10 +8651,157 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(result._tag === "Failure");
       assertTrue(result.failure._tag === "OrchestrationDispatchCommandError");
       assert.include(result.failure.message, "worktree exploded");
+      assert.equal(result.failure.rolledBackThreadId, ThreadId.make("thread-bootstrap-defect"));
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.create", "thread.delete"],
       );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  liveTest.live(
+    "retries a rolled-back bootstrap using a new identity while retaining the deleted thread's history",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeOrchestrationIntegrationHarness();
+        yield* Effect.addFinalizer(() => harness.dispose);
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        yield* harness.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("retry-project-create"),
+          projectId: defaultProjectId,
+          title: "Retry project",
+          workspaceRoot: harness.workspaceDir,
+          defaultModelSelection,
+          createdAt,
+        });
+        let failWorktree = true;
+        yield* buildAppUnderTest({
+          layers: {
+            orchestrationEngine: harness.engine,
+            projectionSnapshotQuery: harness.snapshotQuery,
+            gitVcsDriver: {
+              createWorktree: () =>
+                failWorktree
+                  ? Effect.die(new Error("worktree exploded"))
+                  : Effect.succeed({ worktree: { path: harness.workspaceDir, refName: "main" } }),
+            },
+          },
+        });
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const start = (id: ThreadId, attempt: string) =>
+          Effect.scoped(
+            withWsRpcClient(wsUrl, (client) =>
+              client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+                type: "thread.turn.start",
+                commandId: CommandId.make(`retry-start-${attempt}`),
+                threadId: id,
+                message: {
+                  messageId: MessageId.make(`retry-message-${attempt}`),
+                  role: "user",
+                  text: "hello",
+                  attachments: [],
+                },
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                bootstrap: {
+                  createThread: {
+                    projectId: defaultProjectId,
+                    title: "Retry thread",
+                    modelSelection: defaultModelSelection,
+                    runtimeMode: "full-access",
+                    interactionMode: "default",
+                    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                    branch: "main",
+                    worktreePath: null,
+                    createdAt,
+                  },
+                  prepareWorktree: {
+                    projectCwd: harness.workspaceDir,
+                    baseBranch: "main",
+                    branch: "retry-worktree",
+                  },
+                },
+                createdAt,
+              }),
+            ),
+          );
+        const oldId = ThreadId.make("rolled-back-attempt");
+        const first = yield* start(oldId, "first").pipe(Effect.result);
+        assertTrue(first._tag === "Failure");
+        assertTrue(first.failure._tag === "OrchestrationDispatchCommandError");
+        assert.equal(first.failure.rolledBackThreadId, oldId);
+        const reused = yield* start(oldId, "same-id").pipe(Effect.result);
+        assertTrue(reused._tag === "Failure");
+        assert.include(reused.failure.message, "cannot be created twice");
+        assertTrue(reused.failure._tag === "OrchestrationDispatchCommandError");
+        assert.equal(reused.failure.rolledBackThreadId, oldId);
+        failWorktree = false;
+        const nextId = ThreadId.make("new-attempt");
+        yield* start(nextId, "new-id");
+        const snapshot = yield* harness.snapshotQuery.getCommandReadModel();
+        const retired = snapshot.threads.find((thread) => thread.id === oldId);
+        assert.isDefined(retired);
+        assert.isNotNull(retired?.deletedAt);
+        assert.equal(snapshot.threads.find((thread) => thread.id === nextId)?.deletedAt, null);
+      }).pipe(
+        Effect.provide(NodeHttpServer.layerTest.pipe(Layer.provideMerge(NodeServices.layer))),
+      ),
+  );
+
+  it.effect("does not authorize a new bootstrap identity when cleanup fails", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              command.type === "thread.delete"
+                ? Effect.die(new Error("cleanup failed"))
+                : command.type === "thread.turn.start"
+                  ? Effect.die(new Error("turn start failed"))
+                  : Effect.succeed({ sequence: 1 }),
+          },
+        },
+      });
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cleanup-failed-start"),
+            threadId: ThreadId.make("cleanup-failed-thread"),
+            message: {
+              messageId: MessageId.make("cleanup-failed-message"),
+              role: "user",
+              text: "hello",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Retry",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+                branch: "main",
+                worktreePath: null,
+                createdAt,
+              },
+            },
+            createdAt,
+          }),
+        ).pipe(Effect.result),
+      );
+      assertTrue(result._tag === "Failure");
+      assertTrue(result.failure._tag === "OrchestrationDispatchCommandError");
+      assert.include(result.failure.message, "turn start failed");
+      assert.isUndefined(result.failure.rolledBackThreadId);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

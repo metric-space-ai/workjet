@@ -29,7 +29,12 @@ function reply(
         meeting: { ...native, revision },
       },
     };
-  if ("operationId" in request && "meetingId" in request && "expectedRevision" in request)
+  if (
+    request.action !== "project.presentation.canvas.save" &&
+    "operationId" in request &&
+    "meetingId" in request &&
+    "expectedRevision" in request
+  )
     return {
       _tag: "completed",
       response: {

@@ -1,8 +1,13 @@
-import { WorkjetGatewayAccountId, type WorkjetGatewayAccountSummary } from "@workjet/contracts";
+import {
+  WorkjetGatewayAccountId,
+  WorkjetGatewayOperationError,
+  type WorkjetGatewayAccountSummary,
+} from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 import {
   WorkjetModelsProviders,
+  WorkjetModelsKeyForm,
   type ModelsManagementState,
   type ModelsModelCheck,
 } from "./WorkjetModelsProviders";
@@ -24,7 +29,7 @@ const second: WorkjetGatewayAccountSummary = {
   ...first,
   id: WorkjetGatewayAccountId.make("account-b"),
   label: "backup@example.test",
-  modelIds: ["grok-4.6-exact"],
+  modelIds: ["grok-4.6"],
 };
 const check: ModelsModelCheck = {
   accountId: first.id,
@@ -87,6 +92,64 @@ function html(overrides: Partial<typeof state> = {}) {
   return renderToStaticMarkup(<WorkjetModelsProviders {...state} {...overrides} />);
 }
 describe("Provider account table", () => {
+  it("shows the safe endpoint discovery failure inside the Kimi key form", () => {
+    const message = new WorkjetGatewayOperationError({ reason: "kimi-key-not-accepted" }).message;
+    const rendered = renderToStaticMarkup(
+      <WorkjetModelsKeyForm
+        provider="kimi"
+        models={[]}
+        onClose={() => {}}
+        state={{ ...state, apiKey: { status: "failed", provider: "kimi", message } }}
+      />,
+    );
+    expect(rendered).toContain('role="alert"');
+    expect(rendered).toContain("https://api.moonshot.cn/v1");
+    expect(rendered).toContain("https://api.kimi.com/coding/v1");
+    expect(rendered).not.toContain("<select");
+    expect(rendered).not.toContain("control plane is unavailable");
+    expect(rendered).not.toContain("Credentials rejected");
+  });
+  it("keeps a failed key replacement with the account that submitted it", () => {
+    const message = new WorkjetGatewayOperationError({ reason: "kimi-key-not-accepted" }).message;
+    for (const failedAccountId of [first.id, second.id]) {
+      const rendered = renderToStaticMarkup(
+        <WorkjetModelsKeyForm
+          provider="kimi"
+          account={{ ...first, provider: "kimi", modelIds: ["k3"] }}
+          models={["k3"]}
+          onClose={() => {}}
+          state={{
+            ...state,
+            apiKey: {
+              status: "failed",
+              provider: "kimi",
+              accountId: failedAccountId,
+              message,
+            },
+          }}
+        />,
+      );
+      expect(rendered.includes('role="alert"')).toBe(failedAccountId === first.id);
+    }
+  });
+  it("shows a timeout with a direct retry and no false authentication failure", () => {
+    const timeout: ModelsModelCheck = {
+      ...check,
+      status: "unavailable",
+      source: "gateway",
+      errorClass: null,
+      httpStatus: null,
+      unavailableReason: "timeout",
+      latencyMs: 20000,
+    };
+    const rendered = html({ modelChecks: [timeout] });
+    expect(rendered).toContain('data-model-check="unavailable"');
+    expect(rendered).toContain("Check timed out");
+    expect(rendered).toContain(">Retry</button>");
+    expect(rendered).not.toContain("Re-login");
+    expect(rendered).not.toContain('data-model-check="running"');
+    expect(modelCheckDescription(timeout, false)).toContain("Check timed out");
+  });
   it("shows stacked accounts with their own editable models and only their own check result", () => {
     const rendered = html();
     expect(rendered).toContain('role="table"');
@@ -94,7 +157,7 @@ describe("Provider account table", () => {
     expect(rendered).toContain('value="work@example.test"');
     expect(rendered).toContain('value="backup@example.test"');
     expect(rendered).toContain('value="grok-4.7"');
-    expect(rendered).toContain('value="grok-4.6-exact"');
+    expect(rendered).toContain('value="grok-4.6"');
     expect(rendered.match(/data-model-check="ok"/g)).toHaveLength(1);
     expect(rendered.match(/data-model-check="unchecked"/g)).toHaveLength(1);
     expect(rendered).not.toContain("Gateway pools");
@@ -122,6 +185,36 @@ describe("Provider account table", () => {
     expect(rendered).toContain("API key ··mAzP");
     expect(html()).not.toContain("API key");
   });
+  it.each([
+    {
+      plan: "coding" as const,
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const,
+      title: "Coding plan",
+    },
+    {
+      plan: "api" as const,
+      upstreamBaseUrl: "https://api.moonshot.cn/v1" as const,
+      title: "API plan",
+    },
+  ])(
+    "shows $title and its verified endpoint directly on the account",
+    ({ title, ...kimiConnection }) => {
+      const account: WorkjetGatewayAccountSummary = {
+        ...first,
+        provider: "kimi",
+        label: "Kimi work",
+        credentialKind: "api-key",
+        credentialSuffix: "abcd",
+        modelIds: ["k3"],
+        kimiConnection,
+      };
+      const rendered = html({ catalog: { ...state.catalog!, accounts: [account] } });
+      expect(rendered).toContain(title);
+      expect(rendered).toContain(kimiConnection.upstreamBaseUrl);
+      expect(rendered).toContain("API key ··abcd");
+      expect(rendered).not.toContain("<select");
+    },
+  );
   it("reveals re-login only when this enabled account has an authentication failure", () => {
     expect(
       html({ modelChecks: [{ ...check, status: "error", errorClass: "auth", httpStatus: 401 }] }),
@@ -198,5 +291,46 @@ describe("Provider account table", () => {
     expect(parseModels("not a model")).toBeNull();
     expect(parseModels("bad\u0000id")).toBeNull();
     expect(parseModels("x".repeat(129))).toBeNull();
+  });
+});
+
+describe("shared provider models", () => {
+  it("edits models once per provider and offers only account exclusions", () => {
+    const account = {
+      ...first,
+      provider: "kimi" as const,
+      modelIds: ["k3"],
+      availableModelIds: ["k3", "kimi-for-coding"],
+      excludedModelIds: ["kimi-for-coding"],
+    };
+    const rendered = html({
+      catalog: {
+        ...state.catalog!,
+        accounts: [account],
+        providerModels: [{ provider: "kimi", modelIds: ["k3", "kimi-for-coding"] }],
+      },
+      onEditProviderModels: async () => true,
+      onExcludeModel: async () => true,
+    });
+    expect(rendered).toContain('data-workjet-action="models.provider.kimi.models"');
+    expect(rendered).toContain("k3, kimi-for-coding");
+    expect(rendered).toContain('aria-label="Use k3 for work@example.test"');
+    expect(rendered).toContain("Excluded for this account");
+    expect(rendered).not.toContain('aria-label="Add model for work@example.test"');
+    expect(rendered).not.toContain('aria-label="Model k3 for work@example.test"');
+  });
+  it("does not activate a model absent from this account's live list", () => {
+    const rendered = html({
+      catalog: {
+        ...state.catalog!,
+        accounts: [{ ...first, provider: "kimi", modelIds: ["k3"], availableModelIds: ["k3"] }],
+        providerModels: [{ provider: "kimi", modelIds: ["k3", "kimi-for-coding"] }],
+      },
+      onEditProviderModels: async () => true,
+      onExcludeModel: async () => true,
+    });
+    expect(rendered).toContain("Not offered by this account&#x27;s live model list");
+    expect(rendered).toContain('aria-label="Use kimi-for-coding for work@example.test"');
+    expect(rendered).toContain('disabled=""');
   });
 });

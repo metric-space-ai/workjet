@@ -125,7 +125,7 @@ jobs:
       issues: read
       pull-requests: write
     concurrency:
-      group: pr-size-${{ github.event.pull_request.number }}
+      group: pr-size-label-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
       # This pull_request_target job may fetch untrusted PR commits only as passive

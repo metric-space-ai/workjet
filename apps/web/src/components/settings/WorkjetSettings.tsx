@@ -1,3 +1,5 @@
+import { useInstanceProviders } from "./useInstanceProviders";
+import { nativeLumaRoutes, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import { openInstanceSetup } from "../../instanceSetup";
 import type {
   EnvironmentId,
@@ -9,7 +11,13 @@ import type {
   WorkjetWorkerProfile,
   WorkjetWorkerProfileId,
 } from "@workjet/contracts";
-import { compileWorkjetWorkerPersonaPrompt, WS_METHODS } from "@workjet/contracts";
+import {
+  applyLumaInstanceDocument,
+  extractLumaInstanceDocument,
+  compileWorkjetWorkerPersonaPrompt,
+  WS_METHODS,
+  type WorkjetLumaTarget,
+} from "@workjet/contracts";
 import {
   createEnvironmentRpcCommand,
   isAtomCommandInterrupted,
@@ -28,8 +36,11 @@ import {
 import { useMemo, Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
-import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import type { EnvironmentPresentation } from "../../state/environments";
+import { usePrimaryEnvironment } from "../../state/environments";
+import { useBusinessOsCodeScope } from "../../businessOsCodeScope";
+import { ctoxConnectionMatchesSelectedInstance } from "../../workjetCtoxConnections";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -41,7 +52,7 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
-import { useActiveBusinessOsSettingsEnvironment } from "./businessOsSettingsScope";
+
 import {
   workjetHarnessDisplayLabel,
   workjetReasoningDisplayLabel,
@@ -658,6 +669,10 @@ export function WorkjetSettingsView({
   draftScopeKey,
   greppy,
   gateway,
+  gatewayEnvironmentId = null,
+  nativeInstanceId = null,
+  nativeInstanceLabel = "CTOX instance",
+  onSaveWorkerConfiguration,
   automaticWorktreeStorage,
   defaultSection = "workers",
   onChange,
@@ -666,10 +681,20 @@ export function WorkjetSettingsView({
   readonly draftScopeKey: string;
   readonly greppy: GreppySectionState;
   readonly gateway: WorkjetGatewaySectionState;
+  readonly gatewayEnvironmentId?: EnvironmentId | null;
+  readonly nativeInstanceId?: string | null;
+  readonly nativeInstanceLabel?: string;
+  readonly onSaveWorkerConfiguration?: (configuration: WorkjetConfiguration) => Promise<void>;
   readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
   readonly defaultSection?: WorkjetSettingsSectionId;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
+  const nativeProviders = useInstanceProviders(nativeInstanceId);
+  const availableRoutes = nativeLumaRoutes(
+    configuration.llmRoutes,
+    nativeProviders.registry,
+    nativeInstanceLabel,
+  );
   const locationHash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
@@ -710,7 +735,35 @@ export function WorkjetSettingsView({
         worker={editingWorker}
         draftScopeKey={draftScopeKey}
         computers={configuration.computers}
-        routes={configuration.llmRoutes}
+        routes={availableRoutes}
+        nativeAccounts={nativeProviders.registry?.accounts ?? []}
+        nativeModelsBusy={nativeProviders.busy}
+        nativeModelsError={nativeProviders.error}
+        onRefreshNativeModels={(account) => {
+          void nativeProviders.run({
+            action: "instance.providers.observe",
+            accountId: account.id,
+            expectedAccountRevision: account.revision,
+          });
+        }}
+        onValidateNativeModel={async (account, model) => {
+          const registry = await nativeProviders.run({
+            action: "instance.providers.observe",
+            accountId: account.id,
+            expectedAccountRevision: account.revision,
+          });
+          requireNativeLumaModel(
+            registry?.accounts.find(
+              (current) =>
+                current.id === account.id &&
+                current.holder.id === account.holder.id &&
+                current.revision === account.revision,
+            ),
+            model,
+          );
+        }}
+        gatewayAccounts={gateway.catalog?.accounts ?? []}
+        gatewayEnvironmentId={gatewayEnvironmentId}
         onAddRoute={() =>
           // LLM routes live on the Models page; "Set up access" takes the
           // operator to where an access is actually created.
@@ -725,7 +778,7 @@ export function WorkjetSettingsView({
           setEditingWorkerId(null);
           setPendingWorkerParentId(null);
         }}
-        onSave={(worker: WorkjetWorkerProfile) => {
+        onSave={async (worker: WorkjetWorkerProfile) => {
           const workerProfiles = replaceCatalogItem(configuration.workerProfiles, worker);
           const cleanGraph = sanitizeWorkjetWorkerGraph(configuration.workerGraph, workerProfiles);
           const workerGraph =
@@ -743,11 +796,19 @@ export function WorkjetSettingsView({
                     { fromWorkerId: pendingWorkerParentId, toWorkerId: worker.id },
                   ],
                 };
-          onChange({
+          const nextConfiguration = {
             ...configuration,
             workerProfiles,
             workerGraph,
-          });
+            llmRoutes: (() => {
+              const selected = availableRoutes.find((route) => route.id === worker.llmRouteId);
+              return selected?.nativeAccountReference
+                ? replaceCatalogItem(configuration.llmRoutes, selected)
+                : configuration.llmRoutes;
+            })(),
+          };
+          if (onSaveWorkerConfiguration) await onSaveWorkerConfiguration(nextConfiguration);
+          else onChange(nextConfiguration);
           setAddingWorker(false);
           setEditingWorkerId(null);
           setPendingWorkerParentId(null);
@@ -1260,19 +1321,44 @@ export function WorkjetSettings({
 }: {
   readonly defaultSection?: WorkjetSettingsSectionId;
 } = {}) {
-  const target = useActiveBusinessOsSettingsEnvironment();
+  const scope = useBusinessOsCodeScope();
+  const environment = usePrimaryEnvironment();
+  const connections = useEnvironmentQuery(
+    environment === null
+      ? null
+      : serverEnvironment.workjetDecisionHubConnections({
+          environmentId: environment.environmentId,
+          input: {},
+        }),
+  );
+  const matches =
+    scope.phase === "ready"
+      ? (connections.data?.connections ?? []).filter(
+          (connection) =>
+            connection.status === "ready" &&
+            ctoxConnectionMatchesSelectedInstance(connection, scope.presentationInstanceId),
+        )
+      : [];
+  const connection =
+    matches.length === 1
+      ? matches[0]
+      : matches.find(
+          (entry) =>
+            entry.connectionId ===
+            `ctox-dev:${scope.presentationInstanceId?.replace(/^managed:/, "")}`,
+        );
+  const target =
+    scope.phase === "ready" && connection !== undefined
+      ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
+      : null;
 
-  if (target.phase !== "ready") {
-    const resolving = target.phase === "resolving";
+  if (target === null || environment === null) {
+    const resolving = scope.phase === "resolving" || connections.isPending;
     const description = resolving
       ? "Die aktive Business-OS-Instanz wird geprüft."
-      : target.reason === "no-active-instance"
+      : scope.phase === "blocked" && scope.blocker === "no-active-instance"
         ? "Wähle zuerst eine CTOX-Instanz aus."
-        : target.reason === "no-code-computer"
-          ? "Der CTOX-Master ist eingerichtet. Für Coding-Aufgaben muss ein Rechner zugeordnet und ein Harness einsatzbereit sein. Der Zentralrechner kann diese Aufgaben ebenfalls übernehmen."
-          : target.reason === "ambiguous-code-computer"
-            ? "Luma-Einstellungen sind noch nicht als instanzweite CTOX-Konfiguration verfügbar. Bei mehreren zugewiesenen Rechnern bleibt die Seite deshalb zum Schutz vor Datenvermischung gesperrt."
-            : "Die Berechtigung der aktiven Business-OS-Instanz konnte nicht bestätigt werden.";
+        : "Die authentifizierte Verbindung zur ausgewählten CTOX-Instanz ist nicht verfügbar.";
     return (
       <SettingsPageContainer>
         <SettingsSection title="Lumas">
@@ -1280,7 +1366,8 @@ export function WorkjetSettings({
             title={resolving ? "Instanz wird geladen" : "Lumas nicht verfügbar"}
             description={description}
             control={
-              resolving ? undefined : target.reason === "no-active-instance" ? (
+              resolving ? undefined : scope.phase === "blocked" &&
+                scope.blocker === "no-active-instance" ? (
                 <Button onClick={() => openInstanceSetup()}>Instanz auswählen</Button>
               ) : (
                 <Button render={<Link to="/settings/computers" />}>Computer einrichten</Button>
@@ -1294,8 +1381,10 @@ export function WorkjetSettings({
 
   return (
     <ScopedWorkjetSettings
-      key={target.environment.environmentId}
-      environment={target.environment}
+      key={`${environment.environmentId}:${target.instanceId}:${target.connectionId}`}
+      environment={environment}
+      target={target}
+      nativeInstanceId={scope.presentationInstanceId}
       {...(defaultSection ? { defaultSection } : {})}
     />
   );
@@ -1303,14 +1392,60 @@ export function WorkjetSettings({
 
 function ScopedWorkjetSettings({
   environment,
+  nativeInstanceId,
+  target,
   defaultSection,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly target: WorkjetLumaTarget;
+  readonly nativeInstanceId: string | null;
   readonly defaultSection?: WorkjetSettingsSectionId;
 }) {
   const environmentId = environment.environmentId;
   const settings = useEnvironmentSettings(environmentId);
-  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const instance = useEnvironmentQuery(
+    serverEnvironment.lumaConfiguration({ environmentId, input: target }),
+  );
+  const saveInstance = useAtomCommand(serverEnvironment.updateLumaConfiguration, {
+    reportFailure: false,
+  });
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const configuration =
+    instance.data?.configuration === null || instance.data === null
+      ? settings.workjet
+      : applyLumaInstanceDocument(settings.workjet, instance.data.configuration);
+  const persistInstanceConfiguration = useCallback(
+    async (next: WorkjetConfiguration) => {
+      if (instance.data === null || instance.isPending)
+        throw new Error("Wait until the instance's Luma configuration has loaded.");
+      setSaveError(null);
+      const result = await saveInstance({
+        environmentId,
+        input: {
+          target,
+          expectedRevision: instance.data.revision,
+          configuration: extractLumaInstanceDocument(next),
+        },
+      });
+      const failure =
+        result._tag === "Failure"
+          ? "The instance Luma configuration could not be saved."
+          : result.value.status === "conflict"
+            ? "Another session changed the Lumas. Refresh and apply the change again."
+            : null;
+      if (failure !== null) {
+        setSaveError(failure);
+        throw new Error(failure);
+      }
+    },
+    [environmentId, instance.data, instance.isPending, saveInstance, target],
+  );
+  const updateConfiguration = useCallback(
+    (next: WorkjetConfiguration) => {
+      void persistInstanceConfiguration(next).catch(() => undefined);
+    },
+    [persistInstanceConfiguration],
+  );
   const query = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -1420,33 +1555,61 @@ function ScopedWorkjetSettings({
     [environmentId, runStorageInspection, updateServerSettings],
   );
 
+  if (instance.data === null)
+    return (
+      <SettingsPageContainer>
+        <SettingsSection title="Lumas">
+          <SettingsRow
+            title={
+              instance.isPending
+                ? "Instanzkonfiguration wird geladen"
+                : "Instanzkonfiguration nicht verfügbar"
+            }
+            description="Lumas gehören zur ausgewählten CTOX-Instanz und werden auf allen verbundenen Computern gemeinsam genutzt."
+            control={<Button onClick={instance.refresh}>Erneut laden</Button>}
+          />
+        </SettingsSection>
+      </SettingsPageContainer>
+    );
+
   return (
-    <WorkjetSettingsView
-      {...(defaultSection ? { defaultSection } : {})}
-      draftScopeKey={environmentId}
-      configuration={settings.workjet}
-      greppy={{
-        snapshot: query.data,
-        isInitialLoading: query.isPending && query.data === null,
-        hasInspectFailure: query.error !== null,
-        isRefreshing: query.isPending && query.data !== null,
-        isOperating,
-        onRefresh: query.refresh,
-        onInstall: handleInstall,
-      }}
-      gateway={gateway}
-      automaticWorktreeStorage={{
-        configuredRoot: settings.automaticWorktreeRoot,
-        selectedServerLabel: environment.label,
-        selectedServerId: environmentId,
-        inspection: storageInspection,
-        error: storageError,
-        isChecking: isCheckingStorage,
-        isApplying: isApplyingStorage,
-        onCheck: (root) => void runStorageInspection(root),
-        onApply: handleApplyStorage,
-      }}
-      onChange={(workjet) => updateSettings({ workjet })}
-    />
+    <>
+      {saveError !== null ? (
+        <p role="alert" className="px-4 py-2 text-sm text-destructive">
+          {saveError}
+        </p>
+      ) : null}
+      <WorkjetSettingsView
+        {...(defaultSection ? { defaultSection } : {})}
+        draftScopeKey={`${environmentId}:${target.instanceId}:${target.connectionId}`}
+        nativeInstanceId={nativeInstanceId}
+        nativeInstanceLabel={target.instanceId}
+        onSaveWorkerConfiguration={persistInstanceConfiguration}
+        configuration={configuration}
+        greppy={{
+          snapshot: query.data,
+          isInitialLoading: query.isPending && query.data === null,
+          hasInspectFailure: query.error !== null,
+          isRefreshing: query.isPending && query.data !== null,
+          isOperating,
+          onRefresh: query.refresh,
+          onInstall: handleInstall,
+        }}
+        gateway={gateway}
+        gatewayEnvironmentId={environmentId}
+        automaticWorktreeStorage={{
+          configuredRoot: settings.automaticWorktreeRoot,
+          selectedServerLabel: environment.label,
+          selectedServerId: environmentId,
+          inspection: storageInspection,
+          error: storageError,
+          isChecking: isCheckingStorage,
+          isApplying: isApplyingStorage,
+          onCheck: (root) => void runStorageInspection(root),
+          onApply: handleApplyStorage,
+        }}
+        onChange={updateConfiguration}
+      />
+    </>
   );
 }

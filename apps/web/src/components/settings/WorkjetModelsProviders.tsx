@@ -6,7 +6,14 @@ import type {
   WorkjetGatewayModelCheck,
 } from "@workjet/contracts";
 import { CheckIcon, EllipsisIcon, PlusIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -56,7 +63,19 @@ export interface ModelsModelCheck {
   readonly httpStatus: number | null;
 }
 
+export interface InstanceGrokAccountPresentation {
+  readonly row: ReactNode;
+  readonly label: string;
+  readonly installed: boolean;
+  readonly hasModels: boolean;
+  readonly checking: boolean;
+  readonly start: () => void;
+  readonly checkAll: () => void;
+  readonly refresh: () => void;
+}
 export interface ModelsManagementState {
+  readonly nativeProviderRows?: ReactNode;
+  readonly instanceGrok?: InstanceGrokAccountPresentation;
   readonly modelChecks?: ReadonlyArray<ModelsModelCheck>;
   readonly pendingModelChecks?: ReadonlyArray<{
     readonly accountId: string;
@@ -79,6 +98,18 @@ export interface ModelsManagementState {
     accounts: ReadonlyArray<WorkjetGatewayAccountSummary>,
     models: ReadonlyArray<string>,
   ) => Promise<boolean>;
+  readonly onEditProviderModels?: (
+    provider: WorkjetGatewayProvider,
+    models: ReadonlyArray<string>,
+  ) => Promise<boolean>;
+  readonly modelSuggestions?: Readonly<
+    Partial<Record<WorkjetGatewayProvider, ReadonlyArray<string>>>
+  >;
+  readonly onExcludeModel?: (
+    account: WorkjetGatewayAccountSummary,
+    model: string,
+    excluded: boolean,
+  ) => Promise<boolean>;
   readonly onDeleteAccount: (accountId: string) => Promise<boolean>;
   readonly onRelogin: (provider: WorkjetGatewayOauthProvider, accountId: string) => void;
   readonly onSaveApiKey: (
@@ -100,6 +131,7 @@ function InlineField({
   onSave,
   className,
   action,
+  failureMessage,
 }: {
   readonly value: string;
   readonly label: string;
@@ -108,6 +140,7 @@ function InlineField({
   readonly onSave: (value: string) => Promise<boolean>;
   readonly className?: string;
   readonly action?: string;
+  readonly failureMessage?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const [failed, setFailed] = useState(false);
@@ -191,7 +224,7 @@ function InlineField({
       )}
       {failed && (
         <span role="alert" className="text-xs text-destructive">
-          Not saved. Check your entry and press Enter to try again.
+          {failureMessage ?? "Not saved. Check your entry and press Enter to try again."}
         </span>
       )}
     </div>
@@ -277,7 +310,7 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
   );
 }
 
-function KeyForm({
+export function WorkjetModelsKeyForm({
   provider,
   account,
   models,
@@ -292,22 +325,35 @@ function KeyForm({
 }) {
   const [key, setKey] = useState("");
   const [label, setLabel] = useState(account?.label ?? WORKJET_GATEWAY_PROVIDER_LABELS[provider]);
-  const [modelText, setModelText] = useState(models.join(", "));
+  const sharedModels = state.onEditProviderModels !== undefined;
+  const [modelText, setModelText] = useState(provider === "kimi" ? "" : models.join(", "));
   const [error, setError] = useState<string | null>(null);
+  const apiKeyError =
+    state.apiKey.status === "failed" &&
+    state.apiKey.provider === provider &&
+    state.apiKey.accountId === account?.id
+      ? state.apiKey.message
+      : null;
   return (
     <form
       data-settings-inline-editor=""
       className="grid min-w-0 gap-2 border-t border-border/50 py-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,2fr)_auto]"
       onSubmit={(event) => {
         event.preventDefault();
-        const parsed = parseModels(modelText);
+        // Discover this key's own plan before intersecting shared provider models.
+        const selectedModels = provider === "kimi" ? [] : (account?.modelIds ?? models);
+        const parsed = sharedModels ? selectedModels : parseModels(modelText);
         if (
           !key.trim() ||
           !label.trim() ||
           !parsed ||
-          (account === undefined && parsed.length === 0)
+          (account === undefined && provider !== "kimi" && parsed.length === 0)
         ) {
-          setError("Enter an account name, API key and at least one valid model name.");
+          setError(
+            provider === "kimi"
+              ? "Enter an account name and API key. Leave models empty to discover them."
+              : "Enter an account name, API key and at least one valid model name.",
+          );
           return;
         }
         const credential = key;
@@ -317,7 +363,7 @@ function KeyForm({
           .onSaveApiKey(provider, credential, label.trim(), parsed, account?.id)
           .then((saved) => {
             if (saved) onClose();
-            else setError("API key was not saved. Enter it again and retry.");
+            else setError(null);
           });
       }}
     >
@@ -363,21 +409,25 @@ function KeyForm({
           <XIcon className="size-4" />
         </Button>
       </div>
-      {!account && (
+      {!account && !sharedModels && (
         <label className="col-span-full grid gap-1 text-xs text-muted-foreground">
           Models
           <input
             aria-label={`Models for a new ${WORKJET_GATEWAY_PROVIDER_LABELS[provider]} account`}
-            placeholder="Model IDs, separated by commas"
+            placeholder={
+              provider === "kimi"
+                ? "Discovered after connecting; optional model IDs, separated by commas"
+                : "Model IDs, separated by commas"
+            }
             value={modelText}
             onChange={(event) => setModelText(event.target.value)}
             className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
           />
         </label>
       )}
-      {error && (
+      {(error || apiKeyError) && (
         <p role="alert" className="col-span-full text-xs text-destructive">
-          {error}
+          {error ?? apiKeyError}
         </p>
       )}
     </form>
@@ -385,7 +435,7 @@ function KeyForm({
 }
 
 const MODELS_TABLE_COLUMNS =
-  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3";
+  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
 
 function AccountRow({
   account,
@@ -495,9 +545,27 @@ function AccountRow({
               </button>
             )}
           </div>
+          {account.kimiConnection && (
+            <div
+              className={cn(
+                "min-w-0 text-[10px] leading-4 text-muted-foreground",
+                grouped && "pl-5",
+              )}
+            >
+              <span>{account.kimiConnection.plan === "coding" ? "Coding plan" : "API plan"}</span>
+              <span className="ml-1 break-all">{account.kimiConnection.upstreamBaseUrl}</span>
+            </div>
+          )}
         </div>
         <div role="cell" className="min-w-0">
-          <WorkjetModelsCell account={account} state={state} />
+          <WorkjetModelsCell
+            account={account}
+            state={state}
+            models={
+              state.catalog?.providerModels?.find((entry) => entry.provider === account.provider)
+                ?.modelIds
+            }
+          />
         </div>
         <div role="cell" className="min-w-0">
           <AccountLimits health={health} />
@@ -635,7 +703,7 @@ function AccountRow({
         />
       )}
       {replaceKey && isWorkjetGatewayApiKeyProvider(account.provider) && (
-        <KeyForm
+        <WorkjetModelsKeyForm
           provider={account.provider}
           account={account}
           models={account.modelIds}
@@ -720,6 +788,79 @@ function LoginMessage({
   );
 }
 
+function ProviderModelsField({
+  provider,
+  models,
+  state,
+}: {
+  readonly provider: WorkjetGatewayProvider;
+  readonly models: ReadonlyArray<string>;
+  readonly state: ModelsManagementState;
+}) {
+  const suggestions = state.modelSuggestions?.[provider] ?? [];
+  const [suggestionError, setSuggestionError] = useState(false);
+  return (
+    <div className="flex min-w-0 items-start gap-1">
+      <div className="min-w-0 flex-1">
+        <InlineField
+          value={models.join(", ")}
+          multiline
+          label={"Models for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+          action={"models.provider." + provider + ".models"}
+          failureMessage="Not saved. Use model IDs from the live catalog and press Enter to retry."
+          disabled={state.mutationBusy}
+          className="font-mono text-[11px]"
+          onSave={async (value) => {
+            const parsed = parseModels(value);
+            return parsed !== null && !!(await state.onEditProviderModels?.(provider, parsed));
+          }}
+        />
+      </div>
+      {suggestionError && (
+        <span role="alert" className="text-xs text-destructive">
+          Not saved. Refresh the live catalog and try again.
+        </span>
+      )}
+      {suggestions.length > 0 && (
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={"Model suggestions for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+                disabled={state.mutationBusy}
+              />
+            }
+          >
+            <PlusIcon className="size-3" />
+          </PopoverTrigger>
+          <PopoverPopup align="start" viewportClassName="max-h-64 overflow-y-auto p-1">
+            {suggestions
+              .filter((id) => !models.includes(id))
+              .map((id) => (
+                <button
+                  type="button"
+                  key={id}
+                  className="block w-full px-2 py-1 text-left font-mono text-xs hover:bg-accent"
+                  disabled={state.mutationBusy}
+                  onClick={() => {
+                    setSuggestionError(false);
+                    void state
+                      .onEditProviderModels?.(provider, [...models, id])
+                      .then((saved) => setSuggestionError(!saved));
+                  }}
+                >
+                  {id}
+                </button>
+              ))}
+          </PopoverPopup>
+        </Popover>
+      )}
+    </div>
+  );
+}
+
 export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & ModelsManagementState) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [adding, setAdding] = useState<WorkjetGatewayProvider | null>(null);
@@ -762,7 +903,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           <span className="text-xs text-muted-foreground">
             {state.isInitialLoading
               ? "Loading…"
-              : `${accounts.filter((account) => account.enabled).length} active accounts`}
+              : `${accounts.filter((account) => account.enabled).length + (state.instanceGrok?.installed ? 1 : 0)} active accounts`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -771,21 +912,29 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             variant="ghost"
             disabled={
               state.checksBusy ||
-              !state.onCheckModels ||
-              accounts.every((account) => !account.enabled || account.modelIds.length === 0)
+              state.instanceGrok?.checking ||
+              (!state.onCheckModels && !state.instanceGrok?.hasModels) ||
+              (accounts.every((account) => !account.enabled || account.modelIds.length === 0) &&
+                !state.instanceGrok?.hasModels)
             }
             data-workjet-action="models.check-all"
-            onClick={() => state.onCheckModels?.()}
+            onClick={() => {
+              state.onCheckModels?.();
+              state.instanceGrok?.checkAll();
+            }}
           >
             <CheckIcon className="size-3.5" />
-            {state.checksBusy ? "Checking…" : "Check all"}
+            {state.checksBusy || state.instanceGrok?.checking ? "Checking…" : "Check all"}
           </Button>
           <Button
             size="icon-xs"
             variant="ghost"
             aria-label="Refresh provider status"
             disabled={state.isRefreshing}
-            onClick={state.onRefresh}
+            onClick={() => {
+              state.onRefresh();
+              state.instanceGrok?.refresh();
+            }}
           >
             <RefreshCwIcon className="size-3.5" />
           </Button>
@@ -844,11 +993,14 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           {!state.checksBusy && " Use Check all to continue."}
         </p>
       )}
-      {accounts.length === 0 && adding === null && !state.isInitialLoading && (
-        <p className="py-4 text-sm text-muted-foreground">
-          Add a provider and connect through subscription sign-in or an API key.
-        </p>
-      )}
+      {accounts.length === 0 &&
+        !state.instanceGrok?.installed &&
+        adding === null &&
+        !state.isInitialLoading && (
+          <p className="py-4 text-sm text-muted-foreground">
+            Add a provider and connect through subscription sign-in or an API key.
+          </p>
+        )}
       <div className="overflow-x-auto">
         <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
           <div
@@ -868,9 +1020,13 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
               Actions
             </span>
           </div>
+          {state.instanceGrok?.row}
+          {state.nativeProviderRows}
           {providers.map((provider) => {
             const providerAccounts = accounts.filter((account) => account.provider === provider);
-            const models = [...new Set(providerAccounts.flatMap((account) => account.modelIds))];
+            const models = state.catalog?.providerModels?.find(
+              (entry) => entry.provider === provider,
+            )?.modelIds ?? [...new Set(providerAccounts.flatMap((account) => account.modelIds))];
             const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
             const title = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
             const loginHere =
@@ -878,23 +1034,28 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
               state.login.status !== "idle" &&
               state.login.provider === provider &&
               state.loginAccountId === null;
-            const grouped = providerAccounts.length > 1;
+            const grouped = state.onEditProviderModels !== undefined || providerAccounts.length > 1;
             return (
               <div key={provider} data-provider={provider}>
                 {(grouped || providerAccounts.length === 0) && (
-                  <div className="flex items-center gap-1.5 border-b border-border/50 pt-2 pb-1">
-                    <Icon className="size-4" />
-                    <h3 className="text-xs font-medium">{title}</h3>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={`Add account to ${title}`}
-                      data-workjet-action={`models.provider.${provider}.add-account`}
-                      disabled={state.mutationBusy}
-                      onClick={() => startAdd(provider)}
-                    >
-                      <PlusIcon className="size-3" />
-                    </Button>
+                  <div className={cn(MODELS_TABLE_COLUMNS, "border-b border-border/50 py-2")}>
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="size-4" />
+                      <h3 className="text-xs font-medium">{title}</h3>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`Add account to ${title}`}
+                        data-workjet-action={`models.provider.${provider}.add-account`}
+                        disabled={state.mutationBusy}
+                        onClick={() => startAdd(provider)}
+                      >
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
+                    {state.onEditProviderModels && (
+                      <ProviderModelsField provider={provider} models={models} state={state} />
+                    )}
                   </div>
                 )}
                 {providerAccounts.map((account) => (
@@ -911,8 +1072,19 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                   keyProvider === null &&
                   !loginHere && (
                     <div className="flex gap-2 py-2">
-                      <Button size="xs" variant="outline" onClick={() => state.onAddAccount("xai")}>
-                        Sign in with subscription
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => {
+                          if (state.instanceGrok) {
+                            state.instanceGrok.start();
+                            setAdding(null);
+                          } else state.onAddAccount("xai");
+                        }}
+                      >
+                        {state.instanceGrok
+                          ? `Grok Build OAuth on ${state.instanceGrok.label}`
+                          : "Sign in with subscription"}
                       </Button>
                       <Button size="xs" variant="outline" onClick={() => setKeyProvider("xai")}>
                         Add API key
@@ -920,7 +1092,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                     </div>
                   )}
                 {keyProvider === provider && isWorkjetGatewayApiKeyProvider(provider) && (
-                  <KeyForm
+                  <WorkjetModelsKeyForm
                     provider={provider}
                     models={models}
                     state={state}

@@ -11,6 +11,7 @@ import {
   CheckpointRef,
   CommandId,
   EventId,
+  EnvironmentId,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
@@ -24,6 +25,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "./workjet.ts";
+import { WorkjetWorkerKanban, WorkjetGoalExecution, WorkjetGoalExecutor } from "./workjetGoal.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -33,6 +35,7 @@ export const ORCHESTRATION_WS_METHODS = {
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   getArchivedTeamWorkerDetail: "orchestration.getArchivedTeamWorkerDetail",
+  getThreadContinuation: "orchestration.getThreadContinuation",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
@@ -819,6 +822,49 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ThreadGoalSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  status: Schema.Literals(["active", "paused", "blocked", "complete"]),
+  objective: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4096))),
+  reason: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(8000))),
+  expectedRevision: Schema.optional(NonNegativeInt),
+  createdAt: IsoDateTime,
+});
+
+const ThreadWorkerKanbanSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.worker-kanban.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  kanban: WorkjetWorkerKanban,
+  createdAt: IsoDateTime,
+});
+
+const ThreadGoalExecutionObservedCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.execution-observed"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  execution: WorkjetGoalExecution,
+});
+
+const ThreadGoalExecutorObservedCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.executor-observed"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  expectedRevision: NonNegativeInt,
+  executor: WorkjetGoalExecutor,
+});
+
+const ThreadGoalAdvanceCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.advance"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  completedTurnId: TurnId,
+  expectedRevision: NonNegativeInt,
+  createdAt: IsoDateTime,
+});
+
 export const ThreadWorkjetConfigSetCommand = Schema.Struct({
   type: Schema.Literal("thread.workjet-config.set"),
   commandId: CommandId,
@@ -856,8 +902,29 @@ const ThreadTurnStartBootstrap = Schema.Struct({
 
 export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
 
+/** A portable transcript; provider sessions, grants and source filesystem paths stay local. */
+const ThreadContinuationImportCommand = Schema.Struct({
+  type: Schema.Literal("thread.continuation.import"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createThread: ThreadBootstrapCreateThread,
+  sourceEnvironmentId: EnvironmentId,
+  sourceLabel: TrimmedNonEmptyString,
+  messages: Schema.Array(
+    Schema.Struct({
+      messageId: MessageId,
+      role: Schema.Literals(["user", "assistant"]),
+      text: Schema.String,
+      createdAt: IsoDateTime,
+    }),
+  ),
+  createdAt: IsoDateTime,
+});
+
 export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
+  // Server continuations use the goal revision as an admission fence.
+  goalRevision: Schema.optional(NonNegativeInt),
   commandId: CommandId,
   threadId: ThreadId,
   message: Schema.Struct({
@@ -944,6 +1011,7 @@ const ThreadSessionStopCommand = Schema.Struct({
 });
 
 const DispatchableClientOrchestrationCommand = Schema.Union([
+  ThreadContinuationImportCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -962,6 +1030,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadWorkjetConfigSetCommand,
+  ThreadGoalSetCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -973,6 +1042,7 @@ export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
 
 export const ClientOrchestrationCommand = Schema.Union([
+  ThreadContinuationImportCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -991,6 +1061,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
   ThreadWorkjetConfigSetCommand,
+  ThreadGoalSetCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -1094,6 +1165,10 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadGoalExecutionObservedCommand,
+  ThreadGoalExecutorObservedCommand,
+  ThreadGoalAdvanceCommand,
+  ThreadWorkerKanbanSetCommand,
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
@@ -1317,6 +1392,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  goalRevision: Schema.optional(NonNegativeInt),
   messageId: MessageId,
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -1740,6 +1816,10 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedErrorClass
 }
 
 export const OrchestrationRpcSchemas = {
+  getThreadContinuation: {
+    input: Schema.Struct({ threadId: ThreadId }),
+    output: OrchestrationThreadDetailSnapshot,
+  },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,
@@ -1795,6 +1875,8 @@ export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<O
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
+    // Confirms a deleted, empty bootstrap identity, including drafts from older clients.
+    rolledBackThreadId: Schema.optional(ThreadId),
   },
 ) {}
 

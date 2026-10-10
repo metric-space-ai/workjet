@@ -5,11 +5,12 @@ import {
   validateCapabilityActivation,
   type CapabilityRegistry,
 } from "@metric-space-ai/workjet-capabilities";
-import type {
-  WorkjetCapabilityId,
-  WorkjetConnectionId,
-  WorkjetThreadConfig,
-  WorkjetThreadRole,
+import {
+  workjetExecutionRole,
+  type WorkjetCapabilityId,
+  type WorkjetConnectionId,
+  type WorkjetThreadConfig,
+  type WorkjetThreadRole,
 } from "@workjet/contracts";
 
 export interface ThreadCapabilityContext {
@@ -50,32 +51,42 @@ export function resolveThreadCapabilityContext(
     "decision-hub",
   );
   const team = workjetConfig.schemaVersion === 2 ? workjetConfig.team : undefined;
-  const teamInstructions = team
-    ? `Project team role: ${team.role}. Goal: ${team.goal}\n${
-        team.parentThreadId
-          ? `Your durable parent thread is ${team.parentThreadId}. Return results and blockers to that parent.`
-          : "Retain ownership of this project across specialist and worker deliveries."
-      }\n${
-        team.role === "worker"
-          ? "You are a leaf worker. Deliver the assigned package and accept consolidated rework; do not spawn children. Open exactly one pull request from your assigned isolated worker branch and keep all rework in that same pull request. Return its URL, branch and verification evidence to your parent. The native lifecycle archives this thread after that pull request is merged or closed and execution is stopped."
-          : "Keep your goal and remaining work durable. Report meaningful transitions, not repeated status messages."
-      }`
-    : "";
 
   const ctoxBinding = bindingForCapability(
     activation.config.capabilityBindings,
     "ctox-business-os",
   );
   return Object.freeze({
-    workjetRole: workjetConfig.role,
+    workjetRole: workjetExecutionRole(workjetConfig),
     mcpCapabilityIds: Object.freeze(mcpManifests.map((manifest) => manifest.id)),
     promptCapabilityIds: Object.freeze(promptManifests.map((manifest) => manifest.id)),
     compiledManagedPrompt: compileCapabilityPrompt({
-      role: workjetConfig.role,
+      role: workjetExecutionRole(workjetConfig),
+      ...(team
+        ? {
+            team:
+              workjetConfig.schemaVersion === 2 && workjetConfig.goal
+                ? { ...team, goal: workjetConfig.goal.objective }
+                : team,
+          }
+        : {}),
       managedInstructions: [
         globalManagedInstructions.trim(),
         workjetConfig.managedInstructions.trim(),
-        teamInstructions,
+        ...(workjetConfig.schemaVersion === 2 && workjetConfig.goal
+          ? [
+              `Durable Workjet goal status: ${workjetConfig.goal.status}. ${workjetConfig.goal.reason ?? ""} Do not reactivate a paused goal; only an explicit Owner resume may do that.`,
+              ...(workjetConfig.team?.role === "specialist" && workjetConfig.goal.kanban
+                ? [
+                    "Retained mini-kanban (update first at the next iteration):",
+                    ...workjetConfig.goal.kanban.cards.map(
+                      (card) =>
+                        `${card.id}: ${card.status} — ${card.title}${card.evidence ? ` (${card.evidence})` : ""}`,
+                    ),
+                  ]
+                : []),
+            ]
+          : []),
       ]
         .filter((value) => value.length > 0)
         .join("\n\n"),

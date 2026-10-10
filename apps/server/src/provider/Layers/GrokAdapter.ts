@@ -1,3 +1,4 @@
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import {
   ApprovalRequestId,
   type GrokSettings,
@@ -102,6 +103,8 @@ export interface GrokAdapterLiveOptions {
     NodeJS.ProcessEnv,
     ProviderGatewayRoutingError
   >;
+  /** Gateway prompts may contain many tool rounds; acknowledge dispatch before completion. */
+  readonly dispatchPromptInBackground?: boolean;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
@@ -686,9 +689,12 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             : undefined;
           // Resolved per session start so gateway-routed instances observe the
           // gateway's current status rather than a value frozen at construction.
-          const sessionEnvironment = options?.resolveSessionEnvironment
-            ? yield* options.resolveSessionEnvironment()
-            : options?.environment;
+          const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+          const sessionEnvironment =
+            sourceProfile?.environment ??
+            (options?.resolveSessionEnvironment
+              ? yield* options.resolveSessionEnvironment()
+              : options?.environment);
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
             ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
@@ -1174,6 +1180,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               return {
                 acp: ctx.acp,
                 acpSessionId: ctx.acpSessionId,
+                scope: ctx.scope,
+                resumeCursor: ctx.session.resumeCursor,
                 displayModel,
                 turnPromptParts,
                 turnId,
@@ -1203,7 +1211,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         const promptFailureMessageRef = yield* Ref.make<string | undefined>(undefined);
         const managedPromptFingerprintRef = yield* Ref.make<string | undefined>(undefined);
 
-        return yield* Effect.gen(function* () {
+        const completePrompt = Effect.gen(function* () {
           const result = yield* Effect.gen(function* () {
             const injection = yield* withThreadLock(
               input.threadId,
@@ -1483,6 +1491,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             }).pipe(Effect.catch(() => Effect.void)),
           ),
         );
+        if (options?.dispatchPromptInBackground) {
+          yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(prepared.scope));
+          return {
+            threadId: input.threadId,
+            turnId: prepared.turnId,
+            resumeCursor: prepared.resumeCursor,
+          };
+        }
+        return yield* completePrompt;
       });
 
     const interruptTurn: GrokAdapterShape["interruptTurn"] = (threadId, turnId) =>

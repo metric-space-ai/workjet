@@ -12,12 +12,12 @@ import { searchSettings } from "./settingsSearch";
 describe("Workjet settings information architecture", () => {
   it("puts instances first, keeps Computers, and hides Connections", () => {
     expect(SETTINGS_NAV_ITEMS[0]).toMatchObject({
-      label: "Instances",
+      label: "Instanzen",
       to: "/settings/business-os",
     });
     expect(SETTINGS_NAV_ITEMS).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Computers", to: "/settings/computers" }),
+        expect.objectContaining({ label: "Rechner", to: "/settings/computers" }),
       ]),
     );
     expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).not.toContain("Connections");
@@ -56,7 +56,7 @@ describe("Workjet settings information architecture", () => {
       sidebarChromeSource.indexOf("export const SidebarChromeFooter"),
     );
     expect(footerSource.split("<SidebarMenuItem").length - 1).toBe(1);
-    expect(footerSource).toContain("<span>Settings</span>");
+    expect(footerSource).toContain("<span>Einstellungen</span>");
     expect(footerSource).not.toContain('to: "/machines"');
     expect(footerSource).not.toContain("openWorkjetDevicePairing");
   });

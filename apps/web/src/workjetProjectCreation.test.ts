@@ -43,10 +43,11 @@ describe("runWorkjetProjectCreation", () => {
         runWorkjetProjectCreation({ presentationInstanceId: instanceId, request }, { port }),
       ).resolves.toEqual({ _tag: "failed", code });
       // Only an older shell's unsupported or guest failure retries the legacy list.
-      expect(port).toHaveBeenCalledTimes(code === "unsupported" ? 2 : 1);
+      expect(port).toHaveBeenCalledTimes(code === "unsupported" ? 3 : 1);
       expect(port).toHaveBeenNthCalledWith(1, instanceId, {
         action: "project.list",
         includeConfiguration: true,
+        includeSupervisorLuma: true,
       });
     },
   );
@@ -92,6 +93,7 @@ describe("runWorkjetProjectCreation", () => {
     expect(port).toHaveBeenCalledWith(instanceId, {
       action: "project.list",
       includeConfiguration: true,
+      includeSupervisorLuma: true,
     });
   });
 
@@ -189,12 +191,13 @@ describe("runWorkjetProjectCreation", () => {
     expect(port).toHaveBeenNthCalledWith(1, instanceId, {
       action: "project.list",
       includeConfiguration: true,
+      includeSupervisorLuma: true,
     });
     expect(port).toHaveBeenNthCalledWith(2, instanceId, request);
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });
 
-  it("creates with the stable id when an older core cannot list projects", async () => {
+  it("creates with the stable id when an older shell lacks the Luma projection", async () => {
     const phases: string[] = [];
     const port = vi
       .fn()
@@ -217,8 +220,12 @@ describe("runWorkjetProjectCreation", () => {
     expect(port).toHaveBeenNthCalledWith(1, instanceId, {
       action: "project.list",
       includeConfiguration: true,
+      includeSupervisorLuma: true,
     });
-    expect(port).toHaveBeenNthCalledWith(2, instanceId, { action: "project.list" });
+    expect(port).toHaveBeenNthCalledWith(2, instanceId, {
+      action: "project.list",
+      includeConfiguration: true,
+    });
     expect(port).toHaveBeenNthCalledWith(3, instanceId, request);
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });

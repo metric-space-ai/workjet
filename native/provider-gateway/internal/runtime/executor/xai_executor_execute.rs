@@ -93,6 +93,8 @@ impl XaiExecutor {
         };
         let target =
             XaiUpstreamTarget::new(&base_url).map_err(|_| XaiExecutionError::InvalidTarget)?;
+        let mut custom = super::xai_custom_tools::XaiCustomToolAdapter::default();
+        let mut namespace_tools = std::collections::BTreeMap::new();
         let (body, mut headers) = if media {
             (normalize_image_refs(&request.payload), Headers::new())
         } else {
@@ -116,6 +118,9 @@ impl XaiExecutor {
             if path == "/responses/compact" {
                 sanitize_compact_body(&mut prepared.body);
             }
+            custom = super::xai_custom_tools::XaiCustomToolAdapter::new(prepared.custom_tools)
+                .with_boxed_functions(prepared.boxed_functions);
+            namespace_tools = prepared.namespace_tools;
             (prepared.body, Headers::new())
         };
         if media || path == "/responses/compact" {
@@ -163,10 +168,17 @@ impl XaiExecutor {
             response.body.to_vec()
         } else {
             let completed = aggregate_responses_sse(&response.body)?;
-            if let Some(store) = self.replay_store.as_deref() {
-                cache_reasoning_replay_from_completed(store, replay_scope.as_ref(), &completed);
+            // A valid token-limited response can be returned, but must not
+            // replace the last complete reasoning replay for this session.
+            if serde_json::from_slice::<Value>(&completed).is_ok_and(|event| {
+                event.get("type").and_then(Value::as_str) == Some("response.completed")
+            }) {
+                if let Some(store) = self.replay_store.as_deref() {
+                    cache_reasoning_replay_from_completed(store, replay_scope.as_ref(), &completed);
+                }
             }
-            completed
+            let completed = custom.restore_buffered(&completed);
+            super::xai_executor_response::restore_namespace_tool_calls(&completed, &namespace_tools)
         };
         Ok(Response {
             payload,
@@ -232,7 +244,7 @@ fn aggregate_responses_sse(body: &[u8]) -> Result<Vec<u8>, XaiExecutionError> {
             .ok()
             .and_then(|event| event.get("type").and_then(Value::as_str).map(str::to_owned))
             .as_deref()
-            == Some("response.completed")
+            .is_some_and(|kind| matches!(kind, "response.completed" | "response.incomplete"))
         {
             completed = Some(normalized);
         }

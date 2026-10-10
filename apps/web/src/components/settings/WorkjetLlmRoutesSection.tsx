@@ -116,7 +116,11 @@ export function WorkjetLlmRoutesSection(props: {
         <Fragment key={route.id}>
           <SettingsRow
             title={route.label}
-            description={describeRouteAccount(route.gatewayAccountId, props.catalog)}
+            description={
+              route.gatewayAccountId === undefined
+                ? "CTOX instance account; manage its models in Settings → Models."
+                : describeRouteAccount(route.gatewayAccountId, props.catalog)
+            }
             control={
               <span className="flex items-center gap-1">
                 <Button

@@ -5,7 +5,16 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
-import type { WorkjetGatewayModelBinding } from "@workjet/contracts";
+import type {
+  WorkjetGatewayModelBinding,
+  WorkjetGatewayInferenceProtocol,
+  WorkjetGatewayInferenceResult,
+} from "@workjet/contracts";
+import { discoverKimiConnection } from "./KimiConnection.ts";
+import { discoverZaiConnection } from "./ZaiConnection.ts";
+import { discoverApiKeyModels } from "./ApiKeyModelConnection.ts";
+import { readPublicModelCatalog } from "./LiveProviderCatalog.ts";
+import { discoverClaudeModels } from "./ClaudeConnection.ts";
 
 import type {
   GatewayHostProcess,
@@ -62,13 +71,14 @@ const withTimeout = async <A>(
 };
 
 /** The source alone sends inference to its own gateway. Never returns transport credentials/headers. */
-export async function forwardSourceGatewayResponses(
+export async function forwardSourceGatewayProtocol(
   endpoint: string,
   selected: WorkjetGatewayModelBinding,
   requestJson: string,
   deadlineMs: number,
+  protocol: WorkjetGatewayInferenceProtocol,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<WorkjetGatewayInferenceResult> {
   const url = new URL(endpoint);
   if (
     url.protocol !== "http:" ||
@@ -82,7 +92,12 @@ export async function forwardSourceGatewayResponses(
     throw new Error("invalid gateway endpoint");
   const remaining = deadlineMs - Date.now();
   if (remaining <= 0) throw new Error("expired");
-  const response = await fetch(new URL("/v1/responses", url), {
+  const paths = {
+    responses: "/v1/responses",
+    messages: "/v1/messages",
+    "chat-completions": "/v1/chat/completions",
+  };
+  const response = await fetch(new URL(paths[protocol], url), {
     method: "POST",
     redirect: "error",
     headers: {
@@ -104,18 +119,89 @@ export async function forwardSourceGatewayResponses(
   }
   try {
     const body = await readBoundedResponse(response, 1024 * 1024);
+    const streaming = JSON.parse(requestJson).stream === true;
+    if (streaming) {
+      if (!response.headers.get("content-type")?.startsWith("text/event-stream"))
+        throw new Error("missing native event stream");
+      const frames = body.split(/\r?\n\r?\n/);
+      if (frames.pop()?.trim()) throw new Error("incomplete native event stream");
+      let completed = false;
+      for (const frame of frames) {
+        const data = frame
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("\n");
+        if (!data) continue;
+        if (data === "[DONE]") {
+          if (protocol === "chat-completions") completed = true;
+          continue;
+        }
+        const event: unknown = JSON.parse(data);
+        if (typeof event !== "object" || event === null || Array.isArray(event))
+          throw new Error("invalid native event");
+        const value = event as Record<string, unknown>;
+        if (value.error != null || value.type === "error" || value.type === "response.failed")
+          throw new Error("failed native event stream");
+        if (
+          (protocol === "responses" && value.type === "response.completed") ||
+          (protocol === "messages" && value.type === "message_stop")
+        )
+          completed = true;
+      }
+      if (!completed) throw new Error("incomplete native event stream");
+      return { requestJson: body, contentType: "text/event-stream" };
+    }
     const parsed: unknown = JSON.parse(body);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
     const result = parsed as Record<string, unknown>;
-    if (result.error != null || result.status === "failed" || !Array.isArray(result.output))
+    if (
+      result.error != null ||
+      result.status === "failed" ||
+      (protocol === "messages" && (result.type !== "message" || result.role !== "assistant")) ||
+      !Array.isArray(
+        protocol === "responses"
+          ? result.output
+          : protocol === "messages"
+            ? result.content
+            : result.choices,
+      )
+    )
       throw new Error("invalid response");
-    return body;
+    return { requestJson: body, contentType: "application/json" };
   } finally {
     await response.body?.cancel().catch(() => undefined);
   }
 }
 
+/** Original Codex relay contract: buffered Responses JSON. */
+export async function forwardSourceGatewayResponses(
+  endpoint: string,
+  selected: WorkjetGatewayModelBinding,
+  requestJson: string,
+  deadlineMs: number,
+  signal?: AbortSignal,
+  protocol: "responses" | "messages" = "responses",
+): Promise<string> {
+  const result = await forwardSourceGatewayProtocol(
+    endpoint,
+    selected,
+    requestJson,
+    deadlineMs,
+    protocol,
+    signal,
+  );
+  if (result.contentType !== "application/json")
+    throw new Error("expected buffered Responses JSON");
+  return result.requestJson;
+}
+
 export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
+  publicModelCatalog: readPublicModelCatalog,
+  discoverClaudeModels,
+  discoverKimiConnection,
+  discoverZaiConnection,
+  discoverApiKeyModels,
   fingerprint: (value) => NodeCrypto.createHash("sha256").update(value).digest("hex"),
   providerModelCheck: async (endpoint, provider, accountId, modelId, signal) => {
     const response = await fetch(new URL("/v1/responses", endpoint), {
@@ -130,6 +216,8 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       body: JSON.stringify({
         model: modelId,
         input: [{ role: "user", content: "Hi" }],
+        // Keep the xAI answer within its small visible-output limit.
+        ...(provider === "xai" ? { instructions: "Reply with Hi only." } : {}),
         // Codex subscriptions reject token caps; checks use non-stored requests.
         // Other providers keep the small output bound; the transport/body bounds apply to all.
         ...(provider === "codex"

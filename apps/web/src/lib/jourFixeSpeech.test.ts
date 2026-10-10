@@ -44,6 +44,31 @@ function fixture(kind: JourFixeSpeechProvider["kind"] = "ctox-gateway") {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Jour fixe speech provider boundary", () => {
+  it("uses a persisted native rate and refuses an invalid rate before creating an audio URL", async () => {
+    const f = fixture();
+    f.provider.prepareNarration = vi.fn(async () => ({
+      blob: new Blob(["wav"], { type: "audio/wav" }),
+      rate: 1.3,
+    }));
+    await f.session.prepareNarration("slide-a");
+    expect(f.events.onAudio).toHaveBeenLastCalledWith({
+      ...scope,
+      slideId: "slide-a",
+      blobUrl: "blob:narration",
+      rate: 1.3,
+    });
+    f.provider.prepareNarration = vi.fn(async () => ({
+      blob: new Blob(["wav"], { type: "audio/wav" }),
+      rate: 2,
+    }));
+    await f.session.prepareNarration("slide-b");
+    expect(URL.createObjectURL).toHaveBeenCalledOnce();
+    expect(f.events.onError).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: "Narration has an invalid speaking speed." }),
+    );
+    f.session.close();
+  });
+
   it("releases the microphone state after a bounded utterance and rejects late callbacks", async () => {
     const f = fixture();
     await f.session.toggleMicrophone();
@@ -83,6 +108,7 @@ describe("Jour fixe speech provider boundary", () => {
         ...scope,
         slideId: "slide-a",
         blobUrl: "blob:narration",
+        rate: 1.15,
       });
       f.session.close();
       expect(f.listening().signal.aborted).toBe(true);
@@ -147,6 +173,7 @@ describe("Jour fixe speech provider boundary", () => {
       ...scope,
       slideId: "new",
       blobUrl: "blob:narration",
+      rate: 1.15,
     });
     f.session.close();
   });

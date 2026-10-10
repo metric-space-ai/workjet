@@ -1,7 +1,4 @@
-import {
-  bootstrapRemoteBearerSession,
-  resolveRemoteWebSocketConnectionUrl,
-} from "@workjet/client-runtime/authorization";
+import { resolveRemoteWebSocketConnectionUrl } from "@workjet/client-runtime/authorization";
 import {
   type PreparedConnection,
   PrimaryConnectionTarget,
@@ -30,9 +27,11 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopConnectionCatalogStore from "../app/DesktopConnectionCatalogStore.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import { DesktopLocalServiceSession } from "../backend/DesktopLocalServiceSession.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import { resolveCtoxBinary } from "./CtoxLocalDaemonLaunch.ts";
+import { resolveProvisioningBackendBearerToken } from "./CtoxProvisioningEnvironment.ts";
 import {
   acquireWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
@@ -89,6 +88,7 @@ const make = Effect.gen(function* () {
   const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
   const catalogStore = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
+  const localServiceSession = yield* DesktopLocalServiceSession;
   const rpcFactory = yield* RpcSessionFactory;
   const httpClient = yield* HttpClient.HttpClient;
   const instanceRegistry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
@@ -139,15 +139,13 @@ const make = Effect.gen(function* () {
           httpBaseUrl: config.value.httpBaseUrl.href,
         });
         if (descriptor.environmentId !== environmentId) continue;
-        const session = yield* bootstrapRemoteBearerSession({
-          httpBaseUrl: config.value.httpBaseUrl.href,
-          credential: config.value.bootstrap.desktopBootstrapToken,
-          clientMetadata: { label: "Workjet Decision Hub", deviceType: "desktop" },
-        });
+        const bearerToken = yield* resolveProvisioningBackendBearerToken(config.value).pipe(
+          Effect.provideService(DesktopLocalServiceSession, localServiceSession),
+        );
         return {
           httpBaseUrl: config.value.httpBaseUrl.href,
           wsBaseUrl: config.value.httpBaseUrl.href.replace(/^http/, "ws"),
-          bearerToken: session.access_token,
+          bearerToken,
         };
       }
       return yield* Effect.fail("environment_unavailable" as const);

@@ -1,5 +1,7 @@
 import {
   WORKJET_GATEWAY_API_KEY_MAX_LENGTH,
+  WORKJET_GATEWAY_KIMI_ENDPOINTS,
+  type WorkjetGatewayKimiPlan,
   WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
   WorkjetGatewayAccountId,
   WorkjetGatewayPoolId,
@@ -12,9 +14,12 @@ import {
   type WorkjetGatewayProviderPool,
   type WorkjetGatewayApiKeyProvider,
   type WorkjetGatewayProvider,
+  type WorkjetGatewayProviderModelSelection,
   type WorkjetGatewayRoutingStrategy,
   type WorkjetGatewayRouteSummary,
 } from "@workjet/contracts";
+
+import { adoptProviderModelSelection } from "./ProviderModelSelection.ts";
 
 export const GATEWAY_SECRET_SCOPE = "workjet-provider-gateway";
 export const MANAGEMENT_SECRET_NAME = "management";
@@ -35,6 +40,10 @@ interface GatewayAccountBase {
   readonly priority: number;
   readonly weight: number;
   readonly models: ReadonlyArray<string>;
+  readonly excludedModels?: ReadonlyArray<string>;
+  readonly availableModelIds?: ReadonlyArray<string>;
+  /** Migration snapshot, not a live model-list observation. */
+  readonly legacyModelIds?: ReadonlyArray<string>;
   readonly proxyUrlSecret?: GatewaySecretReference;
 }
 
@@ -77,6 +86,7 @@ export interface ApiKeyGatewayAccount extends GatewayAccountBase {
   readonly provider: WorkjetGatewayApiKeyProvider;
   readonly apiKeySecret: GatewaySecretReference;
   readonly upstreamBaseUrl?: string;
+  readonly kimiPlan?: WorkjetGatewayKimiPlan;
   readonly credentialSuffix?: string;
 }
 
@@ -161,6 +171,7 @@ export interface ProviderGatewayConfiguration {
   readonly schemaVersion: 1;
   readonly defaultProvider: WorkjetGatewayProvider;
   readonly accounts: ReadonlyArray<GatewayAccount>;
+  readonly providerModels?: ReadonlyArray<WorkjetGatewayProviderModelSelection>;
   readonly pools: ReadonlyArray<WorkjetGatewayPoolSummary>;
   readonly routes: ReadonlyArray<WorkjetGatewayRouteSummary>;
   /**
@@ -236,6 +247,9 @@ const ACCOUNT_COMMON_KEYS = [
   "weight",
   "models",
   "proxyUrlSecret",
+  "excludedModels",
+  "availableModelIds",
+  "legacyModelIds",
 ] as const;
 
 /**
@@ -252,6 +266,10 @@ interface CommonAccountFields {
   readonly priority: number;
   readonly weight: number;
   readonly models: ReadonlyArray<string>;
+  readonly excludedModels?: ReadonlyArray<string>;
+  readonly availableModelIds?: ReadonlyArray<string>;
+  /** Migration snapshot, not a live model-list observation. */
+  readonly legacyModelIds?: ReadonlyArray<string>;
   readonly proxyUrlSecret?: GatewaySecretReference;
 }
 
@@ -262,6 +280,12 @@ const parseCommonAccountFields = (
   const id = text(value.id);
   const label = text(value.label);
   const models = modelIds(value.models);
+  const excludedModels =
+    value.excludedModels === undefined ? undefined : modelIds(value.excludedModels);
+  const availableModelIds =
+    value.availableModelIds === undefined ? undefined : modelIds(value.availableModelIds);
+  const legacyModelIds =
+    value.legacyModelIds === undefined ? undefined : modelIds(value.legacyModelIds);
   const priority = value.priority === undefined ? 0 : value.priority;
   const weight = value.weight === undefined ? 1 : value.weight;
   const proxyUrlSecret =
@@ -270,6 +294,9 @@ const parseCommonAccountFields = (
     id === undefined ||
     label === undefined ||
     models === undefined ||
+    (value.excludedModels !== undefined && excludedModels === undefined) ||
+    (value.availableModelIds !== undefined && availableModelIds === undefined) ||
+    (value.legacyModelIds !== undefined && legacyModelIds === undefined) ||
     (value.enabled !== undefined && typeof value.enabled !== "boolean") ||
     typeof priority !== "number" ||
     !Number.isSafeInteger(priority) ||
@@ -289,11 +316,19 @@ const parseCommonAccountFields = (
     priority,
     weight,
     models,
+    ...(excludedModels === undefined ? {} : { excludedModels }),
+    ...(availableModelIds === undefined ? {} : { availableModelIds }),
+    ...(legacyModelIds === undefined ? {} : { legacyModelIds }),
     ...(proxyUrlSecret ? { proxyUrlSecret } : {}),
   };
 };
 
-const API_KEY_ACCOUNT_KEYS = ["apiKeySecret", "upstreamBaseUrl", "credentialSuffix"] as const;
+const API_KEY_ACCOUNT_KEYS = [
+  "apiKeySecret",
+  "upstreamBaseUrl",
+  "kimiPlan",
+  "credentialSuffix",
+] as const;
 
 /** Plain HTTP is accepted only for an explicitly configured local API endpoint. */
 const isApiKeyUpstreamUrl = (value: string): boolean => {
@@ -329,9 +364,15 @@ const parseApiKeyAccount = (
   const upstreamBaseUrl =
     value.upstreamBaseUrl === undefined ? undefined : text(value.upstreamBaseUrl);
   const suffix = value.credentialSuffix;
+  const kimiPlan = value.kimiPlan;
+  const verifiedKimiEndpoint = WORKJET_GATEWAY_KIMI_ENDPOINTS.find(
+    (endpoint) => endpoint.upstreamBaseUrl === upstreamBaseUrl && endpoint.plan === kimiPlan,
+  );
   if (
     common === undefined ||
     apiKeySecret === undefined ||
+    (kimiPlan !== undefined &&
+      (accountProvider !== "kimi" || verifiedKimiEndpoint === undefined)) ||
     (value.upstreamBaseUrl !== undefined &&
       (upstreamBaseUrl === undefined || !isApiKeyUpstreamUrl(upstreamBaseUrl))) ||
     (suffix !== undefined &&
@@ -346,6 +387,7 @@ const parseApiKeyAccount = (
     provider: accountProvider,
     apiKeySecret,
     ...(upstreamBaseUrl ? { upstreamBaseUrl } : {}),
+    ...(verifiedKimiEndpoint ? { kimiPlan: verifiedKimiEndpoint.plan } : {}),
     ...(typeof suffix === "string" ? { credentialSuffix: suffix } : {}),
   };
 };
@@ -585,9 +627,24 @@ export const decodeProviderGatewayConfiguration = (
       "routingStrategy",
       "providerPort",
       "antigravityOauth",
+      "providerModels",
     ])
   ) {
     return undefined;
+  }
+  let providerModels: ReadonlyArray<WorkjetGatewayProviderModelSelection> | undefined;
+  if (value.providerModels !== undefined) {
+    if (!Array.isArray(value.providerModels) || value.providerModels.length > 7) return undefined;
+    const entries: Array<WorkjetGatewayProviderModelSelection> = [];
+    for (const entry of value.providerModels) {
+      if (!isRecord(entry) || !hasOnlyKeys(entry, ["provider", "modelIds"])) return undefined;
+      const name = provider(entry.provider);
+      const ids = modelIds(entry.modelIds);
+      if (name === undefined || ids === undefined) return undefined;
+      entries.push({ provider: name, modelIds: ids });
+    }
+    if (!unique(entries.map((entry) => entry.provider))) return undefined;
+    providerModels = entries;
   }
   const routingStrategy =
     value.routingStrategy === undefined
@@ -651,6 +708,7 @@ export const decodeProviderGatewayConfiguration = (
           .filter((account) => account.enabled)
           .sort((a, b) => a.id.localeCompare(b.id))[0]?.provider ?? defaultProvider),
     accounts: typedAccounts,
+    ...(providerModels === undefined ? {} : { providerModels }),
     pools,
     routes,
     routingStrategy,
@@ -715,21 +773,35 @@ export const providerPools = (
   });
 };
 
-export const gatewayCatalog = (
-  configuration: ProviderGatewayConfiguration,
-): WorkjetGatewayCatalog => {
-  const accounts: Array<WorkjetGatewayAccountSummary> = configuration.accounts.map((account) => ({
-    id: WorkjetGatewayAccountId.make(account.id),
-    label: account.label,
-    provider: account.provider,
-    enabled: account.enabled,
-    priority: account.priority,
-    weight: account.weight,
-    modelIds: account.models,
-    // The only credential-derived value any read route carries.
-    credentialSuffix: isApiKeyAccount(account) ? (account.credentialSuffix ?? null) : null,
-    credentialKind: isApiKeyAccount(account) ? "api-key" : "oauth",
-  }));
+export const gatewayCatalog = (input: ProviderGatewayConfiguration): WorkjetGatewayCatalog => {
+  const configuration = adoptProviderModelSelection(input);
+  const accounts: Array<WorkjetGatewayAccountSummary> = configuration.accounts.map((account) => {
+    const kimiConnection =
+      isApiKeyAccount(account) && account.provider === "kimi" && account.kimiPlan !== undefined
+        ? WORKJET_GATEWAY_KIMI_ENDPOINTS.find(
+            (endpoint) =>
+              endpoint.plan === account.kimiPlan &&
+              endpoint.upstreamBaseUrl === account.upstreamBaseUrl,
+          )
+        : undefined;
+    return {
+      id: WorkjetGatewayAccountId.make(account.id),
+      label: account.label,
+      provider: account.provider,
+      enabled: account.enabled,
+      priority: account.priority,
+      weight: account.weight,
+      modelIds: account.models,
+      ...(account.excludedModels === undefined ? {} : { excludedModelIds: account.excludedModels }),
+      ...(account.availableModelIds === undefined
+        ? {}
+        : { availableModelIds: account.availableModelIds }),
+      // The only credential-derived value any read route carries.
+      credentialSuffix: isApiKeyAccount(account) ? (account.credentialSuffix ?? null) : null,
+      credentialKind: isApiKeyAccount(account) ? "api-key" : "oauth",
+      ...(kimiConnection === undefined ? {} : { kimiConnection }),
+    };
+  });
   const modelMap = new Map<
     string,
     { providers: Set<WorkjetGatewayProvider>; accountIds: Set<string> }
@@ -757,6 +829,9 @@ export const gatewayCatalog = (
     pools: configuration.pools,
     routes: configuration.routes,
     models,
+    ...(configuration.providerModels === undefined
+      ? {}
+      : { providerModels: configuration.providerModels }),
     routingStrategy: WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
     providerPools: providerPools(configuration),
   };

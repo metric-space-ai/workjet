@@ -115,6 +115,7 @@ export type WorkjetGatewayApiKeyState =
   | {
       readonly status: "failed";
       readonly provider: WorkjetGatewayApiKeyProvider;
+      readonly accountId?: string;
       readonly message: string;
     }
   | { readonly status: "completed"; readonly provider: WorkjetGatewayApiKeyProvider };
@@ -174,6 +175,9 @@ const GATEWAY_FAILURE_REASONS = new Set<WorkjetGatewayFailureReason>([
   "startup-timeout",
   "invalid-readiness",
   "management-unavailable",
+  "kimi-key-not-accepted",
+  "api-key-model-list-unavailable",
+  "invalid-model-selection",
   "process-exit",
   "shutdown-timeout",
   "gateway-not-ready",

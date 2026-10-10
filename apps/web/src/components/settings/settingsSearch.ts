@@ -5,6 +5,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/harnesses"
   | "/settings/models"
+  | "/settings/speech"
   | "/settings/computers"
   | "/settings/workjet"
   | "/settings/source-control"
@@ -24,19 +25,32 @@ export interface SettingsSearchItem {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/business-os": "Instances",
-  "/settings/general": "General",
-  "/settings/appearance": "Appearance",
-  "/settings/keybindings": "Keybindings",
+  "/settings/business-os": "Instanzen",
+  "/settings/general": "Allgemein",
+  "/settings/appearance": "Darstellung",
+  "/settings/keybindings": "Tastenkürzel",
   "/settings/harnesses": "Harnesses",
-  "/settings/models": "Models",
-  "/settings/computers": "Computers",
+  "/settings/models": "Modelle",
+  "/settings/speech": "Sprache",
+  "/settings/computers": "Rechner",
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
   "/settings/workjet": "Lumas",
-  "/settings/source-control": "Source Control",
-  "/settings/diagnostics": "Diagnostics",
-  "/settings/archived": "Archive",
+  "/settings/source-control": "Versionsverwaltung",
+  "/settings/diagnostics": "Diagnose",
+  "/settings/archived": "Archiv",
+};
+
+const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly string[]>> = {
+  "/settings/business-os": ["Instances"],
+  "/settings/general": ["General"],
+  "/settings/appearance": ["Appearance"],
+  "/settings/models": ["Models"],
+  "/settings/speech": ["Speech", "Diktat"],
+  "/settings/computers": ["Computers"],
+  "/settings/source-control": ["Source Control"],
+  "/settings/diagnostics": ["Diagnostics"],
+  "/settings/archived": ["Archive"],
 };
 
 /**
@@ -191,6 +205,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/harnesses",
   },
   {
+    id: "import-sessions",
+    title: "Import sessions",
+    to: "/settings/harnesses",
+    searchAliases: ["import", "history", "histories"],
+  },
+  {
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",
@@ -204,7 +224,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-computers",
-    title: "Computers",
+    title: "Rechner",
+    searchAliases: ["computers", "computer"],
     // Computers is a top-level settings page of its own.
     to: "/settings/computers",
   },
@@ -303,7 +324,12 @@ const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
   Object.entries(SETTINGS_SECTION_LABELS) as ReadonlyArray<[SettingsPath, string]>
 )
   .filter(([path]) => path !== "/settings/keybindings")
-  .map(([path, label]) => ({ id: path, title: label, to: path }));
+  .map(([path, label]) => ({
+    id: path,
+    title: label,
+    to: path,
+    searchAliases: SETTINGS_SECTION_SEARCH_ALIASES[path] ?? [],
+  }));
 
 export function searchSettings(
   query: string,
@@ -323,7 +349,9 @@ export function searchSettings(
   // (e.g. the "Computers" catalog entry that lands on /settings/computers).
   const pageMatches = SETTINGS_PAGE_SEARCH_ITEMS.filter(
     (page) =>
-      normalizeSearchText(page.title).includes(normalizedQuery) &&
+      [page.title, ...(page.searchAliases ?? [])].some((label) =>
+        normalizeSearchText(label).includes(normalizedQuery),
+      ) &&
       !matches.some(
         (item) =>
           item.to === page.to &&

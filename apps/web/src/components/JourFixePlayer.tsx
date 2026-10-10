@@ -1,13 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Maximize2Icon,
+  PauseIcon,
+  PlayIcon,
+} from "lucide-react";
 import { Button } from "./ui/button";
 
 export interface JourFixePlayerProps {
   readonly source?: string | undefined;
+  readonly rate?: number | undefined;
   readonly hasPrevious: boolean;
   readonly hasNext: boolean;
   readonly onPrevious: () => void;
   readonly onNext: () => void;
+  /** Show mode: play each slide's narration and go to the next slide when it ends. */
+  readonly autoAdvance?: boolean;
+  readonly onAutoAdvanceChange?: (autoAdvance: boolean) => void;
+  /** Lets the meeting's Space key start and pause the narration. */
+  readonly controlRef?: { current: (() => void) | null };
+  readonly onFullscreen?: () => void;
 }
 
 function timestamp(seconds: number) {
@@ -20,18 +33,47 @@ export function JourFixePlayer(props: JourFixePlayerProps) {
   return <PlayerContent key={props.source ?? "unavailable"} {...props} />;
 }
 
-function PlayerContent({ source, hasPrevious, hasNext, onPrevious, onNext }: JourFixePlayerProps) {
+function PlayerContent({
+  source,
+  rate = 1.15,
+  hasPrevious,
+  hasNext,
+  onPrevious,
+  onNext,
+  autoAdvance = false,
+  onAutoAdvanceChange,
+  controlRef,
+  onFullscreen,
+}: JourFixePlayerProps) {
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(rate);
   const [failed, setFailed] = useState(false);
   const playable = source?.startsWith("blob:") === true && !failed;
+  useEffect(() => {
+    if (audio.current) {
+      audio.current.preservesPitch = true;
+      audio.current.playbackRate = speed;
+    }
+  }, [speed]);
   useEffect(() => {
     const element = audio.current;
     return () => element?.pause();
   }, [source]);
+  useEffect(() => {
+    // Show mode starts the narration as soon as the slide's audio is there.
+    if (!autoAdvance || !playable) return;
+    audio.current?.play().catch(() => setPlaying(false));
+  }, [autoAdvance, playable]);
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = () => void togglePlayback();
+    return () => {
+      controlRef.current = null;
+    };
+  });
   async function togglePlayback() {
     if (!audio.current || !playable) return;
     if (!audio.current.paused) {
@@ -104,29 +146,61 @@ function PlayerContent({ source, hasPrevious, hasNext, onPrevious, onNext }: Jou
           className="h-7 rounded-full border border-border bg-background px-2 text-xs"
           onChange={(event) => {
             const rate = Number(event.target.value);
-            if (audio.current) audio.current.playbackRate = rate;
+            if (audio.current) {
+              audio.current.preservesPitch = true;
+              audio.current.playbackRate = rate;
+            }
             setSpeed(rate);
           }}
         >
-          {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
-            <option key={rate} value={rate}>
-              {rate}×
-            </option>
-          ))}
+          {[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])]
+            .sort((a, b) => a - b)
+            .map((rate) => (
+              <option key={rate} value={rate}>
+                {rate}×
+              </option>
+            ))}
         </select>
+        {onAutoAdvanceChange && (
+          <Button
+            size="sm"
+            variant={autoAdvance ? "default" : "outline"}
+            aria-pressed={autoAdvance}
+            title="Play each slide's narration and go to the next slide when it ends"
+            onClick={() => onAutoAdvanceChange(!autoAdvance)}
+          >
+            Auto
+          </Button>
+        )}
+        {onFullscreen && (
+          <Button
+            size="icon-sm"
+            variant="outline"
+            aria-label="Present full screen"
+            title="Full screen (F) · slides ← → · narration Space"
+            onClick={onFullscreen}
+          >
+            <Maximize2Icon />
+          </Button>
+        )}
         {playable && (
           <audio
             ref={audio}
             preload="metadata"
             src={source}
             onLoadedMetadata={(event) => {
+              event.currentTarget.preservesPitch = true;
+              event.currentTarget.playbackRate = speed;
               const value = event.currentTarget.duration;
               setDuration(Number.isFinite(value) ? value : 0);
             }}
             onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
-            onEnded={() => setPlaying(false)}
+            onEnded={() => {
+              setPlaying(false);
+              if (autoAdvance && hasNext) changeSlide(onNext);
+            }}
             onError={() => {
               setPlaying(false);
               setFailed(true);

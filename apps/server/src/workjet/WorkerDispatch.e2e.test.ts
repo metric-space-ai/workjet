@@ -59,12 +59,17 @@ import {
 } from "@workjet/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as WorkjetSnapshotStore from "./mailbox/WorkjetSnapshotStore.ts";
+import * as WorkjetMeshIdentity from "./mailbox/WorkjetMeshIdentity.ts";
+import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import * as ResourceMonitorBinary from "../resourceTelemetry/ResourceMonitorBinary.ts";
 import * as NativeWorkerWorktreeRemover from "./NativeWorkerWorktreeRemover.ts";
 import * as WorkerDispatchRollback from "./WorkerDispatchRollback.ts";
@@ -78,6 +83,7 @@ import { OrchestrationEngineService } from "../orchestration/Services/Orchestrat
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../orchestration/ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../orchestration/ThreadPlanProgress.ts";
+import { makeWorkerOrdinal } from "./WorkerOrdinal.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
@@ -183,12 +189,15 @@ const makeRealStackLayer = (fixture: Fixture) => {
     ),
     OrchestrationProjectionSnapshotQueryLive,
   ).pipe(
+    Layer.provide(
+      Layer.mock(ServerEnvironment)({ getEnvironmentId: Effect.succeed(environmentId) }),
+    ),
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provide(hostLayer),
   );
   const rollbackLayer = WorkerDispatchRollback.layer.pipe(
@@ -200,10 +209,22 @@ const makeRealStackLayer = (fixture: Fixture) => {
       ),
     ),
   );
-  return Layer.mergeAll(orchestrationLayer, gitLayer, gitVcsDriverLayer, hostLayer, rollbackLayer);
+  const delegationLayer = Layer.mergeAll(
+    WorkjetSnapshotStore.WorkjetSnapshotStoreLive,
+    WorkjetMeshIdentity.layer.pipe(Layer.provide(ServerSecretStore.layer)),
+  ).pipe(Layer.provide(hostLayer), Layer.provide(NodeServices.layer));
+  return Layer.mergeAll(
+    orchestrationLayer,
+    gitLayer,
+    gitVcsDriverLayer,
+    hostLayer,
+    rollbackLayer,
+    delegationLayer,
+  );
 };
 
 type RealStackServices =
+  | SqlClient.SqlClient
   | WorkerDispatchRollback.WorkerDispatchRollback
   | NativeWorkerWorktreeRemover.NativeWorkerWorktreeRemover
   | OrchestrationEngineService
@@ -272,8 +293,24 @@ const seedOrchestratorThread = (input: {
       runtimeMode: "auto-accept-edits",
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
       workjetConfig: {
-        schemaVersion: 1,
-        role: "orchestrator",
+        schemaVersion: 2,
+        role: "standard",
+        capabilityBindings: [],
+        ctoxSession: null,
+        team: {
+          role: "specialist",
+          projectId,
+          threadId: parentThreadId,
+          parentThreadId:
+            (yield* (yield* ProjectionSnapshotQuery).getCommandReadModel()).threads.find(
+              (thread) =>
+                thread.workjetConfig.schemaVersion === 2 &&
+                thread.workjetConfig.team?.role === "supervisor",
+            )!.id,
+          domain: "dispatch",
+          goal: "Keep changes bounded.",
+          createdAt,
+        },
         parent: null,
         managedInstructions: "Keep changes bounded.",
         enabledCapabilityIds: ["greppy", "web-search"],
@@ -517,6 +554,7 @@ it.effect(
         const sources: WorkerDispatchSources = {
           randomUUID: Effect.sync(() => identifiers[index++] ?? "00000000-0000-4000-8000-fallback"),
           nowIso: Effect.succeed(createdAt),
+          nextWorkerOrdinal: yield* makeWorkerOrdinal,
         };
         const workerDispatch = yield* makeWorkerDispatchWithSources(sources);
         const parentBefore = yield* checkoutState(fixture.repositoryRoot);

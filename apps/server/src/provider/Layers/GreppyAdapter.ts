@@ -1,3 +1,4 @@
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 
@@ -111,6 +112,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
   config: GreppySettings,
   options: {
     readonly instanceId: ProviderInstanceId;
+    readonly dispatchPromptInBackground?: boolean;
     readonly resolveSessionEnvironment: (
       model?: string,
     ) => Effect.Effect<NodeJS.ProcessEnv, ProviderAdapterError>;
@@ -218,7 +220,9 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           return yield* requestError("startSession", "Choose a model for the Greppy gateway.");
         const previous = sessions.get(input.threadId);
         if (previous) yield* stop(previous);
-        const environment = yield* options.resolveSessionEnvironment(model);
+        const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+        const environment =
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
         if (plainHttpEndpoint(environment.GREPPY_ENDPOINT || config.endpoint) === null) {
           return yield* requestError(
             "startSession",
@@ -480,7 +484,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
         }),
       );
       const { ctx, turnId } = prepared;
-      return yield* Effect.gen(function* () {
+      const completePrompt = Effect.gen(function* () {
         const selected =
           input.modelSelection?.instanceId === options.instanceId
             ? input.modelSelection.model.trim()
@@ -576,6 +580,11 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           ),
         ),
       );
+      if (options.dispatchPromptInBackground) {
+        yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(ctx.scope));
+        return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
+      }
+      return yield* completePrompt;
     });
   const interruptTurn: ProviderAdapterShape<ProviderAdapterError>["interruptTurn"] = (
     threadId,

@@ -1,6 +1,8 @@
 import {
   WorkjetGatewayInferenceError,
   WorkjetGatewayInferenceInput,
+  type WorkjetGatewayInferenceProtocol,
+  type WorkjetGatewayInferenceResult,
   WorkjetGatewayAdmissionInput,
   WorkjetRemoteWorkerPermit,
   type EnvironmentId,
@@ -83,7 +85,14 @@ export function makeSourceGatewayInference(dependencies: {
     selected: WorkjetGatewayModelBinding,
     requestJson: string,
     deadlineMs: number,
+    protocol: "responses" | "messages",
   ) => Effect.Effect<string, WorkjetGatewayInferenceError>;
+  readonly forwardProtocol?: (
+    selected: WorkjetGatewayModelBinding,
+    requestJson: string,
+    deadlineMs: number,
+    protocol: WorkjetGatewayInferenceProtocol,
+  ) => Effect.Effect<WorkjetGatewayInferenceResult, WorkjetGatewayInferenceError>;
   readonly now: Effect.Effect<number>;
 }) {
   const bindModel = Effect.fn("SourceGatewayInference.bindModel")(function* (
@@ -191,11 +200,18 @@ export function makeSourceGatewayInference(dependencies: {
         const request = body as Record<string, unknown>;
         if (
           request.model !== binding.modelRef.modelId ||
-          (request.stream !== undefined && request.stream !== false) ||
+          (request.stream !== undefined &&
+            (input.protocol === undefined
+              ? request.stream !== false
+              : typeof request.stream !== "boolean")) ||
           (request.background !== undefined && request.background !== false) ||
           request.previous_response_id !== undefined ||
           request.conversation !== undefined ||
-          request.input === undefined
+          ((input.protocol ??
+            (input.workerRequest.harness === "claude-code" ? "messages" : "responses")) ===
+          "responses"
+            ? request.input === undefined || request.messages !== undefined
+            : !Array.isArray(request.messages) || request.input !== undefined)
         )
           throw new Error();
       },
@@ -204,14 +220,27 @@ export function makeSourceGatewayInference(dependencies: {
     const authority = yield* requireAuthority(input);
     if (authority.permit.expiresAtMs - (yield* dependencies.now) < SOURCE_GATEWAY_TURN_TIMEOUT_MS)
       return yield* failure("native-admission-rejected");
-    const result = yield* dependencies.forward(
-      authority.selected,
-      input.requestJson,
-      authority.permit.expiresAtMs,
-    );
+    const result =
+      input.protocol === undefined
+        ? {
+            requestJson: yield* dependencies.forward(
+              authority.selected,
+              input.requestJson,
+              authority.permit.expiresAtMs,
+              input.workerRequest.harness === "claude-code" ? "messages" : "responses",
+            ),
+          }
+        : dependencies.forwardProtocol === undefined
+          ? yield* failure("gateway-unavailable")
+          : yield* dependencies.forwardProtocol(
+              authority.selected,
+              input.requestJson,
+              authority.permit.expiresAtMs,
+              input.protocol,
+            );
     // A revoked/expired grant or native permit also prevents publication after the await.
     yield* requireAuthority({ ...input, permit: authority.permit });
-    return { requestJson: result };
+    return result;
   });
   return { bindModel, admit, infer };
 }

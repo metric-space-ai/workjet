@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  canCoordinateWorkjet,
   hideSessionInitialization,
   type CtoxAppModuleId,
   type CtoxManagedInstanceId,
@@ -177,6 +178,7 @@ import {
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
+import { PersistentWorkerGoal } from "./PersistentWorkerGoal";
 import { ProjectNativeSyncStatus } from "../localProjectRegistration";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
@@ -353,13 +355,11 @@ import {
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
-  getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
   PullRequestDialogState,
   cloneComposerImageForRetry,
-  deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
@@ -368,6 +368,8 @@ import {
   revokeUserMessagePreviewUrls,
   runCtoxSessionRegistrationBeforeThreadCreate,
   shouldWriteThreadErrorToCurrentServerThread,
+  isRolledBackBootstrapError,
+  resolveLocalThreadError,
   startNewThreadForProject,
   waitForStartedServerThread,
 } from "./ChatView.logic";
@@ -381,6 +383,8 @@ import {
   resolveNativeSupervisorScope,
 } from "../nativeSupervisorComposer";
 import { NativeSupervisorComposer } from "./chat/NativeSupervisorComposer";
+import { NativeWorkerSourceControl } from "./chat/NativeWorkerSourceControl";
+import { withWorkerSourceConnection } from "../workjetWorkerSourceConnection";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
@@ -1277,6 +1281,13 @@ function ChatViewContent(props: ChatViewProps) {
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const readThreadContinuation = useAtomCommand(threadEnvironment.continuationSnapshot, {
+    reportFailure: false,
+  });
+  const importThreadContinuation = useAtomCommand(threadEnvironment.importContinuation, {
+    reportFailure: false,
+  });
+  const [computerContinuationBusy, setComputerContinuationBusy] = useState(false);
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -1529,45 +1540,10 @@ function ChatViewContent(props: ChatViewProps) {
     ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
     : null;
   const fallbackDraftProject = useProject(fallbackDraftProjectRef);
-  const localDraftError = activeServerThread
-    ? null
-    : ((draftId ? localDraftErrorsByDraftId[draftId]?.message : null) ?? null);
-  const localServerError = localServerErrorsByThreadKey[routeThreadKey]?.message ?? null;
-  // Draft errors are keyed by draftId while server errors are keyed by thread
-  // key, so a pending draft entry must migrate when the server thread loads or
-  // a failed send would silently disappear on promotion. When both keys hold
-  // an entry, the most recent write wins.
-  useEffect(() => {
-    if (!activeServerThread || !draftId) {
-      return;
-    }
-    const pendingDraftEntry = localDraftErrorsByDraftId[draftId];
-    if (pendingDraftEntry === undefined) {
-      return;
-    }
-    setLocalDraftErrorsByDraftId((existing) => {
-      if (existing[draftId] === undefined) {
-        return existing;
-      }
-      const next = { ...existing };
-      delete next[draftId];
-      return next;
-    });
-    setLocalServerErrorsByThreadKey((existing) => {
-      const currentEntry = existing[routeThreadKey];
-      if (
-        currentEntry !== undefined &&
-        (currentEntry.at > pendingDraftEntry.at ||
-          currentEntry.message === pendingDraftEntry.message)
-      ) {
-        return existing;
-      }
-      return {
-        ...existing,
-        [routeThreadKey]: pendingDraftEntry,
-      };
-    });
-  }, [activeServerThread, draftId, localDraftErrorsByDraftId, routeThreadKey]);
+  const localThreadError = resolveLocalThreadError(
+    draftId ? localDraftErrorsByDraftId[draftId] : undefined,
+    localServerErrorsByThreadKey[routeThreadKey],
+  );
   const localDraftThread = useMemo(
     () =>
       draftThread
@@ -1584,9 +1560,7 @@ function ChatViewContent(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
-  const threadError = isServerThread
-    ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
-    : localDraftError;
+  const threadError = localThreadError ?? activeServerThread?.session?.lastError ?? null;
   // Dismissals can only mask the shown error, never clear it: a server thread
   // keeps its error in session.lastError, so clearing the local shadow would
   // just fall through to the persisted one. Mask the current error until a
@@ -1668,6 +1642,8 @@ function ChatViewContent(props: ChatViewProps) {
       : null;
   const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
   const nativeSupervisorThread = isNativeSupervisorThread(visibleWorkjetConfig);
+  const [nativeSupervisorConversationTarget, setNativeSupervisorConversationTarget] =
+    useState<HTMLDivElement | null>(null);
   const browserSurfaceEnabled = workjetBrowserSurfaceEnabled({
     isServerThread,
     serverConfig: visibleWorkjetConfig,
@@ -1676,7 +1652,8 @@ function ChatViewContent(props: ChatViewProps) {
   // "Send to worker" exists only on an ORCHESTRATOR thread. That is the same
   // boundary the server enforces on the RPC, restated in the UI so a worker or
   // standard thread is never offered an action it would be refused.
-  const workjetIsOrchestratorThread = visibleWorkjetConfig?.role === "orchestrator";
+  const workjetIsOrchestratorThread =
+    visibleWorkjetConfig !== null && canCoordinateWorkjet(visibleWorkjetConfig);
   const [workjetSendDraft, setWorkjetSendDraft] =
     useState<WorkjetSendDraft>(EMPTY_WORKJET_SEND_DRAFT);
   const [workjetSendOutcome, setWorkjetSendOutcome] = useState<WorkjetSendOutcome | null>(null);
@@ -2401,8 +2378,8 @@ function ChatViewContent(props: ChatViewProps) {
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
   /**
    * The environments the composer's Computer ("Rechner") control may move a
-   * draft to — exactly the set `onEnvironmentChange` accepts. A Workjet
-   * computer whose environment is not in this list renders as "not paired".
+   * conversation to — exactly the set `onEnvironmentChange` accepts. Other
+   * computers remain visible with their connection or missing-checkout reason.
    */
   const selectableEnvironmentIds = useMemo(
     () => logicalProjectEnvironments.map((environment) => environment.environmentId),
@@ -2527,11 +2504,6 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
-  const lockedProvider = deriveLockedProvider({
-    thread: activeThread,
-    selectedProvider: selectedProviderByThreadId,
-    threadProvider,
-  });
   // Once a thread selects an environment, never substitute the primary
   // environment's config while the selected environment is still loading.
   const serverConfig = activeEnvironment?.serverConfig ?? null;
@@ -2726,7 +2698,7 @@ function ChatViewContent(props: ChatViewProps) {
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
   );
-  const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
+  const selectedProvider: ProviderDriverKind = unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -3198,7 +3170,8 @@ function ChatViewContent(props: ChatViewProps) {
   )
     ? activeProviderStatus
     : null;
-  const hasTimelineTopBanner = Boolean(visibleThreadError) || visibleProviderStatus !== null;
+  const hasTimelineTopBanner =
+    (nativeSupervisorThread && Boolean(visibleThreadError)) || visibleProviderStatus !== null;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
@@ -3252,27 +3225,107 @@ function ChatViewContent(props: ChatViewProps) {
     }
   }, [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen]);
 
-  const envLocked = Boolean(
-    activeThread &&
-    (activeThread.messages.length > 0 ||
-      (activeThread.session !== null && activeThread.session.status !== "stopped")),
-  );
+  const envLocked =
+    computerContinuationBusy ||
+    activeThread?.session?.status === "starting" ||
+    activeThread?.session?.status === "running";
 
   // Handle environment change for draft threads.  When the user picks a
   // different environment we update the draft context to point at the physical
   // project in that environment while keeping the same logical project.
   const onEnvironmentChange = useCallback(
-    (nextEnvironmentId: EnvironmentId) => {
-      if (envLocked || !draftId) return;
+    async (nextEnvironmentId: EnvironmentId) => {
+      if (envLocked || nextEnvironmentId === environmentId) return;
       const target = logicalProjectEnvironments.find(
         (env) => env.environmentId === nextEnvironmentId,
       );
       if (!target) return;
-      setDraftThreadContext(draftId, {
-        projectRef: scopeProjectRef(target.environmentId, target.projectId),
-      });
+      if (draftId) {
+        setDraftThreadContext(draftId, {
+          projectRef: scopeProjectRef(target.environmentId, target.projectId),
+        });
+        return;
+      }
+      if (!activeThread) return;
+      setComputerContinuationBusy(true);
+      try {
+        const snapshot = await readThreadContinuation({ environmentId, input: { threadId } });
+        if (snapshot._tag === "Failure") throw squashAtomCommandFailure(snapshot);
+        const source = snapshot.value.thread;
+        const result = await importThreadContinuation({
+          environmentId: target.environmentId,
+          input: {
+            threadId: source.id,
+            sourceEnvironmentId: environmentId,
+            sourceLabel: environmentById.get(environmentId)?.label ?? String(environmentId),
+            createThread: {
+              projectId: target.projectId,
+              title: source.title,
+              modelSelection: source.modelSelection,
+              runtimeMode: source.runtimeMode,
+              interactionMode: source.interactionMode,
+              workjetConfig: source.workjetConfig,
+              branch: null,
+              worktreePath: null,
+              createdAt: source.createdAt,
+            },
+            messages: source.messages
+              .filter((message) => message.role === "user" || message.role === "assistant")
+              .map(({ id: messageId, role, text, createdAt }) => ({
+                messageId,
+                role: role as "user" | "assistant",
+                text,
+                createdAt,
+              })),
+          },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        const destinationRef = scopeThreadRef(target.environmentId, source.id);
+        const drafts = useComposerDraftStore.getState();
+        const pending = drafts.getComposerDraft(routeThreadRef);
+        drafts.moveComposerPromptAndImages(routeThreadRef, destinationRef);
+        if (pending?.activeProvider)
+          drafts.setModelSelection(
+            destinationRef,
+            pending.modelSelectionByProvider[pending.activeProvider],
+            { replaceOptions: true },
+          );
+        if (pending)
+          drafts.setWorkjetWorkerSelection(
+            destinationRef,
+            pending.workjetWorkerId,
+            pending.workjetManualReturn,
+          );
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: { environmentId: target.environmentId, threadId: source.id },
+        });
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not switch computer",
+            description: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      } finally {
+        setComputerContinuationBusy(false);
+      }
     },
-    [draftId, envLocked, logicalProjectEnvironments, setDraftThreadContext],
+    [
+      activeThread,
+      draftId,
+      environmentById,
+      environmentId,
+      envLocked,
+      importThreadContinuation,
+      logicalProjectEnvironments,
+      navigate,
+      readThreadContinuation,
+      routeThreadRef,
+      setDraftThreadContext,
+      threadId,
+    ],
   );
 
   const activeTerminalGroup =
@@ -3306,7 +3359,7 @@ function ChatViewContent(props: ChatViewProps) {
             [routeThreadKey]: nextEntry,
           };
         });
-        return;
+        if (!draftId) return;
       }
       const localDraftErrorKey = draftId ?? targetThreadId;
       setLocalDraftErrorsByDraftId((existing) => {
@@ -6229,6 +6282,11 @@ function ChatViewContent(props: ChatViewProps) {
           threadIdForSend,
           error instanceof Error ? error.message : "Failed to send message.",
         );
+        if (draftId && isLocalDraftThread && isRolledBackBootstrapError(error, threadIdForSend)) {
+          useComposerDraftStore
+            .getState()
+            .retryRolledBackDraftThread(draftId, threadIdForSend, newThreadId());
+        }
       }
     }
     sendInFlightRef.current = false;
@@ -6740,52 +6798,10 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
-  const getModelDisabledReason = useCallback(
-    (instanceId: ProviderInstanceId, model: string): string | null => {
-      if (!activeThread) {
-        return null;
-      }
-      const reason = getStartedThreadModelChangeBlockReason({
-        providers: providerStatuses,
-        hasStartedSession: activeThread.session !== null,
-        currentModelSelection: activeThread.modelSelection,
-        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
-        nextModelSelection: { instanceId, model },
-      });
-      return reason ? `${reason.description} Start a new thread to use this model.` : null;
-    },
-    [activeThread, providerStatuses],
-  );
-
+  const getModelDisabledReason = useCallback(() => null, []);
   const onProviderModelSelect = useCallback(
     (instanceId: ProviderInstanceId, model: string) => {
       if (!activeThread) return;
-      // Look up the configured instance so model normalization and custom
-      // model lookup stay scoped to that exact instance. Unknown instance ids
-      // are rejected by returning early; the server remains authoritative too.
-      const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
-      const resolvedDriverKind = entry?.driver ?? null;
-      if (
-        lockedProvider !== null &&
-        resolvedDriverKind !== null &&
-        resolvedDriverKind !== lockedProvider
-      ) {
-        scheduleComposerFocus();
-        return;
-      }
-      if (lockedProvider !== null && activeThread.session?.providerInstanceId) {
-        const currentEntry = providerStatuses.find(
-          (snapshot) => snapshot.instanceId === activeThread.session?.providerInstanceId,
-        );
-        if (
-          currentEntry?.continuation?.groupKey &&
-          entry?.continuation?.groupKey &&
-          currentEntry.continuation.groupKey !== entry.continuation.groupKey
-        ) {
-          scheduleComposerFocus();
-          return;
-        }
-      }
       const resolvedModel = resolveAppModelSelectionForInstance(
         instanceId,
         settings,
@@ -6800,22 +6816,6 @@ function ChatViewContent(props: ChatViewProps) {
         instanceId,
         model: resolvedModel,
       };
-      const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
-        providers: providerStatuses,
-        hasStartedSession: activeThread.session !== null,
-        currentModelSelection: activeThread.modelSelection,
-        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
-        nextModelSelection,
-      });
-      if (modelChangeBlockReason) {
-        toastManager.add({
-          type: "warning",
-          title: modelChangeBlockReason.title,
-          description: modelChangeBlockReason.description,
-        });
-        scheduleComposerFocus();
-        return;
-      }
       setComposerDraftModelSelection(
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,
@@ -6825,7 +6825,6 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       activeThread,
-      lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
@@ -7104,15 +7103,23 @@ function ChatViewContent(props: ChatViewProps) {
           />
         </WorkjetHeaderContent>
         <ProjectNativeSyncStatus project={activeProject ?? null} />
-
-        <ThreadErrorBanner
-          error={visibleThreadError}
-          onDismiss={() => {
-            setThreadError(activeThread.id, null);
-            dismissThreadErrorBannerForSession(threadErrorBannerKey);
-            setThreadErrorBannerDismissTick((tick) => tick + 1);
-          }}
+        <PersistentWorkerGoal
+          config={activeServerThread?.workjetConfig ?? null}
+          sessionStatus={activeServerThread?.session?.status}
+          hasPendingApprovals={pendingApprovals.length > 0}
+          hasPendingUserInput={pendingUserInputs.length > 0}
         />
+        {nativeSupervisorThread ? (
+          <ThreadErrorBanner
+            error={visibleThreadError}
+            onDismiss={() => {
+              setThreadError(activeThread.id, null);
+              dismissThreadErrorBannerForSession(threadErrorBannerKey);
+              setThreadErrorBannerDismissTick((tick) => tick + 1);
+            }}
+          />
+        ) : null}
+
         {/*
           Orchestrator-scoped worker overview: an additive "Workers (N)" section
           listing the child worker threads dispatched from this orchestrator.
@@ -7159,52 +7166,62 @@ function ChatViewContent(props: ChatViewProps) {
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
-                agentPanelModel={agentPanelModel}
-                onOpenAgents={addAgentsSurface}
-                onOpenThread={onOpenWorkjetPeerThread}
-                onWorkjetDelegationAction={onWorkjetDelegationAction}
-                onWorkjetCrossModeAction={onWorkjetCrossModeAction}
-                onOpenBusinessOsObject={onOpenBusinessOsObject}
-                workjetReassignThreads={workjetRecipientThreads}
-                key={activeThread.id}
-                isWorking={isWorking}
-                workingStepLabel={workingStepLabel}
-                activeTurnInProgress={isWorking || !latestTurnSettled}
-                activeTurnStartedAt={activeWorkStartedAt}
-                listRef={legendListRef}
-                timelineEntries={timelineEntries}
-                latestTurn={activeLatestTurn}
-                runningTurnId={
-                  activeThread.session?.status === "running"
-                    ? activeThread.session.activeTurnId
-                    : null
-                }
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-                activeThreadEnvironmentId={activeThread.environmentId}
-                routeThreadKey={routeThreadKey}
-                onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                onImageExpand={onExpandTimelineImage}
-                markdownCwd={gitCwd ?? undefined}
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                workspaceRoot={activeWorkspaceRoot}
-                skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
-                anchorMessageId={timelineAnchorMessageId}
-                onAnchorReady={onTimelineAnchorReady}
-                contentInsetEndAdjustment={composerOverlayHeight}
-                liveFollowEnabled={timelineLiveFollowEnabled}
-                onIsAtEndChange={onIsAtEndChange}
-                onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={
-                  isDraftHeroState || threadDetailLoading || nativeSupervisorThread
-                }
-                topFadeEnabled={!hasTimelineTopBanner}
-                loadEarlier={loadEarlierTurns}
-              />
+              {(!nativeSupervisorThread || timelineEntries.length > 0) && (
+                <MessagesTimeline
+                  agentPanelModel={agentPanelModel}
+                  onOpenAgents={addAgentsSurface}
+                  onOpenThread={onOpenWorkjetPeerThread}
+                  onWorkjetDelegationAction={onWorkjetDelegationAction}
+                  onWorkjetCrossModeAction={onWorkjetCrossModeAction}
+                  onOpenBusinessOsObject={onOpenBusinessOsObject}
+                  workjetReassignThreads={workjetRecipientThreads}
+                  key={activeThread.id}
+                  isWorking={isWorking}
+                  workingStepLabel={workingStepLabel}
+                  activeTurnInProgress={isWorking || !latestTurnSettled}
+                  activeTurnStartedAt={activeWorkStartedAt}
+                  listRef={legendListRef}
+                  timelineEntries={timelineEntries}
+                  latestTurn={activeLatestTurn}
+                  runningTurnId={
+                    activeThread.session?.status === "running"
+                      ? activeThread.session.activeTurnId
+                      : null
+                  }
+                  turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                  activeThreadEnvironmentId={activeThread.environmentId}
+                  routeThreadKey={routeThreadKey}
+                  onOpenTurnDiff={onOpenTurnDiff}
+                  revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                  onRevertUserMessage={onRevertUserMessage}
+                  isRevertingCheckpoint={isRevertingCheckpoint}
+                  onImageExpand={onExpandTimelineImage}
+                  markdownCwd={gitCwd ?? undefined}
+                  resolvedTheme={resolvedTheme}
+                  timestampFormat={timestampFormat}
+                  workspaceRoot={activeWorkspaceRoot}
+                  skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
+                  anchorMessageId={timelineAnchorMessageId}
+                  onAnchorReady={onTimelineAnchorReady}
+                  contentInsetEndAdjustment={composerOverlayHeight}
+                  liveFollowEnabled={timelineLiveFollowEnabled}
+                  onIsAtEndChange={onIsAtEndChange}
+                  onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                  hideEmptyPlaceholder={
+                    isDraftHeroState || threadDetailLoading || nativeSupervisorThread
+                  }
+                  topFadeEnabled={!hasTimelineTopBanner}
+                  loadEarlier={loadEarlierTurns}
+                />
+              )}
+              {nativeSupervisorThread && (
+                <div
+                  key={`supervisor-conversation:${activeThreadKey}:${presentationInstanceId}`}
+                  ref={setNativeSupervisorConversationTarget}
+                  className="min-h-0 flex-1 overflow-y-auto"
+                  style={{ paddingBottom: composerOverlayHeight }}
+                />
+              )}
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (
@@ -7280,183 +7297,246 @@ function ChatViewContent(props: ChatViewProps) {
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           {nativeSupervisorThread && visibleWorkjetConfig && activeServerThread ? (
-                            <NativeSupervisorComposer
-                              key={`${activeThreadKey}:${presentationInstanceId}`}
-                              scope={nativeSupervisorScope}
-                              config={visibleWorkjetConfig}
-                              instanceId={presentationInstanceId}
-                              blockReason={
-                                nativeSupervisorScope === null
-                                  ? nativeSupervisorBlockReason({
-                                      project: activeProject ?? null,
-                                      registry: workjetProjectRegistry,
-                                    })
-                                  : null
-                              }
-                              unavailable={
-                                activeEnvironmentUnavailable ||
-                                threadDetailLoading ||
-                                workjetCapabilityBusy
-                              }
-                              saveConfig={async (nextConfig) => {
-                                const result = await setThreadWorkjetConfig({
-                                  environmentId: activeServerThread.environmentId,
-                                  input: {
-                                    threadId: activeServerThread.id,
-                                    workjetConfig: nextConfig,
-                                  },
-                                });
-                                if (result._tag === "Success" && activeThreadKey) {
-                                  setWorkjetConfigOverridesByThreadKey((current) => ({
-                                    ...current,
-                                    [activeThreadKey]: { config: nextConfig, busy: false },
-                                  }));
+                            <>
+                              <NativeSupervisorComposer
+                                workerSourceControl={
+                                  <NativeWorkerSourceControl
+                                    key={`worker-source:${activeThreadKey}:${presentationInstanceId}`}
+                                    environmentId={activeServerThread.environmentId}
+                                    instanceId={presentationInstanceId}
+                                    config={visibleWorkjetConfig}
+                                    bindConnection={async (connection) => {
+                                      const nextConfig = withWorkerSourceConnection(
+                                        visibleWorkjetConfig,
+                                        presentationInstanceId,
+                                        connection,
+                                      );
+                                      if (!nextConfig) return false;
+                                      const result = await setThreadWorkjetConfig({
+                                        environmentId: activeServerThread.environmentId,
+                                        input: {
+                                          threadId: activeServerThread.id,
+                                          workjetConfig: nextConfig,
+                                        },
+                                      });
+                                      if (result._tag === "Success" && activeThreadKey) {
+                                        setWorkjetConfigOverridesByThreadKey((current) => ({
+                                          ...current,
+                                          [activeThreadKey]: {
+                                            config: nextConfig,
+                                            busy: false,
+                                          },
+                                        }));
+                                      }
+                                      return result._tag === "Success";
+                                    }}
+                                    unavailable={
+                                      activeEnvironmentUnavailable ||
+                                      threadDetailLoading ||
+                                      workjetCapabilityBusy
+                                    }
+                                  />
                                 }
-                                return result;
-                              }}
-                            />
+                                key={`${activeThreadKey}:${presentationInstanceId}`}
+                                conversationTarget={nativeSupervisorConversationTarget}
+                                scope={nativeSupervisorScope}
+                                config={visibleWorkjetConfig}
+                                instanceId={presentationInstanceId}
+                                blockReason={
+                                  nativeSupervisorScope === null
+                                    ? nativeSupervisorBlockReason({
+                                        project: activeProject ?? null,
+                                        registry: workjetProjectRegistry,
+                                      })
+                                    : null
+                                }
+                                unavailable={
+                                  activeEnvironmentUnavailable ||
+                                  threadDetailLoading ||
+                                  workjetCapabilityBusy
+                                }
+                                saveConfig={async (nextConfig) => {
+                                  const result = await setThreadWorkjetConfig({
+                                    environmentId: activeServerThread.environmentId,
+                                    input: {
+                                      threadId: activeServerThread.id,
+                                      workjetConfig: nextConfig,
+                                    },
+                                  });
+                                  if (result._tag === "Success" && activeThreadKey) {
+                                    setWorkjetConfigOverridesByThreadKey((current) => ({
+                                      ...current,
+                                      [activeThreadKey]: { config: nextConfig, busy: false },
+                                    }));
+                                  }
+                                  return result;
+                                }}
+                              />
+                            </>
                           ) : (
-                            <ChatComposer
-                              composerRef={composerRef}
-                              workspaceExtraControls={
-                                showComposerContextStrip ? (
-                                  <div className="pointer-events-auto">
-                                    <BranchToolbar
-                                      environmentId={activeThread.environmentId}
-                                      threadId={activeThread.id}
-                                      showGitControls={isGitRepo}
-                                      {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                                      onEnvModeChange={onEnvModeChange}
-                                      startFromOrigin={startFromOrigin}
-                                      onStartFromOriginChange={onStartFromOriginChange}
-                                      {...(canOverrideServerThreadEnvMode
-                                        ? { effectiveEnvModeOverride: envMode }
-                                        : {})}
-                                      {...(canOverrideServerThreadEnvMode
-                                        ? {
-                                            activeThreadBranchOverride: activeThreadBranch,
-                                            onActiveThreadBranchOverrideChange:
-                                              setPendingServerThreadBranch,
-                                          }
-                                        : {})}
-                                      envLocked={envLocked}
-                                      onComposerFocusRequest={scheduleComposerFocus}
-                                      {...(canCheckoutPullRequestIntoThread
-                                        ? { onCheckoutPullRequestRequest: openPullRequestDialog }
-                                        : {})}
-                                      {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
-                                      availableEnvironments={logicalProjectEnvironments}
-                                    />
-                                  </div>
-                                ) : null
-                              }
-                              composerDraftTarget={composerDraftTarget}
-                              environmentId={environmentId}
-                              routeKind={routeKind}
-                              routeThreadRef={routeThreadRef}
-                              draftId={draftId}
-                              activeThreadId={activeThreadId}
-                              activeThreadEnvironmentId={activeThread?.environmentId}
-                              activeThread={activeThread}
-                              isServerThread={isServerThread}
-                              isLocalDraftThread={isLocalDraftThread}
-                              forceExpandedOnMobile={
-                                forceExpandedMobileComposer && isDraftHeroState
-                              }
-                              projectSelectionRequired={
-                                isLocalDraftThread && activeProject === null
-                              }
-                              phase={phase}
-                              isConnecting={isConnecting}
-                              isSendBusy={isSendBusy}
-                              sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
-                              isPreparingWorktree={isPreparingWorktree}
-                              environmentUnavailable={activeEnvironmentUnavailableState}
-                              activePendingApproval={activePendingApproval}
-                              pendingApprovals={pendingApprovals}
-                              pendingUserInputs={pendingUserInputs}
-                              activePendingProgress={activePendingProgress}
-                              activePendingResolvedAnswers={activePendingResolvedAnswers}
-                              activePendingIsResponding={activePendingIsResponding}
-                              activePendingDraftAnswers={activePendingDraftAnswers}
-                              activePendingQuestionIndex={activePendingQuestionIndex}
-                              respondingRequestIds={respondingRequestIds}
-                              showPlanFollowUpPrompt={showPlanFollowUpPrompt}
-                              activeProposedPlan={activeProposedPlan}
-                              interactionMode={interactionMode}
-                              workjetRole={visibleWorkjetConfig?.role ?? null}
-                              workjetGreppyEnabled={
-                                visibleWorkjetConfig
-                                  ? visibleWorkjetConfig.enabledCapabilityIds.includes(
-                                      GREPPY_CAPABILITY_ID,
-                                    )
-                                  : null
-                              }
-                              workjetSendToWorkerControl={renderWorkjetSendToWorkerControl}
-                              workjetCapabilityBusy={workjetCapabilityBusy}
-                              workjetCapabilityDisabled={
-                                threadDetailLoading || activeEnvironmentUnavailable
-                              }
-                              lockedProvider={lockedProvider}
-                              providerStatuses={providerStatuses as ServerProvider[]}
-                              activeProjectDefaultModelSelection={
-                                activeProject?.defaultModelSelection
-                              }
-                              activeThreadModelSelection={activeThread?.modelSelection}
-                              activeThreadActivities={activeThread?.activities}
-                              resolvedTheme={resolvedTheme}
-                              settings={settings}
-                              keybindings={keybindings}
-                              terminalOpen={Boolean(terminalUiState.terminalOpen)}
-                              gitCwd={gitCwd}
-                              promptRef={promptRef}
-                              composerImagesRef={composerImagesRef}
-                              composerTerminalContextsRef={composerTerminalContextsRef}
-                              composerElementContextsRef={composerElementContextsRef}
-                              onSend={onSend}
-                              onInterrupt={onInterrupt}
-                              onImplementPlanInNewThread={onImplementPlanInNewThread}
-                              onRespondToApproval={onRespondToApproval}
-                              onSelectActivePendingUserInputOption={
-                                onSelectActivePendingUserInputOption
-                              }
-                              onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-                              onPreviousActivePendingUserInputQuestion={
-                                onPreviousActivePendingUserInputQuestion
-                              }
-                              onChangeActivePendingUserInputCustomAnswer={
-                                onChangeActivePendingUserInputCustomAnswer
-                              }
-                              onProviderModelSelect={onProviderModelSelect}
-                              getModelDisabledReason={getModelDisabledReason}
-                              toggleInteractionMode={toggleInteractionMode}
-                              handleInteractionModeChange={handleInteractionModeChange}
-                              onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
-                              onWorkjetCapabilityEnabledChange={
-                                handleWorkjetCapabilityEnabledChange
-                              }
-                              onWorkjetConfigApply={handleWorkjetConfigApply}
-                              workjetEnabledCapabilityIds={
-                                visibleWorkjetConfig?.enabledCapabilityIds ?? undefined
-                              }
-                              workjetCapabilityBindings={
-                                visibleWorkjetConfig !== null &&
-                                "capabilityBindings" in visibleWorkjetConfig
-                                  ? visibleWorkjetConfig.capabilityBindings
-                                  : undefined
-                              }
-                              workjetManagedInstructions={
-                                visibleWorkjetConfig?.managedInstructions ?? null
-                              }
-                              selectableEnvironmentIds={selectableEnvironmentIds}
-                              onDraftEnvironmentChange={onEnvironmentChange}
-                              onWorkjetRoleChange={handleWorkjetRoleChange}
-                              onOpenWorkjetSettings={handleOpenWorkjetSettings}
-                              focusComposer={focusComposer}
-                              scheduleComposerFocus={scheduleComposerFocus}
-                              setThreadError={setThreadError}
-                              onExpandImage={onExpandTimelineImage}
-                            />
+                            <>
+                              <ThreadErrorBanner
+                                error={nativeSupervisorThread ? null : visibleThreadError}
+                                onDismiss={() => {
+                                  setThreadError(activeThread.id, null);
+                                  dismissThreadErrorBannerForSession(threadErrorBannerKey);
+                                  setThreadErrorBannerDismissTick((tick) => tick + 1);
+                                }}
+                              />
+                              <ChatComposer
+                                composerRef={composerRef}
+                                workspaceExtraControls={
+                                  showComposerContextStrip ? (
+                                    <div className="pointer-events-auto">
+                                      <BranchToolbar
+                                        environmentId={activeThread.environmentId}
+                                        threadId={activeThread.id}
+                                        showGitControls={isGitRepo}
+                                        {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                                        onEnvModeChange={onEnvModeChange}
+                                        startFromOrigin={startFromOrigin}
+                                        onStartFromOriginChange={onStartFromOriginChange}
+                                        {...(canOverrideServerThreadEnvMode
+                                          ? { effectiveEnvModeOverride: envMode }
+                                          : {})}
+                                        {...(canOverrideServerThreadEnvMode
+                                          ? {
+                                              activeThreadBranchOverride: activeThreadBranch,
+                                              onActiveThreadBranchOverrideChange:
+                                                setPendingServerThreadBranch,
+                                            }
+                                          : {})}
+                                        envLocked={envLocked}
+                                        onComposerFocusRequest={scheduleComposerFocus}
+                                        {...(canCheckoutPullRequestIntoThread
+                                          ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                                          : {})}
+                                        {...(hasMultipleEnvironments
+                                          ? { onEnvironmentChange }
+                                          : {})}
+                                        availableEnvironments={logicalProjectEnvironments}
+                                      />
+                                    </div>
+                                  ) : null
+                                }
+                                composerDraftTarget={composerDraftTarget}
+                                environmentId={environmentId}
+                                routeKind={routeKind}
+                                routeThreadRef={routeThreadRef}
+                                draftId={draftId}
+                                activeThreadId={activeThreadId}
+                                activeThreadEnvironmentId={activeThread?.environmentId}
+                                activeThread={activeThread}
+                                isServerThread={isServerThread}
+                                isLocalDraftThread={isLocalDraftThread}
+                                forceExpandedOnMobile={
+                                  forceExpandedMobileComposer && isDraftHeroState
+                                }
+                                projectSelectionRequired={
+                                  isLocalDraftThread && activeProject === null
+                                }
+                                phase={phase}
+                                isConnecting={isConnecting}
+                                isSendBusy={isSendBusy}
+                                sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
+                                isPreparingWorktree={isPreparingWorktree}
+                                environmentUnavailable={activeEnvironmentUnavailableState}
+                                activePendingApproval={activePendingApproval}
+                                pendingApprovals={pendingApprovals}
+                                pendingUserInputs={pendingUserInputs}
+                                activePendingProgress={activePendingProgress}
+                                activePendingResolvedAnswers={activePendingResolvedAnswers}
+                                activePendingIsResponding={activePendingIsResponding}
+                                activePendingDraftAnswers={activePendingDraftAnswers}
+                                activePendingQuestionIndex={activePendingQuestionIndex}
+                                respondingRequestIds={respondingRequestIds}
+                                showPlanFollowUpPrompt={showPlanFollowUpPrompt}
+                                activeProposedPlan={activeProposedPlan}
+                                interactionMode={interactionMode}
+                                workjetRole={visibleWorkjetConfig?.role ?? null}
+                                workjetGreppyEnabled={
+                                  visibleWorkjetConfig
+                                    ? visibleWorkjetConfig.enabledCapabilityIds.includes(
+                                        GREPPY_CAPABILITY_ID,
+                                      )
+                                    : null
+                                }
+                                workjetSendToWorkerControl={renderWorkjetSendToWorkerControl}
+                                workjetCapabilityBusy={workjetCapabilityBusy}
+                                workjetCapabilityDisabled={
+                                  threadDetailLoading || activeEnvironmentUnavailable
+                                }
+                                lockedProvider={null}
+                                providerStatuses={providerStatuses as ServerProvider[]}
+                                activeProjectDefaultModelSelection={
+                                  activeProject?.defaultModelSelection
+                                }
+                                activeThreadModelSelection={activeThread?.modelSelection}
+                                activeThreadActivities={activeThread?.activities}
+                                resolvedTheme={resolvedTheme}
+                                settings={settings}
+                                keybindings={keybindings}
+                                terminalOpen={Boolean(terminalUiState.terminalOpen)}
+                                gitCwd={gitCwd}
+                                promptRef={promptRef}
+                                composerImagesRef={composerImagesRef}
+                                composerTerminalContextsRef={composerTerminalContextsRef}
+                                composerElementContextsRef={composerElementContextsRef}
+                                onSend={onSend}
+                                onInterrupt={onInterrupt}
+                                onImplementPlanInNewThread={onImplementPlanInNewThread}
+                                onRespondToApproval={onRespondToApproval}
+                                onSelectActivePendingUserInputOption={
+                                  onSelectActivePendingUserInputOption
+                                }
+                                onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                                onPreviousActivePendingUserInputQuestion={
+                                  onPreviousActivePendingUserInputQuestion
+                                }
+                                onChangeActivePendingUserInputCustomAnswer={
+                                  onChangeActivePendingUserInputCustomAnswer
+                                }
+                                onProviderModelSelect={onProviderModelSelect}
+                                getModelDisabledReason={getModelDisabledReason}
+                                toggleInteractionMode={toggleInteractionMode}
+                                handleInteractionModeChange={handleInteractionModeChange}
+                                onWorkjetGreppyEnabledChange={handleWorkjetGreppyEnabledChange}
+                                onWorkjetCapabilityEnabledChange={
+                                  handleWorkjetCapabilityEnabledChange
+                                }
+                                onWorkjetConfigApply={handleWorkjetConfigApply}
+                                workjetEnabledCapabilityIds={
+                                  visibleWorkjetConfig?.enabledCapabilityIds ?? undefined
+                                }
+                                workjetCapabilityBindings={
+                                  visibleWorkjetConfig !== null &&
+                                  "capabilityBindings" in visibleWorkjetConfig
+                                    ? visibleWorkjetConfig.capabilityBindings
+                                    : undefined
+                                }
+                                workjetManagedInstructions={
+                                  visibleWorkjetConfig?.managedInstructions ?? null
+                                }
+                                selectableEnvironmentIds={selectableEnvironmentIds}
+                                onDraftEnvironmentChange={onEnvironmentChange}
+                                computerChangeDisabledReason={
+                                  computerContinuationBusy
+                                    ? "Copying conversation history…"
+                                    : envLocked
+                                      ? "Finish the current turn before switching computers."
+                                      : activeThread?.workjetConfig.schemaVersion === 2 &&
+                                          activeThread.workjetConfig.ctoxCrewChat !== undefined
+                                        ? "Choose this Luma's computer in Business OS configuration."
+                                        : null
+                                }
+                                onWorkjetRoleChange={handleWorkjetRoleChange}
+                                onOpenWorkjetSettings={handleOpenWorkjetSettings}
+                                focusComposer={focusComposer}
+                                scheduleComposerFocus={scheduleComposerFocus}
+                                setThreadError={setThreadError}
+                                onExpandImage={onExpandTimelineImage}
+                              />
+                            </>
                           )}
                         </div>
                       </div>

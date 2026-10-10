@@ -1,7 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Bounded Node loopback adapter for the external Codex process; source identity is schema validated and scoped by its owning Effect service.
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import {
+  workerSourceNativeProfile,
+  type WorkerSourceNativeProfile,
+} from "./WorkerSourceNativeProfile.ts";
 import { Schema } from "effect";
+import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
+import type { WorkerSubmission } from "./WorkerSubmission.ts";
 
 const Route = Schema.Struct({
   sourceEnvironmentId: Schema.NonEmptyString,
@@ -13,9 +21,79 @@ const Route = Schema.Struct({
 });
 export type WorkerSourceHarnessRoute = typeof Route.Type;
 const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Schema.Boolean) });
-const Reply = Schema.Struct({ requestJson: Schema.String });
+const Reply = Schema.Struct({
+  requestJson: Schema.String,
+  contentType: Schema.optionalKey(Schema.Literals(["application/json", "text/event-stream"])),
+});
+const nativeProtocols = {
+  "/v1/messages": "messages",
+  "/v1/chat/completions": "chat-completions",
+} as const;
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
+const MessagesResponse = Schema.Struct({
+  id: Schema.String,
+  type: Schema.Literal("message"),
+  role: Schema.Literal("assistant"),
+  model: Schema.String,
+  content: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+  stop_reason: Schema.NullOr(Schema.String),
+  stop_sequence: Schema.optional(Schema.NullOr(Schema.String)),
+  usage: Schema.Record(Schema.String, Schema.Unknown),
+});
+
+/** Keep the gateway's Messages blocks, tool IDs, signatures and usage intact. */
+function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void {
+  const message = Schema.decodeUnknownSync(MessagesResponse)(body);
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+  const event = (type: string, data: Record<string, unknown>) =>
+    res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+  event("message_start", {
+    message: {
+      ...message,
+      content: [],
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { ...message.usage, output_tokens: 0 },
+    },
+  });
+  for (const [index, block] of message.content.entries()) {
+    const { text, input, thinking, signature, ...metadata } = block;
+    event("content_block_start", {
+      index,
+      content_block:
+        block.type === "text"
+          ? { ...metadata, text: "" }
+          : block.type === "tool_use"
+            ? { ...metadata, input: {} }
+            : block.type === "thinking"
+              ? { ...metadata, thinking: "", signature: "" }
+              : block,
+    });
+    if (block.type === "text" && typeof text === "string")
+      event("content_block_delta", { index, delta: { type: "text_delta", text } });
+    if (block.type === "tool_use")
+      event("content_block_delta", {
+        index,
+        delta: { type: "input_json_delta", partial_json: JSON.stringify(input) },
+      });
+    if (block.type === "thinking") {
+      if (typeof thinking === "string")
+        event("content_block_delta", { index, delta: { type: "thinking_delta", thinking } });
+      if (typeof signature === "string")
+        event("content_block_delta", { index, delta: { type: "signature_delta", signature } });
+    }
+    event("content_block_stop", { index });
+  }
+  event("message_delta", {
+    delta: { stop_reason: message.stop_reason, stop_sequence: message.stop_sequence ?? null },
+    usage: message.usage,
+  });
+  event("message_stop", {});
+  res.end();
+}
+
 export interface WorkerSourceHarness {
+  readonly nativeProfile?: WorkerSourceNativeProfile;
   readonly isRevoked: () => boolean;
   readonly identity: Readonly<
     Pick<
@@ -27,8 +105,12 @@ export interface WorkerSourceHarness {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
+  readonly harness: RemoteWorkerHarness;
   readonly revoke: () => Promise<void>;
-  readonly retire: () => Promise<void>;
+  readonly retire: (
+    submission?: WorkerSubmission,
+    persistStopped?: () => Promise<void>,
+  ) => Promise<void>;
 }
 const workers = new Map<string, WorkerSourceHarness>();
 const installedRoutes = new Map<string, WorkerSourceHarnessRoute>();
@@ -42,11 +124,22 @@ export async function installWorkerSourceRoute(
     readonly targetEnvironmentId: string;
     readonly requestDigest: string;
     readonly modelId: string;
+    readonly harness?: RemoteWorkerHarness;
+    readonly nativeProfile?: {
+      readonly harness: WorkerSourceNativeProfile["harness"];
+      readonly directory: string;
+    };
   },
 ): Promise<WorkerSourceHarness> {
   const route = Object.freeze(Schema.decodeUnknownSync(Route)(input));
-  const pin = Object.freeze({ ...installation });
+  const pin = Object.freeze({
+    ...installation,
+    harness: Schema.decodeUnknownSync(RemoteWorkerHarness)(
+      installation.harness ?? installation.nativeProfile?.harness ?? "codex-cli",
+    ),
+  });
   if (
+    (pin.nativeProfile !== undefined && pin.nativeProfile.harness !== pin.harness) ||
     threadId !== route.requestId ||
     route.targetEnvironmentId !== pin.targetEnvironmentId ||
     route.requestDigest !== pin.requestDigest ||
@@ -69,7 +162,10 @@ export async function installWorkerSourceRoute(
       original.requestDigest !== route.requestDigest ||
       original.capability !== route.capability ||
       original.port !== route.port ||
-      existing.model !== pin.modelId
+      existing.model !== pin.modelId ||
+      existing.harness !== pin.harness ||
+      existing.nativeProfile?.harness !== pin.nativeProfile?.harness ||
+      existing.nativeProfile?.directory !== pin.nativeProfile?.directory
     )
       throw new Error("Worker source route substitution or revocation");
     await existing.admit();
@@ -80,7 +176,7 @@ export async function installWorkerSourceRoute(
   let revoked = false;
   let busy = false;
   const source = async (
-    operation: "admit" | "infer" | "retire",
+    operation: "admit" | "infer" | "retire" | "retirementAck" | "computers",
     payload: unknown,
     signal: AbortSignal,
   ) => {
@@ -101,11 +197,34 @@ export async function installWorkerSourceRoute(
     return response.json() as Promise<unknown>;
   };
   const server: NodeHttp.Server = NodeHttp.createServer(async (req, res) => {
-    if (revoked || req.headers.authorization !== `Bearer ${apiKey}`) {
+    const messages = pin.harness === "claude-code";
+    const authenticated =
+      req.headers.authorization !== undefined
+        ? req.headers.authorization === `Bearer ${apiKey}`
+        : req.headers["x-api-key"] === apiKey;
+    if (revoked || !authenticated) {
       res.writeHead(403).end();
       return;
     }
-    if (req.method !== "POST" || req.url !== "/v1/responses") {
+    const requestPath = new URL(req.url || "/", "http://127.0.0.1").pathname;
+    // Existing Claude routes remain pinned to Messages; native profiles opt in to translation.
+    const legacyMessages = messages && pin.nativeProfile === undefined;
+    const protocol =
+      requestPath === "/v1/messages" && !legacyMessages
+        ? nativeProtocols["/v1/messages"]
+        : requestPath === "/v1/chat/completions" && !legacyMessages
+          ? nativeProtocols["/v1/chat/completions"]
+          : undefined;
+    const inventory = req.method === "GET" && requestPath === "/v1/workjet/computers";
+    const models = req.method === "GET" && requestPath === "/v1/models";
+    if (
+      !inventory &&
+      !models &&
+      (req.method !== "POST" ||
+        ((legacyMessages || requestPath !== "/v1/responses") &&
+          !(messages && requestPath === "/v1/messages") &&
+          protocol === undefined))
+    ) {
       res.writeHead(404).end();
       return;
     }
@@ -125,6 +244,25 @@ export async function installWorkerSourceRoute(
     };
     res.on("close", disconnect);
     try {
+      if (inventory || models) {
+        await source("admit", {}, controller.signal);
+        const response = inventory
+          ? Schema.decodeUnknownSync(WorkjetComputerInventory)(
+              await source("computers", {}, controller.signal),
+            )
+          : {
+              object: "list",
+              data: [{ id: pin.modelId, object: "model", owned_by: "workjet-source" }],
+            };
+        if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
+        const body = JSON.stringify(response);
+        if (Buffer.byteLength(body) > 64 * 1024)
+          throw new Error("Worker catalog or inventory too large");
+        res
+          .writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
+          .end(body);
+        return;
+      }
       const chunks: Buffer[] = [];
       let size = 0;
       for await (const chunk of req) {
@@ -140,14 +278,34 @@ export async function installWorkerSourceRoute(
         await source(
           "infer",
           {
-            requestJson: JSON.stringify({ ...(json as Record<string, unknown>), stream: false }),
+            ...(protocol === undefined ? {} : { protocol }),
+            requestJson:
+              protocol === undefined
+                ? JSON.stringify({ ...(json as Record<string, unknown>), stream: false })
+                : JSON.stringify(json),
           },
           controller.signal,
         ),
       );
-      const result = Schema.decodeUnknownSync(Response)(JSON.parse(reply.requestJson));
       if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
-      if (request.stream) {
+      if (protocol !== undefined) {
+        const expected = request.stream ? "text/event-stream" : "application/json";
+        if (reply.contentType !== expected || Buffer.byteLength(reply.requestJson) > 1024 * 1024)
+          throw new Error("Invalid native worker response");
+        res
+          .writeHead(200, { "content-type": expected, "cache-control": "no-store" })
+          .end(reply.requestJson);
+        return;
+      }
+      const result = JSON.parse(reply.requestJson);
+      if (messages) {
+        const message = Schema.decodeUnknownSync(MessagesResponse)(result);
+        if (message.model !== pin.modelId)
+          throw new Error("Worker response model differs from source permit");
+      } else Schema.decodeUnknownSync(Response)(result);
+      if (request.stream && messages) {
+        writeMessagesStream(res, result);
+      } else if (request.stream) {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
         const event = (type: string, data: Record<string, unknown>) =>
           res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
@@ -180,7 +338,39 @@ export async function installWorkerSourceRoute(
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
+  const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+  let nativeProfile: WorkerSourceNativeProfile | undefined;
+  try {
+    if (pin.nativeProfile) {
+      nativeProfile = workerSourceNativeProfile({
+        ...pin.nativeProfile,
+        model: pin.modelId,
+        baseUrl,
+        apiKey,
+      });
+      await NodeFSP.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });
+      for (const directory of [
+        nativeProfile.environment.HOME,
+        nativeProfile.environment.XDG_CONFIG_HOME,
+        nativeProfile.environment.XDG_DATA_HOME,
+        nativeProfile.environment.XDG_CACHE_HOME,
+        NodePath.join(nativeProfile.directory, "sessions"),
+      ]) {
+        await NodeFSP.mkdir(directory!, { recursive: true, mode: 0o700 });
+      }
+      for (const file of nativeProfile.files) {
+        const destination = NodePath.join(nativeProfile.directory, file.name);
+        await NodeFSP.writeFile(destination + ".stage", file.content, { mode: 0o600 });
+        await NodeFSP.rename(destination + ".stage", destination);
+      }
+    }
+  } catch {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw new Error("Worker source native profile could not be prepared");
+  }
   const harness: WorkerSourceHarness = {
+    ...(nativeProfile ? { nativeProfile } : {}),
     isRevoked: () => revoked,
     identity: Object.freeze({
       sourceEnvironmentId: route.sourceEnvironmentId,
@@ -200,18 +390,27 @@ export async function installWorkerSourceRoute(
         active.delete(controller);
       }
     },
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl,
     apiKey,
     model: pin.modelId,
-    retire: async () => {
+    harness: pin.harness,
+    retire: async (submission, persistStopped) => {
+      if (submission && !persistStopped) throw new Error("Missing durable worker stop");
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
-        const response = await source("retire", {}, controller.signal);
+        const response = await source("retire", submission ?? {}, controller.signal);
         Schema.decodeUnknownSync(Schema.Struct({ retired: Schema.Literal(true) }))(response);
-      } finally {
-        clearTimeout(timeout);
+        await persistStopped?.();
         await harness.revoke();
+        try {
+          await source("retirementAck", submission ?? {}, controller.signal);
+        } catch {
+          // The persisted stopped receipt still recovers archival; source expiry bounds cleanup.
+        }
+      } finally {
+        // Preserve this route on a lost/failed source acknowledgement so retirement can retry.
+        clearTimeout(timeout);
       }
     },
     revoke: async () => {

@@ -6,8 +6,10 @@ import {
   WorkjetGatewayOperationError,
 } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -19,6 +21,10 @@ import {
   type ProviderGatewayPlatform,
   type ProviderGatewayServiceShape,
 } from "./ProviderGatewayService.ts";
+
+const decodeStoredAccounts = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ accounts: Schema.Array(Schema.Unknown) })),
+);
 
 const configuration = `{
   "schemaVersion": 1,
@@ -109,6 +115,7 @@ const readyHarness = () => {
   };
   const platform: ProviderGatewayPlatform = {
     ...nodeProviderGatewayPlatform,
+    publicModelCatalog: async () => undefined,
     fingerprint: undefined,
     readText: async () => configuration,
     writePrivateText: async (_path, content) => {
@@ -141,6 +148,138 @@ const readyHarness = () => {
 };
 
 describe("ProviderGatewayService", () => {
+  it("returns only a complete live Claude account list without writing account settings", async () => {
+    const harness = readyHarness();
+    let probes = 0;
+    const claude = JSON.stringify({
+      ...JSON.parse(configuration),
+      defaultProvider: "claude",
+      accounts: [
+        {
+          id: "claude-primary",
+          label: "Claude",
+          provider: "claude",
+          enabled: true,
+          models: ["claude-opus-5-5"],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" },
+        },
+      ],
+    });
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      readText: async () => claude,
+      discoverClaudeModels: async (token, signal) => {
+        expect(token).toBe("provider-secret");
+        expect(signal).toBeDefined();
+        ++probes;
+        return ["claude-opus-5-5", "claude-sonnet-5-5"];
+      },
+    };
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const writesBefore = [...harness.writes];
+        const result = yield* gateway.accountModels({
+          accountId: WorkjetGatewayAccountId.make("claude-primary"),
+        });
+        expect(harness.writes).toEqual(writesBefore);
+        return result;
+      }),
+    );
+    expect(result.state).toBe("observed");
+    expect(result.modelIds).toEqual(["claude-opus-5-5", "claude-sonnet-5-5"]);
+    expect(result.reason).toBeNull();
+    expect(probes).toBe(1);
+    expect(JSON.stringify(result)).not.toContain("provider-secret");
+  });
+
+  it("discards a live-list completion if the exact account changes during discovery", async () => {
+    const harness = readyHarness();
+    let enabled = true;
+    const readText = async () =>
+      JSON.stringify({
+        ...JSON.parse(configuration),
+        defaultProvider: "claude",
+        accounts: [
+          {
+            id: "claude-primary",
+            label: "Claude",
+            provider: "claude",
+            enabled,
+            models: ["claude-opus-5-5"],
+            accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
+            refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" },
+          },
+        ],
+      });
+    let probes = 0;
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      readText,
+      discoverClaudeModels: async () => {
+        ++probes;
+        enabled = false;
+        return ["claude-opus-5-5"];
+      },
+    };
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const first = yield* gateway.accountModels({
+          accountId: WorkjetGatewayAccountId.make("claude-primary"),
+        });
+        const second = yield* gateway.accountModels({
+          accountId: WorkjetGatewayAccountId.make("claude-primary"),
+        });
+        return { first, second };
+      }),
+    );
+    expect(result.first.reason).toBe("account-changed");
+    expect(result.second.reason).toBe("account-disabled");
+    expect(result.first.modelIds).toEqual([]);
+    expect(result.second.modelIds).toEqual([]);
+    expect(probes).toBe(1);
+  });
+
+  it("does not turn failed live discovery into an account authentication error", async () => {
+    const harness = readyHarness();
+    const claude = JSON.stringify({
+      ...JSON.parse(configuration),
+      defaultProvider: "claude",
+      accounts: [
+        {
+          id: "claude-primary",
+          label: "Claude",
+          provider: "claude",
+          models: ["claude-opus-5-5"],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "claude.access" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "claude.refresh" },
+        },
+      ],
+    });
+    const result = await runGateway(
+      {
+        ...harness.platform,
+        readText: async () => claude,
+        discoverClaudeModels: async () => undefined,
+      },
+      (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          const writesBefore = [...harness.writes];
+          const result = yield* gateway.accountModels({
+            accountId: WorkjetGatewayAccountId.make("claude-primary"),
+          });
+          expect(harness.writes).toEqual(writesBefore);
+          return result;
+        }),
+    );
+    expect(result.state).toBe("unavailable");
+    expect(result.reason).toBe("catalog-unavailable");
+    expect(result.modelIds).toEqual([]);
+  });
+
   it("admits no inference or auth error for an intentionally disabled account", async () => {
     const harness = readyHarness();
     let probes = 0;
@@ -681,6 +820,14 @@ describe("ProviderGatewayService", () => {
       expect(configWrite?.content).toContain(
         targeted ? '"codex-primary"' : '"codex-user-example.test"',
       );
+      if (!targeted) {
+        const persisted = JSON.parse(configWrite!.content);
+        const added = persisted.accounts.find(
+          (account: { readonly id: string }) => account.id === "codex-user-example.test",
+        );
+        expect(added.models).toEqual([]);
+        expect(configWrite?.content).not.toContain("*");
+      }
       if (targeted) {
         const persisted = JSON.parse(configWrite!.content);
         expect(persisted.accounts).toHaveLength(1);
@@ -696,6 +843,150 @@ describe("ProviderGatewayService", () => {
       expect(spawnCount).toBe(2);
     },
   );
+
+  it("rechecks xAI immediately after same-token re-login and reloads the old cooldown away", async () => {
+    const accountId = WorkjetGatewayAccountId.make("xai-primary");
+    const config = JSON.stringify({
+      schemaVersion: 1,
+      defaultProvider: "xai",
+      accounts: [
+        {
+          id: accountId,
+          provider: "xai",
+          label: "Xai account",
+          enabled: true,
+          models: ["grok-4.7"],
+          priority: 3,
+          weight: 1,
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "xai.access" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "xai.refresh" },
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+    const files = new Map<string, string>([["/state/provider-gateway.json", config]]);
+    let spawnCount = 0;
+    let checks = 0;
+    let firstRecorded!: () => void;
+    let freshRecorded!: () => void;
+    const first = new Promise<void>((resolve) => {
+      firstRecorded = resolve;
+    });
+    const fresh = new Promise<void>((resolve) => {
+      freshRecorded = resolve;
+    });
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      readText: async (path) => {
+        const value = files.get(path);
+        if (value === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return value;
+      },
+      writePrivateText: async (path, content) => {
+        files.set(path, content);
+        if (path.endsWith("provider-gateway-model-checks.json")) {
+          const entry = JSON.parse(content).entries.find(
+            (item: { check: { accountId: string } }) => item.check.accountId === accountId,
+          );
+          if (entry?.check.status === "error") firstRecorded();
+          if (entry?.check.status === "ok") freshRecorded();
+        }
+      },
+      remove: async (path) => {
+        files.delete(path);
+      },
+      spawn: () => {
+        spawnCount++;
+        const exit = deferredExit();
+        return {
+          pid: 321,
+          stdout: iterable([
+            '{"schema":"workjet.provider-gateway-host.readiness.v1","pid":321,"providerEndpoint":"http://127.0.0.1:41000/","managementEndpoint":"http://127.0.0.1:41001/","phase":"ready"}\n',
+          ]),
+          stderr: iterable([]),
+          exit: exit.promise,
+          kill: (signal) => {
+            exit.resolve({ code: null, signal });
+            return true;
+          },
+        };
+      },
+      managementGet: async (_endpoint, route) => {
+        if (route.endsWith("xai-auth-url"))
+          return {
+            provider: "xai",
+            state: "xai-login",
+            authorization_url: "https://auth.x.ai/device",
+          };
+        if (route.startsWith("/v0/management/oauth/status"))
+          return {
+            pending: false,
+            error: null,
+            credentials: [{ id: accountId, provider: "xai", label: "Xai account" }],
+          };
+        return route.endsWith("runtime-status")
+          ? {
+              schema: "workjet.provider-gateway.runtime-status.v1",
+              features: { account_selection: true },
+            }
+          : { schema: "workjet.provider-gateway.runtime-summary.v1" };
+      },
+      managementRequest: async () => ({
+        credentials: [
+          {
+            account: {
+              id: accountId,
+              auth_index: "xai",
+              label: "Xai account",
+              provider: "xai",
+              disabled: false,
+              models: ["grok-4.7"],
+            },
+            // The provider may return the same token; login success must still bypass old checks.
+            secrets: {
+              access_token_secret: "provider-secret",
+              refresh_token_secret: "provider-secret",
+            },
+          },
+        ],
+      }),
+      providerModelCheck: async (_endpoint, provider, selectedAccountId, modelId) => {
+        expect(provider).toBe("xai");
+        expect(selectedAccountId).toBe(accountId);
+        expect(modelId).toBe("grok-4.7");
+        checks++;
+        return spawnCount === 1
+          ? { status: "error", source: "upstream", errorClass: "auth", httpStatus: 401 }
+          : { status: "ok", source: "upstream", errorClass: null, httpStatus: 200 };
+      },
+    };
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        yield* gateway.checkModels({ accountId, force: true });
+        yield* Effect.promise(() => first);
+        expect((yield* gateway.modelChecks()).checks[0]?.errorClass).toBe("auth");
+        const session = yield* gateway.oauthStart({ provider: "xai", accountId });
+        const result = yield* gateway.oauthPoll({ state: session.state });
+        expect(result.completedAccountIds).toEqual([accountId]);
+        yield* Effect.promise(() => fresh);
+        expect((yield* gateway.modelChecks()).checks[0]).toMatchObject({
+          status: "ok",
+          errorClass: null,
+        });
+        const saved = yield* decodeStoredAccounts(files.get("/state/provider-gateway.json")!);
+        expect(saved.accounts).toHaveLength(1);
+        expect(saved.accounts[0]).toMatchObject({
+          id: accountId,
+          priority: 3,
+          models: ["grok-4.7"],
+        });
+      }),
+    );
+    expect(spawnCount).toBe(2);
+    expect(checks).toBe(2);
+  });
 
   it("reports a failed login without claiming credentials", async () => {
     const harness = readyHarness();
@@ -947,7 +1238,19 @@ describe("ProviderGatewayService · API-key accounts", () => {
       getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
       remove: () => Effect.void,
     });
-    return { ...base, storedSecrets, secrets };
+    const platform: ProviderGatewayPlatform = {
+      ...base.platform,
+      discoverApiKeyModels: async (provider) => ({
+        upstreamBaseUrl: provider === "xai" ? "https://api.x.ai/v1" : "https://api.minimax.io/v1",
+        models: provider === "xai" ? ["grok-4.7"] : ["MiniMax-M3", "MiniMax-M3.1-Flash-Preview"],
+      }),
+      discoverKimiConnection: async () => ({
+        plan: "coding",
+        upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+        models: ["k3"],
+      }),
+    };
+    return { ...base, platform, storedSecrets, secrets };
   };
 
   const runWithSecrets = <A, E>(
@@ -1008,6 +1311,693 @@ describe("ProviderGatewayService · API-key accounts", () => {
       expect(result.accountId).toBe(`${provider}-key`);
       expect(harness.writes.join("\n")).not.toContain(API_KEY);
     }
+  });
+
+  it.each(["minimax", "xai"] as const)(
+    "preserves secrets and configuration when the %s live list is unavailable",
+    async (provider) => {
+      const harness = apiKeyHarness();
+      harness.platform = {
+        ...harness.platform,
+        discoverApiKeyModels: async () => {
+          throw new Error(API_KEY);
+        },
+      };
+      const error = await runWithSecrets(harness, (gateway) =>
+        gateway.addApiKeyAccount({ provider, label: "key", apiKey: API_KEY }).pipe(Effect.flip),
+      );
+      expect(error.reason).toBe("api-key-model-list-unavailable");
+      expect(error.message).not.toContain(API_KEY);
+      expect(error.message).not.toContain("Credentials rejected");
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(harness.writes).toEqual([]);
+    },
+  );
+
+  it.each(["minimax", "xai"] as const)(
+    "rejects another provider's live ID before saving a %s key",
+    async (provider) => {
+      const harness = apiKeyHarness();
+      const error = await runWithSecrets(harness, (gateway) =>
+        gateway
+          .addApiKeyAccount({ provider, label: "key", apiKey: API_KEY, models: ["k3"] })
+          .pipe(Effect.flip),
+      );
+      expect(error.reason).toBe("invalid-model-selection");
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(harness.writes).toEqual([]);
+    },
+  );
+
+  it("uses only curated live IDs for a new provider, keeping complete account evidence private", async () => {
+    const harness = apiKeyHarness();
+    harness.platform = {
+      ...harness.platform,
+      publicModelCatalog: async () => ({
+        schemaVersion: 1,
+        checkedAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now())),
+        expiresAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now() + 60_000)),
+        providers: [{ provider: "xai", status: "observed", models: ["grok-4.7"] }],
+      }),
+      discoverApiKeyModels: async () => ({
+        upstreamBaseUrl: "https://api.x.ai/v1",
+        models: ["grok-4.6", "grok-4.7"],
+      }),
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "xai", label: "key", apiKey: API_KEY, models: [] }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      document.accounts.find((account: { provider: string }) => account.provider === "xai"),
+    ).toMatchObject({
+      models: ["grok-4.7"],
+      availableModelIds: ["grok-4.6", "grok-4.7"],
+      upstreamBaseUrl: "https://api.x.ai/v1",
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("never invents defaults when a new provider has no fresh curated list", async () => {
+    const harness = apiKeyHarness();
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "xai", label: "key", apiKey: API_KEY, models: [] }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      document.accounts.find((account: { provider: string }) => account.provider === "xai"),
+    ).toMatchObject({
+      models: [],
+      availableModelIds: ["grok-4.7"],
+    });
+  });
+
+  it("inherits one provider selection on another account without widening the selection", async () => {
+    const harness = apiKeyHarness();
+    const oldAccount = {
+      id: "xai-first",
+      provider: "xai",
+      label: "First",
+      enabled: true,
+      priority: 0,
+      weight: 1,
+      models: ["grok-4.7"],
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "first-key" },
+    };
+    harness.platform = {
+      ...harness.platform,
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [oldAccount],
+          providerModels: [{ provider: "xai", modelIds: ["grok-4.7"] }],
+        }),
+      discoverApiKeyModels: async () => ({
+        upstreamBaseUrl: "https://api.x.ai/v1",
+        models: ["grok-4.6", "grok-4.7"],
+      }),
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "xai", label: "Second", apiKey: API_KEY, models: [] }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(document.providerModels).toEqual([{ provider: "xai", modelIds: ["grok-4.7"] }]);
+    expect(
+      document.accounts.find((account: { id: string }) => account.id === "xai-second").models,
+    ).toEqual(["grok-4.7"]);
+  });
+
+  it("retains account identity, disabled state and exclusions when replacing a verified key", async () => {
+    const harness = apiKeyHarness();
+    const oldAccount = {
+      id: "xai-stable",
+      provider: "xai",
+      label: "Team",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      models: ["grok-4.7"],
+      excludedModels: ["grok-4.6"],
+      upstreamBaseUrl: "https://api.x.ai/v1",
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    harness.platform = {
+      ...harness.platform,
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [oldAccount],
+          providerModels: [{ provider: "xai", modelIds: ["grok-4.6", "grok-4.7"] }],
+        }),
+      discoverApiKeyModels: async (_provider, key, origin) => {
+        expect(key).toBe(API_KEY);
+        expect(origin).toBe(oldAccount.upstreamBaseUrl);
+        return { upstreamBaseUrl: origin!, models: ["grok-4.6", "grok-4.7"] };
+      },
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        provider: "xai",
+        accountId: WorkjetGatewayAccountId.make(oldAccount.id),
+        label: oldAccount.label,
+        apiKey: API_KEY,
+        models: [],
+      }),
+    );
+    const document = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      document.accounts.find((account: { id: string }) => account.id === oldAccount.id),
+    ).toEqual({
+      ...oldAccount,
+      credentialSuffix: "abcd",
+      availableModelIds: ["grok-4.6", "grok-4.7"],
+    });
+    expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
+  });
+
+  it("stores the accepted Z.ai plan with only its selected live model", async () => {
+    const harness = apiKeyHarness();
+    const model = "glm-5.3-flash"; // Real account GET /models, 2026-10-09.
+    harness.platform = {
+      ...harness.platform,
+      publicModelCatalog: async () => ({
+        schemaVersion: 1,
+        checkedAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now())),
+        expiresAt: DateTime.formatIso(DateTime.makeUnsafe(harness.platform.now() + 60_000)),
+        providers: [{ provider: "zai", status: "observed", models: [model] }],
+      }),
+      discoverZaiConnection: async (_key, preferredModels) => {
+        expect(preferredModels).toEqual([model]);
+        return {
+          upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+          models: [model],
+          probeModel: model,
+        };
+      },
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        provider: "zai",
+        label: "Coding plan",
+        apiKey: API_KEY,
+        models: [],
+      }),
+    );
+    const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      stored.accounts.find((entry: { provider: string }) => entry.provider === "zai"),
+    ).toMatchObject({
+      upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+      models: [model],
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it.each(["accepted", "unavailable", "disabled", "other-account", "custom", "coding"] as const)(
+    "repairs only a verified legacy Z.ai binding (%s)",
+    async (mode) => {
+      const harness = apiKeyHarness();
+      const model = "glm-5.3-flash"; // Real account GET /models, 2026-10-09.
+      const account = {
+        id: "zai-existing",
+        provider: "zai",
+        label: "Existing plan",
+        enabled: mode !== "disabled",
+        priority: 7,
+        weight: 1,
+        models: [model],
+        apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+        ...(mode === "custom"
+          ? { upstreamBaseUrl: "https://other.example/v1" }
+          : mode === "coding"
+            ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" }
+            : {}),
+      };
+      let document = JSON.stringify({
+        ...JSON.parse(configuration),
+        accounts: [...JSON.parse(configuration).accounts, account],
+      });
+      let discoveries = 0;
+      const writer = harness.platform.writePrivateText;
+      harness.platform = {
+        ...harness.platform,
+        discoverZaiConnection: async (key, models, origin) => {
+          discoveries += 1;
+          expect(key).toBe("provider-secret");
+          expect(models).toEqual([model]);
+          expect(origin).toBe("https://api.z.ai/api/paas/v4");
+          return mode === "unavailable"
+            ? undefined
+            : {
+                upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+                models: [model],
+                probeModel: model,
+              };
+        },
+        readText: async (path) => {
+          if (path.endsWith("model-checks.json"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return document;
+        },
+        writePrivateText: async (path, value) => {
+          await writer(path, value);
+          if (path.endsWith("/provider-gateway.json")) document = value;
+        },
+      };
+      await runWithSecrets(harness, (gateway) =>
+        gateway.checkModels({
+          force: true,
+          ...(mode === "other-account"
+            ? { accountId: WorkjetGatewayAccountId.make("codex-primary") }
+            : {}),
+        }),
+      );
+      expect(
+        JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id),
+      ).toEqual({
+        ...account,
+        ...(mode === "accepted" ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" } : {}),
+      });
+      expect(discoveries).toBe(mode === "accepted" || mode === "unavailable" ? 1 : 0);
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(document).not.toContain("provider-secret");
+    },
+  );
+
+  it("stores the verified Kimi origin and live IDs on account creation", async () => {
+    const harness = apiKeyHarness();
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        provider: "kimi",
+        label: "Coding plan",
+        apiKey: API_KEY,
+        models: [],
+      }),
+    );
+    const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      stored.accounts.find((account: { provider: string }) => account.provider === "kimi"),
+    ).toMatchObject({
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      kimiPlan: "coding",
+      models: ["k3"],
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("retains a live model selection when replacing a Kimi key with no model input", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "kimi-stable",
+      provider: "kimi",
+      label: "Coding plan",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const,
+      models: ["kimi-for-coding"],
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    harness.platform = {
+      ...harness.platform,
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [...JSON.parse(configuration).accounts, account],
+        }),
+      discoverKimiConnection: async () => ({
+        plan: "coding",
+        upstreamBaseUrl: account.upstreamBaseUrl,
+        models: ["k3", "kimi-for-coding"],
+      }),
+    };
+    const result = await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        accountId: WorkjetGatewayAccountId.make(account.id),
+        provider: "kimi",
+        label: account.label,
+        apiKey: API_KEY,
+        models: [],
+      }),
+    );
+    expect(result.accountId).toBe(account.id);
+    const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(stored.accounts.find((entry: { id: string }) => entry.id === account.id)).toEqual({
+      ...account,
+      kimiPlan: "coding",
+      availableModelIds: ["k3", "kimi-for-coding"],
+      credentialSuffix: "abcd",
+    });
+    expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it.each([undefined, "https://api.moonshot.ai/v1"])(
+    "repairs a legacy Kimi origin %s on Check all without replacing its secret or identity",
+    async (upstreamBaseUrl) => {
+      const harness = apiKeyHarness();
+      const account = {
+        id: "kimi-existing",
+        provider: "kimi",
+        label: "Existing coding plan",
+        upstreamBaseUrl,
+        enabled: true,
+        priority: 7,
+        weight: 1,
+        models: ["kimi-for-coding"],
+        apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+        credentialSuffix: "old1",
+      };
+      let document = JSON.stringify({
+        ...JSON.parse(configuration),
+        accounts: [...JSON.parse(configuration).accounts, account],
+      });
+      const writer = harness.platform.writePrivateText;
+      harness.platform = {
+        ...harness.platform,
+        readText: async (path) => {
+          if (path.endsWith("model-checks.json"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return document;
+        },
+        writePrivateText: async (path, value) => {
+          await writer(path, value);
+          if (path.endsWith("/provider-gateway.json")) document = value;
+        },
+      };
+      await runWithSecrets(harness, (gateway) => gateway.checkModels({ force: true }));
+      expect(
+        JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id),
+      ).toEqual({
+        ...account,
+        upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+        kimiPlan: "coding",
+        models: ["k3"],
+        availableModelIds: ["k3"],
+      });
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(document).not.toContain("provider-secret");
+    },
+  );
+
+  it.each(["observed", "unavailable", "disabled", "other-account"] as const)(
+    "repairs Claude spelling from its live account without enabling it (%s)",
+    async (mode) => {
+      const harness = apiKeyHarness();
+      const model = "claude-opus-5-5";
+      const legacy = model.replace(/-(\d+)$/, ".$1");
+      const account = {
+        id: "claude-existing",
+        provider: "claude",
+        label: "Existing account",
+        enabled: mode !== "disabled",
+        priority: 7,
+        weight: 1,
+        models: [legacy],
+        accessTokenSecret: { scope: "workjet-provider-gateway", name: "existing-access" },
+        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "existing-refresh" },
+      };
+      let document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
+      let discoveries = 0;
+      const writer = harness.platform.writePrivateText;
+      harness.platform = {
+        ...harness.platform,
+        discoverClaudeModels: async () => {
+          discoveries += 1;
+          return mode === "unavailable" ? undefined : [model];
+        },
+        readText: async (path) => {
+          if (path.endsWith("model-checks.json"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return document;
+        },
+        writePrivateText: async (path, value) => {
+          await writer(path, value);
+          if (path.endsWith("/provider-gateway.json")) document = value;
+        },
+      };
+      const result = await runWithSecrets(harness, (gateway) =>
+        gateway.checkModels({
+          force: true,
+          ...(mode === "other-account"
+            ? { accountId: WorkjetGatewayAccountId.make("codex-primary") }
+            : {}),
+        }),
+      );
+      if (mode === "disabled") expect(result.pending).toEqual([]);
+      expect(JSON.parse(document).accounts).toEqual([
+        { ...account, models: [mode === "observed" || mode === "disabled" ? model : legacy] },
+      ]);
+      expect(discoveries).toBe(mode === "other-account" ? 0 : 1);
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(document).not.toContain("provider-secret");
+    },
+  );
+
+  it.each(["enabled", "disabled"] as const)(
+    "repairs a Claude model edit before persistence without changing the %s account",
+    async (mode) => {
+      for (const discovery of ["live", "unavailable", "other-model", "failed"] as const) {
+        const harness = apiKeyHarness();
+        // Authenticated account GET /models evidence, 2026-10-08.
+        const model = "claude-opus-5-5";
+        const legacy = model.replace(/-(\d+)$/, ".$1");
+        const account = {
+          id: "claude-existing",
+          provider: "claude",
+          label: "Existing account",
+          enabled: mode === "enabled",
+          priority: 7,
+          weight: 1,
+          models: [model],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "existing-access" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "existing-refresh" },
+        };
+        let document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
+        let discoveries = 0;
+        const writer = harness.platform.writePrivateText;
+        harness.platform = {
+          ...harness.platform,
+          discoverClaudeModels: async (_token, signal) => {
+            discoveries += 1;
+            expect(signal?.aborted).toBe(false);
+            if (discovery === "failed") throw new Error("transport failed");
+            return discovery === "unavailable"
+              ? undefined
+              : discovery === "other-model"
+                ? ["claude-sonnet-5-5"]
+                : [model];
+          },
+          readText: async (path) => {
+            if (path.endsWith("model-checks.json"))
+              throw Object.assign(new Error("missing"), { code: "ENOENT" });
+            return document;
+          },
+          writePrivateText: async (path, value) => {
+            await writer(path, value);
+            if (path.endsWith("/provider-gateway.json")) document = value;
+          },
+        };
+        const result = await runWithSecrets(harness, (gateway) =>
+          gateway.updateRouting({
+            strategy: "fill-first",
+            accounts: [
+              {
+                accountId: WorkjetGatewayAccountId.make(account.id),
+                enabled: account.enabled,
+                priority: account.priority,
+                weight: account.weight,
+                models: [legacy],
+              },
+            ],
+          }),
+        );
+        const expected = discovery === "live" ? model : legacy;
+        expect(JSON.parse(document).accounts).toEqual([{ ...account, models: [expected] }]);
+        expect(result.catalog.accounts[0]?.modelIds).toEqual([expected]);
+        expect(discoveries).toBe(1);
+        expect(harness.storedSecrets.size).toBe(0);
+        expect(document).not.toContain("provider-secret");
+      }
+    },
+  );
+
+  it("does not discover or change a disabled Kimi account during Check all", async () => {
+    const harness = apiKeyHarness();
+    let discoveries = 0;
+    const document = JSON.stringify({
+      ...JSON.parse(configuration),
+      accounts: [
+        {
+          id: "kimi-disabled",
+          provider: "kimi",
+          label: "Disabled",
+          enabled: false,
+          priority: 0,
+          weight: 1,
+          models: ["k3"],
+          apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+        },
+      ],
+    });
+    harness.platform = {
+      ...harness.platform,
+      readText: async (path) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return document;
+      },
+      discoverKimiConnection: async () => {
+        discoveries += 1;
+        return undefined;
+      },
+    };
+    const result = await runWithSecrets(harness, (gateway) => gateway.checkModels({ force: true }));
+    expect(result.pending).toEqual([]);
+    expect(discoveries).toBe(0);
+    expect(harness.writes).toEqual([]);
+    expect(harness.storedSecrets.size).toBe(0);
+  });
+
+  it("adds plan metadata to an accepted existing Coding endpoint without changing its selection or secret", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "kimi-existing",
+      provider: "kimi",
+      label: "Coding work",
+      enabled: true,
+      priority: 7,
+      weight: 1,
+      models: ["kimi-for-coding"],
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    let document = JSON.stringify({
+      ...JSON.parse(configuration),
+      providerPort: 41000,
+      accounts: [account],
+    });
+    const writer = harness.platform.writePrivateText;
+    harness.platform = {
+      ...harness.platform,
+      discoverKimiConnection: async () => ({
+        plan: "coding",
+        upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+        models: ["k3", "kimi-for-coding"],
+      }),
+      readText: async (path) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return document;
+      },
+      writePrivateText: async (path, value) => {
+        await writer(path, value);
+        if (path.endsWith("/provider-gateway.json")) document = value;
+      },
+    };
+    const catalog = await runWithSecrets(harness, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.checkModels({ force: true });
+        yield* gateway.checkModels({ force: true });
+        return yield* gateway.catalog();
+      }),
+    );
+    expect(JSON.parse(document).accounts).toEqual([
+      { ...account, kimiPlan: "coding", availableModelIds: ["k3", "kimi-for-coding"] },
+    ]);
+    expect(catalog.accounts[0]?.kimiConnection).toEqual({
+      plan: "coding",
+      upstreamBaseUrl: account.upstreamBaseUrl,
+    });
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes.filter((value) => value.includes('"kimiPlan"'))).toHaveLength(1);
+  });
+
+  it("persists the accepted regional API plan without a user choice", async () => {
+    const harness = apiKeyHarness();
+    harness.platform = {
+      ...harness.platform,
+      discoverKimiConnection: async () => ({
+        plan: "api",
+        upstreamBaseUrl: "https://api.moonshot.cn/v1",
+        models: ["k3"],
+      }),
+    };
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        provider: "kimi",
+        label: "API work",
+        apiKey: API_KEY,
+      }),
+    );
+    const stored = JSON.parse(harness.writes.find((value) => value.includes("apiKeySecret"))!);
+    expect(
+      stored.accounts.find((account: { provider: string }) => account.provider === "kimi"),
+    ).toMatchObject({
+      kimiPlan: "api",
+      upstreamBaseUrl: "https://api.moonshot.cn/v1",
+      models: ["k3"],
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("preserves the existing account and secret when a replacement Kimi key is not accepted", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "kimi-existing",
+      provider: "kimi",
+      label: "Coding work",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      models: ["kimi-for-coding"],
+      kimiPlan: "coding",
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    const document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
+    harness.platform = {
+      ...harness.platform,
+      readText: async () => document,
+      discoverKimiConnection: async () => undefined,
+    };
+    const error = await runWithSecrets(harness, (gateway) =>
+      gateway
+        .addApiKeyAccount({
+          provider: "kimi",
+          accountId: WorkjetGatewayAccountId.make(account.id),
+          label: account.label,
+          apiKey: API_KEY,
+        })
+        .pipe(Effect.flip),
+    );
+    expect(error.reason).toBe("kimi-key-not-accepted");
+    expect(error.message).not.toContain(API_KEY);
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes).toEqual([]);
+  });
+
+  it("does not persist a Kimi key when no official endpoint returns a live list", async () => {
+    const harness = apiKeyHarness();
+    harness.platform = { ...harness.platform, discoverKimiConnection: async () => undefined };
+    const error = await runWithSecrets(harness, (gateway) =>
+      gateway
+        .addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY })
+        .pipe(Effect.flip),
+    );
+    expect(error.reason).toBe("kimi-key-not-accepted");
+    expect(error.message).toContain("https://api.kimi.com/coding/v1");
+    expect(error.message).toContain("https://api.kimi.ai/coding/v1");
+    expect(error.message).toContain("https://api.moonshot.ai/v1");
+    expect(error.message).toContain("https://api.moonshot.cn/v1");
+    expect(error.message).not.toContain(API_KEY);
+    expect(error.message).not.toContain("Credentials rejected");
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes).toEqual([]);
   });
 
   it("replaces a key in place without losing disabled state, models or stable identity", async () => {
@@ -1285,32 +2275,68 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
   });
 
-  it("labels catalog models and configured models apart, and says when a provider has no catalog", async () => {
+  it("does not recover compiled suggestions when the live catalog is unavailable", async () => {
     const harness = poolHarness();
     const discovery = await runPools(harness, (gateway) => gateway.discoverModels());
-    const claude = discovery.providers.find((entry) => entry.provider === "claude");
-    expect(claude?.channel).toBe("claude");
-    expect(claude?.catalogAvailable).toBe(true);
-    expect(claude?.models).toEqual([
-      { id: "claude-opus-4", displayName: "Claude Opus 4", source: "gateway-catalog" },
-      { id: "claude-haiku-4-5", displayName: "claude-haiku-4-5", source: "gateway-catalog" },
+    expect(
+      discovery.providers.every(
+        (provider) => !provider.catalogAvailable && provider.channel === null,
+      ),
+    ).toBe(true);
+    expect(
+      discovery.providers
+        .flatMap((provider) => provider.models)
+        .every((model) => model.source === "account-configuration"),
+    ).toBe(true);
+    expect(harness.routes.some((route) => route.includes("model-definitions/"))).toBe(false);
+  });
+
+  it("discovers actual Kimi IDs from the fresh public catalog without reading compiled definitions", async () => {
+    const harness = readyHarness();
+    const configuration = JSON.stringify({
+      schemaVersion: 1,
+      defaultProvider: "kimi",
+      accounts: [
+        {
+          id: "kimi-observed",
+          label: "Kimi",
+          provider: "kimi",
+          models: [],
+          apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi.key" },
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      now: () => 1_000,
+      readText: async () => configuration,
+      publicModelCatalog: async () => ({
+        schemaVersion: 1,
+        checkedAt: "1970-01-01T00:00:01.000Z",
+        expiresAt: "1970-01-01T00:01:01.000Z",
+        providers: [{ provider: "kimi", status: "observed", models: ["k3", "kimi-for-coding"] }],
+      }),
+    };
+    const discovery = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        return yield* gateway.discoverModels();
+      }),
+    );
+    expect(discovery.providers).toEqual([
       {
-        id: "claude-configured-only",
-        displayName: "claude-configured-only",
-        source: "account-configuration",
+        provider: "kimi",
+        channel: null,
+        catalogAvailable: true,
+        models: ["k3", "kimi-for-coding"].map((id) => ({
+          id,
+          displayName: id,
+          source: "gateway-catalog",
+        })),
       },
     ]);
-
-    // The host has no zai channel, so the surface must say so rather than
-    // present the configured list as a gateway answer.
-    const zai = discovery.providers.find((entry) => entry.provider === "zai");
-    expect(zai?.channel).toBeNull();
-    expect(zai?.catalogAvailable).toBe(false);
-    expect(zai?.models).toEqual([
-      { id: "glm-5.3", displayName: "glm-5.3", source: "account-configuration" },
-    ]);
-    // A provider with no channel must not have been asked for one.
-    expect(harness.routes.some((route) => route.includes("model-definitions/zai"))).toBe(false);
   });
 
   it("persists legacy strategy and membership edits while projecting the fixed host policy", async () => {
@@ -1606,5 +2632,101 @@ describe("ProviderGatewayService environment scoping", () => {
       expect(hostDocument!.content).not.toContain(`/environments/${other}`);
       expect(hostDocument!.content).not.toContain(`claude-${other}`);
     }
+  });
+});
+
+describe("shared provider model commands", () => {
+  const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+  const account = {
+    id: "kimi-primary",
+    label: "Primary",
+    provider: "kimi",
+    enabled: true,
+    models: ["k3"],
+    availableModelIds: ["k3", "kimi-for-coding"],
+    apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi-primary" },
+    upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+    kimiPlan: "coding",
+  };
+  const harnessForSharedModels = () => {
+    const harness = readyHarness();
+    let stored = encodeJson({
+      schemaVersion: 1,
+      defaultProvider: "kimi",
+      accounts: [
+        account,
+        {
+          ...account,
+          id: "kimi-backup",
+          label: "Backup",
+          enabled: false,
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+    return {
+      harness,
+      stored: () => stored,
+      platform: {
+        ...harness.platform,
+        discoverKimiConnection: async () => undefined,
+        readText: async () => stored,
+        writePrivateText: async (path: string, text: string) => {
+          if (path.endsWith("provider-gateway.json")) stored = text;
+          harness.writes.push(text);
+        },
+      },
+    };
+  };
+  it("persists provider edits, account exclusions and unchanged credentials across reads", async () => {
+    const fixture = harnessForSharedModels();
+    await runGateway(fixture.platform, (gateway) =>
+      Effect.gen(function* () {
+        const selected = yield* gateway.updateRouting({
+          strategy: "fill-first",
+          accounts: [],
+          providers: [{ provider: "kimi", modelIds: ["k3", "kimi-for-coding"] }],
+        });
+        expect(selected.catalog.accounts.map((entry) => entry.modelIds)).toEqual([
+          ["k3", "kimi-for-coding"],
+          ["k3", "kimi-for-coding"],
+        ]);
+        const excluded = yield* gateway.updateRouting({
+          strategy: "fill-first",
+          accounts: [
+            {
+              accountId: WorkjetGatewayAccountId.make("kimi-primary"),
+              enabled: true,
+              priority: 0,
+              weight: 1,
+              excludedModels: ["k3"],
+            },
+          ],
+        });
+        expect(excluded.catalog.accounts[0]?.modelIds).toEqual(["kimi-for-coding"]);
+        expect(excluded.catalog.accounts[1]?.enabled).toBe(false);
+        const saved = yield* decodeStoredAccounts(fixture.stored());
+        expect(saved.accounts[0]).toMatchObject({ apiKeySecret: account.apiKeySecret });
+        expect(encodeJson(excluded.catalog)).not.toContain("apiKeySecret");
+        expect((yield* gateway.catalog()).accounts[0]?.excludedModelIds).toEqual(["k3"]);
+      }),
+    );
+  });
+  it("refuses newly selected IDs not evidenced for this provider without writing configuration", async () => {
+    const fixture = harnessForSharedModels();
+    const before = fixture.stored();
+    const result = await runGateway(fixture.platform, (gateway) =>
+      gateway
+        .updateRouting({
+          strategy: "fill-first",
+          accounts: [],
+          // Real Anthropic GET/models ID, deliberately submitted under the wrong provider.
+          providers: [{ provider: "kimi", modelIds: ["claude-opus-5-5"] }],
+        })
+        .pipe(Effect.flip),
+    );
+    expect(result.reason).toBe("invalid-configuration");
+    expect(fixture.stored()).toBe(before);
   });
 });

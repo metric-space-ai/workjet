@@ -2,10 +2,46 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   listWorkjetProjects,
+  describeWorkjetProjectControlFailure,
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
   type WorkjetProjectPoolPort,
 } from "./workjetProjectControl";
+
+describe("project instance failure display", () => {
+  it("distinguishes hosted sign-in from accountless paired authentication", () => {
+    const failure = { _tag: "failed", code: "authentication_required" } as const;
+    expect(describeWorkjetProjectControlFailure(failure, "managed:tenant")).toContain(
+      "Sign in to ctox.dev",
+    );
+    expect(describeWorkjetProjectControlFailure(failure, "paired:tenant")).not.toContain(
+      "ctox.dev",
+    );
+  });
+  it("shows fixed discovery error and HTTP status", () => {
+    expect(
+      describeWorkjetProjectControlFailure({
+        _tag: "failed",
+        code: "guest_failed",
+        discovery: { code: "http_error", httpStatus: 503 },
+      }),
+    ).toContain("http_error (HTTP 503)");
+  });
+  it("asks for the connected shell update when its action is unsupported", () => {
+    expect(describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" })).toBe(
+      "The connected CTOX instance does not support this action. Update its Business OS shell.",
+    );
+  });
+  it("explains a classified data-plane timeout without showing guest exception text", () => {
+    expect(
+      describeWorkjetProjectControlFailure({
+        _tag: "failed",
+        code: "guest_failed",
+        diagnostic: { stage: "execute", reason: "request_timeout" },
+      }),
+    ).toBe("The CTOX data request timed out. Retry connection.");
+  });
+});
 
 describe("listWorkjetProjects", () => {
   const result = {
@@ -19,11 +55,12 @@ describe("listWorkjetProjects", () => {
     expect(request).toHaveBeenCalledExactlyOnceWith("managed:selected", {
       action: "project.list",
       includeConfiguration: true,
+      includeSupervisorLuma: true,
     });
   });
 
   it.each(["unsupported", "guest_failed"] as const)(
-    "falls back to the same guest's legacy projection for %s",
+    "falls back to the same guest's configured projection for %s",
     async (code) => {
       const request = vi
         .fn<WorkjetProjectControlPort>()
@@ -31,14 +68,52 @@ describe("listWorkjetProjects", () => {
         .mockResolvedValueOnce(result);
       await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
       expect(request).toHaveBeenCalledTimes(2);
-      expect(request).toHaveBeenNthCalledWith(2, "managed:selected", { action: "project.list" });
+      expect(request).toHaveBeenNthCalledWith(2, "managed:selected", {
+        action: "project.list",
+        includeConfiguration: true,
+      });
     },
   );
+
+  it("keeps a bounded legacy fallback for shells without either additive flag", async () => {
+    const request = vi
+      .fn<WorkjetProjectControlPort>()
+      .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
+      .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
+      .mockResolvedValueOnce(result);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(request).toHaveBeenNthCalledWith(3, "managed:selected", { action: "project.list" });
+  });
+
+  it("does not repeat a failed account discovery as a legacy project query", async () => {
+    const result = {
+      _tag: "failed",
+      code: "guest_failed",
+      discovery: { code: "network_error" },
+    } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledOnce();
+  });
 
   it("preserves authentication failure without retrying a denied request", async () => {
     const result = { _tag: "failed", code: "authentication_required" } as const;
     const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
     await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledOnce();
+  });
+});
+
+describe("classified project list failures", () => {
+  it("does not repeat a known peer failure as two legacy queries", async () => {
+    const failure = {
+      _tag: "failed",
+      code: "guest_failed",
+      diagnostic: { stage: "execute", reason: "peer_unavailable" },
+    } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
     expect(request).toHaveBeenCalledOnce();
   });
 });

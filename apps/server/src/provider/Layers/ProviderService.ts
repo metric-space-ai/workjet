@@ -39,7 +39,11 @@ import * as SchemaIssue from "effect/SchemaIssue";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
-import { withImportedHistoryContext } from "../importedHistoryContext.ts";
+import { readHistoryContinuation, withImportedHistoryContext } from "../importedHistoryContext.ts";
+import {
+  requireEnforcedExecutionPolicy,
+  requirePersistedEnforcedExecutionPolicy,
+} from "../executionPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import {
   increment,
@@ -511,6 +515,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     return yield* Effect.gen(function* () {
       const adapter = yield* registry.getByInstance(bindingInstanceId);
       const persistedWorkjetConfig = readPersistedWorkjetConfig(input.binding.runtimePayload);
+      yield* requirePersistedEnforcedExecutionPolicy(
+        input.operation,
+        adapter.provider,
+        input.binding.runtimePayload,
+      );
       const hasResumeCursor =
         input.binding.resumeCursor !== null && input.binding.resumeCursor !== undefined;
       const hasActiveSession = yield* adapter.hasSession(input.binding.threadId);
@@ -632,6 +641,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const instanceId = yield* requireBindingInstanceId(input.operation, binding);
     const adapter = yield* registry.getByInstance(instanceId);
 
+    if (input.allowRecovery) {
+      yield* requirePersistedEnforcedExecutionPolicy(
+        input.operation,
+        adapter.provider,
+        binding.runtimePayload,
+      );
+    }
     const hasRequestedSession = yield* adapter.hasSession(input.threadId);
     if (hasRequestedSession) {
       return {
@@ -734,6 +750,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...parsed,
           threadId,
           provider: resolvedProvider,
+          ...(parsed.resumePolicy === "fresh" ? { resumeCursor: undefined } : {}),
         };
         if (!instanceInfo.enabled) {
           return yield* toValidationError(
@@ -743,10 +760,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
         const effectiveResumeCursor =
-          input.resumeCursor ??
-          (persistedBinding?.providerInstanceId === resolvedInstanceId
-            ? persistedBinding.resumeCursor
-            : undefined);
+          input.resumePolicy === "fresh"
+            ? undefined
+            : (input.resumeCursor ??
+              (persistedBinding?.providerInstanceId === resolvedInstanceId
+                ? persistedBinding.resumeCursor
+                : undefined));
         const effectiveCwd =
           input.cwd ??
           (persistedBinding?.providerInstanceId === resolvedInstanceId
@@ -772,6 +791,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
+        yield* requireEnforcedExecutionPolicy(
+          "ProviderService.startSession",
+          adapter.provider,
+          input.workjetConfig,
+        );
+        if (persistedBinding) {
+          yield* requirePersistedEnforcedExecutionPolicy(
+            "ProviderService.startSession",
+            adapter.provider,
+            persistedBinding.runtimePayload,
+          );
+        }
         yield* prepareMcpSession(threadId, resolvedInstanceId, input.workjetConfig, effectiveCwd);
         const session = yield* adapter
           .startSession({
@@ -802,6 +833,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           modelSelection: input.modelSelection,
           workjetConfig: input.workjetConfig,
         });
+        if (input.historyContinuation !== undefined) {
+          yield* directory.upsert({
+            threadId,
+            provider: resolvedProvider,
+            providerInstanceId: resolvedInstanceId,
+            resumeCursor: sessionWithInstance.resumeCursor ?? null,
+            runtimePayload: { historyContinuation: input.historyContinuation },
+          });
+        }
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,
           runtimeMode: input.runtimeMode,
@@ -910,6 +950,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
       const continuationInput = yield* withImportedHistoryContext(input, routed.adapter.provider);
+      const binding = yield* directory.getBinding(input.threadId);
+      const config = Option.isSome(binding)
+        ? readPersistedWorkjetConfig(binding.value.runtimePayload)
+        : undefined;
+      if (
+        config?.schemaVersion === 2 &&
+        config.team?.role === "specialist" &&
+        config.goal?.status === "active" &&
+        routed.adapter.nativeGoal
+      ) {
+        const native = yield* routed.adapter.nativeGoal.get(input.threadId);
+        if (native === null)
+          yield* routed.adapter.nativeGoal.set(input.threadId, config.goal.objective, "active");
+      }
+      const historyContinuation = Option.isSome(binding)
+        ? readHistoryContinuation(binding.value.runtimePayload)
+        : undefined;
       const turn = yield* routed.adapter.sendTurn(continuationInput);
       yield* directory.upsert({
         threadId: input.threadId,
@@ -920,6 +977,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         runtimePayload: {
           ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
           activeTurnId: turn.turnId,
+          ...(historyContinuation !== undefined
+            ? { historyContinuation: { ...historyContinuation, pending: false } }
+            : {}),
           lastRuntimeEvent: "provider.sendTurn",
           lastRuntimeEventAt: yield* nowIso,
         },
@@ -1171,6 +1231,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           resumeCursor?: ProviderSession["resumeCursor"];
           runtimeMode?: ProviderSession["runtimeMode"];
           providerInstanceId?: ProviderSession["providerInstanceId"];
+          model?: ProviderSession["model"];
         } = {};
         overrides.providerInstanceId = dieOnMissingBindingInstanceId(
           "ProviderService.listSessions",
@@ -1189,6 +1250,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               `ProviderService.listSessions: thread '${session.threadId}' is active on provider instance '${session.providerInstanceId}' but persisted binding names '${overrides.providerInstanceId}'.`,
             ),
           );
+        }
+        const persistedModelSelection = readPersistedModelSelection(binding.runtimePayload);
+        if (
+          session.model === undefined &&
+          persistedModelSelection !== undefined &&
+          persistedModelSelection.instanceId === session.providerInstanceId
+        ) {
+          overrides.model = persistedModelSelection.model;
         }
         if (session.resumeCursor === undefined && binding.resumeCursor !== undefined) {
           overrides.resumeCursor = binding.resumeCursor;
@@ -1310,6 +1379,41 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   );
 
   return {
+    nativeGoal: {
+      get: (threadId, options) =>
+        Effect.gen(function* () {
+          const binding = yield* directory.getBinding(threadId);
+          if (Option.isNone(binding)) return undefined;
+          const instanceId = yield* requireBindingInstanceId(
+            "ProviderService.nativeGoal.get",
+            binding.value,
+          );
+          const adapter = yield* registry.getByInstance(instanceId);
+          if (!adapter.nativeGoal) return undefined;
+          const routed = yield* resolveRoutableSession({
+            threadId,
+            operation: "ProviderService.nativeGoal.get",
+            allowRecovery: options?.allowRecovery !== false,
+          });
+          if (!routed.isActive) return null;
+          return yield* routed.adapter.nativeGoal!.get(threadId);
+        }),
+      set: (threadId, objective, status) =>
+        Effect.gen(function* () {
+          const routed = yield* resolveRoutableSession({
+            threadId,
+            operation: "ProviderService.nativeGoal.set",
+            allowRecovery: false,
+          });
+          if (!routed.isActive) return;
+          if (!routed.adapter.nativeGoal)
+            return yield* toValidationError(
+              "ProviderService.nativeGoal.set",
+              "This harness does not expose native goal controls.",
+            );
+          yield* routed.adapter.nativeGoal.set(threadId, objective, status);
+        }),
+    },
     startSession,
     sendTurn,
     interruptTurn,

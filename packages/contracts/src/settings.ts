@@ -209,6 +209,7 @@ export const ClientSettingsSchema = Schema.Struct({
   workjetProductMode: WorkjetProductMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_PRODUCT_MODE)),
   ),
+  workjetModesIntroSeen: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -514,6 +515,31 @@ export const MiniMaxSettings = makeProviderSettingsSchema(
   { order: ["binaryPath", "dataDirectory", "model"] },
 );
 export type MiniMaxSettings = typeof MiniMaxSettings.Type;
+
+export const PiSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("pi").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Pi Code executable on this computer.",
+        providerSettingsForm: { placeholder: "pi", clearWhenEmpty: "omit" },
+      }),
+    ),
+    model: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Preferred model",
+        description: "Choose a model from the connected Workjet gateway accounts.",
+      }),
+    ),
+  },
+  { order: ["binaryPath", "model"] },
+);
+export type PiSettings = typeof PiSettings.Type;
 
 export const GreppySettings = makeProviderSettingsSchema(
   {
@@ -935,5 +961,6 @@ export const ClientSettingsPatch = Schema.Struct({
   timestampFormat: Schema.optionalKey(TimestampFormat),
   wordWrap: Schema.optionalKey(Schema.Boolean),
   workjetProductMode: Schema.optionalKey(WorkjetProductMode),
+  workjetModesIntroSeen: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

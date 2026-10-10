@@ -41,6 +41,7 @@ import { SessionImportBrowser, sessionImportFolderName } from "./SessionImportBr
 import { prepareSessionImportProject, type SessionImportProject } from "./sessionImportProject";
 import { selectAllSessionImportCandidates } from "./sessionImportSelection";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { searchableSetting } from "./settingsSearch";
 
 const PAGE_SIZE = 20;
 
@@ -313,7 +314,7 @@ export function SessionImportSection({
             );
             if (modelSelection === null)
               throw new Error(
-                "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+                "Configure an available account with a concrete model in Models to create this project’s Lumas.",
               );
             const commandId = projectCommandId(project);
             const created = await createProject({
@@ -421,7 +422,7 @@ export function SessionImportSection({
   };
 
   return (
-    <SettingsSection title="Import sessions">
+    <SettingsSection {...searchableSetting("import-sessions")}>
       <SettingsRow
         title="Bring conversations into a project"
         description="Browse Codex and Claude Code conversations, preview their content, and choose where they belong."

@@ -1,6 +1,7 @@
 import {
   CommandId,
   type CtoxWorkjetComputerProjection,
+  type CtoxWorkjetComputerSshKey,
   type CtoxWorkjetComputerControlRequest,
   type DesktopCtoxBridge,
   type WorkjetComputer,
@@ -198,7 +199,7 @@ export function createComputerMembershipStore() {
     instanceId: string,
     enrollment: OperationalComputerEnrollment,
     bridge: DesktopCtoxBridge | undefined,
-  ): Promise<void> => {
+  ): Promise<CtoxWorkjetComputerSshKey | null> => {
     if (
       snapshot.instanceId !== instanceId ||
       snapshot.phase !== "ready" ||
@@ -212,11 +213,15 @@ export function createComputerMembershipStore() {
     try {
       const control = bridge?.requestComputerControl;
       if (!control) throw new Error(membershipError("unsupported"));
+      let sshKey: CtoxWorkjetComputerSshKey | null = null;
       const confirmed = await enrollOperationalComputer(
         enrollment,
         (request) => control(instanceId, request),
         () => CommandId.make(randomUUID()),
         isCurrent,
+        (key) => {
+          sshKey = key;
+        },
       );
       if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
       publish({
@@ -225,6 +230,7 @@ export function createComputerMembershipStore() {
         pendingComputerId: null,
         error: null,
       });
+      return sshKey;
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : membershipError("guest_failed");
       if (isCurrent()) publish({ ...snapshot, pendingComputerId: null, error: message });

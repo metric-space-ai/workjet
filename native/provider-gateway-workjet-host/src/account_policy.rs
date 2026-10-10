@@ -81,7 +81,11 @@ struct State {
     #[serde(default)]
     api_key_fingerprints: BTreeMap<String, String>,
     #[serde(default)]
+    api_key_upstreams: BTreeMap<String, String>,
+    #[serde(default)]
     oauth_fingerprints: BTreeMap<String, String>,
+    #[serde(default)]
+    oauth_login_recoveries: std::collections::BTreeSet<String>,
     #[serde(default)]
     observations: BTreeMap<String, (u16, i64)>,
     #[serde(default)]
@@ -100,6 +104,53 @@ pub struct AccountState {
     conductor: Arc<CooldownConductor>,
 }
 impl AccountState {
+    /// A verified OAuth claim can reuse the current token. Clear only stale
+    /// authentication failures belonging to that provider/token identity.
+    /// Quota, balance, model failures and session affinity remain authoritative.
+    pub fn recover_oauth_claim(
+        &self,
+        provider: &str,
+        token: &[u8],
+    ) -> Result<(), CooldownStoreError> {
+        let fingerprint = format!("{:x}", Sha256::digest(token));
+        let prefix = format!("{}:", provider.trim().to_ascii_lowercase());
+        let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
+        let identities: std::collections::BTreeSet<_> = state
+            .oauth_fingerprints
+            .iter()
+            .filter(|(identity, saved)| identity.starts_with(&prefix) && **saved == fingerprint)
+            .map(|(identity, _)| identity.clone())
+            .collect();
+        if identities.is_empty() {
+            return Ok(());
+        }
+        let mut next = state.clone();
+        next.cooldowns.retain(|record| {
+            !(identities.contains(&account_key(&record.provider, &record.auth_id))
+                && matches!(
+                    record
+                        .last_error
+                        .as_ref()
+                        .and_then(|error| error.http_status),
+                    Some(401 | 403)
+                ))
+        });
+        next.observations.retain(|identity, (status, _)| {
+            !(identities.contains(identity) && matches!(*status, 401 | 403))
+        });
+        // The reload consumes this marker after the old process has exited.
+        next.oauth_login_recoveries.extend(identities);
+        if next.cooldowns.len() == state.cooldowns.len()
+            && next.observations.len() == state.observations.len()
+            && next.oauth_login_recoveries == state.oauth_login_recoveries
+        {
+            return Ok(());
+        }
+        self.persist(&next)?;
+        *state = next;
+        Ok(())
+    }
+
     /// OAuth token replacement keeps the stable account's quota and session affinity.
     /// Only a one-way token fingerprint is stored; old authentication outcomes expire.
     pub fn bind_oauth(
@@ -111,13 +162,32 @@ impl AccountState {
         let identity = account_key(provider, account);
         let fingerprint = format!("{:x}", Sha256::digest(token));
         let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
-        if state.oauth_fingerprints.get(&identity) == Some(&fingerprint) {
+        let unchanged = state.oauth_fingerprints.get(&identity) == Some(&fingerprint);
+        if unchanged && !state.oauth_login_recoveries.contains(&identity) {
             return Ok(());
         }
         let mut next = state.clone();
-        next.cooldowns
-            .retain(|r| !(r.provider.eq_ignore_ascii_case(provider) && r.auth_id == account));
-        next.observations.remove(&identity);
+        next.cooldowns.retain(|record| {
+            let selected =
+                record.provider.eq_ignore_ascii_case(provider) && record.auth_id == account;
+            let auth_failure = matches!(
+                record
+                    .last_error
+                    .as_ref()
+                    .and_then(|error| error.http_status),
+                Some(401 | 403)
+            );
+            !(selected && (!unchanged || auth_failure))
+        });
+        if !unchanged
+            || next
+                .observations
+                .get(&identity)
+                .is_some_and(|(status, _)| matches!(*status, 401 | 403))
+        {
+            next.observations.remove(&identity);
+        }
+        next.oauth_login_recoveries.remove(&identity);
         next.oauth_fingerprints.insert(identity, fingerprint);
         self.persist(&next)?;
         *state = next;
@@ -131,19 +201,58 @@ impl AccountState {
         account: &str,
         key: &[u8],
     ) -> Result<(), CooldownStoreError> {
+        self.bind_api_key_target(provider, account, key, None)
+    }
+
+    /// Health belongs to a credential at one upstream, while session affinity belongs to the account.
+    pub fn bind_api_key_target(
+        &self,
+        provider: &str,
+        account: &str,
+        key: &[u8],
+        upstream: Option<&str>,
+    ) -> Result<(), CooldownStoreError> {
         let identity = account_key(provider, account);
         let fingerprint = format!("{:x}", Sha256::digest(key));
         let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
-        if state.api_key_fingerprints.get(&identity) == Some(&fingerprint) {
+        let previous_key = state.api_key_fingerprints.get(&identity);
+        // Legacy Z.ai accounts used the platform default before plan discovery.
+        // Only that known default-to-coding repair may migrate unscoped legacy health.
+        let previous_upstream = state
+            .api_key_upstreams
+            .get(&identity)
+            .map(String::as_str)
+            .or_else(|| {
+                (previous_key.is_some()
+                    && provider == "zai"
+                    && upstream == Some("https://api.z.ai/api/coding/paas/v4"))
+                .then_some("https://api.z.ai/api/paas/v4")
+            });
+        let target_changed = previous_upstream
+            .zip(upstream)
+            .is_some_and(|(old, new)| old != new);
+        if previous_key == Some(&fingerprint)
+            && !target_changed
+            && upstream.is_none_or(|target| {
+                state
+                    .api_key_upstreams
+                    .get(&identity)
+                    .is_some_and(|old| old == target)
+            })
+        {
             return Ok(());
         }
         let mut next = state.clone();
-        if next.api_key_fingerprints.contains_key(&identity) {
+        if previous_key.is_some() && (previous_key != Some(&fingerprint) || target_changed) {
             next.cooldowns
                 .retain(|r| !(r.provider.eq_ignore_ascii_case(provider) && r.auth_id == account));
             next.quotas.remove(&identity);
             next.balances.remove(&identity);
             next.observations.remove(&identity);
+        }
+        if let Some(upstream) = upstream {
+            next.api_key_upstreams
+                .insert(identity.clone(), upstream.to_owned());
         }
         next.api_key_fingerprints.insert(identity, fingerprint);
         self.persist(&next)?;

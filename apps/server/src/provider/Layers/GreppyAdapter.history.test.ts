@@ -11,6 +11,8 @@ import {
   type ProviderImportedMessage,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Exit from "effect/Exit";
 import * as Stream from "effect/Stream";
 import type { AcpSessionRuntime } from "../acp/AcpSessionRuntime.ts";
@@ -20,6 +22,8 @@ const probe = vi.hoisted(() => ({
   capable: true,
   omitCapabilities: false,
   validAcknowledgement: true,
+  promptGate: undefined as Deferred.Deferred<void> | undefined,
+  promptEntered: undefined as Deferred.Deferred<void> | undefined,
 
   calls: [] as Array<{ method: string; payload?: unknown }>,
 }));
@@ -55,9 +59,11 @@ vi.mock("../acp/GreppyAcpSupport.ts", () => ({
           };
         }),
       prompt: (payload: unknown) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           probe.calls.push({ method: "session/prompt", payload });
-          return { stopReason: "end_turn" };
+          if (probe.promptEntered) yield* Deferred.succeed(probe.promptEntered, undefined);
+          if (probe.promptGate) yield* Deferred.await(probe.promptGate);
+          return { stopReason: "end_turn" as const };
         }),
     } as unknown as AcpSessionRuntime["Service"]),
 }));
@@ -71,6 +77,7 @@ const withAdapter = <A, E>(
     adapter: Effect.Success<ReturnType<typeof makeGreppyAdapter>>,
     threadId: ThreadId,
   ) => Effect.Effect<A, E>,
+  dispatchPromptInBackground = false,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -80,11 +87,12 @@ const withAdapter = <A, E>(
         {
           ...DEFAULT_SERVER_SETTINGS.providers.greppy,
           enabled: true,
-          model: "fixture",
+          model: "claude-opus-5-5",
           endpoint: "http://127.0.0.1:18147",
         },
         {
           instanceId: ProviderInstanceId.make("greppy"),
+          dispatchPromptInBackground,
           resolveSessionEnvironment: () => Effect.succeed({}),
         },
       );
@@ -223,3 +231,43 @@ it.effect("accepts omitted capabilities at startup and refuses imported turns ex
     ),
   );
 });
+
+it.effect("acknowledges routed dispatch while the ACP prompt remains pending", () =>
+  Effect.gen(function* () {
+    const gate = yield* Deferred.make<void>();
+    const entered = yield* Deferred.make<void>();
+    probe.promptGate = gate;
+    probe.promptEntered = entered;
+    return yield* withAdapter(
+      (adapter, threadId) =>
+        Effect.gen(function* () {
+          const completed = yield* adapter.streamEvents.pipe(
+            Stream.filter((event) => event.type === "turn.completed"),
+            Stream.take(1),
+            Stream.runCollect,
+            Effect.forkChild({ startImmediately: true }),
+          );
+          const receipt = yield* adapter.sendTurn({ threadId, input: "Read-only routed turn" });
+          yield* Deferred.await(entered);
+          expect(receipt.threadId).toBe(threadId);
+          expect((yield* adapter.listSessions())[0]?.status).toBe("running");
+          const overlap = yield* adapter
+            .sendTurn({ threadId, input: "Overlapping turn" })
+            .pipe(Effect.flip);
+          expect(overlap.message).toContain("already answering");
+          yield* Deferred.succeed(gate, undefined);
+          const events = yield* Fiber.join(completed);
+          expect(events[0]?.type).toBe("turn.completed");
+          expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
+        }),
+      true,
+    );
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        probe.promptGate = undefined;
+        probe.promptEntered = undefined;
+      }),
+    ),
+  ),
+);

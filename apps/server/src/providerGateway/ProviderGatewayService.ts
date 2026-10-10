@@ -18,6 +18,8 @@ import {
   type WorkjetGatewayUsage,
   type WorkjetGatewayUsageInput,
   type WorkjetGatewayModelDiscovery,
+  type WorkjetGatewayAccountModelsInput,
+  type WorkjetGatewayAccountModels,
   type WorkjetGatewayOauthPollInput,
   type WorkjetGatewayOauthPollResult,
   type WorkjetGatewayOauthSession,
@@ -41,6 +43,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Schedule from "effect/Schedule";
 
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -60,8 +63,6 @@ import {
   type ProviderGatewayConfiguration,
 } from "./ProviderGatewayConfig.ts";
 import {
-  GATEWAY_MODEL_CHANNELS,
-  decodeModelDefinitions,
   decodeRuntimeConfigSummary,
   decodeRuntimeStatus,
   decodeAccountHealth,
@@ -72,6 +73,16 @@ import {
   USAGE_JOURNAL_MAX_BYTES,
 } from "./ProviderGatewayUsage.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
+import { decodeLiveProviderModels } from "./LiveProviderCatalog.ts";
+import { makePublicModelCatalogCache } from "./PublicModelCatalogCache.ts";
+import type { ApiKeyModelConnection } from "./ApiKeyModelConnection.ts";
+import {
+  applyProviderModelSelection,
+  projectProviderModelSelection,
+  providerModelSelections,
+  reconcileAccountModelRepairs,
+  retainProviderModelSelection,
+} from "./ProviderModelSelection.ts";
 import {
   decodeGatewayGrants,
   emptyGatewayGrants,
@@ -81,6 +92,9 @@ import {
 } from "./ProviderGatewayGrants.ts";
 
 import { makeModelChecks } from "./ProviderGatewayModelChecks.ts";
+import { KIMI_BASE_URLS, type KimiConnection } from "./KimiConnection.ts";
+import { ZAI_BASE_URLS, type ZaiConnection } from "./ZaiConnection.ts";
+import { repairClaudeModelIds } from "./ClaudeConnection.ts";
 
 const CONFIG_MAX_BYTES = 256 * 1024;
 const READINESS_MAX_BYTES = 4 * 1024;
@@ -111,7 +125,29 @@ export interface GatewayHostProcess {
 }
 
 export interface ProviderGatewayPlatform {
+  readonly publicModelCatalog?: () => Promise<unknown>;
+  readonly discoverClaudeModels?: (
+    accessToken: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
+  readonly discoverKimiConnection?: (
+    apiKey: string,
+    preferredBaseUrl?: string,
+    signal?: AbortSignal,
+  ) => Promise<KimiConnection | undefined>;
+  readonly discoverApiKeyModels?: (
+    provider: "minimax" | "xai",
+    apiKey: string,
+    preferredBaseUrl?: string,
+    signal?: AbortSignal,
+  ) => Promise<ApiKeyModelConnection | undefined>;
   readonly fingerprint?: ((value: string) => string) | undefined;
+  readonly discoverZaiConnection?: (
+    apiKey: string,
+    preferredModels: ReadonlyArray<string>,
+    preferredBaseUrl?: string,
+    signal?: AbortSignal,
+  ) => Promise<ZaiConnection | undefined>;
   readonly providerModelCheck?: (
     endpoint: string,
     provider: WorkjetGatewayProvider,
@@ -232,14 +268,16 @@ export interface ProviderGatewayServiceShape {
     input: WorkjetGatewayUsageInput,
   ) => Effect.Effect<WorkjetGatewayUsage, WorkjetGatewayOperationError>;
   /**
-   * Models the host's own catalog serves per provider, merged with the models
-   * recorded on the accounts. The host performs no upstream capability query,
-   * so every entry is labelled with where it came from.
+   * Live llm.ctox.dev suggestions plus separately labelled account configuration.
+   * Neither source proves this account's inference health.
    */
   readonly discoverModels: () => Effect.Effect<
     WorkjetGatewayModelDiscovery,
     WorkjetGatewayOperationError
   >;
+  readonly accountModels: (
+    input: WorkjetGatewayAccountModelsInput,
+  ) => Effect.Effect<WorkjetGatewayAccountModels, WorkjetGatewayOperationError>;
   /** Edits the host-wide selection strategy and per-account pool membership. */
   readonly updateRouting: (
     input: WorkjetGatewayUpdateRoutingInput,
@@ -407,6 +445,16 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     );
     const hostPidPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-host.pid.json");
     const grantsPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-grants.json");
+    const publicCatalogPath = platform.joinPath(
+      serverConfig.stateDir,
+      "provider-model-catalog.json",
+    );
+    const publicCatalogCache = makePublicModelCatalogCache({
+      now: platform.now,
+      read: () => platform.readText(publicCatalogPath, 128 * 1024),
+      write: (value) => platform.writePrivateText(publicCatalogPath, value),
+      fetch: async () => platform.publicModelCatalog?.(),
+    });
     const grantsMutex = yield* Semaphore.make(1);
     const executable = options.executable ?? platform.defaultExecutable(serverConfig.stateDir);
     const startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
@@ -544,6 +592,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         );
         if (account === undefined || !account.enabled)
           return { ...unavailable, unavailableReason: "account-unavailable" as const };
+        if (
+          account.provider === "kimi" &&
+          isApiKeyAccount(account) &&
+          account.upstreamBaseUrl === undefined
+        )
+          return { ...unavailable, unavailableReason: "unverified-response" as const };
         return platform.providerModelCheck(
           currentStatus.providerEndpoint,
           account.provider,
@@ -1040,19 +1094,6 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       });
     };
 
-    /**
-     * Models a fresh OAuth account serves, when the provider reported none.
-     * The wildcard patterns are the ones the operator's own configuration
-     * used; without them a new account is "In rotation" but serves nothing.
-     */
-    const DEFAULT_OAUTH_ACCOUNT_MODELS: Partial<
-      Record<WorkjetGatewayOauthProvider, ReadonlyArray<string>>
-    > = {
-      claude: ["claude-*"],
-      codex: ["gpt-*", "codex-*"],
-      xai: ["grok-*"],
-    };
-
     const persistClaimedAccounts = async (
       claimed: ReadonlyArray<ClaimedCredential>,
       targetAccountId?: string,
@@ -1129,10 +1170,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           enabled: true,
           priority: 0,
           weight: 1,
-          models:
-            credential.models.length > 0
-              ? credential.models
-              : (DEFAULT_OAUTH_ACCOUNT_MODELS[credential.provider] ?? []),
+          // OAuth identity alone does not report any concrete model IDs.
+          // Keep an absent list empty instead of inventing routing patterns.
+          models: credential.models,
         };
         if (credential.provider === "claude") {
           const accessTokenSecret = reference("access-token");
@@ -1177,16 +1217,22 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }
         createdIds.push(id);
       }
-      const candidate = {
-        schemaVersion: 1,
-        defaultProvider: existing?.defaultProvider ?? claimed[0]?.provider ?? "claude",
+      const candidate = retainProviderModelSelection(
+        {
+          schemaVersion: 1,
+          defaultProvider: existing?.defaultProvider ?? claimed[0]?.provider ?? "claude",
+          accounts,
+          ...(existing?.providerModels === undefined
+            ? {}
+            : { providerModels: existing.providerModels }),
+          pools: existing?.pools ?? [],
+          routes: existing?.routes ?? [],
+          routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
+          ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
+          ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+        },
         accounts,
-        pools: existing?.pools ?? [],
-        routes: existing?.routes ?? [],
-        routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
-        ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
-        ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
-      };
+      );
       const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));
       if (decoded === undefined) throw safeError("invalid-configuration");
       // Validate the entire configuration and snapshot existing secrets before
@@ -1260,6 +1306,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         return { schemaVersion: 1, pending: false, failed: true, completedAccountIds: [] };
       }
       let claim: unknown;
+      // Stop old probes before the native one-time claim records auth recovery.
+      await modelChecks.cancel();
       try {
         claim = await platform.managementRequest(
           endpoint,
@@ -1325,6 +1373,72 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       }
       const apiReplacement =
         replacement !== undefined && isApiKeyAccount(replacement) ? replacement : undefined;
+      let apiConnection: ApiKeyModelConnection | undefined;
+      let discoveredApiModels: ReadonlyArray<string> | undefined;
+      if (input.provider === "minimax" || input.provider === "xai") {
+        apiConnection = await platform
+          .discoverApiKeyModels?.(input.provider, apiKey, apiReplacement?.upstreamBaseUrl)
+          .catch(() => undefined);
+        if (apiConnection === undefined) throw safeError("api-key-model-list-unavailable");
+        if (input.models?.some((model) => !apiConnection!.models.includes(model)))
+          throw safeError("invalid-model-selection");
+        const selected =
+          existing === undefined
+            ? undefined
+            : providerModelSelections(existing).find((entry) => entry.provider === input.provider);
+        let preferredModels = input.models?.length
+          ? input.models
+          : (selected?.modelIds ?? apiReplacement?.models);
+        if (preferredModels === undefined) {
+          const catalog = await platform.publicModelCatalog?.().catch(() => undefined);
+          preferredModels = decodeLiveProviderModels(catalog, input.provider, platform.now()) ?? [];
+        }
+        discoveredApiModels = preferredModels.filter((model) =>
+          apiConnection!.models.includes(model),
+        );
+      }
+      const kimiConnection =
+        input.provider === "kimi"
+          ? await platform.discoverKimiConnection?.(apiKey, apiReplacement?.upstreamBaseUrl)
+          : undefined;
+      let zaiConnection: ZaiConnection | undefined;
+      if (input.provider === "zai" && platform.discoverZaiConnection !== undefined) {
+        let preferredModels = input.models?.length ? input.models : (apiReplacement?.models ?? []);
+        if (preferredModels.length === 0) {
+          const catalog = await platform.publicModelCatalog?.().catch(() => undefined);
+          preferredModels = decodeLiveProviderModels(catalog, "zai", platform.now()) ?? [];
+        }
+        zaiConnection = await platform.discoverZaiConnection(
+          apiKey,
+          preferredModels,
+          apiReplacement?.upstreamBaseUrl,
+        );
+        const zaiModels = zaiConnection?.models;
+        if (zaiModels !== undefined && input.models?.some((id) => !zaiModels.includes(id)))
+          throw safeError("invalid-configuration");
+      }
+      if (input.provider === "kimi" && kimiConnection === undefined)
+        throw safeError(
+          platform.discoverKimiConnection === undefined
+            ? "management-unavailable"
+            : "kimi-key-not-accepted",
+        );
+      if (
+        kimiConnection !== undefined &&
+        input.models?.some((id) => !kimiConnection.models.includes(id))
+      )
+        throw safeError("invalid-configuration");
+      const retainedKimiModels =
+        kimiConnection !== undefined &&
+        apiReplacement?.upstreamBaseUrl === kimiConnection.upstreamBaseUrl
+          ? apiReplacement.models.filter((id) => kimiConnection.models.includes(id))
+          : [];
+      const discoveredKimiModels =
+        retainedKimiModels.length > 0 ? retainedKimiModels : kimiConnection?.models;
+      const discoveredZaiModels =
+        zaiConnection === undefined
+          ? undefined
+          : apiReplacement?.models.filter((id) => zaiConnection.models.includes(id));
       const usedIds = new Set(accounts.map((account) => account.id));
       const base = `${input.provider}-${secretSlug(input.label)}`;
       let id = replacement?.id ?? base;
@@ -1346,30 +1460,62 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         priority: replacement?.priority ?? 0,
         weight: replacement?.weight ?? 1,
         models:
-          input.models ??
-          replacement?.models ??
-          accounts.find((account) => account.provider === input.provider)?.models ??
-          [],
+          input.models !== undefined &&
+          (!["kimi", "zai", "minimax", "xai"].includes(input.provider) || input.models.length > 0)
+            ? input.models
+            : (discoveredApiModels ??
+              discoveredKimiModels ??
+              (discoveredZaiModels?.length
+                ? discoveredZaiModels
+                : zaiConnection === undefined
+                  ? undefined
+                  : [zaiConnection.probeModel]) ??
+              replacement?.models ??
+              accounts.find((account) => account.provider === input.provider)?.models ??
+              []),
         apiKeySecret,
-        ...(apiReplacement?.upstreamBaseUrl
-          ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
-          : {}),
+        ...(replacement?.excludedModels === undefined
+          ? {}
+          : { excludedModels: replacement.excludedModels }),
+        ...(replacement?.legacyModelIds === undefined
+          ? {}
+          : { legacyModelIds: replacement.legacyModelIds }),
+        ...(apiConnection !== undefined
+          ? { availableModelIds: apiConnection.models }
+          : kimiConnection !== undefined
+            ? { availableModelIds: kimiConnection.models }
+            : {}),
+        ...(kimiConnection !== undefined
+          ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl, kimiPlan: kimiConnection.plan }
+          : apiConnection !== undefined
+            ? { upstreamBaseUrl: apiConnection.upstreamBaseUrl }
+            : zaiConnection !== undefined
+              ? { upstreamBaseUrl: zaiConnection.upstreamBaseUrl }
+              : apiReplacement?.upstreamBaseUrl
+                ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
+                : {}),
         ...(suffix ? { credentialSuffix: suffix } : {}),
       };
       if (replacement === undefined) accounts.push(nextAccount);
       else accounts[accounts.indexOf(replacement)] = nextAccount;
-      const candidate = {
-        schemaVersion: 1,
-        // The first account of any kind also becomes the default provider, so
-        // a gateway whose only account is an API-key account still routes.
-        defaultProvider: existing?.accounts.length ? existing.defaultProvider : input.provider,
+      const candidate = retainProviderModelSelection(
+        {
+          schemaVersion: 1,
+          // The first account of any kind also becomes the default provider, so
+          // a gateway whose only account is an API-key account still routes.
+          defaultProvider: existing?.accounts.length ? existing.defaultProvider : input.provider,
+          accounts,
+          ...(existing?.providerModels === undefined
+            ? {}
+            : { providerModels: existing.providerModels }),
+          pools: existing?.pools ?? [],
+          routes: existing?.routes ?? [],
+          routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
+          ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
+          ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
+        },
         accounts,
-        pools: existing?.pools ?? [],
-        routes: existing?.routes ?? [],
-        routingStrategy: existing?.routingStrategy ?? WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
-        ...(existing?.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
-        ...(existing?.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
-      };
+      );
       const serialized = `${JSON.stringify(candidate, null, 2)}\n`;
       // Belt and braces: the configuration document must never contain the key.
       if (
@@ -1446,6 +1592,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         schemaVersion: 1,
         defaultProvider,
         accounts,
+        ...(existing.providerModels === undefined
+          ? {}
+          : { providerModels: existing.providerModels }),
         pools,
         routes,
         routingStrategy: existing.routingStrategy,
@@ -1553,53 +1702,25 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
     };
 
-    /**
-     * Asks the host which models it serves per provider.
-     *
-     * The host answers from `GET /v0/management/model-definitions/<channel>`,
-     * which is its own pinned catalog compiled into the binary. It makes NO
-     * upstream capability call for this — not at request time and not on the
-     * management surface — so every model is labelled `gateway-catalog` and the
-     * models recorded on the accounts are merged in as `account-configuration`.
-     * Neither label may be presented as a live provider answer. A provider the
-     * host has no channel for (zai, minimax) reports `catalogAvailable: false`
-     * and lists only its configured models.
-     */
+    /** Public catalog suggestions; cached observations never authorize a new model ID. */
     const runDiscoverModels = async (): Promise<WorkjetGatewayModelDiscovery> => {
-      const { endpoint, key } = requireManagement();
+      requireManagement();
       const configuration = await loadConfiguration();
-      const observedAtMs = Math.max(0, Math.trunc(platform.now()));
+      const liveCatalog = await publicCatalogCache.read();
+      const observedAtMs = Math.max(
+        0,
+        Math.trunc(liveCatalog === undefined ? platform.now() : Date.parse(liveCatalog.checkedAt)),
+      );
       const providers: Array<WorkjetGatewayProviderModels> = [];
       for (const provider of GATEWAY_PROVIDERS) {
         const accounts = configuration.accounts.filter(
           (account) => account.provider === provider && account.enabled,
         );
-        if (accounts.length === 0) continue;
-        const channel = GATEWAY_MODEL_CHANNELS[provider];
-        let catalog: ReadonlyArray<{ readonly id: string; readonly displayName: string }> = [];
-        let catalogAvailable = false;
-        if (channel !== null) {
-          try {
-            const response = await platform.managementGet(
-              endpoint,
-              `/v0/management/model-definitions/${encodeURIComponent(channel)}`,
-              key,
-              MANAGEMENT_MAX_BYTES,
-            );
-            const decoded = decodeModelDefinitions(response, channel);
-            if (decoded !== undefined) {
-              catalog = decoded;
-              catalogAvailable = true;
-            }
-          } catch {
-            // A channel the host refuses is reported as unavailable for this
-            // provider; it must not fail the whole discovery.
-            catalogAvailable = false;
-          }
-        }
-        const models: Array<WorkjetGatewayDiscoveredModel> = catalog.map((model) => ({
-          id: model.id,
-          displayName: model.displayName,
+        const liveModels = decodeLiveProviderModels(liveCatalog, provider, platform.now(), true);
+        if (accounts.length === 0 && liveModels === undefined) continue;
+        const models: Array<WorkjetGatewayDiscoveredModel> = (liveModels ?? []).map((id) => ({
+          id,
+          displayName: id,
           source: "gateway-catalog" as const,
         }));
         const known = new Set(models.map((model) => model.id));
@@ -1612,12 +1733,85 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }
         providers.push({
           provider,
-          channel,
-          catalogAvailable,
+          channel: null,
+          catalogAvailable: liveModels !== undefined,
           models: models.slice(0, 256),
         });
       }
       return { schemaVersion: 1, observedAtMs, providers };
+    };
+
+    /** Read-only live metadata; stale account or credential completions are discarded. */
+    const runAccountModels = async (
+      input: WorkjetGatewayAccountModelsInput,
+    ): Promise<WorkjetGatewayAccountModels> => {
+      requireManagement();
+      const unavailable = (
+        reason: NonNullable<WorkjetGatewayAccountModels["reason"]>,
+      ): WorkjetGatewayAccountModels => ({
+        accountId: input.accountId,
+        checkedAtMs: Math.max(0, Math.trunc(platform.now())),
+        state: "unavailable",
+        reason,
+        modelIds: [],
+      });
+      const configuration = await loadConfiguration();
+      const account = configuration.accounts.find((candidate) => candidate.id === input.accountId);
+      if (account === undefined) return unavailable("account-unavailable");
+      if (!account.enabled) return unavailable("account-disabled");
+      if (account.provider !== "claude" || platform.discoverClaudeModels === undefined)
+        return unavailable("provider-unsupported");
+      const readToken = async () => {
+        const secret = await runPromise(secrets.get(secretStoreName(account.accessTokenSecret)));
+        return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
+      };
+      const token = await readToken();
+      if (token === undefined || !isAcceptableApiKey(token))
+        return unavailable("catalog-unavailable");
+      const models = await platform
+        .discoverClaudeModels(token, AbortSignal.timeout(8_000))
+        .catch(() => undefined);
+      const current = (await loadConfiguration()).accounts.find(
+        (candidate) => candidate.id === input.accountId,
+      );
+      if (JSON.stringify(current) !== JSON.stringify(account) || (await readToken()) !== token)
+        return unavailable("account-changed");
+      if (models === undefined || models.length === 0) return unavailable("catalog-unavailable");
+      return {
+        accountId: input.accountId,
+        checkedAtMs: Math.max(0, Math.trunc(platform.now())),
+        state: "observed",
+        reason: null,
+        modelIds: [...new Set(models)],
+      };
+    };
+
+    /** User edits and legacy repairs share the account's authenticated model evidence. */
+    const repairClaudeAccountModels = async (
+      account: GatewayAccount,
+      deadline: AbortSignal,
+    ): Promise<GatewayAccount> => {
+      if (
+        deadline.aborted ||
+        account.provider !== "claude" ||
+        platform.discoverClaudeModels === undefined ||
+        !account.models.some((id) => id.startsWith("claude-") && /\.(?=\d)/.test(id))
+      )
+        return account;
+      const secret = await runPromise(
+        secrets.get(secretStoreName(account.accessTokenSecret)),
+      ).catch(() => Option.none<Uint8Array>());
+      if (Option.isNone(secret)) return account;
+      const token = new TextDecoder().decode(secret.value);
+      if (!isAcceptableApiKey(token)) return account;
+      const available = await platform
+        .discoverClaudeModels(token.trim(), deadline)
+        .catch(() => undefined);
+      if (available === undefined || deadline.aborted) return account;
+      const models = repairClaudeModelIds(account.models, available);
+      return JSON.stringify(models) === JSON.stringify(account.models)
+        ? account
+        : { ...account, models };
     };
 
     /**
@@ -1629,10 +1823,80 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
      * strategy or a membership. That is the same path the OAuth claim and the
      * API-key add already take: write the file, then stop and start the host.
      */
+    const prepareProviderSelection = async (
+      configuration: ProviderGatewayConfiguration,
+      updates: NonNullable<WorkjetGatewayUpdateRoutingInput["providers"]>,
+    ): Promise<ProviderGatewayConfiguration> => {
+      if (updates.length === 0) return applyProviderModelSelection(configuration, []);
+      if (new Set(updates.map((update) => update.provider)).size !== updates.length)
+        throw safeError("invalid-configuration");
+      const selected = providerModelSelections(configuration);
+      const publicCatalog = await platform.publicModelCatalog?.().catch(() => undefined);
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(8_000);
+      for (const [index, account] of accounts.entries()) {
+        if (deadline.aborted || !updates.some((update) => update.provider === account.provider))
+          continue;
+        if (account.provider === "claude" && platform.discoverClaudeModels !== undefined) {
+          const secret = await runPromise(
+            secrets.get(secretStoreName(account.accessTokenSecret)),
+          ).catch(() => Option.none<Uint8Array>());
+          if (Option.isNone(secret)) continue;
+          const models = await platform
+            .discoverClaudeModels(new TextDecoder().decode(secret.value), deadline)
+            .catch(() => undefined);
+          if (models !== undefined && !deadline.aborted)
+            accounts[index] = { ...account, availableModelIds: models };
+        } else if (
+          account.provider === "kimi" &&
+          isApiKeyAccount(account) &&
+          platform.discoverKimiConnection !== undefined
+        ) {
+          const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
+            () => Option.none<Uint8Array>(),
+          );
+          if (Option.isNone(secret)) continue;
+          const connection = await platform
+            .discoverKimiConnection(
+              new TextDecoder().decode(secret.value),
+              account.upstreamBaseUrl,
+              deadline,
+            )
+            .catch(() => undefined);
+          if (connection !== undefined && !deadline.aborted)
+            accounts[index] = {
+              ...account,
+              availableModelIds: connection.models,
+              upstreamBaseUrl: connection.upstreamBaseUrl,
+              kimiPlan: connection.plan,
+            };
+        }
+      }
+      for (const update of updates) {
+        const known = new Set(
+          selected.find((entry) => entry.provider === update.provider)?.modelIds ?? [],
+        );
+        const live = new Set([
+          ...(decodeLiveProviderModels(publicCatalog, update.provider, platform.now()) ?? []),
+          ...accounts
+            .filter((account) => account.provider === update.provider)
+            .flatMap((account) => account.availableModelIds ?? []),
+        ]);
+        if (update.modelIds.some((id) => !known.has(id) && !live.has(id)))
+          throw safeError("invalid-configuration");
+      }
+      return applyProviderModelSelection({ ...configuration, accounts }, updates);
+    };
+
     const runUpdateRouting = async (
       input: WorkjetGatewayUpdateRoutingInput,
     ): Promise<WorkjetGatewayUpdateRoutingResult> => {
       const existing = await loadConfiguration();
+      const draft =
+        input.providers !== undefined ||
+        input.accounts.some((update) => update.excludedModels !== undefined)
+          ? await prepareProviderSelection(existing, input.providers ?? [])
+          : existing;
       const updates = new Map(input.accounts.map((update) => [String(update.accountId), update]));
       // An edit naming an account that does not exist is a stale client, not a
       // no-op: refuse it instead of silently applying the rest.
@@ -1643,31 +1907,54 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       ) {
         throw safeError("invalid-configuration");
       }
-      const accounts = existing.accounts.map((account) => {
+      const accounts: Array<GatewayAccount> = [];
+      const deadline = AbortSignal.timeout(8_000);
+      for (const account of draft.accounts) {
         const update = updates.get(account.id);
-        return update === undefined
-          ? account
-          : {
-              ...account,
-              ...(update.label !== undefined ? { label: update.label } : {}),
-              enabled: update.enabled,
-              priority: update.priority,
-              weight: update.weight,
-              // Omitted means "not editing this list", which must stay
-              // distinct from an empty array clearing it.
-              ...(update.models === undefined ? {} : { models: [...update.models] }),
-            };
-      });
-      const candidate = {
-        schemaVersion: 1,
-        defaultProvider: existing.defaultProvider,
+        const selection = draft.providerModels?.find(
+          (entry) => entry.provider === account.provider,
+        );
+        if (
+          selection !== undefined &&
+          update?.models?.some((id) => !selection.modelIds.includes(id))
+        )
+          throw safeError("invalid-configuration");
+        if (update?.excludedModels !== undefined && selection === undefined)
+          throw safeError("invalid-configuration");
+        const next =
+          update === undefined
+            ? account
+            : {
+                ...account,
+                ...(update.label !== undefined ? { label: update.label } : {}),
+                enabled: update.enabled,
+                priority: update.priority,
+                weight: update.weight,
+                // Omitted means "not editing this list", which must stay
+                // distinct from an empty array clearing it.
+                ...(update.models === undefined ? {} : { models: [...update.models] }),
+                ...(update.excludedModels !== undefined
+                  ? { excludedModels: [...new Set(update.excludedModels)] }
+                  : selection !== undefined && update.models !== undefined
+                    ? {
+                        excludedModels: [
+                          ...(account.excludedModels ?? []).filter(
+                            (id) => !selection.modelIds.includes(id),
+                          ),
+                          ...selection.modelIds.filter((id) => !update.models!.includes(id)),
+                        ],
+                      }
+                    : {}),
+              };
+        accounts.push(
+          update?.models !== undefined ? await repairClaudeAccountModels(next, deadline) : next,
+        );
+      }
+      const candidate = projectProviderModelSelection({
+        ...draft,
         accounts,
-        pools: existing.pools,
-        routes: existing.routes,
         routingStrategy: input.strategy,
-        ...(existing.providerPort !== undefined ? { providerPort: existing.providerPort } : {}),
-        ...(existing.antigravityOauth ? { antigravityOauth: existing.antigravityOauth } : {}),
-      };
+      });
       const serialized = `${JSON.stringify(candidate, null, 2)}\n`;
       // Disabling the default provider's last enabled account would produce a
       // configuration the host refuses to start on; decoding catches that here
@@ -1681,14 +1968,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const reloadRequired =
         input.strategy !== existing.routingStrategy ||
         existing.accounts.some((account) => {
-          const update = updates.get(account.id);
+          const next = decoded.accounts.find((candidate) => candidate.id === account.id)!;
           return (
-            update !== undefined &&
-            (update.enabled !== account.enabled ||
-              update.priority !== account.priority ||
-              update.weight !== account.weight ||
-              (update.models !== undefined &&
-                JSON.stringify(update.models) !== JSON.stringify(account.models)))
+            next.enabled !== account.enabled ||
+            next.priority !== account.priority ||
+            next.weight !== account.weight ||
+            JSON.stringify(next.models) !== JSON.stringify(account.models) ||
+            (isApiKeyAccount(next) &&
+              isApiKeyAccount(account) &&
+              next.upstreamBaseUrl !== account.upstreamBaseUrl)
           );
         });
       // Display-name edits do not interrupt an in-flight inference stream.
@@ -1700,6 +1988,148 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         // status() carries the failure reason; the edit itself is persisted.
       }
       return { schemaVersion: 1, catalog: currentCatalog };
+    };
+
+    /** Adopts legacy Kimi keys in place; no secret write, rotation or new account. */
+    const runRepairKimiConnections = async (accountId?: string): Promise<void> => {
+      if (platform.discoverKimiConnection === undefined) return;
+      const configuration = await loadConfiguration();
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(8_000);
+      let changed = false;
+      for (const [index, account] of accounts.entries()) {
+        if (
+          deadline.aborted ||
+          account.provider !== "kimi" ||
+          !account.enabled ||
+          !isApiKeyAccount(account) ||
+          (account.upstreamBaseUrl !== undefined &&
+            !(KIMI_BASE_URLS as ReadonlyArray<string>).includes(account.upstreamBaseUrl)) ||
+          (accountId !== undefined && account.id !== accountId)
+        )
+          continue;
+        const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
+          () => Option.none<Uint8Array>(),
+        );
+        if (Option.isNone(secret)) continue;
+        const apiKey = new TextDecoder().decode(secret.value);
+        if (!isAcceptableApiKey(apiKey)) continue;
+        const connection = await platform.discoverKimiConnection(
+          apiKey.trim(),
+          account.upstreamBaseUrl,
+          deadline,
+        );
+        if (connection === undefined || deadline.aborted) continue;
+        const models =
+          account.upstreamBaseUrl === connection.upstreamBaseUrl
+            ? account.models.filter((model) => connection.models.includes(model))
+            : connection.models;
+        if (
+          account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+          account.kimiPlan === connection.plan &&
+          JSON.stringify(account.models) === JSON.stringify(models) &&
+          JSON.stringify(account.availableModelIds) === JSON.stringify(connection.models)
+        )
+          continue;
+        accounts[index] = {
+          ...account,
+          upstreamBaseUrl: connection.upstreamBaseUrl,
+          kimiPlan: connection.plan,
+          availableModelIds: connection.models,
+          models,
+        };
+        changed = true;
+      }
+      if (!changed) return;
+      await modelChecks.cancel();
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify(projectProviderModelSelection({ ...configuration, accounts }), null, 2)}\n`,
+      );
+      await stopSingleFlight();
+      await startSingleFlight();
+    };
+
+    /** Repair legacy Z.ai plan routing only after real inference accepts the existing key. */
+    const runRepairZaiConnections = async (accountId?: string): Promise<void> => {
+      if (platform.discoverZaiConnection === undefined) return;
+      const configuration = await loadConfiguration();
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(16_000);
+      let changed = false;
+      for (const [index, account] of accounts.entries()) {
+        if (
+          deadline.aborted ||
+          account.provider !== "zai" ||
+          !account.enabled ||
+          !isApiKeyAccount(account) ||
+          account.models.length === 0 ||
+          account.upstreamBaseUrl === ZAI_BASE_URLS[0] ||
+          (account.upstreamBaseUrl !== undefined && account.upstreamBaseUrl !== ZAI_BASE_URLS[1]) ||
+          (accountId !== undefined && account.id !== accountId)
+        )
+          continue;
+        const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
+          () => Option.none<Uint8Array>(),
+        );
+        if (Option.isNone(secret)) continue;
+        const apiKey = new TextDecoder().decode(secret.value);
+        if (!isAcceptableApiKey(apiKey)) continue;
+        const connection = await platform.discoverZaiConnection(
+          apiKey.trim(),
+          account.models,
+          account.upstreamBaseUrl ?? ZAI_BASE_URLS[1],
+          deadline,
+        );
+        if (connection === undefined || deadline.aborted) continue;
+        const models = account.models.filter((id) => connection.models.includes(id));
+        if (
+          account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+          JSON.stringify(account.models) === JSON.stringify(models)
+        )
+          continue;
+        accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, models };
+        changed = true;
+      }
+      if (!changed) return;
+      await modelChecks.cancel();
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+      );
+      await stopSingleFlight();
+      await startSingleFlight();
+    };
+
+    /** A spelling repair is permitted only by this account's real provider list. */
+    const runRepairClaudeModels = async (accountId?: string): Promise<void> => {
+      if (platform.discoverClaudeModels === undefined) return;
+      const configuration = await loadConfiguration();
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(8_000);
+      let changed = false;
+      for (const [index, account] of accounts.entries()) {
+        if (
+          deadline.aborted ||
+          account.provider !== "claude" ||
+          !("accessTokenSecret" in account) ||
+          (accountId !== undefined && account.id !== accountId) ||
+          !account.models.some((id) => id.startsWith("claude-") && /\.(?=\d)/.test(id))
+        )
+          continue;
+        const repaired = await repairClaudeAccountModels(account, deadline);
+        if (repaired === account) continue;
+        accounts[index] = repaired;
+        changed = true;
+      }
+      if (!changed) return;
+      await modelChecks.cancel();
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify(reconcileAccountModelRepairs(configuration, accounts), null, 2)}\n`,
+      );
+      await stopSingleFlight();
+      await startSingleFlight();
     };
 
     const runOauthCancel = async (input: WorkjetGatewayOauthPollInput): Promise<void> => {
@@ -1729,6 +2159,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
 
     yield* Effect.addFinalizer(() => Effect.promise(modelChecks.shutdown));
 
+    // The service scope owns startup/daily refresh; no detached timer survives shutdown.
+    yield* Effect.forkScoped(
+      Effect.promise(publicCatalogCache.refresh).pipe(Effect.repeat(Schedule.spaced("1 day"))),
+    );
+
     return ProviderGatewayService.of({
       modelChecks: () =>
         Effect.tryPromise({
@@ -1736,10 +2171,17 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           catch: () => safeError("management-unavailable"),
         }),
       checkModels: (input) =>
-        Effect.tryPromise({
-          try: () => modelChecks.schedule(input),
-          catch: () => safeError("management-unavailable"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              await runRepairClaudeModels(input.accountId);
+              await runRepairKimiConnections(input.accountId);
+              await runRepairZaiConnections(input.accountId);
+              return modelChecks.schedule(input);
+            },
+            catch: () => safeError("management-unavailable"),
+          }),
+        ),
       status: () => Effect.sync(() => currentStatus),
       catalog: () =>
         Effect.tryPromise({
@@ -1835,17 +2277,20 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
         }),
       oauthPoll: (input) =>
-        Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runOauthPoll(input);
-            if (result.completedAccountIds.length > 0 && previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const result = await runOauthPoll(input);
+              if (result.completedAccountIds.length > 0)
+                await modelChecks
+                  .recheckAccounts(result.completedAccountIds)
+                  .catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
+          }),
+        ),
       oauthCancel: (input) =>
         Effect.tryPromise({
           try: () => runOauthCancel(input),
@@ -1853,17 +2298,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("oauth-session-invalid"),
         }),
       addApiKeyAccount: (input) =>
-        Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runAddApiKeyAccount(input);
-            if (previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runAddApiKeyAccount(input);
+              if (previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          }),
+        ),
       removeAccount: (input) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
@@ -1909,18 +2356,25 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("management-unavailable"),
         }),
-      updateRouting: (input) =>
+      accountModels: (input) =>
         Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runUpdateRouting(input);
-            if (previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          try: () => runAccountModels(input),
+          catch: () => safeError("management-unavailable"),
         }),
+      updateRouting: (input) =>
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runUpdateRouting(input);
+              if (previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          }),
+        ),
     });
   });
 

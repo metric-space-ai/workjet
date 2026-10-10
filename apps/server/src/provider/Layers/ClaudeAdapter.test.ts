@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeHttp from "node:http";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -14,6 +15,9 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  DEFAULT_MODEL,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  ProjectId,
   EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
@@ -35,6 +39,9 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import { installWorkerSourceRoute } from "../../workjet/WorkerSourceHarness.ts";
+import { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
@@ -159,6 +166,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
 function makeHarness(config?: {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: ClaudeAdapterLiveOptions["nativeEventLogger"];
+  readonly createNativeSupervisorSdkJournal?: ClaudeAdapterLiveOptions["createNativeSupervisorSdkJournal"];
   readonly cwd?: string;
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
@@ -177,6 +185,9 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.createNativeSupervisorSdkJournal
+      ? { createNativeSupervisorSdkJournal: config.createNativeSupervisorSdkJournal }
+      : {}),
     createQuery: (input) => {
       createInput = input;
       config?.onCreateQuery?.(input);
@@ -309,7 +320,149 @@ function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): vo
   });
 }
 
+const foreignClaudeStart = (threadId: string, model?: string) => ({
+  threadId: ThreadId.make(threadId),
+  provider: ProviderDriverKind.make("claudeAgent"),
+  runtimeMode: "auto-accept-edits" as const,
+  ...(model === undefined
+    ? {}
+    : { modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model } }),
+  workjetConfig: {
+    schemaVersion: 2 as const,
+    role: "worker" as const,
+    parent: {
+      environmentId: EnvironmentId.make("source-environment"),
+      threadId: ThreadId.make("supervisor"),
+    },
+    managedInstructions: "Bounded leaf worker.",
+    enabledCapabilityIds: [],
+    capabilityBindings: [],
+  },
+});
+const onClaudeTarget = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.provideService(ServerEnvironment, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("target-environment")),
+      getDescriptor: Effect.die("Descriptor is unused by the Claude startup seam"),
+    }),
+  );
+const foreignClaudeSource = (requestId: string) =>
+  Effect.acquireRelease(
+    Effect.promise(async () => {
+      const server = NodeHttp.createServer((_req, res) =>
+        res.setHeader("content-type", "application/json").end("{}"),
+      );
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing address");
+      const source = await installWorkerSourceRoute(
+        requestId,
+        {
+          sourceEnvironmentId: "source-environment",
+          targetEnvironmentId: "target-environment",
+          requestId,
+          requestDigest: "pinned-request",
+          capability: "worker-scoped-capability",
+          port: address.port,
+        },
+        {
+          targetEnvironmentId: "target-environment",
+          requestDigest: "pinned-request",
+          modelId: "gpt-6.1-sol",
+          harness: "claude-code",
+        },
+      );
+      return { server, source };
+    }),
+    ({ server, source }) =>
+      Effect.promise(async () => {
+        await source.revoke();
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }),
+  );
+describe("ClaudeAdapter foreign worker source authority", () => {
+  it.effect(
+    "refuses foreign workers without source authority before starting the target harness",
+    () => {
+      const harness = makeHarness();
+      return onClaudeTarget(
+        Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          const error = yield* Effect.flip(
+            adapter.startSession(foreignClaudeStart("claude-missing-source")),
+          );
+          assert.isTrue(Schema.is(ProviderAdapterValidationError)(error));
+          assert.isUndefined(harness.getLastCreateQueryInput());
+        }),
+      ).pipe(Effect.provide(harness.layer));
+    },
+  );
+  it.effect(
+    "starts only the pinned source model with isolated Claude configuration and source credentials",
+    () => {
+      const harness = makeHarness({ claudeConfig: { launchArgs: "--verbose" } });
+      return onClaudeTarget(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const { source } = yield* foreignClaudeSource("claude-pinned-source");
+            const adapter = yield* ClaudeAdapter;
+            yield* adapter.startSession(foreignClaudeStart("claude-pinned-source", source.model));
+            const options = harness.getLastCreateQueryInput()?.options;
+            assert.isDefined(options);
+            assert.equal(options?.model, source.model);
+            assert.equal(options?.env?.ANTHROPIC_BASE_URL, source.baseUrl.slice(0, -3));
+            assert.equal(options?.env?.ANTHROPIC_API_KEY, source.apiKey);
+            assert.equal(options?.env?.WORKJET_WORKER_SOURCE_KEY, source.apiKey);
+            assert.equal(options?.env?.WORKJET_WORKER_SOURCE_URL, source.baseUrl);
+            assert.isUndefined(options?.env?.ANTHROPIC_AUTH_TOKEN);
+            assert.isUndefined(options?.env?.CLAUDE_CODE_OAUTH_TOKEN);
+            assert.include(
+              options?.env?.CLAUDE_CONFIG_DIR,
+              "worker-harnesses/claude-pinned-source/claude",
+            );
+            assert.deepEqual(options?.settingSources, []);
+            assert.isUndefined(options?.extraArgs);
+            yield* adapter.stopSession(ThreadId.make("claude-pinned-source"));
+            yield* Effect.promise(() => source.revoke());
+            const error = yield* Effect.flip(
+              adapter.startSession(foreignClaudeStart("claude-pinned-source", source.model)),
+            );
+            assert.isTrue(Schema.is(ProviderAdapterValidationError)(error));
+          }),
+        ),
+      ).pipe(Effect.provide(harness.layer));
+    },
+  );
+});
+
 describe("ClaudeAdapterLive", () => {
+  it.effect("rejects replaceable queries before constructing an original SDK journal", () => {
+    let constructed = false;
+    const harness = makeHarness({
+      createNativeSupervisorSdkJournal: () => {
+        constructed = true;
+        return new NativeSupervisorSdkJournal(async () => {});
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const error = yield* adapter
+        .startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "auto-accept-edits",
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(error, ProviderAdapterValidationError);
+      assert.equal(
+        error.issue,
+        "Original SDK observation requires the actual SDK child; a query override is unsupported.",
+      );
+      assert.isFalse(constructed);
+      assert.isUndefined(harness.getLastCreateQueryInput());
+    }).pipe(Effect.provide(harness.layer));
+  });
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -2365,6 +2518,20 @@ describe("ClaudeAdapterLive", () => {
         { type: "system", subtype: "plugin_install", session_id: "session", uuid: "pi" },
         { type: "system", subtype: "memory_recall", session_id: "session", uuid: "mr" },
         { type: "system", subtype: "elicitation_complete", session_id: "session", uuid: "ec" },
+        {
+          type: "system",
+          subtype: "per_turn_effort_changed",
+          per_turn_effort_active: false,
+          session_id: "session",
+          uuid: "effort-inactive",
+        },
+        {
+          type: "system",
+          subtype: "per_turn_effort_changed",
+          per_turn_effort_active: true,
+          session_id: "session",
+          uuid: "effort-active",
+        },
         { type: "prompt_suggestion", suggestion: "try this", session_id: "session", uuid: "ps" },
         {
           type: "system",
@@ -2970,6 +3137,88 @@ describe("ClaudeAdapterLive", () => {
         String(assistantCompletions[0]?.itemId),
         String(assistantCompletions[1]?.itemId),
       );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("emits the actual assistant model only for the persistent Parent's own turn", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const events = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        runtimeMode: "full-access",
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          schemaVersion: 2,
+          role: "orchestrator",
+          team: {
+            projectId: ProjectId.make("parent-project"),
+            threadId: THREAD_ID,
+            role: "specialist",
+            parentThreadId: ThreadId.make("supervisor"),
+            domain: "harness",
+            goal: "Deliver the bounded result.",
+            createdAt: "2026-10-10T03:00:00.000Z",
+          },
+        },
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "Perform the bounded work.",
+        attachments: [],
+      });
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-parent",
+        uuid: "subagent-snapshot",
+        parent_tool_use_id: "child-tool",
+        message: {
+          id: "child-message",
+          model: DEFAULT_MODEL,
+          content: [{ type: "text", text: "child" }],
+        },
+      } as unknown as SDKMessage);
+      const assistant = {
+        type: "assistant",
+        session_id: "sdk-parent",
+        uuid: "parent-snapshot",
+        parent_tool_use_id: null,
+        message: {
+          id: "parent-message",
+          model: DEFAULT_MODEL,
+          content: [{ type: "text", text: "done" }],
+        },
+      } as unknown as SDKMessage;
+      harness.query.emit(assistant);
+      harness.query.emit(assistant);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-parent",
+        uuid: "parent-result",
+      } as unknown as SDKMessage);
+      const actual = Array.from(yield* Fiber.join(events)).filter(
+        (event) =>
+          event.type === "thread.metadata.updated" &&
+          event.raw?.method === "claude/assistant/model",
+      );
+      assert.equal(actual.length, 1);
+      assert.equal(actual[0]?.turnId, turn.turnId);
+      assert.equal(actual[0]?.providerInstanceId, ProviderInstanceId.make("claudeAgent"));
+      assert.deepEqual(actual[0]?.payload, { metadata: { workjetAuthorModel: DEFAULT_MODEL } });
+      assert.equal(actual[0]?.raw?.source, "claude.sdk.message");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

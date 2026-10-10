@@ -16,7 +16,9 @@ use super::{
     finalize_anthropic_messages_body_cch, normalize_claude_cache_control_ttl,
     sign_anthropic_messages_body,
 };
-use crate::internal::signature::sanitize_claude_messages_for_claude_upstream;
+use crate::internal::signature::{
+    normalize_claude_empty_message_text, sanitize_claude_messages_for_claude_upstream,
+};
 
 #[cfg(feature = "anthropic-fingerprint-transport")]
 use std::fmt;
@@ -271,7 +273,7 @@ pub fn prepare_claude_upstream_body_with_identity(
     let body = if model.is_some_and(|model| model.provider_type.eq_ignore_ascii_case("claude")) {
         sanitize_claude_messages_for_claude_upstream(&body).0
     } else {
-        body
+        normalize_claude_empty_message_text(&body)
     };
     let body = if count_claude_cache_controls(&body) == 0 {
         ensure_claude_cache_control(&body)
@@ -299,7 +301,12 @@ pub fn prepare_claude_upstream_body_with_identity(
     // verified client did not carry the measured billing block, install the
     // deterministic Claude Code fallback before hashing the final body.
     let body = if oauth {
-        let fallback = claude_cch_fallback_billing_header(&body, "2.1.220", "cli", "");
+        let fallback = claude_cch_fallback_billing_header(
+            &body,
+            super::helps::DEFAULT_CLAUDE_CLI_VERSION,
+            "cli",
+            "",
+        );
         finalize_anthropic_messages_body_cch(&body, &fallback)
     } else {
         sign_anthropic_messages_body(&body)
@@ -816,7 +823,9 @@ fn visit_message_tool_names(root: &mut Value, mut visit: impl FnMut(&mut Value, 
 
 fn mutate_response_tool_names(body: &[u8], mut map: impl FnMut(&str) -> Option<String>) -> Vec<u8> {
     let Ok(mut root) = serde_json::from_slice::<Value>(body) else {
-        return body.to_vec();
+        // Buffered Responses translation also requests an Anthropic SSE body.
+        // Restore its names before the response converter sees the tool calls.
+        return mutate_stream_tool_name(body, map);
     };
     let mut changed = false;
     if let Some(parts) = root.get_mut("content").and_then(Value::as_array_mut) {
@@ -847,6 +856,28 @@ fn mutate_response_tool_names(body: &[u8], mut map: impl FnMut(&str) -> Option<S
 }
 
 fn mutate_stream_tool_name(line: &[u8], mut map: impl FnMut(&str) -> Option<String>) -> Vec<u8> {
+    // The tracked transport returns complete SSE frames, including event/id
+    // lines and the blank separator. Rewrite data lines without consuming any
+    // framing bytes; a data-only frame still needs its separator downstream.
+    let mut output = Vec::with_capacity(line.len());
+    for segment in line.split_inclusive(|byte| *byte == b'\n') {
+        let mut end = segment.len();
+        if segment.last() == Some(&b'\n') {
+            end -= 1;
+            if end > 0 && segment[end - 1] == b'\r' {
+                end -= 1;
+            }
+        }
+        output.extend_from_slice(&mutate_stream_tool_name_line(&segment[..end], &mut map));
+        output.extend_from_slice(&segment[end..]);
+    }
+    output
+}
+
+fn mutate_stream_tool_name_line(
+    line: &[u8],
+    map: &mut impl FnMut(&str) -> Option<String>,
+) -> Vec<u8> {
     let trimmed = trim_ascii(line);
     let (sse, payload) = trimmed
         .strip_prefix(b"data:")
@@ -858,8 +889,8 @@ fn mutate_stream_tool_name(line: &[u8], mut map: impl FnMut(&str) -> Option<Stri
         return line.to_vec();
     };
     let changed = match block.get("type").and_then(Value::as_str) {
-        Some("tool_use") => replace_object_field(block, "name", &mut map),
-        Some("tool_reference") => replace_object_field(block, "tool_name", &mut map),
+        Some("tool_use") => replace_object_field(block, "name", map),
+        Some("tool_reference") => replace_object_field(block, "tool_name", map),
         _ => false,
     };
     if !changed {
@@ -1433,10 +1464,45 @@ mod payload_tests {
         let (body, _, _) = prepare_claude_upstream_body_with_identity(input, None, "secret", true);
         let root = value(&body);
         let billing = root["system"][0]["text"].as_str().unwrap();
-        assert!(billing.starts_with("x-anthropic-billing-header: cc_version=2.1.220."));
+        assert!(billing.starts_with("x-anthropic-billing-header: cc_version=2.1.280."));
         assert!(billing.contains("cc_entrypoint=cli; cch="));
         assert!(!billing.contains("cch=00000;"));
         assert_eq!(sign_anthropic_messages_body(&body), body);
+    }
+
+    #[test]
+    fn live_model_without_static_metadata_keeps_twenty_tool_replays_valid() {
+        let mut messages = vec![serde_json::json!({"role":"user","content":"Run the tool"})];
+        for index in 1..=20 {
+            let id = format!("call_{index}");
+            let tool = serde_json::json!({"type":"tool_use","id":id,"name":"greppy","input":{"command":format!("printf PROXY_MATRIX_{index:02}")}});
+            let result = serde_json::json!({"type":"tool_result","tool_use_id":id,"content":format!("PROXY_MATRIX_{index:02}"),"is_error":false});
+            messages.push(serde_json::json!({"role":"assistant","content":[{"type":"text","text":""},{"type":"redacted_thinking","data":"opaque"},tool]}));
+            messages.push(serde_json::json!({"role":"user","content":[result]}));
+            let input = serde_json::to_vec(
+                &serde_json::json!({"model":"claude-opus-5-5","messages":messages}),
+            )
+            .unwrap();
+            let (output, _, _) =
+                prepare_claude_upstream_body_with_identity(&input, None, "", false);
+            let root = value(&output);
+            let replay = root["messages"].as_array().unwrap();
+            assert_eq!(replay.len(), 1 + index * 2);
+            for (original, normalized) in messages.iter().skip(1).zip(replay.iter().skip(1)) {
+                if original["role"] == "assistant" {
+                    assert_eq!(
+                        normalized["content"],
+                        serde_json::json!([original["content"][1], original["content"][2]])
+                    );
+                } else {
+                    let mut normalized = normalized.clone();
+                    for block in normalized["content"].as_array_mut().unwrap() {
+                        block.as_object_mut().unwrap().remove("cache_control");
+                    }
+                    assert_eq!(&normalized, original);
+                }
+            }
+        }
     }
 
     #[test]
@@ -1833,8 +1899,8 @@ mod tests {
         assert!(lower.contains("anthropic-beta: claude-code-20250219"));
         assert!(lower.contains("x-app: cli"));
         assert!(lower.contains("x-claude-code-session-id: "));
-        assert!(lower.contains("user-agent: claude-cli/2.1.220 (external, cli)"));
-        assert!(lower.contains("x-stainless-package-version: 0.94.0"));
+        assert!(lower.contains("user-agent: claude-cli/2.1.280 (external, cli)"));
+        assert!(lower.contains("x-stainless-package-version: 0.112.1"));
         assert!(lower.contains("x-stainless-runtime-version: v26.3.0"));
         assert!(lower.contains("x-stainless-os: macos"));
         assert!(lower.contains("x-stainless-arch: arm64"));

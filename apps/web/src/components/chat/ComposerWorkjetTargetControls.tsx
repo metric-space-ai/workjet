@@ -8,9 +8,8 @@
  *                   · System Prompt · Tools · Upload.
  *
  * The computer ("Rechner") control is SELECTABLE in both modes: on a draft it
- * moves the draft to the chosen computer's environment through the existing
- * draft environment-change path; on a started server thread selection is locked
- * with a stated reason. Computer details remain reachable in the same popup.
+ * moves the draft or continues a completed conversation in that computer's
+ * project checkout. Computer details remain reachable in the same popup.
  * It never silently no-ops — a computer where this logical project is not
  * available renders as a disabled option that says so. This is deliberately
  * not described as device pairing: a Workjet installation can be connected
@@ -18,6 +17,7 @@
  */
 import type {
   EnvironmentId,
+  CtoxWorkjetComputerProjection,
   WorkjetComputer,
   WorkjetGatewayModelSummary,
   WorkjetGatewayProvider,
@@ -65,12 +65,10 @@ import { Textarea } from "../ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
- * Why the computer control refuses on a started thread. Mid-session migration
- * means moving a live provider session between machines — a separate project,
- * not a dropdown.
+ * A running turn must finish before a fresh session can continue its history elsewhere.
  */
 export const COMPOSER_COMPUTER_LOCKED_REASON =
-  "This thread already runs on its computer. Moving a started session to another computer is a separate project.";
+  "Finish the current turn before switching computers.";
 
 /** The option hint for a connected computer this project has no environment on. */
 export const COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT =
@@ -147,7 +145,9 @@ export function gatewayModelsForRoute(
   route: WorkjetLlmRoute | null,
 ): ReadonlyArray<WorkjetGatewayModelSummary> {
   if (route === null) return models;
-  const scoped = models.filter((model) => model.accountIds.includes(route.gatewayAccountId));
+  const accountId = route.gatewayAccountId;
+  if (accountId === undefined) return [];
+  const scoped = models.filter((model) => model.accountIds.includes(accountId));
   // A catalog that does not link this route's account to any model would
   // leave the control empty and lie about the gateway offering nothing;
   // fall back to the whole catalog instead.
@@ -170,6 +170,10 @@ export interface ComposerComputerControlProps {
     readonly update: (update: (current: ComputerEditorState) => ComputerEditorState) => void;
   };
   readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly registeredComputers?: ReadonlyArray<CtoxWorkjetComputerProjection>;
+  readonly computerAvailability?: Readonly<
+    Record<string, { readonly status: string; readonly reason: string | null }>
+  >;
   /** The computer whose environment the composer currently targets, if any. */
   readonly selectedComputerId: string | null;
   readonly activeEnvironmentId: EnvironmentId;
@@ -203,7 +207,7 @@ export function ComposerComputerChoiceList(
           {props.mismatchNote}
         </p>
       ) : null}
-      {props.computers.length === 0 ? (
+      {props.computers.length === 0 && (props.registeredComputers?.length ?? 0) === 0 ? (
         <p className="px-2 py-2 text-xs text-muted-foreground">
           No computers — add one in Settings → Computers
         </p>
@@ -216,6 +220,7 @@ export function ComposerComputerChoiceList(
         );
         const reason =
           (props.busy ? "Saving computer settings…" : props.disabledReason) ??
+          props.computerAvailability?.[computer.id]?.reason ??
           (projectAvailable ? null : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT);
         return (
           <div key={computer.id} className="flex min-w-0 items-center gap-1 rounded-md">
@@ -233,9 +238,10 @@ export function ComposerComputerChoiceList(
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{computer.label}</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {projectAvailable
-                    ? workjetComputerKindLabel(computer.presentationKind)
-                    : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
+                  {props.computerAvailability?.[computer.id]?.status
+                    ? `${props.computerAvailability[computer.id]!.status} · `
+                    : ""}
+                  {reason ?? workjetComputerKindLabel(computer.presentationKind)}
                 </span>
               </span>
               {computer.id === props.selectedComputerId ? (
@@ -255,6 +261,22 @@ export function ComposerComputerChoiceList(
           </div>
         );
       })}
+      {props.registeredComputers
+        ?.filter((computer) => !props.computers.some((configured) => configured.id === computer.id))
+        .map((computer) => (
+          <button
+            key={`native-${computer.id}`}
+            type="button"
+            disabled
+            title={`No coding connection is registered for ${computer.displayName}. Open Settings → Computers to configure one.`}
+            className="block w-full rounded-md px-2 py-2 text-left text-sm disabled:opacity-50"
+          >
+            <span className="block font-medium">{computer.displayName}</span>
+            <span className="block text-xs text-muted-foreground">
+              Connection not observed · No coding connection
+            </span>
+          </button>
+        ))}
       {props.onAddComputer ? (
         <Button
           type="button"
@@ -362,7 +384,7 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
     props.computers.find((computer) => computer.id === detailComputerId) ?? null;
   return (
     <span
-      className="inline-flex min-w-0 shrink-0 items-center"
+      className="inline-flex min-w-0 max-w-full shrink-0 items-center"
       data-composer-computer-control="true"
       title={
         saving
@@ -383,14 +405,14 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
         trigger={
           <ComposerControl
             type="button"
-            className="min-w-0 max-w-52 font-medium"
+            className="h-auto min-w-0 max-w-full font-medium"
             aria-label="Computer"
             disabled={saving}
             aria-busy={saving}
             {...(props.mismatchNote === null ? {} : { "data-computer-mismatch": "true" })}
           >
             <ComposerControlIcon icon={MonitorIcon} />
-            <span className="min-w-0 truncate">
+            <span className="min-w-0 whitespace-normal break-words text-left">
               {selected?.label ??
                 (props.selectedComputerId !== null ? "Missing computer" : "Computer")}
             </span>
@@ -650,7 +672,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
 
   return (
     <span
-      className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
+      className="flex min-w-0 flex-wrap items-center gap-1"
       data-composer-manual-target-controls="true"
       data-model-catalog-source={props.modelSource ?? "gateway"}
     >
@@ -719,7 +741,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
               nativeModels
                 ? "Models reported by this harness on the selected computer."
                 : configuredModels
-                  ? "Configured for this Greppy profile; choose a model or enter its ID."
+                  ? "Configured for this harness; choose a model or enter its ID."
                   : "Served by the Workjet gateway; choose a catalog model or enter its ID."
             }
           >
@@ -740,7 +762,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         detailTitle="Custom model"
         detailDescription={
           configuredModels
-            ? "Enter a model ID accepted by this Greppy profile's endpoint. Choose Use model to apply it to this chat."
+            ? "Enter a model ID accepted by this harness's endpoint. Choose Use model to apply it to this chat."
             : "Enter a model ID accepted by your gateway. Choose Use model to apply it to this chat."
         }
         detail={

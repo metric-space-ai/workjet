@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ProjectExitModelPanel, ProjectExitModelSummary } from "./ProjectExitModel";
 import type { ProjectOverview } from "@workjet/contracts";
 import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
@@ -17,6 +17,7 @@ import {
 } from "../projectKpis";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectOverviewEditor, type ProjectConfigurationValues } from "./ProjectOverviewEditor";
+import { ProjectSupervisorLumaField } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
@@ -31,11 +32,15 @@ export function ProjectOverviewCard({
   kpis,
   onSaveKpis,
   ctoxInstanceId = null,
+  onReadKpis,
+  reorderHandle,
 }: {
   readonly project: GalleryProject;
   readonly ctoxInstanceId?: string | null;
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
+  readonly onReadKpis?: ((projectId: string) => Promise<PromptedProjectKpis | null>) | undefined;
+  readonly reorderHandle?: ReactNode;
   readonly onOpen: () => void;
   readonly onSaveConfiguration?:
     | ((next: ProjectConfigurationValues) => Promise<boolean>)
@@ -46,6 +51,25 @@ export function ProjectOverviewCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [assessing, setAssessing] = useState(false);
+  const [kpiReadAttempt, setKpiReadAttempt] = useState(0);
+  const [kpiReadStatus, setKpiReadStatus] = useState<"idle" | "pending" | "ready" | "failed">(
+    "idle",
+  );
+  useEffect(() => {
+    if (!editing || !onReadKpis) return;
+    let active = true;
+    setKpiReadStatus("pending");
+    void onReadKpis(project.id)
+      .then((result) => {
+        if (active) setKpiReadStatus(result === null ? "failed" : "ready");
+      })
+      .catch(() => {
+        if (active) setKpiReadStatus("failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, [editing, onReadKpis, project.id, kpiReadAttempt]);
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -135,6 +159,7 @@ export function ProjectOverviewCard({
             </a>
           )}
         </div>
+        {reorderHandle}
         {(repository || onSave) && (
           <Menu>
             <MenuTrigger
@@ -304,12 +329,32 @@ export function ProjectOverviewCard({
             <DialogTitle>Manage {project.title}</DialogTitle>
           </DialogHeader>
           <DialogPanel>
+            {kpiReadStatus === "pending" && (
+              <p role="status" className="mb-3 text-xs text-muted-foreground">
+                Loading KPI prompts…
+              </p>
+            )}
+            {kpiReadStatus === "failed" && (
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p role="alert" className="text-xs text-destructive">
+                  Couldn’t load KPI prompts.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setKpiReadAttempt((attempt) => attempt + 1)}
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
             {editing && onSave && (
               <ProjectOverviewEditor
                 overview={overview}
                 configuration={project.configuration}
                 onSaveConfiguration={onSaveConfiguration}
                 onSave={onSave}
+                renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
                 onCancel={() => setEditing(false)}
                 kpis={scopedKpis}
                 onSaveKpis={onSaveKpis}

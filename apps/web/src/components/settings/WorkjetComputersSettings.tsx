@@ -17,9 +17,11 @@ import {
 } from "../../workjetComputerMembership";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { findComputerForTarget, includeSavedComputers } from "../../workjetComputerCatalog";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
+import { workerSourceConnectionForEnrollment } from "../../workjetWorkerSourceConnection";
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { Button } from "../ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
@@ -110,57 +112,46 @@ export function removeComputer(
   };
 }
 
-/** Host identity is presentation metadata; it never authorizes a connection or worker. */
-export function findComputerForTarget(
-  configuration: WorkjetConfiguration,
-  target: WorkjetEnvironmentTargetOption,
-  targets: ReadonlyArray<WorkjetEnvironmentTargetOption>,
-): WorkjetComputer | undefined {
-  const exact = configuration.computers.find(
-    (computer) => computer.environmentId === target.environmentId,
+export async function removeComputerConnection(input: {
+  readonly configuration: WorkjetConfiguration;
+  readonly computer: WorkjetComputer;
+  readonly selectedInstanceId: string | null;
+  readonly membership: ComputerMembershipSnapshot | null;
+  readonly savedEnvironmentIds: ReadonlyArray<EnvironmentId>;
+  readonly removeConnection: (environmentId: EnvironmentId) => Promise<boolean>;
+}): Promise<
+  | { readonly status: "assigned" | "connection_failed" }
+  | { readonly status: "removed"; readonly configuration: WorkjetConfiguration }
+> {
+  // Removing a local connection never unassigns or revokes a native computer.
+  // Keep a known assignment protected, including while its inventory refreshes.
+  if (
+    input.selectedInstanceId &&
+    input.membership?.instanceId === input.selectedInstanceId &&
+    input.membership.computers.some(
+      (entry) => entry.id === input.computer.id && entry.status === "assigned",
+    )
+  ) {
+    return { status: "assigned" };
+  }
+  const shared = input.configuration.computers.some(
+    (entry) =>
+      entry.id !== input.computer.id && entry.environmentId === input.computer.environmentId,
   );
-  if (exact) return exact;
-  const hostId = target.hostId?.trim();
-  if (!hostId) return undefined;
-  return configuration.computers.find((computer) =>
-    targets.some(
-      (option) =>
-        option.environmentId === computer.environmentId && option.hostId?.trim() === hostId,
-    ),
-  );
+  if (
+    !shared &&
+    input.savedEnvironmentIds.includes(input.computer.environmentId) &&
+    !(await input.removeConnection(input.computer.environmentId))
+  ) {
+    return { status: "connection_failed" };
+  }
+  return {
+    status: "removed",
+    configuration: removeComputer(input.configuration, input.computer.id),
+  };
 }
 
-/** Saved connections and configured computers share one catalog in the UI. */
-export function includeSavedComputers(
-  configuration: WorkjetConfiguration,
-  targets: ReadonlyArray<WorkjetEnvironmentTargetOption>,
-  primaryEnvironmentId: EnvironmentId | null,
-): WorkjetConfiguration {
-  const computers = [...configuration.computers];
-  const catalog = { ...configuration, computers };
-  let added = false;
-  const primaryHostId = targets
-    .find((target) => target.environmentId === primaryEnvironmentId)
-    ?.hostId?.trim();
-  for (const target of targets) {
-    if (
-      target.environmentId === primaryEnvironmentId ||
-      (primaryHostId && target.hostId?.trim() === primaryHostId) ||
-      findComputerForTarget(catalog, target, targets)
-    )
-      continue;
-    computers.push(
-      saveWorkjetComputerDraft(
-        createWorkjetComputerDraft({
-          environments: [target],
-          id: `connection-${target.environmentId}`,
-        }),
-      ),
-    );
-    added = true;
-  }
-  return added ? catalog : configuration;
-}
+export { findComputerForTarget, includeSavedComputers } from "../../workjetComputerCatalog";
 
 const OPERATIONAL_CAPABILITIES = [
   { kind: "build", label: "Build" },
@@ -916,6 +907,16 @@ export function WorkjetComputersSettings({
   const enrollRemoteComputer = useAtomCommand(serverEnvironment.enrollWorkjetRemoteComputer, {
     reportFailure: false,
   });
+  const workerConnections = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetDecisionHubConnections({ environmentId, input: {} }),
+  );
+  const finishCapabilities = () => {
+    setAddMode(null);
+    setCapabilityComputer(null);
+    if (setupOnly) onCompleted?.();
+  };
   const saveCapabilities = async (enrollment: OperationalComputerEnrollment) => {
     if (!selectedInstanceId) throw new Error("Select a Business OS before adding this computer.");
     const computer = setupOnly ? setupComputer : capabilityComputer;
@@ -924,11 +925,20 @@ export function WorkjetComputersSettings({
     if (build && computer?.environmentId !== environmentId) {
       if (!computer || !environmentId)
         throw new Error("Connect this build computer over SSH before saving its capabilities.");
+      const source = workerSourceConnectionForEnrollment(
+        workerConnections.data?.connections ?? [],
+        selectedInstanceId,
+      );
+      if (!source)
+        throw new Error(
+          "Connect workers for this Business OS in its project supervisor before saving a remote build computer.",
+        );
       const result = await enrollRemoteComputer({
         environmentId,
         targetEnvironmentId: computer.environmentId,
         input: {
-          selectedInstanceId,
+          selectedInstanceId: source.instanceId,
+          sourceConnectionId: source.connectionId,
           computerId: computer.id,
           displayName: enrollment.displayName,
           hostingMode: enrollment.hostingMode,
@@ -941,10 +951,13 @@ export function WorkjetComputersSettings({
         );
       assigned = { ...enrollment, computerId: result.value.computerId };
     }
-    await membershipStore.enroll(selectedInstanceId, assigned, window.desktopBridge?.ctox);
-    setAddMode(null);
-    setCapabilityComputer(null);
-    if (setupOnly) onCompleted?.();
+    const key = await membershipStore.enroll(
+      selectedInstanceId,
+      assigned,
+      window.desktopBridge?.ctox,
+    );
+    if (!key) finishCapabilities();
+    return key;
   };
   const enrollmentAvailable =
     !!selectedInstanceId &&
@@ -991,6 +1004,7 @@ export function WorkjetComputersSettings({
           addMode === "capabilities" ? (
             <ComputerCapabilitiesEditor
               onSave={saveCapabilities}
+              onDone={finishCapabilities}
               onCancel={() => setAddMode(null)}
             />
           ) : (
@@ -1045,6 +1059,7 @@ export function WorkjetComputersSettings({
                 ) ?? false
               }
               onSave={saveCapabilities}
+              onDone={finishCapabilities}
               onCancel={() => setSetupComputer(null)}
             />
             {activeMembership?.phase === "failed" ? (
@@ -1125,6 +1140,7 @@ export function WorkjetComputersSettings({
                   false)
               }
               onSave={saveCapabilities}
+              onDone={finishCapabilities}
               onCancel={() => setAddMode(null)}
             />
           </SheetPanel>
@@ -1203,11 +1219,17 @@ export function WorkjetComputersSettings({
         pendingConnectionEnvironmentId={pendingComputerId}
         onRemove={(computer) => {
           void (async () => {
-            if (
-              selectedInstanceId &&
-              (activeMembership?.phase !== "ready" ||
-                activeMembership.computers.some((entry) => entry.id === computer.id))
-            ) {
+            const result = await removeComputerConnection({
+              configuration,
+              computer,
+              selectedInstanceId,
+              membership: activeMembership ?? null,
+              savedEnvironmentIds: connections.savedEnvironments.map(
+                (entry) => entry.environmentId,
+              ),
+              removeConnection: (environmentId) => connections.removeConnection(environmentId),
+            });
+            if (result.status === "assigned") {
               toastManager.add({
                 type: "error",
                 title: "Computer still assigned",
@@ -1216,15 +1238,7 @@ export function WorkjetComputersSettings({
               });
               return;
             }
-            const shared = configuration.computers.some(
-              (entry) => entry.id !== computer.id && entry.environmentId === computer.environmentId,
-            );
-            const saved = connections.savedEnvironments.some(
-              (entry) => entry.environmentId === computer.environmentId,
-            );
-            if (!shared && saved && !(await connections.removeConnection(computer.environmentId)))
-              return;
-            updateSettings({ workjet: removeComputer(configuration, computer.id) });
+            if (result.status === "removed") updateSettings({ workjet: result.configuration });
           })();
         }}
         membership={activeMembership}

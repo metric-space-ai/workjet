@@ -5,5 +5,6 @@ export * from "./activation.ts";
 export * from "./dualHost.ts";
 export * from "./manifests.ts";
 export * from "./prompt.ts";
+export * from "./teamRolePrompt.ts";
 export * from "./registry.ts";
 export * from "./greppyRuntime.ts";

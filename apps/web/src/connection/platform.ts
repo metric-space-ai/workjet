@@ -128,6 +128,7 @@ function sshPreparationError(cause: unknown) {
   const normalized = message.toLowerCase();
   if (
     normalized.includes("cancel") ||
+    normalized.includes("tailscale ssh requires an additional check") ||
     /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u.test(
       normalized,
     ) ||

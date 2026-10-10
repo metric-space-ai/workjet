@@ -77,6 +77,7 @@ export interface WorkerDispatchResult {
 
 export type WorkerDispatchFailureReason =
   | "role-not-authorized"
+  | "execution-policy-invalid"
   | "parent-unavailable"
   | "parent-not-orchestrator"
   | "duplicate-capabilities"
@@ -96,6 +97,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
   {
     reason: Schema.Literals([
       "role-not-authorized",
+      "execution-policy-invalid",
       "parent-unavailable",
       "parent-not-orchestrator",
       "duplicate-capabilities",
@@ -123,6 +125,8 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
     switch (this.reason) {
       case "role-not-authorized":
         return "Worker dispatch is not authorized for this provider session.";
+      case "execution-policy-invalid":
+        return "The execution policy must reference the parent thread's project and verified team membership.";
       case "parent-unavailable":
         return "The parent thread is unavailable for worker dispatch.";
       case "parent-not-orchestrator":
@@ -234,6 +238,17 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
     if (parentTeam && parentTeam.role !== "specialist" && parentTeam.role !== "supervisor") {
       return yield* failure("role-not-authorized");
+    }
+    const executionPolicy =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.executionPolicy : undefined;
+    if (
+      executionPolicy !== undefined &&
+      (executionPolicy.projectId !== parent.projectId ||
+        parentTeam === undefined ||
+        parentTeam.projectId !== parent.projectId ||
+        parentTeam.threadId !== parent.id)
+    ) {
+      return yield* failure("execution-policy-invalid");
     }
 
     const requestedCapabilityIds = input.enabledCapabilityIds
@@ -364,6 +379,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           (saved.value.request.harness ?? "codex-cli") !== profile.harness ||
           saved.value.request.llmRouteId !== profile.llmRouteId ||
           saved.value.request.modelSelection.model !== profile.modelId ||
+          !NodeUtil.isDeepStrictEqual(
+            saved.value.request.executionPolicy,
+            executionPolicy,
+          ) ||
           saved.value.request.enabledCapabilityIds.some(
             (id) => !profile.capabilityIds.includes(id),
           ) ||
@@ -433,6 +452,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           llmRouteId: profile.llmRouteId,
           parent: { environmentId: invocation.environmentId, threadId: parent.id },
           ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
+          ...(executionPolicy === undefined ? {} : { executionPolicy }),
           parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
           managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
             .filter(Boolean)
@@ -678,6 +698,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         managedInstructions: parent.workjetConfig.managedInstructions,
         enabledCapabilityIds,
         capabilityBindings: [],
+        ...(executionPolicy === undefined ? {} : { executionPolicy }),
         ...(parentTeam
           ? {
               team: {
@@ -762,6 +783,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                   worker.branch === workerRefName &&
                   worker.worktreePath === workerWorktree.path &&
                   worker.workjetConfig.schemaVersion === 2 &&
+                  NodeUtil.isDeepStrictEqual(
+                    worker.workjetConfig.executionPolicy,
+                    executionPolicy,
+                  ) &&
                   worker.workjetConfig.role === "worker" &&
                   worker.workjetConfig.parent?.environmentId === invocation.environmentId &&
                   worker.workjetConfig.parent?.threadId === parent.id &&

@@ -145,6 +145,9 @@ export const make = Effect.gen(function* () {
       request.targetEnvironmentId !== targetEnvironmentId ||
       request.parent.environmentId === targetEnvironmentId ||
       request.parent.threadId === request.requestId ||
+      (request.executionPolicy !== undefined &&
+        (request.executionPolicy.projectId !== request.project.id ||
+          request.parentTeamRole === undefined)) ||
       !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(request.requestId) ||
       url === null ||
       new Set(request.enabledCapabilityIds).size !== request.enabledCapabilityIds.length ||
@@ -532,6 +535,7 @@ export const make = Effect.gen(function* () {
           managedInstructions: request.managedInstructions,
           enabledCapabilityIds: request.enabledCapabilityIds,
           capabilityBindings: [],
+          ...(request.executionPolicy === undefined ? {} : { executionPolicy: request.executionPolicy }),
           ...(request.parentTeamRole
             ? {
                 team: {

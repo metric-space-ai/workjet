@@ -122,6 +122,62 @@ import {
   remoteWorkerRepositoryUrl,
 } from "./RemoteWorkerReceiver.ts";
 import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
+import { requireEnforcedExecutionPolicy } from "../provider/executionPolicy.ts";
+
+it.effect("retains the immutable source policy in the target provider configuration", () =>
+  Effect.gen(function* () {
+    const h = harness();
+    const receiver = yield* h.receiver;
+    const executionPolicy = {
+      mode: "autonomous-worktree" as const,
+      projectId: request.project.id,
+      revision: 7,
+    };
+    const scoped = { ...request, executionPolicy };
+    yield* receiver.receive(scoped);
+    const create = h.commands.find(({ command }) => command.type === "thread.create")?.command;
+    expect(create?.type).toBe("thread.create");
+    if (create?.type !== "thread.create") throw new Error("No target worker configuration");
+    expect(create.workjetConfig).toMatchObject({ schemaVersion: 2, executionPolicy });
+    const rejected = yield* Effect.flip(requireEnforcedExecutionPolicy(
+      "startSession", ProviderDriverKind.make("codex"), create.workjetConfig,
+    ));
+    expect(rejected.issue).toContain("unsupported");
+    const restarted = yield* h.receiver;
+    yield* restarted.receive(scoped);
+    expect(h.commands).toHaveLength(2);
+    expect((yield* Effect.flip(restarted.receive({
+      ...scoped, executionPolicy: { ...executionPolicy, revision: 8 },
+    }))).reason).toBe("request-conflict");
+    expect(h.commands).toHaveLength(2);
+    expect(h.worktreeCalls).toHaveLength(1);
+  }),
+);
+
+it.effect("rejects foreign or unteamed policies before storing or touching a repository", () =>
+  Effect.gen(function* () {
+    const executionPolicy = {
+      mode: "autonomous-worktree" as const,
+      projectId: request.project.id,
+      revision: 7,
+    };
+    for (const invalid of [
+      { ...request, executionPolicy: { ...executionPolicy, projectId: ProjectId.make("foreign-project") } },
+      { ...request, executionPolicy, parentTeamRole: undefined },
+      { ...request, executionPolicy: { ...executionPolicy, revision: -1 } },
+      { ...request, executionPolicy: { ...executionPolicy, mode: "full-access" } },
+    ]) {
+      const h = harness();
+      const receiver = yield* h.receiver;
+      expect((yield* Effect.flip(receiver.receive(invalid as RemoteWorkerRequest))).reason)
+        .toBe("invalid-request");
+      expect(h.receipt()).toBeUndefined();
+      expect(h.commands).toEqual([]);
+      expect(h.gitCalls).toEqual([]);
+      expect(h.worktreeCalls).toEqual([]);
+    }
+  }),
+);
 
 const target = EnvironmentId.make("gpu3");
 const source = EnvironmentId.make("mac");

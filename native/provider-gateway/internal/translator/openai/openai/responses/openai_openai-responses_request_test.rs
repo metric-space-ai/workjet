@@ -5,7 +5,6 @@
 use super::convert_openai_responses_request_to_openai_chat_completions;
 use serde_json::{json, Value};
 
-
 #[test]
 fn empty_instructions_do_not_create_an_empty_system_message() {
     for instructions in [None, Some(""), Some(" "), Some("Keep the project context.")] {
@@ -26,7 +25,10 @@ fn empty_instructions_do_not_create_an_empty_system_message() {
             } else {
                 assert_eq!(messages.len(), 1);
             }
-            assert_eq!(messages.last().unwrap(), &json!({"role":"user","content":"Hi"}));
+            assert_eq!(
+                messages.last().unwrap(),
+                &json!({"role":"user","content":"Hi"})
+            );
         }
     }
 }

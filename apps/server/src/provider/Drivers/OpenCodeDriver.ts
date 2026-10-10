@@ -26,7 +26,10 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError, ProviderGatewayRoutingError } from "../Errors.ts";
-import { openCodeGatewayConfiguration, openCodeGatewayModel } from "../opencode/OpenCodeGatewayProfile.ts";
+import {
+  openCodeGatewayConfiguration,
+  openCodeGatewayModel,
+} from "../opencode/OpenCodeGatewayProfile.ts";
 import { ProviderGatewayService } from "../../providerGateway/ProviderGatewayService.ts";
 import {
   openCodeGatewayRoutingBlock,
@@ -162,31 +165,45 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         routeViaGateway,
         serverUrl: effectiveConfig.serverUrl,
       });
-      const routingError = (cause: unknown) => new ProviderGatewayRoutingError({
-        provider: DRIVER_KIND, instanceId, reason: "catalog-unavailable",
-        detail: cause instanceof Error ? cause.message : String(cause), cause,
-      });
-      const resolveSessionEnvironment = Effect.fn("OpenCode.gatewayEnvironment")(function* (model?: string) {
+      const routingError = (cause: unknown) =>
+        new ProviderGatewayRoutingError({
+          provider: DRIVER_KIND,
+          instanceId,
+          reason: "catalog-unavailable",
+          detail: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        });
+      const resolveSessionEnvironment = Effect.fn("OpenCode.gatewayEnvironment")(function* (
+        model?: string,
+      ) {
         if (routingBlock) return yield* Effect.fail(routingBlock);
         const resolved = yield* resolveGatewayRoutedEnvironment({
-          driver: DRIVER_KIND, instanceId, routeViaGateway, environment,
+          driver: DRIVER_KIND,
+          instanceId,
+          routeViaGateway,
+          environment,
           ...(model ? { model } : {}),
         }).pipe(Effect.provideService(ProviderGatewayService, gateway));
         if (!routeViaGateway) return resolved;
         const status = yield* gateway.status();
-        if (!status.providerEndpoint) return yield* Effect.fail(routingError("The gateway has no provider endpoint."));
+        if (!status.providerEndpoint)
+          return yield* Effect.fail(routingError("The gateway has no provider endpoint."));
         const endpoint = status.providerEndpoint;
         const catalog = yield* gateway.catalog().pipe(Effect.mapError(routingError));
         const content = yield* Effect.try({
-          try: () => openCodeGatewayConfiguration(endpoint, catalog, resolved.OPENCODE_CONFIG_CONTENT),
+          try: () =>
+            openCodeGatewayConfiguration(endpoint, catalog, resolved.OPENCODE_CONFIG_CONTENT),
           catch: routingError,
         });
         return { ...resolved, OPENCODE_CONFIG_CONTENT: content };
       });
-      const resolveSessionModel = (model?: string) => gateway.catalog().pipe(
-        Effect.mapError(routingError),
-        Effect.flatMap(catalog => Effect.try({ try: () => openCodeGatewayModel(catalog, model), catch: routingError })),
-      );
+      const resolveSessionModel = (model?: string) =>
+        gateway.catalog().pipe(
+          Effect.mapError(routingError),
+          Effect.flatMap((catalog) =>
+            Effect.try({ try: () => openCodeGatewayModel(catalog, model), catch: routingError }),
+          ),
+        );
 
       const adapter = yield* makeOpenCodeAdapter(effectiveConfig, {
         instanceId,
@@ -195,14 +212,30 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         ...(routeViaGateway ? { resolveSessionModel } : {}),
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
-      const textGeneration = yield* makeOpenCodeTextGeneration(effectiveConfig, processEnv, routeViaGateway ? { resolveEnvironment: resolveSessionEnvironment, resolveModel: resolveSessionModel } : undefined);
+      const textGeneration = yield* makeOpenCodeTextGeneration(
+        effectiveConfig,
+        processEnv,
+        routeViaGateway
+          ? { resolveEnvironment: resolveSessionEnvironment, resolveModel: resolveSessionModel }
+          : undefined,
+      );
 
-      const checkProvider = (routeViaGateway
-        ? resolveSessionEnvironment().pipe(Effect.flatMap(env => checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, env)))
-        : checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, processEnv)
+      const checkProvider = (
+        routeViaGateway
+          ? resolveSessionEnvironment().pipe(
+              Effect.flatMap((env) =>
+                checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, env),
+              ),
+            )
+          : checkOpenCodeProviderStatus(effectiveConfig, serverConfig.cwd, processEnv)
       ).pipe(
-        Effect.catch(cause => makePendingOpenCodeProvider(effectiveConfig).pipe(Effect.map(draft => ({ ...draft, status: "error" as const, message: cause.message })))),
-        Effect.map(stampIdentity), Effect.provideService(OpenCodeRuntime, openCodeRuntime),
+        Effect.catch((cause) =>
+          makePendingOpenCodeProvider(effectiveConfig).pipe(
+            Effect.map((draft) => ({ ...draft, status: "error" as const, message: cause.message })),
+          ),
+        ),
+        Effect.map(stampIdentity),
+        Effect.provideService(OpenCodeRuntime, openCodeRuntime),
       );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);

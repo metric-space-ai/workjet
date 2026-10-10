@@ -1,3 +1,4 @@
+import { InstanceProviderSection, InstanceConnectionStatus } from "./InstanceProviderSection";
 import {
   WorkjetGatewayAccountId,
   WorkjetGatewayOperationError,
@@ -92,6 +93,76 @@ function html(overrides: Partial<typeof state> = {}) {
   return renderToStaticMarkup(<WorkjetModelsProviders {...state} {...overrides} />);
 }
 describe("Provider account table", () => {
+  it("groups an instance outage once while local xAI remains active and verified", () => {
+    const failure = {
+      _tag: "failed" as const,
+      code: "guest_failed" as const,
+      preparation: {
+        stage: "navigation_commit" as const,
+        reason: "did_fail_load" as const,
+        errorCode: -102,
+      },
+    };
+    const rendered = html({
+      nativeProviderRows: (
+        <InstanceProviderSection
+          label="Welsch"
+          providers={{
+            registry: undefined,
+            error: "CTOX: guest_failed",
+            errorAccountId: undefined,
+            connectionFailure: failure,
+            busy: false,
+            run: async () => undefined,
+            refresh: async () => undefined,
+          }}
+          grok={{
+            row: <div>xAI · Welsch · Not loaded</div>,
+            connectionFailure: failure,
+            label: "Welsch",
+            installed: false,
+            hasModels: false,
+            checking: false,
+            start: () => {},
+            checkAll: () => {},
+            refresh: () => {},
+          }}
+        />
+      ),
+    });
+    expect(rendered.match(/data-workjet-instance-connection=/g)).toHaveLength(1);
+    expect(rendered).toContain("Instance Welsch");
+    expect(rendered).toContain("This computer");
+    expect(rendered).toContain("navigation_commit");
+    expect(rendered).toContain("Reconnect");
+    expect(rendered).not.toContain("guest_failed");
+    expect(rendered).not.toContain("Not loaded");
+    expect(rendered).toContain("work@example.test");
+    expect(rendered).toContain("grok-4.7");
+    expect(rendered).toContain("200");
+  });
+  it("shows a German instance status and safe diagnostic disclosure", () => {
+    const rendered = renderToStaticMarkup(
+      <InstanceConnectionStatus
+        label="Welsch"
+        language="de"
+        failure={{
+          _tag: "failed",
+          code: "guest_failed",
+          preparation: { stage: "session", reason: "unknown" },
+        }}
+        busy={false}
+        reconnect={() => {}}
+      />,
+    );
+    expect(rendered).toContain("Verbindung zur Instanz Welsch gestört");
+    expect(rendered).toContain("Neu verbinden");
+    expect(rendered).toContain("<details>");
+    expect(rendered).toContain("Sitzung vorbereiten");
+    expect(rendered).not.toContain("guest_failed");
+    expect(rendered).not.toContain("text-destructive");
+  });
+
   it("shows the safe endpoint discovery failure inside the Kimi key form", () => {
     const message = new WorkjetGatewayOperationError({ reason: "kimi-key-not-accepted" }).message;
     const rendered = renderToStaticMarkup(

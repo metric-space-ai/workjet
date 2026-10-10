@@ -782,6 +782,7 @@ describe("CtoxGuestWindows", () => {
         assert.deepEqual(yield* hosts[4]!.invoke(manager.activate(descriptor.id, bounds)), {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "renderer_budget", reason: "unknown" },
         });
         expect(harness.views).toHaveLength(4);
         yield* hosts[1]!.invoke(manager.exitBusinessOsMode);
@@ -1170,6 +1171,7 @@ describe("CtoxGuestManager", () => {
         {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "navigation_commit", reason: "did_fail_load", errorCode: -105 },
         },
       );
       expect(harness.views[0]?.close).toHaveBeenCalledOnce();

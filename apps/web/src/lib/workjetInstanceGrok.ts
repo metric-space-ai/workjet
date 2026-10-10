@@ -2,7 +2,7 @@ import { WorkjetInstanceGrokResponse } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { newCommandId } from "./utils";
 import {
-  describeWorkjetProjectControlFailure,
+  WorkjetProjectControlError,
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
 } from "../workjetProjectControl";
@@ -75,8 +75,7 @@ export async function requestInstanceGrok(
       }),
     ]);
     signal.throwIfAborted();
-    if (result._tag !== "completed")
-      throw new GrokControlFailure(describeWorkjetProjectControlFailure(result, instanceId));
+    if (result._tag !== "completed") throw new WorkjetProjectControlError(result, instanceId);
     let response: WorkjetInstanceGrokResponse;
     try {
       response = Schema.decodeUnknownSync(WorkjetInstanceGrokResponse)(result.response);
@@ -94,7 +93,8 @@ export async function requestInstanceGrok(
     return response;
   } catch (error) {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-    if (error instanceof GrokControlFailure) throw error;
+    if (error instanceof GrokControlFailure || error instanceof WorkjetProjectControlError)
+      throw error;
     throw new GrokControlFailure(
       "Grok control failed. Check the instance connection and Owner/Admin access, then retry.",
     );

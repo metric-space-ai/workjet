@@ -275,6 +275,16 @@ export function NativeProviderRows({
   readonly label: string;
 }) {
   const state = useInstanceProviders(instanceId);
+  return <NativeProviderRowsView state={state} label={label} />;
+}
+
+export function NativeProviderRowsView({
+  state,
+  label,
+}: {
+  readonly state: ReturnType<typeof useInstanceProviders>;
+  readonly label: string;
+}) {
   const registry = state.registry;
   const accounts = registry?.accounts.filter((account) => account.provider === "claude") ?? [];
   const refresh = async () => {
@@ -288,6 +298,7 @@ export function NativeProviderRows({
         });
     }
   };
+  if (state.connectionFailure) return null;
   return (
     <div
       role="rowgroup"

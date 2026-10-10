@@ -32,6 +32,9 @@ import { RemoteWorkerSourceOperations } from "./RemoteWorkerConnectionBootstrap.
 import { RemoteWorkerComputerEnrollment } from "./RemoteWorkerComputerEnrollment.ts";
 import { computerInventory } from "./computerInventory.ts";
 import { reportRemoteWorkerSubmission } from "./WorkerSubmission.ts";
+import { retainRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
+import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
+import { WorkerPullRequestStore } from "./WorkerPullRequestStore.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { makeCtoxLumaConfigurationClient } from "./ctox/CtoxLumaConfigurationClient.ts";
@@ -44,6 +47,8 @@ const InferPayload = Schema.Struct({
 
 export const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment;
+  const broker = yield* RemoteWorkerBroker;
+  const pullRequests = yield* WorkerPullRequestStore;
   const engine = yield* OrchestrationEngineService;
   const sourceControl = yield* Effect.serviceOption(SourceControlProviderRegistry);
   const settings = yield* ServerSettingsService;
@@ -178,6 +183,20 @@ export const make = Effect.gen(function* () {
                 Effect.provideService(OrchestrationEngineService, engine),
                 Effect.provideService(SourceControlProviderRegistry, sourceControl.value),
               );
+              if (
+                typeof payload === "object" &&
+                payload !== null &&
+                "pullRequest" in payload &&
+                (payload.pullRequest as { provider?: unknown })?.provider === "github"
+              ) {
+                // Retirement is cleanup; current source authority is re-read by the native publisher.
+                yield* retainRemoteWorkerOutcome(request, payload).pipe(
+                  Effect.provideService(ProjectionSnapshotQuery, query),
+                  Effect.provideService(RemoteWorkerBroker, broker),
+                  Effect.provideService(WorkerPullRequestStore, pullRequests),
+                  Effect.provideService(SourceControlProviderRegistry, sourceControl.value),
+                );
+              }
             }
             yield* authority.revoke(request);
             return { retired: true };

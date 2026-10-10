@@ -1,11 +1,13 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { randomUUID } from "node:crypto";
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import {
   EventId,
   ProviderDriverKind,
   RuntimeItemId,
   TurnId,
   type ProviderInstanceId,
+  type ProviderSessionStartInput,
   type ProviderRuntimeEvent,
   type ProviderSession,
   type ThreadId,
@@ -64,6 +66,7 @@ const decodeMessages = Schema.decodeUnknownEffect(
 interface SessionContext {
   session: ProviderSession;
   readonly rpc: PiRpc;
+  readonly sourceStartInput?: ProviderSessionStartInput;
   readonly scope: Scope.Closeable;
   readonly turns: ProviderThreadTurnSnapshot[];
   turnId: TurnId | undefined;
@@ -250,13 +253,17 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
         if (managed?.activeWorkjetMcpCapabilityIds.length && !input.extensionPath)
           return yield* error("startSession", "The Pi Workjet MCP extension is unavailable.");
         const model = inputStart.modelSelection.model;
-        const selected = yield* input.resolveModel(model);
+        const sourceProfile = yield* admitWorkerSourceNativeProfile(inputStart, PROVIDER);
+        const selected = sourceProfile
+          ? { provider: sourceProfile.provider ?? "workjet-source", model: sourceProfile.model, environment: sourceProfile.environment }
+          : yield* input.resolveModel(model);
+        const sessionDirectory = sourceProfile ? path.join(sourceProfile.directory, "sessions") : input.sessionDirectory;
         const decoded = decodeResume(inputStart.resumeCursor);
         if (inputStart.resumeCursor !== undefined && Option.isNone(decoded))
           return yield* error("startSession", "This is not a resumable Pi RPC session.");
         const resume = Option.isSome(decoded) ? decoded.value.sessionFile : undefined;
         if (resume) {
-          const relative = path.relative(input.sessionDirectory, resume);
+          const relative = path.relative(sessionDirectory, resume);
           if (
             path.isAbsolute(relative) ||
             relative.startsWith("..") ||
@@ -301,7 +308,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
               "--model",
               selected.model,
               "--session-dir",
-              input.sessionDirectory,
+              sessionDirectory,
               ...(input.extensionPath ? ["--extension", input.extensionPath] : []),
               ...(resume ? ["--session", resume] : []),
             ],
@@ -333,6 +340,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
           const ctx: SessionContext = {
             session,
             rpc,
+            ...(sourceProfile ? { sourceStartInput: inputStart } : {}),
             scope,
             turns: [],
             turnId: undefined,
@@ -375,6 +383,10 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
       const model = turn.modelSelection?.model ?? ctx.session.model;
       if (!model || (turn.modelSelection && turn.modelSelection.instanceId !== input.instanceId))
         return yield* error("sendTurn", "Choose a gateway model for this Pi instance.");
+      if (ctx.sourceStartInput) {
+        yield* admitWorkerSourceNativeProfile({ ...ctx.sourceStartInput,
+          modelSelection: { instanceId: input.instanceId, model } }, PROVIDER);
+      }
       if (model !== ctx.session.model) {
         const selected = yield* input.resolveModel(model);
         yield* ctx.rpc.request("set_model", {

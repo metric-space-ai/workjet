@@ -146,3 +146,48 @@ fn invalid_wrapped_arguments_fail_instead_of_reaching_a_harness() {
         XaiCustomToolAdapter::default().with_boxed_functions(BTreeSet::from(["guide".into()]));
     assert_eq!(adapter.apply(json!({"type":"response.output_item.done","item":{"type":"function_call","name":"guide","arguments":"{}"}}))[0]["type"],"response.failed");
 }
+
+#[test]
+fn twenty_codex_reasoning_replays_omit_only_null_optional_content() {
+    let mut history = Vec::new();
+    for index in 1..=20 {
+        history.push(json!({"type":"reasoning","id":format!("rs-{index}"),
+            "summary":[],"content":null,"encrypted_content":format!("opaque-reasoning-{index}")}));
+        history.push(json!({"type":"function_call","id":format!("fc-{index}"),
+            "name":"exec_command","call_id":format!("call-{index}"),"arguments":"{\"cmd\":\"date\"}"}));
+        history.push(
+            json!({"type":"function_call_output","id":format!("out-{index}"),
+            "call_id":format!("call-{index}"),"output":"successful command result"}),
+        );
+        let prepared = prepare_xai_responses_body(
+            &json!({"input":history}).to_string().into_bytes(),
+            XaiRequestPolicy {
+                model: "grok-4.7",
+                stream: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let body: Value = serde_json::from_slice(&prepared.body).unwrap();
+        for (expected, actual) in history.iter().zip(body["input"].as_array().unwrap()) {
+            let mut normalized = expected.clone();
+            if expected["type"] == "reasoning" {
+                normalized.as_object_mut().unwrap().remove("content");
+            }
+            assert_eq!(actual, &normalized);
+        }
+    }
+    let preserved = json!({"type":"reasoning","content":[],"encrypted_content":"opaque"});
+    let prepared = prepare_xai_responses_body(
+        &json!({"input":[preserved]}).to_string().into_bytes(),
+        XaiRequestPolicy {
+            model: "grok-4.7",
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&prepared.body).unwrap()["input"][0],
+        preserved
+    );
+}

@@ -280,6 +280,7 @@ pub fn prepare_xai_responses_body(
     let custom_tools = collect_custom_tool_names(&root);
     let namespace_tools = collect_namespace_tool_refs(&root);
     let boxed_functions = normalize_tools(&mut root);
+    normalize_input_reasoning_content(&mut root);
     normalize_input_custom_tool_calls(&mut root);
     normalize_input_boxed_functions(&mut root, &boxed_functions)?;
     if policy.inject_x_search {
@@ -527,6 +528,20 @@ fn prune_orphaned_tool_choice(root: &mut Value) {
         });
     if !found {
         root.as_object_mut().unwrap().remove("tool_choice");
+    }
+}
+
+fn normalize_input_reasoning_content(root: &mut Value) {
+    if let Some(input) = root.get_mut("input").and_then(Value::as_array_mut) {
+        for item in input {
+            if item.get("type").and_then(Value::as_str) == Some("reasoning")
+                && item.get("content").is_some_and(Value::is_null)
+            {
+                // Codex serializes an absent optional reasoning body as null;
+                // xAI accepts omission, but rejects the explicit null value.
+                item.as_object_mut().unwrap().remove("content");
+            }
+        }
     }
 }
 

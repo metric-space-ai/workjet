@@ -1,5 +1,6 @@
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  DEFAULT_MODEL,
   WorkjetConnectionId,
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
@@ -54,6 +55,7 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
 import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
+import { initialWorkerGoal } from "../../workjet/workerGoal.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -387,6 +389,53 @@ describe("ProviderRuntimeIngestion", () => {
       state: "failed",
     });
     expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
+  });
+
+  it("journals current Parent execution from canonical events using only the thread shell", async () => {
+    const at = "2026-01-01T00:00:00.000Z";
+    const harness = await createHarness({
+      hideThreadDetail: true,
+      threadWorkjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2,
+        team: {
+          projectId: asProjectId("project-1"), threadId: asThreadId("thread-1"),
+          role: "specialist", parentThreadId: asThreadId("supervisor"),
+          domain: "harness", createdAt: at,
+        },
+        goal: initialWorkerGoal("Deliver the approved result.", at),
+      },
+    });
+    const base = {
+      provider: ProviderDriverKind.make("codex"), providerInstanceId: ProviderInstanceId.make("codex"),
+      threadId: asThreadId("thread-1"), turnId: asTurnId("actual-parent-turn"),
+      createdAt: at, providerRefs: {},
+      raw: { source: "codex.app-server.notification", payload: {} },
+    };
+    harness.emit({
+      ...base, type: "turn.started", eventId: asEventId("parent-started"),
+      payload: { model: DEFAULT_MODEL },
+    });
+    const started = await waitForThread(harness.readModel, (thread) =>
+      thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.goal?.lastExecution?.state === "running",
+    );
+    const startedConfig = started.workjetConfig;
+    if (startedConfig.schemaVersion !== 2) throw new Error("missing goal");
+    expect(startedConfig.goal?.lastExecution?.author).toBeNull();
+    harness.emit({
+      ...base, type: "turn.completed", eventId: asEventId("parent-completed"),
+      payload: { state: "completed" },
+    });
+    const completed = await waitForThread(harness.readModel, (thread) =>
+      thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.goal?.lastExecution?.state === "completed",
+    );
+    const config = completed.workjetConfig;
+    if (config.schemaVersion !== 2) throw new Error("missing goal");
+    expect(config.goal?.lastExecution).toMatchObject({
+      providerInstanceId: base.providerInstanceId, turnId: base.turnId,
+      sourceEventId: "parent-completed", author: null,
+    });
+    expect(config.goal?.status).toBe("active");
+    expect(config.goal?.lastVerifiedProgress).toBeNull();
   });
 
   it("maps turn started/completed events into thread session updates", async () => {

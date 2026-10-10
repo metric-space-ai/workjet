@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Focused Linux verification. Run through the shared gpu build lane.
 set -euo pipefail
+export CI=true
 export RAYON_NUM_THREADS=2
 export UV_THREADPOOL_SIZE=2
 export GOMAXPROCS=2

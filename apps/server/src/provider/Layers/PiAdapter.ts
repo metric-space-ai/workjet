@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import {
   EventId,
@@ -77,7 +77,6 @@ interface SessionContext {
   assistantIndex: number;
   turnError: string | undefined;
   importedHistoryKey: string | undefined;
-  managedPrompt: string | undefined;
 }
 
 export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
@@ -111,7 +110,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
       provider: PROVIDER,
       providerInstanceId: input.instanceId,
       threadId,
-      eventId: EventId.make(randomUUID()),
+      eventId: EventId.make(NodeCrypto.randomUUID()),
       createdAt: yield* now,
     } as ProviderRuntimeEvent);
   });
@@ -250,14 +249,23 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
             "Choose a connected gateway model for this Pi instance.",
           );
         const managed = readMcpProviderSession(inputStart.threadId);
+        const managedPrompt = (
+          managed?.compiledManagedPrompt || inputStart.workjetConfig?.managedInstructions
+        )?.trim();
         if (managed?.activeWorkjetMcpCapabilityIds.length && !input.extensionPath)
           return yield* error("startSession", "The Pi Workjet MCP extension is unavailable.");
         const model = inputStart.modelSelection.model;
         const sourceProfile = yield* admitWorkerSourceNativeProfile(inputStart, PROVIDER);
         const selected = sourceProfile
-          ? { provider: sourceProfile.provider ?? "workjet-source", model: sourceProfile.model, environment: sourceProfile.environment }
+          ? {
+              provider: sourceProfile.provider ?? "workjet-source",
+              model: sourceProfile.model,
+              environment: sourceProfile.environment,
+            }
           : yield* input.resolveModel(model);
-        const sessionDirectory = sourceProfile ? path.join(sourceProfile.directory, "sessions") : input.sessionDirectory;
+        const sessionDirectory = sourceProfile
+          ? path.join(sourceProfile.directory, "sessions")
+          : input.sessionDirectory;
         const decoded = decodeResume(inputStart.resumeCursor);
         if (inputStart.resumeCursor !== undefined && Option.isNone(decoded))
           return yield* error("startSession", "This is not a resumable Pi RPC session.");
@@ -309,6 +317,12 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
               selected.model,
               "--session-dir",
               sessionDirectory,
+              ...(managedPrompt
+                ? [
+                    "--append-system-prompt",
+                    `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
+                  ]
+                : []),
               ...(input.extensionPath ? ["--extension", input.extensionPath] : []),
               ...(resume ? ["--session", resume] : []),
             ],
@@ -351,8 +365,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
             assistantIndex: 0,
             turnError: undefined,
             importedHistoryKey: undefined,
-            managedPrompt:
-              managed?.compiledManagedPrompt || inputStart.workjetConfig?.managedInstructions,
           };
           sessions.set(inputStart.threadId, ctx);
           yield* rpc.events.pipe(
@@ -384,8 +396,10 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
       if (!model || (turn.modelSelection && turn.modelSelection.instanceId !== input.instanceId))
         return yield* error("sendTurn", "Choose a gateway model for this Pi instance.");
       if (ctx.sourceStartInput) {
-        yield* admitWorkerSourceNativeProfile({ ...ctx.sourceStartInput,
-          modelSelection: { instanceId: input.instanceId, model } }, PROVIDER);
+        yield* admitWorkerSourceNativeProfile(
+          { ...ctx.sourceStartInput, modelSelection: { instanceId: input.instanceId, model } },
+          PROVIDER,
+        );
       }
       if (model !== ctx.session.model) {
         const selected = yield* input.resolveModel(model);
@@ -394,7 +408,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
           modelId: selected.model,
         });
       }
-      const turnId = TurnId.make(randomUUID());
+      const turnId = TurnId.make(NodeCrypto.randomUUID());
       const finished = yield* Deferred.make<void>();
       ctx.turnId = turnId;
       ctx.finished = finished;
@@ -413,16 +427,12 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
         historyKey && historyKey !== ctx.importedHistoryKey
           ? `<imported_conversation>\n${turn.importedHistory!.map((message) => `${message.role}:\n${message.text}`).join("\n\n")}\n</imported_conversation>\n\n`
           : "";
-      const managed = ctx.managedPrompt
-        ? `<workjet_managed_instructions>\n${ctx.managedPrompt}\n</workjet_managed_instructions>\n\n`
-        : "";
-      yield* ctx.rpc.request("prompt", { message: managed + history + turn.input }).pipe(
+      yield* ctx.rpc.request("prompt", { message: history + turn.input }).pipe(
         Effect.tapError((cause) => {
           ctx.turnError = cause.message;
           return finish(ctx);
         }),
       );
-      ctx.managedPrompt = undefined;
       ctx.importedHistoryKey = historyKey;
       // Native RPC acknowledges dispatch before agent_end; return that receipt now.
       const state = yield* ctx.rpc.request("get_state").pipe(

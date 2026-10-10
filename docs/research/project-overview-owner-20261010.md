@@ -73,7 +73,13 @@ its data were unchanged.
 
 ## Verification
 
-The final product source is `a32ccc5731f19afa5239f5eb22e75aadb2d19c02`.
+The initial overview implementation was checked on
+`a32ccc5731f19afa5239f5eb22e75aadb2d19c02`. Before review, the branch
+integrated `origin/main` at `35bbb7e01`: the only conflict was two new General
+settings rows. Both the project-language selector and main's analytics-consent
+row were preserved. The overview rendering files remain identical to the
+visual-proof source. The integrated revision repeats the full required checks
+and web suite; its terminal receipt is linked from the PR.
 Canonical gpu3 run `workjet-project-overview-owner-20261010T230422Z`
 passed every code check with two test workers and two-CPU affinity:
 

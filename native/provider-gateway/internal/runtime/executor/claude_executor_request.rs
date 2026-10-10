@@ -16,7 +16,9 @@ use super::{
     finalize_anthropic_messages_body_cch, normalize_claude_cache_control_ttl,
     sign_anthropic_messages_body,
 };
-use crate::internal::signature::sanitize_claude_messages_for_claude_upstream;
+use crate::internal::signature::{
+    normalize_claude_empty_message_text, sanitize_claude_messages_for_claude_upstream,
+};
 
 #[cfg(feature = "anthropic-fingerprint-transport")]
 use std::fmt;
@@ -271,7 +273,7 @@ pub fn prepare_claude_upstream_body_with_identity(
     let body = if model.is_some_and(|model| model.provider_type.eq_ignore_ascii_case("claude")) {
         sanitize_claude_messages_for_claude_upstream(&body).0
     } else {
-        body
+        normalize_claude_empty_message_text(&body)
     };
     let body = if count_claude_cache_controls(&body) == 0 {
         ensure_claude_cache_control(&body)
@@ -1466,6 +1468,41 @@ mod payload_tests {
         assert!(billing.contains("cc_entrypoint=cli; cch="));
         assert!(!billing.contains("cch=00000;"));
         assert_eq!(sign_anthropic_messages_body(&body), body);
+    }
+
+    #[test]
+    fn live_model_without_static_metadata_keeps_twenty_tool_replays_valid() {
+        let mut messages = vec![serde_json::json!({"role":"user","content":"Run the tool"})];
+        for index in 1..=20 {
+            let id = format!("call_{index}");
+            let tool = serde_json::json!({"type":"tool_use","id":id,"name":"greppy","input":{"command":format!("printf PROXY_MATRIX_{index:02}")}});
+            let result = serde_json::json!({"type":"tool_result","tool_use_id":id,"content":format!("PROXY_MATRIX_{index:02}"),"is_error":false});
+            messages.push(serde_json::json!({"role":"assistant","content":[{"type":"text","text":""},{"type":"redacted_thinking","data":"opaque"},tool]}));
+            messages.push(serde_json::json!({"role":"user","content":[result]}));
+            let input = serde_json::to_vec(
+                &serde_json::json!({"model":"claude-opus-5-5","messages":messages}),
+            )
+            .unwrap();
+            let (output, _, _) =
+                prepare_claude_upstream_body_with_identity(&input, None, "", false);
+            let root = value(&output);
+            let replay = root["messages"].as_array().unwrap();
+            assert_eq!(replay.len(), 1 + index * 2);
+            for (original, normalized) in messages.iter().skip(1).zip(replay.iter().skip(1)) {
+                if original["role"] == "assistant" {
+                    assert_eq!(
+                        normalized["content"],
+                        serde_json::json!([original["content"][1], original["content"][2]])
+                    );
+                } else {
+                    let mut normalized = normalized.clone();
+                    for block in normalized["content"].as_array_mut().unwrap() {
+                        block.as_object_mut().unwrap().remove("cache_control");
+                    }
+                    assert_eq!(&normalized, original);
+                }
+            }
+        }
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  OrchestrationDispatchCommandError,
   type EnvironmentId,
   ProjectId,
   type ModelSelection,
@@ -147,6 +148,20 @@ export function shouldWriteThreadErrorToCurrentServerThread(input: {
     input.activeServerThread.environmentId === input.routeThreadRef.environmentId &&
     input.activeServerThread.id === input.targetThreadId,
   );
+}
+
+export function isRolledBackBootstrapError(error: unknown, threadId: ThreadId): boolean {
+  return (
+    Schema.is(OrchestrationDispatchCommandError)(error) && error.rolledBackThreadId === threadId
+  );
+}
+
+/** Preserve the latest error through draft promotion and rollback. */
+export function resolveLocalThreadError(
+  draft: { readonly message: string | null; readonly at: number } | undefined,
+  server: { readonly message: string | null; readonly at: number } | undefined,
+): string | null {
+  return (server && (!draft || server.at > draft.at) ? server : draft)?.message ?? null;
 }
 
 export function buildThreadTurnInterruptInput(thread: Pick<Thread, "id" | "session">): {

@@ -15,18 +15,7 @@ export function requireOneShotIsolation(
         detail,
       }),
     );
-  if (
-    !team &&
-    (model.projects.some(
-      (project) => project.id === thread.projectId && project.ctoxRegistration != null,
-    ) ||
-      model.threads.some(
-        (candidate) =>
-          candidate.projectId === thread.projectId &&
-          candidate.workjetConfig.schemaVersion === 2 &&
-          candidate.workjetConfig.team != null,
-      ))
-  )
+  if (!team && thread.workjetConfig.role === "worker")
     return fail(
       "A manual project One-Shot Worker must be prepared in its own worktree before execution.",
     );

@@ -4,6 +4,7 @@ import {
   RemoteWorkerDispatchError,
   WorkjetGatewayAdmissionInput,
   WorkjetGatewayInferenceInput,
+  WorkjetGatewayInferenceProtocol,
   WorkjetComputerId,
   WorkjetConnectionId,
   type RemoteWorkerRequest,
@@ -42,6 +43,7 @@ import { makeCtoxLumaConfigurationRpc } from "./ctox/CtoxLumaConfigurationRpc.ts
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "computer-unavailable" });
 const InferPayload = Schema.Struct({
+  protocol: Schema.optionalKey(WorkjetGatewayInferenceProtocol),
   requestJson: Schema.String.check(Schema.isMaxLength(256 * 1024)),
 });
 
@@ -232,7 +234,7 @@ export const make = Effect.gen(function* () {
           ).pipe(Effect.mapError(failure));
           const inferenceInput = yield* Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput)({
             ...admitted,
-            requestJson: input.requestJson,
+            ...input,
           }).pipe(Effect.mapError(failure));
           return yield* inference.infer(inferenceInput).pipe(Effect.mapError(failure));
         }),

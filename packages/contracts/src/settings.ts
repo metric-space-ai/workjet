@@ -516,6 +516,31 @@ export const MiniMaxSettings = makeProviderSettingsSchema(
 );
 export type MiniMaxSettings = typeof MiniMaxSettings.Type;
 
+export const PiSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("pi").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Pi Code executable on this computer.",
+        providerSettingsForm: { placeholder: "pi", clearWhenEmpty: "omit" },
+      }),
+    ),
+    model: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Preferred model",
+        description: "Choose a model from the connected Workjet gateway accounts.",
+      }),
+    ),
+  },
+  { order: ["binaryPath", "model"] },
+);
+export type PiSettings = typeof PiSettings.Type;
+
 export const GreppySettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(

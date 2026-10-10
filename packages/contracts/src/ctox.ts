@@ -1228,6 +1228,8 @@ export const CtoxWorkjetComputerControlRequest = Schema.Union([
     action: Schema.Literal("computer.assign"),
     commandId: CommandId,
     computerId: CtoxComputerId,
+    /** Existing native pairing proof reference; the receiving Owner policy validates it. */
+    deviceBindingId: Schema.optionalKey(CtoxProjectText(160)),
     displayName: CtoxProjectText(256),
     hostingMode: CtoxComputerHostingMode,
     capabilities: CtoxComputerCapabilities,

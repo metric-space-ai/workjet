@@ -1,8 +1,14 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Bounded Node loopback adapter for the external Codex process; source identity is schema validated and scoped by its owning Effect service.
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import {
+  workerSourceNativeProfile,
+  type WorkerSourceNativeProfile,
+} from "./WorkerSourceNativeProfile.ts";
 import { Schema } from "effect";
-import { WorkjetComputerInventory, type RemoteWorkerHarness } from "@workjet/contracts";
+import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
 import type { WorkerSubmission } from "./WorkerSubmission.ts";
 
 const Route = Schema.Struct({
@@ -15,7 +21,14 @@ const Route = Schema.Struct({
 });
 export type WorkerSourceHarnessRoute = typeof Route.Type;
 const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Schema.Boolean) });
-const Reply = Schema.Struct({ requestJson: Schema.String });
+const Reply = Schema.Struct({
+  requestJson: Schema.String,
+  contentType: Schema.optionalKey(Schema.Literals(["application/json", "text/event-stream"])),
+});
+const nativeProtocols = {
+  "/v1/messages": "messages",
+  "/v1/chat/completions": "chat-completions",
+} as const;
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
 const MessagesResponse = Schema.Struct({
   id: Schema.String,
@@ -80,6 +93,7 @@ function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void 
 }
 
 export interface WorkerSourceHarness {
+  readonly nativeProfile?: WorkerSourceNativeProfile;
   readonly isRevoked: () => boolean;
   readonly identity: Readonly<
     Pick<
@@ -111,11 +125,21 @@ export async function installWorkerSourceRoute(
     readonly requestDigest: string;
     readonly modelId: string;
     readonly harness?: RemoteWorkerHarness;
+    readonly nativeProfile?: {
+      readonly harness: WorkerSourceNativeProfile["harness"];
+      readonly directory: string;
+    };
   },
 ): Promise<WorkerSourceHarness> {
   const route = Object.freeze(Schema.decodeUnknownSync(Route)(input));
-  const pin = Object.freeze({ ...installation, harness: installation.harness ?? "codex-cli" });
+  const pin = Object.freeze({
+    ...installation,
+    harness: Schema.decodeUnknownSync(RemoteWorkerHarness)(
+      installation.harness ?? installation.nativeProfile?.harness ?? "codex-cli",
+    ),
+  });
   if (
+    (pin.nativeProfile !== undefined && pin.nativeProfile.harness !== pin.harness) ||
     threadId !== route.requestId ||
     route.targetEnvironmentId !== pin.targetEnvironmentId ||
     route.requestDigest !== pin.requestDigest ||
@@ -139,7 +163,9 @@ export async function installWorkerSourceRoute(
       original.capability !== route.capability ||
       original.port !== route.port ||
       existing.model !== pin.modelId ||
-      existing.harness !== pin.harness
+      existing.harness !== pin.harness ||
+      existing.nativeProfile?.harness !== pin.nativeProfile?.harness ||
+      existing.nativeProfile?.directory !== pin.nativeProfile?.directory
     )
       throw new Error("Worker source route substitution or revocation");
     await existing.admit();
@@ -175,20 +201,29 @@ export async function installWorkerSourceRoute(
     const authenticated =
       req.headers.authorization !== undefined
         ? req.headers.authorization === `Bearer ${apiKey}`
-        : messages && req.headers["x-api-key"] === apiKey;
+        : req.headers["x-api-key"] === apiKey;
     if (revoked || !authenticated) {
       res.writeHead(403).end();
       return;
     }
-    // Legacy Claude routes pin Messages; adding native routes must not change that boundary.
-    if (messages && req.url === "/v1/responses") {
-      res.writeHead(404).end();
-      return;
-    }
-    const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
+    const requestPath = new URL(req.url || "/", "http://127.0.0.1").pathname;
+    // Existing Claude routes remain pinned to Messages; native profiles opt in to translation.
+    const legacyMessages = messages && pin.nativeProfile === undefined;
+    const protocol =
+      requestPath === "/v1/messages" && !legacyMessages
+        ? nativeProtocols["/v1/messages"]
+        : requestPath === "/v1/chat/completions" && !legacyMessages
+          ? nativeProtocols["/v1/chat/completions"]
+          : undefined;
+    const inventory = req.method === "GET" && requestPath === "/v1/workjet/computers";
+    const models = req.method === "GET" && requestPath === "/v1/models";
     if (
       !inventory &&
-      (req.method !== "POST" || req.url !== (messages ? "/v1/messages" : "/v1/responses"))
+      !models &&
+      (req.method !== "POST" ||
+        ((legacyMessages || requestPath !== "/v1/responses") &&
+          !(messages && requestPath === "/v1/messages") &&
+          protocol === undefined))
     ) {
       res.writeHead(404).end();
       return;
@@ -209,14 +244,20 @@ export async function installWorkerSourceRoute(
     };
     res.on("close", disconnect);
     try {
-      if (inventory) {
+      if (inventory || models) {
         await source("admit", {}, controller.signal);
-        const response = Schema.decodeUnknownSync(WorkjetComputerInventory)(
-          await source("computers", {}, controller.signal),
-        );
+        const response = inventory
+          ? Schema.decodeUnknownSync(WorkjetComputerInventory)(
+              await source("computers", {}, controller.signal),
+            )
+          : {
+              object: "list",
+              data: [{ id: pin.modelId, object: "model", owned_by: "workjet-source" }],
+            };
         if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
         const body = JSON.stringify(response);
-        if (Buffer.byteLength(body) > 64 * 1024) throw new Error("Worker inventory too large");
+        if (Buffer.byteLength(body) > 64 * 1024)
+          throw new Error("Worker catalog or inventory too large");
         res
           .writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
           .end(body);
@@ -237,18 +278,31 @@ export async function installWorkerSourceRoute(
         await source(
           "infer",
           {
-            requestJson: JSON.stringify({ ...(json as Record<string, unknown>), stream: false }),
+            ...(protocol === undefined ? {} : { protocol }),
+            requestJson:
+              protocol === undefined
+                ? JSON.stringify({ ...(json as Record<string, unknown>), stream: false })
+                : JSON.stringify(json),
           },
           controller.signal,
         ),
       );
+      if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
+      if (protocol !== undefined) {
+        const expected = request.stream ? "text/event-stream" : "application/json";
+        if (reply.contentType !== expected || Buffer.byteLength(reply.requestJson) > 1024 * 1024)
+          throw new Error("Invalid native worker response");
+        res
+          .writeHead(200, { "content-type": expected, "cache-control": "no-store" })
+          .end(reply.requestJson);
+        return;
+      }
       const result = JSON.parse(reply.requestJson);
       if (messages) {
         const message = Schema.decodeUnknownSync(MessagesResponse)(result);
         if (message.model !== pin.modelId)
           throw new Error("Worker response model differs from source permit");
       } else Schema.decodeUnknownSync(Response)(result);
-      if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
       if (request.stream && messages) {
         writeMessagesStream(res, result);
       } else if (request.stream) {
@@ -284,7 +338,39 @@ export async function installWorkerSourceRoute(
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
+  const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+  let nativeProfile: WorkerSourceNativeProfile | undefined;
+  try {
+    if (pin.nativeProfile) {
+      nativeProfile = workerSourceNativeProfile({
+        ...pin.nativeProfile,
+        model: pin.modelId,
+        baseUrl,
+        apiKey,
+      });
+      await NodeFSP.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });
+      for (const directory of [
+        nativeProfile.environment.HOME,
+        nativeProfile.environment.XDG_CONFIG_HOME,
+        nativeProfile.environment.XDG_DATA_HOME,
+        nativeProfile.environment.XDG_CACHE_HOME,
+        NodePath.join(nativeProfile.directory, "sessions"),
+      ]) {
+        await NodeFSP.mkdir(directory!, { recursive: true, mode: 0o700 });
+      }
+      for (const file of nativeProfile.files) {
+        const destination = NodePath.join(nativeProfile.directory, file.name);
+        await NodeFSP.writeFile(destination + ".stage", file.content, { mode: 0o600 });
+        await NodeFSP.rename(destination + ".stage", destination);
+      }
+    }
+  } catch {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw new Error("Worker source native profile could not be prepared");
+  }
   const harness: WorkerSourceHarness = {
+    ...(nativeProfile ? { nativeProfile } : {}),
     isRevoked: () => revoked,
     identity: Object.freeze({
       sourceEnvironmentId: route.sourceEnvironmentId,
@@ -304,7 +390,7 @@ export async function installWorkerSourceRoute(
         active.delete(controller);
       }
     },
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl,
     apiKey,
     model: pin.modelId,
     harness: pin.harness,

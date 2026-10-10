@@ -5,7 +5,11 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
-import type { WorkjetGatewayModelBinding } from "@workjet/contracts";
+import type {
+  WorkjetGatewayModelBinding,
+  WorkjetGatewayInferenceProtocol,
+  WorkjetGatewayInferenceResult,
+} from "@workjet/contracts";
 import { discoverKimiConnection } from "./KimiConnection.ts";
 import { discoverZaiConnection } from "./ZaiConnection.ts";
 import { discoverApiKeyModels } from "./ApiKeyModelConnection.ts";
@@ -67,14 +71,14 @@ const withTimeout = async <A>(
 };
 
 /** The source alone sends inference to its own gateway. Never returns transport credentials/headers. */
-export async function forwardSourceGatewayResponses(
+export async function forwardSourceGatewayProtocol(
   endpoint: string,
   selected: WorkjetGatewayModelBinding,
   requestJson: string,
   deadlineMs: number,
+  protocol: WorkjetGatewayInferenceProtocol,
   signal?: AbortSignal,
-  protocol: "responses" | "messages" = "responses",
-): Promise<string> {
+): Promise<WorkjetGatewayInferenceResult> {
   const url = new URL(endpoint);
   if (
     url.protocol !== "http:" ||
@@ -88,46 +92,108 @@ export async function forwardSourceGatewayResponses(
     throw new Error("invalid gateway endpoint");
   const remaining = deadlineMs - Date.now();
   if (remaining <= 0) throw new Error("expired");
-  const response = await fetch(
-    new URL(protocol === "messages" ? "/v1/messages" : "/v1/responses", url),
-    {
-      method: "POST",
-      redirect: "error",
-      headers: {
-        authorization: "Bearer workjet-gateway",
-        "content-type": "application/json",
-        "X-CTOX-Provider": selected.providerRef.provider,
-        "X-CTOX-Account": selected.credentialRef.accountId,
-        "X-CTOX-Purpose": "remote-worker",
-      },
-      body: requestJson,
-      signal: AbortSignal.any([
-        AbortSignal.timeout(Math.min(120_000, remaining)),
-        ...(signal === undefined ? [] : [signal]),
-      ]),
+  const paths = {
+    responses: "/v1/responses",
+    messages: "/v1/messages",
+    "chat-completions": "/v1/chat/completions",
+  };
+  const response = await fetch(new URL(paths[protocol], url), {
+    method: "POST",
+    redirect: "error",
+    headers: {
+      authorization: "Bearer workjet-gateway",
+      "content-type": "application/json",
+      "X-CTOX-Provider": selected.providerRef.provider,
+      "X-CTOX-Account": selected.credentialRef.accountId,
+      "X-CTOX-Purpose": "remote-worker",
     },
-  );
+    body: requestJson,
+    signal: AbortSignal.any([
+      AbortSignal.timeout(Math.min(120_000, remaining)),
+      ...(signal === undefined ? [] : [signal]),
+    ]),
+  });
   if (response.headers.get("X-CTOX-Account-Selected") !== selected.credentialRef.accountId) {
     await response.body?.cancel();
     throw new Error("exact account unavailable");
   }
   try {
     const body = await readBoundedResponse(response, 1024 * 1024);
+    const streaming = JSON.parse(requestJson).stream === true;
+    if (streaming) {
+      if (!response.headers.get("content-type")?.startsWith("text/event-stream"))
+        throw new Error("missing native event stream");
+      const frames = body.split(/\r?\n\r?\n/);
+      if (frames.pop()?.trim()) throw new Error("incomplete native event stream");
+      let completed = false;
+      for (const frame of frames) {
+        const data = frame
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("\n");
+        if (!data) continue;
+        if (data === "[DONE]") {
+          if (protocol === "chat-completions") completed = true;
+          continue;
+        }
+        const event: unknown = JSON.parse(data);
+        if (typeof event !== "object" || event === null || Array.isArray(event))
+          throw new Error("invalid native event");
+        const value = event as Record<string, unknown>;
+        if (value.error != null || value.type === "error" || value.type === "response.failed")
+          throw new Error("failed native event stream");
+        if (
+          (protocol === "responses" && value.type === "response.completed") ||
+          (protocol === "messages" && value.type === "message_stop")
+        )
+          completed = true;
+      }
+      if (!completed) throw new Error("incomplete native event stream");
+      return { requestJson: body, contentType: "text/event-stream" };
+    }
     const parsed: unknown = JSON.parse(body);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
     const result = parsed as Record<string, unknown>;
     if (
       result.error != null ||
       result.status === "failed" ||
-      (protocol === "messages"
-        ? result.type !== "message" || result.role !== "assistant" || !Array.isArray(result.content)
-        : !Array.isArray(result.output))
+      (protocol === "messages" && (result.type !== "message" || result.role !== "assistant")) ||
+      !Array.isArray(
+        protocol === "responses"
+          ? result.output
+          : protocol === "messages"
+            ? result.content
+            : result.choices,
+      )
     )
       throw new Error("invalid response");
-    return body;
+    return { requestJson: body, contentType: "application/json" };
   } finally {
     await response.body?.cancel().catch(() => undefined);
   }
+}
+
+/** Original Codex relay contract: buffered Responses JSON. */
+export async function forwardSourceGatewayResponses(
+  endpoint: string,
+  selected: WorkjetGatewayModelBinding,
+  requestJson: string,
+  deadlineMs: number,
+  signal?: AbortSignal,
+  protocol: "responses" | "messages" = "responses",
+): Promise<string> {
+  const result = await forwardSourceGatewayProtocol(
+    endpoint,
+    selected,
+    requestJson,
+    deadlineMs,
+    protocol,
+    signal,
+  );
+  if (result.contentType !== "application/json")
+    throw new Error("expected buffered Responses JSON");
+  return result.requestJson;
 }
 
 export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {

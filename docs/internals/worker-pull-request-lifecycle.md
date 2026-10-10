@@ -11,12 +11,17 @@ isolated checkout. Its initial title is
 `[WorkerN@<Parent title>]: <model>`. Parent environment, parent thread, worker
 thread and project IDs remain in native metadata, including remote dispatch.
 
-A newly started role-less project chat is prepared as a One-Shot Worker before
-its first turn. Workjet uses the actual project supervisor and a pinned,
-published Git base; it preserves an already recorded owned checkout on retry.
-Standalone chats remain ordinary chats. Historical project chats with work in
-a shared checkout require explicit migration; Workjet neither deletes nor
-silently relocates their history or source.
+Ordinary Manual and Luma chats keep their selected checkout and configuration,
+including in projects with a Supervisor. Only an explicitly commissioned worker
+enters the isolated-worker bootstrap; its named Supervisor or Persistent Worker
+owns the package. Workjet uses a pinned, published Git base and preserves an
+already recorded owned worker checkout on retry. Historical ordinary chats keep
+their checkout and history; migrating one into an isolated worker remains explicit.
+
+A failed first-send bootstrap reports the deleted server thread ID only after
+rollback is confirmed. The composer preserves its draft, prompt and selections,
+uses a fresh server thread ID on retry, and displays the server reason directly
+above the composer. Deleted identities remain reserved in the event history.
 
 The worker finishes its change and required checks before submitting exactly
 one PR. It does not merge its own PR or wait for merge. Native tool-completion,

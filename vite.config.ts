@@ -17,6 +17,8 @@ export default defineConfig({
       "**/dist-electron/**",
       "**/.{idea,git,cache,output,temp}/**",
       "**/scripts/audit-workjet-content.test.mjs",
+      "**/scripts/offline-runtime-defaults.test.mjs",
+      "**/offline-runtime-defaults.test.mjs",
       "**/scripts/check-workjet-webrtc-only-release.test.ts",
       "**/scripts/generate-workjet-install-manifest.test.mjs",
       "**/audit-workjet-content.test.mjs",

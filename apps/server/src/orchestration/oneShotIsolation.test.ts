@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { CommandId, MessageId, ThreadId } from "@workjet/contracts";
+import { CommandId, DEFAULT_WORKJET_THREAD_CONFIG, MessageId, ThreadId } from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -8,10 +8,11 @@ import { requireOneShotIsolation } from "./oneShotIsolation.ts";
 import { readModelForTest } from "./oneShotTestFixture.ts";
 
 it.layer(NodeServices.layer)("one-shot execution and title ownership", (it) => {
-  it.effect("rejects shared roots, shared worker paths and unprepared project chats", () =>
+  it.effect("rejects shared roots, shared worker paths and inconsistent worker roles", () =>
     Effect.gen(function* () {
       const valid = readModelForTest();
       const worker = valid.threads[0]!;
+      if (worker.workjetConfig.schemaVersion !== 2) throw new Error("fixture");
       const start = {
         type: "thread.turn.start" as const,
         commandId: CommandId.make("start-worker"),
@@ -33,13 +34,10 @@ it.layer(NodeServices.layer)("one-shot execution and title ownership", (it) => {
         { worktreePath: null },
         {
           workjetConfig: {
+            ...worker.workjetConfig,
             schemaVersion: 2 as const,
             role: "standard" as const,
             parent: null,
-            managedInstructions: "",
-            enabledCapabilityIds: [],
-            capabilityBindings: [],
-            ctoxSession: null,
           },
         },
       ]) {
@@ -65,36 +63,56 @@ it.layer(NodeServices.layer)("one-shot execution and title ownership", (it) => {
       expect(error.message).toContain("exclusively owned");
     }),
   );
-  it.effect("blocks unprepared registered project starts even when its supervisor is missing", () =>
+  it.effect(
+    "allows ordinary Manual and Luma chats regardless of project registration or checkout",
+    () =>
+      Effect.gen(function* () {
+        const model = readModelForTest();
+        const original = model.threads[0]!;
+        for (const registered of [false, true]) {
+          for (const withSupervisor of [false, true]) {
+            for (const worktreePath of [null, model.projects[0]!.workspaceRoot, "/user/checkout"]) {
+              for (const managedInstructions of ["", "The existing Luma task"]) {
+                const thread = {
+                  ...original,
+                  branch: "user/branch",
+                  worktreePath,
+                  workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, managedInstructions },
+                };
+                yield* requireOneShotIsolation(thread, {
+                  ...model,
+                  projects: registered
+                    ? model.projects.map((project) => ({
+                        ...project,
+                        ctoxRegistration: {
+                          instanceId: "isolated-project",
+                          commandId: CommandId.make("registration"),
+                          status: "confirmed" as const,
+                        },
+                      }))
+                    : model.projects,
+                  threads: withSupervisor ? [thread, model.threads[1]!] : [thread],
+                });
+              }
+            }
+          }
+        }
+      }),
+  );
+  it.effect("rejects explicitly commissioned workers without isolation metadata", () =>
     Effect.gen(function* () {
       const model = readModelForTest();
-      const original = model.threads[0]!;
-      const thread = {
-        ...original,
-        workjetConfig: {
-          schemaVersion: 2 as const,
-          role: "standard" as const,
-          parent: null,
-          managedInstructions: "",
-          enabledCapabilityIds: [],
-          capabilityBindings: [],
-        },
-      };
-      const registered = {
-        ...model,
-        projects: model.projects.map((project) => ({
-          ...project,
-          ctoxRegistration: {
-            instanceId: "isolated-project",
-            commandId: CommandId.make("registration"),
-            status: "confirmed" as const,
-          },
-        })),
-        threads: [thread],
-      };
-      const result = yield* requireOneShotIsolation(thread, registered).pipe(Effect.result);
-      expect(result._tag).toBe("Failure");
-      yield* requireOneShotIsolation(thread, { ...model, threads: [thread] });
+      const worker = model.threads[0]!;
+      if (worker.workjetConfig.schemaVersion !== 2) throw new Error("fixture");
+      const { team: _team, ...workjetConfig } = worker.workjetConfig;
+      const thread = { ...worker, workjetConfig };
+      for (const withSupervisor of [false, true]) {
+        const result = yield* requireOneShotIsolation(thread, {
+          ...model,
+          threads: withSupervisor ? [thread, model.threads[1]!] : [thread],
+        }).pipe(Effect.result);
+        expect(result._tag).toBe("Failure");
+      }
     }),
   );
   it.effect("rejects moving a worker onto another checkout or branch", () =>

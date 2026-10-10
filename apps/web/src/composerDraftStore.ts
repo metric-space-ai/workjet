@@ -423,6 +423,12 @@ interface ComposerDraftStoreState {
       interactionMode?: ProviderInteractionMode;
     },
   ) => void;
+  /** Retries a confirmed bootstrap rollback without losing the user's draft. */
+  retryRolledBackDraftThread: (
+    draftId: DraftId,
+    rolledBackThreadId: ThreadId,
+    nextThreadId: ThreadId,
+  ) => boolean;
   /** Updates mutable draft-session metadata without touching composer content. */
   setDraftThreadContext: (
     threadRef: ComposerThreadTarget,
@@ -2507,6 +2513,23 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             draftId,
             options,
           );
+        },
+        retryRolledBackDraftThread: (draftId, rolledBackThreadId, nextThreadId) => {
+          const existing = get().draftThreadsByThreadKey[draftId];
+          if (
+            !existing ||
+            existing.threadId !== rolledBackThreadId ||
+            nextThreadId === rolledBackThreadId
+          )
+            return false;
+          // Deleted server identities remain reserved in the event history.
+          set((state) => ({
+            draftThreadsByThreadKey: {
+              ...state.draftThreadsByThreadKey,
+              [draftId]: { ...existing, threadId: nextThreadId, promotedTo: null },
+            },
+          }));
+          return true;
         },
         setDraftThreadContext: (threadRef, options) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";

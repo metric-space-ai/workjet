@@ -1875,6 +1875,8 @@ export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<O
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
+    // Confirms a deleted, empty bootstrap identity, including drafts from older clients.
+    rolledBackThreadId: Schema.optional(ThreadId),
   },
 ) {}
 

@@ -49,12 +49,16 @@ it("sends verified submission details and retains the source route after a faile
     },
     headOid: "a".repeat(40),
   };
-  await expect(harness.retire(notice)).rejects.toThrow();
+  let stopped = false;
+  const persistStopped = async () => { stopped = true; };
+  await expect(harness.retire(notice, persistStopped)).rejects.toThrow();
   expect(harness.isRevoked()).toBe(false);
+  expect(stopped).toBe(false);
   fail = false;
-  await harness.retire(notice);
+  await harness.retire(notice, persistStopped);
   expect(harness.isRevoked()).toBe(true);
-  expect(notices).toEqual([notice, notice]);
+  expect(stopped).toBe(true);
+  expect(notices).toEqual([notice, notice, notice]);
 });
 it("pins worker identity and model and routes HTTP through source authority without target credentials", async () => {
   const operations: string[] = [];

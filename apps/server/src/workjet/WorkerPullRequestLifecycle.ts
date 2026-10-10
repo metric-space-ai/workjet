@@ -75,7 +75,11 @@ export const make = Effect.gen(function* () {
       if (config.parent.environmentId !== environmentId) {
         // Never write a remote parent id into the target's local project.
         if (!harness) return;
-        yield* Effect.promise(() => harness.retire({ pullRequest, headOid: receipt.headOid }));
+        yield* Effect.promise(() =>
+          harness.retire({ pullRequest, headOid: receipt.headOid }, () =>
+            Effect.runPromise(store.markExecutionStopped(thread.id)),
+          ),
+        );
       } else {
         const model = yield* query.getCommandReadModel();
         const parent = model.threads.find((candidate) => candidate.id === config.parent?.threadId);

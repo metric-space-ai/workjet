@@ -93,7 +93,10 @@ export interface WorkerSourceHarness {
   readonly model: string;
   readonly harness: RemoteWorkerHarness;
   readonly revoke: () => Promise<void>;
-  readonly retire: (submission?: WorkerSubmission) => Promise<void>;
+  readonly retire: (
+    submission?: WorkerSubmission,
+    persistStopped?: () => Promise<void>,
+  ) => Promise<void>;
 }
 const workers = new Map<string, WorkerSourceHarness>();
 const installedRoutes = new Map<string, WorkerSourceHarnessRoute>();
@@ -147,7 +150,7 @@ export async function installWorkerSourceRoute(
   let revoked = false;
   let busy = false;
   const source = async (
-    operation: "admit" | "infer" | "retire" | "computers",
+    operation: "admit" | "infer" | "retire" | "retirementAck" | "computers",
     payload: unknown,
     signal: AbortSignal,
   ) => {
@@ -300,13 +303,20 @@ export async function installWorkerSourceRoute(
     apiKey,
     model: pin.modelId,
     harness: pin.harness,
-    retire: async (submission) => {
+    retire: async (submission, persistStopped) => {
+      if (submission && !persistStopped) throw new Error("Missing durable worker stop");
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
         const response = await source("retire", submission ?? {}, controller.signal);
         Schema.decodeUnknownSync(Schema.Struct({ retired: Schema.Literal(true) }))(response);
+        await persistStopped?.();
         await harness.revoke();
+        try {
+          await source("retirementAck", submission ?? {}, controller.signal);
+        } catch {
+          // The persisted stopped receipt still recovers archival; source expiry bounds cleanup.
+        }
       } finally {
         // Preserve this route on a lost/failed source acknowledgement so retirement can retry.
         clearTimeout(timeout);

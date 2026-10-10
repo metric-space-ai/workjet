@@ -36,7 +36,7 @@ export interface WorkerSourceChannel {
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_ACTIVE_OPERATIONS = 8;
 const OPERATION_TIMEOUT_MS = 120_000;
-const operations = new Set<string>(["admit", "bindModel", "infer", "retire", "computers"]);
+const operations = new Set<string>(["admit", "bindModel", "infer", "retire", "retirementAck", "computers"]);
 
 /** Bind only to source loopback. A service-owned registered SSH reverse forward
  * makes this listener reachable on target loopback; never expose the source's
@@ -47,6 +47,11 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
   type Session = Parameters<WorkerSourceChannel["issue"]>[0] & {
     readonly capability: string;
     readonly active: Set<AbortController>;
+    retirement?: {
+      readonly payload: string;
+      readonly response: Promise<unknown>;
+      readonly expiry: ReturnType<typeof setTimeout>;
+    };
   };
   const sessions = new Map<string, Session>();
   const revoked = new Set<string>();
@@ -56,6 +61,7 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
     const session = sessions.get(requestId);
     sessions.delete(requestId);
     revoked.add(requestId);
+    if (session?.retirement) clearTimeout(session.retirement.expiry);
     for (const controller of session?.active ?? []) controller.abort();
   };
   const server = NodeHttp.createServer((req, res) => {
@@ -122,6 +128,38 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
           return reject(401);
         const response = await Promise.race([
           (async () => {
+            const payload = JSON.stringify(value.payload ?? {});
+            const retained = session.retirement;
+            if (retained) {
+              if (value.operation !== "retire" && value.operation !== "retirementAck")
+                throw new Error("retired");
+              if (payload !== retained.payload) throw new Error("retirement conflict");
+              return retained.response;
+            }
+            if (value.operation === "retirementAck") throw new Error("not retired");
+            if (value.operation === "retire") {
+              const response = session.invoke("retire", value.payload, controller.signal);
+              const expiry = setTimeout(() => {
+                if (sessions.get(session.requestId) !== session) return;
+                revoke(session.requestId);
+                session.onRetired?.();
+              }, Math.max(1, session.expiresAtMs - Date.now()));
+              expiry.unref();
+              const retirement = { payload, response, expiry };
+              session.retirement = retirement;
+              try {
+                const result = await response;
+                for (const other of session.active)
+                  if (other !== controller) other.abort();
+                return result;
+              } catch (error) {
+                if (session.retirement === retirement) {
+                  clearTimeout(expiry);
+                  delete session.retirement;
+                }
+                throw error;
+              }
+            }
             if (value.operation !== "admit" && value.operation !== "retire")
               await session.invoke("admit", undefined, controller.signal);
             if (controller.signal.aborted || sessions.get(session.requestId) !== session)
@@ -141,6 +179,7 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
         if (
           controller.signal.aborted ||
           sessions.get(session.requestId) !== session ||
+          (session.retirement && value.operation !== "retire" && value.operation !== "retirementAck") ||
           session.expiresAtMs <= Date.now()
         )
           return reject(401);
@@ -152,7 +191,7 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
           "x-workjet-worker-request": session.requestId,
           "x-workjet-worker-digest": session.requestDigest,
         });
-        if (value.operation === "retire")
+        if (value.operation === "retirementAck")
           res.once("finish", () => {
             revoke(session.requestId);
             session.onRetired?.();

@@ -13,6 +13,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ChangeRequest, ProjectId, ThreadId } from "@workjet/contracts";
 
 import { canonicalWorkerRemovalPath, make } from "./WorkerWorktreeCleanup.ts";
+import { IsolatedWorkerWorktreeStore } from "./IsolatedWorkerWorktreeStore.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SourceControlProvider } from "../sourceControl/SourceControlProvider.ts";
@@ -134,6 +135,7 @@ const cleanupFixture = () => {
     checkoutChangeRequest: unexpected,
   });
   const services = Layer.mergeAll(
+    Layer.mock(IsolatedWorkerWorktreeStore)({ get: () => Effect.succeed(Option.none()) }),
     Layer.mock(ProjectionSnapshotQuery)({
       getThreadWorktreeCleanupContext: () =>
         Effect.succeed(

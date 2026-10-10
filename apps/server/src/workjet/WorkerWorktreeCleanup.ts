@@ -2,7 +2,7 @@
  * WorkerWorktreeCleanup - durable removal of a dispatched worker's isolated
  * checkout.
  *
- * `WorkerDispatch` gives every worker thread its own Git worktree plus a
+ * `WorkerDispatch` gives every worker thread its own Git checkout plus a
  * throwaway `workjet/worker/<threadId>` branch. Dispatch rollback covers the
  * failure paths only; the durable end of a worker's life is the
  * `thread.deleted` orchestration domain event, which the
@@ -18,7 +18,9 @@
  *  - only the branch ref named exactly `workjet/worker/<threadId>`;
  *  - only after the provider confirms the exact local HEAD or retained branch
  *    commit was merged;
- *  - never force worktree removal; branch deletion compares the expected commit.
+ *  - private repositories require the immutable allocation's original inode
+ *    pair and are retained together with `.git` in the native recovery path;
+ *  - linked worktrees are never force removed; branch deletion compares HEAD.
  *
  * Every outcome is a value, so the reaction is observable, and the caller can
  * log a failure without ever failing the thread deletion it reacts to.
@@ -40,6 +42,7 @@ import { SourceControlProviderRegistry } from "../sourceControl/SourceControlPro
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { NativeWorkerWorktreeRemover } from "./NativeWorkerWorktreeRemover.ts";
+import { IsolatedWorkerWorktreeStore } from "./IsolatedWorkerWorktreeStore.ts";
 import {
   WorkerCleanupReceiptStore,
   type VerifiedWorkerCleanup,
@@ -64,7 +67,8 @@ export type WorkerWorktreeCleanupOutcome =
   | {
       readonly status: "cleaned";
       readonly worktreePath: string;
-      readonly deletedRefName: string;
+      readonly deletedRefName: string | null;
+      readonly retainedRepositoryPath?: string;
     };
 
 export type WorkerWorktreeCleanupFailureStep =
@@ -99,7 +103,7 @@ export class WorkerWorktreeCleanupError extends Schema.TaggedErrorClass<WorkerWo
       case "record-verification":
         return "The verified worker merge could not be recorded.";
       case "remove-worktree":
-        return "The isolated worker worktree could not be removed.";
+        return "The worker checkout could not be safely released.";
       case "record-removal":
         return "The removed worker worktree could not be recorded.";
       case "delete-branch":
@@ -181,6 +185,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
   const fs = yield* FileSystem.FileSystem;
   const receipts = yield* WorkerCleanupReceiptStore;
   const nativeRemover = yield* NativeWorkerWorktreeRemover;
+  const isolatedWorktrees = yield* IsolatedWorkerWorktreeStore;
   const validateRemovalPath = (input: Parameters<WorkerRemovalPathGuard>[0]) =>
     removalPathGuard(input).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
@@ -243,6 +248,175 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
       }).pipe(Effect.orElseSucceed(() => null));
 
     const cwd = context.workspaceRoot;
+    const allocation = yield* isolatedWorktrees
+      .get(threadId)
+      .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+    if (Option.isSome(allocation)) {
+      const { intent, custody } = allocation.value;
+      // The allocation journal captures the staging directory BEFORE its
+      // atomic publication. Remap only its names, never its original inodes.
+      if (
+        custody === null ||
+        intent.workerId !== threadId ||
+        intent.projectId !== context.projectId ||
+        intent.sourceCwd !== cwd ||
+        intent.branch !== workerRefName ||
+        intent.destination !== worktreePath ||
+        path.dirname(custody.worktreePath) !== path.dirname(worktreePath) ||
+        !path.basename(custody.worktreePath).startsWith(`.workjet-prepared-${threadId}-`) ||
+        custody.adminPath !== path.join(custody.worktreePath, ".git")
+      ) {
+        return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+      }
+      const captured = {
+        ...custody,
+        worktreePath,
+        adminPath: path.join(worktreePath, ".git"),
+      };
+      const recoveryPath = `${worktreePath}.workjet-rejected-${captured.worktreeIno}`;
+      const originalExists = yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
+      const targetPath = originalExists ? worktreePath : recoveryPath;
+      if (
+        (yield* validateRemovalPath({
+          worktreePath: targetPath,
+          workspaceRoot: cwd,
+          trustedRoots,
+        })) !== targetPath
+      ) {
+        return { status: "skipped", reason: "outside-storage-root" } as const;
+      }
+      const observed = yield* nativeRemover.capture(targetPath, "isolated").pipe(Effect.option);
+      if (
+        Option.isNone(observed) ||
+        observed.value.kind !== "isolated" ||
+        observed.value.worktreePath !== targetPath ||
+        observed.value.worktreeDev !== captured.worktreeDev ||
+        observed.value.worktreeIno !== captured.worktreeIno ||
+        observed.value.adminPath !== path.join(targetPath, ".git") ||
+        observed.value.adminDev !== captured.adminDev ||
+        observed.value.adminIno !== captured.adminIno
+      ) {
+        return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+      }
+      const cleanHead = Effect.gen(function* () {
+        yield* gitWorkflow.invalidateLocalStatus(targetPath);
+        const status = yield* gitWorkflow.localStatus({ cwd: targetPath });
+        if (!status.isRepo || status.hasWorkingTreeChanges || status.refName !== workerRefName)
+          return null;
+        return (yield* git.resolveCommit({ cwd: targetPath, revision: "HEAD" })).commitSha;
+      }).pipe(Effect.orElseSucceed(() => null));
+      const head = yield* cleanHead;
+      if (head === null) return { status: "skipped", reason: "merge-unverified" } as const;
+      const stored = yield* receipts
+        .get(threadId)
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+      const matching =
+        Option.isSome(stored) &&
+        stored.value.worktreePath === worktreePath &&
+        stored.value.branchRef === workerRefName &&
+        stored.value.mergedHeadOid === head &&
+        stored.value.mergedChangeRequestUrl.length > 0
+          ? stored.value
+          : null;
+      if (matching?.status === "complete") {
+        return {
+          status: "skipped",
+          reason: originalExists ? "safe-removal-unavailable" : "already-cleaned",
+        } as const;
+      }
+      let receipt: VerifiedWorkerCleanup;
+      if (originalExists) {
+        if (matching?.status === "removed")
+          return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+        const mergedUrl = yield* mergedAtCommit(worktreePath, head);
+        if (mergedUrl === null) return { status: "skipped", reason: "merge-unverified" } as const;
+        receipt = {
+          threadId,
+          worktreePath,
+          branchRef: workerRefName,
+          mergedHeadOid: head,
+          mergedChangeRequestUrl: mergedUrl,
+        };
+        const recorded = yield* receipts.recordVerified(receipt).pipe(
+          Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-verification" })),
+        );
+        if (!recorded) return { status: "skipped", reason: "merge-unverified" } as const;
+        const verified = yield* receipts.get(threadId).pipe(
+          Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })),
+        );
+        if (Option.isNone(verified) || verified.value.status !== "verified")
+          return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+        if ((yield* cleanHead) !== head)
+          return { status: "skipped", reason: "merge-unverified" } as const;
+        // The native helper preserves the checkout AND its private Git admin
+        // using the original capture. Never remove refs in the source repo.
+        const recovery = yield* nativeRemover.quarantineCaptured(captured, {
+          headOid: head,
+          branchRef: workerRefName,
+        }).pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
+        if (recovery.recoveryWorktreePath !== recoveryPath ||
+          recovery.recoveryAdminPath !== path.join(recoveryPath, ".git") ||
+          recovery.recoveryLocationStatus !== "verified")
+          return yield* new WorkerWorktreeCleanupError({ step: "remove-worktree" });
+      } else {
+        // A lost native acknowledgement or SQL write must not strand a worker.
+        // A missing original alone is insufficient: require the ORIGINAL inode
+        // pair and the helper's synced terminal receipt at the recovery path.
+        if (matching === null)
+          return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+        const nativeProof = yield* Effect.gen(function* () {
+          const readBounded = (name: string) => Effect.gen(function* () {
+            const file = path.join(recoveryPath, ".git", name);
+            const info = yield* fs.stat(file);
+            if (info.size > 65536n) return yield* Effect.fail("oversized-receipt");
+            return yield* fs.readFileString(file);
+          });
+          const proof = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
+            schemaVersion: Schema.Literal(1),
+            kind: Schema.Literal("isolated"),
+            originalWorktreePath: Schema.String,
+            originalAdminPath: Schema.String,
+            recoveryWorktreePath: Schema.String,
+            recoveryAdminPath: Schema.String,
+            originalHeadOid: Schema.String,
+            originalBranchRef: Schema.String,
+            worktreeIdentity: Schema.Struct({ dev: Schema.Number, ino: Schema.Number }),
+            adminIdentity: Schema.Struct({ dev: Schema.Number, ino: Schema.Number }),
+            automaticContentDeletion: Schema.Literal(false),
+          })))(yield* readBounded("workjet-rollback-receipt.json"));
+          const progress = yield* readBounded("workjet-rollback-progress.jsonl");
+          const terminal = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
+            phase: Schema.Literal("checkout-and-admin-quarantined"),
+          })))(progress.trim().split("\n").at(-1));
+          return terminal.phase === "checkout-and-admin-quarantined" &&
+            proof.originalWorktreePath === worktreePath &&
+            proof.originalAdminPath === captured.adminPath &&
+            proof.recoveryWorktreePath === recoveryPath &&
+            proof.recoveryAdminPath === path.join(recoveryPath, ".git") &&
+            proof.originalHeadOid === head && proof.originalBranchRef === workerRefName &&
+            String(proof.worktreeIdentity.dev) === captured.worktreeDev &&
+            String(proof.worktreeIdentity.ino) === captured.worktreeIno &&
+            String(proof.adminIdentity.dev) === captured.adminDev &&
+            String(proof.adminIdentity.ino) === captured.adminIno;
+        }).pipe(Effect.orElseSucceed(() => false));
+        if (!nativeProof)
+          return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+        if ((yield* cleanHead) !== head ||
+          (yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => true))))
+          return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+        receipt = matching;
+      }
+      yield* receipts.markRemoved(receipt).pipe(
+        Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-removal" })),
+      );
+      yield* receipts.markComplete(receipt).pipe(
+        Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })),
+      );
+      return {
+        status: "cleaned", worktreePath, deletedRefName: null,
+        retainedRepositoryPath: recoveryPath,
+      } as const;
+    }
     const existingPath = yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
     const safeRemovalPath = existingPath
       ? yield* validateRemovalPath({ worktreePath, workspaceRoot: cwd, trustedRoots })

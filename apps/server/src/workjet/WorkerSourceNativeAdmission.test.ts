@@ -132,12 +132,8 @@ for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-cod
         expect(profile?.environment.WORKJET_SOURCE_ISOLATED).toBe("true");
         expect(profile?.environment.WORKJET_WORKER_SOURCE_KEY).toBe(f.route.apiKey);
         expect(profile?.environment.HOME).toBe(f.route.nativeProfile!.environment.HOME);
-        const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
-          profile,
-        );
-        expect(encoded).not.toMatch(
-          /target-(?:anthropic|xai)-secret|target-secret/,
-        );
+        const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(profile);
+        expect(encoded).not.toMatch(/target-(?:anthropic|xai)-secret|target-secret/);
         expect(profile?.environment.WORKJET_TARGET_SECRET).toBeUndefined();
       }
       expect(f.admitted() - before).toBe(20);

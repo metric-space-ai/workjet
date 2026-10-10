@@ -669,10 +669,13 @@ fn main() -> io::Result<()> {
     let mut args = std::env::args_os();
     let _program = args.next();
     if let Some(command) = args.next() {
-        let quarantine = command == "--quarantine-rejected-worktree";
+        let isolated_quarantine = command == "--quarantine-isolated-worktree";
+        let isolated_publish = command == "--publish-isolated-worktree";
+        let quarantine = command == "--quarantine-rejected-worktree" || isolated_quarantine;
         if command != "--remove-verified-dir"
             && command != "--remove-verified-worktree"
             && !quarantine
+            && !isolated_publish
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -690,7 +693,7 @@ fn main() -> io::Result<()> {
         };
         let expected_dev = parse_identity(args.next())?;
         let expected_ino = parse_identity(args.next())?;
-        if command == "--remove-verified-worktree" || quarantine {
+        if command == "--remove-verified-worktree" || quarantine || isolated_publish {
             let admin_path = PathBuf::from(args.next().ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -699,6 +702,29 @@ fn main() -> io::Result<()> {
             })?);
             let admin_dev = parse_identity(args.next())?;
             let admin_ino = parse_identity(args.next())?;
+            if isolated_publish {
+                let destination = PathBuf::from(args.next().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "missing publication destination",
+                    )
+                })?);
+                if args.next().is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "unexpected argument",
+                    ));
+                }
+                safe_worktree_cleanup::publish_isolated_worktree(
+                    &path,
+                    (expected_dev, expected_ino),
+                    &admin_path,
+                    (admin_dev, admin_ino),
+                    &destination,
+                )?;
+                println!("{{\"status\":\"published\"}}");
+                return Ok(());
+            }
             if quarantine {
                 let head_oid = args
                     .next()
@@ -718,7 +744,12 @@ fn main() -> io::Result<()> {
                         "unexpected argument",
                     ));
                 }
-                safe_worktree_cleanup::quarantine_rejected_worktree(
+                let quarantine_worktree = if isolated_quarantine {
+                    safe_worktree_cleanup::quarantine_isolated_worktree
+                } else {
+                    safe_worktree_cleanup::quarantine_rejected_worktree
+                };
+                quarantine_worktree(
                     &path,
                     (expected_dev, expected_ino),
                     &admin_path,

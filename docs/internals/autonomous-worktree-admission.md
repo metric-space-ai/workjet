@@ -71,3 +71,28 @@ access to credential directories.
 Installed G2 acceptance remains open. This change prevents a premature project
 setting from silently turning into host-wide access; it does not claim that an
 autonomous worker has been accepted.
+
+## Isolated Git metadata custody
+
+An executor confined to its workspace cannot use a linked worktree's shared
+Git administration directory outside that workspace. The native helper now
+supports publication and rejected-start quarantine of a prepared checkout
+whose own `.git` directory is inside it. Publication requires the captured
+directory and Git metadata identities, stays beside the prepared checkout,
+and never replaces an existing destination, including an empty directory.
+Symlink ancestors, replaced identities, `commondir`, and object alternates
+are rejected. The caller must persist the capture before publication and
+verify that same capture on recovery; a path alone does not prove custody.
+
+The default linked-worktree capture and automatic removal are unchanged:
+they never adopt a standalone/manual repository. Isolated captures require
+an explicit kind and cannot use automatic recursive removal. On a rejected
+start, the rollback API can receive the original persisted custody; it
+quarantines checkout and private Git metadata together, records recovery
+locations, retains late writes, and never deletes a ref from the source
+project. A failed native response reports candidate recovery paths only.
+
+This is a prerequisite for isolated allocation and its durable receipt, not
+a sandbox witness or an enabled provider policy. Remote allocation still uses
+the existing linked-worktree path until that integration is complete. Every
+autonomous-worktree provider mode remains unsupported.

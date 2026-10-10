@@ -75,7 +75,7 @@ export function makeManagedSourceGatewayInference(dependencies: {
             ),
           );
       }).pipe(Effect.provide(FetchHttpClient.layer)),
-    forward: (selected, requestJson, deadlineMs) =>
+    forward: (selected, requestJson, deadlineMs, protocol) =>
       Effect.gen(function* () {
         const status = yield* dependencies.gateway.status();
         if (status.phase !== "ready" || status.providerEndpoint === null)
@@ -87,6 +87,25 @@ export function makeManagedSourceGatewayInference(dependencies: {
               selected,
               requestJson,
               deadlineMs,
+              signal,
+              protocol,
+            ),
+          catch: () => failure("inference-failed"),
+        });
+      }),
+    forwardProtocol: (selected, requestJson, deadlineMs, protocol) =>
+      Effect.gen(function* () {
+        const status = yield* dependencies.gateway.status();
+        if (status.phase !== "ready" || status.providerEndpoint === null)
+          return yield* failure("gateway-unavailable");
+        return yield* Effect.tryPromise({
+          try: (signal) =>
+            forwardSourceGatewayProtocol(
+              status.providerEndpoint!,
+              selected,
+              requestJson,
+              deadlineMs,
+              protocol,
               signal,
             ),
           catch: () => failure("inference-failed"),

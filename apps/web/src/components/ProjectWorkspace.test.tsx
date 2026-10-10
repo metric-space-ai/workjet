@@ -82,6 +82,12 @@ function markup(threads: readonly EnvironmentThreadShell[]) {
 }
 
 describe("project worker activity", () => {
+  it("does not claim the local thread model is the native Supervisor execution route", () => {
+    const html = markup([shell(source, "supervisor")]);
+    expect(html).toContain("Instance default");
+    expect(html).not.toContain("gpt-6.1-sol");
+  });
+
   it("omits an empty activity panel instead of showing unknown history as zero", () => {
     const html = markup([shell(source, "supervisor")]);
     expect(html).not.toContain('data-workjet-overview-section="activity"');

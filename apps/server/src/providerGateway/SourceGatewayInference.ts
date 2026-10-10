@@ -85,6 +85,7 @@ export function makeSourceGatewayInference(dependencies: {
     selected: WorkjetGatewayModelBinding,
     requestJson: string,
     deadlineMs: number,
+    protocol: "responses" | "messages",
   ) => Effect.Effect<string, WorkjetGatewayInferenceError>;
   readonly forwardProtocol?: (
     selected: WorkjetGatewayModelBinding,
@@ -206,9 +207,11 @@ export function makeSourceGatewayInference(dependencies: {
           (request.background !== undefined && request.background !== false) ||
           request.previous_response_id !== undefined ||
           request.conversation !== undefined ||
-          (input.protocol === "messages" || input.protocol === "chat-completions"
-            ? !Array.isArray(request.messages)
-            : request.input === undefined)
+          ((input.protocol ??
+            (input.workerRequest.harness === "claude-code" ? "messages" : "responses")) ===
+          "responses"
+            ? request.input === undefined || request.messages !== undefined
+            : !Array.isArray(request.messages) || request.input !== undefined)
         )
           throw new Error();
       },
@@ -224,6 +227,7 @@ export function makeSourceGatewayInference(dependencies: {
               authority.selected,
               input.requestJson,
               authority.permit.expiresAtMs,
+              input.workerRequest.harness === "claude-code" ? "messages" : "responses",
             ),
           }
         : dependencies.forwardProtocol === undefined

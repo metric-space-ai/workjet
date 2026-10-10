@@ -55,6 +55,28 @@ const render = (replies: readonly SupervisorPublicReply[], current = journal) =>
   );
 
 describe("native Supervisor conversation display", () => {
+  it("keeps durable Owner context literal and distinguishes delivery from task completion", () => {
+    const html = render([], {
+      ...journal,
+      inputs: [
+        {
+          intent: {
+            ...journal.intent,
+            body: "<script>owner context</script>",
+            targetCommandId: journal.turn!.commandId,
+            commandId: CommandId.make("input"),
+          },
+          receipt: null,
+          submission: "awaiting-receipt",
+        },
+      ],
+    });
+    expect(html).toContain("&lt;script&gt;owner context&lt;/script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("Context receipt pending");
+    expect(html).toContain("running · Attempt 1");
+    expect(html).not.toContain("Saved for the task’s next step");
+  });
   it("renders streamed emphasis and lists with the existing chat typography", () => {
     const html = render([{ ...reply, text: "**Belegt**\n\n- Erstens\n- Zweitens" }]);
     expect(html).toContain("<strong>Belegt</strong>");

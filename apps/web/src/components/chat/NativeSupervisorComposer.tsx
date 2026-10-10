@@ -9,7 +9,13 @@ import {
   type WorkjetSupervisorTurnIntent,
   type WorkjetSupervisorTurnKind,
 } from "@workjet/contracts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowUpIcon, PlusIcon } from "lucide-react";
+import { ComposerBar } from "./ComposerBar";
+import { ComposerDictationButton } from "./ComposerDictationButton";
+import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { ComposerControl } from "./ComposerControl";
+import { shouldSubmitComposerOnEnter } from "../../composer-logic";
 import { createPortal } from "react-dom";
 import {
   appendSupervisorExecutionEvents,
@@ -37,6 +43,10 @@ import {
   readWorkjetSupervisorTurnCapabilities,
 } from "../../workjetSupervisorControl";
 import {
+  readWorkjetSupervisorInputCapabilities,
+  submitWorkjetSupervisorInput,
+} from "../../workjetSupervisorInput";
+import {
   requestWorkjetProjectControl,
   describeWorkjetProjectControlFailure,
 } from "../../workjetProjectControl";
@@ -46,6 +56,9 @@ import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
+import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
+import { supervisorRouteLabel } from "../../workjetSupervisorRoute";
+
 export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
   readonly config: WorkjetThreadConfig;
@@ -54,15 +67,21 @@ export function NativeSupervisorComposer(props: {
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
   readonly conversationTarget?: HTMLElement | null;
+  readonly workerSourceControl?: ReactNode;
 }) {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
+  const routeLabel = supervisorRouteLabel(useSupervisorRouteDisplay(props.scope));
   const [prompt, setPrompt] = useState("");
   const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
   const [capabilityRetry, setCapabilityRetry] = useState(0);
   const [capability, setCapability] = useState<ScopedSupervisorTurnCapabilities | null>(null);
   const [newMessageFor, setNewMessageFor] = useState<string | null>(null);
+  const [inputFor, setInputFor] = useState<string | null>(null);
+  const [inputCapability, setInputCapability] = useState<ScopedSupervisorTurnCapabilities | null>(
+    null,
+  );
   const [bindingRetry, setBindingRetry] = useState(0);
   const [binding, setBinding] = useState<{
     readonly scope: NativeSupervisorScope;
@@ -118,6 +137,19 @@ export function NativeSupervisorComposer(props: {
   const pending = canResumeSupervisorJournal(journal, null);
   const confirmedPending = pending && journal?.submission === "confirmed" && journal.turn !== null;
   const continuing = confirmedPending && newMessageFor === journal.intent.commandId;
+  const unresolvedInput = journal?.inputs?.find((entry) => entry.receipt === null);
+  const inputting = journal !== null && inputFor === journal.intent.commandId;
+  const drafting = continuing || inputting;
+  const inputSupported =
+    scope !== null &&
+    inputCapability !== null &&
+    inputCapability.scope.instanceId === scope.instanceId &&
+    inputCapability.scope.projectId === scope.projectId &&
+    inputCapability.scope.threadId === scope.threadId &&
+    !inputCapability.error &&
+    inputCapability.response?.inputContract === "ctox.workjet.supervisor_input.v1" &&
+    inputCapability.response.inputDelivery === "next_slice" &&
+    inputCapability.response.maxInputChars === 4096;
   const previousTurns =
     props.config.schemaVersion === 2
       ? (props.config.ctoxSupervisorPreviousTurns ?? []).filter(
@@ -131,7 +163,7 @@ export function NativeSupervisorComposer(props: {
   latestProps.current = props;
 
   const run = async (
-    operation: "send" | "resume" | "cancel" | "events",
+    operation: "send" | "input" | "resume" | "cancel" | "events",
     pageRequest?: WorkjetSupervisorExecutionPageRequest,
   ) => {
     const current = latestProps.current;
@@ -157,6 +189,14 @@ export function NativeSupervisorComposer(props: {
     )
       return;
     if (operation !== "send" && saved === null) return;
+    if (
+      operation === "input" &&
+      (saved?.submission !== "confirmed" ||
+        !saved.turn?.taskId ||
+        !inputSupported ||
+        (!unresolvedInput && (saved.turn.terminal || prompt.trim() === "")))
+    )
+      return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
     if (operation === "events" && saved?.turn == null) return;
     inFlight.current = true;
@@ -188,6 +228,20 @@ export function NativeSupervisorComposer(props: {
           ...(turnKind === "conversation" ? { turnKind } : {}),
         };
         result = await submitWorkjetSupervisorTurn(intent, port);
+      } else if (operation === "input" && saved?.turn) {
+        const intent = saved.inputs?.find((entry) => entry.receipt === null)?.intent ?? {
+          ...target,
+          targetCommandId: saved.turn.commandId,
+          commandId: CommandId.make(`owner-input-${newCommandId()}`),
+          body: prompt.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        result = await submitWorkjetSupervisorInput(saved, intent, port);
+        if (result._tag === "completed") {
+          setNotice("Context saved for the task’s next step.");
+          setPrompt((draft) => (draft === prompt ? "" : draft));
+          setInputFor(null);
+        }
       } else if (operation === "resume" && saved !== null) {
         result = await resumeWorkjetSupervisorTurn(
           saved,
@@ -209,6 +263,7 @@ export function NativeSupervisorComposer(props: {
           result.response.action === "project.supervisor.turn.cancel"
         ) {
           await port.save({
+            ...saved,
             intent: saved.intent,
             turn: result.response.turn,
             submission: "confirmed",
@@ -370,6 +425,8 @@ export function NativeSupervisorComposer(props: {
 
   useEffect(() => {
     setTurnKind("work");
+    setInputFor(null);
+    setNewMessageFor(null);
   }, [bindingInstanceId, bindingProjectId, bindingThreadId]);
   const bindingError = bindingMatches ? binding.error : null;
   useEffect(() => {
@@ -390,6 +447,7 @@ export function NativeSupervisorComposer(props: {
     };
     let stale = false;
     setCapability({ scope: target, response: null, error: null });
+    setInputCapability({ scope: target, response: null, error: null });
     void readWorkjetSupervisorTurnCapabilities(target, CommandId.make(`kind-${newCommandId()}`))
       .then((result) => {
         if (stale) return;
@@ -409,6 +467,33 @@ export function NativeSupervisorComposer(props: {
       .catch(() => {
         if (!stale)
           setCapability({ scope: target, response: null, error: "Could not check chat support." });
+      });
+    void readWorkjetSupervisorInputCapabilities(
+      target,
+      CommandId.make(`input-kind-${newCommandId()}`),
+    )
+      .then((result) => {
+        if (stale) return;
+        setInputCapability({
+          scope: target,
+          response:
+            result._tag === "completed" &&
+            result.response.action === "project.supervisor.turn.capabilities"
+              ? result.response
+              : null,
+          error:
+            result._tag === "failed"
+              ? describeWorkjetProjectControlFailure(result, target.instanceId)
+              : null,
+        });
+      })
+      .catch(() => {
+        if (!stale)
+          setInputCapability({
+            scope: target,
+            response: null,
+            error: "Could not check task context support.",
+          });
       });
     return () => {
       stale = true;
@@ -435,15 +520,15 @@ export function NativeSupervisorComposer(props: {
   useEffect(() => {
     // Drafting a follow-up pauses background polling so receipt reads cannot
     // repeatedly take the Send lock. An already running read finishes normally.
-    if (disabled || busy || continuing || !canResumeSupervisorJournal(journal, failureCode)) return;
+    if (disabled || busy || drafting || !canResumeSupervisorJournal(journal, failureCode)) return;
     const timer = setTimeout(() => {
       void runRef.current("resume");
     }, 3000);
     return () => clearTimeout(timer);
-  }, [disabled, busy, continuing, failureCode, journal]);
+  }, [disabled, busy, drafting, failureCode, journal]);
 
   useEffect(() => {
-    if (disabled || busy || continuing || !execution?.page.has_more || execution.historyLimited)
+    if (disabled || busy || drafting || !execution?.page.has_more || execution.historyLimited)
       return;
     // Backfill retained pages without another turn. One request at a time; a forward native cursor is required.
     const timer = setTimeout(
@@ -452,7 +537,7 @@ export function NativeSupervisorComposer(props: {
       100,
     );
     return () => clearTimeout(timer);
-  }, [disabled, busy, continuing, execution]);
+  }, [disabled, busy, drafting, execution]);
 
   const followReply = useRef(true);
   useEffect(() => {
@@ -490,6 +575,7 @@ export function NativeSupervisorComposer(props: {
       setError(null);
       setFailureCode(null);
       setNewMessageFor(null);
+      setInputFor(null);
       restored.current = false;
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not restore the task.");
@@ -681,6 +767,32 @@ export function NativeSupervisorComposer(props: {
           </select>
         </label>
       )}
+      {unresolvedInput && (
+        <p role="status" className="mb-2 text-xs text-muted-foreground">
+          Context receipt pending. Recover the saved message before adding another.
+          <button
+            type="button"
+            disabled={disabled || busy || !inputSupported}
+            className="ml-2 underline"
+            onClick={() => void run("input")}
+          >
+            Recover context receipt
+          </button>
+        </p>
+      )}
+      {inputting && journal?.turn?.terminal && !unresolvedInput && (
+        <p role="status" className="mb-2 text-xs text-muted-foreground">
+          This task has finished. Your context was not sent.
+          <button
+            type="button"
+            className="ml-2 underline"
+            disabled={disabled || busy}
+            onClick={() => setInputFor(null)}
+          >
+            Start a new request
+          </button>
+        </p>
+      )}
       {confirmedPending && (
         <div
           role="status"
@@ -690,12 +802,53 @@ export function NativeSupervisorComposer(props: {
             Previous request: {journal.turn.status}. A new message starts a separate request; this
             task stays in Task history.
           </span>
+          <button
+            type="button"
+            disabled={disabled || !inputSupported || unresolvedInput !== undefined}
+            className="underline underline-offset-2 disabled:opacity-40"
+            title={
+              inputSupported
+                ? "Add context to this task’s next step"
+                : "Task context is not supported on this connection"
+            }
+            onClick={() => {
+              setNewMessageFor(null);
+              setInputFor(journal.intent.commandId);
+            }}
+          >
+            Add context to task
+          </button>
+          {!inputSupported && (
+            <span>
+              Same-task context is unavailable on this connection.{" "}
+              <button
+                type="button"
+                className="underline"
+                disabled={disabled || busy}
+                onClick={() => setCapabilityRetry((value) => value + 1)}
+              >
+                Check context support
+              </button>
+            </span>
+          )}
+          {inputting && (
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={() => setInputFor(null)}
+            >
+              Keep waiting
+            </button>
+          )}
           {!continuing ? (
             <button
               type="button"
               disabled={disabled}
               className="underline underline-offset-2"
-              onClick={() => setNewMessageFor(journal.intent.commandId)}
+              onClick={() => {
+                setInputFor(null);
+                setNewMessageFor(journal.intent.commandId);
+              }}
             >
               Continue anyway
             </button>
@@ -711,61 +864,129 @@ export function NativeSupervisorComposer(props: {
         </div>
       )}
       <form
+        aria-label={inputting ? "Add context to current task" : "New Supervisor request"}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!bindingPending) void run("send");
+          if (!bindingPending) void run(inputting ? "input" : "send");
         }}
-        className="flex items-end gap-2"
+        className="flex w-full min-w-0 flex-col gap-1"
       >
-        <SupervisorTurnKindPicker
-          scope={scope}
-          capability={capability}
-          value={turnKind}
-          disabled={disabled || busy || (pending && !confirmedPending)}
-          onChange={setTurnKind}
-        />
         <textarea
           aria-label="Message to Supervisor"
-          placeholder="Ask the Supervisor …"
+          placeholder={
+            inputting ? "Add context for this task’s next step …" : "Ask the Supervisor …"
+          }
           rows={2}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           disabled={pending && !confirmedPending}
           onKeyDown={(event) => {
             if (
-              (event.metaKey || event.ctrlKey) &&
               event.key === "Enter" &&
-              !event.nativeEvent.isComposing
+              shouldSubmitComposerOnEnter({
+                shiftKey: event.shiftKey,
+                isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
+              })
             ) {
               event.preventDefault();
-              if (!bindingPending) void run("send");
+              if (!bindingPending) void run(inputting ? "input" : "send");
             }
           }}
-          className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none"
+          className="w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm outline-none"
         />
-        <span
-          className="pb-2 text-xs text-muted-foreground"
-          title="Execution and model are managed by CTOX"
-        >
-          CTOX
-        </span>
-        <button
-          type="submit"
-          aria-label="Send to Supervisor"
-          disabled={
-            disabled ||
-            busy ||
-            bindingPending ||
-            conversationUnavailable ||
-            (pending && !continuing) ||
-            prompt.trim() === ""
+        <ComposerBar
+          attachments={
+            <ComposerControl
+              type="button"
+              disabled
+              aria-label="Add attachments"
+              title="This supervisor connection accepts text. Attachment support requires a CTOX update."
+              className="size-7 justify-center px-0"
+            >
+              <PlusIcon className="size-4" />
+            </ComposerControl>
           }
-          className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
-        >
-          Send
-        </button>
+          worker={
+            <ComposerControl
+              type="button"
+              aria-disabled="true"
+              title="Managed by the project instance. Luma selection requires an instance update."
+            >
+              Supervisor
+            </ComposerControl>
+          }
+          manual={
+            <>
+              <ComposerControl type="button" aria-disabled="true" title={routeLabel.title}>
+                {routeLabel.model}
+              </ComposerControl>
+              <ComposerControl
+                type="button"
+                aria-disabled="true"
+                title={props.instanceId ?? "No connected instance"}
+              >
+                {routeLabel.computer}
+              </ComposerControl>
+            </>
+          }
+          status={
+            <>
+              <SupervisorTurnKindPicker
+                scope={scope}
+                capability={capability}
+                value={turnKind}
+                disabled={disabled || busy || inputting || (pending && !confirmedPending)}
+                onChange={setTurnKind}
+              />
+
+              {props.workerSourceControl}
+            </>
+          }
+          settings={
+            <CompactComposerControlsMenu
+              interactionMode="default"
+              showInteractionModeToggle={false}
+              onToggleInteractionMode={() => {}}
+              extraMenuContent={
+                <p className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
+                  The supervisor's context, system prompt, tools and reasoning are managed by its
+                  instance.
+                </p>
+              }
+            />
+          }
+          dictation={
+            <ComposerDictationButton
+              key={JSON.stringify(scope)}
+              instanceId={props.instanceId}
+              disabled={pending && !confirmedPending}
+              onTranscript={(text) =>
+                setPrompt((current) => (current ? `${current} ${text}` : text))
+              }
+            />
+          }
+          actions={
+            <button
+              type="submit"
+              aria-label="Send to Supervisor"
+              disabled={
+                disabled ||
+                busy ||
+                bindingPending ||
+                (!inputting && conversationUnavailable) ||
+                (inputting && !inputSupported) ||
+                (inputting && journal?.turn?.terminal && !unresolvedInput) ||
+                (pending && !drafting) ||
+                prompt.trim() === ""
+              }
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+            >
+              <ArrowUpIcon className="size-4" aria-hidden="true" />
+            </button>
+          }
+        />
       </form>
-      {continuing && busy && (
+      {drafting && busy && (
         <p role="status" className="mt-1 text-xs text-muted-foreground">
           Checking the task receipt. You can edit your draft; Send becomes available when this read
           finishes.

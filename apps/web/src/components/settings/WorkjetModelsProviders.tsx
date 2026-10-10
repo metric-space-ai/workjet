@@ -74,6 +74,7 @@ export interface InstanceGrokAccountPresentation {
   readonly refresh: () => void;
 }
 export interface ModelsManagementState {
+  readonly nativeProviderRows?: ReactNode;
   readonly instanceGrok?: InstanceGrokAccountPresentation;
   readonly modelChecks?: ReadonlyArray<ModelsModelCheck>;
   readonly pendingModelChecks?: ReadonlyArray<{
@@ -1020,6 +1021,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             </span>
           </div>
           {state.instanceGrok?.row}
+          {state.nativeProviderRows}
           {providers.map((provider) => {
             const providerAccounts = accounts.filter((account) => account.provider === provider);
             const models = state.catalog?.providerModels?.find(

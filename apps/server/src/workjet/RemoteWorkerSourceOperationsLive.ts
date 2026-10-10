@@ -30,6 +30,9 @@ import { RemoteWorkerAuthorityStore } from "./RemoteWorkerAuthorityStore.ts";
 import { makeRemoteWorkerSourceAuthority } from "./RemoteWorkerSourceAuthority.ts";
 import { RemoteWorkerSourceOperations } from "./RemoteWorkerConnectionBootstrap.ts";
 import { RemoteWorkerComputerEnrollment } from "./RemoteWorkerComputerEnrollment.ts";
+import { computerInventory } from "./computerInventory.ts";
+import { makeCtoxLumaConfigurationClient } from "./ctox/CtoxLumaConfigurationClient.ts";
+import { makeCtoxLumaConfigurationRpc } from "./ctox/CtoxLumaConfigurationRpc.ts";
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "computer-unavailable" });
 const InferPayload = Schema.Struct({
@@ -49,6 +52,10 @@ export const make = Effect.gen(function* () {
   const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
   const native = makeCtoxRemoteWorkerAdmissionClient({ connections, gateway, transport });
   const targets = makeCtoxRemoteWorkerTargets({ connections, transport });
+  const lumas = makeCtoxLumaConfigurationRpc({
+    connections,
+    client: makeCtoxLumaConfigurationClient(yield* HttpClient.HttpClient),
+  });
   const authority = yield* makeRemoteWorkerSourceAuthority(store, native);
   const inference = makeManagedSourceGatewayInference({
     environmentId: environment.getEnvironmentId,
@@ -75,7 +82,13 @@ export const make = Effect.gen(function* () {
       )
     )
       return yield* failure();
-    const config = (yield* settings.getSettings.pipe(Effect.mapError(failure))).workjet;
+    const source = yield* bindings.fromStartConfig(parent.workjetConfig);
+    if (source.environmentId !== environmentId || source.binding === undefined)
+      return yield* failure();
+    const local = (yield* settings.getSettings.pipe(Effect.mapError(failure))).workjet;
+    const config = yield* lumas
+      .resolveDispatch(source.binding, local)
+      .pipe(Effect.mapError(failure));
     const computers = config.computers.filter(
       (entry) =>
         entry.id === request.computerId && entry.environmentId === request.targetEnvironmentId,
@@ -84,7 +97,7 @@ export const make = Effect.gen(function* () {
       (entry) =>
         entry.id === request.workerProfileId &&
         entry.computerId === request.computerId &&
-        entry.harness === "codex-cli" &&
+        entry.harness === (request.harness ?? "codex-cli") &&
         entry.modelId === request.modelSelection.model &&
         entry.llmRouteId === request.llmRouteId,
     );
@@ -94,16 +107,13 @@ export const make = Effect.gen(function* () {
       request.enabledCapabilityIds.some((id) => !profiles[0]!.capabilityIds.includes(id))
     )
       return yield* failure();
-    const source = yield* bindings.fromStartConfig(parent.workjetConfig);
-    if (source.environmentId !== environmentId || source.binding === undefined)
-      return yield* failure();
-    return source.binding;
+    return { scope: source.binding, configuration: config };
   });
   return RemoteWorkerSourceOperations.of({
     authorize: (request, profile) =>
       Effect.gen(function* () {
         if (profile.environmentId !== request.targetEnvironmentId) return yield* failure();
-        const scope = yield* currentSource(request);
+        const { scope } = yield* currentSource(request);
         yield* enrollment.verifyRegisteredProfile(request.computerId, scope, profile);
         const registration = yield* targets.resolve(
           scope,
@@ -159,7 +169,7 @@ export const make = Effect.gen(function* () {
             yield* authority.revoke(request);
             return { retired: true };
           }
-          const scope = yield* currentSource(request);
+          const { scope, configuration } = yield* currentSource(request);
           const current = yield* authority.admit(request);
           if (
             scope.connectionId !== current.sourceConnectionId ||
@@ -167,6 +177,9 @@ export const make = Effect.gen(function* () {
           )
             return yield* failure();
           if (operation === "admit") return { admitted: true };
+          if (operation === "computers") {
+            return computerInventory(configuration);
+          }
           const binding = current.permit.binding;
           if (operation === "bindModel")
             return {

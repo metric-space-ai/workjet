@@ -31,7 +31,7 @@ const registry = createCapabilityRegistry([
 ]);
 
 describe("resolveThreadCapabilityContext", () => {
-  it("gives project workers one PR and the native terminal archive contract", () => {
+  it("gives one-shot workers one PR and ends the run at submission", () => {
     const config = {
       schemaVersion: 2,
       role: "worker",
@@ -54,8 +54,34 @@ describe("resolveThreadCapabilityContext", () => {
     } as const satisfies WorkjetThreadConfig;
     const context = resolveThreadCapabilityContext(config);
     expect(context.compiledManagedPrompt).toContain("Open exactly one pull request");
-    expect(context.compiledManagedPrompt).toContain("keep all rework in that same pull request");
-    expect(context.compiledManagedPrompt).toContain("merged or closed and execution is stopped");
+    expect(context.compiledManagedPrompt).toContain(
+      "do not wait for the pull request to be merged or perform post-submission rework",
+    );
+    expect(context.compiledManagedPrompt).not.toMatch(/kanban|goal-loop/i);
+    expect(context.compiledManagedPrompt).toContain("Stop after submission");
+    expect(context.compiledManagedPrompt).not.toContain(
+      "merged or closed and execution is stopped",
+    );
+  });
+
+  it("gives a bound parent its persistent role even when its old settings role is orchestrator", () => {
+    const context = resolveThreadCapabilityContext({
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      schemaVersion: 2,
+      role: "orchestrator",
+      team: {
+        projectId: ProjectId.make("project"),
+        threadId: ThreadId.make("parent"),
+        role: "specialist",
+        parentThreadId: ThreadId.make("supervisor"),
+        domain: "harness",
+        goal: "Deliver the verified weekly result.",
+        createdAt: "2026-10-09T21:00:00.000Z",
+      },
+    });
+    expect(context.compiledManagedPrompt).toContain("## Workjet Role: Persistent Worker");
+    expect(context.compiledManagedPrompt).not.toContain("## Workjet Role: Orchestrator");
+    expect(context.compiledManagedPrompt).toContain("Deliver the verified weekly result.");
   });
 
   it("resolves the default config to the collective prompt baseline", () => {

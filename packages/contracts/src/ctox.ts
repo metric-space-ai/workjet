@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import {
+  WorkjetNativeProviderRequests,
+  WorkjetNativeProviderResponse,
+} from "./workjetNativeProviders.ts";
+export * from "./workjetNativeProviders.ts";
 import * as Schema from "effect/Schema";
+import {
+  WorkjetSupervisorRouteRequests,
+  WorkjetSupervisorRouteResponses,
+  isWorkjetSupervisorRouteReceiptForRequest,
+} from "./workjetSupervisorRoute.ts";
+export * from "./workjetSupervisorRoute.ts";
 import { WorkjetInstanceGrokRequests, WorkjetInstanceGrokResponse } from "./workjetInstanceGrok.ts";
 export * from "./workjetInstanceGrok.ts";
 import {
@@ -8,6 +19,8 @@ import {
   WorkjetSpeechPlaybackResponse,
 } from "./workjetSpeechSettings.ts";
 export * from "./workjetSpeechSettings.ts";
+import { WorkjetDictationRequests, WorkjetDictationResponse } from "./workjetDictation.ts";
+export * from "./workjetDictation.ts";
 import {
   WorkjetJourFixeNarrationReadRequest,
   WorkjetJourFixeNarrationReadResponse,
@@ -61,6 +74,7 @@ import {
   WorkjetSupervisorTurn,
   WorkjetSupervisorTurnKind,
   WorkjetSupervisorTurnCapabilitiesResponse,
+  WorkjetSupervisorInputReceipt,
 } from "./workjetSupervisor.ts";
 import {
   WorkjetSupervisorExecutionPageRequest,
@@ -604,6 +618,7 @@ export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   description: Schema.optionalKey(Schema.NullOr(projectInfoText(4_096))),
   repoUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
   publicUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
+  supervisorLumaId: Schema.optionalKey(Schema.NullOr(CtoxProjectText(160))),
   info: Schema.optionalKey(Schema.NullOr(CtoxWorkjetProjectInfo)),
   jourFixe: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
 });
@@ -706,6 +721,7 @@ export type CtoxWorkjetGalleryOrder = typeof CtoxWorkjetGalleryOrder.Type;
 
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetInstanceGrokRequests,
+  ...WorkjetNativeProviderRequests,
   WorkjetJourFixeNarrationReadRequest,
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
@@ -713,6 +729,8 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetPresentationRequests,
   ...WorkjetCalendarNativeRequests,
   ...WorkjetSpeechSettingsRequests,
+  ...WorkjetDictationRequests,
+  ...WorkjetSupervisorRouteRequests,
   Schema.Struct({
     action: Schema.Literal("project.kpis.read"),
     commandId: CommandId,
@@ -758,6 +776,15 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     commandId: CommandId,
     projectId: ProjectId,
     threadId: WorkjetSupervisorThreadId,
+    includeInput: Schema.optionalKey(Schema.Boolean),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.input"),
+    commandId: CommandId.check(Schema.isMaxLength(120)),
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+    targetCommandId: CtoxProjectText(256),
+    body: WorkjetSupervisorGoal,
   }),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.watch"),
@@ -778,6 +805,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("project.list"),
     includeConfiguration: Schema.optionalKey(Schema.Boolean),
+    includeSupervisorLuma: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
     action: Schema.Literal("project.configure"),
@@ -859,7 +887,9 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetInstanceGrokResponse,
+  WorkjetNativeProviderResponse,
   WorkjetSupervisorTurnCapabilitiesResponse,
+  WorkjetSupervisorInputReceipt,
   WorkjetJourFixeNarrationReadResponse,
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
@@ -868,6 +898,8 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   ...WorkjetCalendarNativeResponses,
   WorkjetSpeechSettingsResponse,
   WorkjetSpeechPlaybackResponse,
+  WorkjetDictationResponse,
+  ...WorkjetSupervisorRouteResponses,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,
@@ -993,6 +1025,17 @@ export function isWorkjetSupervisorReceiptForRequest(
   response: CtoxWorkjetProjectControlResponse,
 ): boolean {
   if (!request.action.startsWith("project.supervisor.")) return true;
+  if (
+    request.action === "project.supervisor.route.capabilities.v1" ||
+    request.action === "project.supervisor.route.read.v1"
+  ) {
+    if (
+      response.action !== "project.supervisor.route.capabilities.v1" &&
+      response.action !== "project.supervisor.route.read.v1"
+    )
+      return false;
+    return isWorkjetSupervisorRouteReceiptForRequest(request, response);
+  }
   if (!("binding" in response) || !("threadId" in request) || !("commandId" in response))
     return false;
   if (
@@ -1005,8 +1048,20 @@ export function isWorkjetSupervisorReceiptForRequest(
     return false;
   if (request.action === "project.supervisor.bind") return response.action === request.action;
   if (request.action === "project.supervisor.turn.capabilities")
-    return response.action === request.action;
+    return (
+      response.action === request.action &&
+      (request.includeInput === true) === (response.inputContract !== undefined)
+    );
   if (!("turn" in response) || response.turn.threadId !== request.threadId) return false;
+  if (request.action === "project.supervisor.turn.input")
+    return (
+      response.action === request.action &&
+      response.turn.commandId === request.targetCommandId &&
+      response.turn.taskId !== null &&
+      response.input.body === request.body &&
+      response.delivery === "next_slice" &&
+      response.workerInterrupted === false
+    );
   if (
     request.action === "project.supervisor.turn.watch" ||
     request.action === "project.supervisor.turn.cancel"

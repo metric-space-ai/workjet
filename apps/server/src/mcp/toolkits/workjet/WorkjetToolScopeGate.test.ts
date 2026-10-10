@@ -59,7 +59,6 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   readonly enforcer: (typeof SCOPE_ENFORCERS)[number];
 }> = [
   { file: "CollectiveTool.ts", enforcer: "requireWorkjetMember" },
-  { file: "CollectiveTool.ts", enforcer: "requireWorkjetMember" },
   // Enforces BOTH `requireActiveWorkjetMcpCapability("ctox-business-os")` and
   // `requireWorkjetMember`; the scan reports the first match in SCOPE_ENFORCERS
   // order, so the member check is the one named here. The capability check is
@@ -67,6 +66,7 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "CtoxBusinessOsTool.ts", enforcer: "requireWorkjetMember" },
   { file: "CtoxCrewTool.ts", enforcer: "requireWorkjetMember" },
   { file: "DecisionHubTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
+  { file: "GoalTool.ts", enforcer: "requireWorkjetMember" },
   { file: "GreppyTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
@@ -81,6 +81,7 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "WorkBlockTool.ts", enforcer: "requireWorkjetMember" },
+  { file: "WorkerKanbanTool.ts", enforcer: "requireWorkjetMember" },
   { file: "WorkerTool.ts", enforcer: "requireWorkjetOrchestrator" },
 ];
 

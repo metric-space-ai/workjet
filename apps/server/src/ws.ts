@@ -2176,6 +2176,12 @@ const makeWsRpcLayer = (
             providerGateway.discoverModels(),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        [WS_METHODS.workjetGatewayAccountModels]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayAccountModels,
+            providerGateway.accountModels(input),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
         [WS_METHODS.workjetGatewayUpdateRouting]: (input) =>
           observeRpcEffect(
             WS_METHODS.workjetGatewayUpdateRouting,

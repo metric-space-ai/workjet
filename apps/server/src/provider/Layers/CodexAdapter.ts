@@ -1736,6 +1736,13 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           }
         }
         if (workerSource) {
+          if (workerSource.harness !== "codex-cli") {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Worker harness differs from the source permit.",
+            });
+          }
           yield* Effect.tryPromise({
             try: () => workerSource.admit(),
             catch: () =>
@@ -1753,6 +1760,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               TMPDIR: process.env.TMPDIR,
               LANG: process.env.LANG,
               WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
+              WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
             }
           : options?.resolveSessionEnvironment
             ? yield* options.resolveSessionEnvironment({ model: selectedModel })
@@ -2109,6 +2117,36 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
 
   return {
     provider: PROVIDER,
+    nativeGoal: {
+      get: (threadId) =>
+        Effect.gen(function* () {
+          const session = yield* requireSession(threadId);
+          if (!session.runtime.getNativeGoal)
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "nativeGoal.get",
+              issue: "Codex native goal controls are unsupported by this runtime.",
+            });
+          return yield* session.runtime.getNativeGoal.pipe(
+            Effect.mapError((error) => mapCodexRuntimeError(threadId, "thread/goal/get", error)),
+          );
+        }),
+      set: (threadId, objective, status) =>
+        Effect.gen(function* () {
+          const session = yield* requireSession(threadId);
+          if (!session.runtime.setNativeGoal)
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "nativeGoal.set",
+              issue: "Codex native goal controls are unsupported by this runtime.",
+            });
+          yield* session.runtime
+            .setNativeGoal(objective, status)
+            .pipe(
+              Effect.mapError((error) => mapCodexRuntimeError(threadId, "thread/goal/set", error)),
+            );
+        }),
+    },
     capabilities: {
       sessionModelSwitch: "in-session",
     },

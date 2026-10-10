@@ -9,6 +9,8 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
   EnvironmentOrchestrationHttpApi,
   ProviderInstanceId,
   ThreadId,
@@ -22,6 +24,8 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import { FetchHttpClient } from "effect/unstable/http";
 import * as CliError from "effect/unstable/cli/CliError";
 import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/unstable/cli";
@@ -42,6 +46,7 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { environmentAuthenticatedAuthLayer } from "./auth/http.ts";
+import * as ServerSettings from "./serverSettings.ts";
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 class ProjectCliHttpApi extends HttpApi.make("environment").add(EnvironmentOrchestrationHttpApi) {}
@@ -118,7 +123,7 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
   Effect.gen(function* () {
     const config = yield* makeCliTestServerConfig(baseDir);
     const routesLayer = HttpApiBuilder.layer(ProjectCliHttpApi).pipe(
-      Layer.provide(orchestrationHttpApiLayer),
+      Layer.provide(orchestrationHttpApiLayer.pipe(Layer.provide(ServerSettings.layerTest()))),
       Layer.provide(environmentAuthenticatedAuthLayer),
     );
     const appLayer = HttpRouter.serve(routesLayer, {
@@ -162,6 +167,45 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
   });
 
 it.layer(NodeServices.layer)("bin cli parsing", (it) => {
+  it.effect("authenticates computer inventory and requires orchestration read scope", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-computers-test-"),
+      );
+      yield* withLiveProjectCliServer(baseDir, () =>
+        Effect.gen(function* () {
+          const server = yield* HttpServer.HttpServer;
+          const address = server.address;
+          if (typeof address === "string" || !("port" in address))
+            assert.fail("Expected TCP address");
+          const client = yield* HttpApiClient.make(ProjectCliHttpApi, {
+            baseUrl: `http://127.0.0.1:${address.port}`,
+          });
+          const auth = yield* EnvironmentAuth.EnvironmentAuth;
+          const denied = yield* client.orchestration.computers({ headers: {} }).pipe(Effect.flip);
+          assert.equal(denied._tag, "EnvironmentAuthInvalidError");
+          const operator = yield* auth.issueSession({
+            scopes: [AuthOrchestrationOperateScope],
+            label: "inventory operate test",
+          });
+          const forbidden = yield* client.orchestration
+            .computers({ headers: { authorization: `Bearer ${operator.token}` } })
+            .pipe(Effect.flip);
+          assert.equal(forbidden._tag, "EnvironmentScopeRequiredError");
+          const reader = yield* auth.issueSession({
+            scopes: [AuthOrchestrationReadScope],
+            label: "inventory read test",
+          });
+          const inventory = yield* client.orchestration.computers({
+            headers: { authorization: `Bearer ${reader.token}` },
+          });
+          assert.deepEqual(inventory, { schemaVersion: 1, computers: [] });
+          yield* auth.revokeSession(operator.sessionId);
+          yield* auth.revokeSession(reader.sessionId);
+        }).pipe(Effect.provide(FetchHttpClient.layer)),
+      );
+    }),
+  );
   it.effect("accepts the built-in lowercase log-level flag values", () =>
     runCliWithRuntime(["--log-level", "debug", "--version"]),
   );

@@ -2,6 +2,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { WorkjetProjectTeamMember } from "./workjetProjectTeam.ts";
+import { WorkjetThreadGoal } from "./workjetGoal.ts";
+import { WorkjetExecutionPolicy } from "./workjetExecutionPolicy.ts";
 import { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
 import {
   EnvironmentId,
@@ -127,16 +129,35 @@ export const WorkjetGatewayAccountId = TrimmedNonEmptyString.pipe(
 );
 export type WorkjetGatewayAccountId = typeof WorkjetGatewayAccountId.Type;
 
-/**
- * A non-secret route to credentials protected by the provider-gateway account
- * authority. The reference is a Workjet gateway account id — never a Code
- * provider-driver instance id, and never a model or a credential.
- */
-export const WorkjetLlmRoute = Schema.Struct({
-  id: WorkjetLlmRouteId,
-  label: TrimmedNonEmptyString,
-  gatewayAccountId: WorkjetGatewayAccountId,
+/** Public identity and revision issued by the authenticated native provider registry. */
+export const WorkjetNativeAccountReference = Schema.Struct({
+  accountId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  holderInstanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  accountRevision: PositiveInt.check(Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
 });
+export type WorkjetNativeAccountReference = typeof WorkjetNativeAccountReference.Type;
+
+/**
+ * A non-secret route identifies a local gateway account, a native CTOX account,
+ * or an explicitly verified pairing of both. Decoding metadata does not grant
+ * authority: native execution re-resolves
+ * Owner, holder, account revision, live model and the actual Supervisor lease.
+ * Legacy gateway ids must never be promoted by matching provider/email labels.
+ */
+export const WorkjetLlmRoute = Schema.Union([
+  Schema.Struct({
+    id: WorkjetLlmRouteId,
+    label: TrimmedNonEmptyString,
+    gatewayAccountId: WorkjetGatewayAccountId,
+    nativeAccountReference: Schema.optionalKey(WorkjetNativeAccountReference),
+  }),
+  Schema.Struct({
+    id: WorkjetLlmRouteId,
+    label: TrimmedNonEmptyString,
+    gatewayAccountId: Schema.optionalKey(WorkjetGatewayAccountId),
+    nativeAccountReference: WorkjetNativeAccountReference,
+  }),
+]);
 export type WorkjetLlmRoute = typeof WorkjetLlmRoute.Type;
 
 /**
@@ -191,15 +212,29 @@ const WorkjetLlmRoutePersisted = Schema.Union([WorkjetLlmRoute, WorkjetLlmRouteV
     WorkjetLlmRoute,
     SchemaTransformation.transformOrFail({
       decode: (route: WorkjetLlmRoutePersistedInput): Effect.Effect<WorkjetLlmRoute> =>
-        Effect.succeed("gatewayAccountId" in route ? route : migrateWorkjetLlmRouteV1ToV2(route)),
+        Effect.succeed("providerInstanceId" in route ? migrateWorkjetLlmRouteV1ToV2(route) : route),
       encode: (
         route: typeof WorkjetLlmRoute.Encoded,
       ): Effect.Effect<WorkjetLlmRoutePersistedInput> =>
-        Effect.succeed({
-          id: WorkjetLlmRouteId.make(route.id),
-          label: route.label,
-          gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId),
-        }),
+        Effect.succeed(
+          route.gatewayAccountId !== undefined
+            ? {
+                id: WorkjetLlmRouteId.make(route.id),
+                label: route.label,
+                gatewayAccountId: WorkjetGatewayAccountId.make(route.gatewayAccountId),
+                ...(route.nativeAccountReference === undefined
+                  ? {}
+                  : {
+                      nativeAccountReference: route.nativeAccountReference,
+                    }),
+              }
+            : {
+                id: WorkjetLlmRouteId.make(route.id),
+                label: route.label,
+                // The canonical union requires this field when no gateway ID exists.
+                nativeAccountReference: route.nativeAccountReference!,
+              },
+        ),
     }),
   ),
 );
@@ -982,6 +1017,8 @@ export type WorkjetWorkerPullRequest = typeof WorkjetWorkerPullRequest.Type;
 const WorkjetThreadConfigV2BaseFields = {
   schemaVersion: Schema.Literal(2),
   team: Schema.optionalKey(WorkjetProjectTeamMember),
+  goal: Schema.optionalKey(WorkjetThreadGoal),
+  executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
   managedInstructions: Schema.String,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
@@ -1554,6 +1591,30 @@ export const WorkjetGatewayModelDiscovery = Schema.Struct({
   providers: Schema.Array(WorkjetGatewayProviderModels),
 });
 export type WorkjetGatewayModelDiscovery = typeof WorkjetGatewayModelDiscovery.Type;
+
+/** An authenticated list for one exact account; never an inference permission. */
+export const WorkjetGatewayAccountModelsInput = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+});
+export type WorkjetGatewayAccountModelsInput = typeof WorkjetGatewayAccountModelsInput.Type;
+export const WorkjetGatewayAccountModels = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+  checkedAtMs: NonNegativeInt,
+  state: Schema.Literals(["observed", "unavailable"]),
+  reason: Schema.NullOr(
+    Schema.Literals([
+      "account-unavailable",
+      "account-disabled",
+      "provider-unsupported",
+      "catalog-unavailable",
+      "account-changed",
+    ]),
+  ),
+  modelIds: Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160)))).pipe(
+    Schema.check(Schema.isMaxLength(1024)),
+  ),
+});
+export type WorkjetGatewayAccountModels = typeof WorkjetGatewayAccountModels.Type;
 
 /** One account's pool membership edit. Every field is replaced, never merged. */
 export const WorkjetGatewayAccountRoutingUpdate = Schema.Struct({

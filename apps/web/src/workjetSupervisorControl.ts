@@ -188,7 +188,7 @@ export async function resumeWorkjetSupervisorTurn(
   );
   if (result._tag === "completed" && result.response.action === "project.supervisor.turn.watch") {
     await journal.save({
-      intent: saved.intent,
+      ...saved,
       turn: result.response.turn,
       submission: "confirmed",
     });

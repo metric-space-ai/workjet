@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   CtoxWorkjetProjectControlRequest,
   type CtoxWorkjetProjectMetadataProjection,
@@ -12,6 +12,7 @@ import {
   type SaveProjectKpiPrompts,
 } from "../projectKpis";
 import { ProjectKpiResult } from "./ProjectKpiResult";
+import { ProjectSupervisorLumaSelect, type LumaFieldProps } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -21,7 +22,7 @@ const decodeProjectConfiguration = Schema.decodeUnknownSync(CtoxWorkjetProjectCo
 
 export type ProjectConfigurationValues = Pick<
   Extract<CtoxWorkjetProjectControlRequest, { readonly action: "project.configure" }>,
-  "repoUrl" | "publicUrl" | "info" | "jourFixe"
+  "repoUrl" | "publicUrl" | "info" | "jourFixe" | "supervisorLumaId"
 >;
 
 export function ProjectOverviewEditor({
@@ -34,6 +35,7 @@ export function ProjectOverviewEditor({
   onCancel,
   kpis,
   onSaveKpis,
+  renderLumaField,
 }: {
   readonly overview: ProjectOverview | null | undefined;
   readonly onSave: (next: ProjectOverview) => Promise<boolean>;
@@ -43,6 +45,7 @@ export function ProjectOverviewEditor({
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
   readonly configuration?: CtoxWorkjetProjectMetadataProjection | undefined;
+  readonly renderLumaField?: ((props: LumaFieldProps) => ReactNode) | undefined;
   readonly onSaveConfiguration?:
     | ((next: ProjectConfigurationValues) => Promise<boolean>)
     | undefined;
@@ -50,6 +53,9 @@ export function ProjectOverviewEditor({
   const id = useId();
   const [draft, setDraft] = useState(() => overviewDraft(overview));
   const [state, setState] = useState({ pending: false, message: "" });
+  const [supervisorLumaId, setSupervisorLumaId] = useState<string | null>(
+    configuration?.supervisorLumaId ?? null,
+  );
   const [info, setInfo] = useState(() => ({
     ...configuration?.info,
     summary: configuration?.info?.summary ?? configuration?.info?.description ?? "",
@@ -77,6 +83,7 @@ export function ProjectOverviewEditor({
   const cancel = () => {
     if (onCancel) return onCancel();
     setDraft(overviewDraft(overview));
+    setSupervisorLumaId(configuration?.supervisorLumaId ?? null);
     setInfo({
       ...configuration?.info,
       summary: configuration?.info?.summary ?? configuration?.info?.description ?? "",
@@ -110,6 +117,9 @@ export function ProjectOverviewEditor({
               commandId: "validate-project-configuration",
               projectId: configuration.id,
               title: configuration.title,
+              ...(supervisorLumaId !== (configuration.supervisorLumaId ?? null)
+                ? { supervisorLumaId }
+                : {}),
               repoUrl: next.repositoryUrl ?? null,
               publicUrl: next.websiteUrl,
               info,
@@ -123,6 +133,9 @@ export function ProjectOverviewEditor({
             });
             if (validated.action !== "project.configure") throw new Error("Invalid configuration");
             metadata = {
+              ...(validated.supervisorLumaId !== undefined
+                ? { supervisorLumaId: validated.supervisorLumaId }
+                : {}),
               repoUrl: validated.repoUrl ?? null,
               publicUrl: validated.publicUrl ?? null,
               info: validated.info ?? null,
@@ -205,6 +218,26 @@ export function ProjectOverviewEditor({
         />
         {configuration && onSaveConfiguration && (
           <>
+            <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-luma`}>
+              Supervisor Luma
+            </label>
+            {renderLumaField ? (
+              renderLumaField({
+                id: `${id}-supervisor-luma`,
+                value: supervisorLumaId,
+                onChange: setSupervisorLumaId,
+                disabled: state.pending,
+              })
+            ) : (
+              <ProjectSupervisorLumaSelect
+                id={`${id}-supervisor-luma`}
+                value={supervisorLumaId}
+                onChange={setSupervisorLumaId}
+                disabled={state.pending}
+                phase="unavailable"
+                profiles={[]}
+              />
+            )}
             <span className="text-xs text-muted-foreground">Jour fixe</span>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2">
               <select

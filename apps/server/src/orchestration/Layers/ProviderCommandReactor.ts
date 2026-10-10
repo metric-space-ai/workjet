@@ -1609,6 +1609,7 @@ const make = Effect.gen(function* () {
         providerService
           .sendTurn(sendTurnRequest.value)
           .pipe(Effect.timeout(PROVIDER_SEND_ACK_TIMEOUT)),
+        event.payload.goalRevision,
       )
       .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
   });

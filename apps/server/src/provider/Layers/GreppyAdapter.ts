@@ -1,3 +1,4 @@
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 
@@ -219,7 +220,9 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           return yield* requestError("startSession", "Choose a model for the Greppy gateway.");
         const previous = sessions.get(input.threadId);
         if (previous) yield* stop(previous);
-        const environment = yield* options.resolveSessionEnvironment(model);
+        const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+        const environment =
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
         if (plainHttpEndpoint(environment.GREPPY_ENDPOINT || config.endpoint) === null) {
           return yield* requestError(
             "startSession",

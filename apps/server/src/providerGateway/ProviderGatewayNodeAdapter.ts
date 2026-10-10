@@ -158,6 +158,7 @@ export async function forwardSourceGatewayProtocol(
     if (
       result.error != null ||
       result.status === "failed" ||
+      (protocol === "messages" && (result.type !== "message" || result.role !== "assistant")) ||
       !Array.isArray(
         protocol === "responses"
           ? result.output
@@ -180,13 +181,14 @@ export async function forwardSourceGatewayResponses(
   requestJson: string,
   deadlineMs: number,
   signal?: AbortSignal,
+  protocol: "responses" | "messages" = "responses",
 ): Promise<string> {
   const result = await forwardSourceGatewayProtocol(
     endpoint,
     selected,
     requestJson,
     deadlineMs,
-    "responses",
+    protocol,
     signal,
   );
   if (result.contentType !== "application/json")

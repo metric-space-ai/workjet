@@ -386,6 +386,197 @@ describe("OrchestrationEngine", () => {
     }
   });
 
+  it("deduplicates a retained goal continuation and fences late starts behind an Owner stop", async () => {
+    const system = await createOrchestrationSystem();
+    const projectId = asProjectId("persistent-goal-project");
+    const threadId = ThreadId.make("persistent-goal-parent");
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("goal-project"),
+          projectId,
+          title: "Goal fence",
+          workspaceRoot: "/fixture/goal-fence",
+          createdAt: now(),
+        }),
+      );
+      const supervisor = (await system.readModel()).threads[0]!;
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("goal-parent"),
+          threadId,
+          projectId,
+          title: "Harness",
+          modelSelection: supervisor.modelSelection,
+          interactionMode: supervisor.interactionMode,
+          runtimeMode: supervisor.runtimeMode,
+          branch: null,
+          worktreePath: null,
+          createdAt: now(),
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            schemaVersion: 2,
+            role: "orchestrator",
+            team: {
+              projectId,
+              threadId,
+              role: "specialist",
+              parentThreadId: supervisor.id,
+              domain: "harness",
+              goal: "Verify the approved outcome.",
+              createdAt: now(),
+            },
+          },
+        }),
+      );
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.goal.set",
+          commandId: CommandId.make("goal-start"),
+          threadId,
+          objective: "Verify the approved outcome.",
+          status: "active",
+          createdAt: now(),
+        }),
+      );
+      const config = (await system.readModel()).threads.find(
+        (thread) => thread.id === threadId,
+      )!.workjetConfig;
+      if (config.schemaVersion !== 2 || !config.goal?.pendingContinuation)
+        throw new Error("missing retained continuation");
+      const goal = config.goal;
+      const pending = goal.pendingContinuation!;
+      const start: OrchestrationCommand = {
+        type: "thread.turn.start",
+        commandId: pending.commandId,
+        threadId,
+        goalRevision: goal.revision,
+        message: {
+          messageId: pending.messageId,
+          role: "user",
+          text: "Continue the retained goal.",
+          attachments: [],
+        },
+        runtimeMode: supervisor.runtimeMode,
+        interactionMode: supervisor.interactionMode,
+        createdAt: pending.createdAt,
+      };
+      const first = await system.run(system.engine.dispatch(start));
+      expect(await system.run(system.engine.dispatch(start))).toEqual(first);
+      expect(
+        (await system.readModel()).threads
+          .find((thread) => thread.id === threadId)!
+          .messages.filter((message) => message.id === pending.messageId),
+      ).toHaveLength(1);
+      await system.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const entered = yield* Deferred.make<void>();
+            const release = yield* Deferred.make<void>();
+            const sending = yield* Effect.forkScoped(
+              system.engine.runTurnStartIfActive(
+                threadId,
+                Effect.gen(function* () {
+                  yield* Deferred.succeed(entered, undefined);
+                  yield* Deferred.await(release);
+                }),
+                goal.revision,
+              ),
+            );
+            yield* Deferred.await(entered);
+            const beforeStop = yield* system.engine.latestSequence;
+            const stopping = yield* Effect.forkScoped(
+              system.engine.dispatch({
+                type: "thread.goal.set",
+                commandId: CommandId.make("goal-owner-stop"),
+                threadId,
+                status: "paused",
+                expectedRevision: goal.revision,
+                createdAt: now(),
+              }),
+            );
+            yield* Effect.yieldNow;
+            expect(yield* system.engine.latestSequence).toBe(beforeStop);
+            yield* Deferred.succeed(release, undefined);
+            expect(yield* Fiber.join(sending)).toBe(true);
+            yield* Fiber.join(stopping);
+            let lateStart = false;
+            expect(
+              yield* system.engine.runTurnStartIfActive(
+                threadId,
+                Effect.sync(() => {
+                  lateStart = true;
+                }),
+                goal.revision,
+              ),
+            ).toBe(false);
+            expect(lateStart).toBe(false);
+          }),
+        ),
+      );
+      const stopped = (await system.readModel()).threads.find(
+        (thread) => thread.id === threadId,
+      )!.workjetConfig;
+      expect(stopped.schemaVersion === 2 && stopped.goal?.status).toBe("paused");
+      if (stopped.schemaVersion !== 2 || !stopped.goal) throw new Error("missing paused goal");
+      const pausedGuard = { revision: stopped.goal.revision, status: "paused" as const };
+      await system.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const entered = yield* Deferred.make<void>();
+            const release = yield* Deferred.make<void>();
+            const nativePause = yield* Effect.forkScoped(
+              system.engine.runTurnStartIfActive(
+                threadId,
+                Effect.gen(function* () {
+                  yield* Deferred.succeed(entered, undefined);
+                  yield* Deferred.await(release);
+                }),
+                pausedGuard,
+              ),
+            );
+            yield* Deferred.await(entered);
+            const beforeResume = yield* system.engine.latestSequence;
+            const resume = yield* Effect.forkScoped(
+              system.engine.dispatch({
+                type: "thread.goal.set",
+                commandId: CommandId.make("goal-owner-resume"),
+                threadId,
+                status: "active",
+                expectedRevision: pausedGuard.revision,
+                createdAt: now(),
+              }),
+            );
+            yield* Effect.yieldNow;
+            expect(yield* system.engine.latestSequence).toBe(beforeResume);
+            yield* Deferred.succeed(release, undefined);
+            expect(yield* Fiber.join(nativePause)).toBe(true);
+            yield* Fiber.join(resume);
+            let stalePauseApplied = false;
+            expect(
+              yield* system.engine.runTurnStartIfActive(
+                threadId,
+                Effect.sync(() => {
+                  stalePauseApplied = true;
+                }),
+                pausedGuard,
+              ),
+            ).toBe(false);
+            expect(stalePauseApplied).toBe(false);
+          }),
+        ),
+      );
+      const resumed = (await system.readModel()).threads.find(
+        (thread) => thread.id === threadId,
+      )!.workjetConfig;
+      expect(resumed.schemaVersion === 2 && resumed.goal?.status).toBe("active");
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("fences provider turn starts against thread and forced-project deletion", async () => {
     for (const deletion of ["thread", "project"] as const) {
       const system = await createOrchestrationSystem();

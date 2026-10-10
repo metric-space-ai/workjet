@@ -113,8 +113,13 @@ const input: WorkjetGatewayInferenceInput = {
   }),
 };
 const fixture = (
-  forwardProtocol?: Parameters<typeof makeSourceGatewayInference>[0]["forwardProtocol"],
+  argument:
+    | string
+    | Parameters<typeof makeSourceGatewayInference>[0]["forwardProtocol"] = input.requestJson,
 ) => {
+  const expectedRequest = typeof argument === "string" ? argument : input.requestJson;
+  const forwardProtocol = typeof argument === "function" ? argument : undefined;
+  const protocols: string[] = [];
   const events: string[] = [];
   const deadlines: number[] = [];
   let scoped = catalog;
@@ -148,11 +153,12 @@ const fixture = (
         events.push("native");
         return nativeError === undefined ? Effect.succeed(receipt) : Effect.fail(nativeError);
       }),
-    forward: (selected, request, deadline) =>
+    forward: (selected, request, deadline, protocol) =>
       Effect.sync(() => {
         events.push("forward");
         expect(selected).toEqual({ target, ...references });
-        expect(request).toBe(input.requestJson);
+        expect(request).toBe(expectedRequest);
+        protocols.push(protocol);
         deadlines.push(deadline);
         afterForward();
         return encodeJson({ output: [{ text: "result" }] });
@@ -164,6 +170,7 @@ const fixture = (
     consumer,
     events,
     deadlines,
+    protocols,
     scope: (value: WorkjetGatewayScopedCatalog) => {
       scoped = value;
     },
@@ -190,6 +197,39 @@ const reason = (request: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =
   });
 
 describe("source gateway inference", () => {
+  it.effect("pins Messages routing to the worker harness and rejects protocol substitution", () =>
+    Effect.gen(function* () {
+      const requestJson = encodeJson({
+        model: input.workerRequest.modelSelection.model,
+        messages: [{ role: "user", content: "Task" }],
+        max_tokens: 100,
+        stream: false,
+      });
+      const claude = {
+        ...input,
+        workerRequest: { ...input.workerRequest, harness: "claude-code" as const },
+        requestJson,
+      };
+      const f = fixture(requestJson);
+      yield* f.consumer.infer(claude);
+      expect(f.protocols).toEqual(["messages"]);
+      const codex = fixture();
+      yield* codex.consumer.infer(input);
+      expect(codex.protocols).toEqual(["responses"]);
+      const denied = fixture();
+      expect(yield* reason(denied.consumer.infer({ ...input, requestJson }))).toBe(
+        "invalid-request",
+      );
+      expect(
+        yield* reason(denied.consumer.infer({ ...claude, requestJson: input.requestJson })),
+      ).toBe("invalid-request");
+      expect(denied.events).toEqual([]);
+      expect(yield* remoteWorkerRequestDigest(claude.workerRequest)).not.toBe(
+        yield* remoteWorkerRequestDigest(input.workerRequest),
+      );
+    }),
+  );
+
   it.effect("distinguishes unavailable native authority from a malformed receipt", () =>
     Effect.gen(function* () {
       const unavailable = fixture();

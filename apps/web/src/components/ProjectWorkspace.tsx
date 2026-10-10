@@ -1,3 +1,4 @@
+import { ProjectSupervisorLumaSummary } from "./ProjectSupervisorLumaField";
 import { useState } from "react";
 import { NativeJourFixeRoom } from "./NativeJourFixeRoom";
 import { effectiveSnoozed } from "@workjet/client-runtime/state/thread-settled";
@@ -20,6 +21,7 @@ import {
   resolveGalleryProjectOverview,
 } from "../projectOverview";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
+import { PersistentWorkerGoal } from "./PersistentWorkerGoal";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -330,7 +332,14 @@ export function ProjectWorkspace({
                                 <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                                   <span className="text-sm font-semibold">{thread.title}</span>
                                   <span className="text-xs text-muted-foreground">
-                                    {thread.modelSelection.model} ·{" "}
+                                    {project.configuration?.supervisorLumaId ? (
+                                      <ProjectSupervisorLumaSummary
+                                        lumaId={project.configuration.supervisorLumaId}
+                                      />
+                                    ) : (
+                                      "Instance default"
+                                    )}
+                                    {" · "}
                                     {projectUpdateAge(thread.updatedAt)}
                                   </span>
                                 </span>
@@ -351,7 +360,16 @@ export function ProjectWorkspace({
                                   className="flex min-w-0 items-baseline gap-2 text-sm font-medium"
                                   title={thread.title}
                                 >
-                                  <span className="min-w-0 truncate">{thread.title}</span>
+                                  <span className="min-w-0">
+                                    <span className="block truncate">{thread.title}</span>
+                                    <PersistentWorkerGoal
+                                      config={thread.workjetConfig}
+                                      sessionStatus={thread.session?.status}
+                                      hasPendingApprovals={thread.hasPendingApprovals}
+                                      hasPendingUserInput={thread.hasPendingUserInput}
+                                      compact
+                                    />
+                                  </span>
                                   {duplicateTitles.has(thread.title) ? (
                                     <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
                                       {harness}

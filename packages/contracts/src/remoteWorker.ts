@@ -18,12 +18,24 @@ import {
 
 /** Prepared by the source server from its live orchestrator, relayed by an
  * authenticated client connection. Never contains source paths or credentials. */
+export const RemoteWorkerHarness = Schema.Literals([
+  "codex-cli",
+  "claude-code",
+  "grok-cli",
+  "opencode",
+  "greppy",
+  "minimax-code",
+  "pi-code",
+]);
+export type RemoteWorkerHarness = typeof RemoteWorkerHarness.Type;
 export const RemoteWorkerRequest = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   requestId: ThreadId,
   targetEnvironmentId: EnvironmentId,
   computerId: WorkjetComputerId,
   workerProfileId: Schema.optional(WorkjetWorkerProfileId),
+  /** Absent in existing Codex requests; part of the immutable request digest. */
+  harness: Schema.optional(RemoteWorkerHarness),
   llmRouteId: Schema.optional(WorkjetLlmRouteId),
   parent: WorkjetParentThreadReference,
   parentTeamRole: Schema.optional(Schema.Literals(["supervisor", "specialist"])),
@@ -53,6 +65,8 @@ export const RemoteWorkerResult = Schema.Struct({
   workerThreadId: ThreadId,
   computerId: WorkjetComputerId,
   branch: TrimmedNonEmptyString,
+  harness: Schema.optional(RemoteWorkerHarness),
+  hostname: Schema.optional(TrimmedNonEmptyString),
   worktreePath: TrimmedNonEmptyString,
   parent: WorkjetParentThreadReference,
   modelSelection: ModelSelection,

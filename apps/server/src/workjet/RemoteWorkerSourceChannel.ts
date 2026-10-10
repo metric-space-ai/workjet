@@ -3,7 +3,7 @@
 import * as NodeCrypto from "node:crypto";
 import * as NodeHttp from "node:http";
 
-export type WorkerSourceOperation = "admit" | "bindModel" | "infer" | "retire";
+export type WorkerSourceOperation = "admit" | "bindModel" | "infer" | "retire" | "computers";
 export interface WorkerSourceIdentity {
   readonly sourceEnvironmentId: string;
   readonly targetEnvironmentId: string;
@@ -36,7 +36,7 @@ export interface WorkerSourceChannel {
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_ACTIVE_OPERATIONS = 8;
 const OPERATION_TIMEOUT_MS = 120_000;
-const operations = new Set<string>(["admit", "bindModel", "infer", "retire"]);
+const operations = new Set<string>(["admit", "bindModel", "infer", "retire", "computers"]);
 
 /** Bind only to source loopback. A service-owned registered SSH reverse forward
  * makes this listener reachable on target loopback; never expose the source's

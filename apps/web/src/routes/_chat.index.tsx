@@ -255,10 +255,14 @@ function IndexDraftLanding() {
         const modelSelection = resolveProjectTeamModelSelection(
           environments.find((environment) => environment.environmentId === target.environmentId)
             ?.serverConfig?.providers ?? [],
+          projects.find(
+            (project) =>
+              project.id === target.projectId && project.environmentId === target.environmentId,
+          )?.defaultModelSelection,
         );
         if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)
           throw new Error(
-            "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+            "Configure an available account with a concrete model in Models to create this project’s Lumas.",
           );
         if (plan._tag === "create") {
           const result = await createProject({
@@ -391,6 +395,7 @@ function IndexDraftLanding() {
               environments.find(
                 (environment) => environment.environmentId === supervisor.environmentId,
               )?.serverConfig?.providers ?? [],
+              supervisor.modelSelection,
             );
             if (!modelSelection) return false;
             const threadId = newThreadId();

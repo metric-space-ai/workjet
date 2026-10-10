@@ -652,7 +652,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
 
   return (
     <span
-      className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
+      className="flex shrink-0 flex-nowrap items-center gap-1"
       data-composer-manual-target-controls="true"
       data-model-catalog-source={props.modelSource ?? "gateway"}
     >
@@ -721,7 +721,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
               nativeModels
                 ? "Models reported by this harness on the selected computer."
                 : configuredModels
-                  ? "Configured for this Greppy profile; choose a model or enter its ID."
+                  ? "Configured for this harness; choose a model or enter its ID."
                   : "Served by the Workjet gateway; choose a catalog model or enter its ID."
             }
           >
@@ -742,7 +742,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         detailTitle="Custom model"
         detailDescription={
           configuredModels
-            ? "Enter a model ID accepted by this Greppy profile's endpoint. Choose Use model to apply it to this chat."
+            ? "Enter a model ID accepted by this harness's endpoint. Choose Use model to apply it to this chat."
             : "Enter a model ID accepted by your gateway. Choose Use model to apply it to this chat."
         }
         detail={

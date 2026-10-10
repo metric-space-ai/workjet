@@ -13,6 +13,8 @@ import {
   WorkjetSpeechPlaybackResponse,
 } from "./workjetSpeechSettings.ts";
 export * from "./workjetSpeechSettings.ts";
+import { WorkjetDictationRequests, WorkjetDictationResponse } from "./workjetDictation.ts";
+export * from "./workjetDictation.ts";
 import {
   WorkjetJourFixeNarrationReadRequest,
   WorkjetJourFixeNarrationReadResponse,
@@ -721,6 +723,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetPresentationRequests,
   ...WorkjetCalendarNativeRequests,
   ...WorkjetSpeechSettingsRequests,
+  ...WorkjetDictationRequests,
   Schema.Struct({
     action: Schema.Literal("project.kpis.read"),
     commandId: CommandId,
@@ -888,6 +891,7 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   ...WorkjetCalendarNativeResponses,
   WorkjetSpeechSettingsResponse,
   WorkjetSpeechPlaybackResponse,
+  WorkjetDictationResponse,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,

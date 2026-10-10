@@ -69,6 +69,15 @@ export function linuxServerBuildTask(repoRoot: string) {
   );
 }
 
+/** Include linked web assets in the portable server input. */
+export async function archiveServerDist(inputArchive: string, serverDist: string) {
+  // The CLI build links client assets; their targets must travel to the other host.
+  await execFile("tar", ["-chzf", inputArchive, "-C", serverDist, "."], {
+    timeout: 120_000,
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+  });
+}
+
 /** Build native Linux dependencies on gpu3 around the fresh desktop server output. */
 export async function buildLinuxSshServer(input: {
   readonly repoRoot: string;
@@ -94,10 +103,7 @@ export async function buildLinuxSshServer(input: {
   let completed = false;
   try {
     await NodeFSP.mkdir(output);
-    await execFile("tar", ["-czf", inputArchive, "-C", input.serverDist, "."], {
-      timeout: 120_000,
-      env: { ...process.env, COPYFILE_DISABLE: "1" },
-    });
+    await archiveServerDist(inputArchive, input.serverDist);
     await execFile("ssh", [...SSH_OPTIONS, host, `mkdir -p ${remote}`]);
     await execFile("scp", [...SSH_OPTIONS, inputArchive, `${host}:${remote}/server-dist.tgz`]);
     const { stdout } = await execFile(

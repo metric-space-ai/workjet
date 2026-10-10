@@ -51,6 +51,25 @@ const config: WorkjetThreadConfig = {
 const saveConfig = async () => ({ _tag: "Success" });
 
 describe("native supervisor receipt display", () => {
+  it("places the full-width editor above the same attachment, route, gear, mic and send bar", () => {
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={config}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html.indexOf("<textarea")).toBeLessThan(html.indexOf("data-composer-bar="));
+    expect(html).toContain('data-composer-bar="true"');
+    expect(html).toContain('aria-label="Advanced settings"');
+    expect(html).toContain('aria-label="Dictate message"');
+    expect(html).toContain('aria-label="Supervisor message type"');
+    expect(html).not.toContain(">CTOX</span>");
+    expect(html).not.toContain(">Send</button>");
+  });
   it("offers the existing account login for the managed project's discovery refusal", () => {
     const html = renderToStaticMarkup(
       <NativeSupervisorComposer

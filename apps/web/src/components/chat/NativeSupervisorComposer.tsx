@@ -9,7 +9,13 @@ import {
   type WorkjetSupervisorTurnIntent,
   type WorkjetSupervisorTurnKind,
 } from "@workjet/contracts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowUpIcon, PlusIcon } from "lucide-react";
+import { ComposerBar } from "./ComposerBar";
+import { ComposerDictationButton } from "./ComposerDictationButton";
+import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { ComposerControl } from "./ComposerControl";
+import { shouldSubmitComposerOnEnter } from "../../composer-logic";
 import { createPortal } from "react-dom";
 import {
   appendSupervisorExecutionEvents,
@@ -58,6 +64,7 @@ export function NativeSupervisorComposer(props: {
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
   readonly conversationTarget?: HTMLElement | null;
+  readonly workerSourceControl?: ReactNode;
 }) {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
@@ -858,15 +865,8 @@ export function NativeSupervisorComposer(props: {
           event.preventDefault();
           if (!bindingPending) void run(inputting ? "input" : "send");
         }}
-        className="flex items-end gap-2"
+        className="flex w-full min-w-0 flex-col gap-1"
       >
-        <SupervisorTurnKindPicker
-          scope={scope}
-          capability={capability}
-          value={turnKind}
-          disabled={disabled || busy || inputting || (pending && !confirmedPending)}
-          onChange={setTurnKind}
-        />
         <textarea
           aria-label="Message to Supervisor"
           placeholder={
@@ -878,39 +878,113 @@ export function NativeSupervisorComposer(props: {
           disabled={pending && !confirmedPending}
           onKeyDown={(event) => {
             if (
-              (event.metaKey || event.ctrlKey) &&
               event.key === "Enter" &&
-              !event.nativeEvent.isComposing
+              shouldSubmitComposerOnEnter({
+                shiftKey: event.shiftKey,
+                isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
+              })
             ) {
               event.preventDefault();
               if (!bindingPending) void run(inputting ? "input" : "send");
             }
           }}
-          className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none"
+          className="w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm outline-none"
         />
-        <span
-          className="pb-2 text-xs text-muted-foreground"
-          title="Execution and model are managed by CTOX"
-        >
-          CTOX
-        </span>
-        <button
-          type="submit"
-          aria-label="Send to Supervisor"
-          disabled={
-            disabled ||
-            busy ||
-            bindingPending ||
-            (!inputting && conversationUnavailable) ||
-            (inputting && !inputSupported) ||
-            (inputting && journal?.turn?.terminal && !unresolvedInput) ||
-            (pending && !drafting) ||
-            prompt.trim() === ""
+        <ComposerBar
+          attachments={
+            <ComposerControl
+              type="button"
+              disabled
+              aria-label="Add attachments"
+              title="This supervisor connection accepts text. Attachment support requires a CTOX update."
+              className="size-7 justify-center px-0"
+            >
+              <PlusIcon className="size-4" />
+            </ComposerControl>
           }
-          className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
-        >
-          Send
-        </button>
+          worker={
+            <ComposerControl
+              type="button"
+              aria-disabled="true"
+              title="Managed by the project instance. Luma selection requires an instance update."
+            >
+              Supervisor
+            </ComposerControl>
+          }
+          manual={
+            <>
+              <ComposerControl
+                type="button"
+                aria-disabled="true"
+                title="Execution and model are managed by this project's CTOX instance."
+              >
+                Instance model
+              </ComposerControl>
+              <ComposerControl
+                type="button"
+                aria-disabled="true"
+                title={props.instanceId ?? "No connected instance"}
+              >
+                Project instance
+              </ComposerControl>
+            </>
+          }
+          status={
+            <>
+              <SupervisorTurnKindPicker
+                scope={scope}
+                capability={capability}
+                value={turnKind}
+                disabled={disabled || busy || inputting || (pending && !confirmedPending)}
+                onChange={setTurnKind}
+              />
+
+              {props.workerSourceControl}
+            </>
+          }
+          settings={
+            <CompactComposerControlsMenu
+              interactionMode="default"
+              showInteractionModeToggle={false}
+              onToggleInteractionMode={() => {}}
+              extraMenuContent={
+                <p className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
+                  The supervisor's context, system prompt, tools and reasoning are managed by its
+                  instance.
+                </p>
+              }
+            />
+          }
+          dictation={
+            <ComposerDictationButton
+              key={JSON.stringify(scope)}
+              instanceId={props.instanceId}
+              disabled={pending && !confirmedPending}
+              onTranscript={(text) =>
+                setPrompt((current) => (current ? `${current} ${text}` : text))
+              }
+            />
+          }
+          actions={
+            <button
+              type="submit"
+              aria-label="Send to Supervisor"
+              disabled={
+                disabled ||
+                busy ||
+                bindingPending ||
+                (!inputting && conversationUnavailable) ||
+                (inputting && !inputSupported) ||
+                (inputting && journal?.turn?.terminal && !unresolvedInput) ||
+                (pending && !drafting) ||
+                prompt.trim() === ""
+              }
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+            >
+              <ArrowUpIcon className="size-4" aria-hidden="true" />
+            </button>
+          }
+        />
       </form>
       {drafting && busy && (
         <p role="status" className="mt-1 text-xs text-muted-foreground">

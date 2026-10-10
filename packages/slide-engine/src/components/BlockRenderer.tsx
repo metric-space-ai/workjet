@@ -195,7 +195,7 @@ const tableStyle: CSSProperties = {
 const tableHeaderStyle: CSSProperties = {
   padding: "12px 14px",
   borderBottom: "1px solid var(--line)",
-  background: "oklch(94% 0.014 230)",
+  background: "var(--panel-soft)",
   fontWeight: 820,
   textAlign: "left"
 };

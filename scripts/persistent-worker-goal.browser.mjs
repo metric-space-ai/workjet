@@ -69,6 +69,31 @@ try {
     .getByText("Das gespeicherte Ziel bleibt beim Ändern pausiert.", { exact: true })
     .waitFor();
   await page.getByText("Pausiert · Durchlauf 0", { exact: false }).waitFor();
+  await page.locator('[data-slide-id="iteration-2"]').waitFor();
+  const contrast = await page
+    .locator("th")
+    .first()
+    .evaluate((header) => {
+      const style = getComputedStyle(header);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas color sampler unavailable");
+      const luminance = (color) => {
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const data = context.getImageData(0, 0, 1, 1).data;
+        const rgb = [...data].slice(0, 3).map((value) => {
+          const fraction = value / 255;
+          return fraction <= 0.04045 ? fraction / 12.92 : ((fraction + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+      };
+      const a = luminance(style.color),
+        b = luminance(style.backgroundColor);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    });
+  NodeAssert.ok(contrast >= 4.5, `Kanban heading contrast ${contrast}`);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: NodePath.resolve(output, "goal-board-390.png"), fullPage: true });
   NodeAssert.equal(

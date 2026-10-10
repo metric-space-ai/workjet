@@ -114,6 +114,34 @@ const markup = (threads: readonly EnvironmentThreadShell[], language: "de" | "en
   );
 
 describe("owner project overview", () => {
+  it("counts durable goal statuses without treating completed turns as completed goals", () => {
+    const goal = {
+      objective: "Verify the fracture cases.",
+      status: "active" as const,
+      revision: 1,
+      continuationCount: 0,
+      lastCompletedTurnId: null,
+      pendingContinuation: null,
+      reason: null,
+      updatedAt: createdAt,
+    };
+    const withGoal = {
+      ...specialist,
+      workjetConfig: { ...specialist.workjetConfig, goal },
+    } as EnvironmentThreadShell;
+    expect(overview([supervisor, withGoal]).kpis[2]?.value).toBe("1");
+    const complete = {
+      ...withGoal,
+      workjetConfig: { ...withGoal.workjetConfig, goal: { ...goal, status: "complete" as const } },
+    } as EnvironmentThreadShell;
+    expect(overview([supervisor, complete]).kpis[2]?.value).toBe("0");
+    expect(overview([supervisor, complete]).goals[0]?.state).toBe("erledigt");
+    expect(overview([supervisor, withGoal, specialist]).kpis[2]?.value).toBeNull();
+  });
+  it("keeps an active one-shot that is waiting for its owner's answer", () => {
+    expect(isRunningProjectOneShot({ ...worker, hasPendingUserInput: true })).toBe(true);
+  });
+
   it("renders exactly four honest KPIs and explains unavailable values without zero placeholders", () => {
     const data = overview([supervisor, specialist]);
     expect(data.kpis).toHaveLength(4);

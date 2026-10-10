@@ -380,22 +380,28 @@ it.effect(
     ),
 );
 
-it.effect("retires a child seeded from a Parent worktree while preserving the project and Parent refs", () =>
-  test(Effect.gen(function* () {
-    const h = yield* fixture;
-    const projectWorkspace = h.path.join(h.path.dirname(h.source), "project");
-    yield* h.git(h.source, ["worktree", "add", "--detach", projectWorkspace, "HEAD"]);
-    const projectHead = (yield* h.git(projectWorkspace, ["rev-parse", "HEAD"])).stdout;
-    h.state.workspaceRoot = projectWorkspace;
-    assert.equal((yield* h.clean()).status, "cleaned");
-    assert.equal((yield* h.receipt()).status, "complete");
-    yield* h.verifySource();
-    assert.equal((yield* h.git(projectWorkspace, ["rev-parse", "HEAD"])).stdout, projectHead);
-    assert.equal(yield* h.fs.readFileString(h.path.join(projectWorkspace, "result.txt")), "real committed result\n");
-    assert.equal(yield* h.fs.exists(h.recovery), true);
-  })),
+it.effect(
+  "retires a child seeded from a Parent worktree while preserving the project and Parent refs",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const h = yield* fixture;
+        const projectWorkspace = h.path.join(h.path.dirname(h.source), "project");
+        yield* h.git(h.source, ["worktree", "add", "--detach", projectWorkspace, "HEAD"]);
+        const projectHead = (yield* h.git(projectWorkspace, ["rev-parse", "HEAD"])).stdout;
+        h.state.workspaceRoot = projectWorkspace;
+        assert.equal((yield* h.clean()).status, "cleaned");
+        assert.equal((yield* h.receipt()).status, "complete");
+        yield* h.verifySource();
+        assert.equal((yield* h.git(projectWorkspace, ["rev-parse", "HEAD"])).stdout, projectHead);
+        assert.equal(
+          yield* h.fs.readFileString(h.path.join(projectWorkspace, "result.txt")),
+          "real committed result\n",
+        );
+        assert.equal(yield* h.fs.exists(h.recovery), true);
+      }),
+    ),
 );
-
 
 for (const failure of ["loseAck", "failRemovalWrite"] as const) {
   it.effect(

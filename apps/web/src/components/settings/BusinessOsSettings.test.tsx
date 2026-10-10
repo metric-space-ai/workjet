@@ -144,9 +144,9 @@ describe("Business OS settings scope", () => {
         requiresInstanceSelection={false}
       />,
     );
-    expect(markup).toContain("Models");
+    expect(markup).toContain("Modelle");
     expect(markup).toContain("Harnesses");
-    expect(markup).toContain("Computers");
+    expect(markup).toContain("Rechner");
     expect(markup).toContain("Lumas");
     expect(markup).not.toContain("Wähle zuerst eine Instanz aus.");
   });
@@ -162,9 +162,9 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain('aria-label="Active instance"');
     expect(markup).toContain("WELSCH");
     expect(markup).toContain("Devices for WELSCH");
-    expect(markup).toContain("Models");
+    expect(markup).toContain("Modelle");
     expect(markup).toContain("Harnesses");
-    expect(markup).toContain("Computers");
+    expect(markup).toContain("Rechner");
     expect(markup).toContain("Lumas");
     expect(markup).not.toContain("globalen Computer-Inventar");
     expect(markup).not.toContain("Rechner für Code");
@@ -173,8 +173,8 @@ describe("Business OS settings scope", () => {
     expect(markup).not.toContain("Technische Details");
     expect(markup).not.toContain("Darstellungs-ID");
     expect(markup).not.toContain("ctox_dev");
-    expect(markup.indexOf("CTOX instances")).toBeLessThan(markup.indexOf(">Models<"));
-    expect(markup.indexOf(">Models<")).toBeLessThan(markup.indexOf("Connected devices"));
+    expect(markup.indexOf("CTOX instances")).toBeLessThan(markup.indexOf(">Modelle<"));
+    expect(markup.indexOf(">Modelle<")).toBeLessThan(markup.indexOf("Connected devices"));
   });
 
   it("keeps opaque authority identifiers out of regular instance labels", () => {

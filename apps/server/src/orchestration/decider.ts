@@ -1115,16 +1115,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       const slideDocument = yield* Effect.try({
-        try: () => createWorkerKanbanSlideDocument({
-          threadId: thread.id,
-          title: thread.title,
-          objective: config.goal.objective,
-          kanban: command.kanban,
-        }),
-        catch: () => new OrchestrationCommandInvariantError({
-          commandType: command.type,
-          detail: "The mini-kanban could not be converted to a valid SlideDocument.",
-        }),
+        try: () =>
+          createWorkerKanbanSlideDocument({
+            threadId: thread.id,
+            title: thread.title,
+            objective: config.goal.objective,
+            kanban: command.kanban,
+          }),
+        catch: () =>
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The mini-kanban could not be converted to a valid SlideDocument.",
+          }),
       });
       return {
         ...(yield* withEventBase({

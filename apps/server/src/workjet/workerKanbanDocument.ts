@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import type {
   ThreadId,
   WorkjetWorkerKanban,
@@ -6,6 +6,8 @@ import type {
 } from "@workjet/contracts";
 import { parseSlideDocument, SLIDE_DOCUMENT_SCHEMA_VERSION } from "@workjet/slide-engine/schema";
 import * as Schema from "effect/Schema";
+
+const encodeDocumentJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const columns = [
   ["todo", "To do"],
@@ -30,7 +32,7 @@ export function createWorkerKanbanSlideDocument(input: {
   readonly kanban: WorkjetWorkerKanban;
 }): WorkjetWorkerKanbanSlideDocument {
   const { kanban } = input;
-  const key = createHash("sha256")
+  const key = NodeCrypto.createHash("sha256")
     .update(input.threadId + "\0" + kanban.goalRevision + "\0" + kanban.iteration)
     .digest("hex")
     .slice(0, 24);
@@ -72,40 +74,50 @@ export function createWorkerKanbanSlideDocument(input: {
       blocks: [
         { id: "objective-" + key, type: "paragraph", text: compact(input.objective, 1200) },
         ...(rows.length > 0
-          ? [{
-              id: "cards-" + key,
-              type: "table",
-              columns: columns.map(([, label]) => label),
-              rows: rows.slice(page * rowsPerSlide, (page + 1) * rowsPerSlide),
-              mobileStrategy: "cards",
-              caption: "Reported plan and evidence · updated " + kanban.updatedAt,
-            }]
-          : [{
-              id: "empty-" + key,
-              type: "callout",
-              tone: "info",
-              text: "No cards recorded for this iteration.",
-            }]),
+          ? [
+              {
+                id: "cards-" + key,
+                type: "table",
+                columns: columns.map(([, label]) => label),
+                rows: rows.slice(page * rowsPerSlide, (page + 1) * rowsPerSlide),
+                mobileStrategy: "cards",
+                caption: "Reported plan and evidence · updated " + kanban.updatedAt,
+              },
+            ]
+          : [
+              {
+                id: "empty-" + key,
+                type: "callout",
+                tone: "info",
+                text: "No cards recorded for this iteration.",
+              },
+            ]),
       ],
       speakerNotes: notes,
-      sourceRefs: [{
-        id: "source-" + key,
-        sourceType: "import",
-        label: "Durable parent mini-kanban",
-        locator: compact(
-          "Thread " + input.threadId + " · goal revision " + kanban.goalRevision
-            + " · iteration " + kanban.iteration,
-          180,
-        ),
-      }],
+      sourceRefs: [
+        {
+          id: "source-" + key,
+          sourceType: "import",
+          label: "Durable parent mini-kanban",
+          locator: compact(
+            "Thread " +
+              input.threadId +
+              " · goal revision " +
+              kanban.goalRevision +
+              " · iteration " +
+              kanban.iteration,
+            180,
+          ),
+        },
+      ],
     })),
     assets: [],
     createdBy: { mode: "import" },
   });
-  const documentJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(document);
+  const documentJson = encodeDocumentJson(document);
   return {
     schemaVersion: SLIDE_DOCUMENT_SCHEMA_VERSION,
     documentJson,
-    sha256: createHash("sha256").update(documentJson).digest("hex"),
+    sha256: NodeCrypto.createHash("sha256").update(documentJson).digest("hex"),
   };
 }

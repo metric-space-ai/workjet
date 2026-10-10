@@ -410,7 +410,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
       );
       ctx.managedPrompt = undefined;
       ctx.importedHistoryKey = historyKey;
-      yield* Deferred.await(finished);
+      // Native RPC acknowledges dispatch before agent_end; return that receipt now.
       const state = yield* ctx.rpc.request("get_state").pipe(
         Effect.flatMap(decodeState),
         Effect.mapError((cause) => error("get_state", cause.message)),

@@ -284,6 +284,8 @@ export function assertLumaLiveModelChoice(
     throw new Error(`Enable ${model} for this account in Settings → Models first.`);
 }
 
+const EMPTY_NATIVE_ACCOUNTS: readonly WorkjetNativeProviderAccount[] = [];
+
 export function WorkjetWorkerEditor({
   worker = null,
   draftScopeKey,
@@ -291,7 +293,7 @@ export function WorkjetWorkerEditor({
   routes,
   gatewayAccounts = [],
   gatewayEnvironmentId = null,
-  nativeAccounts = [],
+  nativeAccounts = EMPTY_NATIVE_ACCOUNTS,
   nativeModelsBusy = false,
   nativeModelsError,
   onRefreshNativeModels,

@@ -69,7 +69,7 @@ export async function requestInstanceProviders(
     const response = decode(result.response);
     if (response.action !== input.action || response.operationId !== operationId)
       throw new NativeProviderFailure(
-        "The native account response belongs to another request. Refresh accounts.",
+        "The account response belongs to another request. Refresh accounts.",
       );
     return response.registry;
   } catch (error) {
@@ -117,7 +117,7 @@ export function nativeLumaRoutes(
     ...registry.accounts.map((account) => {
       const previous = routes.find((route) => sameAccount(route, account));
       return {
-        id: previous?.id ?? WorkjetLlmRouteId.make("native-account:" + account.id),
+        id: previous?.id ?? WorkjetLlmRouteId.make("ctox-account:" + account.id),
         label:
           previous?.label ??
           (account.provider === "claude" ? "Claude" : account.provider) +

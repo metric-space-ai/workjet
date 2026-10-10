@@ -8,9 +8,11 @@ import {
 } from "../components/settings/WorkjetWorkerEditor";
 import { nativeLumaRoutes } from "./workjetNativeProviders";
 
+const decodeRegistry = Schema.decodeUnknownSync(WorkjetNativeProviderRegistry);
+
 describe("native Claude Luma editor", () => {
   it("shows full live model names without presenting catalog metadata as inference", () => {
-    const registry = Schema.decodeUnknownSync(WorkjetNativeProviderRegistry)({
+    const registry = decodeRegistry({
       ok: true,
       schema: "ctox.provider-federation-registry.v1",
       revision: 0,

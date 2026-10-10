@@ -35,7 +35,7 @@ function ProviderModels({
         .flatMap((account) => account.modelCatalog.models),
     ),
   ];
-  const listId = "native-provider-models-" + provider;
+  const listId = "ctox-provider-models-" + provider;
   return (
     <div className="min-w-0" role="cell">
       <Input
@@ -163,7 +163,7 @@ export function NativeProviderRows({
                 >
                   <input
                     type="checkbox"
-                    aria-label={`Use ${model} for native account ${account.id}`}
+                    aria-label={`Use ${model} for instance account ${account.id}`}
                     checked={!account.excludedModels.includes(model)}
                     disabled={state.busy || !account.modelCatalog.models.includes(model)}
                     onChange={(event) => {
@@ -214,7 +214,7 @@ export function NativeProviderRows({
                 variant="ghost"
                 size="icon-xs"
                 disabled={state.busy || !account.enabled}
-                aria-label={`Refresh live models for native account ${account.id}`}
+                aria-label={`Refresh live models for instance account ${account.id}`}
                 onClick={() => {
                   void state.run({
                     action: "instance.providers.observe",

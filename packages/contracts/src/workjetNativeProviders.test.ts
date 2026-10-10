@@ -6,6 +6,10 @@ import {
   WorkjetNativeProviderRegistry,
 } from "./workjetNativeProviders.ts";
 
+const decodeRegistry = Schema.decodeUnknownSync(WorkjetNativeProviderRegistry);
+const decodeAccount = Schema.decodeUnknownSync(WorkjetNativeProviderAccount);
+const decodeRequest = Schema.decodeUnknownSync(WorkjetNativeProviderRequest);
+
 const reference = {
   accountId: "196a89ba-ee86-4413-885c-04ca60e6f291",
   holderInstanceId: "322084e5-8239-48d7-b3c5-c5178fbe5822",
@@ -41,7 +45,7 @@ const account = {
 };
 describe("native provider public contract", () => {
   it("retains catalog evidence without promoting it to inference verification", () => {
-    const registry = Schema.decodeUnknownSync(WorkjetNativeProviderRegistry)({
+    const registry = decodeRegistry({
       ok: true,
       schema: "ctox.provider-federation-registry.v1",
       revision: 0,
@@ -52,7 +56,7 @@ describe("native provider public contract", () => {
     expect(registry.accounts[0]?.inferenceVerified).toBe(false);
     expect(JSON.stringify(registry)).not.toContain("private-fixture");
     expect(() =>
-      Schema.decodeUnknownSync(WorkjetNativeProviderAccount)({
+      decodeAccount({
         ...account,
         inferenceVerified: true,
       }),
@@ -66,7 +70,7 @@ describe("native provider public contract", () => {
       { ...account, modelCatalog: { ...account.modelCatalog, lastAttempt: null } },
       { ...account, modelCatalog: { ...account.modelCatalog, lastSuccessAtMs: null } },
     ])
-      expect(() => Schema.decodeUnknownSync(WorkjetNativeProviderAccount)(value)).toThrow();
+      expect(() => decodeAccount(value)).toThrow();
   });
   it("requires native account and policy revisions for mutation commands", () => {
     const base = {
@@ -78,13 +82,13 @@ describe("native provider public contract", () => {
       models: [],
       expectedRevision: 0,
     };
-    expect(Schema.decodeUnknownSync(WorkjetNativeProviderRequest)(base)).toEqual(base);
+    expect(decodeRequest(base)).toEqual(base);
     for (const invalid of [
       { ...base, expectedAccountRevision: 0 },
       { ...base, expectedRevision: -1 },
       { ...base, models: Array.from({ length: 257 }, () => "claude-opus-5-5") },
       { ...base, action: "instance.providers.secret" },
     ])
-      expect(() => Schema.decodeUnknownSync(WorkjetNativeProviderRequest)(invalid)).toThrow();
+      expect(() => decodeRequest(invalid)).toThrow();
   });
 });

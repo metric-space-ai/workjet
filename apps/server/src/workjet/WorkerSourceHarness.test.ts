@@ -50,7 +50,9 @@ it("sends verified submission details and retains the source route after a faile
     headOid: "a".repeat(40),
   };
   let stopped = false;
-  const persistStopped = async () => { stopped = true; };
+  const persistStopped = async () => {
+    stopped = true;
+  };
   await expect(harness.retire(notice, persistStopped)).rejects.toThrow();
   expect(harness.isRevoked()).toBe(false);
   expect(stopped).toBe(false);

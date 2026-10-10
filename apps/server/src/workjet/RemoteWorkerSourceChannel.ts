@@ -36,7 +36,14 @@ export interface WorkerSourceChannel {
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_ACTIVE_OPERATIONS = 8;
 const OPERATION_TIMEOUT_MS = 120_000;
-const operations = new Set<string>(["admit", "bindModel", "infer", "retire", "retirementAck", "computers"]);
+const operations = new Set<string>([
+  "admit",
+  "bindModel",
+  "infer",
+  "retire",
+  "retirementAck",
+  "computers",
+]);
 
 /** Bind only to source loopback. A service-owned registered SSH reverse forward
  * makes this listener reachable on target loopback; never expose the source's
@@ -139,18 +146,20 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
             if (value.operation === "retirementAck") throw new Error("not retired");
             if (value.operation === "retire") {
               const response = session.invoke("retire", value.payload, controller.signal);
-              const expiry = setTimeout(() => {
-                if (sessions.get(session.requestId) !== session) return;
-                revoke(session.requestId);
-                session.onRetired?.();
-              }, Math.max(1, session.expiresAtMs - Date.now()));
+              const expiry = setTimeout(
+                () => {
+                  if (sessions.get(session.requestId) !== session) return;
+                  revoke(session.requestId);
+                  session.onRetired?.();
+                },
+                Math.max(1, session.expiresAtMs - Date.now()),
+              );
               expiry.unref();
               const retirement = { payload, response, expiry };
               session.retirement = retirement;
               try {
                 const result = await response;
-                for (const other of session.active)
-                  if (other !== controller) other.abort();
+                for (const other of session.active) if (other !== controller) other.abort();
                 return result;
               } catch (error) {
                 if (session.retirement === retirement) {
@@ -179,7 +188,9 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
         if (
           controller.signal.aborted ||
           sessions.get(session.requestId) !== session ||
-          (session.retirement && value.operation !== "retire" && value.operation !== "retirementAck") ||
+          (session.retirement &&
+            value.operation !== "retire" &&
+            value.operation !== "retirementAck") ||
           session.expiresAtMs <= Date.now()
         )
           return reject(401);

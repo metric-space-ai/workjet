@@ -10,7 +10,9 @@ it("replays a lost retirement acknowledgement without inference or a second sour
     ...identity,
     requestId: "lost-terminal-ack",
     expiresAtMs: Date.now() + 60_000,
-    onRetired: () => { retired = true; },
+    onRetired: () => {
+      retired = true;
+    },
     invoke: async (operation) => {
       assert.equal(operation, "retire");
       calls++;

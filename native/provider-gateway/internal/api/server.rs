@@ -22,6 +22,9 @@ use crate::internal::api::server_routes::{
 use crate::sdk::api::handlers::claude::code_handlers::{
     ClaudeMessagesHttpResponse, ClaudeMessagesRouteHandler, ClaudeMessagesRouteResponse,
 };
+use crate::sdk::api::handlers::openai::chat_completions_bridge::{
+    route_chat_completions, ChatCompletionsRouteResponse,
+};
 use crate::sdk::api::handlers::openai::openai_responses_handlers::{
     OpenAiResponsesHttpResponse, OpenAiResponsesRouteHandler, OpenAiResponsesRouteResponse,
 };
@@ -201,7 +204,8 @@ where
 {
     super::account_selection::ACCOUNT_SELECTION
         .scope(std::sync::Mutex::new(Default::default()), async {
-            let request = match tokio::time::timeout(header_timeout, read_request(stream)).await {
+            let mut request = match tokio::time::timeout(header_timeout, read_request(stream)).await
+            {
                 Err(_) => return Ok(()),
                 Ok(Ok(request)) => request,
                 Ok(Err(error)) => {
@@ -212,6 +216,21 @@ where
             let mut response_writer =
                 policy.and_then(|policy| response_writer_for_request(&request, policy));
             let route = resolve_server_route(&request.target);
+            // Harnesses without custom request headers can still choose a model
+            // from the host's connected-account catalog. Explicit selections
+            // retain their authority and never go through this inference.
+            if request.provider.is_none()
+                && request.method == "POST"
+                && matches!(route, ServerRoute::Messages | ServerRoute::Responses | ServerRoute::ChatCompletions)
+            {
+                match catalog_provider_for_request(&request.body, models_response.body()) {
+                    Ok(provider) => request.provider = provider,
+                    Err(message) => {
+                        let response = OpenAiResponsesHttpResponse::error(400, message);
+                        return write_response(stream, &response).await;
+                    }
+                }
+            }
             let write_result = if route == ServerRoute::Models {
                 let mut response =
                     ClaudeMessagesRouteResponse::Buffered(if request.method == "GET" {
@@ -230,6 +249,32 @@ where
                 };
                 prepare_messages_response_writer(response_writer.as_mut(), &response);
                 write_messages_route_response(stream, &mut response, response_writer.as_mut()).await
+            } else if route == ServerRoute::ChatCompletions {
+                let mut response = if request.method == "POST" {
+                    route_chat_completions(responses_handler, request.provider.as_deref(), &request.body).await
+                } else {
+                    ChatCompletionsRouteResponse::Buffered(OpenAiResponsesHttpResponse::error(405, "method not allowed"))
+                };
+                match &mut response {
+                    ChatCompletionsRouteResponse::Buffered(buffered) => {
+                        if let Some(writer) = response_writer.as_mut() {
+                            writer.write_header(buffered.status(), BTreeMap::from([("Content-Type".into(), vec![buffered.content_type().into()])]));
+                        }
+                        write_response_with_capture(stream, buffered, response_writer.as_mut()).await
+                    }
+                    ChatCompletionsRouteResponse::Stream(translated) => {
+                        if let Some(writer) = response_writer.as_mut() {
+                            writer.write_header(200, BTreeMap::from([("Content-Type".into(), vec!["text/event-stream".into()])]));
+                        }
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes()).await?;
+                        while let Some(chunk) = translated.next_chunk().await {
+                            let result = stream.write_all(&chunk).await;
+                            if let Some(writer) = response_writer.as_mut() { writer.write(&chunk); }
+                            result?;
+                        }
+                        stream.shutdown().await
+                    }
+                }
             } else if matches!(
                 route,
                 ServerRoute::CountTokens
@@ -324,6 +369,47 @@ where
             write_route_response(stream, &mut response, None).await
         })
         .await
+}
+
+fn catalog_provider_for_request(
+    body: &[u8],
+    catalog: &[u8],
+) -> Result<Option<String>, &'static str> {
+    use crate::internal::client::claude::models::resolve_claude_model_id_prefix;
+    use crate::internal::thinking::parse_suffix;
+    use serde_json::Value;
+
+    let Ok(request) = serde_json::from_slice::<Value>(body) else {
+        return Ok(None);
+    };
+    let Some(model) = request.get("model").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let model = parse_suffix(&resolve_claude_model_id_prefix(model)).model_name;
+    let Ok(catalog) = serde_json::from_slice::<Value>(catalog) else {
+        return Ok(None);
+    };
+    let Some(models) = catalog.get("data").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    let providers: std::collections::BTreeSet<&str> = models
+        .iter()
+        .filter(|entry| {
+            entry
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| resolve_claude_model_id_prefix(id) == model)
+        })
+        .filter_map(|entry| entry.get("providers").and_then(Value::as_array))
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|provider| !provider.is_empty())
+        .collect();
+    match providers.len() {
+        0 => Ok(None), // Preserve the existing default for legacy catalog-less hosts.
+        1 => Ok(providers.first().map(|provider| (*provider).to_owned())),
+        _ => Err("model belongs to multiple connected providers; select X-CTOX-Provider"),
+    }
 }
 
 pub(super) struct ParsedRequest {
@@ -543,7 +629,7 @@ where
     if account.is_some()
         && !matches!(
             resolve_server_route(&target),
-            ServerRoute::Responses | ServerRoute::Messages
+            ServerRoute::Responses | ServerRoute::Messages | ServerRoute::ChatCompletions
         )
     {
         return Err(RequestReadError {
@@ -1002,6 +1088,181 @@ fn reason_phrase(status: u16) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    struct SelectedProviderProbe;
+
+    impl super::OpenAiResponsesRouteHandler for SelectedProviderProbe {
+        fn handle_provider_route<'a>(
+            &'a self,
+            provider: Option<&'a str>,
+            _body: &'a [u8],
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = super::OpenAiResponsesRouteResponse> + Send + 'a>,
+        > {
+            Box::pin(async move {
+                super::OpenAiResponsesRouteResponse::Buffered(
+                    super::OpenAiResponsesHttpResponse::json(
+                        200,
+                        serde_json::to_vec(&serde_json::json!({"selectedProvider": provider}))
+                            .unwrap(),
+                    ),
+                )
+            })
+        }
+    }
+
+    impl super::ClaudeMessagesRouteHandler for SelectedProviderProbe {
+        fn handle_provider_route<'a>(
+            &'a self,
+            provider: Option<&'a str>,
+            _body: &'a [u8],
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = super::ClaudeMessagesRouteResponse> + Send + 'a>,
+        > {
+            Box::pin(async move {
+                super::ClaudeMessagesRouteResponse::Buffered(
+                    super::ClaudeMessagesHttpResponse::error(200, provider.unwrap_or("")),
+                )
+            })
+        }
+    }
+
+    async fn catalog_routed_request(
+        path: &str,
+        model: &str,
+        providers: &[&str],
+        header: Option<&str>,
+    ) -> (u16, serde_json::Value) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (mut client, mut server) = tokio::io::duplex(4096);
+        let entry = serde_json::json!({"id": "claude-opus-5-5", "providers": providers});
+        let catalog = crate::sdk::api::handlers::claude::code_handlers::claude_models_response(
+            &[entry.as_object().unwrap().clone()],
+            false,
+        );
+        let serving = tokio::spawn(async move {
+            super::serve_provider_connection(
+                &mut server,
+                &SelectedProviderProbe,
+                Some(&SelectedProviderProbe),
+                &catalog,
+                None,
+            )
+            .await
+            .unwrap();
+        });
+        let body =
+            serde_json::to_vec(&serde_json::json!({"model": model, "messages": [], "input": []}))
+                .unwrap();
+        let header = header
+            .map(|provider| format!("X-CTOX-Provider: {provider}\r\n"))
+            .unwrap_or_default();
+        client
+            .write_all(
+                format!(
+                    "POST {path} HTTP/1.1\r\nHost: localhost\r\n{header}Content-Length: {}\r\n\r\n",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        client.write_all(&body).await.unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        serving.await.unwrap();
+        let split = response
+            .windows(4)
+            .position(|part| part == b"\r\n\r\n")
+            .unwrap();
+        let status = std::str::from_utf8(&response[..split])
+            .unwrap()
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse()
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&response[split + 4..]).unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn catalog_routing_selects_model_provider_for_headerless_harnesses() {
+        for path in ["/v1/messages", "/v1/responses"] {
+            for model in ["claude-opus-5-5", "claude-opus-5-5(high)"] {
+                let (status, body) = catalog_routed_request(path, model, &["claude"], None).await;
+                assert_eq!(status, 200);
+                let selected = if path == "/v1/messages" {
+                    &body["error"]["message"]
+                } else {
+                    &body["selectedProvider"]
+                };
+                assert_eq!(selected, "claude");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn catalog_routing_preserves_explicit_supervisor_provider() {
+        for path in ["/v1/messages", "/v1/responses"] {
+            let (status, body) =
+                catalog_routed_request(path, "claude-opus-5-5", &["claude"], Some("codex")).await;
+            assert_eq!(status, 200);
+            let selected = if path == "/v1/messages" {
+                &body["error"]["message"]
+            } else {
+                &body["selectedProvider"]
+            };
+            assert_eq!(selected, "codex");
+        }
+    }
+
+    #[tokio::test]
+    async fn catalog_routing_refuses_ambiguous_model_without_dispatch() {
+        for path in ["/v1/messages", "/v1/responses"] {
+            let (status, body) =
+                catalog_routed_request(path, "claude-opus-5-5", &["claude", "codex"], None).await;
+            assert_eq!(status, 400);
+            assert!(body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("X-CTOX-Provider"));
+        }
+    }
+
+    #[test]
+    fn catalog_routing_resolves_protocol_aliases_and_preserves_legacy_defaults() {
+        let model = "claude-opus-5-5";
+        let encoded = format!(
+            "claude-fable-5-dd-{}",
+            model.chars().rev().collect::<String>()
+        );
+        let catalog = serde_json::to_vec(
+            &serde_json::json!({"data": [{"id": encoded, "providers": ["claude"]}]}),
+        )
+        .unwrap();
+        for model in [model.to_owned(), encoded] {
+            let request = serde_json::to_vec(&serde_json::json!({"model": model})).unwrap();
+            assert_eq!(
+                super::catalog_provider_for_request(&request, &catalog),
+                Ok(Some("claude".to_owned()))
+            );
+        }
+        assert_eq!(
+            super::catalog_provider_for_request(b"{\"model\":\"\"}", &catalog),
+            Ok(None)
+        );
+        assert_eq!(
+            super::catalog_provider_for_request(b"{}", &catalog),
+            Ok(None)
+        );
+        assert_eq!(
+            super::catalog_provider_for_request(b"invalid", &catalog),
+            Ok(None)
+        );
+    }
+
     use std::collections::HashMap;
     use std::fs;
     use std::future::Future;

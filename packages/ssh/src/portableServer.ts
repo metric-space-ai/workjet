@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- hashes the app's bundled archive before SSH transfer.
 import * as NodeCrypto from "node:crypto";
-import * as NodeBuffer from "node:buffer";
 import type { DesktopSshEnvironmentTarget } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -56,20 +55,12 @@ export const preparePortableServer = Effect.fn("ssh.preparePortableServer")(func
     stdin: `if [ -f "$HOME/${destination}/.complete" ] && [ -f "$HOME/${destination}/package/dist/bin.mjs" ]; then printf '%s\\n' "$HOME/${destination}/package/dist/bin.mjs"; fi\n`,
   });
   if (probe.stdout.trim()) return probe.stdout.trim();
-  const encoded =
-    NodeBuffer.Buffer.from(archive)
-      .toString("base64")
-      .match(/.{1,76}/g)
-      ?.join("\n") ?? "";
   const script = `set -eu
 umask 077
 mkdir -p "$HOME/.workjet/ssh-server"
 stage="$(mktemp -d "$HOME/.workjet/ssh-server/.transfer.XXXXXXXX")"
 trap 'rm -rf "$stage"' EXIT
-cat > "$stage/archive.base64" <<'WORKJET_ARCHIVE'
-${encoded}
-WORKJET_ARCHIVE
-if [ "$(uname -s)" = Darwin ]; then base64 -D -i "$stage/archive.base64" > "$stage/server.tgz"; else base64 -d "$stage/archive.base64" > "$stage/server.tgz"; fi
+cat > "$stage/server.tgz"
 if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$stage/server.tgz")"; else actual="$(shasum -a 256 "$stage/server.tgz")"; fi
 test "\${actual%% *}" = '${digest}' || { printf 'Workjet server transfer checksum verification failed.\\n' >&2; exit 1; }
 mkdir "$stage/${digest}"
@@ -82,8 +73,10 @@ printf '%s\\n' "$HOME/${destination}/package/dist/bin.mjs"
 `;
   const installed = yield* runSshCommand(target, {
     ...auth,
-    remoteCommandArgs: ["sh", "-s"],
-    stdin: script,
+    // SSH joins remote arguments into a shell command. Quote the small installer,
+    // and stream the unchanged archive bytes on stdin instead of a huge heredoc.
+    remoteCommandArgs: ["sh", "-c", "'" + script.replaceAll("'", "'\\''") + "'"],
+    stdin: archive,
     timeoutMs: 180_000,
   });
   return installed.stdout.trim();

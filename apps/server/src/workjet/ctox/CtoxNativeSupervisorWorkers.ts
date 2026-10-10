@@ -49,7 +49,10 @@ const sameSource = (left: NativeSupervisorSource, right: NativeSupervisorSource)
 /** Native agent sessions cannot call the managed-source side of this channel.
  * Every operation resolves the current existing owner-authenticated connection. */
 export function makeCtoxNativeSupervisorWorkers(dependencies: {
-  readonly connections: Pick<DecisionHubConnectionRegistry["Service"], "resolveReadyTarget">;
+  readonly connections: Pick<
+    DecisionHubConnectionRegistry["Service"],
+    "resolveReadyTarget" | "probe"
+  >;
   readonly transport: ReturnType<typeof makeCtoxMcpTransport>;
 }) {
   const invoke = Effect.fn("CtoxNativeSupervisorWorkers.invoke")(function* (
@@ -60,11 +63,22 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       .resolveReadyTarget(scope.connectionId, scope.instanceId)
       .pipe(Effect.mapError(failure));
     const tool = "business_os.workjet_worker_dispatch";
-    if (args.action === "register_source")
-      yield* dependencies.transport.probe(target, [tool]).pipe(Effect.mapError(failure));
-    const response = yield* dependencies.transport
-      .callTool(target, tool, args)
-      .pipe(Effect.mapError(failure));
+    const call = dependencies.transport.callTool(target, tool, args);
+    const response = yield* (
+      args.action === "register_source"
+        ? dependencies.transport.probe(target, [tool]).pipe(Effect.andThen(call))
+        : call
+    ).pipe(
+      Effect.tapError((error) =>
+        error.reason === "authentication-required"
+          ? // Probe the current credential, rather than invalidating a token that
+            // may have been replaced while this request was in flight. A second
+            // 401 persists needs_auth and stops all parents sharing this source.
+            dependencies.connections.probe(scope.connectionId).pipe(Effect.ignore)
+          : Effect.void,
+      ),
+      Effect.mapError(failure),
+    );
     if (response.isError || response.structuredContent === undefined) return yield* failure();
     return response.structuredContent;
   });

@@ -103,3 +103,14 @@ describe("automatic supervisor worker connection", () => {
     expect(provision).not.toHaveBeenCalled();
   });
 });
+
+it("shows reconnect for a previously bound source whose authorization was rejected", () => {
+  state.data = {
+    connections: [{ ...connection, status: "needs_auth", reason: "authentication-required" }],
+  };
+  const html = render({ config: boundConfig });
+  expect(html).toContain('aria-label="Reconnect project workers"');
+  expect(html).toContain("Worker connection needs authorization.");
+  expect(html).not.toContain("data-workjet-worker-source-connection-id=");
+  expect(html).not.toContain("data-workjet-worker-source-instance-id=");
+});

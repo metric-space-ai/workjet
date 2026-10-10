@@ -14,6 +14,7 @@ export class CtoxMcpTransportError extends Schema.TaggedErrorClass<CtoxMcpTransp
     reason: Schema.Literals([
       "invalid-endpoint",
       "connection-unavailable",
+      "authentication-required",
       "remote-identity-mismatch",
       "remote-tools-missing",
       "remote-response-invalid",
@@ -93,6 +94,7 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
         HttpClientRequest.bearerToken(target.token),
       );
       const response = yield* httpClient.execute(request);
+      if (response.status === 401) return yield* failure("authentication-required");
       if (response.status < 200 || response.status >= 300) {
         return yield* failure("connection-unavailable");
       }

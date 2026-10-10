@@ -55,6 +55,7 @@ export const WorkjetDecisionHubConnectionErrorReason = Schema.Literals([
   "foreign-environment",
   "secret-store-unavailable",
   "connection-unavailable",
+  "authentication-required",
   "remote-identity-mismatch",
   "remote-tools-missing",
   "remote-response-invalid",

@@ -247,6 +247,9 @@ const make = Effect.gen(function* () {
         Effect.matchEffect({
           onSuccess: () => setStatus(connectionId, "ready", null),
           onFailure: (error) => {
+            if (error.reason === "authentication-required") {
+              return setStatus(connectionId, "needs_auth", error.reason);
+            }
             if (
               error.reason === "remote-identity-mismatch" ||
               error.reason === "remote-tools-missing"

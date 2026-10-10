@@ -13,7 +13,7 @@ import {
   type NativeSupervisorWorkerCompletion,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
-import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
+import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { makeCtoxNativeSupervisorWorkers } from "./CtoxNativeSupervisorWorkers.ts";
 const scope = { connectionId: WorkjetConnectionId.make("native"), instanceId: "managed:source" };
 const source = {
@@ -72,6 +72,7 @@ function fixture() {
   const client = makeCtoxNativeSupervisorWorkers({
     transport,
     connections: {
+      probe: () => Effect.die("No authentication rejection in this fixture"),
       resolveReadyTarget: (connectionId, instanceId) => {
         assert.equal(connectionId, scope.connectionId);
         assert.equal(instanceId, scope.instanceId);
@@ -282,4 +283,85 @@ it.effect(
       );
       assert.equal(f.calls.length, disconnected);
     }),
+);
+
+it.effect("retires a rejected shared source before registering the other project parents", () =>
+  Effect.gen(function* () {
+    let ready = true;
+    let requests = 0;
+    let authChecks = 0;
+    const client = makeCtoxNativeSupervisorWorkers({
+      connections: {
+        resolveReadyTarget: () =>
+          ready
+            ? Effect.succeed({ endpoint: "https://native.invalid/mcp", token: "rejected-token" })
+            : Effect.fail(
+                new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" }),
+              ),
+        probe: () =>
+          Effect.sync(() => {
+            authChecks++;
+            ready = false;
+            return {
+              connectionId: scope.connectionId,
+              instanceId: scope.instanceId,
+              displayName: "Project workers",
+              source: "ctox_dev" as const,
+              status: "needs_auth" as const,
+              reason: "authentication-required",
+            };
+          }),
+      },
+      transport: {
+        probe: () =>
+          Effect.suspend(() => {
+            requests++;
+            return Effect.fail(new CtoxMcpTransportError({ reason: "authentication-required" }));
+          }),
+        callTool: () => Effect.die("A rejected probe cannot call a worker tool"),
+      },
+    });
+    for (let index = 0; index < 12; index++) {
+      const result = yield* client
+        .register(scope, { ...source, sourceSupervisorThreadId: ThreadId.make("parent-" + index) })
+        .pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+    }
+    assert.equal(requests, 1);
+    assert.equal(authChecks, 1);
+  }),
+);
+
+it.effect("keeps a newly authorized source usable after a late rejection of the old token", () =>
+  Effect.gen(function* () {
+    let checks = 0;
+    const client = makeCtoxNativeSupervisorWorkers({
+      connections: {
+        resolveReadyTarget: () =>
+          Effect.succeed({ endpoint: "https://native.invalid/mcp", token: "current-token" }),
+        probe: () =>
+          Effect.sync(() => {
+            checks++;
+            return {
+              connectionId: scope.connectionId,
+              instanceId: scope.instanceId,
+              displayName: "Project workers",
+              source: "ctox_dev" as const,
+              status: "ready" as const,
+              reason: null,
+            };
+          }),
+      },
+      transport: {
+        probe: () => Effect.succeed(undefined),
+        callTool: () =>
+          checks === 0
+            ? Effect.fail(new CtoxMcpTransportError({ reason: "authentication-required" }))
+            : Effect.succeed({ structuredContent: registration }),
+      },
+    });
+    assert.equal((yield* client.register(scope, source).pipe(Effect.result))._tag, "Failure");
+    assert.deepEqual(yield* client.register(scope, source), registration);
+    assert.equal(checks, 1);
+  }),
 );

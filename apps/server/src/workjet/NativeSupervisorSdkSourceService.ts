@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
+  type NativeSupervisorManagedRuntime,
   type NativeSupervisorSourceEnrollment,
   type NativeSupervisorSourceSelection,
 } from "./NativeSupervisorSourceEnrollment.ts";
@@ -27,10 +28,14 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
 )(function* (options: {
   readonly enrollment: NativeSupervisorSourceEnrollment["Service"];
   readonly selection: NativeSupervisorSourceSelection;
+  /** Supplied only by the protected managed-runtime locator on first start. */
+  readonly managedRuntime?: NativeSupervisorManagedRuntime;
   readonly privateServiceDirectory: string;
   readonly sdkExecutable: string;
 }) {
-  const plan = yield* options.enrollment.resolve(options.selection);
+  const plan = yield* options.managedRuntime === undefined
+    ? options.enrollment.resolve(options.selection)
+    : options.enrollment.prepare(options.selection, options.managedRuntime);
   const source = yield* acquireNativeSupervisorSourceTransport({
     executable: plan.runtime.ctoxExecutable,
     originalNativeRoot: plan.runtime.nativeRoot,

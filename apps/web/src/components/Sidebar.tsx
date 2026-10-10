@@ -1238,7 +1238,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   // Snoozed rows show when they come BACK, not when they were
                   // last touched — the return ticket is the row's whole story.
                   <span className="text-xs text-blue-600 tabular-nums dark:text-blue-400">
-                    {props.snoozeWakeLabelText}
+                    {props.projectTeam
+                      ? overviewText[projectOverviewWorkerState(thread)]
+                      : props.snoozeWakeLabelText}
                   </span>
                 ) : isWoke ? (
                   // A wake can land straight in the settled tail (e.g. PR
@@ -1251,7 +1253,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
                   >
                     <AlarmClockIcon aria-hidden className="size-3" />
-                    <span role="status">Woke</span>
+                    <span role="status">
+                      {props.projectTeam
+                        ? overviewText[projectOverviewWorkerState(thread)]
+                        : "Woke"}
+                    </span>
                   </button>
                 ) : (
                   <span className="text-xs">
@@ -1272,6 +1278,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     className={cn(
                       "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
                       isWoke && "group-hover/sidebar-row:static",
+                      props.projectTeam && "relative ml-1",
                     )}
                   >
                     <AlarmClockOffIcon className="mb-px size-3" />
@@ -1285,6 +1292,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
                     isWoke && "group-hover/sidebar-row:static",
+                    props.projectTeam && "relative ml-1",
                   )}
                 >
                   <Undo2Icon className="mb-px size-3.5" />
@@ -1297,6 +1305,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
                     isWoke && "group-hover/sidebar-row:static",
+                    props.projectTeam && "relative ml-1",
                   )}
                 >
                   <CheckIcon className="size-3" />

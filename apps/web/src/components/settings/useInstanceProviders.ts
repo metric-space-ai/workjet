@@ -59,39 +59,62 @@ export function useInstanceProviders(instanceId: string | null) {
     },
     [instanceId],
   );
-  const check = useCallback(async (accountId: string, accountRevision: number, modelId: string) => {
-    if (!instanceId || !alive.current || scope.current !== instanceId) return undefined;
-    controller.current?.abort();
-    const active = new AbortController();
-    controller.current = active;
-    setError(undefined);
-    setBusy(true);
-    try {
-      const probe = await checkInstanceModel(instanceId, accountId, accountRevision, modelId, active.signal);
-      if (!active.signal.aborted && alive.current) {
-        setSnapshot((current) => {
-          if (current?.instanceId !== instanceId) return current;
-          return { ...current, registry: { ...current.registry,
-            accounts: current.registry.accounts.map((account) =>
-              account.id === accountId && account.revision === accountRevision
-                ? { ...account, modelChecks: [
-                  ...(account.modelChecks ?? []).filter((saved) => saved.modelId !== modelId), probe,
-                ] } : account),
-          } };
-        });
-        return probe;
+  const check = useCallback(
+    async (accountId: string, accountRevision: number, modelId: string) => {
+      if (!instanceId || !alive.current || scope.current !== instanceId) return undefined;
+      controller.current?.abort();
+      const active = new AbortController();
+      controller.current = active;
+      setError(undefined);
+      setBusy(true);
+      try {
+        const probe = await checkInstanceModel(
+          instanceId,
+          accountId,
+          accountRevision,
+          modelId,
+          active.signal,
+        );
+        if (!active.signal.aborted && alive.current) {
+          setSnapshot((current) => {
+            if (current?.instanceId !== instanceId) return current;
+            return {
+              ...current,
+              registry: {
+                ...current.registry,
+                accounts: current.registry.accounts.map((account) =>
+                  account.id === accountId && account.revision === accountRevision
+                    ? {
+                        ...account,
+                        modelChecks: [
+                          ...(account.modelChecks ?? []).filter(
+                            (saved) => saved.modelId !== modelId,
+                          ),
+                          probe,
+                        ],
+                      }
+                    : account,
+                ),
+              },
+            };
+          });
+          return probe;
+        }
+      } catch (failure) {
+        if (!active.signal.aborted && alive.current)
+          setError({
+            accountId,
+            ...(failure instanceof WorkjetProjectControlError ? { failure: failure.failure } : {}),
+            message: failure instanceof Error ? failure.message : "Model check unavailable.",
+          });
+      } finally {
+        if (controller.current === active && !active.signal.aborted && alive.current)
+          setBusy(false);
       }
-    } catch (failure) {
-      if (!active.signal.aborted && alive.current)
-        setError({ accountId,
-          ...(failure instanceof WorkjetProjectControlError ? { failure: failure.failure } : {}),
-          message: failure instanceof Error ? failure.message : "Model check unavailable.",
-        });
-    } finally {
-      if (controller.current === active && !active.signal.aborted && alive.current) setBusy(false);
-    }
-    return undefined;
-  }, [instanceId]);
+      return undefined;
+    },
+    [instanceId],
+  );
   useEffect(() => {
     alive.current = true;
     scope.current = instanceId;

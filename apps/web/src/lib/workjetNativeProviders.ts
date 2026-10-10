@@ -129,12 +129,28 @@ export async function checkInstanceModel(
   let onAbort: (() => void) | undefined;
   try {
     const result = await Promise.race([
-      requestWorkjetProjectControl(instanceId, { version: 1, action: "instance.providers.models.check",
-        operationId, accountId, expectedAccountRevision: accountRevision, modelId }, port),
+      requestWorkjetProjectControl(
+        instanceId,
+        {
+          version: 1,
+          action: "instance.providers.models.check",
+          operationId,
+          accountId,
+          expectedAccountRevision: accountRevision,
+          modelId,
+        },
+        port,
+      ),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new NativeProviderFailure(
-          "Model check timed out. Check the connection and try again.",
-        )), 30_000);
+        timer = setTimeout(
+          () =>
+            reject(
+              new NativeProviderFailure(
+                "Model check timed out. Check the connection and try again.",
+              ),
+            ),
+          30_000,
+        );
         onAbort = () => reject(new DOMException("Cancelled", "AbortError"));
         signal.addEventListener("abort", onAbort, { once: true });
         if (signal.aborted) onAbort();
@@ -143,13 +159,20 @@ export async function checkInstanceModel(
     signal.throwIfAborted();
     if (result._tag !== "completed") throw new WorkjetProjectControlError(result, instanceId);
     const response = Schema.decodeUnknownSync(WorkjetNativeModelCheckResponse)(result.response);
-    if (response.operationId !== operationId || response.accountId !== accountId
-      || response.accountRevision !== accountRevision || response.probe.modelId !== modelId)
-      throw new NativeProviderFailure("The model check response belongs to another account or request.");
+    if (
+      response.operationId !== operationId ||
+      response.accountId !== accountId ||
+      response.accountRevision !== accountRevision ||
+      response.probe.modelId !== modelId
+    )
+      throw new NativeProviderFailure(
+        "The model check response belongs to another account or request.",
+      );
     return response.probe;
   } catch (error) {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-    if (error instanceof NativeProviderFailure || error instanceof WorkjetProjectControlError) throw error;
+    if (error instanceof NativeProviderFailure || error instanceof WorkjetProjectControlError)
+      throw error;
     throw new NativeProviderFailure(
       "Native model check unavailable. Check the connection, account and installed CTOX version.",
     );

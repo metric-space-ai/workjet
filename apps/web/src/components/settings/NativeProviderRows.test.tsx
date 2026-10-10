@@ -72,24 +72,53 @@ function html(
 }
 describe("Native provider account rows", () => {
   it("shows an actual green Hi status and measured latency instead of a catalog-derived claim", () => {
-    const rendered = html({ ...registry.accounts[0]!, modelChecks: [{
-      modelId: "claude-opus-5-5", checkedAtMs: 1000, elapsedMs: 123, status: "ok",
-      source: "upstream", failure: null, httpStatus: 200, retryAtMs: null,
-    }] });
+    const rendered = html({
+      ...registry.accounts[0]!,
+      modelChecks: [
+        {
+          modelId: "claude-opus-5-5",
+          checkedAtMs: 1000,
+          elapsedMs: 123,
+          status: "ok",
+          source: "upstream",
+          failure: null,
+          httpStatus: 200,
+          retryAtMs: null,
+        },
+      ],
+    });
     expect(rendered).toContain("Model check passed");
     expect(rendered).toContain("123 ms");
     expect(rendered).toContain("Check all");
     expect(rendered).not.toContain("Inference not checked");
   });
   it("shows real model failure with a fix and local cooldown as a separate unavailable state", () => {
-    const base = { modelId: "claude-opus-5-5", checkedAtMs: 1000, elapsedMs: 123,
-      httpStatus: 404, retryAtMs: null } as const;
-    const red = html({ ...registry.accounts[0]!, modelChecks: [{ ...base, status: "failed",
-      source: "upstream", failure: "model_not_found" }] });
+    const base = {
+      modelId: "claude-opus-5-5",
+      checkedAtMs: 1000,
+      elapsedMs: 123,
+      httpStatus: 404,
+      retryAtMs: null,
+    } as const;
+    const red = html({
+      ...registry.accounts[0]!,
+      modelChecks: [{ ...base, status: "failed", source: "upstream", failure: "model_not_found" }],
+    });
     expect(red).toContain("Model check failed: model_not_found");
     expect(red).toContain("Refresh the live model list");
-    const local = html({ ...registry.accounts[0]!, modelChecks: [{ ...base, status: "unavailable",
-      source: "gateway", failure: "gateway_cooldown", httpStatus: 503, retryAtMs: 2000 }] });
+    const local = html({
+      ...registry.accounts[0]!,
+      modelChecks: [
+        {
+          ...base,
+          status: "unavailable",
+          source: "gateway",
+          failure: "gateway_cooldown",
+          httpStatus: 503,
+          retryAtMs: 2000,
+        },
+      ],
+    });
     expect(local).toContain("Model check unavailable: gateway_cooldown");
     expect(local).toContain("Gateway retry after");
     expect(local).not.toContain("Model check failed");
@@ -106,7 +135,7 @@ describe("Native provider account rows", () => {
         busy: !error,
         run: vi.fn(async () => undefined),
         check: vi.fn(async () => undefined),
-    refresh: vi.fn(async () => undefined),
+        refresh: vi.fn(async () => undefined),
       });
       const rendered = renderToStaticMarkup(
         <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
@@ -124,7 +153,7 @@ describe("Native provider account rows", () => {
       busy: false,
       run: vi.fn(async () => undefined),
       check: vi.fn(async () => undefined),
-    refresh: vi.fn(async () => undefined),
+      refresh: vi.fn(async () => undefined),
     });
     const rendered = renderToStaticMarkup(
       <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,

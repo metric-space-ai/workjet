@@ -129,23 +129,54 @@ describe("native provider public contract", () => {
 });
 describe("native model probe contract", () => {
   const modelId = "claude-opus-5-5";
-  const probe = { modelId, checkedAtMs: 1000, elapsedMs: 80, status: "ok", source: "upstream",
-    failure: null, httpStatus: 200, retryAtMs: null };
+  const probe = {
+    modelId,
+    checkedAtMs: 1000,
+    elapsedMs: 80,
+    status: "ok",
+    source: "upstream",
+    failure: null,
+    httpStatus: 200,
+    retryAtMs: null,
+  };
   const decode = Schema.decodeUnknownSync(WorkjetNativeModelProbe);
   it("requires actual upstream success and strips private response fields", () => {
     expect(decode({ ...probe, secret: "private" })).toEqual(probe);
-    for (const changes of [{ source: "gateway" }, { httpStatus: 403 }, { httpStatus: null },
-      { failure: "auth" }, { retryAtMs: 10000 }, { status: "unknown" }])
+    for (const changes of [
+      { source: "gateway" },
+      { httpStatus: 403 },
+      { httpStatus: null },
+      { failure: "auth" },
+      { retryAtMs: 10000 },
+      { status: "unknown" },
+    ])
       expect(() => decode({ ...probe, ...changes })).toThrow();
   });
   it("retains local cooldown as unavailable and validates real provider failure classes", () => {
-    expect(decode({ ...probe, status: "unavailable", source: "gateway",
-      failure: "gateway_cooldown", httpStatus: 503, retryAtMs: 1200 }).failure).toBe("gateway_cooldown");
-    expect(() => decode({ ...probe, status: "unavailable", source: "gateway", failure: "auth" })).toThrow();
-    for (const [failure, httpStatus] of [["auth",401], ["model_not_found",404],
-      ["quota_rate_limit",429], ["provider",503], ["invalid_response",200]]) {
+    expect(
+      decode({
+        ...probe,
+        status: "unavailable",
+        source: "gateway",
+        failure: "gateway_cooldown",
+        httpStatus: 503,
+        retryAtMs: 1200,
+      }).failure,
+    ).toBe("gateway_cooldown");
+    expect(() =>
+      decode({ ...probe, status: "unavailable", source: "gateway", failure: "auth" }),
+    ).toThrow();
+    for (const [failure, httpStatus] of [
+      ["auth", 401],
+      ["model_not_found", 404],
+      ["quota_rate_limit", 429],
+      ["provider", 503],
+      ["invalid_response", 200],
+    ]) {
       expect(decode({ ...probe, status: "failed", failure, httpStatus }).failure).toBe(failure);
-      expect(() => decode({ ...probe, status: "failed", source: "gateway", failure, httpStatus })).toThrow();
+      expect(() =>
+        decode({ ...probe, status: "failed", source: "gateway", failure, httpStatus }),
+      ).toThrow();
     }
   });
   it("keeps older catalogs compatible and stores only one observation per model", () => {
@@ -154,11 +185,23 @@ describe("native model probe contract", () => {
     expect(() => decodeAccount({ ...account, modelChecks: [probe, probe] })).toThrow();
   });
   it("correlates public check requests and replies without requiring a project or meeting", () => {
-    const request = { version: 1, operationId: reference.accountId, action: "instance.providers.models.check",
-      accountId: reference.accountId, expectedAccountRevision: 3, modelId };
+    const request = {
+      version: 1,
+      operationId: reference.accountId,
+      action: "instance.providers.models.check",
+      accountId: reference.accountId,
+      expectedAccountRevision: 3,
+      modelId,
+    };
     expect(Schema.decodeUnknownSync(WorkjetNativeModelCheckRequest)(request)).toEqual(request);
-    const response = { version: 1, operationId: request.operationId, action: request.action,
-      accountId: request.accountId, accountRevision: 3, probe };
+    const response = {
+      version: 1,
+      operationId: request.operationId,
+      action: request.action,
+      accountId: request.accountId,
+      accountRevision: 3,
+      probe,
+    };
     expect(Schema.decodeUnknownSync(WorkjetNativeModelCheckResponse)(response)).toEqual(response);
   });
 });

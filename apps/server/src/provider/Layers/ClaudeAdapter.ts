@@ -244,6 +244,7 @@ interface ClaudeTaskAgentState {
 interface ClaudeSessionContext {
   session: ProviderSession;
   readonly observeGoalAuthor: boolean;
+  readonly sdkJournal: NativeSupervisorSdkJournal | undefined;
   lastGoalAuthor: { readonly turnId: TurnId; readonly model: string } | undefined;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
@@ -296,6 +297,8 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly close: () => void;
 }
 
+import type { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
+
 export interface ClaudeAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
@@ -324,6 +327,8 @@ export interface ClaudeAdapterLiveOptions {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
+  /** Private original-Source service only; never supplied by settings/RPC. */
+  readonly createNativeSupervisorSdkJournal?: (threadId: ThreadId) => NativeSupervisorSdkJournal;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
 }
@@ -3637,10 +3642,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  const observeNativeSdk = Effect.fn("observeNativeSdk")(function* (
+    context: ClaudeSessionContext, observe: (journal: NativeSupervisorSdkJournal) => Promise<void>,
+  ) {
+    if (context.sdkJournal) yield* Effect.tryPromise({
+      try: () => observe(context.sdkJournal!),
+      catch: cause => new ProviderAdapterProcessError({ provider: PROVIDER,
+        threadId: context.session.threadId, detail: "Original SDK observation could not be committed.", cause }),
+    });
+  });
+
   const handleSdkMessage = Effect.fn("handleSdkMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
   ) {
+    yield* observeNativeSdk(context, journal => journal.observeSdkMessage(message, context.turnState?.turnId));
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
 
@@ -3711,6 +3727,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ),
         ),
       ),
+      Effect.onExit(() => observeNativeSdk(context, journal => journal.sdkStreamJoined())),
     );
 
   const handleStreamExit = Effect.fn("handleStreamExit")(function* (
@@ -3796,6 +3813,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           cause,
         }),
     }).pipe(
+      Effect.tap(() => observeNativeSdk(context, journal => journal.sdkQueryCloseReturned())),
       Effect.catch((error) =>
         emitRuntimeError(context, "Failed to close Claude runtime query.", {
           errorTag: error._tag,
@@ -3865,6 +3883,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
         });
       }
+      if (options?.createNativeSupervisorSdkJournal && options.createQuery !== undefined) {
+        return yield* new ProviderAdapterValidationError({ provider: PROVIDER,
+          operation: "startSession", issue: "Original SDK observation requires the actual SDK child; a query override is unsupported." });
+      }
+      const sdkJournal = options?.createNativeSupervisorSdkJournal
+        ? yield* Effect.try({
+          try: () => options.createNativeSupervisorSdkJournal!(input.threadId),
+          catch: cause => new ProviderAdapterProcessError({ provider: PROVIDER,
+            threadId: input.threadId, detail: "Original SDK observer could not be created.", cause }),
+        }) : undefined;
       const workerSource = readWorkerSourceHarness(input.threadId);
       if (input.workjetConfig?.role === "worker") {
         const environment = yield* Effect.serviceOption(ServerEnvironment);
@@ -4414,6 +4442,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         if (child.pid !== undefined) {
           const pid = child.pid;
+          sdkJournal?.captureOwnedSdkChild(child);
           processes.push({
             pid,
             isRunning: Effect.sync(() => child.exitCode === null && child.signalCode === null),
@@ -4549,6 +4578,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           input.workjetConfig?.schemaVersion === 2 &&
           input.workjetConfig.team?.role === "specialist",
         lastGoalAuthor: undefined,
+        sdkJournal,
         promptQueue,
         query: queryRuntime,
         processes,
@@ -4786,6 +4816,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       boundInstanceId,
     });
 
+    yield* observeNativeSdk(context, journal => journal.turnSubmitted(turnId));
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message,

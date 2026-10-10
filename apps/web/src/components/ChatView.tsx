@@ -2413,8 +2413,8 @@ function ChatViewContent(props: ChatViewProps) {
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
   /**
    * The environments the composer's Computer ("Rechner") control may move a
-   * draft to — exactly the set `onEnvironmentChange` accepts. A Workjet
-   * computer whose environment is not in this list renders as "not paired".
+   * conversation to — exactly the set `onEnvironmentChange` accepts. Other
+   * computers remain visible with their connection or missing-checkout reason.
    */
   const selectableEnvironmentIds = useMemo(
     () => logicalProjectEnvironments.map((environment) => environment.environmentId),

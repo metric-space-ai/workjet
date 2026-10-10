@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect";
 import { decideOrchestrationCommand } from "./decider.ts";
 
 const NOW = "2026-08-25T12:00:00.000Z";
+const COPY_AT = "2026-08-25T12:03:00.000Z";
 const THREAD_ID = ThreadId.make("thread-1");
 const MESSAGE_ID = MessageId.make("message-1");
 const readModel: OrchestrationReadModel = {

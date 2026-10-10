@@ -102,6 +102,8 @@ export interface GrokAdapterLiveOptions {
     NodeJS.ProcessEnv,
     ProviderGatewayRoutingError
   >;
+  /** Gateway prompts may contain many tool rounds; acknowledge dispatch before completion. */
+  readonly dispatchPromptInBackground?: boolean;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
@@ -1174,6 +1176,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               return {
                 acp: ctx.acp,
                 acpSessionId: ctx.acpSessionId,
+                scope: ctx.scope,
+                resumeCursor: ctx.session.resumeCursor,
                 displayModel,
                 turnPromptParts,
                 turnId,
@@ -1203,7 +1207,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         const promptFailureMessageRef = yield* Ref.make<string | undefined>(undefined);
         const managedPromptFingerprintRef = yield* Ref.make<string | undefined>(undefined);
 
-        return yield* Effect.gen(function* () {
+        const completePrompt = Effect.gen(function* () {
           const result = yield* Effect.gen(function* () {
             const injection = yield* withThreadLock(
               input.threadId,
@@ -1483,6 +1487,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             }).pipe(Effect.catch(() => Effect.void)),
           ),
         );
+        if (options?.dispatchPromptInBackground) {
+          yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(prepared.scope));
+          return { threadId: input.threadId, turnId: prepared.turnId, resumeCursor: prepared.resumeCursor };
+        }
+        return yield* completePrompt;
       });
 
     const interruptTurn: GrokAdapterShape["interruptTurn"] = (threadId, turnId) =>

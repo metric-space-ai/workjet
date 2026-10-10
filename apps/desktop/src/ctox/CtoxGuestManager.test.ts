@@ -3085,7 +3085,7 @@ describe("CtoxGuestManager", () => {
       };
       const assessment: WorkjetExitModelAssessment = {
         contract: "ctox.workjet.exit_model.v1",
-        project_id: "project-one",
+        project_id: request.projectId,
         run_id: "blocked-run",
         as_of: "2026-10-08",
         exit_date: "2031-10-08",

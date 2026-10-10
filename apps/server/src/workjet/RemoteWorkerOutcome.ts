@@ -100,7 +100,7 @@ export const retainRemoteWorkerOutcome = Effect.fn("retainRemoteWorkerOutcome")(
 });
 
 /** Observe a retained source submission after its target thread has been archived.
- * Never use the remote worktree path as a source checkout or change its frozen PR/head. */
+ * Never use the remote worktree path as a source checkout or change its PR identity. */
 export const refreshRemoteWorkerOutcome = Effect.fn("refreshRemoteWorkerOutcome")(function* (
   receipt: WorkerPullRequestReceipt,
   startup: RemoteWorkerResult,
@@ -142,12 +142,15 @@ export const refreshRemoteWorkerOutcome = Effect.fn("refreshRemoteWorkerOutcome"
     pr.number !== receipt.prNumber ||
     pr.url !== receipt.prUrl ||
     pr.headRefName !== receipt.branchRef ||
-    pr.headCommitOid !== receipt.headOid ||
+    !pr.headCommitOid ||
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(pr.headCommitOid) ||
     pr.isCrossRepository !== false
   )
     return yield* fail();
   const store = yield* WorkerPullRequestStore;
-  const observed = { ...receipt, state: pr.state };
+  // The parent may fix the submitted PR after the one-shot stops. Freeze its
+  // verified final head with the first terminal observation, as the native contract does.
+  const observed = { ...receipt, headOid: pr.headCommitOid, state: pr.state };
   if (!(yield* store.observe(observed).pipe(Effect.mapError(fail)))) return yield* fail();
   return observed;
 });

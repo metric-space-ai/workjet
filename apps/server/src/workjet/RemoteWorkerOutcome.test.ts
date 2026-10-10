@@ -133,12 +133,13 @@ it.effect(
             Effect.provideService(SourceControlProviderRegistry, registry),
             Effect.provideService(WorkerPullRequestStore, restarted),
           );
-        candidates = [{ ...pr, state: "merged", headCommitOid: "b".repeat(40) }];
+        candidates = [{ ...pr, state: "merged", headCommitOid: "not-a-commit" }];
         assert.equal((yield* refresh(submission).pipe(Effect.result))._tag, "Failure");
         assert.deepEqual(Option.getOrThrow(yield* store.get(worker.requestId)), submission);
-        candidates = [{ ...pr, state: "merged" }];
-        assert.deepEqual(yield* refresh(submission), persisted);
-        assert.deepEqual(Option.getOrThrow(yield* store.get(worker.requestId)), persisted);
+        candidates = [{ ...pr, state: "merged", headCommitOid: "b".repeat(40) }];
+        const terminal = { ...persisted, headOid: "b".repeat(40) };
+        assert.deepEqual(yield* refresh(submission), terminal);
+        assert.deepEqual(Option.getOrThrow(yield* store.get(worker.requestId)), terminal);
         assert.equal(
           (yield* invoke({
             ...notice,
@@ -146,7 +147,7 @@ it.effect(
           }).pipe(Effect.result))._tag,
           "Failure",
         );
-        assert.deepEqual(Option.getOrThrow(yield* store.get(worker.requestId)), persisted);
+        assert.deepEqual(Option.getOrThrow(yield* store.get(worker.requestId)), terminal);
       }),
     ),
 );

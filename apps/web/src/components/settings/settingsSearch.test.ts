@@ -107,7 +107,7 @@ describe("searchSettings", () => {
       ["Darstellung", "Appearance", "/settings/appearance"],
       ["Rechner", "Computers", "/settings/computers"],
       ["Sprache", "Speech", "/settings/speech"],
-    ]) {
+    ] as const) {
       expect(searchSettings(german).map((item) => item.to)).toContain(path);
       expect(searchSettings(english).map((item) => item.to)).toContain(path);
     }

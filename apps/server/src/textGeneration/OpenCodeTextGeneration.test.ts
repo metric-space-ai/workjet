@@ -568,10 +568,12 @@ it.layer(OpenCodeTextGenerationTestLayer)("OpenCode routed text generation", (it
         {
           resolveEnvironment: () => Effect.succeed({}),
           resolveModel: () =>
-            Effect.fail(new TextGenerationError({
-              operation: "generateCommitMessage",
-              detail: "gateway catalog unavailable",
-            })),
+            Effect.fail(
+              new TextGenerationError({
+                operation: "generateCommitMessage",
+                detail: "gateway catalog unavailable",
+              }),
+            ),
         },
       ),
   );

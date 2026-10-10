@@ -193,8 +193,12 @@ interface SharedOpenCodeTextGenerationServerState {
 }
 
 export interface OpenCodeTextGenerationRouting {
-  readonly resolveEnvironment: (model: string) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError | TextGenerationError>;
-  readonly resolveModel: (model: string) => Effect.Effect<string, ProviderGatewayRoutingError | TextGenerationError>;
+  readonly resolveEnvironment: (
+    model: string,
+  ) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError | TextGenerationError>;
+  readonly resolveModel: (
+    model: string,
+  ) => Effect.Effect<string, ProviderGatewayRoutingError | TextGenerationError>;
 }
 
 export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration")(function* (

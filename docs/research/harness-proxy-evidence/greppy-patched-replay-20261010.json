@@ -23,9 +23,7 @@
     "message_delta",
     "message_stop"
   ],
-  "toolNames": [
-    "greppy"
-  ],
+  "toolNames": ["greppy"],
   "toolNamesMatchDeclaration": true,
   "pass": true,
   "runtimeBuild": {

@@ -1593,7 +1593,8 @@ export function makeOpenCodeAdapter(
             PROVIDER,
           )
         : undefined;
-      const nativeModel = sourceProfile?.model ??
+      const nativeModel =
+        sourceProfile?.model ??
         (options?.resolveSessionModel
           ? yield* options.resolveSessionModel(modelSelection?.model)
           : modelSelection?.model);

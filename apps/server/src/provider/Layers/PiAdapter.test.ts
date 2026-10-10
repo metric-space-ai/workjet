@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { NodeServices } from "@effect/platform-node";
-import { DEFAULT_WORKJET_THREAD_CONFIG, EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
@@ -43,24 +48,33 @@ const adapterInput = (directory: string) => ({
 
 describe("Pi native RPC adapter", () => {
   it("rejects a foreign restart before resolving any local account or spawning Pi", async () => {
-    await runTest((directory) => Effect.gen(function* () {
-      let resolved = false;
-      const adapter = yield* makePiAdapter({
-        ...adapterInput(directory),
-        resolveModel: (model: string) => {
-          resolved = true;
-          return Effect.succeed({ provider: "workjet-claude", model, environment: process.env });
-        },
-      });
-      const failure = yield* Effect.flip(adapter.startSession({
-        threadId: ThreadId.make("foreign-pi-missing-route"), cwd: directory,
-        runtimeMode: "full-access", modelSelection,
-        workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, role: "worker",
-          parent: { environmentId: EnvironmentId.make("foreign-source"), threadId } },
-      }));
-      expect(failure.message).toContain("Foreign worker source route");
-      expect(resolved).toBe(false);
-    }));
+    await runTest((directory) =>
+      Effect.gen(function* () {
+        let resolved = false;
+        const adapter = yield* makePiAdapter({
+          ...adapterInput(directory),
+          resolveModel: (model: string) => {
+            resolved = true;
+            return Effect.succeed({ provider: "workjet-claude", model, environment: process.env });
+          },
+        });
+        const failure = yield* Effect.flip(
+          adapter.startSession({
+            threadId: ThreadId.make("foreign-pi-missing-route"),
+            cwd: directory,
+            runtimeMode: "full-access",
+            modelSelection,
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              role: "worker",
+              parent: { environmentId: EnvironmentId.make("foreign-source"), threadId },
+            },
+          }),
+        );
+        expect(failure.message).toContain("Foreign worker source route");
+        expect(resolved).toBe(false);
+      }),
+    );
   });
   it("projects twenty consecutive tool results and resumes the same durable native conversation", async () => {
     await runTest((directory) =>

@@ -43,15 +43,15 @@ Keeping a connected model when switching routed harnesses is intentional (`apps/
 
 ## Live matrix and evidence
 
-| Harness | claude-opus-5-5 | gpt-6.1-sol | grok-4.7 |
-| --- | --- | --- | --- |
-| Claude Code | Pass 20/20; restart continuation 20/20 | Pass 20/20 | Pass 20/20 |
-| Codex CLI | Pass 20/20 | Pass 20/20 | Pass 20/20 |
-| Grok CLI / Grok Build | Pass 20/20 | Pass 20/20 | Pass 20/20 |
-| OpenCode | Pass 20/20 | Pass 20/20 | Pass 20/20 |
-| Greppy | Pass 20/20 | Pass 20/20 | Pass 20/20 |
-| MiniMax Code | Pass 20/20 | Pass 20/20 | Pass 20/20 |
-| Pi | Pass 20/20 | Pass 20/20 | Pass 20/20 |
+| Harness               | claude-opus-5-5                        | gpt-6.1-sol | grok-4.7   |
+| --------------------- | -------------------------------------- | ----------- | ---------- |
+| Claude Code           | Pass 20/20; restart continuation 20/20 | Pass 20/20  | Pass 20/20 |
+| Codex CLI             | Pass 20/20                             | Pass 20/20  | Pass 20/20 |
+| Grok CLI / Grok Build | Pass 20/20                             | Pass 20/20  | Pass 20/20 |
+| OpenCode              | Pass 20/20                             | Pass 20/20  | Pass 20/20 |
+| Greppy                | Pass 20/20                             | Pass 20/20  | Pass 20/20 |
+| MiniMax Code          | Pass 20/20                             | Pass 20/20  | Pass 20/20 |
+| Pi                    | Pass 20/20                             | Pass 20/20  | Pass 20/20 |
 
 The evidence checks actual native calls and matching results, strict sequential execution, exact numbered printf output, success status and no tool errors. Every harness uses the real account-backed Rust host. No HTTP-only or mocked result counts as a live cell.
 

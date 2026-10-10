@@ -244,6 +244,47 @@ describe("persistent goal reactor", () => {
       ).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect.each([false, true])(
+    "records the actual reactor and native control support = %s",
+    (native) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const h = yield* harness(
+            native
+              ? {
+                  get: () =>
+                    Effect.succeed({ objective: "Verify the approved outcome.", status: "active" }),
+                  set: () => Effect.void,
+                }
+              : undefined,
+          );
+          const thread = h.read();
+          const instanceId = ProviderInstanceId.make(native ? "codex" : "greppy");
+          h.replace({
+            ...thread,
+            modelSelection: { ...thread.modelSelection, instanceId },
+            session: {
+              ...thread.session!,
+              providerName: native ? "codex" : "greppy",
+              providerInstanceId: instanceId,
+            },
+          });
+          yield* h.reactor.start();
+          yield* h.completeTurn("actual-completion");
+          yield* Deferred.await(h.signals[0]!);
+          const config = h.read().workjetConfig;
+          if (config.schemaVersion !== 2) throw new Error("missing goal");
+          expect(config.goal?.executor).toMatchObject({
+            implementation: "workjet-persistent-goal-reactor.v1",
+            goalControl: native ? "provider-native" : "workjet-emulated",
+            providerInstanceId: instanceId,
+          });
+          expect(config.goal?.lastVerifiedProgress).toBeNull();
+          expect(h.starts).toHaveLength(1);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("recovers a pending continuation and admits its stable command only once", () =>
     Effect.scoped(
       Effect.gen(function* () {

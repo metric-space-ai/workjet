@@ -34,7 +34,11 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-import { initialWorkerGoal, prepareGoalContinuation } from "../workjet/workerGoal.ts";
+import {
+  initialWorkerGoal,
+  prepareGoalContinuation,
+  withoutGoalObservations,
+} from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
 import {
   requireProjectTeamLifecycle,
@@ -530,7 +534,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
-          workjetConfig: command.workjetConfig,
+          workjetConfig: withoutGoalObservations(command.workjetConfig),
           branch: command.branch,
           worktreePath: command.worktreePath,
           createdAt: command.createdAt,
@@ -1161,6 +1165,91 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.goal.execution-observed":
+    case "thread.goal.executor-observed": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const config = thread.workjetConfig;
+      if (
+        config.schemaVersion !== 2 ||
+        config.team?.role !== "specialist" ||
+        !config.goal ||
+        thread.archivedAt !== null ||
+        thread.deletedAt !== null
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Producer observations belong to active persistent worker threads.",
+        });
+      }
+      const previous = config.goal;
+      const instanceId =
+        command.type === "thread.goal.execution-observed"
+          ? command.execution.providerInstanceId
+          : command.executor.providerInstanceId;
+      if (thread.session?.providerInstanceId !== instanceId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "The observed producer is not this thread's current provider session.",
+        });
+      }
+      let goal: WorkjetThreadGoal;
+      let observedAt: string;
+      if (command.type === "thread.goal.execution-observed") {
+        const observed = command.execution;
+        if (
+          thread.latestTurn?.turnId !== observed.turnId ||
+          thread.session.providerName !== observed.provider
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "A stale or foreign turn cannot supply goal producer evidence.",
+          });
+        }
+        const retained =
+          previous.lastExecution?.turnId === observed.turnId &&
+          previous.lastExecution.providerInstanceId === observed.providerInstanceId &&
+          previous.lastExecution.provider === observed.provider
+            ? previous.lastExecution
+            : undefined;
+        const lastExecution = {
+          ...observed,
+          ...(retained && retained.state !== "running" && observed.state === "running"
+            ? {
+                state: retained.state,
+                sourceEventId: retained.sourceEventId,
+                observedAt: retained.observedAt,
+              }
+            : {}),
+          author: observed.author ?? retained?.author ?? null,
+        };
+        observedAt = observed.observedAt;
+        goal = { ...previous, lastExecution };
+      } else {
+        if (previous.revision !== command.expectedRevision) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The goal changed before its executor observation.",
+          });
+        }
+        observedAt = command.executor.observedAt;
+        goal = { ...previous, executor: command.executor };
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: observedAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.workjet-config-set",
+        payload: {
+          threadId: command.threadId,
+          workjetConfig: { ...config, goal },
+          updatedAt: observedAt,
+        },
+      };
+    }
+
     case "thread.goal.set":
     case "thread.goal.advance": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
@@ -1323,7 +1412,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             thread.workjetConfig.goal &&
             retained.config.schemaVersion === 2
               ? { ...retained.config, goal: thread.workjetConfig.goal }
-              : retained.config,
+              : withoutGoalObservations(retained.config),
           updatedAt: occurredAt,
         },
       };

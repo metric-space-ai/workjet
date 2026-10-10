@@ -1,5 +1,8 @@
 import {
   CommandId,
+  ClientOrchestrationCommand,
+  EventId,
+  ProviderDriverKind,
   DEFAULT_MODEL,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
@@ -20,6 +23,7 @@ import { decideOrchestrationCommand } from "./decider.ts";
 import { projectEvent } from "./projector.ts";
 import { initialWorkerGoal } from "../workjet/workerGoal.ts";
 
+const isClientCommand = Schema.is(ClientOrchestrationCommand);
 const goalJson = Schema.fromJsonString(WorkjetThreadGoal);
 const decodeGoalJson = Schema.decodeUnknownEffect(goalJson);
 const encodeGoalJson = Schema.encodeEffect(goalJson);
@@ -125,6 +129,114 @@ const apply = Effect.fn("test.applyGoalCommand")(function* (
 });
 
 it.layer(NodeServices.layer)("persistent goal journal", (it) => {
+  it.effect(
+    "persists provider witnesses without changing goal status or inventing verified progress",
+    () =>
+      Effect.gen(function* () {
+        const original = withGoal();
+        const turnId = TurnId.make("observed-turn");
+        const running: OrchestrationReadModel = {
+          ...original,
+          threads: [
+            {
+              ...original.threads[0]!,
+              latestTurn: {
+                turnId,
+                state: "completed",
+                requestedAt: NOW,
+                startedAt: NOW,
+                completedAt: NOW,
+                assistantMessageId: null,
+              },
+              session: {
+                threadId: id,
+                providerName: "codex",
+                providerInstanceId: ProviderInstanceId.make("codex"),
+                runtimeMode: "full-access",
+                status: "ready",
+                activeTurnId: null,
+                lastError: null,
+                updatedAt: NOW,
+              },
+            },
+          ],
+        };
+        const execution = {
+          turnId,
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeSource: "codex.app-server.notification",
+          state: "completed" as const,
+          sourceEventId: EventId.make("actual-terminal"),
+          observedAt: NOW,
+          author: null,
+        };
+        const command: OrchestrationCommand = {
+          type: "thread.goal.execution-observed",
+          commandId: CommandId.make("producer-observed"),
+          threadId: id,
+          execution,
+        };
+        const observed = yield* apply(running, command);
+        const goal = observed.threads[0]!.workjetConfig;
+        if (goal.schemaVersion !== 2) throw new Error("old config");
+        expect(goal.goal?.lastExecution).toEqual(execution);
+        expect(goal.goal?.status).toBe("active");
+        expect(goal.goal?.revision).toBe(0);
+        expect(goal.goal?.lastVerifiedProgress).toBeNull();
+        expect(yield* decodeGoalJson(yield* encodeGoalJson(goal.goal!))).toEqual(goal.goal);
+        expect(isClientCommand(command)).toBe(false);
+
+        const late = yield* apply(observed, {
+          ...command,
+          commandId: CommandId.make("late-author"),
+          execution: {
+            ...execution,
+            state: "running",
+            sourceEventId: EventId.make("late"),
+            author: {
+              model: DEFAULT_MODEL,
+              evidence: "assistant-response",
+              sourceEventId: EventId.make("sdk-response"),
+            },
+          },
+        });
+        const final = late.threads[0]!.workjetConfig;
+        if (final.schemaVersion !== 2) throw new Error("old config");
+        expect(final.goal?.lastExecution?.state).toBe("completed");
+        expect(final.goal?.lastExecution?.sourceEventId).toBe(execution.sourceEventId);
+        expect(final.goal?.lastExecution?.author?.evidence).toBe("assistant-response");
+
+        for (const invalid of [
+          { ...execution, turnId: TurnId.make("old-turn") },
+          { ...execution, providerInstanceId: ProviderInstanceId.make("foreign") },
+        ]) {
+          const result = yield* Effect.result(apply(observed, { ...command, execution: invalid }));
+          expect(result._tag).toBe("Failure");
+        }
+        const executorCommand: OrchestrationCommand = {
+          type: "thread.goal.executor-observed",
+          commandId: CommandId.make("executor-observed"),
+          threadId: id,
+          expectedRevision: 0,
+          executor: {
+            implementation: "workjet-persistent-goal-reactor.v1",
+            goalControl: "workjet-emulated",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            observedAt: NOW,
+          },
+        };
+        const loop = yield* apply(observed, executorCommand);
+        const loopConfig = loop.threads[0]!.workjetConfig;
+        if (loopConfig.schemaVersion !== 2) throw new Error("old config");
+        expect(loopConfig.goal?.executor?.goalControl).toBe("workjet-emulated");
+        const stale = yield* Effect.result(
+          apply(loop, { ...executorCommand, expectedRevision: 9 }),
+        );
+        expect(stale._tag).toBe("Failure");
+      }),
+  );
+
   it.effect("defaults to active on a real parent turn, and survives projection/JSON reload", () =>
     Effect.gen(function* () {
       const result = yield* apply(snapshot, turn);

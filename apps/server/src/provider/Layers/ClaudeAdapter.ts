@@ -243,6 +243,8 @@ interface ClaudeTaskAgentState {
 
 interface ClaudeSessionContext {
   session: ProviderSession;
+  readonly observeGoalAuthor: boolean;
+  lastGoalAuthor: { readonly turnId: TurnId; readonly model: string } | undefined;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
   readonly processes: readonly ProviderTrackedProcess[];
@@ -3034,6 +3036,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (context.turnState) {
+      const authorModel = trimmedString(message.message.model);
+      if (
+        authorModel &&
+        context.observeGoalAuthor &&
+        (context.lastGoalAuthor?.turnId !== context.turnState.turnId ||
+          context.lastGoalAuthor.model !== authorModel)
+      ) {
+        const stamp = yield* makeEventStamp();
+        yield* offerRuntimeEvent({
+          type: "thread.metadata.updated",
+          eventId: stamp.eventId,
+          provider: PROVIDER,
+          createdAt: stamp.createdAt,
+          threadId: context.session.threadId,
+          turnId: asCanonicalTurnId(context.turnState.turnId),
+          payload: { metadata: { workjetAuthorModel: authorModel } },
+          ...(context.session.providerInstanceId !== undefined
+            ? { providerInstanceId: context.session.providerInstanceId }
+            : {}),
+          providerRefs: nativeProviderRefs(context),
+          raw: {
+            source: "claude.sdk.message",
+            method: "claude/assistant/model",
+            payload: { model: authorModel, messageId: message.uuid },
+          },
+        });
+        context.lastGoalAuthor = { turnId: context.turnState.turnId, model: authorModel };
+      }
       context.turnState.items.push(message.message);
       yield* backfillAssistantTextBlocksFromSnapshot(context, message);
     }
@@ -4513,6 +4543,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       const context: ClaudeSessionContext = {
         session,
+        observeGoalAuthor:
+          input.workjetConfig?.schemaVersion === 2 &&
+          input.workjetConfig.team?.role === "specialist",
+        lastGoalAuthor: undefined,
         promptQueue,
         query: queryRuntime,
         processes,

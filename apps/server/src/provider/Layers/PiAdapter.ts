@@ -260,11 +260,13 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
           if (
             path.isAbsolute(relative) ||
             relative.startsWith("..") ||
-            !(yield* fs.exists(resume).pipe(
-              Effect.mapError(() =>
-                error("startSession", "The saved Pi session could not be checked."),
-              ),
-            ))
+            !(yield* fs
+              .exists(resume)
+              .pipe(
+                Effect.mapError(() =>
+                  error("startSession", "The saved Pi session could not be checked."),
+                ),
+              ))
           )
             return yield* error(
               "startSession",

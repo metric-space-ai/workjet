@@ -1,0 +1,271 @@
+{
+  "harness": "Greppy",
+  "model": "gpt-6.1-sol",
+  "workjetThreadId": "1839d02b-67fe-44a3-912a-61806b68e804",
+  "nativeSessionId": "sess-1791604279099-51516-0",
+  "startedAt": "2026-10-10T03:51:18.410Z",
+  "endedAt": "2026-10-10T03:52:15.291Z",
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T03:43:50.091Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "2af374bad09d56f7b3ef730c4b01cc6a7e1daf124b9f707b51e4bbf058c91406",
+      "sourceHead": "6a0940c98"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "9656e4250cf25db227680f986fc611c69ee4995355a189184740e1d42269c0a2",
+      "sourceHead": "92a24c6a8a60d3ccca29473b293edf643a3e93e8"
+    }
+  },
+  "nativeHistory": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/profile/harness-homes/greppy/Library/Application Support/greppy/agent-sessions/harness-proxy-fix/sess-1791604279099-51516-0.jsonl",
+  "nativeHistorySha256": "e94c5c3b9f91af0805bf401507ccf75c8acf00a58a6fe647401138f28970eb0b",
+  "acceptance": {
+    "passed": true,
+    "successfulSequentialToolCalls": 20,
+    "basis": "twenty interleaved native Greppy calls and matching successful results"
+  },
+  "workjetObservedCompletions": 20,
+  "pairs": [
+    {
+      "number": 1,
+      "callId": "call_7yRRuThnlfOpMx5w3u8hFFz5",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_01\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_01\n",
+      "exitCode": 0
+    },
+    {
+      "number": 2,
+      "callId": "call_gX4xwktq8XtXO1tlEHGCVapd",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_02\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_02\n",
+      "exitCode": 0
+    },
+    {
+      "number": 3,
+      "callId": "call_BX0738rRQ13iekuwAJuksceu",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_03\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_03\n",
+      "exitCode": 0
+    },
+    {
+      "number": 4,
+      "callId": "call_QpGA58jT5bQaO0bQStx09PD2",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_04\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_04\n",
+      "exitCode": 0
+    },
+    {
+      "number": 5,
+      "callId": "call_m3KIjsDB3Mxa7Zpd09IA4Mud",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_05\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_05\n",
+      "exitCode": 0
+    },
+    {
+      "number": 6,
+      "callId": "call_pRO8j9uoprnbypzO2QozwQwo",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_06\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_06\n",
+      "exitCode": 0
+    },
+    {
+      "number": 7,
+      "callId": "call_BS92dHgEkYxwLkIc2Z3paErj",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_07\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_07\n",
+      "exitCode": 0
+    },
+    {
+      "number": 8,
+      "callId": "call_jkUeVkwVCnpBGEggPYVYpjjg",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_08\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_08\n",
+      "exitCode": 0
+    },
+    {
+      "number": 9,
+      "callId": "call_iji9Bu7PS94AOAH1QeiEyjZM",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_09\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_09\n",
+      "exitCode": 0
+    },
+    {
+      "number": 10,
+      "callId": "call_i6jkQk3RCLRfbYeDFWLcCA8N",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_10\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_10\n",
+      "exitCode": 0
+    },
+    {
+      "number": 11,
+      "callId": "call_Mu0REv8WWKDI38UZS7ycZyqq",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_11\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_11\n",
+      "exitCode": 0
+    },
+    {
+      "number": 12,
+      "callId": "call_suyhUj5wbRYxUorzjpBJp69o",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_12\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_12\n",
+      "exitCode": 0
+    },
+    {
+      "number": 13,
+      "callId": "call_d9WF9xcTHUf93d9aR4ClrRBs",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_13\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_13\n",
+      "exitCode": 0
+    },
+    {
+      "number": 14,
+      "callId": "call_3O7151si0W9FnSq1zVvv2rBf",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_14\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_14\n",
+      "exitCode": 0
+    },
+    {
+      "number": 15,
+      "callId": "call_b2KaRwiZcyDEQSyxLlMj96jc",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_15\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_15\n",
+      "exitCode": 0
+    },
+    {
+      "number": 16,
+      "callId": "call_oYC5DF1PgHp2D1Actv0D2ruw",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_16\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_16\n",
+      "exitCode": 0
+    },
+    {
+      "number": 17,
+      "callId": "call_ZHGE0FekbTBcF01zTTrgqWww",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_17\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_17\n",
+      "exitCode": 0
+    },
+    {
+      "number": 18,
+      "callId": "call_n47H6CObw0dfvGjRMNGZ47bh",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_18\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_18\n",
+      "exitCode": 0
+    },
+    {
+      "number": 19,
+      "callId": "call_uIrCNSXWgYaENdB751DimDYw",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_19\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_19\n",
+      "exitCode": 0
+    },
+    {
+      "number": 20,
+      "callId": "call_nJbrh8k1GWHaK7DrdgPlpe34",
+      "tool": "greppy",
+      "arguments": [
+        "bash-smart",
+        "--",
+        "printf 'PROXY_MATRIX_20\\n'"
+      ],
+      "output": "ok \u2014 exit 0\nPROXY_MATRIX_20\n",
+      "exitCode": 0
+    }
+  ]
+}

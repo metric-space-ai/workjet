@@ -328,10 +328,12 @@ export interface OpenCodeAdapterLiveOptions {
    * spawns itself; an instance configured with an external `serverUrl` is
    * rejected before this point by the driver.
    */
-  readonly resolveSessionEnvironment?: () => Effect.Effect<
-    NodeJS.ProcessEnv,
-    ProviderGatewayRoutingError
-  >;
+  readonly resolveSessionModel?: (
+    model?: string,
+  ) => Effect.Effect<string, ProviderGatewayRoutingError>;
+  readonly resolveSessionEnvironment?: (
+    model?: string,
+  ) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError>;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
 }
@@ -1334,7 +1336,7 @@ export function makeOpenCodeAdapter(
         const sessionEnvironment =
           sourceProfile?.environment ??
           (options?.resolveSessionEnvironment
-            ? yield* options.resolveSessionEnvironment()
+            ? yield* options.resolveSessionEnvironment(input.modelSelection?.model)
             : options?.environment);
 
         const started = yield* Effect.gen(function* () {
@@ -1591,7 +1593,12 @@ export function makeOpenCodeAdapter(
             PROVIDER,
           )
         : undefined;
-      const parsedModel = parseOpenCodeModelSlug(sourceProfile?.model ?? modelSelection?.model);
+      const nativeModel =
+        sourceProfile?.model ??
+        (options?.resolveSessionModel
+          ? yield* options.resolveSessionModel(modelSelection?.model)
+          : modelSelection?.model);
+      const parsedModel = parseOpenCodeModelSlug(nativeModel);
       if (!parsedModel) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,

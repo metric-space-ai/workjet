@@ -14,7 +14,7 @@ export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNative
 ) {
   const failure = (issue: string) => new ProviderAdapterValidationError({ provider, operation: "startSession", issue });
   const source = readWorkerSourceHarness(input.threadId);
-  if (input.workjetConfig.role === "worker") {
+  if (input.workjetConfig?.role === "worker") {
     const environment = yield* Effect.serviceOption(ServerEnvironment);
     const localEnvironmentId = Option.isSome(environment) ? yield* environment.value.getEnvironmentId : undefined;
     if (input.workjetConfig.parent.environmentId !== localEnvironmentId && (

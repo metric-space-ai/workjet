@@ -1,0 +1,30 @@
+{
+  "recordedAt": "2026-10-10T04:35:24.798Z",
+  "model": "kimi-for-coding",
+  "outcomes": [
+    {
+      "variant": "no-guide",
+      "httpStatus": 200,
+      "upstreamStatus": null,
+      "errorClass": null,
+      "responseBytes": 78180,
+      "hasFunctionCall": true
+    },
+    {
+      "variant": "boxed-guide",
+      "httpStatus": 200,
+      "upstreamStatus": null,
+      "errorClass": null,
+      "responseBytes": 74447,
+      "hasFunctionCall": true
+    },
+    {
+      "variant": "multi-agent-only",
+      "httpStatus": 200,
+      "upstreamStatus": null,
+      "errorClass": null,
+      "responseBytes": 47832,
+      "hasFunctionCall": true
+    }
+  ]
+}

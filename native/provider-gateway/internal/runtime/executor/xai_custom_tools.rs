@@ -2,26 +2,40 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 
 #[cfg(test)]
+mod boxed_tests;
+#[cfg(test)]
 mod integration_tests;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone, Copy)]
+enum WrappedInput {
+    Freeform,
+    Json,
+}
+
 #[derive(Default)]
 pub(super) struct XaiCustomToolAdapter {
     names: BTreeSet<String>,
-    arguments: BTreeMap<String, String>,
+    boxed_functions: BTreeSet<String>,
+    arguments: BTreeMap<String, (WrappedInput, String)>,
 }
 
 impl XaiCustomToolAdapter {
     pub(super) fn new(names: BTreeSet<String>) -> Self {
         Self {
             names,
-            arguments: BTreeMap::new(),
+            ..Self::default()
         }
     }
 
-    /// Freeform input cannot be decoded until the JSON wrapper is complete.
-    /// Buffer only those argument deltas; ordinary function deltas pass through.
+    pub(super) fn with_boxed_functions(mut self, names: BTreeSet<String>) -> Self {
+        self.boxed_functions = names;
+        self
+    }
+
+    /// A wrapped argument must be complete before decoding. Ordinary function
+    /// deltas pass through; only freeform and non-object schemas are buffered.
     pub(super) fn apply(&mut self, mut event: Value) -> Vec<Value> {
         let kind = event
             .get("type")
@@ -36,26 +50,33 @@ impl XaiCustomToolAdapter {
         if kind == "response.function_call_arguments.delta" && self.arguments.contains_key(&item_id)
         {
             if let Some(delta) = event.get("delta").and_then(Value::as_str) {
-                self.arguments.get_mut(&item_id).unwrap().push_str(delta);
+                self.arguments.get_mut(&item_id).unwrap().1.push_str(delta);
             }
             return Vec::new();
         }
         if kind == "response.function_call_arguments.done" && self.arguments.contains_key(&item_id)
         {
+            let (input_kind, buffered) = &self.arguments[&item_id];
             let arguments = event
                 .get("arguments")
                 .and_then(Value::as_str)
-                .unwrap_or(&self.arguments[&item_id]);
-            let Some(input) = unwrap_input(arguments) else {
+                .unwrap_or(buffered);
+            let Some(input) = unwrap_input(arguments, *input_kind) else {
                 return vec![failure()];
             };
             let mut delta = event.clone();
-            delta["type"] = json!("response.custom_tool_call_input.delta");
             delta.as_object_mut().unwrap().remove("arguments");
+            delta["type"] = json!("response.function_call_arguments.delta");
             delta["delta"] = json!(input);
-            event["type"] = json!("response.custom_tool_call_input.done");
-            event.as_object_mut().unwrap().remove("arguments");
-            event["input"] = json!(input);
+            match input_kind {
+                WrappedInput::Freeform => {
+                    delta["type"] = json!("response.custom_tool_call_input.delta");
+                    event["type"] = json!("response.custom_tool_call_input.done");
+                    event.as_object_mut().unwrap().remove("arguments");
+                    event["input"] = json!(input);
+                }
+                WrappedInput::Json => event["arguments"] = json!(input),
+            }
             return vec![delta, event];
         }
         if matches!(
@@ -64,13 +85,14 @@ impl XaiCustomToolAdapter {
         ) {
             if let Some(item) = event.get_mut("item") {
                 let added = kind == "response.output_item.added";
-                if self.is_custom(item) {
+                if let Some(input_kind) = self.wrapped_input(item) {
                     if added {
                         if let Some(id) = item.get("id").and_then(Value::as_str) {
-                            self.arguments.insert(id.to_owned(), String::new());
+                            self.arguments
+                                .insert(id.to_owned(), (input_kind, String::new()));
                         }
                     }
-                    if !restore_item(item, added) {
+                    if !restore_item(item, added, input_kind) {
                         return vec![failure()];
                     }
                 }
@@ -81,20 +103,28 @@ impl XaiCustomToolAdapter {
             .and_then(Value::as_array_mut)
         {
             for item in items {
-                if self.is_custom(item) && !restore_item(item, false) {
-                    return vec![failure()];
+                if let Some(input_kind) = self.wrapped_input(item) {
+                    if !restore_item(item, false, input_kind) {
+                        return vec![failure()];
+                    }
                 }
             }
         }
         vec![event]
     }
 
-    fn is_custom(&self, item: &Value) -> bool {
-        item.get("type").and_then(Value::as_str) == Some("function_call")
-            && item
-                .get("name")
-                .and_then(Value::as_str)
-                .is_some_and(|name| self.names.contains(name))
+    fn wrapped_input(&self, item: &Value) -> Option<WrappedInput> {
+        if item.get("type").and_then(Value::as_str) != Some("function_call") {
+            return None;
+        }
+        let name = item.get("name")?.as_str()?;
+        if self.names.contains(name) {
+            Some(WrappedInput::Freeform)
+        } else if self.boxed_functions.contains(name) {
+            Some(WrappedInput::Json)
+        } else {
+            None
+        }
     }
 
     pub(super) fn restore_buffered(&mut self, data: &[u8]) -> Vec<u8> {
@@ -106,32 +136,38 @@ impl XaiCustomToolAdapter {
     }
 }
 
-fn restore_item(item: &mut Value, added: bool) -> bool {
+fn restore_item(item: &mut Value, added: bool, kind: WrappedInput) -> bool {
     let arguments = item.get("arguments").and_then(Value::as_str).unwrap_or("");
     let input = if added && arguments.is_empty() {
         String::new()
     } else {
-        let Some(input) = unwrap_input(arguments) else {
+        let Some(input) = unwrap_input(arguments, kind) else {
             return false;
         };
         input
     };
-    item["type"] = json!("custom_tool_call");
-    item.as_object_mut().unwrap().remove("arguments");
-    item["input"] = json!(input);
+    match kind {
+        WrappedInput::Freeform => {
+            item["type"] = json!("custom_tool_call");
+            item.as_object_mut().unwrap().remove("arguments");
+            item["input"] = json!(input);
+        }
+        WrappedInput::Json => item["arguments"] = json!(input),
+    }
     true
 }
 
-fn unwrap_input(arguments: &str) -> Option<String> {
-    serde_json::from_str::<Value>(arguments)
-        .ok()?
-        .get("input")?
-        .as_str()
-        .map(str::to_owned)
+fn unwrap_input(arguments: &str, kind: WrappedInput) -> Option<String> {
+    let wrapper = serde_json::from_str::<Value>(arguments).ok()?;
+    let input = wrapper.get("input")?;
+    match kind {
+        WrappedInput::Freeform => input.as_str().map(str::to_owned),
+        WrappedInput::Json => Some(input.to_string()),
+    }
 }
 
 fn failure() -> Value {
-    json!({"type":"response.failed","response":{"status":"failed","error":{"code":"invalid_custom_tool_input","message":"xAI returned invalid freeform tool input"}}})
+    json!({"type":"response.failed","response":{"status":"failed","error":{"code":"invalid_tool_input","message":"xAI returned invalid wrapped tool input"}}})
 }
 
 #[cfg(test)]

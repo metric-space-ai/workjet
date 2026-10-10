@@ -118,7 +118,8 @@ impl XaiExecutor {
             if path == "/responses/compact" {
                 sanitize_compact_body(&mut prepared.body);
             }
-            custom = super::xai_custom_tools::XaiCustomToolAdapter::new(prepared.custom_tools);
+            custom = super::xai_custom_tools::XaiCustomToolAdapter::new(prepared.custom_tools)
+                .with_boxed_functions(prepared.boxed_functions);
             namespace_tools = prepared.namespace_tools;
             (prepared.body, Headers::new())
         };

@@ -99,6 +99,7 @@ impl XaiExecutor {
             prepared.client_declared_tools,
             prepared.namespace_tools,
             prepared.custom_tools,
+            prepared.boxed_functions,
             self.replay_store().cloned(),
             replay_scope,
         ))
@@ -332,6 +333,7 @@ fn process_stream(
     declared: std::collections::BTreeSet<super::xai_executor_request::ClientToolKey>,
     refs: BTreeMap<String, super::xai_executor_request::NamespaceToolRef>,
     custom_tools: std::collections::BTreeSet<String>,
+    boxed_functions: std::collections::BTreeSet<String>,
     replay_store: Option<Arc<dyn XaiReasoningReplayStore>>,
     replay_scope: Option<XaiReasoningReplayScope>,
 ) -> XaiProcessedStream {
@@ -339,7 +341,8 @@ fn process_stream(
     let (sender, receiver) = mpsc::channel(32);
     tokio::spawn(async move {
         let mut filter = InternalXSearchResponseFilter::new(enabled, declared);
-        let mut custom = XaiCustomToolAdapter::new(custom_tools);
+        let mut custom =
+            XaiCustomToolAdapter::new(custom_tools).with_boxed_functions(boxed_functions);
         let mut decoder = crate::internal::translator::common::SseDecoder::new();
         let mut terminal = false;
         loop {

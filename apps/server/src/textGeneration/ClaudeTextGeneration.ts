@@ -19,7 +19,10 @@ import { resolveSpawnCommand } from "@workjet/shared/shell";
 
 import { TextGenerationError } from "@workjet/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { resolveTextGenerationEnvironment, type TextGenerationEnvironmentResolver } from "./TextGenerationRouting.ts";
+import {
+  resolveTextGenerationEnvironment,
+  type TextGenerationEnvironmentResolver,
+} from "./TextGenerationRouting.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -159,8 +162,18 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         : undefined;
 
     const runClaudeCommand = Effect.fn("runClaudeJson.runClaudeCommand")(function* () {
-      const routed = yield* resolveTextGenerationEnvironment(operation, modelSelection.model, claudeEnvironment, resolveEnvironment);
-      const commandEnvironment = { ...routed, ...(claudeEnvironment.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: claudeEnvironment.CLAUDE_CONFIG_DIR } : {}) };
+      const routed = yield* resolveTextGenerationEnvironment(
+        operation,
+        modelSelection.model,
+        claudeEnvironment,
+        resolveEnvironment,
+      );
+      const commandEnvironment = {
+        ...routed,
+        ...(claudeEnvironment.CLAUDE_CONFIG_DIR
+          ? { CLAUDE_CONFIG_DIR: claudeEnvironment.CLAUDE_CONFIG_DIR }
+          : {}),
+      };
       const spawnCommand = yield* resolveSpawnCommand(
         claudeSettings.binaryPath || "claude",
         [

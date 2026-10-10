@@ -12,7 +12,10 @@ import { extractJsonObject } from "@workjet/shared/schemaJson";
 
 import { TextGenerationError } from "@workjet/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { resolveTextGenerationEnvironment, type TextGenerationEnvironmentResolver } from "./TextGenerationRouting.ts";
+import {
+  resolveTextGenerationEnvironment,
+  type TextGenerationEnvironmentResolver,
+} from "./TextGenerationRouting.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -62,7 +65,12 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
       const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
-      const commandEnvironment = yield* resolveTextGenerationEnvironment(operation, modelSelection.model, environment, resolveEnvironment);
+      const commandEnvironment = yield* resolveTextGenerationEnvironment(
+        operation,
+        modelSelection.model,
+        environment,
+        resolveEnvironment,
+      );
       const outputRef = yield* Ref.make("");
       const runtime = yield* makeGrokAcpRuntime({
         grokSettings,

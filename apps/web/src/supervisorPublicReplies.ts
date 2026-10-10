@@ -17,7 +17,7 @@ export interface SupervisorPublicReply {
 
 export interface SupervisorNativeMessageReply {
   id: string;
-  source: "native-message";
+  source: "provider-message";
   executionKey: string;
   modelOperationId: string;
   nativeMessageId: string;
@@ -119,7 +119,7 @@ export function reconstructSupervisorPublicReplies(
 
 const nativeReplyId = (attemptId: string, chunk: WorkjetSupervisorNativeMessageText) =>
   JSON.stringify([
-    "native-message",
+    "provider-message",
     attemptId,
     chunk.execution_key,
     chunk.model_operation_id,
@@ -145,7 +145,7 @@ export function reconstructSupervisorNativeMessageReplies(
       entry = {
         reply: {
           id,
-          source: "native-message",
+          source: "provider-message",
           executionKey: chunk.execution_key,
           modelOperationId: chunk.model_operation_id,
           nativeMessageId: chunk.native_message_id,

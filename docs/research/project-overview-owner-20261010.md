@@ -52,11 +52,25 @@ Final screenshots and lane results are recorded after the bounded check ends.
 
 ## Verification
 
-The complete web suite passed on `51880539fa2170c388e8d227d93b5c761472bde4`:
-420 files and 3,849 tests. The same run passed `vp check`, contract settings
-tests and the content vocabulary guard. Typecheck found one missing new
-language field in the desktop settings test fixture; commit `e54910640`
-corrects it.
+The final product source is `a32ccc5731f19afa5239f5eb22e75aadb2d19c02`.
+Canonical gpu3 run `workjet-project-overview-owner-20261010T230422Z`
+passed every code check with two test workers and two-CPU affinity:
 
-The final lane repeats the required checks and affected tests on the corrected
-source. No merge is authorized before Michael reviews the design.
+| Command                                                                                             | Result                                                    |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `pnpm exec vp check`                                                                                | Passed                                                    |
+| `pnpm exec vp run typecheck`                                                                        | Passed across all workspaces                              |
+| `pnpm exec vp test run --project unit --maxWorkers=2` in `apps/web`                                 | 420 files, 3,853 tests passed; 21 overview tests included |
+| `pnpm exec vp test run src/settings/DesktopClientSettings.test.ts --maxWorkers=2` in `apps/desktop` | 7 tests passed                                            |
+| `pnpm exec vp test run src/settings.test.ts --maxWorkers=2` in `packages/contracts`                 | 46 tests passed                                           |
+| `pnpm run guard:content`                                                                            | Passed                                                    |
+
+The run's overall exit was 1 because the separately recorded screenshot step
+failed: the host-installed Chrome exited with SIGTRAP before opening a page.
+The Vite server was ready; all owned process groups were stopped and the
+temporary entry files and browser profile were removed. Successful code checks
+are retained independently from that infrastructure failure.
+
+A separate bounded visual run uses the browser matched to the existing
+Playwright dependency. It does not repeat the successful code checks.
+No merge is authorized before Michael reviews the design.

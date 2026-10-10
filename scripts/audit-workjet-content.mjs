@@ -378,6 +378,11 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
     reason: "The window target name is an internal host symbol.",
   },
   {
+    path: "apps/desktop/src/ctox/CtoxGuestDiagnostics.ts",
+    context: /withSpan\(["'`]?ctox\.guest\.preparation\.failed/u,
+    reason: "The trace span name is internal telemetry; the UI renders the typed reason instead.",
+  },
+  {
     path: "apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts",
     context: /NodePath\.join|provider-gateway-workjet-host|target.*release/iu,
     reason: "Artifact paths retain the native build directory name.",

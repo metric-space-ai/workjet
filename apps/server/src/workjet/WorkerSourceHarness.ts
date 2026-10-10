@@ -3,6 +3,7 @@ import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
 import { Schema } from "effect";
 import { WorkjetComputerInventory, type RemoteWorkerHarness } from "@workjet/contracts";
+import type { WorkerSubmission } from "./WorkerSubmission.ts";
 
 const Route = Schema.Struct({
   sourceEnvironmentId: Schema.NonEmptyString,
@@ -92,7 +93,7 @@ export interface WorkerSourceHarness {
   readonly model: string;
   readonly harness: RemoteWorkerHarness;
   readonly revoke: () => Promise<void>;
-  readonly retire: () => Promise<void>;
+  readonly retire: (submission?: WorkerSubmission) => Promise<void>;
 }
 const workers = new Map<string, WorkerSourceHarness>();
 const installedRoutes = new Map<string, WorkerSourceHarnessRoute>();
@@ -299,15 +300,16 @@ export async function installWorkerSourceRoute(
     apiKey,
     model: pin.modelId,
     harness: pin.harness,
-    retire: async () => {
+    retire: async (submission) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
-        const response = await source("retire", {}, controller.signal);
+        const response = await source("retire", submission ?? {}, controller.signal);
         Schema.decodeUnknownSync(Schema.Struct({ retired: Schema.Literal(true) }))(response);
-      } finally {
-        clearTimeout(timeout);
         await harness.revoke();
+      } finally {
+        // Preserve this route on a lost/failed source acknowledgement so retirement can retry.
+        clearTimeout(timeout);
       }
     },
     revoke: async () => {

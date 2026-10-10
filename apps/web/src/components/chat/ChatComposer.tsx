@@ -1088,7 +1088,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ?.prompt.trim();
       setComposerDraftWorkjetConfig(composerDraftTarget, {
         schemaVersion: 2,
-        role: worker.role,
+        role: "standard",
         parent: null,
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,

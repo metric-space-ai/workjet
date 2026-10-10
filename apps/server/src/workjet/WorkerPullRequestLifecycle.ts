@@ -8,6 +8,9 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
+import { publishWorkerSubmission } from "./WorkerSubmission.ts";
 
 import * as Duration from "effect/Duration";
 import * as Schedule from "effect/Schedule";
@@ -24,6 +27,7 @@ import {
   WorkerPullRequestStore,
   sameWorkerPullRequest,
   receiptMatchesThread,
+  type WorkerPullRequestReceipt,
 } from "./WorkerPullRequestStore.ts";
 
 export const WORKER_PR_CYCLE_INTERVAL = Duration.minutes(1);
@@ -37,27 +41,87 @@ export const make = Effect.gen(function* () {
   const provider = yield* ProviderService;
   const terminals = yield* TerminalManager;
   const store = yield* WorkerPullRequestStore;
+  const environment = yield* ServerEnvironment;
+  const environmentId = yield* environment.getEnvironmentId;
   const mutex = yield* Semaphore.make(1);
   let cursor = 0;
 
   const retire = Effect.fn("WorkerPullRequestLifecycle.retire")(function* (
     thread: OrchestrationThread,
-    executionStopped: boolean,
+    receipt: WorkerPullRequestReceipt,
   ) {
-    if (!executionStopped) {
-      const stopped = yield* provider.stopSession({ threadId: thread.id });
-      if (stopped === undefined || !stopped.terminated) return;
-      if (!(yield* terminals.closeForCleanup({ threadId: thread.id }))) return;
+    if (receipt.executionStopped !== 1) {
+      const stopped = yield* engine.runWorkerRetirementIfSubmitted(
+        thread.id,
+        Effect.gen(function* () {
+          const result = yield* provider.stopSession({ threadId: thread.id });
+          if (result === undefined) {
+            const sessions = yield* provider.listSessions();
+            if (sessions.some((session) => session.threadId === thread.id)) return false;
+          } else if (!result.terminated) return false;
+          return yield* terminals.closeForCleanup({ threadId: thread.id });
+        }),
+      );
+      if (!stopped) return;
+      const config = thread.workjetConfig;
+      if (config.role !== "worker" || config.parent === null) return;
+      const pullRequest = {
+        provider: receipt.provider,
+        number: receipt.prNumber,
+        url: receipt.prUrl,
+        branch: receipt.branchRef,
+      };
+      const harness = readWorkerSourceHarness(thread.id);
+      if (config.parent.environmentId !== environmentId) {
+        // Never write a remote parent id into the target's local project.
+        if (!harness) return;
+        yield* Effect.promise(() => harness.retire({ pullRequest, headOid: receipt.headOid }));
+      } else {
+        const model = yield* query.getCommandReadModel();
+        const parent = model.threads.find((candidate) => candidate.id === config.parent?.threadId);
+        if (!parent || parent.deletedAt !== null || parent.projectId !== thread.projectId) return;
+        yield* publishWorkerSubmission(engine, {
+          workerId: thread.id,
+          parentId: parent.id,
+          model: thread.modelSelection.model,
+          pullRequest,
+          createdAt: thread.updatedAt,
+        });
+      }
       yield* store.markExecutionStopped(thread.id);
     }
-    // Preserve checkout/history for closed or dirty/unpublished work. Merge cleanup remains separate.
+    // Preserve checkout and history after submission; merge cleanup remains separate.
     yield* engine.dispatch({
       type: "thread.archive",
       commandId: CommandId.make(`worker-pr-archive-${thread.id}`),
       threadId: thread.id,
     });
-    const harness = readWorkerSourceHarness(thread.id);
-    if (harness) yield* Effect.promise(() => harness.retire());
+  });
+
+  const finishSubmission = Effect.fn("WorkerPullRequestLifecycle.finishSubmission")(function* (
+    thread: OrchestrationThread,
+    receipt: WorkerPullRequestReceipt,
+  ) {
+    const title = `#${receipt.prNumber}: ${thread.modelSelection.model}`;
+    if (thread.title !== title) {
+      yield* engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make(`worker-pr-title-${thread.id}`),
+        threadId: thread.id,
+        title,
+      });
+    }
+    const model = yield* query.getCommandReadModel();
+    const committed = model.threads.find((candidate) => candidate.id === thread.id);
+    if (
+      !committed ||
+      committed.deletedAt !== null ||
+      committed.archivedAt !== null ||
+      committed.title !== title ||
+      !receiptMatchesThread(receipt, committed)
+    )
+      return;
+    yield* retire(committed, receipt);
   });
 
   const reconcile = Effect.fn("WorkerPullRequestLifecycle.reconcile")(function* (
@@ -75,7 +139,7 @@ export const make = Effect.gen(function* () {
     )
       return;
     const previous = Option.getOrUndefined(yield* store.get(thread.id));
-    if (previous && previous.state !== "open") {
+    if (previous) {
       const retainedIdentity: WorkjetWorkerPullRequest = {
         provider: previous.provider,
         number: previous.prNumber,
@@ -87,8 +151,7 @@ export const make = Effect.gen(function* () {
         workjetConfig: { ...config, pullRequest: config.pullRequest ?? retainedIdentity },
       };
       if (!receiptMatchesThread(previous, retainedThread)) return;
-      // A native terminal receipt is monotonic. Resume after lost acknowledgement
-      // or restart even when the source-control provider is temporarily unavailable.
+      // Verified submission is monotonic, including open PRs. Recover without a provider lookup.
       if (!config.pullRequest) {
         yield* engine.dispatch({
           type: "thread.workjet-config.set",
@@ -97,9 +160,8 @@ export const make = Effect.gen(function* () {
           workjetConfig: retainedThread.workjetConfig,
           createdAt: thread.createdAt,
         });
-        return;
       }
-      yield* retire(thread, previous.executionStopped === 1);
+      yield* finishSubmission(thread, previous);
       return;
     }
     const local = yield* git.statusDetailsLocal(cwd);
@@ -121,8 +183,7 @@ export const make = Effect.gen(function* () {
       pr.headRefName !== branch ||
       pr.isCrossRepository !== false ||
       !pr.headCommitOid ||
-      (pr.headCommitOid !== head.commitSha &&
-        !(previous && pr.state !== "open" && receiptMatchesThread(previous, thread)))
+      pr.headCommitOid !== head.commitSha
     )
       return;
     const identity: WorkjetWorkerPullRequest = {
@@ -153,11 +214,10 @@ export const make = Effect.gen(function* () {
         workjetConfig: { ...config, pullRequest: identity },
         createdAt: thread.createdAt,
       });
-      // Wait for the committed projection before acting on this binding.
-      return;
+      // The committed projection is read below before retirement.
     }
-    if (pr.state === "open") return;
-    yield* retire(thread, false);
+    const receipt = Option.getOrUndefined(yield* store.get(thread.id));
+    if (receipt) yield* finishSubmission(thread, receipt);
   });
 
   const runCycle = mutex
@@ -194,7 +254,34 @@ export const make = Effect.gen(function* () {
       Effect.timeout(Duration.minutes(6)),
       Effect.catchCause(() => Effect.void),
     );
-  return { runCycle };
+  const reconcileThread = (threadId: OrchestrationThread["id"]) =>
+    mutex
+      .withPermit(
+        Effect.gen(function* () {
+          const model = yield* query.getCommandReadModel();
+          const thread = model.threads.find((candidate) => candidate.id === threadId);
+          if (!thread || thread.archivedAt !== null || thread.deletedAt !== null) return;
+          yield* reconcile(thread);
+        }),
+      )
+      .pipe(
+        Effect.timeout(Duration.seconds(20)),
+        Effect.catchCause(() => Effect.void),
+      );
+  const reconcileWorktree = (cwd: string) =>
+    Effect.gen(function* () {
+      const model = yield* query.getCommandReadModel();
+      const owned = model.threads.filter(
+        (thread) =>
+          thread.worktreePath === cwd &&
+          thread.deletedAt === null &&
+          thread.archivedAt === null &&
+          thread.workjetConfig.schemaVersion === 2 &&
+          thread.workjetConfig.team?.role === "worker",
+      );
+      yield* Effect.forEach(owned, (thread) => reconcileThread(thread.id));
+    }).pipe(Effect.catchCause(() => Effect.void));
+  return { runCycle, reconcileThread, reconcileWorktree };
 });
 
 export class WorkerPullRequestLifecycle extends Context.Service<
@@ -205,6 +292,22 @@ export const layer = Layer.effect(
   WorkerPullRequestLifecycle,
   Effect.gen(function* () {
     const service = yield* make;
+    const engine = yield* OrchestrationEngineService;
+    yield* forkParked(
+      engine.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) =>
+            (event.type === "thread.activity-appended" &&
+              event.payload.activity.kind === "tool.completed") ||
+            event.type === "thread.session-set",
+        ),
+        Stream.map((event) => event.aggregateId as OrchestrationThread["id"]),
+        Stream.groupedWithin(BATCH_SIZE, Duration.millis(100)),
+        Stream.runForEach((ids) =>
+          Effect.forEach([...new Set(ids)], service.reconcileThread).pipe(Effect.asVoid),
+        ),
+      ),
+    );
     yield* forkParked(
       service.runCycle.pipe(Effect.repeat(Schedule.spaced(WORKER_PR_CYCLE_INTERVAL))),
     );

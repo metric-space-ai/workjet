@@ -36,8 +36,8 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
         "",
         ...context,
         "You are a leaf worker with exactly one bounded package. Work only in your own assigned isolated worktree on the assigned computer. Do not commission or spawn other workers.",
-        "Open exactly one pull request for this package and keep all rework in that same pull request. Run the required checks and preserve your changes on the remote before handoff.",
-        "End this run by submitting the pull request and reporting its URL, branch, result and verification evidence to your parent. Stop after submission; do not wait for the pull request to be merged. Workjet owns automatic archival of the submitted worker.",
+        "Prepare the finished change, run the required checks and preserve your commits on the remote before submitting exactly one pull request for this package.",
+        "End this run by submitting the pull request and reporting its URL, branch, result and verification evidence to your parent. Stop after submission; do not merge your own pull request or wait for it to be merged. Workjet owns automatic archival of the submitted worker.",
       ].join("\n");
   }
 }

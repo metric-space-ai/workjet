@@ -192,9 +192,9 @@ import {
 import {
   groupThreadsByProjectTeam,
   PROJECT_TEAM_SECTIONS,
-  projectTeamSectionOf,
   projectTeamStatus,
   projectTeamHarnessLabel,
+  projectTeamParentTitle,
   duplicateProjectTeamTitles,
 } from "../lib/projectTeamSections";
 
@@ -675,6 +675,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   variant: "card" | "slim";
   projectTeam?: boolean | undefined;
   teamHarnessLabel?: string | undefined;
+  teamParentTitle?: string | undefined;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
   variantAction: "settle" | "unsettle" | "unsnooze";
@@ -1199,6 +1200,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 {props.teamHarnessLabel}
               </span>
             ) : null}
+            {props.teamParentTitle ? (
+              <span
+                className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
+                title={`Dispatched by ${props.teamParentTitle}`}
+              >
+                {props.teamParentTitle}
+              </span>
+            ) : null}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
@@ -1481,6 +1490,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : (
                 <span className="flex-1" />
               )}
+              {props.teamParentTitle ? (
+                <span
+                  className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
+                  title={`Dispatched by ${props.teamParentTitle}`}
+                >
+                  {props.teamParentTitle}
+                </span>
+              ) : null}
               {terminalStatusIcon}
               {prBadge}
               {diff ? (
@@ -2315,7 +2332,7 @@ export default function Sidebar() {
         // arise from stale or raced writes.)
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);
-      } else if (scopedProjectKeys !== null && projectTeamSectionOf(thread) !== "other") {
+      } else if (scopedProjectKeys !== null) {
         active.push(thread);
       } else if (
         supportsSettlement &&
@@ -3969,11 +3986,7 @@ export default function Sidebar() {
               <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
                 {(() => {
                   const groupByTeam =
-                    selectedWorkjetProject !== null ||
-                    (scopedProjectGroup !== null &&
-                      [...pinnedThreads, ...activeThreads].some(
-                        (thread) => projectTeamSectionOf(thread) !== "other",
-                      ));
+                    selectedWorkjetProject !== null || scopedProjectGroup !== null;
                   const duplicateTitles = duplicateProjectTeamTitles([
                     ...pinnedThreads,
                     ...activeThreads,
@@ -4004,6 +4017,9 @@ export default function Sidebar() {
                         thread={thread}
                         variant={rowVariant}
                         projectTeam={groupByTeam}
+                        teamParentTitle={
+                          groupByTeam ? projectTeamParentTitle(thread, threads) : undefined
+                        }
                         teamHarnessLabel={
                           groupByTeam && duplicateTitles.has(thread.title)
                             ? projectTeamHarnessLabel(thread)
@@ -4175,23 +4191,6 @@ export default function Sidebar() {
                           ),
                         );
                       }
-                    }
-                    if (team.other.length > 0) {
-                      items.push(
-                        <li
-                          key="team-other-header"
-                          data-workjet-team-section="other"
-                          className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5"
-                        >
-                          <span className="text-xs font-medium text-muted-foreground/70">
-                            Other chats
-                          </span>
-                          <span className="h-px flex-1 bg-sidebar-border/60" />
-                        </li>,
-                      );
-                    }
-                    for (const thread of team.other) {
-                      items.push(renderThreadRow(thread, "active"));
                     }
                   } else {
                     for (const thread of activeThreads) {

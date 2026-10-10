@@ -59,6 +59,12 @@ export interface OrchestrationEngineShape {
         },
   ) => Effect.Effect<boolean, E, R>;
 
+  /** Wait for earlier provider starts, then stop only an exactly receipted submitted worker. */
+  readonly runWorkerRetirementIfSubmitted: <E, R>(
+    threadId: ThreadId,
+    stop: Effect.Effect<boolean, E, R>,
+  ) => Effect.Effect<boolean, E, R>;
+
   /**
    * Replay persisted orchestration events from an exclusive sequence cursor.
    *

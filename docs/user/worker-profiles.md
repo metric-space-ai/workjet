@@ -1,6 +1,8 @@
 # Choose and edit a worker
 
-A project Supervisor or Parent can dispatch a one-time Luma with a bounded task and its own worktree. The Luma remains linked to the chat that started it and cannot start another worker.
+A project Supervisor or Persistent Worker can commission a One-Shot Worker with a bounded task and its own worktree. The thread’s team role grants coordination rights automatically. A Luma describes its harness, model, computer and task; there is no separate Orchestrator setting.
+
+A One-Shot Worker starts as `[WorkerN@Parent title]: model` and keeps its parent affiliation in the sidebar. When it submits its PR, its title becomes `#PRnumber: model` and Workjet archives it automatically. Its parent receives the PR link and the project PR overview retains the PR. The worker cannot commission children or merge its own PR.
 
 Open the Worker control in the composer to choose a saved worker or Manual. Each worker shows its harness, model and reasoning level before you choose it.
 

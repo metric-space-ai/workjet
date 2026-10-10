@@ -92,7 +92,6 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetGatewayAccountModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayCheckModels]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayDiscoverModels]: AuthOrchestrationReadScope,
-  [WS_METHODS.workjetGatewayAccountModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayUpdateRouting]: AuthOrchestrationOperateScope,
   // Looking at the one-shot legacy import offer is a read; answering it writes
   // this environment's `settings.workjet` and a terminal marker, so the decision

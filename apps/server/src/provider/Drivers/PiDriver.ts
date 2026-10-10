@@ -112,7 +112,6 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
           Effect.gen(function* () {
             for (const [filename, content] of [
               ["models.json", encoded],
-              ["workjet-extension.mjs", PI_WORKJET_EXTENSION],
             ] as const) {
               const staged = path.join(agentDirectory, `${filename}.workjet-stage`);
               yield* fs.writeFileString(staged, content).pipe(
@@ -124,12 +123,25 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         );
         return { ...selected, environment: { ...processEnv, PI_CODING_AGENT_DIR: agentDirectory } };
       });
+      const extensionPath = path.join(agentDirectory, "workjet-extension.mjs");
+      const stagedExtension = `${extensionPath}.workjet-stage`;
+      // Source-admitted sessions bypass local model resolution but load this static extension.
+      yield* fs.makeDirectory(agentDirectory, { recursive: true, mode: 0o700 }).pipe(
+        Effect.andThen(
+          fs.writeFileString(stagedExtension, PI_WORKJET_EXTENSION, { mode: 0o600 }),
+        ),
+        Effect.andThen(fs.rename(stagedExtension, extensionPath)),
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({ driver: DRIVER, instanceId, detail: cause.message, cause }),
+        ),
+      );
       const adapter = yield* makePiAdapter({
         instanceId,
         binaryPath: config.binaryPath,
         enabled,
         sessionDirectory,
-        extensionPath: path.join(agentDirectory, "workjet-extension.mjs"),
+        extensionPath,
         resolveModel,
       });
       const maintenanceCapabilities = makeManualOnlyProviderMaintenanceCapabilities({

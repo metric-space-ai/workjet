@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+if (process.argv.includes("--version")) {
+  process.stdout.write("1.0.0\n");
+  process.exit(0);
+}
 const option = (name) => process.argv[process.argv.indexOf(name) + 1];
+const extensionPath = process.argv.includes("--extension") ? option("--extension") : null;
+const registeredTools = [];
+if (extensionPath) {
+  const extension = await import(NodeURL.pathToFileURL(extensionPath).href);
+  await extension.default({ registerTool: (tool) => registeredTools.push(tool), on: () => {} });
+}
 const sessionFile = process.argv.includes("--session")
   ? option("--session")
   : NodePath.join(option("--session-dir"), "fixture-session.jsonl");
@@ -14,6 +25,11 @@ NodeFS.writeFileSync(
       : null,
     replacesSystemPrompt: process.argv.includes("--system-prompt"),
     sessionFile,
+    extensionPath,
+    loadedTools: registeredTools.map((tool) => tool.name),
+    agentDirectory: process.env.PI_CODING_AGENT_DIR,
+    sourceIsolated: process.env.WORKJET_SOURCE_ISOLATED === "true",
+    targetSecretPresent: process.env.WORKJET_PI_TEST_TARGET_SECRET !== undefined,
   }),
 );
 if (!NodeFS.existsSync(sessionFile)) NodeFS.writeFileSync(sessionFile, "");
@@ -24,7 +40,7 @@ const emit = (value) => process.stdout.write(JSON.stringify(value) + "\n");
 const reply = (request, data) =>
   emit({ type: "response", id: request.id, command: request.type, success: true, data });
 let buffer = "";
-process.stdin.on("data", (chunk) => {
+process.stdin.on("data", async (chunk) => {
   buffer += chunk.toString();
   let index;
   while ((index = buffer.indexOf("\n")) >= 0) {
@@ -77,17 +93,22 @@ process.stdin.on("data", (chunk) => {
         }
         for (let n = 1; n <= 20; n++) {
           const id = "call-" + n;
+          const tool = request.message === "RUN_WORKJET_MCP" ? registeredTools[0] : undefined;
+          const args = { command: tool ? "result-" + n : "printf " + n };
           emit({
             type: "tool_execution_start",
             toolCallId: id,
-            toolName: "bash",
-            args: { command: "printf " + n },
+            toolName: tool?.name ?? "bash",
+            args,
           });
+          const result = tool
+            ? await tool.execute(id, args)
+            : { content: [{ type: "text", text: "result-" + n }] };
           emit({
             type: "tool_execution_end",
             toolCallId: id,
-            toolName: "bash",
-            result: { content: [{ type: "text", text: "result-" + n }] },
+            toolName: tool?.name ?? "bash",
+            result,
             isError: false,
           });
         }

@@ -115,6 +115,21 @@ const markup = (threads: readonly EnvironmentThreadShell[], language: "de" | "en
   );
 
 describe("owner project overview", () => {
+  it("does not attribute the supervisor's Luma or the control computer to a native specialist", () => {
+    const crew = {
+      ...specialist,
+      workjetConfig: {
+        ...specialist.workjetConfig,
+        ctoxCrewChat: {},
+      },
+    } as unknown as EnvironmentThreadShell;
+    const data = { ...overview([crew]), supervisorLumaId: "supervisor-identity" };
+    const html = renderToStaticMarkup(<ProjectOverviewView data={data} onOpenChat={() => {}} />);
+    expect(html).not.toContain("supervisor-identity");
+    expect(html).toContain("controlEnvironmentId");
+    expect(html).toContain(">Rechner</dt><dd class=");
+    expect(html).not.toMatch(/>Rechner<\/dt><dd[^>]*>desktop<\/dd>/u);
+  });
   it("labels stale native KPI values instead of implying a current measurement", () => {
     const kpis = {
       project_id: project.id,

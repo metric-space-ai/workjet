@@ -234,11 +234,15 @@ export function ProjectOverviewView(props: {
                     <dt>{text.saved}</dt>
                     <dd className="break-words [overflow-wrap:anywhere]">
                       {native
-                        ? (data.supervisorLumaId ?? text.unknown)
+                        ? config.schemaVersion === 2 && config.team?.role === "supervisor"
+                          ? (data.supervisorLumaId ?? text.unknown)
+                          : text.unknown
                         : thread.modelSelection.instanceId + " · " + thread.modelSelection.model}
                     </dd>
                     <dt>{text.computer}</dt>
-                    <dd className="break-words [overflow-wrap:anywhere]">{thread.environmentId}</dd>
+                    <dd className="break-words [overflow-wrap:anywhere]">
+                      {native ? text.unknown : thread.environmentId}
+                    </dd>
                     <dt>{text.status}</dt>
                     <dd>{text[state]}</dd>
                   </dl>
@@ -260,6 +264,7 @@ export function ProjectOverviewView(props: {
                     <pre className="mt-1 overflow-x-auto text-[11px]">
                       {JSON.stringify(
                         {
+                          controlEnvironmentId: thread.environmentId,
                           branch: thread.branch,
                           latestTurn: thread.latestTurn,
                           sessionStatus: thread.session?.status,

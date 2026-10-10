@@ -70,7 +70,9 @@ const failure = (reason: RemoteWorkerDispatchError["reason"]) =>
 
 export const remoteWorkerRequestDigest = (request: RemoteWorkerRequest) =>
   Schema.encodeEffect(RemoteWorkerRequest)(request).pipe(
-    Effect.map((wire) => NodeCrypto.createHash("sha256").update(canonicalWorkerJson(wire)).digest("hex")),
+    Effect.map((wire) =>
+      NodeCrypto.createHash("sha256").update(canonicalWorkerJson(wire)).digest("hex"),
+    ),
     Effect.mapError(() => failure("invalid-request")),
   );
 

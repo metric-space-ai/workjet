@@ -605,33 +605,44 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     let workerWorktree: { readonly path: string; readonly refName: string };
     let custody: CapturedWorkerWorktree | undefined;
     if (executionPolicy !== undefined) {
-      if (Option.isNone(localWorktrees) || parentTeam === undefined || preparedDelegation === undefined)
+      if (
+        Option.isNone(localWorktrees) ||
+        parentTeam === undefined ||
+        preparedDelegation === undefined
+      )
         return yield* failure("worktree-failed");
-      const project = yield* query.getProjectShellById(parent.projectId)
+      const project = yield* query
+        .getProjectShellById(parent.projectId)
         .pipe(Effect.mapError(() => failure("worktree-failed")));
-      if (Option.isNone(project) || project.value.repositoryIdentity === null)
+      if (
+        Option.isNone(project) ||
+        project.value.repositoryIdentity === undefined ||
+        project.value.repositoryIdentity === null
+      )
         return yield* failure("worktree-failed");
-      const allocated = yield* localWorktrees.value.allocate({
-        cwd: gitCwd,
-        refName: parent.branch ?? "HEAD",
-        repository: project.value.repositoryIdentity,
-        context: {
-          schemaVersion: 1,
-          environmentId: invocation.environmentId,
-          ...(computerId === undefined ? {} : { computerId }),
-          parentThreadId: parent.id,
-          projectId: parent.projectId,
-          workerThreadId,
-          teamRole: parentTeam.role,
-          teamParentThreadId: parentTeam.parentThreadId,
-          taskDigest: preparedDelegation.delegation.prompt.digest,
-          modelSelection,
-          enabledCapabilityIds,
-          runtimeMode: parent.runtimeMode,
-          interactionMode: parent.interactionMode,
-          executionPolicy,
-        },
-      }).pipe(Effect.mapError(() => failure("worktree-failed")));
+      const allocated = yield* localWorktrees.value
+        .allocate({
+          cwd: gitCwd,
+          refName: parent.branch ?? "HEAD",
+          repository: project.value.repositoryIdentity,
+          context: {
+            schemaVersion: 1,
+            environmentId: invocation.environmentId,
+            ...(computerId === undefined ? {} : { computerId }),
+            parentThreadId: parent.id,
+            projectId: parent.projectId,
+            workerThreadId,
+            teamRole: parentTeam.role,
+            teamParentThreadId: parentTeam.parentThreadId,
+            taskDigest: preparedDelegation.delegation.prompt.digest,
+            modelSelection,
+            enabledCapabilityIds,
+            runtimeMode: parent.runtimeMode,
+            interactionMode: parent.interactionMode,
+            executionPolicy,
+          },
+        })
+        .pipe(Effect.mapError(() => failure("worktree-failed")));
       workerWorktree = allocated;
       custody = allocated.custody;
       if (workerWorktree.refName !== workerRefName || custody.kind !== "isolated")
@@ -670,7 +681,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         ...(custody === undefined ? {} : { custody }),
       })
       .pipe(Effect.option);
-    if (custody !== undefined && Option.isNone(preparedRollback)) return yield* failure("worktree-failed");
+    if (custody !== undefined && Option.isNone(preparedRollback))
+      return yield* failure("worktree-failed");
     const requireRejected = Effect.fn("WorkerDispatch.requireRejected")(function* (
       commandId: CommandId,
     ) {

@@ -40,7 +40,7 @@ const props: ComponentProps<typeof NativeWorkerSourceControl> = {
   environmentId: EnvironmentId.make("source-environment"),
   instanceId: `managed:${tenant}`,
   config: DEFAULT_WORKJET_THREAD_CONFIG,
-  bindConnection: vi.fn(async () => true),
+  bindConnection: vi.fn(async () => ({ _tag: "saved" as const })),
   unavailable: false,
 };
 const render = (overrides: Partial<typeof props> = {}) =>
@@ -59,6 +59,59 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("automatic supervisor worker connection", () => {
+  it("keeps an already-ready binding when another grant exists", () => {
+    state.data = {
+      connections: [
+        connection,
+        {
+          ...connection,
+          connectionId: WorkjetConnectionId.make(
+            `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+          ),
+        },
+      ],
+    };
+    const html = render({ config: boundConfig });
+    expect(html).toContain(`data-workjet-worker-source-connection-id="${connection.connectionId}"`);
+    expect(html).not.toContain("Erneut verbinden");
+  });
+
+  it("shows an actionable ambiguity without a reconnect button or another grant", () => {
+    state.data = {
+      connections: [
+        { ...connection, status: "needs_auth" },
+        {
+          ...connection,
+          connectionId: WorkjetConnectionId.make(
+            `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+          ),
+        },
+        {
+          ...connection,
+          connectionId: WorkjetConnectionId.make(
+            `ctox-dev-worker-source:${tenant}:dddddddd-dddd-4ddd-8ddd-dddddddddddd`,
+          ),
+        },
+      ],
+    };
+    const html = render({ config: boundConfig });
+    expect(html).toContain("Multiple authorized worker connections");
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain("Erneut verbinden");
+    state.effects.forEach((effect) => effect());
+    expect(provision).not.toHaveBeenCalled();
+    expect(props.bindConnection).not.toHaveBeenCalled();
+  });
+
+  it("displays an immutable-instance rejection instead of offering a doomed retry", () => {
+    state.data = { connections: [{ ...connection, instanceId: "foreign.ctox.dev" }] };
+    const html = render({ config: boundConfig });
+    expect(html).toContain("original CTOX instance and tenant");
+    expect(html).not.toContain("Erneut verbinden");
+    state.effects.forEach((effect) => effect());
+    expect(props.bindConnection).not.toHaveBeenCalled();
+  });
+
   it("removes the lone Connect workers button and attempts setup once on opening", async () => {
     expect(render()).not.toContain("Connect workers");
     for (const effect of state.effects) {

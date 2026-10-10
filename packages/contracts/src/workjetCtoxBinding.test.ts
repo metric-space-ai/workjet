@@ -78,6 +78,16 @@ describe("CTOX thread identity and typed app access", () => {
       ctoxCrewChat: { ...before.ctoxCrewChat, connectionId: newId },
     };
     expect(retainWorkjetCtoxBinding(before, next).error).toBeNull();
+    for (const connectionId of [
+      WorkjetConnectionId.make("local-ctox"),
+      WorkjetConnectionId.make(newId.replace(tenant, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")),
+    ])
+      expect(
+        retainWorkjetCtoxBinding(before, {
+          ...next,
+          ctoxCrewChat: { ...next.ctoxCrewChat, connectionId },
+        }).error,
+      ).not.toBeNull();
     expect(
       retainWorkjetCtoxBinding(before, {
         ...next,

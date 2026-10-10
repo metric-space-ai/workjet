@@ -66,6 +66,7 @@ import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHu
 import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
 import * as DecisionHubMcpClient from "./workjet/decisionHub/DecisionHubMcpClient.ts";
 import * as DecisionHubReconciler from "./workjet/decisionHub/DecisionHubReconciler.ts";
+import * as CtoxWorkerSourceRotation from "./workjet/ctox/CtoxWorkerSourceRotation.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -714,6 +715,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   WorkjetDelegationExecutorLive,
   NativeSupervisorWorkerDispatchLive,
   DecisionHubReconcilerLive,
+  CtoxWorkerSourceRotation.layer.pipe(Layer.provide(DecisionHubConnectionRegistryLive)),
 ).pipe(
   // One shared, server-lifetime redacted mailbox audit emitter. It is provided
   // ONCE here so the delivery, transport, and executor services and the

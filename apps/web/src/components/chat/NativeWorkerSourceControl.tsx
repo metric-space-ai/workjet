@@ -3,6 +3,7 @@ import type {
   WorkjetConnectionSummary,
   WorkjetThreadConfig,
 } from "@workjet/contracts";
+import { rotateWorkjetCtoxWorkerSource } from "@workjet/contracts";
 import { useEffect, useRef, useState } from "react";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -10,13 +11,17 @@ import {
   workerSourceConnectionForInstance,
   workerSourceIsBound,
   workerSourceProvisionRequest,
+  workerSourceBindingError,
+  workerSourceBindingFailure,
 } from "../../workjetWorkerSourceConnection";
 
 export function NativeWorkerSourceControl(props: {
   readonly environmentId: EnvironmentId;
   readonly instanceId: string | null;
   readonly config: WorkjetThreadConfig;
-  readonly bindConnection: (connection: WorkjetConnectionSummary) => Promise<boolean>;
+  readonly bindConnection: (
+    connection: WorkjetConnectionSummary,
+  ) => Promise<{ readonly _tag: "saved" } | { readonly _tag: "failed"; readonly error: unknown }>;
   readonly unavailable: boolean;
 }) {
   const query = useEnvironmentQuery(
@@ -34,9 +39,11 @@ export function NativeWorkerSourceControl(props: {
     readonly queryData: typeof query.data;
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ readonly scope: string; readonly message: string } | null>(
-    null,
-  );
+  const [error, setError] = useState<{
+    readonly scope: string;
+    readonly message: string;
+    readonly retryable?: boolean;
+  } | null>(null);
   const inFlight = useRef(false);
   const autoAttempted = useRef<string | null>(null);
   const request = workerSourceProvisionRequest(props.environmentId, props.instanceId);
@@ -45,14 +52,38 @@ export function NativeWorkerSourceControl(props: {
     provisioned?.scope === scope && provisioned.queryData === query.data
       ? [provisioned.connection]
       : (query.data?.connections ?? []);
-  const source = workerSourceConnectionForInstance(connections, props.instanceId);
+  const boundSource = connections.find(
+    (entry) =>
+      workerSourceConnectionForInstance([entry], props.instanceId) &&
+      workerSourceIsBound(props.config, entry),
+  );
+  const source = boundSource ?? workerSourceConnectionForInstance(connections, props.instanceId);
+  const selectionError =
+    rotateWorkjetCtoxWorkerSource(props.config, connections).error ??
+    (!boundSource &&
+    connections.filter(
+      (entry) =>
+        entry.status === "ready" && workerSourceConnectionForInstance([entry], props.instanceId),
+    ).length > 1
+      ? "Multiple authorized worker connections match this instance. Remove the unused connection in Settings before reconnecting."
+      : source?.status === "ready"
+        ? workerSourceBindingError(props.config, props.instanceId, source)
+        : null);
   const ready = source?.status === "ready";
   const bound = source !== undefined && workerSourceIsBound(props.config, source);
   const provision =
     typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
 
   const connect = async () => {
-    if (!request || props.unavailable || query.isPending || inFlight.current || bound) return;
+    if (
+      !request ||
+      props.unavailable ||
+      query.isPending ||
+      inFlight.current ||
+      bound ||
+      selectionError
+    )
+      return;
     if (!ready && !provision) {
       setError({ scope, message: "Open Workjet desktop to connect this project's workers." });
       return;
@@ -87,15 +118,19 @@ export function NativeWorkerSourceControl(props: {
         return;
       }
       // Retry a failed config save with this existing grant, without issuing another.
+      const bindingError = workerSourceBindingError(props.config, props.instanceId, accepted);
+      if (bindingError) {
+        setError({ scope: requestedScope, message: bindingError, retryable: false });
+        return;
+      }
       setProvisioned({ scope: requestedScope, connection: accepted, queryData });
       const saved = await currentContext.current.bindConnection(accepted);
       if (currentContext.current.scope !== requestedScope) return;
       query.refresh();
-      if (!saved) {
+      if (saved._tag === "failed") {
         setError({
           scope: requestedScope,
-          message:
-            "Could not save the worker connection for this supervisor. Retry the worker connection.",
+          ...workerSourceBindingFailure(saved.error),
         });
       }
     } catch {
@@ -120,6 +155,7 @@ export function NativeWorkerSourceControl(props: {
       busy ||
       inFlight.current ||
       bound ||
+      selectionError ||
       autoAttempted.current === scope
     )
       return;
@@ -129,11 +165,12 @@ export function NativeWorkerSourceControl(props: {
       return;
     }
     void connectRef.current();
-  }, [scope, props.unavailable, query.isPending, busy, bound, request === null]);
+  }, [scope, props.unavailable, query.isPending, busy, bound, selectionError, request === null]);
 
   const currentError = bound
     ? null
-    : ((error?.scope === scope ? error.message : null) ??
+    : (selectionError ??
+      (error?.scope === scope ? error.message : null) ??
       (!query.isPending && source !== undefined && !ready
         ? source.status === "needs_auth"
           ? "Worker connection needs authorization. Reconnect project workers."
@@ -145,7 +182,11 @@ export function NativeWorkerSourceControl(props: {
       data-workjet-worker-source-connection-id={bound ? source?.connectionId : undefined}
       data-workjet-worker-source-instance-id={bound ? source?.instanceId : undefined}
     >
-      {currentError ? (
+      {currentError && (selectionError || (error?.scope === scope && error.retryable === false)) ? (
+        <span role="alert" className="text-amber-500">
+          {currentError}
+        </span>
+      ) : currentError ? (
         <button
           type="button"
           aria-label="Reconnect project workers"

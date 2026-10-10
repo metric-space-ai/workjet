@@ -1,4 +1,8 @@
-import { normalizeWorkjetThreadConfig, type WorkjetThreadConfig } from "./workjet.ts";
+import {
+  normalizeWorkjetThreadConfig,
+  type WorkjetConnectionSummary,
+  type WorkjetThreadConfig,
+} from "./workjet.ts";
 import type { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
 import * as Schema from "effect/Schema";
 
@@ -30,6 +34,74 @@ export function isWorkjetCtoxCredentialRotation(
     previous.instanceId !== undefined &&
     previous.instanceId === next.instanceId
   );
+}
+
+export function workjetCtoxWorkerSourceSuccessor(
+  connections: readonly WorkjetConnectionSummary[],
+  target: { readonly connectionId: string; readonly instanceId?: string },
+): { readonly connection?: WorkjetConnectionSummary; readonly error: string | null } {
+  const original = connections.find((entry) => entry.connectionId === target.connectionId);
+  if (
+    !original ||
+    original.source !== "ctox_dev" ||
+    original.status === "ready" ||
+    original.instanceId !== target.instanceId ||
+    !ctoxWorkerSourceTenantId(original.connectionId)
+  )
+    return { error: null };
+  const candidates = connections.filter(
+    (entry) =>
+      entry.source === "ctox_dev" &&
+      entry.status === "ready" &&
+      isWorkjetCtoxCredentialRotation(target, entry),
+  );
+  if (candidates.length > 1)
+    return {
+      error:
+        "Multiple authorized worker connections match this instance. Remove the unused connection in Settings before reconnecting.",
+    };
+  return candidates[0] ? { connection: candidates[0], error: null } : { error: null };
+}
+
+/** Rotate only credential references, retaining disabled tools, journals and receipts. */
+export function rotateWorkjetCtoxWorkerSource(
+  config: WorkjetThreadConfig,
+  connections: readonly WorkjetConnectionSummary[],
+): {
+  readonly config: WorkjetThreadConfig;
+  readonly changed: boolean;
+  readonly error: string | null;
+} {
+  const normalized = normalizeWorkjetThreadConfig(config);
+  let changed = false;
+  let error: string | null = null;
+  const capabilityBindings = normalized.capabilityBindings.map((binding) => {
+    if (binding.capabilityId !== "ctox-business-os") return binding;
+    const result = workjetCtoxWorkerSourceSuccessor(connections, binding.target);
+    error ??= result.error;
+    if (!result.connection) return binding;
+    changed = true;
+    return {
+      ...binding,
+      target: { ...binding.target, connectionId: result.connection.connectionId },
+    };
+  });
+  let ctoxCrewChat = normalized.ctoxCrewChat;
+  if (ctoxCrewChat) {
+    const result = workjetCtoxWorkerSourceSuccessor(connections, ctoxCrewChat);
+    error ??= result.error;
+    if (result.connection) {
+      changed = true;
+      ctoxCrewChat = { ...ctoxCrewChat, connectionId: result.connection.connectionId };
+    }
+  }
+  if (error || !changed) return { config, changed: false, error };
+  const retained = retainWorkjetCtoxBinding(config, {
+    ...normalized,
+    capabilityBindings,
+    ...(ctoxCrewChat ? { ctoxCrewChat } : {}),
+  });
+  return { ...retained, changed: retained.error === null };
 }
 
 function supervisorObservationError(

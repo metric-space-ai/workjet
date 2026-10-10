@@ -19,7 +19,7 @@ fn guide() -> Value {
 
 #[test]
 fn twenty_union_calls_preserve_original_argument_types_history_and_namespace() {
-    let mut history = Vec::new();
+    let mut history: Vec<Value> = Vec::new();
     for index in 1..=20 {
         let input = if index % 2 == 0 {
             json!(["東京", format!("call-{index}")])
@@ -149,7 +149,7 @@ fn invalid_wrapped_arguments_fail_instead_of_reaching_a_harness() {
 
 #[test]
 fn twenty_codex_reasoning_replays_omit_only_null_optional_content() {
-    let mut history = Vec::new();
+    let mut history: Vec<Value> = Vec::new();
     for index in 1..=20 {
         history.push(json!({"type":"reasoning","id":format!("rs-{index}"),
             "summary":[],"content":null,"encrypted_content":format!("opaque-reasoning-{index}")}));

@@ -7,7 +7,7 @@ import type { DecisionHubConnectionRegistryShape } from "../workjet/decisionHub/
 import { makeCtoxMcpTransport } from "../workjet/ctox/CtoxMcpTransport.ts";
 import { makeCtoxRemoteWorkerAdmissionClient } from "../workjet/ctox/CtoxRemoteWorkerAdmission.ts";
 import type { ProviderGatewayServiceShape } from "./ProviderGatewayService.ts";
-import { forwardSourceGatewayResponses } from "./ProviderGatewayNodeAdapter.ts";
+import { forwardSourceGatewayResponses, forwardSourceGatewayProtocol } from "./ProviderGatewayNodeAdapter.ts";
 import { makeSourceGatewayInference } from "./SourceGatewayInference.ts";
 
 /** Source-process constructor shared by authenticated RPC and the managed worker bridge.
@@ -87,6 +87,16 @@ export function makeManagedSourceGatewayInference(dependencies: {
               signal,
               protocol,
             ),
+          catch: () => failure("inference-failed"),
+        });
+      }),
+    forwardProtocol: (selected, requestJson, deadlineMs, protocol) =>
+      Effect.gen(function* () {
+        const status = yield* dependencies.gateway.status();
+        if (status.phase !== "ready" || status.providerEndpoint === null)
+          return yield* failure("gateway-unavailable");
+        return yield* Effect.tryPromise({
+          try: (signal) => forwardSourceGatewayProtocol(status.providerEndpoint!, selected, requestJson, deadlineMs, protocol, signal),
           catch: () => failure("inference-failed"),
         });
       }),

@@ -270,7 +270,7 @@ describe("Workjet Greppy runtime settings", () => {
     expect(SETTINGS_NAV_ITEMS).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Lumas", to: "/settings/workjet" }),
-        expect.objectContaining({ label: "Computers", to: "/settings/computers" }),
+        expect.objectContaining({ label: "Rechner", to: "/settings/computers" }),
       ]),
     );
   });

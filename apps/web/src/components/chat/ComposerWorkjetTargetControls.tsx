@@ -384,7 +384,7 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
     props.computers.find((computer) => computer.id === detailComputerId) ?? null;
   return (
     <span
-      className="inline-flex min-w-0 shrink-0 items-center"
+      className="inline-flex min-w-0 max-w-full shrink-0 items-center"
       data-composer-computer-control="true"
       title={
         saving
@@ -405,14 +405,14 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
         trigger={
           <ComposerControl
             type="button"
-            className="min-w-0 max-w-52 font-medium"
+            className="h-auto min-w-0 max-w-full font-medium"
             aria-label="Computer"
             disabled={saving}
             aria-busy={saving}
             {...(props.mismatchNote === null ? {} : { "data-computer-mismatch": "true" })}
           >
             <ComposerControlIcon icon={MonitorIcon} />
-            <span className="min-w-0 truncate">
+            <span className="min-w-0 whitespace-normal break-words text-left">
               {selected?.label ??
                 (props.selectedComputerId !== null ? "Missing computer" : "Computer")}
             </span>
@@ -672,7 +672,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
 
   return (
     <span
-      className="flex shrink-0 flex-nowrap items-center gap-1"
+      className="flex min-w-0 flex-wrap items-center gap-1"
       data-composer-manual-target-controls="true"
       data-model-catalog-source={props.modelSource ?? "gateway"}
     >

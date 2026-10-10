@@ -7,7 +7,6 @@ import { SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
 const SETTINGS_BREADCRUMB_LABELS: Readonly<Record<string, string>> = {
   ...SETTINGS_SECTION_LABELS,
-  "/settings/diagnostics": "Diagnostics",
 };
 
 function settingsBreadcrumbLabel(pathname: string): string | null {
@@ -25,10 +24,10 @@ export function SettingsBreadcrumb({
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
-    <WorkspaceBreadcrumb ariaLabel="Settings breadcrumb">
+    <WorkspaceBreadcrumb ariaLabel="Einstellungen">
       {sectionLabel ? (
         <>
-          <WorkspaceBreadcrumbItem>Settings</WorkspaceBreadcrumbItem>
+          <WorkspaceBreadcrumbItem>Einstellungen</WorkspaceBreadcrumbItem>
           <WorkspaceBreadcrumbSeparator />
           {activeInstanceName !== null && pathname !== "/settings/business-os" ? (
             <>
@@ -41,7 +40,7 @@ export function SettingsBreadcrumb({
         </>
       ) : null}
       <WorkspaceBreadcrumbItem current className="truncate">
-        {sectionLabel ?? "Settings"}
+        {sectionLabel ?? "Einstellungen"}
       </WorkspaceBreadcrumbItem>
     </WorkspaceBreadcrumb>
   );

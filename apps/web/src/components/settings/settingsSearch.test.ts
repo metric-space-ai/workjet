@@ -42,7 +42,12 @@ describe("searchSettings", () => {
     // A sidebar label is findable even when no individual setting carries it.
     expect(searchSettings("connections", ITEMS)).toEqual([]);
     expect(searchSettings("instances", ITEMS)).toEqual([
-      { id: "/settings/business-os", title: "Instances", to: "/settings/business-os" },
+      {
+        id: "/settings/business-os",
+        title: "Instanzen",
+        to: "/settings/business-os",
+        searchAliases: ["Instances"],
+      },
     ]);
     expect(searchSettings("claude", ITEMS)).toEqual([]);
   });
@@ -94,6 +99,18 @@ describe("searchSettings", () => {
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("finds German navigation labels and keeps the old English search vocabulary", () => {
+    for (const [german, english, path] of [
+      ["Allgemein", "General", "/settings/general"],
+      ["Darstellung", "Appearance", "/settings/appearance"],
+      ["Rechner", "Computers", "/settings/computers"],
+      ["Sprache", "Speech", "/settings/speech"],
+    ] as const) {
+      expect(searchSettings(german).map((item) => item.to)).toContain(path);
+      expect(searchSettings(english).map((item) => item.to)).toContain(path);
+    }
   });
 
   it("keeps Business OS first and removes Connections from visible settings", async () => {

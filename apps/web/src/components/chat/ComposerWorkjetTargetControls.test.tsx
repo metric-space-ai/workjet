@@ -302,8 +302,11 @@ describe("the Computer control", () => {
       />,
     );
 
-    expect(markup).toContain("max-w-52");
+    expect(markup).toContain("max-w-full");
     expect(markup).toContain("min-w-0");
+    expect(markup).toContain("whitespace-normal");
+    expect(markup).toContain(`Computer ${"x".repeat(180)}`);
+    expect(markup).not.toContain("truncate");
   });
 
   it("separates project availability from device pairing", () => {

@@ -1598,7 +1598,7 @@ const makeWsRpcLayer = (
               return snapshot.value;
             }).pipe(
               Effect.mapError((cause) =>
-                cause instanceof OrchestrationGetSnapshotError
+                Schema.is(OrchestrationGetSnapshotError)(cause)
                   ? cause
                   : new OrchestrationGetSnapshotError({
                       message:

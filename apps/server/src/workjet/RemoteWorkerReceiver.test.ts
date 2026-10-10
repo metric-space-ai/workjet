@@ -1,3 +1,42 @@
+for (const [harnessName, driver] of [
+  ["grok-cli", "grok"],
+  ["opencode", "opencode"],
+  ["minimax-code", "minimax"],
+  ["greppy", "greppy"],
+  ["pi-code", "pi"],
+] as const) {
+  it.effect(`requires a source route before creating a ${harnessName} checkout`, () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const service = yield* h.receiver;
+      expect(
+        (yield* Effect.flip(service.receive({ ...request, harness: harnessName }))).reason,
+      ).toBe("source-unavailable");
+      expect(h.worktreeCalls).toEqual([]);
+      expect(h.commands).toEqual([]);
+    }),
+  );
+  it(`selects only the installed ${harnessName} driver for its pinned source model`, () => {
+    const selected = { ...request, harness: harnessName };
+    const source = { harness: harnessName, model: request.modelSelection.model };
+    const instance = {
+      instanceId: ProviderInstanceId.make("target-" + driver),
+      enabled: true,
+      driverKind: ProviderDriverKind.make(driver),
+    };
+    expect(remoteWorkerRuntimeSelection(selected, source, [instance])).toEqual({
+      ...request.modelSelection,
+      instanceId: instance.instanceId,
+    });
+    expect(
+      remoteWorkerRuntimeSelection(selected, source, [{ ...instance, enabled: false }]),
+    ).toBeUndefined();
+    expect(
+      remoteWorkerRuntimeSelection(selected, { ...source, model: "grok-4.7" }, [instance]),
+    ).toBeUndefined();
+    expect(remoteWorkerRuntimeSelection(request, source, [instance])).toBeUndefined();
+  });
+}
 it.effect("requires an installed source route before creating a Claude worker checkout", () =>
   Effect.gen(function* () {
     const h = harness();

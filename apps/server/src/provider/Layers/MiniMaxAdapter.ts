@@ -1,3 +1,4 @@
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import {
@@ -293,12 +294,17 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
             "startSession",
             "A saved MiniMax Code session cursor is required. Workjet will not create a replacement session.",
           );
-        const environment = yield* options.resolveSessionEnvironment();
+        const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+        const environment =
+          sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment());
+        const runtimeConfig = sourceProfile
+          ? { ...config, dataDirectory: sourceProfile.directory }
+          : config;
         const profileKey = NodeCrypto.createHash("sha256")
           .update(
             encodeProfileKey([
               options.instanceId,
-              config.dataDirectory ||
+              runtimeConfig.dataDirectory ||
                 environment.MINIMAX_DATA_DIR ||
                 environment.MAVIS_DATA_DIR ||
                 "default",
@@ -323,7 +329,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         let childExit: ChildProcessSpawner.ChildProcessHandle["exitCode"] | undefined;
         let transferred = false;
         const acp = yield* makeMiniMaxAcpRuntime({
-          config,
+          config: runtimeConfig,
           environment,
           spawner,
           cwd: input.cwd,

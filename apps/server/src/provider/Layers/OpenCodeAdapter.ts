@@ -1,3 +1,5 @@
+import type { ProviderSessionStartInput } from "@workjet/contracts";
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import {
   EventId,
   type OpenCodeSettings,
@@ -244,6 +246,7 @@ function openCodeEventSessionTitle(event: OpenCodeSubscribedEvent): string | und
 }
 
 interface OpenCodeSessionContext {
+  readonly sourceStartInput?: ProviderSessionStartInput;
   session: ProviderSession;
   readonly client: OpencodeClient;
   readonly server: OpenCodeServerConnection;
@@ -1321,9 +1324,18 @@ export function makeOpenCodeAdapter(
 
         // Resolved per session start so gateway-routed instances observe the
         // gateway's current status rather than a value frozen at construction.
-        const sessionEnvironment = options?.resolveSessionEnvironment
-          ? yield* options.resolveSessionEnvironment()
-          : options?.environment;
+        const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+        if (sourceProfile && serverUrl)
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Source-bound workers require an owned private OpenCode process.",
+          });
+        const sessionEnvironment =
+          sourceProfile?.environment ??
+          (options?.resolveSessionEnvironment
+            ? yield* options.resolveSessionEnvironment()
+            : options?.environment);
 
         const started = yield* Effect.gen(function* () {
           const sessionScope = yield* Scope.make();
@@ -1508,6 +1520,7 @@ export function makeOpenCodeAdapter(
         };
 
         const context: OpenCodeSessionContext = {
+          ...(sourceProfile ? { sourceStartInput: input } : {}),
           session,
           client: started.client,
           server: started.server,
@@ -1572,7 +1585,13 @@ export function makeOpenCodeAdapter(
           issue: `OpenCode model selection is bound to instance '${modelSelection?.instanceId}', expected '${boundInstanceId}'.`,
         });
       }
-      const parsedModel = parseOpenCodeModelSlug(modelSelection?.model);
+      const sourceProfile = context.sourceStartInput
+        ? yield* admitWorkerSourceNativeProfile(
+            { ...context.sourceStartInput, modelSelection },
+            PROVIDER,
+          )
+        : undefined;
+      const parsedModel = parseOpenCodeModelSlug(sourceProfile?.model ?? modelSelection?.model);
       if (!parsedModel) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,

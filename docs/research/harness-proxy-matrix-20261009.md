@@ -2,7 +2,7 @@
 
 ## Result and scope
 
-**21/21 live cells pass** as of 2026-10-10 04:16 UTC: all seven requested harnesses execute twenty strictly sequential native tools with Claude Opus, GPT Sol and Grok. Codex additionally passes twenty native calls with the live GLM model. Kimi's Codex request fails before a tool and remains under investigation. Universal remote worker and integrated UI acceptance remain open.
+**21/21 required live cells pass**: all seven requested harnesses execute twenty strictly sequential native tools with Claude Opus, GPT Sol and Grok. Codex additionally passes twenty native calls with the live GLM and Kimi models. Remote routing has focused integration coverage; native remote-worker and integrated UI acceptance remain open.
 
 Michael requested every harness through Workjet's existing Rust CLIProxyAPI, using models from real connected accounts. Work is confined to the durable `~/.local/state/workjet-launchpads/harness-proxy-fix` clone, based on `519aaba16528e4534dd948ac3e3cd184c099083b`. The supervisor merges; this thread has made no merge or installed-app replacement.
 
@@ -35,7 +35,9 @@ Workjet uses `native/provider-gateway` and `native/provider-gateway-workjet-host
 - [#308](https://github.com/metric-space-ai/workjet/pull/308): gateway routing defaults for new supported instances and Greppy settings. Existing saved choices are preserved.
 - [#313](https://github.com/metric-space-ai/workjet/pull/313): account-model read RPC authorization repair discovered in inherited CI.
 - [#315](https://github.com/metric-space-ai/workjet/pull/315): route metadata generation through the selected gateway model.
-- [#318](https://github.com/metric-space-ai/workjet/pull/318): additive source-authorized native protocol relay. Remote harness identity, target adapters and native acceptance remain open; Codex-only dispatch guards are retained.
+- [#318](https://github.com/metric-space-ai/workjet/pull/318): additive source-authorized native protocol relay.
+- [#331](https://github.com/metric-space-ai/workjet/pull/331): dispatch, receiver and private source profiles for all seven native harnesses; source-model and source-account admission before spawn and each turn. The existing Codex and Claude setup paths are preserved. Source authorization checks pass 215 focused tests, and the Pi composition passes 25 tests; native remote acceptance remains open.
+- [#332](https://github.com/metric-space-ai/workjet/pull/332): reversible object envelopes for union-shaped native tools on API-key provider routes, including Kimi. Forty-two Responses regressions pass, and Codex/Kimi now passes twenty native calls.
 
 Keeping a connected model when switching routed harnesses is intentional (`apps/web/src/modelSelection.ts:254`). The connected gateway catalog determines compatibility. The test profile explicitly enables gateway routing on each native instance; legacy saved choices do not change automatically.
 
@@ -60,9 +62,9 @@ The evidence checks actual native calls and matching results, strict sequential 
 - Greppy: [Opus](harness-proxy-evidence/greppy-opus-20261010-native-tool-results.json), [GPT](harness-proxy-evidence/greppy-gpt-sol-20261010-native-tool-results.json), [Grok](harness-proxy-evidence/greppy-grok-20261010-native-tool-results.json). Proofs inspect native saved histories with twenty interleaved calls/results.
 - MiniMax Code: [Opus](harness-proxy-evidence/minimax-code-opus-20261010-native-tool-results.json), [GPT](harness-proxy-evidence/minimax-code-gpt-sol-20261010-native-tool-results.json), [Grok](harness-proxy-evidence/minimax-code-grok-20261010-native-tool-results.json). Proofs match raw native ACP stdout, stderr, exit code zero and timing to twenty Workjet tool receipts.
 - Pi: [Opus](harness-proxy-evidence/pi-opus-20261010-native-tool-results.json), [GPT](harness-proxy-evidence/pi-gpt-sol-20261010-native-tool-results.json), [Grok](harness-proxy-evidence/pi-grok-20261010-native-tool-results.json). Proofs inspect native saved bash calls/results, ordered timestamps and non-error exact output.
-- Additional live family: [Codex / glm-5.3-flash](harness-proxy-evidence/codex-glm-20261010-native-tool-results.json).
+- Additional live families: [Codex / glm-5.3-flash](harness-proxy-evidence/codex-glm-20261010-native-tool-results.json), [Codex / kimi-for-coding](harness-proxy-evidence/codex-kimi-20261010-native-tool-results.json).
 
-The isolated RC has its own database and native harness homes. Private credential copies remain within its disposable profile. The installed user profile is untouched. Each proof records actual Rust and JavaScript source heads separately. The current candidate uses Rust source `6a0940c98`, binary SHA256 `2af374bad09d56f7b3ef730c4b01cc6a7e1daf124b9f707b51e4bbf058c91406`; JavaScript source `8b084964a605672e1fbb132e67a2333b6e356f51`, entry SHA256 `ed0468d4963644b108fd5be0e233f11289214c9c7039957443f471e8aa0f255b`. Three formatter-only TypeScript changes from that build are committed in the candidate. Its macOS native runtime dependencies are reused read-only from installed 0.0.69.
+The isolated RC has its own database and native harness homes. Private credential copies remain within its disposable profile. The installed user profile is untouched. Each proof records actual Rust and JavaScript source heads separately. The Codex/Kimi candidate uses Rust source `eb9876f82`, binary SHA256 `0f1560cd1849051b42707671e811ac1488436e0c5ce6e3a4c9d67ed29158130f`; JavaScript source `8b084964a605672e1fbb132e67a2333b6e356f51`, entry SHA256 `ed0468d4963644b108fd5be0e233f11289214c9c7039957443f471e8aa0f255b`. Three formatter-only TypeScript changes from that build are committed in the candidate. Its macOS native runtime dependencies are reused read-only from installed 0.0.69.
 
 ## Checks and remaining owner actions
 

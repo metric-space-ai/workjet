@@ -150,5 +150,4 @@ describe("a worker's harness decides which runtime the turn uses", () => {
     expect(providerInstanceIdForHarness("cursor-agent")).toBe("cursor");
     expect(providerInstanceIdForHarness("pi-code")).toBe("pi");
   });
-
 });

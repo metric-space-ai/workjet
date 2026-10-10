@@ -195,10 +195,13 @@ export function configuredHarnessExecutable(
     const instances = Object.values(settings.providerInstances ?? {}).filter(
       (instance) => instance.driver === "pi" && instance.enabled !== false,
     );
-    const instance = canonical?.driver === "pi" ? canonical : instances.length === 1 ? instances[0] : undefined;
+    const instance =
+      canonical?.driver === "pi" ? canonical : instances.length === 1 ? instances[0] : undefined;
     if (!instance) return undefined;
     const decoded = configuredBinaryPath(instance.config);
-    return Option.isSome(decoded) && decoded.value.binaryPath.length > 0 ? decoded.value.binaryPath : undefined;
+    return Option.isSome(decoded) && decoded.value.binaryPath.length > 0
+      ? decoded.value.binaryPath
+      : undefined;
   }
   const driver =
     harness === "codex-cli"

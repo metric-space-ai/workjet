@@ -76,7 +76,9 @@ describe("project team role prompts", () => {
     expect(prompt).not.toContain("workjet_worker_kanban");
     expect(prompt).not.toMatch(/kanban|goal-loop/i);
     expect(prompt).toContain("Do not merge your own pull request");
-    expect(prompt).toContain("do not wait for the pull request to be merged or perform post-submission rework");
+    expect(prompt).toContain(
+      "do not wait for the pull request to be merged or perform post-submission rework",
+    );
     expect(prompt).not.toContain("keep all rework in that same pull request");
   });
 });

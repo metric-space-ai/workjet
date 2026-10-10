@@ -111,6 +111,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
   config: GreppySettings,
   options: {
     readonly instanceId: ProviderInstanceId;
+    readonly dispatchPromptInBackground?: boolean;
     readonly resolveSessionEnvironment: (
       model?: string,
     ) => Effect.Effect<NodeJS.ProcessEnv, ProviderAdapterError>;
@@ -480,7 +481,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
         }),
       );
       const { ctx, turnId } = prepared;
-      return yield* Effect.gen(function* () {
+      const completePrompt = Effect.gen(function* () {
         const selected =
           input.modelSelection?.instanceId === options.instanceId
             ? input.modelSelection.model.trim()
@@ -576,6 +577,11 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           ),
         ),
       );
+      if (options.dispatchPromptInBackground) {
+        yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(ctx.scope));
+        return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
+      }
+      return yield* completePrompt;
     });
   const interruptTurn: ProviderAdapterShape<ProviderAdapterError>["interruptTurn"] = (
     threadId,

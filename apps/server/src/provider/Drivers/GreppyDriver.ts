@@ -119,6 +119,7 @@ export const GreppyDriver: ProviderDriver<GreppySettings, GreppyDriverEnv> = {
       const adapter = yield* makeGreppyAdapter(effectiveConfig, {
         instanceId,
         resolveSessionEnvironment,
+        dispatchPromptInBackground: routeViaGateway,
       });
       const textGeneration = yield* makeGreppyTextGeneration;
       const checkProvider = checkGreppyProviderStatus(effectiveConfig, processEnv).pipe(

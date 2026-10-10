@@ -300,24 +300,16 @@ describe("ProviderRuntimeIngestion", () => {
       },
       createdAt,
     });
-    const team = options?.threadWorkjetConfig?.schemaVersion === 2
-      ? options.threadWorkjetConfig.team
-      : undefined;
-    if (team && team.parentThreadId !== null) {
-      await dispatch({
-        type: "thread.create", commandId: CommandId.make("cmd-supervisor-create"),
-        threadId: team.parentThreadId, projectId: asProjectId("project-1"), title: "Supervisor",
-        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
-        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        runtimeMode: "approval-required", branch: null, worktreePath: null, createdAt,
-        workjetConfig: {
-          ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2, role: "orchestrator",
-          team: {
-            projectId: asProjectId("project-1"), threadId: team.parentThreadId, role: "supervisor",
-            parentThreadId: null, goal: "Coordinate the real project work.", createdAt,
-          },
-        },
-      });
+    let threadConfig = options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG;
+    if (threadConfig.schemaVersion === 2 && threadConfig.team?.role === "specialist") {
+      const snapshot = await runtime.runPromise(snapshotQuery.getSnapshot());
+      const supervisor = snapshot.threads.find((entry) =>
+        entry.projectId === asProjectId("project-1") &&
+        entry.workjetConfig.schemaVersion === 2 &&
+        entry.workjetConfig.team?.role === "supervisor",
+      );
+      if (!supervisor) throw new Error("Project creation did not produce its durable supervisor.");
+      threadConfig = { ...threadConfig, team: { ...threadConfig.team, parentThreadId: supervisor.id } };
     }
     await dispatch({
       type: "thread.create",
@@ -330,7 +322,7 @@ describe("ProviderRuntimeIngestion", () => {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-      workjetConfig: options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG,
+      workjetConfig: threadConfig,
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: null,

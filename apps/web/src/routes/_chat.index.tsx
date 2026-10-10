@@ -89,6 +89,7 @@ import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveNativeProjectOpening } from "../nativeProjectOpening";
 import { resolveProjectTeamModelSelection } from "../providerInstances";
+import { createPersistentWorkerConfig } from "./-projectWorkerConfig";
 import { threadEnvironment } from "../state/threads";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -411,20 +412,15 @@ function IndexDraftLanding() {
                 modelSelection,
                 runtimeMode: supervisor.runtimeMode,
                 interactionMode: "default",
-                workjetConfig: {
-                  ...supervisor.workjetConfig,
-                  role: "orchestrator",
-                  parent: null,
-                  team: {
-                    role: "specialist",
-                    projectId: supervisor.projectId,
-                    threadId,
-                    parentThreadId: supervisor.id,
-                    domain,
-                    goal,
-                    createdAt,
-                  },
-                },
+                workjetConfig: createPersistentWorkerConfig({
+                  supervisorConfig: supervisor.workjetConfig,
+                  projectId: supervisor.projectId,
+                  supervisorThreadId: supervisor.id,
+                  threadId,
+                  domain,
+                  goal,
+                  createdAt,
+                }),
                 branch: null,
                 worktreePath: null,
                 createdAt,

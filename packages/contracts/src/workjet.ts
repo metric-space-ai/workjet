@@ -1105,6 +1105,22 @@ export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): Workj
   };
 }
 
+/** New threads inherit settings, never another thread's execution or native references. */
+export function inheritWorkjetThreadSettings(config: WorkjetThreadConfig): WorkjetThreadConfigV2 {
+  const normalized = normalizeWorkjetThreadConfig(config);
+  const settings = {
+    schemaVersion: 2,
+    managedInstructions: normalized.managedInstructions,
+    enabledCapabilityIds: normalized.enabledCapabilityIds,
+    capabilityBindings: normalized.capabilityBindings,
+    ctoxSession: null,
+    ...(normalized.executionPolicy === undefined
+      ? {}
+      : { executionPolicy: normalized.executionPolicy }),
+  } as const;
+  return { ...settings, role: "standard", parent: null };
+}
+
 /** Replace-all settings updates retain the one PR of this worker run. */
 export function retainWorkjetWorkerPullRequest(
   previous: WorkjetThreadConfig,

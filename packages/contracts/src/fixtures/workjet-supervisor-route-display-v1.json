@@ -3,14 +3,10 @@
   "contract_version": 1,
   "types": {
     "RouteCapabilitiesSchema": {
-      "enum": [
-        "ctox.workjet.supervisor.route-capabilities.v1"
-      ]
+      "enum": ["ctox.workjet.supervisor.route-capabilities.v1"]
     },
     "RouteReadCommand": {
-      "enum": [
-        "ctox.workjet.project.supervisor.route.read.v1"
-      ]
+      "enum": ["ctox.workjet.project.supervisor.route.read.v1"]
     },
     "SupervisorRouteCapabilities": {
       "fields": {
@@ -36,9 +32,7 @@
       }
     },
     "RouteDisplaySchema": {
-      "enum": [
-        "ctox.workjet.supervisor.route-display.v1"
-      ]
+      "enum": ["ctox.workjet.supervisor.route-display.v1"]
     },
     "ConfiguredSupervisorRoute": {
       "fields": {

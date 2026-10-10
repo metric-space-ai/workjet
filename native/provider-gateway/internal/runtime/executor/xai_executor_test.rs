@@ -54,7 +54,10 @@ fn promotes_additional_tools_and_qualifies_namespaces() {
     .unwrap();
     let body: Value = serde_json::from_slice(&prepared.body).unwrap();
     assert_eq!(body["tools"][0]["name"], "collaboration__spawn_agent");
-    assert_eq!(body["tools"][0]["parameters"]["oneOf"][0]["type"], "object");
+    assert_eq!(
+        body["tools"][0]["parameters"]["properties"]["input"]["oneOf"][0]["type"],
+        "object"
+    );
     assert!(body["input"].as_array().unwrap().is_empty());
     assert_eq!(
         prepared.namespace_tools["collaboration__spawn_agent"].namespace,

@@ -74,7 +74,8 @@ export const make = Effect.gen(function* () {
       row.intent.binding.requestId !== id ||
       !NodeUtil.isDeepStrictEqual(
         row.intent.binding.executionPolicy,
-        row.intent.request.executionPolicy) ||
+        row.intent.request.executionPolicy,
+      ) ||
       (row.receipt !== null && !NodeUtil.isDeepStrictEqual(row.receipt.binding, row.intent.binding))
     )
       return yield* invalid();

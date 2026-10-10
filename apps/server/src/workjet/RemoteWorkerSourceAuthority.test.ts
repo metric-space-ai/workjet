@@ -238,7 +238,11 @@ it.effect("preserves the native policy in durable intent and forbids policy loss
   Effect.gen(function* () {
     const store = yield* RemoteWorkerAuthorityStore;
     const original = yield* intentFor;
-    const policy = { mode: "autonomous-worktree" as const, projectId: request.project.id, revision: 4 };
+    const policy = {
+      mode: "autonomous-worktree" as const,
+      projectId: request.project.id,
+      revision: 4,
+    };
     const scopedRequest = { ...request, executionPolicy: policy };
     const intent = {
       ...original,
@@ -258,6 +262,11 @@ it.effect("preserves the native policy in durable intent and forbids policy loss
     assert.deepEqual(recovered.receipt?.binding.executionPolicy, policy);
     assert.equal((yield* Effect.flip(store.prepare(original)))._tag, "RemoteWorkerDispatchError");
     const { executionPolicy: _policy, ...unscoped } = intent.binding;
-    assert.equal((yield* Effect.flip(store.saveReceipt(request.requestId, receipt, { ...receipt, binding: unscoped })))._tag, "RemoteWorkerDispatchError");
+    assert.equal(
+      (yield* Effect.flip(
+        store.saveReceipt(request.requestId, receipt, { ...receipt, binding: unscoped }),
+      ))._tag,
+      "RemoteWorkerDispatchError",
+    );
   }).pipe(Effect.provide(testLayer)),
 );

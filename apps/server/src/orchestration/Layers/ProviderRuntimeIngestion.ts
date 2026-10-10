@@ -44,6 +44,7 @@ import {
 import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
+import { goalExecutionObservation } from "../../workjet/goalExecutionObservation.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -1640,6 +1641,43 @@ const make = Effect.gen(function* () {
             },
             createdAt: now,
           });
+        }
+      }
+
+      if (
+        shouldApplyThreadLifecycle &&
+        eventTurnId !== undefined &&
+        (event.type === "turn.started" ||
+          event.type === "turn.completed" ||
+          event.type === "thread.metadata.updated")
+      ) {
+        const detailed = Option.getOrUndefined(
+          yield* projectionSnapshotQuery.getThreadShellById(thread.id),
+        );
+        const config = detailed?.workjetConfig;
+        if (
+          config?.schemaVersion === 2 &&
+          config.team?.role === "specialist" &&
+          config.goal &&
+          detailed?.latestTurn?.turnId === eventTurnId
+        ) {
+          const execution = goalExecutionObservation(event, config.goal.lastExecution);
+          if (execution) {
+            yield* orchestrationEngine.dispatch({
+              type: "thread.goal.execution-observed",
+              commandId: yield* providerCommandId(event, "goal-execution-observed"),
+              threadId: thread.id,
+              execution,
+            }).pipe(
+              Effect.catch((error) =>
+                Effect.logDebug("goal producer observation rejected after a concurrent change", {
+                  threadId: thread.id,
+                  eventId: event.eventId,
+                  error,
+                }),
+              ),
+            );
+          }
         }
       }
 

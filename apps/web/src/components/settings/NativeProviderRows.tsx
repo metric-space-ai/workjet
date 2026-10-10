@@ -91,18 +91,18 @@ function ModelCheckStatus({
   const title = !supported
     ? "Native Hi checks are not yet available for this provider."
     : probe
-    ? (probe.status === "ok"
-        ? "Hi check passed"
-        : (probe.failure?.replaceAll("_", " ") ?? "Check unavailable")) +
-      " · " +
-      probe.elapsedMs +
-      " ms · " +
-      new Date(probe.checkedAtMs).toLocaleString() +
-      (probe.httpStatus === null ? "" : " · HTTP " + probe.httpStatus) +
-      (probe.retryAtMs === null
-        ? ""
-        : " · Gateway retry after " + new Date(probe.retryAtMs).toLocaleString())
-    : "Inference not checked. Check this model.";
+      ? (probe.status === "ok"
+          ? "Hi check passed"
+          : (probe.failure?.replaceAll("_", " ") ?? "Check unavailable")) +
+        " · " +
+        probe.elapsedMs +
+        " ms · " +
+        new Date(probe.checkedAtMs).toLocaleString() +
+        (probe.httpStatus === null ? "" : " · HTTP " + probe.httpStatus) +
+        (probe.retryAtMs === null
+          ? ""
+          : " · Gateway retry after " + new Date(probe.retryAtMs).toLocaleString())
+      : "Inference not checked. Check this model.";
   return (
     <button
       type="button"
@@ -285,7 +285,14 @@ function NativeAccountRow({
               </span>
             </label>
           ) : (
-            <span className="text-[11px]" title={account.controls ? "Activation changes are not available for this account." : "Update CTOX to manage this account here."}>
+            <span
+              className="text-[11px]"
+              title={
+                account.controls
+                  ? "Activation changes are not available for this account."
+                  : "Update CTOX to manage this account here."
+              }
+            >
               {account.enabled ? "On" : "Off"}
             </span>
           )}
@@ -389,7 +396,9 @@ export function NativeProviderRowsView({
   return (
     <div role="rowgroup" aria-label={`CTOX provider accounts on ${label}`}>
       {state.error && !state.errorAccountId && (
-        <p role="alert" className="py-1 text-xs text-destructive">{state.error}</p>
+        <p role="alert" className="py-1 text-xs text-destructive">
+          {state.error}
+        </p>
       )}
       {(providers.length > 0 ? providers : [""]).map((provider) => (
         <NativeProviderGroup key={provider} provider={provider} state={state} label={label} />
@@ -412,7 +421,9 @@ function NativeProviderGroup({
   const accounts = registry?.accounts.filter((account) => account.provider === provider) ?? [];
   const knownProvider = WORKJET_GATEWAY_PROVIDERS.find((entry) => entry === provider);
   const ProviderIcon = knownProvider ? WORKJET_GATEWAY_PROVIDER_ICONS[knownProvider] : undefined;
-  const providerLabel = knownProvider ? WORKJET_GATEWAY_PROVIDER_LABELS[knownProvider] : provider || "CTOX accounts";
+  const providerLabel = knownProvider
+    ? WORKJET_GATEWAY_PROVIDER_LABELS[knownProvider]
+    : provider || "CTOX accounts";
   const checksSupported = provider === "claude";
   const checkAll = async () => {
     if (!checksSupported) return;
@@ -514,8 +525,7 @@ function NativeProviderGroup({
                   expectedRevision: registry.revision,
                 });
                 const previous =
-                  registry.providers.find((entry) => entry.provider === provider)
-                    ?.selection ?? [];
+                  registry.providers.find((entry) => entry.provider === provider)?.selection ?? [];
                 if (!checksSupported) return;
                 for (const account of current?.accounts ?? []) {
                   if (

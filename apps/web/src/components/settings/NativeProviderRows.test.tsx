@@ -59,7 +59,12 @@ function html(
   busy = false,
   error?: string,
 ) {
-  return registryHtml({ ...registry, accounts: [account] }, busy, error, error ? accountId : undefined);
+  return registryHtml(
+    { ...registry, accounts: [account] },
+    busy,
+    error,
+    error ? accountId : undefined,
+  );
 }
 function registryHtml(
   current: WorkjetNativeProviderRegistry,
@@ -95,7 +100,11 @@ describe("Native provider account rows", () => {
   const apiSelection = { provider: "zai", selection: ["glm-5.3-flash"] };
 
   it("shows a real non-Claude account with its own shared live models and holder controls", () => {
-    const rendered = registryHtml({ ...registry, providers: [apiSelection], accounts: [apiAccount] });
+    const rendered = registryHtml({
+      ...registry,
+      providers: [apiSelection],
+      accounts: [apiAccount],
+    });
     expect(rendered).toContain("Z.ai (GLM) · Welsch");
     expect(rendered).toContain("glm-5.3-flash");
     expect(rendered).toContain('aria-label="Models for zai on CTOX"');
@@ -104,16 +113,22 @@ describe("Native provider account rows", () => {
     expect(control(rendered, "Check glm-5.3-flash")).toContain("disabled");
     expect(rendered).toContain("Native Hi checks are not yet available for this provider");
     expect(rendered).not.toContain("Model check passed");
-    expect(control(rendered, "Permanently remove instance account native-api-fixture")).toContain("disabled");
+    expect(control(rendered, "Permanently remove instance account native-api-fixture")).toContain(
+      "disabled",
+    );
     expect(rendered).toContain("Removal is not available for this account.");
     expect(rendered).not.toContain("Update CTOX");
   });
   it("keeps provider model fields separate and shows a shared refresh failure once", () => {
-    const rendered = registryHtml({
-      ...registry,
-      accounts: [registry.accounts[0]!, apiAccount],
-      providers: [...registry.providers, apiSelection],
-    }, false, "The instance refresh failed.");
+    const rendered = registryHtml(
+      {
+        ...registry,
+        accounts: [registry.accounts[0]!, apiAccount],
+        providers: [...registry.providers, apiSelection],
+      },
+      false,
+      "The instance refresh failed.",
+    );
     expect(rendered).toContain('aria-label="Models for claude on CTOX"');
     expect(rendered).toContain('aria-label="Models for zai on CTOX"');
     expect(rendered).toContain("claude-opus-5-5");
@@ -123,7 +138,11 @@ describe("Native provider account rows", () => {
   });
   it("retains an unfamiliar native provider using its real public identity", () => {
     const account = { ...apiAccount, provider: "ctox_proxy" };
-    const rendered = registryHtml({ ...registry, accounts: [account], providers: [{ ...apiSelection, provider: "ctox_proxy" }] });
+    const rendered = registryHtml({
+      ...registry,
+      accounts: [account],
+      providers: [{ ...apiSelection, provider: "ctox_proxy" }],
+    });
     expect(rendered).toContain("ctox_proxy · Welsch");
     expect(rendered).toContain('aria-label="Models for ctox_proxy on CTOX"');
     expect(rendered).toContain("glm-5.3-flash");

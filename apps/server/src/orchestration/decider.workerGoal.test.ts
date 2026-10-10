@@ -208,12 +208,21 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       const reloaded = {
         ...saved,
         threads: [
-          { ...saved.threads[0]!, workjetConfig: { ...cfg, goal: yield* decodeGoalJson(yield* encodeGoalJson(cfg.goal)) } },
+          {
+            ...saved.threads[0]!,
+            workjetConfig: { ...cfg, goal: yield* decodeGoalJson(yield* encodeGoalJson(cfg.goal)) },
+          },
         ],
       };
       for (const cards of [
         command.kanban.cards,
-        [{ ...command.kanban.cards[0], status: "done" as const, evidence: "A later claimed result" }],
+        [
+          {
+            ...command.kanban.cards[0],
+            status: "done" as const,
+            evidence: "A later claimed result",
+          },
+        ],
       ]) {
         const duplicate = yield* apply(reloaded, {
           ...command,
@@ -226,10 +235,19 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       const completedId = TurnId.make("completed-parent-turn");
       const completed = {
         ...reloaded,
-        threads: [{
-          ...reloaded.threads[0]!,
-          latestTurn: { turnId: completedId, state: "completed", requestedAt: NOW, startedAt: NOW, completedAt: NOW, assistantMessageId: MessageId.make("result") },
-        }],
+        threads: [
+          {
+            ...reloaded.threads[0]!,
+            latestTurn: {
+              turnId: completedId,
+              state: "completed",
+              requestedAt: NOW,
+              startedAt: NOW,
+              completedAt: NOW,
+              assistantMessageId: MessageId.make("result"),
+            },
+          },
+        ],
       } satisfies OrchestrationReadModel;
       const advanced = yield* apply(completed, {
         type: "thread.goal.advance",

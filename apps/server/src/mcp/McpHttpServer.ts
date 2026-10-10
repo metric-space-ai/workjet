@@ -40,6 +40,8 @@ import { CtoxCrewToolkitRegistrationLive } from "./toolkits/workjet/CtoxCrewTool
 import { CtoxBusinessOsToolkitRegistrationLive } from "./toolkits/workjet/CtoxBusinessOsTool.ts";
 import { CollectiveToolkitRegistrationLive } from "./toolkits/workjet/CollectiveTool.ts";
 import { WorkBlockToolkitRegistrationLive } from "./toolkits/workjet/WorkBlockTool.ts";
+import { GoalToolkitRegistrationLive } from "./toolkits/workjet/GoalTool.ts";
+import { WorkerKanbanToolkitRegistrationLive } from "./toolkits/workjet/WorkerKanbanTool.ts";
 import { ManagerToolkitRegistrationLive } from "./toolkits/workjet/ManagerTool.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
@@ -238,6 +240,8 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
 const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
   CollectiveToolkitRegistrationLive,
   WorkBlockToolkitRegistrationLive,
+  GoalToolkitRegistrationLive,
+  WorkerKanbanToolkitRegistrationLive,
   ManagerToolkitRegistrationLive,
   WorkerToolkitRegistrationLive,
   DecisionHubToolkitRegistrationLive,

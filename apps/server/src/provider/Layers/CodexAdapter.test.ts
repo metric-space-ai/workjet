@@ -51,6 +51,7 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import type { ProviderNativeGoal } from "../Services/ProviderAdapter.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { installWorkerSourceRoute } from "../../workjet/WorkerSourceHarness.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
@@ -134,6 +135,16 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   );
 
   public readonly closeImpl = vi.fn(() => Promise.resolve(undefined));
+
+  public readonly nativeGoalSetImpl = vi.fn(
+    (_objective: string, _status: "active" | "paused" | "blocked" | "complete") => undefined,
+  );
+  getNativeGoal = Effect.succeed({
+    objective: "Verify the approved outcome.",
+    status: "active",
+  } satisfies ProviderNativeGoal);
+  setNativeGoal = (objective: string, status: "active" | "paused" | "blocked" | "complete") =>
+    Effect.sync(() => this.nativeGoalSetImpl(objective, status));
 
   readonly options: CodexSessionRuntimeOptions;
 
@@ -280,6 +291,49 @@ validationLayer("CodexAdapterLive validation", (it) => {
         }),
       );
       NodeAssert.equal(validationRuntimeFactory.factory.mock.calls.length, 0);
+    }),
+  );
+  it.effect("routes native goal reads and Owner stops to the current Codex runtime", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("native-goal-current");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      NodeAssert.deepStrictEqual(yield* adapter.nativeGoal!.get(threadId), {
+        objective: "Verify the approved outcome.",
+        status: "active",
+      });
+      yield* adapter.nativeGoal!.set(threadId, "Retain this objective.", "paused");
+      NodeAssert.deepStrictEqual(
+        validationRuntimeFactory.lastRuntime!.nativeGoalSetImpl.mock.calls,
+        [["Retain this objective.", "paused"]],
+      );
+    }),
+  );
+  it.effect("reports unsupported native goal controls instead of pretending to set a goal", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("native-goal-unsupported");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtime = validationRuntimeFactory.lastRuntime!;
+      Object.defineProperty(runtime, "getNativeGoal", { value: undefined });
+      Object.defineProperty(runtime, "setNativeGoal", { value: undefined });
+      for (const action of [
+        adapter.nativeGoal!.get(threadId),
+        adapter.nativeGoal!.set(threadId, "Verify the approved outcome.", "active"),
+      ]) {
+        const result = yield* action.pipe(Effect.result);
+        NodeAssert.equal(result._tag, "Failure");
+        if (result._tag === "Failure") NodeAssert.match(result.failure.message, /unsupported/);
+      }
+      NodeAssert.equal(runtime.nativeGoalSetImpl.mock.calls.length, 0);
     }),
   );
   it.effect("maps codex model options before starting a session", () =>

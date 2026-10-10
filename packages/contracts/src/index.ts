@@ -23,6 +23,7 @@ export * from "./orchestration.ts";
 export * from "./workjet.ts";
 export * from "./workjetCalendar.ts";
 export * from "./workjetProjectTeam.ts";
+export * from "./workjetGoal.ts";
 export * from "./remoteWorker.ts";
 export * from "./nativeSupervisorWorker.ts";
 export * from "./workerSourceConnection.ts";

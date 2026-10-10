@@ -119,11 +119,26 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const runTurnStartIfActive: OrchestrationEngineShape["runTurnStartIfActive"] = (
     threadId,
     start,
+    goalRevision,
   ) =>
     turnStartFence.withPermits(1)(
       Effect.gen(function* () {
         const thread = commandReadModel.threads.find((item) => item.id === threadId);
         if (!thread || thread.deletedAt !== null) return false;
+        if (goalRevision !== undefined) {
+          const goal =
+            thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined;
+          const revision = typeof goalRevision === "number" ? goalRevision : goalRevision.revision;
+          const status = typeof goalRevision === "number" ? "active" : goalRevision.status;
+          if (
+            thread.archivedAt !== null ||
+            thread.workjetConfig.schemaVersion !== 2 ||
+            thread.workjetConfig.team?.role !== "specialist" ||
+            goal?.status !== status ||
+            goal.revision !== revision
+          )
+            return false;
+        }
         yield* start;
         return true;
       }),
@@ -531,7 +546,12 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         }
         return { sequence: committedCommand.lastSequence };
       }).pipe(Effect.withSpan(`orchestration.command.${envelope.command.type}`), (effect) =>
-        envelope.command.type === "thread.delete" || envelope.command.type === "project.delete"
+        envelope.command.type === "thread.delete" ||
+        envelope.command.type === "project.delete" ||
+        envelope.command.type === "thread.goal.set" ||
+        envelope.command.type === "thread.turn.interrupt" ||
+        envelope.command.type === "thread.session.stop" ||
+        envelope.command.type === "thread.archive"
           ? turnStartFence.withPermits(1)(effect)
           : effect,
       ),

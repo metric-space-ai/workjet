@@ -35,6 +35,7 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
+import { continuationPrefixIssue } from "./threadContinuation.ts";
 import {
   initialWorkerGoal,
   prepareGoalContinuation,
@@ -1610,6 +1611,118 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       return [...lifecycleResetEvents, userMessageEvent, turnStartRequestedEvent];
+    }
+
+    case "thread.continuation.import": {
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: command.createThread.projectId,
+      });
+      if (
+        project.deletedAt !== null ||
+        project.workspaceRoot === null ||
+        command.createThread.worktreePath !== null
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail:
+            "The destination project needs its own checkout. Source filesystem paths cannot be transferred.",
+        });
+      const existing = readModel.threads.find((thread) => thread.id === command.threadId);
+      const config = existing?.workjetConfig ?? command.createThread.workjetConfig;
+      if (
+        (config.schemaVersion === 2 && config.ctoxCrewChat !== undefined) ||
+        (command.createThread.workjetConfig.schemaVersion === 2 &&
+          command.createThread.workjetConfig.ctoxCrewChat !== undefined)
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "This native Luma needs a computer route from its Business OS configuration.",
+        });
+      if (existing) {
+        if (
+          existing.deletedAt !== null ||
+          existing.archivedAt !== null ||
+          existing.projectId !== project.id
+        )
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "The destination conversation belongs to a different or archived project.",
+          });
+        if (
+          existing.session?.status === "starting" ||
+          existing.session?.status === "running" ||
+          hasOpenBlockingRequest(existing) ||
+          threadHasQueuedTurnStart(existing, command.createdAt)
+        )
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Finish the destination turn and its pending requests before switching computers.",
+          });
+      }
+      const incoming = command.messages.map(({ messageId: id, role, text }) => ({
+        id,
+        role,
+        text,
+      }));
+      const prefixIssue = continuationPrefixIssue(existing?.messages ?? [], incoming);
+      if (prefixIssue)
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: prefixIssue,
+        });
+      const commands: OrchestrationCommand[] = [];
+      if (!existing)
+        commands.push({
+          ...command.createThread,
+          threadId: command.threadId,
+          type: "thread.create",
+          commandId: command.commandId,
+        });
+      else
+        commands.push({
+          type: "thread.meta.update",
+          threadId: command.threadId,
+          commandId: command.commandId,
+          modelSelection: command.createThread.modelSelection,
+        });
+      const additions = command.messages.slice(existing?.messages.length ?? 0);
+      for (let offset = 0; offset < additions.length; offset += 200)
+        commands.push({
+          type: "thread.history.import",
+          threadId: command.threadId,
+          commandId: command.commandId,
+          messages: additions.slice(offset, offset + 200),
+          createdAt: command.createdAt,
+        });
+      const transferId = EventId.make(`computer-continuation:${command.commandId}`);
+      commands.push({
+        type: "thread.activity.append",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        createdAt: command.createdAt,
+        activity: {
+          id: transferId,
+          tone: "info",
+          kind: "provider.history.transfer",
+          summary: `Next turn on this computer · history from ${command.sourceLabel} carried over`,
+          payload: {
+            sourceEnvironmentId: command.sourceEnvironmentId,
+            historyContinuation: {
+              transferId,
+              messageIds: incoming.map((message) => message.id),
+              pending: true,
+            },
+            detail:
+              "Text history is copied. Attachments, filesystem state, pending approvals and provider sessions stay on the source computer. The next turn uses this project's checkout and fresh permissions.",
+          },
+          turnId: null,
+          createdAt: command.createdAt,
+        },
+      });
+      return yield* decideCommandSequence({ commands, readModel, environmentId });
     }
 
     case "thread.history.import": {

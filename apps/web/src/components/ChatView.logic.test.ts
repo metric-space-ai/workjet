@@ -19,10 +19,8 @@ import {
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
-  deriveLockedProvider,
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
-  getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
@@ -327,73 +325,6 @@ describe("buildExpiredTerminalContextToastCopy", () => {
     expect(buildExpiredTerminalContextToastCopy(2, "omitted")).toEqual({
       title: "Expired terminal contexts omitted from message",
       description: "Re-add it if you want that terminal output included.",
-    });
-  });
-});
-
-describe("getStartedThreadModelChangeBlockReason", () => {
-  const providers = [
-    {
-      instanceId: ProviderInstanceId.make("codex"),
-    },
-    {
-      instanceId: ProviderInstanceId.make("grok"),
-      requiresNewThreadForModelChange: true,
-    },
-  ];
-
-  it("allows model changes before a provider session has started", () => {
-    expect(
-      getStartedThreadModelChangeBlockReason({
-        providers,
-        hasStartedSession: false,
-        currentModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-build",
-        },
-        nextModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-other",
-        },
-      }),
-    ).toBeNull();
-  });
-
-  it("allows unchanged model selections for restricted providers", () => {
-    expect(
-      getStartedThreadModelChangeBlockReason({
-        providers,
-        hasStartedSession: true,
-        currentModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-build",
-        },
-        nextModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-build",
-        },
-      }),
-    ).toBeNull();
-  });
-
-  it("blocks started-session model changes when either provider requires a new thread", () => {
-    expect(
-      getStartedThreadModelChangeBlockReason({
-        providers,
-        hasStartedSession: true,
-        currentModelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5.4",
-        },
-        nextModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-build",
-        },
-      }),
-    ).toEqual({
-      title: "Start a new chat to change models",
-      description:
-        "This provider does not allow switching models after a conversation has started.",
     });
   });
 });
@@ -738,72 +669,5 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
-  });
-});
-
-describe("the provider/model picker stays enabled on orchestrator and worker threads", () => {
-  // Plan §8: "Direct selection itself is untouched — the picker takes no role
-  // or routing prop." The property held structurally but nothing failed if it
-  // stopped holding, which is how an unguarded invariant regresses silently.
-  const orchestratorConfig = {
-    ...DEFAULT_WORKJET_THREAD_CONFIG,
-    role: "orchestrator",
-  } as const satisfies Thread["workjetConfig"];
-
-  const workerConfig = {
-    schemaVersion: 1,
-    role: "worker",
-    parent: { environmentId, threadId: ThreadId.make("parent-thread") },
-    managedInstructions: "",
-    enabledCapabilityIds: [],
-  } as const satisfies Thread["workjetConfig"];
-
-  const roles = [
-    ["standard", DEFAULT_WORKJET_THREAD_CONFIG],
-    ["orchestrator", orchestratorConfig],
-    ["worker", workerConfig],
-  ] as const;
-
-  it("derives the same provider lock whatever the thread's Workjet role is", () => {
-    // Every combination that changes the answer for a NON-Workjet reason, so a
-    // role-dependent branch cannot hide behind one lucky fixture.
-    const situations = [
-      { name: "unstarted", thread: {} as Partial<Thread> },
-      { name: "started, session pins a known provider", thread: { session: readySession } },
-      {
-        name: "started, session provider is unknown",
-        thread: { session: { ...readySession, providerName: "not-a-driver-kind" } },
-      },
-    ] as const;
-
-    for (const situation of situations) {
-      for (const selectedProvider of [null, "claude"]) {
-        const answers = roles.map(([, workjetConfig]) =>
-          deriveLockedProvider({
-            thread: makeThread({ ...situation.thread, workjetConfig }),
-            selectedProvider,
-            threadProvider: null,
-          }),
-        );
-        expect(
-          new Set(answers).size,
-          `${situation.name} / selectedProvider=${String(selectedProvider)} answered ` +
-            roles.map(([role], index) => `${role}=${String(answers[index])}`).join(", "),
-        ).toBe(1);
-      }
-    }
-  });
-
-  it("takes no role-shaped input at all", () => {
-    // The stronger half: even if some future role happened to derive the same
-    // lock, reading the role here would make the picker role-aware. Pin the
-    // signature instead of only its current answers.
-    const input = {
-      thread: makeThread({ workjetConfig: workerConfig, session: readySession }),
-      selectedProvider: null,
-      threadProvider: null,
-    };
-    expect(Object.keys(input).sort()).toEqual(["selectedProvider", "thread", "threadProvider"]);
-    expect(deriveLockedProvider(input)).toBe("codex");
   });
 });

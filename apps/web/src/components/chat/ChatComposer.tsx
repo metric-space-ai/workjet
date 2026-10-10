@@ -46,7 +46,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { usePrimarySettings } from "../../hooks/useSettings";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import { workjetComputerMembership } from "../../workjetComputerMembership";
+import { includeSavedComputers } from "../../workjetComputerCatalog";
+import { workjetEnvironmentTargetOptions } from "../settings/workjetEnvironmentTargetOptions";
 import { createPortal } from "react-dom";
 import type { ComputerEditorState } from "./ComposerWorkjetTargetControls";
 import {
@@ -115,7 +122,6 @@ import { ComposerBar } from "./ComposerBar";
 import { ComposerDictationButton } from "./ComposerDictationButton";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import {
-  COMPOSER_COMPUTER_LOCKED_REASON,
   ComposerComputerControl,
   ComposerManualTargetControls,
   ComposerSystemPromptControl,
@@ -525,7 +531,7 @@ export interface ChatComposerProps {
         readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
       }) => void)
     | undefined;
-  workjetEnabledCapabilityIds?: ReadonlyArray<string> | undefined;
+  workjetEnabledCapabilityIds?: WorkjetThreadConfig["enabledCapabilityIds"] | undefined;
   workjetCapabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding> | undefined;
   /** The thread's managed instructions, `null` on a draft thread. */
   workjetManagedInstructions: string | null;
@@ -535,8 +541,9 @@ export interface ChatComposerProps {
    * this project. Device pairing is a separate Business OS relation.
    */
   selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
-  /** Moves a draft to another environment; the caller guards started threads. */
+  /** Moves a draft or copies a settled conversation's history to another computer. */
   onDraftEnvironmentChange?: ((environmentId: EnvironmentId) => void) | undefined;
+  computerChangeDisabledReason?: string | null;
   onWorkjetRoleChange: (role: WorkjetSelectableRole) => void;
   /** Routes to Settings → Workjet; the composer never hosts a second surface. */
   onOpenWorkjetSettings: () => void;
@@ -628,6 +635,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     workjetManagedInstructions,
     selectableEnvironmentIds,
     onDraftEnvironmentChange,
+    computerChangeDisabledReason,
     onWorkjetRoleChange,
     onOpenWorkjetSettings,
     focusComposer,
@@ -908,23 +916,45 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * optional chain: the one at the footer never had one either.
    */
   const businessOsCodeScope = useBusinessOsCodeScope();
+  const navigate = useNavigate();
+  const primaryWorkjet = usePrimarySettings((primary) => primary.workjet);
+  const { environments: computerEnvironments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const membership = useSyncExternalStore(
+    workjetComputerMembership.subscribe,
+    workjetComputerMembership.getSnapshot,
+    workjetComputerMembership.getSnapshot,
+  );
+  const nativeComputers =
+    membership.instanceId === businessOsCodeScope.presentationInstanceId
+      ? membership.computers
+      : [];
   const workjetComputers = useMemo(
     () =>
-      settings.workjet.computers.filter((computer) =>
-        businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId),
-      ),
-    [businessOsCodeScope, settings.workjet.computers],
+      includeSavedComputers(
+        primaryWorkjet,
+        workjetEnvironmentTargetOptions(computerEnvironments),
+        primaryEnvironmentId,
+      ).computers,
+    [computerEnvironments, primaryEnvironmentId, primaryWorkjet],
   );
   const scopedComputerIds = useMemo(
-    () => new Set(workjetComputers.map((computer) => computer.id)),
-    [workjetComputers],
+    () =>
+      new Set(
+        workjetComputers
+          .filter((computer) =>
+            businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId),
+          )
+          .map((computer) => computer.id),
+      ),
+    [businessOsCodeScope, workjetComputers],
   );
   const workjetWorkers = useMemo(
     () =>
-      settings.workjet.workerProfiles.filter((worker) => scopedComputerIds.has(worker.computerId)),
-    [scopedComputerIds, settings.workjet.workerProfiles],
+      primaryWorkjet.workerProfiles.filter((worker) => scopedComputerIds.has(worker.computerId)),
+    [scopedComputerIds, primaryWorkjet.workerProfiles],
   );
-  const workjetLlmRoutes = settings.workjet.llmRoutes;
+  const workjetLlmRoutes = primaryWorkjet.llmRoutes;
   // Persisted with the draft (F1): the worker's model lands in the shared
   // per-instance selection, so a component-local worker choice that dies on
   // unmount left the bar in "Manual" WITH the worker's model — a corrupted
@@ -948,9 +978,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * Worker mode hides the manual controls. A worker BUNDLES harness, model
    * and effort, so showing pickers beside it displays two sources of truth
    * for one decision — the operator called that mix a farce, correctly. The
-   * pickers return the moment Manual is chosen. Mid-session switching stays
-   * gated on the session-ownership migration (correction -1); this governs
-   * the draft, where the next turn is composed.
+   * pickers return the moment Manual is chosen. A settled conversation uses
+   * its completed history when the next turn needs another provider session.
    */
   const workerModeActive = selectedWorkjetWorkerId !== null;
   const selectedWorkjetWorker =
@@ -982,8 +1011,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const [draftManagedInstructions, setDraftManagedInstructions] = useState<string | null>(null);
   /**
-   * Apply the selected worker's EXTRAS and TASK TEXT once the draft becomes a
-   * server thread — one dispatch, because the caller's in-flight guard drops
+   * Apply the selected worker's EXTRAS and TASK TEXT when the draft becomes a
+   * server thread or its Luma choice changes — one dispatch, because the caller drops
    * concurrent config changes. A manual draft with a locally edited system
    * prompt takes the same path with only `managedInstructions` set. The ref
    * guards against re-applying on every render and against overriding what
@@ -993,7 +1022,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTargetIsThread =
     typeof composerDraftTarget === "object" && composerDraftTarget !== null;
   useEffect(() => {
-    if (!composerTargetIsThread || onWorkjetConfigApply === undefined) return;
+    if (!composerTargetIsThread || onWorkjetConfigApply === undefined || workjetCapabilityBusy)
+      return;
     const worker =
       selectedWorkjetWorkerId === null
         ? undefined
@@ -1001,11 +1031,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     let payload: {
       readonly capabilityIds?: ReadonlyArray<string>;
       readonly managedInstructions?: string;
+      readonly capabilityBindings?: ReadonlyArray<WorkjetCapabilityBinding>;
     };
     if (worker !== undefined) {
       // Model rules travel with every worker on this model (the Swift app's
       // Modellregeln), ahead of the worker's own task.
-      const modelRules = settings.workjet.modelPrompts
+      const modelRules = primaryWorkjet.modelPrompts
         .find((entry) => entry.modelId === worker.modelId)
         ?.prompt.trim();
       payload = {
@@ -1013,18 +1044,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           draftWorkerCapabilityIds ??
           composerDraft.workjetConfig?.enabledCapabilityIds ??
           worker.capabilityIds,
+        capabilityBindings: worker.capabilityBindings,
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,
           workers: workjetWorkers,
-          graph: settings.workjet.workerGraph,
+          graph: primaryWorkjet.workerGraph,
         }),
+      };
+    } else if (composerDraft.workjetConfig !== null) {
+      const config = composerDraft.workjetConfig;
+      payload = {
+        capabilityIds: config.enabledCapabilityIds,
+        managedInstructions: draftManagedInstructions ?? config.managedInstructions,
+        capabilityBindings: config.schemaVersion === 2 ? config.capabilityBindings : [],
       };
     } else if (draftManagedInstructions !== null) {
       payload = { managedInstructions: draftManagedInstructions };
     } else {
       return;
     }
-    const targetKey = JSON.stringify(composerDraftTarget);
+    const targetKey = JSON.stringify([composerDraftTarget, selectedWorkjetWorkerId]);
     if (appliedWorkerCapabilitiesRef.current === targetKey) return;
     appliedWorkerCapabilitiesRef.current = targetKey;
     onWorkjetConfigApply(payload);
@@ -1035,9 +1074,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftManagedInstructions,
     draftWorkerCapabilityIds,
     onWorkjetConfigApply,
+    workjetCapabilityBusy,
     selectedWorkjetWorkerId,
-    settings.workjet.modelPrompts,
-    settings.workjet.workerGraph,
+    primaryWorkjet.modelPrompts,
+    primaryWorkjet.workerGraph,
     workjetWorkers,
   ]);
   /**
@@ -1060,8 +1100,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // the newly chosen worker, and a worker carries its own task text.
       setDraftWorkerCapabilityIds(null);
       if (workerId !== null && selectedWorkjetWorkerId === null) {
-        manualInstructionsReturnRef.current = draftManagedInstructions;
-        manualWorkjetConfigReturnRef.current = draftWorkjetConfig;
+        manualInstructionsReturnRef.current =
+          draftManagedInstructions ?? workjetManagedInstructions;
+        manualWorkjetConfigReturnRef.current =
+          composerTargetIsThread && composerDraft.workjetConfig === null
+            ? normalizeWorkjetThreadConfig({
+                ...draftWorkjetConfig,
+                managedInstructions: workjetManagedInstructions ?? "",
+                enabledCapabilityIds: workjetEnabledCapabilityIds ?? [],
+                capabilityBindings: workjetCapabilityBindings ?? [],
+              })
+            : draftWorkjetConfig;
       }
       setDraftManagedInstructions(workerId === null ? manualInstructionsReturnRef.current : null);
       if (workerId === null) {
@@ -1083,7 +1132,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
       if (worker === undefined) return;
-      const modelRules = settings.workjet.modelPrompts
+      const modelRules = primaryWorkjet.modelPrompts
         .find((entry) => entry.modelId === worker.modelId)
         ?.prompt.trim();
       setComposerDraftWorkjetConfig(composerDraftTarget, {
@@ -1093,7 +1142,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,
           workers: workjetWorkers,
-          graph: settings.workjet.workerGraph,
+          graph: primaryWorkjet.workerGraph,
         }),
         enabledCapabilityIds: worker.capabilityIds,
         capabilityBindings: worker.capabilityBindings,
@@ -1109,11 +1158,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
 
       // Apply the worker's COMPUTER: a worker names where it runs, so a
-      // draft moves to that computer's environment through the same path the
-      // environment selector uses. Only drafts move — a started thread's
-      // session owns its environment. An unresolvable computer changes
+      // conversation moves through the same history-continuation path the
+      // environment selector uses. An unresolvable computer changes
       // nothing; the Computer control shows the mismatch instead of lying.
-      if (!composerTargetIsThread && onDraftEnvironmentChange !== undefined) {
+      if (onDraftEnvironmentChange !== undefined) {
         const workerEnvironmentId = workjetComputers.find(
           (computer) => computer.id === worker.computerId,
         )?.environmentId;
@@ -1166,24 +1214,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setWorkjetWorkerSelection,
       workjetComputers,
       workjetWorkers,
-      settings.workjet.modelPrompts,
-      settings.workjet.workerGraph,
-      draftWorkjetConfig,
+      workjetManagedInstructions,
+      workjetEnabledCapabilityIds,
+      workjetCapabilityBindings,
+      composerDraft.workjetConfig,
+      primaryWorkjet.modelPrompts,
+      primaryWorkjet.workerGraph,
     ],
   );
 
   /**
-   * The Computer ("Rechner") control, selectable in BOTH modes. On a draft,
-   * choosing a computer moves the draft to that computer's environment; on a
-   * started server thread the control is disabled with the reason — moving a
-   * live session between machines is a separate project.
+   * Computer selection moves drafts directly. Existing conversations carry
+   * their completed history to the destination for a fresh session on the next
+   * turn. Running turns and unavailable routes supply their concrete reason.
    */
   const composerComputerDisabledReason =
-    composerTargetIsThread || routeKind === "server"
-      ? COMPOSER_COMPUTER_LOCKED_REASON
-      : onDraftEnvironmentChange === undefined
-        ? "This draft cannot change its environment here."
-        : null;
+    computerChangeDisabledReason ??
+    (onDraftEnvironmentChange === undefined ? "Computer selection is unavailable here." : null);
   const workerBoundComputer =
     selectedWorkjetWorker === null
       ? null
@@ -1194,7 +1241,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     workerModeActive,
     workerComputerId: selectedWorkjetWorker?.computerId ?? null,
     activeEnvironmentId: environmentId,
-    selectedComputerId: settings.workjet.selectedComputerId,
+    selectedComputerId: primaryWorkjet.selectedComputerId,
   });
   const composerSelectedComputerId = composerComputerResolution.computer?.id ?? null;
   // Worker mode surfaces the mismatch instead of lying: the worker names a
@@ -1210,15 +1257,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           : null;
   const handleSelectComposerComputer = useCallback(
     (computerId: string) => {
-      if (composerTargetIsThread || onDraftEnvironmentChange === undefined) return;
+      if (composerComputerDisabledReason || onDraftEnvironmentChange === undefined) return;
       const computer = workjetComputers.find((candidate) => candidate.id === computerId);
       if (computer === undefined) return;
+      if (!businessOsCodeScopeContainsEnvironment(businessOsCodeScope, computer.environmentId))
+        return;
+      if (
+        computerEnvironments.find(
+          (environment) => environment.environmentId === computer.environmentId,
+        )?.connection.phase !== "connected"
+      )
+        return;
       if (computer.environmentId === environmentId) return;
       if (!selectableEnvironmentIds.includes(computer.environmentId)) return;
       onDraftEnvironmentChange(computer.environmentId);
     },
     [
-      composerTargetIsThread,
+      composerComputerDisabledReason,
+      businessOsCodeScope,
+      computerEnvironments,
       environmentId,
       onDraftEnvironmentChange,
       selectableEnvironmentIds,
@@ -1227,6 +1284,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   useEffect(() => {
     if (
+      composerTargetIsThread ||
       composerComputerResolution.source !== "selected" ||
       composerComputerResolution.computer === null
     ) {
@@ -1236,6 +1294,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [
     composerComputerResolution.computer,
     composerComputerResolution.source,
+    composerTargetIsThread,
     handleSelectComposerComputer,
   ]);
 
@@ -4059,6 +4118,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           key={environmentId}
                           editor={{ state: computerEditorState, update: setComputerEditorState }}
                           computers={workjetComputers}
+                          registeredComputers={nativeComputers}
+                          computerAvailability={Object.fromEntries(
+                            workjetComputers.map((computer) => {
+                              const connection = computerEnvironments.find(
+                                (environment) =>
+                                  environment.environmentId === computer.environmentId,
+                              )?.connection;
+                              const status =
+                                connection?.phase === "connected"
+                                  ? "Online"
+                                  : connection?.phase === "offline"
+                                    ? "Offline"
+                                    : "Not connected";
+                              const reason = !businessOsCodeScopeContainsEnvironment(
+                                businessOsCodeScope,
+                                computer.environmentId,
+                              )
+                                ? "This computer has no coding route in the selected Business OS."
+                                : connection?.phase !== "connected"
+                                  ? (connection?.error ?? status)
+                                  : !selectableEnvironmentIds.includes(computer.environmentId) &&
+                                      computer.environmentId !== environmentId
+                                    ? `Project checkout missing on ${computer.label}.`
+                                    : null;
+                              return [computer.id, { status, reason }];
+                            }),
+                          )}
                           selectedComputerId={composerSelectedComputerId}
                           activeEnvironmentId={environmentId}
                           selectableEnvironmentIds={selectableEnvironmentIds}
@@ -4066,7 +4152,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           mismatchNote={composerComputerMismatchNote}
                           onSelectComputer={handleSelectComposerComputer}
                           onAddComputer={() => {
-                            window.location.hash = "#/settings/computers";
+                            void navigate({ to: "/settings/computers" });
                           }}
                         />
                       </>

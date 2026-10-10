@@ -355,13 +355,11 @@ import {
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldShowBranchMismatchBanner,
-  getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
   PullRequestDialogState,
   cloneComposerImageForRetry,
-  deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
@@ -1281,6 +1279,13 @@ function ChatViewContent(props: ChatViewProps) {
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const readThreadContinuation = useAtomCommand(threadEnvironment.continuationSnapshot, {
+    reportFailure: false,
+  });
+  const importThreadContinuation = useAtomCommand(threadEnvironment.importContinuation, {
+    reportFailure: false,
+  });
+  const [computerContinuationBusy, setComputerContinuationBusy] = useState(false);
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -2408,8 +2413,8 @@ function ChatViewContent(props: ChatViewProps) {
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
   /**
    * The environments the composer's Computer ("Rechner") control may move a
-   * draft to — exactly the set `onEnvironmentChange` accepts. A Workjet
-   * computer whose environment is not in this list renders as "not paired".
+   * conversation to — exactly the set `onEnvironmentChange` accepts. Other
+   * computers remain visible with their connection or missing-checkout reason.
    */
   const selectableEnvironmentIds = useMemo(
     () => logicalProjectEnvironments.map((environment) => environment.environmentId),
@@ -2534,11 +2539,6 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
-  const lockedProvider = deriveLockedProvider({
-    thread: activeThread,
-    selectedProvider: selectedProviderByThreadId,
-    threadProvider,
-  });
   // Once a thread selects an environment, never substitute the primary
   // environment's config while the selected environment is still loading.
   const serverConfig = activeEnvironment?.serverConfig ?? null;
@@ -2733,7 +2733,7 @@ function ChatViewContent(props: ChatViewProps) {
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
   );
-  const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
+  const selectedProvider: ProviderDriverKind = unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
@@ -3259,27 +3259,107 @@ function ChatViewContent(props: ChatViewProps) {
     }
   }, [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen]);
 
-  const envLocked = Boolean(
-    activeThread &&
-    (activeThread.messages.length > 0 ||
-      (activeThread.session !== null && activeThread.session.status !== "stopped")),
-  );
+  const envLocked =
+    computerContinuationBusy ||
+    activeThread?.session?.status === "starting" ||
+    activeThread?.session?.status === "running";
 
   // Handle environment change for draft threads.  When the user picks a
   // different environment we update the draft context to point at the physical
   // project in that environment while keeping the same logical project.
   const onEnvironmentChange = useCallback(
-    (nextEnvironmentId: EnvironmentId) => {
-      if (envLocked || !draftId) return;
+    async (nextEnvironmentId: EnvironmentId) => {
+      if (envLocked || nextEnvironmentId === environmentId) return;
       const target = logicalProjectEnvironments.find(
         (env) => env.environmentId === nextEnvironmentId,
       );
       if (!target) return;
-      setDraftThreadContext(draftId, {
-        projectRef: scopeProjectRef(target.environmentId, target.projectId),
-      });
+      if (draftId) {
+        setDraftThreadContext(draftId, {
+          projectRef: scopeProjectRef(target.environmentId, target.projectId),
+        });
+        return;
+      }
+      if (!activeThread) return;
+      setComputerContinuationBusy(true);
+      try {
+        const snapshot = await readThreadContinuation({ environmentId, input: { threadId } });
+        if (snapshot._tag === "Failure") throw squashAtomCommandFailure(snapshot);
+        const source = snapshot.value.thread;
+        const result = await importThreadContinuation({
+          environmentId: target.environmentId,
+          input: {
+            threadId: source.id,
+            sourceEnvironmentId: environmentId,
+            sourceLabel: environmentById.get(environmentId)?.label ?? String(environmentId),
+            createThread: {
+              projectId: target.projectId,
+              title: source.title,
+              modelSelection: source.modelSelection,
+              runtimeMode: source.runtimeMode,
+              interactionMode: source.interactionMode,
+              workjetConfig: source.workjetConfig,
+              branch: null,
+              worktreePath: null,
+              createdAt: source.createdAt,
+            },
+            messages: source.messages
+              .filter((message) => message.role === "user" || message.role === "assistant")
+              .map(({ id: messageId, role, text, createdAt }) => ({
+                messageId,
+                role: role as "user" | "assistant",
+                text,
+                createdAt,
+              })),
+          },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        const destinationRef = scopeThreadRef(target.environmentId, source.id);
+        const drafts = useComposerDraftStore.getState();
+        const pending = drafts.getComposerDraft(routeThreadRef);
+        drafts.moveComposerPromptAndImages(routeThreadRef, destinationRef);
+        if (pending?.activeProvider)
+          drafts.setModelSelection(
+            destinationRef,
+            pending.modelSelectionByProvider[pending.activeProvider],
+            { replaceOptions: true },
+          );
+        if (pending)
+          drafts.setWorkjetWorkerSelection(
+            destinationRef,
+            pending.workjetWorkerId,
+            pending.workjetManualReturn,
+          );
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: { environmentId: target.environmentId, threadId: source.id },
+        });
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not switch computer",
+            description: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      } finally {
+        setComputerContinuationBusy(false);
+      }
     },
-    [draftId, envLocked, logicalProjectEnvironments, setDraftThreadContext],
+    [
+      activeThread,
+      draftId,
+      environmentById,
+      environmentId,
+      envLocked,
+      importThreadContinuation,
+      logicalProjectEnvironments,
+      navigate,
+      readThreadContinuation,
+      routeThreadRef,
+      setDraftThreadContext,
+      threadId,
+    ],
   );
 
   const activeTerminalGroup =
@@ -6747,52 +6827,10 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef,
   ]);
 
-  const getModelDisabledReason = useCallback(
-    (instanceId: ProviderInstanceId, model: string): string | null => {
-      if (!activeThread) {
-        return null;
-      }
-      const reason = getStartedThreadModelChangeBlockReason({
-        providers: providerStatuses,
-        hasStartedSession: activeThread.session !== null,
-        currentModelSelection: activeThread.modelSelection,
-        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
-        nextModelSelection: { instanceId, model },
-      });
-      return reason ? `${reason.description} Start a new thread to use this model.` : null;
-    },
-    [activeThread, providerStatuses],
-  );
-
+  const getModelDisabledReason = useCallback(() => null, []);
   const onProviderModelSelect = useCallback(
     (instanceId: ProviderInstanceId, model: string) => {
       if (!activeThread) return;
-      // Look up the configured instance so model normalization and custom
-      // model lookup stay scoped to that exact instance. Unknown instance ids
-      // are rejected by returning early; the server remains authoritative too.
-      const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
-      const resolvedDriverKind = entry?.driver ?? null;
-      if (
-        lockedProvider !== null &&
-        resolvedDriverKind !== null &&
-        resolvedDriverKind !== lockedProvider
-      ) {
-        scheduleComposerFocus();
-        return;
-      }
-      if (lockedProvider !== null && activeThread.session?.providerInstanceId) {
-        const currentEntry = providerStatuses.find(
-          (snapshot) => snapshot.instanceId === activeThread.session?.providerInstanceId,
-        );
-        if (
-          currentEntry?.continuation?.groupKey &&
-          entry?.continuation?.groupKey &&
-          currentEntry.continuation.groupKey !== entry.continuation.groupKey
-        ) {
-          scheduleComposerFocus();
-          return;
-        }
-      }
       const resolvedModel = resolveAppModelSelectionForInstance(
         instanceId,
         settings,
@@ -6807,22 +6845,6 @@ function ChatViewContent(props: ChatViewProps) {
         instanceId,
         model: resolvedModel,
       };
-      const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
-        providers: providerStatuses,
-        hasStartedSession: activeThread.session !== null,
-        currentModelSelection: activeThread.modelSelection,
-        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
-        nextModelSelection,
-      });
-      if (modelChangeBlockReason) {
-        toastManager.add({
-          type: "warning",
-          title: modelChangeBlockReason.title,
-          description: modelChangeBlockReason.description,
-        });
-        scheduleComposerFocus();
-        return;
-      }
       setComposerDraftModelSelection(
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,
@@ -6832,7 +6854,6 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       activeThread,
-      lockedProvider,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
@@ -7461,7 +7482,7 @@ function ChatViewContent(props: ChatViewProps) {
                               workjetCapabilityDisabled={
                                 threadDetailLoading || activeEnvironmentUnavailable
                               }
-                              lockedProvider={lockedProvider}
+                              lockedProvider={null}
                               providerStatuses={providerStatuses as ServerProvider[]}
                               activeProjectDefaultModelSelection={
                                 activeProject?.defaultModelSelection
@@ -7514,6 +7535,16 @@ function ChatViewContent(props: ChatViewProps) {
                               }
                               selectableEnvironmentIds={selectableEnvironmentIds}
                               onDraftEnvironmentChange={onEnvironmentChange}
+                              computerChangeDisabledReason={
+                                computerContinuationBusy
+                                  ? "Copying conversation history…"
+                                  : envLocked
+                                    ? "Finish the current turn before switching computers."
+                                    : activeThread?.workjetConfig.schemaVersion === 2 &&
+                                        activeThread.workjetConfig.ctoxCrewChat !== undefined
+                                      ? "Choose this Luma's computer in Business OS configuration."
+                                      : null
+                              }
                               onWorkjetRoleChange={handleWorkjetRoleChange}
                               onOpenWorkjetSettings={handleOpenWorkjetSettings}
                               focusComposer={focusComposer}

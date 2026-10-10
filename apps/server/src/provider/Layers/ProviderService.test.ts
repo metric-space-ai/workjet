@@ -55,6 +55,7 @@ import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
 import { makeProviderServiceLive } from "./ProviderService.ts";
+import { readHistoryContinuation } from "../importedHistoryContext.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -1072,31 +1073,31 @@ routing.layer("ProviderServiceLive routing", (it) => {
     );
   }
 
-  it.effect("rejects unsupported imported continuation before sending a turn", () =>
-    Effect.gen(function* () {
-      const provider = yield* ProviderService.ProviderService;
-      const threadId = asThreadId("unsupported-imported-context");
-      yield* provider.startSession(threadId, {
-        provider: CURSOR_DRIVER,
-        providerInstanceId: ProviderInstanceId.make("cursor"),
-        threadId,
-        runtimeMode: "full-access",
-      });
-      routing.cursor.sendTurn.mockClear();
-      const error = yield* Effect.flip(
-        provider.sendTurn({
+  it.effect(
+    "continues imported conversation through Cursor with the same portable text framing",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("unsupported-imported-context");
+        yield* provider.startSession(threadId, {
+          provider: CURSOR_DRIVER,
+          providerInstanceId: ProviderInstanceId.make("cursor"),
+          threadId,
+          runtimeMode: "full-access",
+        });
+        routing.cursor.sendTurn.mockClear();
+        yield* provider.sendTurn({
           threadId,
           input: "Continue",
           importedHistory: [
             { id: MessageId.make("source-unsupported"), role: "user", text: "Previous context" },
           ],
-        }),
-      );
-      assert.ok(Schema.is(ProviderAdapterRequestError)(error));
-      assert.ok(error.detail.includes("cannot continue imported conversation history"));
-      assert.equal(routing.cursor.sendTurn.mock.calls.length, 0);
-      yield* provider.stopSession({ threadId });
-    }),
+        });
+        assert.equal(routing.cursor.sendTurn.mock.calls.length, 1);
+        assert.ok(routing.cursor.sendTurn.mock.calls[0]?.[0].input?.includes("Previous context"));
+        yield* provider.stopSession({ threadId });
+        routing.cursor.sendTurn.mockClear();
+      }),
   );
 
   it.effect("condenses oversized imported context instead of refusing the turn", () =>
@@ -1128,6 +1129,42 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.ok((sent?.input?.length ?? Infinity) <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
       routing.codex.sendTurn.mockClear();
       yield* provider.stopSession({ threadId });
+    }),
+  );
+
+  it.effect("uses the persisted requested model only when the active adapter omits it", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-optional-session-model");
+      const session = yield* provider.startSession(threadId, {
+        providerInstanceId: codexInstanceId,
+        threadId,
+        modelSelection: { instanceId: codexInstanceId, model: "gpt-5-codex" },
+        runtimeMode: "approval-required",
+      });
+      assert.equal(session.model, undefined);
+      const sessions = yield* provider.listSessions();
+      assert.equal(sessions.find((entry) => entry.threadId === threadId)?.model, "gpt-5-codex");
+
+      routing.codex.listSessions.mockImplementationOnce(() =>
+        Effect.succeed([{ ...session, model: "gpt-5.4" }]),
+      );
+      const reportedSessions = yield* provider.listSessions();
+      assert.equal(reportedSessions.find((entry) => entry.threadId === threadId)?.model, "gpt-5.4");
+      yield* provider.stopSession({ threadId });
+
+      const unselectedThreadId = asThreadId("thread-unknown-session-model");
+      yield* provider.startSession(unselectedThreadId, {
+        providerInstanceId: codexInstanceId,
+        threadId: unselectedThreadId,
+        runtimeMode: "approval-required",
+      });
+      const unselectedSessions = yield* provider.listSessions();
+      assert.equal(
+        unselectedSessions.find((entry) => entry.threadId === unselectedThreadId)?.model,
+        undefined,
+      );
+      yield* provider.stopSession({ threadId: unselectedThreadId });
     }),
   );
 
@@ -1723,6 +1760,52 @@ routing.layer("ProviderServiceLive routing", (it) => {
         runtimeMode: "full-access",
       });
     }),
+  );
+
+  it.effect(
+    "starts fresh without old resume credentials and retains history replay until send succeeds",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+        const threadId = asThreadId("thread-fresh-history");
+        const initial = yield* provider.startSession(threadId, {
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "approval-required",
+        });
+        const historyContinuation = {
+          messageIds: [MessageId.make("earlier-decision")],
+          pending: true,
+        };
+        yield* provider.startSession(threadId, {
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "approval-required",
+          resumePolicy: "fresh",
+          resumeCursor: initial.resumeCursor,
+          historyContinuation,
+        });
+        const freshInput = routing.codex.startSession.mock.calls.at(-1)?.[0];
+        assert.equal(freshInput?.resumeCursor, undefined);
+        assert.equal(freshInput?.resumePolicy, "fresh");
+        routing.codex.sendTurn.mockImplementationOnce(() =>
+          Effect.die(new Error("temporary send failure")),
+        );
+        const request = { threadId, input: "Continue", attachments: [] };
+        const failed = yield* Effect.exit(provider.sendTurn(request));
+        assert.equal(Exit.isFailure(failed), true);
+        const before = Option.getOrThrow(yield* directory.getBinding(threadId));
+        assert.deepEqual(readHistoryContinuation(before.runtimePayload), historyContinuation);
+        yield* provider.sendTurn(request);
+        const after = Option.getOrThrow(yield* directory.getBinding(threadId));
+        assert.deepEqual(readHistoryContinuation(after.runtimePayload), {
+          ...historyContinuation,
+          pending: false,
+        });
+        yield* provider.stopSession({ threadId });
+        routing.codex.sendTurn.mockClear();
+      }),
   );
 
   it.effect("stops stale sessions in other providers after a successful replacement start", () =>

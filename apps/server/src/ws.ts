@@ -13,6 +13,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -95,6 +96,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { threadHasQueuedTurnStart } from "./orchestration/decider.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as WorkjetCrossModeCtoxClient from "./workjet/crossmode/WorkjetCrossModeCtoxClient.ts";
@@ -431,6 +433,7 @@ const makeWsRpcLayer = (
       const crypto = yield* Crypto.Crypto;
       const workerPullRequestLifecycle = yield* Effect.serviceOption(WorkerPullRequestLifecycle);
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+      const fileSystem = yield* FileSystem.FileSystem;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
@@ -1569,11 +1572,68 @@ const makeWsRpcLayer = (
             { "rpc.aggregate": "worker-dispatch" },
           ),
 
+        [ORCHESTRATION_WS_METHODS.getThreadContinuation]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadContinuation,
+            Effect.gen(function* () {
+              const snapshot = yield* projectionSnapshotQuery.getThreadDetailSnapshot(
+                input.threadId,
+              );
+              if (Option.isNone(snapshot))
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "The source conversation was not found.",
+                });
+              const thread = snapshot.value.thread;
+              const exportedAt = yield* nowIso;
+              if (
+                thread.deletedAt !== null ||
+                thread.session?.status === "starting" ||
+                thread.session?.status === "running" ||
+                thread.messages.some((message) => message.streaming) ||
+                threadHasQueuedTurnStart(thread, exportedAt)
+              )
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "Finish the source turn before switching computers.",
+                });
+              return snapshot.value;
+            }).pipe(
+              Effect.mapError((cause) =>
+                Schema.is(OrchestrationGetSnapshotError)(cause)
+                  ? cause
+                  : new OrchestrationGetSnapshotError({
+                      message:
+                        "Could not read the complete source conversation. No history was copied.",
+                      cause,
+                    }),
+              ),
+            ),
+            { "rpc.aggregate": "thread" },
+          ),
+
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
               const normalizedCommand = yield* normalizeDispatchCommand(command);
+              if (normalizedCommand.type === "thread.continuation.import") {
+                const project = yield* projectionSnapshotQuery.getProjectShellById(
+                  normalizedCommand.createThread.projectId,
+                );
+                const thread = yield* projectionSnapshotQuery.getThreadShellById(
+                  normalizedCommand.threadId,
+                );
+                const cwd =
+                  Option.getOrUndefined(thread)?.worktreePath ??
+                  Option.getOrUndefined(project)?.workspaceRoot;
+                const checkout = cwd
+                  ? yield* fileSystem.stat(cwd).pipe(Effect.option)
+                  : Option.none();
+                if (Option.isNone(checkout) || checkout.value.type !== "Directory")
+                  return yield* new OrchestrationDispatchCommandError({
+                    message:
+                      "The project checkout is missing or inaccessible on this computer. No history was copied.",
+                  });
+              }
               // Archive and settle both mean "done with this thread", so a
               // live provider session must not keep running background work
               // (PR monitors, dev servers, subagent fleets) after either

@@ -1646,6 +1646,15 @@ export const WsOrchestrationGetArchivedTeamWorkerDetailRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetThreadContinuationRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadContinuation,
+  {
+    payload: OrchestrationRpcSchemas.getThreadContinuation.input,
+    success: OrchestrationRpcSchemas.getThreadContinuation.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -1955,6 +1964,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationGetArchivedTeamWorkerDetailRpc,
+  WsOrchestrationGetThreadContinuationRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );

@@ -131,14 +131,12 @@ it.effect("rejects stale persisted custody before any rejected-start cleanup", (
     test.state.adminIno = "9";
     const service = yield* test.service;
     expect(
-      yield* service
-        .prepare({ ...input, custody: test.capturedIdentity })
-        .pipe(
-          Effect.match({
-            onFailure: (error) => error.reason,
-            onSuccess: () => "unexpected-success",
-          }),
-        ),
+      yield* service.prepare({ ...input, custody: test.capturedIdentity }).pipe(
+        Effect.match({
+          onFailure: (error) => error.reason,
+          onSuccess: () => "unexpected-success",
+        }),
+      ),
     ).toBe("changed");
     expect(
       yield* service

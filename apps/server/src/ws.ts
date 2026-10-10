@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
@@ -109,6 +110,7 @@ import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
 import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
 import * as WorkjetSessionImport from "./workjet/sessionImport/WorkjetSessionImport.ts";
+import { WorkerPullRequestLifecycle } from "./workjet/WorkerPullRequestLifecycle.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -167,6 +169,14 @@ import * as SourceControlProviderRegistry from "./sourceControl/SourceControlPro
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as WorkjetHarnessAvailability from "./workjet/WorkjetHarnessAvailability.ts";
 import * as WorktreeStorage from "./worktree/WorktreeStorage.ts";
+import {
+  manualProjectWorkerParent,
+  ManualProjectWorkerSetupError,
+  manualProjectWorkerConfig,
+} from "./workjet/ManualProjectWorker.ts";
+import { validateManualWorkerSource } from "./workjet/ManualProjectWorkerSource.ts";
+import { makeWorkerOrdinal } from "./workjet/WorkerOrdinal.ts";
+import { deriveWorkerTitle } from "./workjet/WorkerDispatch.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
@@ -419,6 +429,7 @@ const makeWsRpcLayer = (
       const computerEnrollment = yield* Effect.serviceOption(RemoteWorkerComputerEnrollment);
       const workerConnection = yield* Effect.serviceOption(RemoteWorkerConnectionBootstrap);
       const crypto = yield* Crypto.Crypto;
+      const workerPullRequestLifecycle = yield* Effect.serviceOption(WorkerPullRequestLifecycle);
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
@@ -1037,6 +1048,8 @@ const makeWsRpcLayer = (
           Stream.flatMap((items) => Stream.fromIterable(items)),
         );
 
+      const allocateManualWorkerOrdinal = yield* makeWorkerOrdinal;
+      const manualWorkerPreparation = yield* Semaphore.make(1);
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
@@ -1044,12 +1057,13 @@ const makeWsRpcLayer = (
           const bootstrap = command.bootstrap;
           const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
           let createdThread = false;
+          let manualWorkerPrepared = false;
           let targetProjectId = bootstrap?.createThread?.projectId;
           let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;
           let targetWorktreePath = bootstrap?.createThread?.worktreePath ?? null;
 
           const cleanupCreatedThread = () =>
-            createdThread
+            createdThread && !manualWorkerPrepared
               ? serverCommandId("bootstrap-thread-delete").pipe(
                   Effect.flatMap((commandId) =>
                     orchestrationEngine.dispatch({
@@ -1178,7 +1192,20 @@ const makeWsRpcLayer = (
             });
 
           const bootstrapProgram = Effect.gen(function* () {
-            if (bootstrap?.createThread) {
+            const existingBootstrapThread = bootstrap?.createThread
+              ? yield* projectionSnapshotQuery.getThreadShellById(command.threadId)
+              : Option.none();
+            if (
+              bootstrap?.createThread &&
+              Option.isSome(existingBootstrapThread) &&
+              existingBootstrapThread.value.projectId !== bootstrap.createThread.projectId
+            )
+              return yield* Effect.fail(
+                new ManualProjectWorkerSetupError({
+                  message: "Bootstrap retry belongs to a different project.",
+                }),
+              );
+            if (bootstrap?.createThread && Option.isNone(existingBootstrapThread)) {
               const workjetConfig = bootstrap.createThread.workjetConfig;
               if (workjetConfig.enabledCapabilityIds.includes("decision-hub")) {
                 const connections = yield* withDecisionHubConnections((registry) => registry.list);
@@ -1220,7 +1247,136 @@ const makeWsRpcLayer = (
               createdThread = true;
             }
 
-            if (bootstrap?.prepareWorktree) {
+            const shell = yield* projectionSnapshotQuery.getShellSnapshot();
+            const thread = shell.threads.find((candidate) => candidate.id === command.threadId);
+            const manualParent = thread
+              ? manualProjectWorkerParent(
+                  thread,
+                  shell.threads,
+                  shell.projects.some(
+                    (project) =>
+                      project.id === thread.projectId && project.ctoxRegistration != null,
+                  ),
+                )
+              : undefined;
+            if (thread && manualParent) {
+              const project = shell.projects.find((candidate) => candidate.id === thread.projectId);
+              const cwd = project?.workspaceRoot;
+              if (!cwd)
+                return yield* Effect.fail(
+                  new ManualProjectWorkerSetupError({
+                    message: "A project worker requires a published Git source checkout.",
+                  }),
+                );
+              const sourceStatus = yield* gitWorkflow.status({ cwd });
+              const { branch, resuming } = validateManualWorkerSource(
+                thread,
+                shell.threads,
+                sourceStatus,
+              );
+              if (!resuming) {
+                const baseRef =
+                  bootstrap?.prepareWorktree?.baseBranch ?? thread.branch ?? sourceStatus.refName;
+                if (!baseRef)
+                  return yield* Effect.fail(
+                    new ManualProjectWorkerSetupError({
+                      message: "Select a published base branch before starting this worker.",
+                    }),
+                  );
+                const pinnedBase = yield* gitVcsDriver.resolveCommit({ cwd, revision: baseRef });
+                const publishedBase = yield* gitWorkflow.resolveRemoteTrackingCommit({
+                  cwd,
+                  refName: baseRef,
+                  fallbackRemoteName: "origin",
+                });
+                const published = yield* gitVcsDriver.execute({
+                  cwd,
+                  operation: "manual-worker-published-base",
+                  args: [
+                    "merge-base",
+                    "--is-ancestor",
+                    pinnedBase.commitSha,
+                    publishedBase.commitSha,
+                  ],
+                  allowNonZeroExit: true,
+                });
+                if (published.exitCode !== 0)
+                  return yield* Effect.fail(
+                    new ManualProjectWorkerSetupError({
+                      message:
+                        "Selected worker base has unpublished commits; publish it before starting. Existing work is preserved.",
+                    }),
+                  );
+                const worktree = yield* gitWorkflow.createWorktree({
+                  cwd,
+                  refName: pinnedBase.commitSha,
+                  baseRefName: baseRef,
+                  newRefName: branch,
+                  path: null,
+                });
+                // Once created, retain this owned checkout on dispatch failure: retries reuse
+                // persisted identity, and no user edits can be removed by rollback.
+                manualWorkerPrepared = true;
+                targetWorktreePath = worktree.worktree.path;
+                yield* orchestrationEngine.dispatch({
+                  type: "thread.meta.update",
+                  commandId: yield* serverCommandId("manual-worker-checkout"),
+                  threadId: thread.id,
+                  branch,
+                  worktreePath: targetWorktreePath,
+                });
+              } else {
+                const ownedStatus = yield* gitWorkflow.localStatus({ cwd: thread.worktreePath! });
+                if (
+                  thread.worktreePath === cwd ||
+                  !ownedStatus.isRepo ||
+                  ownedStatus.refName !== branch
+                )
+                  return yield* Effect.fail(
+                    new ManualProjectWorkerSetupError({
+                      message:
+                        "Saved worker checkout does not match its isolated branch; preserve it for explicit recovery.",
+                    }),
+                  );
+                manualWorkerPrepared = true;
+                targetWorktreePath = thread.worktreePath;
+              }
+              const environmentId = yield* serverEnvironment.getEnvironmentId;
+              const parent = { environmentId, threadId: manualParent.id };
+              const ordinal = yield* allocateManualWorkerOrdinal(parent, thread.id);
+              yield* orchestrationEngine.dispatch({
+                type: "thread.meta.update",
+                commandId: yield* serverCommandId("manual-worker-title"),
+                threadId: thread.id,
+                title: deriveWorkerTitle(
+                  ordinal,
+                  manualParent.title,
+                  (command.modelSelection ?? thread.modelSelection).model,
+                ),
+              });
+              yield* orchestrationEngine.dispatch({
+                type: "thread.workjet-config.set",
+                commandId: yield* serverCommandId("manual-worker-config"),
+                threadId: thread.id,
+                workjetConfig: manualProjectWorkerConfig(
+                  thread,
+                  manualParent,
+                  environmentId,
+                  command.message.text,
+                ),
+                createdAt: command.createdAt,
+              });
+            }
+
+            if (Option.isSome(existingBootstrapThread) && targetWorktreePath === null)
+              targetWorktreePath = existingBootstrapThread.value.worktreePath;
+            if (
+              bootstrap?.prepareWorktree &&
+              !manualParent &&
+              !(
+                Option.isSome(existingBootstrapThread) && existingBootstrapThread.value.worktreePath
+              )
+            ) {
               let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
               // "Start from origin" is a stored default; repos without an
               // origin remote fall back to the local base branch instead of
@@ -1268,7 +1424,14 @@ const makeWsRpcLayer = (
 
           return yield* bootstrapProgram.pipe(
             Effect.catchCause((cause) => {
-              const dispatchError = toBootstrapDispatchCommandCauseError(cause);
+              const originalError = toBootstrapDispatchCommandCauseError(cause);
+              const dispatchError =
+                manualWorkerPrepared && targetWorktreePath
+                  ? new OrchestrationDispatchCommandError({
+                      message: `${originalError.message} Worker checkout preserved at ${targetWorktreePath} on workjet/worker/${command.threadId}; retry recorded ownership or recover it explicitly.`,
+                      cause,
+                    })
+                  : originalError;
               if (Cause.hasInterruptsOnly(cause)) {
                 return Effect.fail(dispatchError);
               }
@@ -1281,8 +1444,22 @@ const makeWsRpcLayer = (
         normalizedCommand: OrchestrationCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> => {
         const dispatchEffect =
-          normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap
-            ? dispatchBootstrapTurnStart(normalizedCommand)
+          normalizedCommand.type === "thread.turn.start"
+            ? projectionSnapshotQuery.getThreadShellById(normalizedCommand.threadId).pipe(
+                Effect.flatMap((existing) => {
+                  const config = Option.isSome(existing) ? existing.value.workjetConfig : undefined;
+                  const preparedTeam = config?.schemaVersion === 2 && config.team !== undefined;
+                  // Existing team threads never wait for an unrelated manual checkout.
+                  return preparedTeam
+                    ? dispatchBootstrapTurnStart(normalizedCommand)
+                    : manualWorkerPreparation.withPermit(
+                        dispatchBootstrapTurnStart(normalizedCommand),
+                      );
+                }),
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to prepare project worker"),
+                ),
+              )
             : orchestrationEngine
                 .dispatch(normalizedCommand)
                 .pipe(
@@ -2771,6 +2948,11 @@ const makeWsRpcLayer = (
                     onFailure: (cause) => Queue.failCause(queue, cause),
                     onSuccess: () =>
                       refreshGitStatus(input.cwd).pipe(
+                        Effect.andThen(
+                          Option.isSome(workerPullRequestLifecycle)
+                            ? workerPullRequestLifecycle.value.reconcileWorktree(input.cwd)
+                            : Effect.void,
+                        ),
                         Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
                       ),
                   }),

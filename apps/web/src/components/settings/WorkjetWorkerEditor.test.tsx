@@ -68,7 +68,6 @@ describe("WorkjetWorkerEditor", () => {
       llmRouteId: routeId,
       modelId: " gpt-5.6-sol ",
       reasoning: "high",
-      role: "standard",
       capabilityIds: ["greppy", "web-search", "web-stack-browser"],
       capabilityBindings: [],
       personalization,
@@ -90,7 +89,7 @@ describe("WorkjetWorkerEditor", () => {
     });
   });
 
-  it("requires exactly one Decision Hub binding and persists the root role", () => {
+  it("requires exactly one Decision Hub binding without granting a role", () => {
     const draft = {
       ...createWorkjetWorkerDraft({ computers: [computer], routes: [route], id: "worker-1" }),
       name: "Owner coordinator",
@@ -112,7 +111,7 @@ describe("WorkjetWorkerEditor", () => {
         },
       ],
     });
-    expect(saved.role).toBe("orchestrator");
+    expect(saved.role).toBe("standard");
     expect(saved.capabilityBindings).toHaveLength(1);
   });
 
@@ -174,6 +173,8 @@ describe("WorkjetWorkerEditor", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
 
     // Options visible, not hidden behind a trigger.
+    expect(markup).not.toContain("Orchestrator");
+    expect(markup).not.toContain("Root role");
     expect(markup).toContain("Claude Code");
     expect(markup).toContain("OpenCode");
     expect(markup).toContain("Web Stack Browser");

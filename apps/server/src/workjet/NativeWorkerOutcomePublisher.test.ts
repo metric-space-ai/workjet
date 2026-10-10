@@ -14,6 +14,7 @@ function fixture() {
   const reports: string[] = [];
   const dependencies = {
     listStopped: (after: string) => Effect.succeed(after === "" ? [receipt] : []),
+    refresh: (saved: WorkerPullRequestReceipt) => Effect.succeed(saved),
     readStartup: () => Effect.succeed(hasStartup ? Option.some({
       request: worker, worktreePath: startup.worktreePath,
       response: { requestId: worker.requestId, outcome: { status: "dispatched" as const, result: startup } },

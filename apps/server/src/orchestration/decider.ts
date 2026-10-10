@@ -20,6 +20,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import { requireOneShotIsolation } from "./oneShotIsolation.ts";
 import type * as PlatformError from "effect/PlatformError";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
@@ -601,7 +602,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (workerPullRequestTerminal) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "This worker's pull request is complete. Start a new worker for new work.",
+          detail: "This worker has submitted its pull request. Start a new worker for new work.",
         });
       }
       const thread = yield* requireThreadArchived({
@@ -983,6 +984,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const workerConfig =
+        thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.role === "worker"
+          ? thread.workjetConfig
+          : undefined;
+      if (
+        workerConfig &&
+        ((command.branch !== undefined && command.branch !== thread.branch) ||
+          (command.worktreePath !== undefined && command.worktreePath !== thread.worktreePath))
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "A One-Shot Worker's assigned checkout and branch are immutable.",
+        });
+      const workerModel = command.modelSelection?.model ?? thread.modelSelection.model;
+      const workerPrefix = thread.title.match(/^(\[Worker[1-9]\d*@.*\]): /)?.[1];
+      const title = workerConfig?.pullRequest
+        ? `#${workerConfig.pullRequest.number}: ${workerModel}`
+        : workerConfig && workerPrefix
+          ? `${workerPrefix}: ${workerModel}`
+          : workerConfig &&
+              command.title !== undefined &&
+              !/^\[Worker[1-9]\d*@.*\]: /s.test(command.title)
+            ? thread.title
+            : command.title;
       const branch =
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
@@ -1000,8 +1025,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.meta-updated",
         payload: {
           threadId: command.threadId,
-          ...(command.title !== undefined ? { title: command.title } : {}),
-          ...(command.regenerateTitle === true
+          ...(title !== undefined ? { title } : {}),
+          ...(command.regenerateTitle === true && !workerConfig
             ? {
                 regenerateTitle: true as const,
                 previousTitle: thread.title,
@@ -1030,7 +1055,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      const requestIsCurrent = thread.titleRegeneration?.requestId === command.requestId;
+      const requestIsCurrent =
+        thread.workjetConfig.role !== "worker" &&
+        thread.titleRegeneration?.requestId === command.requestId;
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1323,7 +1350,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (workerPullRequestTerminal) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "This worker's pull request is complete. Start a new worker for new work.",
+          detail: "This worker has submitted its pull request. Start a new worker for new work.",
         });
       }
       const targetThread = yield* requireThread({
@@ -1337,6 +1364,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Deleted thread '${command.threadId}' cannot start another turn.`,
         });
       }
+      yield* requireOneShotIsolation(targetThread, readModel);
       const sourceProposedPlan = command.sourceProposedPlan;
       if (command.goalRevision !== undefined) {
         const config = targetThread.workjetConfig;

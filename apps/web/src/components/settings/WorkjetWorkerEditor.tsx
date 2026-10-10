@@ -109,7 +109,6 @@ export interface WorkjetWorkerDraft {
   readonly llmRouteId: string;
   readonly modelId: string;
   readonly reasoning: WorkjetReasoningSelection;
-  readonly role: "standard" | "orchestrator";
   readonly capabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly capabilityBindings: ReadonlyArray<WorkjetCapabilityBinding>;
   readonly personalization: WorkjetWorkerPersonalization;
@@ -137,7 +136,6 @@ export function createWorkjetWorkerDraft(input: {
     llmRouteId: input.routes[0]?.id ?? "",
     modelId: "",
     reasoning: "automatic",
-    role: "standard",
     capabilityIds: [],
     capabilityBindings: [],
     personalization: createDefaultWorkjetWorkerPersonalization(),
@@ -191,7 +189,7 @@ export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorker
     llmRouteId: WorkjetLlmRouteId.make(draft.llmRouteId),
     modelId,
     reasoning: draft.reasoning,
-    role: draft.role,
+    role: "standard",
     capabilityIds: [...draft.capabilityIds],
     capabilityBindings: draft.capabilityIds.includes("decision-hub")
       ? [...decisionHubBindings]
@@ -682,25 +680,6 @@ export function WorkjetWorkerEditor({
               />
             ))}
           </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <SectionHeader title="Root role" />
-          <div className="flex flex-wrap gap-2">
-            <ChoiceButton
-              title="Standard"
-              selected={draft.role === "standard"}
-              onClick={() => patchDraft({ role: "standard" })}
-            />
-            <ChoiceButton
-              title="Orchestrator"
-              selected={draft.role === "orchestrator"}
-              onClick={() => patchDraft({ role: "orchestrator" })}
-            />
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            Orchestrator Lumas coordinate child Lumas. Child Lumas never inherit Decision Hub.
-          </p>
         </div>
 
         <div className="space-y-1.5">

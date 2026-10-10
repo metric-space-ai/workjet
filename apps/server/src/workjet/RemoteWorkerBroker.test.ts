@@ -74,7 +74,17 @@ function runtime(parentCapabilities = ["greppy"], computers = true) {
     projectId: request.project.id,
     deletedAt: null,
     archivedAt: null,
-    workjetConfig: { role: "orchestrator", enabledCapabilityIds: parentCapabilities },
+    workjetConfig: {
+      schemaVersion: 2,
+      role: "standard",
+      enabledCapabilityIds: parentCapabilities,
+      team: {
+        role: "supervisor",
+        parentThreadId: null,
+        threadId: request.parent.threadId,
+        projectId: request.project.id,
+      },
+    },
   } as unknown as OrchestrationThread;
   return Layer.mergeAll(
     storeLayer,

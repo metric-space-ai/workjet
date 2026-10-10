@@ -2,6 +2,7 @@ import {
   CommandId,
   DEFAULT_MODEL,
   DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
   MessageId,
   ProjectId,
   ProviderInstanceId,
@@ -213,6 +214,11 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
         {
           ...DEFAULT_WORKJET_THREAD_CONFIG,
           schemaVersion: 2,
+          role: "worker",
+          parent: {
+            environmentId: EnvironmentId.make("goal-fixture"),
+            threadId: ThreadId.make("parent"),
+          },
           team: {
             projectId,
             threadId: id,
@@ -226,7 +232,18 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       ];
       for (const workjetConfig of workerConfigs) {
         const result = yield* apply(
-          { ...snapshot, threads: [{ ...snapshot.threads[0]!, workjetConfig }] },
+          {
+            ...snapshot,
+            threads: [
+              {
+                ...snapshot.threads[0]!,
+                workjetConfig,
+                ...(workjetConfig.schemaVersion === 2 && workjetConfig.team?.role === "worker"
+                  ? { branch: `workjet/worker/${id}`, worktreePath: "/fixture/owned-worker" }
+                  : {}),
+              },
+            ],
+          },
           turn,
         );
         const projected = result.threads[0]!.workjetConfig;

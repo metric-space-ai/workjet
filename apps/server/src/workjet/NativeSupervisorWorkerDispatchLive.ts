@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
+  canCoordinateWorkjet,
   RemoteWorkerDispatchError,
   RemoteWorkerResult,
   type NativeSupervisorWorkerIntent,
@@ -32,6 +33,8 @@ import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
 import { WorkerDispatch, type WorkerDispatchError } from "./WorkerDispatch.ts";
 import { WorkerPullRequestStore } from "./WorkerPullRequestStore.ts";
 import { makeNativeWorkerOutcomePublisher } from "./NativeWorkerOutcomePublisher.ts";
+import { refreshRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
+import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const encodeResult = Schema.encodeEffect(RemoteWorkerResult);
@@ -75,6 +78,7 @@ export const make = Effect.gen(function* () {
   const workers = yield* WorkerDispatch;
   const broker = yield* RemoteWorkerBroker;
   const pullRequests = yield* WorkerPullRequestStore;
+  const sourceControl = yield* SourceControlProviderRegistry;
   const native = makeCtoxNativeSupervisorWorkers({
     connections,
     transport: makeCtoxMcpTransport(yield* HttpClient.HttpClient),
@@ -86,7 +90,7 @@ export const make = Effect.gen(function* () {
     if (
       parent.deletedAt !== null ||
       parent.archivedAt !== null ||
-      parent.workjetConfig.role !== "orchestrator" ||
+      !canCoordinateWorkjet(parent.workjetConfig) ||
       (parent.workjetConfig.schemaVersion === 2 && parent.workjetConfig.team?.role !== "supervisor")
     )
       return yield* failure();
@@ -116,6 +120,15 @@ export const make = Effect.gen(function* () {
   const outcomes = makeNativeWorkerOutcomePublisher({
     listStopped: (after) => pullRequests.listStopped(after).pipe(Effect.mapError(failure)),
     readStartup: broker.read,
+    refresh: (receipt, startup) => Effect.gen(function* () {
+      const saved = yield* broker.read(receipt.threadId);
+      if (Option.isNone(saved)) return yield* failure();
+      return yield* refreshRemoteWorkerOutcome(receipt, startup, saved.value.request).pipe(
+        Effect.provideService(ProjectionSnapshotQuery, query),
+        Effect.provideService(SourceControlProviderRegistry, sourceControl),
+        Effect.provideService(WorkerPullRequestStore, pullRequests),
+      );
+    }),
     currentSource: (worker) => Effect.gen(function* () {
       const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
       const parent = model.threads.find((thread) => thread.id === worker.request.parent.threadId);

@@ -467,6 +467,8 @@ const RemoteWorkerComputerEnrollmentLayerLive = RemoteWorkerComputerEnrollmentLi
 const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
   Layer.provide(
     RemoteWorkerSourceOperationsLive.layer.pipe(
+      Layer.provide(SourceControlProviderRegistryLayerLive),
+      Layer.provide(VcsProcess.layer),
       Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
       Layer.provide(CtoxThreadBindingSourceLayerLive),
       Layer.provide(RemoteWorkerAuthorityStore.layer),
@@ -508,7 +510,7 @@ const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.
 
 const RuntimeCoreFoundationLive = Layer.mergeAll(
   ReactorLayerLive,
-  WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer), Layer.provide(RemoteWorkerStore.layer)),
+  WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
 ).pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(WorktreeStorageLayerLive),

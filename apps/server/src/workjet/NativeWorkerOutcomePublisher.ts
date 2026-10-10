@@ -10,6 +10,7 @@ import { terminalReceiptFrom, type NativeWorkerTerminalReceipt } from "./NativeW
 export function makeNativeWorkerOutcomePublisher(dependencies: {
   readonly listStopped: (after: string) => Effect.Effect<ReadonlyArray<WorkerPullRequestReceipt>, RemoteWorkerDispatchError>;
   readonly readStartup: (id: ThreadId) => Effect.Effect<Option.Option<RemoteWorkerReceipt>, RemoteWorkerDispatchError>;
+  readonly refresh: (receipt: WorkerPullRequestReceipt, startup: RemoteWorkerResult) => Effect.Effect<WorkerPullRequestReceipt, RemoteWorkerDispatchError>;
   readonly currentSource: (worker: RemoteWorkerReceipt) => Effect.Effect<NativeSupervisorWorkerSource, RemoteWorkerDispatchError>;
   readonly report: (source: RegisteredNativeWorkerSource, startup: RemoteWorkerResult, outcome: NativeWorkerTerminalReceipt) => Effect.Effect<number, RemoteWorkerDispatchError>;
 }) {
@@ -33,7 +34,7 @@ export function makeNativeWorkerOutcomePublisher(dependencies: {
             request.computerId !== startup.computerId ||
             request.parent.environmentId !== startup.parent.environmentId ||
             request.parent.threadId !== startup.parent.threadId) return;
-        const outcome = yield* terminalReceiptFrom(receipt, startup);
+        if (receipt.executionStopped !== 1) return;
         const current = yield* dependencies.currentSource(saved.value);
         const matched = sources.find(({ source, registration }) =>
           source.scope.connectionId === current.scope.connectionId &&
@@ -46,7 +47,9 @@ export function makeNativeWorkerOutcomePublisher(dependencies: {
           registration.sourceEnvironmentId === request.parent.environmentId &&
           registration.sourceSupervisorThreadId === request.parent.threadId);
         if (!matched) return;
-        const key = `${matched.source.scope.connectionId}/${matched.registration.registrationId}/${matched.registration.revision}/${receipt.threadId}/${receipt.headOid}/${receipt.state}`;
+        const observed = receipt.state === "open" ? yield* dependencies.refresh(receipt, startup) : receipt;
+        const outcome = yield* terminalReceiptFrom(observed, startup);
+        const key = `${matched.source.scope.connectionId}/${matched.registration.registrationId}/${matched.registration.revision}/${receipt.threadId}/${observed.headOid}/${observed.state}`;
         if (accepted.has(key)) return;
         yield* dependencies.report(matched, startup, outcome);
         accepted.add(key);

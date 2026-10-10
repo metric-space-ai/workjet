@@ -108,7 +108,7 @@ export const make = Effect.gen(function* () {
   const markExecutionStopped = (threadId: ThreadId) =>
     sql`
       UPDATE workjet_worker_pull_requests SET execution_stopped = 1
-      WHERE thread_id = ${threadId} AND state IN ('merged', 'closed')
+      WHERE thread_id = ${threadId}
     `.pipe(
       Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.markExecutionStopped")),
       Effect.asVoid,
@@ -119,7 +119,7 @@ export const make = Effect.gen(function* () {
         branch_ref AS "branchRef", provider, pr_number AS "prNumber", pr_url AS "prUrl",
         head_oid AS "headOid", state, execution_stopped AS "executionStopped"
       FROM workjet_worker_pull_requests
-      WHERE execution_stopped = 1 AND state IN ('merged', 'closed') AND thread_id > ${afterThreadId}
+      WHERE execution_stopped = 1 AND thread_id > ${afterThreadId}
       ORDER BY thread_id LIMIT 16
     `.pipe(Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.listStopped")));
   return { get, observe, markExecutionStopped, listStopped };

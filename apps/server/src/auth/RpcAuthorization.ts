@@ -89,6 +89,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetGatewayHealth]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayModelChecks]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayAccountModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayCheckModels]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayDiscoverModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayUpdateRouting]: AuthOrchestrationOperateScope,

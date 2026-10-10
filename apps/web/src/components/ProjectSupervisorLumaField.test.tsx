@@ -2,7 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 import { Schema } from "effect";
 import { WorkjetWorkerProfile } from "@workjet/contracts";
-import { ProjectSupervisorLumaSelect, ProjectSupervisorLumaSummaryView } from "./ProjectSupervisorLumaField";
+import {
+  ProjectSupervisorLumaSelect,
+  ProjectSupervisorLumaSummaryView,
+} from "./ProjectSupervisorLumaField";
 
 const profile = Schema.decodeUnknownSync(WorkjetWorkerProfile)({
   id: "molecularity-supervisor",
@@ -16,11 +19,17 @@ const profile = Schema.decodeUnknownSync(WorkjetWorkerProfile)({
 
 describe("Project Supervisor Luma selection", () => {
   it("uses configured metadata in the overview only while its scoped source is available", () => {
-    const ready = renderToStaticMarkup(<ProjectSupervisorLumaSummaryView lumaId={profile.id}
-      phase="ready" profiles={[profile]} />);
+    const ready = renderToStaticMarkup(
+      <ProjectSupervisorLumaSummaryView lumaId={profile.id} phase="ready" profiles={[profile]} />,
+    );
     expect(ready).toContain(`Configured · Claude Code · ${profile.modelId}`);
-    const unavailable = renderToStaticMarkup(<ProjectSupervisorLumaSummaryView lumaId={profile.id}
-      phase="unavailable" profiles={[profile]} />);
+    const unavailable = renderToStaticMarkup(
+      <ProjectSupervisorLumaSummaryView
+        lumaId={profile.id}
+        phase="unavailable"
+        profiles={[profile]}
+      />,
+    );
     expect(unavailable).toContain("Configured Luma unavailable");
     expect(unavailable).not.toContain(profile.modelId);
   });

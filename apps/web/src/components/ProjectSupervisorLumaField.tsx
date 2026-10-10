@@ -72,16 +72,26 @@ export function ProjectSupervisorLumaSummary({ lumaId }: { readonly lumaId: stri
   return <ProjectSupervisorLumaSummaryView lumaId={lumaId} {...useProjectSupervisorLumas()} />;
 }
 
-export function ProjectSupervisorLumaSummaryView({ lumaId, phase, profiles }: {
+export function ProjectSupervisorLumaSummaryView({
+  lumaId,
+  phase,
+  profiles,
+}: {
   readonly lumaId: string;
   readonly phase: "loading" | "ready" | "unavailable";
   readonly profiles: readonly WorkjetWorkerProfile[];
 }) {
-  const selected = phase === "ready" ? profiles.find((profile) => profile.id === lumaId) : undefined;
-  return <span title={selected?.computerId}>
-    {selected ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
-      : phase === "loading" ? "Loading configured Luma…" : "Configured Luma unavailable"}
-  </span>;
+  const selected =
+    phase === "ready" ? profiles.find((profile) => profile.id === lumaId) : undefined;
+  return (
+    <span title={selected?.computerId}>
+      {selected
+        ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
+        : phase === "loading"
+          ? "Loading configured Luma…"
+          : "Configured Luma unavailable"}
+    </span>
+  );
 }
 
 export function ProjectSupervisorLumaSelect({

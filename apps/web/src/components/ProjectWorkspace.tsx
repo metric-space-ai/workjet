@@ -332,8 +332,12 @@ export function ProjectWorkspace({
                                   <span className="text-sm font-semibold">{thread.title}</span>
                                   <span className="text-xs text-muted-foreground">
                                     {project.configuration?.supervisorLumaId ? (
-                                      <ProjectSupervisorLumaSummary lumaId={project.configuration.supervisorLumaId} />
-                                    ) : "Instance default"}
+                                      <ProjectSupervisorLumaSummary
+                                        lumaId={project.configuration.supervisorLumaId}
+                                      />
+                                    ) : (
+                                      "Instance default"
+                                    )}
                                     {" · "}
                                     {projectUpdateAge(thread.updatedAt)}
                                   </span>

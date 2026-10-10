@@ -255,8 +255,9 @@ function IndexDraftLanding() {
         const modelSelection = resolveProjectTeamModelSelection(
           environments.find((environment) => environment.environmentId === target.environmentId)
             ?.serverConfig?.providers ?? [],
-          projects.find((project) =>
-            project.id === target.projectId && project.environmentId === target.environmentId,
+          projects.find(
+            (project) =>
+              project.id === target.projectId && project.environmentId === target.environmentId,
           )?.defaultModelSelection,
         );
         if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)

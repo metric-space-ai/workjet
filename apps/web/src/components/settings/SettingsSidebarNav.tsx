@@ -194,8 +194,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 setActiveResultIndex(0);
               }}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Search"
-              aria-label="Search settings"
+              placeholder="Suchen"
+              aria-label="Einstellungen suchen"
               role="combobox"
               aria-autocomplete="list"
               aria-expanded={isSearching && hasResults}
@@ -213,7 +213,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 size="icon-xs"
                 variant="ghost"
                 className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                aria-label="Clear settings search"
+                aria-label="Suche zurücksetzen"
                 onClick={() => {
                   clearSearch();
                   searchInputRef.current?.focus();
@@ -230,14 +230,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               role="status"
               className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
             >
-              No settings found
+              Keine Einstellungen gefunden
             </p>
           ) : null}
           <SidebarMenu
             className="ps-px"
             id={isSearching && hasResults ? "settings-search-results" : undefined}
             role={isSearching && hasResults ? "listbox" : undefined}
-            aria-label={isSearching && hasResults ? "Settings search results" : undefined}
+            aria-label={isSearching && hasResults ? "Suchergebnisse" : undefined}
           >
             {isSearching
               ? results.map((item, index) => (
@@ -283,9 +283,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                             className="px-2 text-[11px] font-medium text-sidebar-muted-foreground"
                             data-settings-instance-context=""
                           >
-                            Settings for
+                            Einstellungen für
                             <span className="mt-0.5 block truncate text-sm text-sidebar-foreground">
-                              {instanceContext.activeInstanceName ?? "Select an instance"}
+                              {instanceContext.activeInstanceName ?? "Instanz auswählen"}
                             </span>
                           </p>
                         </SidebarMenuItem>
@@ -317,7 +317,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             <SidebarMenuItem>
               <SidebarMenuButton onClick={handleBackClick}>
                 <ArrowLeftIcon />
-                <span>Back</span>
+                <span>Zurück</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

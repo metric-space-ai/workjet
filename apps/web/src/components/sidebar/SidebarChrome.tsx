@@ -211,7 +211,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={handleSettingsClick}>
             <SettingsIcon />
-            <span>Settings</span>
+            <span>Einstellungen</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

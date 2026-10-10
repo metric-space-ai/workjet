@@ -17,7 +17,7 @@ export function ComposerBar(props: {
       </div>
       <div
         data-composer-bar-target="true"
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-1 py-1"
       >
         {props.worker}
         {props.manual}

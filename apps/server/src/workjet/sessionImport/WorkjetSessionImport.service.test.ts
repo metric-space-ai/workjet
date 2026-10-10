@@ -35,6 +35,7 @@ const sourceRace = vi.hoisted(() => ({
   afterSourceClose: null as (() => Promise<void>) | null,
   sourceSignal: null as AbortSignal | null,
   archivePath: null as string | null,
+  previewReads: [] as string[],
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -42,6 +43,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     ...actual,
     open: async (...args: Parameters<typeof actual.open>) => {
       const handle = await actual.open(...args);
+      if (args[1] === "r" && typeof args[0] === "string" && args[0].endsWith(".jsonl"))
+        sourceRace.previewReads.push(args[0]);
       if (args[0] === sourceRace.path && sourceRace.afterSourceClose) {
         const createStream = handle.createReadStream.bind(handle);
         const close = handle.close.bind(handle);
@@ -263,6 +266,91 @@ const withFixture = <A, E>(
       );
     }),
   );
+describe("session import search inventory", () => {
+  it.effect(
+    "answers cold and repeated searches beyond the preview limit without rescanning transcript content",
+    () =>
+      withFixture(({ root, service }) =>
+        Effect.gen(function* () {
+          const seed = NodePath.join(root, "sessions", "seed.jsonl");
+          const content =
+            transcript("Archive conversation") +
+            encodeJson({ type: "tool_result", payload: "x".repeat(64 * 1024) }) +
+            "\n";
+          yield* Effect.promise(() => NodeFSP.writeFile(seed, content));
+          yield* Effect.forEach(
+            Array.from({ length: 600 }, (_, index) => index),
+            (index) =>
+              Effect.promise(() =>
+                NodeFSP.link(seed, NodePath.join(root, "sessions", `copy-${index}.jsonl`)),
+              ),
+            { concurrency: 2, discard: true },
+          );
+          const invalid = NodePath.join(root, "sessions", "non-conversation.jsonl");
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(invalid, encodeJson({ type: "tool_result" }) + "\n"),
+          );
+          const started = performance.now();
+          expect((yield* service.inspect({ query: "absent title" })).candidates).toEqual([]);
+          const coldMs = performance.now() - started;
+          const reads = sourceRace.previewReads.filter((path) => path.startsWith(root)).length;
+          expect(reads).toBe(602);
+          const warmStarted = performance.now();
+          expect((yield* service.inspect({ query: "another absent title" })).candidates).toEqual(
+            [],
+          );
+          const warmMs = performance.now() - warmStarted;
+          expect(sourceRace.previewReads.filter((path) => path.startsWith(root))).toHaveLength(
+            reads,
+          );
+          console.info(
+            `UX-013 602-session search: cold=${coldMs.toFixed(1)}ms warm=${warmMs.toFixed(1)}ms`,
+          );
+          expect(coldMs).toBeLessThan(2_000);
+          expect(warmMs).toBeLessThan(2_000);
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(invalid, transcript("Newly recorded conversation")),
+          );
+          const updated = yield* service.inspect({ query: "newly recorded" });
+          expect(updated.candidates.map(({ title }) => title)).toEqual([
+            "Newly recorded conversation",
+          ]);
+          expect(updated.candidates[0]?.previewMessages?.[0]?.text).toBe(
+            "Newly recorded conversation",
+          );
+          expect(sourceRace.previewReads.filter((path) => path.startsWith(root))).toHaveLength(
+            reads + 1,
+          );
+        }),
+      ),
+  );
+
+  it.effect(
+    "shares preview reads between overlapping searches and preserves their independent results",
+    () =>
+      withFixture(({ root, service }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(root, "sessions", "one.jsonl"),
+              transcript("Shared archive"),
+            ),
+          );
+          const before = sourceRace.previewReads.filter((path) => path.startsWith(root)).length;
+          const results = yield* Effect.all(
+            [service.inspect({ query: "Shared" }), service.inspect({ query: "missing" })],
+            { concurrency: 2 },
+          );
+          expect(results[0]?.candidates.map(({ title }) => title)).toEqual(["Shared archive"]);
+          expect(results[1]?.candidates).toEqual([]);
+          expect(sourceRace.previewReads.filter((path) => path.startsWith(root))).toHaveLength(
+            before + 1,
+          );
+        }),
+      ),
+  );
+});
+
 describe("existing imported thread names", () => {
   it.effect(
     "repairs an automatic title, respects a local rename, and leaves history receipts intact",

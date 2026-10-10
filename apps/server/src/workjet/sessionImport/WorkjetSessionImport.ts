@@ -704,6 +704,65 @@ export const make = Effect.gen(function* () {
       };
     }
   >();
+  // Search retains compact metadata for the inventory, while transcript previews stay bounded.
+  const summaryCache = new Map<
+    string,
+    { readonly fingerprint: string; readonly session: Omit<ParsedSession, "messages"> | null }
+  >();
+  const pendingPreviews = new Map<string, Promise<ParsedSession | null>>();
+  let discovery: { readonly key: string; readonly promise: Promise<SourceFile[]> } | null = null;
+  const discoverForInspection = (locations: readonly SourceLocation[]) => {
+    const key = JSON.stringify(locations);
+    if (discovery?.key === key) return discovery.promise;
+    const promise = discoverFiles(locations).finally(() => {
+      if (discovery?.promise === promise) discovery = null;
+    });
+    discovery = { key, promise };
+    return promise;
+  };
+  const fingerprintFor = (file: SourceFile) =>
+    `${file.mtimeMs}:${file.size}:${file.titleVersion ?? ""}`;
+  const loadPreview = (file: SourceFile) => {
+    const fingerprint = fingerprintFor(file);
+    const key = `${file.sourceKey}:${fingerprint}`;
+    const pending = pendingPreviews.get(key);
+    if (pending) return pending;
+    const promise = readSessionPreview(file)
+      .then((preview) => {
+        if (!preview) {
+          summaryCache.set(file.sourceKey, { fingerprint, session: null });
+          return null;
+        }
+        const { messages, ...session } = preview;
+        summaryCache.set(file.sourceKey, { fingerprint, session });
+        previewCache.set(file.sourceKey, {
+          fingerprint,
+          session: {
+            ...session,
+            previewMessages: messages
+              .slice(0, 3)
+              .map(({ role, text }) => ({ role, text: text.slice(0, 1_000) })),
+          },
+        });
+        if (previewCache.size > MAX_CACHED_PREVIEWS) {
+          const oldestKey = previewCache.keys().next().value;
+          if (oldestKey !== undefined) previewCache.delete(oldestKey);
+        }
+        return preview;
+      })
+      .catch(() => null)
+      .finally(() => pendingPreviews.delete(key));
+    pendingPreviews.set(key, promise);
+    return promise;
+  };
+  const loadSummary = async (file: SourceFile) => {
+    const cached = summaryCache.get(file.sourceKey);
+    if (cached?.fingerprint === fingerprintFor(file)) return cached.session;
+    const preview = await loadPreview(file);
+    if (!preview) return null;
+    const { messages: _messages, ...session } = preview;
+    return session;
+  };
   const inspect: WorkjetSessionImportShape["inspect"] = (input = {}) =>
     Effect.gen(function* () {
       const limit = Math.min(input.limit ?? 20, WORKJET_SESSION_IMPORT_MAX_CANDIDATES);
@@ -716,7 +775,7 @@ export const make = Effect.gen(function* () {
       );
       const locations = resolveLocations(settings, path);
       const files = yield* Effect.tryPromise({
-        try: () => discoverFiles(locations),
+        try: () => discoverForInspection(locations),
         catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
       });
       rememberFiles(locations, files);
@@ -737,85 +796,80 @@ export const make = Effect.gen(function* () {
         yield* sql<ImportRow>`SELECT source_key, thread_id, imported_message_count, prefix_hash FROM workjet_session_imports`;
       const fileKeys = new Set(files.map((file) => file.sourceKey));
       for (const key of previewCache.keys()) if (!fileKeys.has(key)) previewCache.delete(key);
+      for (const key of summaryCache.keys()) if (!fileKeys.has(key)) summaryCache.delete(key);
       const candidates: WorkjetSessionImportCandidate[] = [];
       let matched = 0;
       let hasMore = false;
-      for (const file of files) {
-        if (input.source && file.source !== input.source) continue;
-        const fingerprint = `${file.mtimeMs}:${file.size}:${file.titleVersion ?? ""}`;
-        let parsed =
-          previewCache.get(file.sourceKey)?.fingerprint === fingerprint
-            ? previewCache.get(file.sourceKey)?.session
-            : undefined;
-        if (!parsed) {
-          const preview = yield* Effect.promise(() => readSessionPreview(file).catch(() => null));
-          if (preview) {
-            parsed = {
-              title: preview.title,
-              ...(preview.sourceThreadId ? { sourceThreadId: preview.sourceThreadId } : {}),
-              ...(preview.repositoryUrl ? { repositoryUrl: preview.repositoryUrl } : {}),
-              model: preview.model,
-              workspaceRoot: preview.workspaceRoot,
-              createdAt: preview.createdAt,
-              updatedAt: preview.updatedAt,
-              previewMessages: preview.messages
-                .slice(0, 3)
-                .map(({ role, text }) => ({ role, text: text.slice(0, 1_000) })),
-            };
-            previewCache.set(file.sourceKey, { fingerprint, session: parsed });
-            if (previewCache.size > MAX_CACHED_PREVIEWS) {
-              const oldestKey = previewCache.keys().next().value;
-              if (oldestKey !== undefined) previewCache.delete(oldestKey);
-            }
-          }
-        }
-        if (!parsed) continue;
-        if (
-          search &&
-          !`${parsed.title}\n${parsed.workspaceRoot ?? ""}`.toLocaleLowerCase().includes(search)
-        )
-          continue;
-        if (matched++ < offset) continue;
-        if (candidates.length === limit) {
-          hasMore = true;
-          break;
-        }
-        const copies = rows.filter(
-          (row) =>
-            row.source_key === file.sourceKey || row.source_key.startsWith(`${file.sourceKey}:`),
-        );
-        const importedCopies: NonNullable<
-          WorkjetSessionImportCandidate["importedCopies"]
-        >[number][] = [];
-        for (const copy of copies) {
-          const thread = Option.getOrUndefined(
-            yield* query.getThreadShellById(ThreadId.make(copy.thread_id)),
-          );
-          if (thread && !importedCopies.some((entry) => entry.threadId === thread.id))
-            importedCopies.push({ projectId: thread.projectId, threadId: thread.id });
-        }
-        candidates.push({
-          candidateId: file.sourceKey,
-          source: file.source,
-          providerInstanceId: file.providerInstanceId,
-          title: parsed.title,
-          ...(parsed.sourceThreadId ? { sourceThreadId: parsed.sourceThreadId } : {}),
-          workspaceRoot: parsed.workspaceRoot,
-          createdAt: parsed.createdAt,
-          updatedAt: parsed.updatedAt,
-          sourceSizeBytes: file.size,
-          importedThreadId: importedCopies[0]?.threadId ?? null,
-          importedCopies,
-          previewMessages: parsed.previewMessages,
-          workspaceAvailable: yield* Effect.promise(() =>
-            parsed.workspaceRoot
-              ? NodeFSP.access(parsed.workspaceRoot).then(
-                  () => true,
-                  () => false,
-                )
-              : Promise.resolve(false),
+      const sourceFiles = input.source
+        ? files.filter((file) => file.source === input.source)
+        : files;
+      candidatePages: for (let index = 0; index < sourceFiles.length; index += 2) {
+        const batch = yield* Effect.promise(() =>
+          Promise.all(
+            sourceFiles.slice(index, index + 2).map(async (file) => ({
+              file,
+              parsed: await loadSummary(file),
+            })),
           ),
-        });
+        );
+        for (const { file, parsed } of batch) {
+          if (!parsed) continue;
+          if (
+            search &&
+            !`${parsed.title}\n${parsed.workspaceRoot ?? ""}`.toLocaleLowerCase().includes(search)
+          )
+            continue;
+          if (matched++ < offset) continue;
+          if (candidates.length === limit) {
+            hasMore = true;
+            break candidatePages;
+          }
+          const copies = rows.filter(
+            (row) =>
+              row.source_key === file.sourceKey || row.source_key.startsWith(`${file.sourceKey}:`),
+          );
+          const importedCopies: NonNullable<
+            WorkjetSessionImportCandidate["importedCopies"]
+          >[number][] = [];
+          for (const copy of copies) {
+            const thread = Option.getOrUndefined(
+              yield* query.getThreadShellById(ThreadId.make(copy.thread_id)),
+            );
+            if (thread && !importedCopies.some((entry) => entry.threadId === thread.id))
+              importedCopies.push({ projectId: thread.projectId, threadId: thread.id });
+          }
+          candidates.push({
+            candidateId: file.sourceKey,
+            source: file.source,
+            providerInstanceId: file.providerInstanceId,
+            title: parsed.title,
+            ...(parsed.sourceThreadId ? { sourceThreadId: parsed.sourceThreadId } : {}),
+            workspaceRoot: parsed.workspaceRoot,
+            createdAt: parsed.createdAt,
+            updatedAt: parsed.updatedAt,
+            sourceSizeBytes: file.size,
+            importedThreadId: importedCopies[0]?.threadId ?? null,
+            importedCopies,
+            previewMessages: yield* Effect.promise(async () => {
+              const cached = previewCache.get(file.sourceKey);
+              if (cached?.fingerprint === fingerprintFor(file))
+                return cached.session.previewMessages;
+              return (
+                (await loadPreview(file))?.messages
+                  .slice(0, 3)
+                  .map(({ role, text }) => ({ role, text: text.slice(0, 1_000) })) ?? []
+              );
+            }),
+            workspaceAvailable: yield* Effect.promise(() =>
+              parsed.workspaceRoot
+                ? NodeFSP.access(parsed.workspaceRoot).then(
+                    () => true,
+                    () => false,
+                  )
+                : Promise.resolve(false),
+            ),
+          });
+        }
       }
       const summaries = (["codex", "claude-code"] as const).map((source) => ({
         source,

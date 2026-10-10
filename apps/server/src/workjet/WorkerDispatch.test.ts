@@ -364,7 +364,9 @@ it.effect(
         const rejected = yield* Effect.flip(
           service.dispatch(invocation, { task: "Fix documentation" }),
         );
-        expect(rejected.reason).toBe("execution-policy-invalid");
+        expect(rejected.reason).toBe(
+          "team" in config ? "execution-policy-invalid" : "parent-not-orchestrator",
+        );
         expect(h.commands).toEqual([]);
         expect(h.worktreeCreates).toEqual([]);
         expect(h.remoteRequests).toEqual([]);

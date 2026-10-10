@@ -3,6 +3,8 @@ import {
   CommandId,
   EventId,
   type ModelSelection,
+  type MessageId,
+  type ProviderHistoryContinuation,
   type OrchestrationEvent,
   ProviderDriverKind,
   type ProjectId,
@@ -38,6 +40,7 @@ import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import {
   buildImportedHistoryPrompt,
   describeImportedHistoryFit,
+  readHistoryContinuation,
   IMPORTED_HISTORY_CONTEXT_NOTICE,
 } from "../../provider/importedHistoryContext.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
@@ -533,44 +536,13 @@ const make = Effect.gen(function* () {
       .pipe(Effect.map(Option.getOrUndefined));
   });
 
-  const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
-    readonly threadId: ThreadId;
-    readonly currentModelSelection: ModelSelection;
-    readonly requestedModelSelection: ModelSelection | undefined;
-  }) {
-    const requestedModelSelection = input.requestedModelSelection;
-    if (
-      requestedModelSelection === undefined ||
-      (input.currentModelSelection.instanceId === requestedModelSelection.instanceId &&
-        input.currentModelSelection.model === requestedModelSelection.model)
-    ) {
-      return;
-    }
-    const providers = yield* providerRegistry.getProviders;
-    const requiresNewThread =
-      providers.find((snapshot) => snapshot.instanceId === input.currentModelSelection.instanceId)
-        ?.requiresNewThreadForModelChange === true ||
-      providers.find((snapshot) => snapshot.instanceId === requestedModelSelection.instanceId)
-        ?.requiresNewThreadForModelChange === true;
-    if (!requiresNewThread) {
-      return;
-    }
-    return yield* new ProviderAdapterRequestError({
-      provider: providerErrorLabelFromInstanceHint({
-        instanceId: String(requestedModelSelection.instanceId),
-        modelSelectionInstanceId: String(input.currentModelSelection.instanceId),
-      }),
-      method: "thread.turn.start",
-      detail: `Thread '${input.threadId}' cannot switch models after the conversation has started. Start a new thread to use '${requestedModelSelection.model}'.`,
-    });
-  });
-
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly currentMessageId?: MessageId;
     },
   ) {
     const thread = yield* resolveThread(threadId);
@@ -610,20 +582,6 @@ const make = Effect.gen(function* () {
         : thread.modelSelection.instanceId;
     const desiredModelSelection = requestedModelSelection ?? thread.modelSelection;
     const desiredInstanceId = desiredModelSelection.instanceId;
-    const currentInfo = yield* providerService.getInstanceInfo(currentInstanceId).pipe(
-      Effect.mapError(
-        () =>
-          new ProviderAdapterRequestError({
-            provider: providerErrorLabelFromInstanceHint({
-              instanceId: String(currentInstanceId),
-              modelSelectionInstanceId: String(thread.modelSelection.instanceId),
-              sessionProvider: thread.session?.providerName ?? undefined,
-            }),
-            method: "thread.turn.start",
-            detail: `Thread '${threadId}' references unknown provider instance '${currentInstanceId}'. The instance is not configured in this build.`,
-          }),
-      ),
-    );
     const desiredInfo = yield* providerService.getInstanceInfo(desiredInstanceId).pipe(
       Effect.mapError(
         () =>
@@ -661,43 +619,29 @@ const make = Effect.gen(function* () {
         createdAt,
       });
     }
-    if (thread.session !== null) {
-      yield* rejectStartedThreadModelChangeIfRequired({
-        threadId,
-        currentModelSelection:
-          activeSession?.model !== undefined
-            ? {
-                ...thread.modelSelection,
-                instanceId: currentInstanceId,
-                model: activeSession.model,
-              }
-            : thread.modelSelection,
-        requestedModelSelection,
-      });
-    }
-    if (
-      thread.session !== null &&
-      requestedModelSelection !== undefined &&
-      requestedModelSelection.instanceId !== currentInstanceId
-    ) {
-      if (currentInfo.driverKind !== desiredInfo.driverKind) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' is bound to driver '${currentInfo.driverKind}' and cannot switch to '${desiredInfo.driverKind}'.`,
-        });
-      }
-      if (
-        currentInfo.continuationIdentity.continuationKey !==
-        desiredInfo.continuationIdentity.continuationKey
-      ) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' cannot switch from instance '${currentInstanceId}' to '${desiredInstanceId}' because their provider resume state is incompatible.`,
-        });
-      }
-    }
+    const targetChanged =
+      activeSession !== undefined &&
+      (activeSession.providerInstanceId !== desiredInstanceId ||
+        activeSession.model !== desiredModelSelection.model);
+    const freshSession =
+      targetChanged ||
+      (activeSession === undefined &&
+        thread.session !== null &&
+        (thread.workjetConfig.schemaVersion !== 2 ||
+          thread.workjetConfig.ctoxCrewChat === undefined));
+    const historyContinuation: ProviderHistoryContinuation | undefined = freshSession
+      ? {
+          messageIds: thread.messages
+            .filter(
+              (message) =>
+                message.id !== options?.currentMessageId &&
+                !message.streaming &&
+                (message.role === "user" || message.role === "assistant"),
+            )
+            .map((message) => message.id),
+          pending: true,
+        }
+      : undefined;
     const project = yield* resolveProject(thread.projectId);
     let effectiveCwd = resolveThreadWorkspaceCwd({
       thread,
@@ -734,7 +678,11 @@ const make = Effect.gen(function* () {
         providerInstanceId: desiredInstanceId,
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         modelSelection: desiredModelSelection,
-        ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+        ...(freshSession
+          ? { resumePolicy: "fresh" as const, historyContinuation }
+          : input?.resumeCursor !== undefined
+            ? { resumeCursor: input.resumeCursor }
+            : {}),
         runtimeMode: desiredRuntimeMode,
         workjetConfig: thread.workjetConfig,
       });
@@ -773,15 +721,13 @@ const make = Effect.gen(function* () {
     if (existingSessionThreadId) {
       const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
       const cwdChanged = effectiveCwd !== activeSession?.cwd;
-      const sessionModelSwitch = (yield* providerService.getCapabilities(desiredInstanceId))
-        .sessionModelSwitch;
       const modelChanged =
         requestedModelSelection !== undefined &&
         requestedModelSelection.model !== activeSession?.model;
       const instanceChanged =
         requestedModelSelection !== undefined &&
         activeSession?.providerInstanceId !== requestedModelSelection.instanceId;
-      const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "unsupported";
+      const shouldRestartForModelChange = modelChanged;
       const previousModelSelection = threadModelSelections.get(threadId);
       const shouldRestartForModelSelectionChange =
         preferredProvider === "claudeAgent" &&
@@ -795,12 +741,10 @@ const make = Effect.gen(function* () {
         !shouldRestartForModelChange &&
         !shouldRestartForModelSelectionChange
       ) {
-        return existingSessionThreadId;
+        return { threadId: existingSessionThreadId, historyContinuation: undefined };
       }
 
-      const resumeCursor = shouldRestartForModelChange
-        ? undefined
-        : (activeSession?.resumeCursor ?? undefined);
+      const resumeCursor = freshSession ? undefined : (activeSession?.resumeCursor ?? undefined);
       yield* Effect.logInfo("provider command reactor restarting provider session", {
         threadId,
         existingSessionThreadId,
@@ -832,18 +776,19 @@ const make = Effect.gen(function* () {
         cwd: restartedSession.cwd,
       });
       yield* bindSessionToThread(restartedSession);
-      return restartedSession.threadId;
+      return { threadId: restartedSession.threadId, historyContinuation };
     }
 
     const startedSession = yield* startProviderSession(undefined);
     yield* bindSessionToThread(startedSession);
-    return startedSession.threadId;
+    return { threadId: startedSession.threadId, historyContinuation };
   });
 
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly requestId: string;
     readonly messageText: string;
+    readonly messageId?: MessageId;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
@@ -856,9 +801,10 @@ const make = Effect.gen(function* () {
       );
     }
     if (thread.deletedAt !== null) return null;
-    yield* ensureSessionForThread(input.threadId, input.createdAt, {
+    const ensuredSession = yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       pendingTurnStart: true,
+      ...(input.messageId !== undefined ? { currentMessageId: input.messageId } : {}),
     });
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
@@ -896,8 +842,17 @@ const make = Effect.gen(function* () {
     const importedMessageIds = projectionSnapshotQuery.getThreadImportedMessageIds
       ? yield* projectionSnapshotQuery.getThreadImportedMessageIds(input.threadId)
       : [];
+    const binding = Option.isSome(providerSessionDirectory)
+      ? Option.getOrUndefined(yield* providerSessionDirectory.value.getBinding(input.threadId))
+      : undefined;
+    const continuation =
+      ensuredSession.historyContinuation ?? readHistoryContinuation(binding?.runtimePayload);
+    const historyIds =
+      continuation && (continuation.pending || activeSession?.provider === "greppy")
+        ? [...new Set([...continuation.messageIds, ...importedMessageIds])]
+        : importedMessageIds;
     const messagesById = new Map(thread.messages.map((message) => [message.id, message]));
-    const importedHistory = yield* Effect.forEach(importedMessageIds, (id) =>
+    const importedHistory = yield* Effect.forEach(historyIds, (id) =>
       Effect.gen(function* () {
         const message = messagesById.get(id);
         if (
@@ -917,9 +872,16 @@ const make = Effect.gen(function* () {
 
     if (
       importedHistory.length > 0 &&
-      (activeSession?.provider === "codex" || activeSession?.provider === "claudeAgent")
+      (continuation?.pending || activeSession?.provider !== "greppy")
     ) {
       const fit = buildImportedHistoryPrompt(importedHistory, normalizedInput);
+      if (!fit && activeSession?.provider !== "greppy")
+        return yield* new ProviderAdapterRequestError({
+          provider: activeSession?.provider ?? "unknown",
+          method: "thread.turn.start",
+          detail:
+            "The current request is too long to send with conversation history. No turn was sent. Shorten the request and try again.",
+        });
       const fitDetail = fit ? describeImportedHistoryFit(fit) : "";
       yield* orchestrationEngine.dispatch({
         type: "thread.activity.append",
@@ -929,7 +891,9 @@ const make = Effect.gen(function* () {
           id: EventId.make("imported-context:" + input.requestId),
           tone: "info",
           kind: "provider.history.context",
-          summary: "Imported-history continuation",
+          summary: continuation?.pending
+            ? `Continue with ${activeSession?.provider === "codex" ? "Codex CLI" : activeSession?.provider === "claudeAgent" ? "Claude Code" : activeSession?.provider} · ${requestedModelSelection.model}, history carried over`
+            : "Imported-history continuation",
           payload: {
             detail: fitDetail
               ? `${IMPORTED_HISTORY_CONTEXT_NOTICE} ${fitDetail}`
@@ -1579,6 +1543,7 @@ const make = Effect.gen(function* () {
       threadId: event.payload.threadId,
       requestId: key,
       messageText: message.text,
+      messageId: message.id,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }

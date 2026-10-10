@@ -1,15 +1,24 @@
 import {
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  ProviderHistoryContinuation,
   type ProviderDriverKind,
   type ProviderImportedMessage,
   type ProviderSendTurnInput,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
 
 import { ProviderAdapterRequestError } from "./Errors.ts";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const decodeHistoryContinuation = Schema.decodeUnknownOption(ProviderHistoryContinuation);
+
+export function readHistoryContinuation(payload: unknown): ProviderHistoryContinuation | undefined {
+  if (typeof payload !== "object" || payload === null || !("historyContinuation" in payload))
+    return undefined;
+  return Option.getOrUndefined(decodeHistoryContinuation(payload.historyContinuation));
+}
 
 export const IMPORTED_HISTORY_CONTEXT_NOTICE =
   "Copied messages preserve earlier context, results and recorded decisions. " +
@@ -147,16 +156,6 @@ export const withImportedHistoryContext = Effect.fn("withImportedHistoryContext"
   provider: ProviderDriverKind,
 ) {
   if (!input.importedHistory?.length || provider === "greppy") return input;
-  if (provider !== "codex" && provider !== "claudeAgent")
-    return yield* new ProviderAdapterRequestError({
-      provider,
-      method: "thread.turn.start",
-      detail:
-        "The selected harness cannot continue imported conversation history. " +
-        "Choose Codex, Claude Code, or a Greppy build with history import support. " +
-        IMPORTED_HISTORY_CONTEXT_NOTICE,
-    });
-
   const fitted = buildImportedHistoryPrompt(input.importedHistory, input.input);
   if (!fitted)
     return yield* new ProviderAdapterRequestError({

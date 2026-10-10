@@ -3116,7 +3116,7 @@ describe("ClaudeAdapterLive", () => {
           team: {
             projectId: ProjectId.make("parent-project"), threadId: THREAD_ID,
             role: "specialist", parentThreadId: ThreadId.make("supervisor"),
-            domain: "harness", createdAt: "2026-10-10T03:00:00.000Z",
+            domain: "harness", goal: "Deliver the bounded result.", createdAt: "2026-10-10T03:00:00.000Z",
           },
         },
       });

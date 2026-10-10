@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
   DEFAULT_MODEL, DEFAULT_WORKJET_THREAD_CONFIG, EventId, ProviderDriverKind,
   ProviderInstanceId, ThreadId, TurnId, type ProviderRuntimeEvent,

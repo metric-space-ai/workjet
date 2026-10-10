@@ -400,7 +400,7 @@ describe("ProviderRuntimeIngestion", () => {
         team: {
           projectId: asProjectId("project-1"), threadId: asThreadId("thread-1"),
           role: "specialist", parentThreadId: asThreadId("supervisor"),
-          domain: "harness", createdAt: at,
+          domain: "harness", goal: "Deliver the approved result.", createdAt: at,
         },
         goal: initialWorkerGoal("Deliver the approved result.", at),
       },

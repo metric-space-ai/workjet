@@ -53,10 +53,28 @@ it("resolves all server-configurable harness paths", () => {
 });
 
 it("probes the configured Pi executable without guessing between named instances", () => {
-  const pi = { driver: ProviderDriverKind.make("pi"), enabled: true, config: { binaryPath: "/configured/pi" } };
-  const settings = { ...DEFAULT_SERVER_SETTINGS, providerInstances: { [ProviderInstanceId.make("pi-custom")]: pi } };
+  const pi = {
+    driver: ProviderDriverKind.make("pi"),
+    enabled: true,
+    config: { binaryPath: "/configured/pi" },
+  };
+  const settings = {
+    ...DEFAULT_SERVER_SETTINGS,
+    providerInstances: { [ProviderInstanceId.make("pi-custom")]: pi },
+  };
   assert.equal(configuredHarnessExecutable(settings, "pi-code"), "/configured/pi");
-  assert.isUndefined(configuredHarnessExecutable({ ...settings, providerInstances: { ...settings.providerInstances, [ProviderInstanceId.make("pi-other")]: pi } }, "pi-code"));
+  assert.isUndefined(
+    configuredHarnessExecutable(
+      {
+        ...settings,
+        providerInstances: {
+          ...settings.providerInstances,
+          [ProviderInstanceId.make("pi-other")]: pi,
+        },
+      },
+      "pi-code",
+    ),
+  );
 });
 
 it("prefers the canonical provider instance path and rejects a mismatched driver", () => {

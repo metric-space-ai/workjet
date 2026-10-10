@@ -32,7 +32,7 @@ import {
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
-import type { TextGenerationRoutingError } from "./TextGenerationRouting.ts";
+import type { ProviderGatewayRoutingError } from "../provider/Errors.ts";
 
 const OPENCODE_TEXT_GENERATION_IDLE_TTL = "30 seconds";
 
@@ -193,8 +193,8 @@ interface SharedOpenCodeTextGenerationServerState {
 }
 
 export interface OpenCodeTextGenerationRouting {
-  readonly resolveEnvironment: (model: string) => Effect.Effect<NodeJS.ProcessEnv, TextGenerationRoutingError>;
-  readonly resolveModel: (model: string) => Effect.Effect<string, TextGenerationRoutingError>;
+  readonly resolveEnvironment: (model: string) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError | TextGenerationError>;
+  readonly resolveModel: (model: string) => Effect.Effect<string, ProviderGatewayRoutingError | TextGenerationError>;
 }
 
 export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration")(function* (

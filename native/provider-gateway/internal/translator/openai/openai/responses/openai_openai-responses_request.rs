@@ -37,7 +37,7 @@ pub fn convert_openai_responses_request_to_openai_chat_completions(
     let mut messages: Vec<Vec<u8>> = Vec::new();
 
     if let Some(instructions) = root.get("instructions") {
-        if let Some(text) = instructions.as_str() {
+        if let Some(text) = instructions.as_str().filter(|text| !text.is_empty()) {
             let message = json!({"role":"system","content":text});
             push_message(
                 &mut messages,

@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-10T05:17:45.939Z",
+  "model": "kimi-for-coding",
+  "outcomes": [
+    {
+      "variant": "absent",
+      "status": 200,
+      "upstream": "200"
+    },
+    {
+      "variant": "empty",
+      "status": 502,
+      "upstream": "400"
+    },
+    {
+      "variant": "text",
+      "status": 200,
+      "upstream": "200"
+    },
+    {
+      "variant": "developer",
+      "status": 200,
+      "upstream": "200"
+    }
+  ]
+}

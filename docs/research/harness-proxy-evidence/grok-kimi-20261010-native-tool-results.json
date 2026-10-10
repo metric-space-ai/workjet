@@ -1,0 +1,206 @@
+{
+  "recordedAt": "2026-10-10T06:39:47.250Z",
+  "harness": "Grok CLI / Grok Build",
+  "model": "kimi-for-coding",
+  "workjetThreadId": "640ed10c-ee27-4c49-999d-d93591041d0a",
+  "nativeSessionId": "01a12486-1f03-7343-a6cb-1b906f728c20",
+  "terminal": "ready",
+  "workjetToolCompletions": 20,
+  "errors": [],
+  "runtimeBuild": {
+    "recordedAt": "2026-10-10T06:15:33.358Z",
+    "native": {
+      "binary": "/Volumes/OneTB/dev-artifacts/workjet/harness-proxy-rc-20261009/cargo-target/debug/workjet-provider-gateway-host",
+      "sha256": "e567d593237a8a59b30bcd6c69c51ea25647e78c08f4a577e8bb599471140668",
+      "sourceHead": "3b4b4f7c24bf732708982caac99971f15b39eb56"
+    },
+    "server": {
+      "entry": "/Volumes/tmp/dev-artifacts/workjet/harness-proxy-rc-20261009/runtime/apps/server/dist/bin.mjs",
+      "sha256": "52ec9c533392c6e437a9629b6c79b64da2741fd254c0a7fefad4223f66569eb2",
+      "sourceHead": "3b4b4f7c24bf732708982caac99971f15b39eb56"
+    }
+  },
+  "strictlySequential": true,
+  "nativeResults": [
+    {
+      "index": 1,
+      "callId": "tool_U4QoO4d8AebiddYme4zVKxvs",
+      "command": "printf 'PROXY_MATRIX_01\\n'",
+      "output": "PROXY_MATRIX_01\n",
+      "exitCode": 0,
+      "completedAt": 1791614146,
+      "status": "completed"
+    },
+    {
+      "index": 2,
+      "callId": "tool_HH4KwiiKO78AH1PeoHiJbSKn",
+      "command": "printf 'PROXY_MATRIX_02\\n'",
+      "output": "PROXY_MATRIX_02\n",
+      "exitCode": 0,
+      "completedAt": 1791614149,
+      "status": "completed"
+    },
+    {
+      "index": 3,
+      "callId": "tool_rEodFaiUPvL85UEdMBOly7QT",
+      "command": "printf 'PROXY_MATRIX_03\\n'",
+      "output": "PROXY_MATRIX_03\n",
+      "exitCode": 0,
+      "completedAt": 1791614153,
+      "status": "completed"
+    },
+    {
+      "index": 4,
+      "callId": "tool_jqpx1xjB5cRkuIW1iPFtIen0",
+      "command": "printf 'PROXY_MATRIX_04\\n'",
+      "output": "PROXY_MATRIX_04\n",
+      "exitCode": 0,
+      "completedAt": 1791614156,
+      "status": "completed"
+    },
+    {
+      "index": 5,
+      "callId": "tool_7NJsWU3uc01siotg3KiG6uN1",
+      "command": "printf 'PROXY_MATRIX_05\\n'",
+      "output": "PROXY_MATRIX_05\n",
+      "exitCode": 0,
+      "completedAt": 1791614160,
+      "status": "completed"
+    },
+    {
+      "index": 6,
+      "callId": "tool_zUBtqJpV3qhPupJSV03mjiEw",
+      "command": "printf 'PROXY_MATRIX_06\\n'",
+      "output": "PROXY_MATRIX_06\n",
+      "exitCode": 0,
+      "completedAt": 1791614165,
+      "status": "completed"
+    },
+    {
+      "index": 7,
+      "callId": "tool_XtB2gwMmxJwO5qUWi7DXCvqS",
+      "command": "printf 'PROXY_MATRIX_07\\n'",
+      "output": "PROXY_MATRIX_07\n",
+      "exitCode": 0,
+      "completedAt": 1791614168,
+      "status": "completed"
+    },
+    {
+      "index": 8,
+      "callId": "tool_ZWzhnpz0ljqcCF4y9wXEe6Ij",
+      "command": "printf 'PROXY_MATRIX_08\\n'",
+      "output": "PROXY_MATRIX_08\n",
+      "exitCode": 0,
+      "completedAt": 1791614173,
+      "status": "completed"
+    },
+    {
+      "index": 9,
+      "callId": "tool_UfrDcx5kWEcA75rdLJluDRvf",
+      "command": "printf 'PROXY_MATRIX_09\\n'",
+      "output": "PROXY_MATRIX_09\n",
+      "exitCode": 0,
+      "completedAt": 1791614177,
+      "status": "completed"
+    },
+    {
+      "index": 10,
+      "callId": "tool_MwiiDbZVIzUyAj2ArtGx3pFK",
+      "command": "printf 'PROXY_MATRIX_10\\n'",
+      "output": "PROXY_MATRIX_10\n",
+      "exitCode": 0,
+      "completedAt": 1791614180,
+      "status": "completed"
+    },
+    {
+      "index": 11,
+      "callId": "tool_uZtym5YVAtTHojnEbx5u4sZA",
+      "command": "printf 'PROXY_MATRIX_11\\n'",
+      "output": "PROXY_MATRIX_11\n",
+      "exitCode": 0,
+      "completedAt": 1791614184,
+      "status": "completed"
+    },
+    {
+      "index": 12,
+      "callId": "tool_S2jocW5Qk6AbigktrbIfNcIM",
+      "command": "printf 'PROXY_MATRIX_12\\n'",
+      "output": "PROXY_MATRIX_12\n",
+      "exitCode": 0,
+      "completedAt": 1791614188,
+      "status": "completed"
+    },
+    {
+      "index": 13,
+      "callId": "tool_fXsnOS1GssMWGvvCSTswJWZk",
+      "command": "printf 'PROXY_MATRIX_13\\n'",
+      "output": "PROXY_MATRIX_13\n",
+      "exitCode": 0,
+      "completedAt": 1791614191,
+      "status": "completed"
+    },
+    {
+      "index": 14,
+      "callId": "tool_KGB7ZsD2p0oCyu7acuzEQGBN",
+      "command": "printf 'PROXY_MATRIX_14\\n'",
+      "output": "PROXY_MATRIX_14\n",
+      "exitCode": 0,
+      "completedAt": 1791614195,
+      "status": "completed"
+    },
+    {
+      "index": 15,
+      "callId": "tool_AtjgBRaFwe9c6slC1YnNBmCE",
+      "command": "printf 'PROXY_MATRIX_15\\n'",
+      "output": "PROXY_MATRIX_15\n",
+      "exitCode": 0,
+      "completedAt": 1791614198,
+      "status": "completed"
+    },
+    {
+      "index": 16,
+      "callId": "tool_QhiwX0dvICRjfpiLSn2MU48p",
+      "command": "printf 'PROXY_MATRIX_16\\n'",
+      "output": "PROXY_MATRIX_16\n",
+      "exitCode": 0,
+      "completedAt": 1791614201,
+      "status": "completed"
+    },
+    {
+      "index": 17,
+      "callId": "tool_4sBs1sCRi3oCZpoqx7LsYgna",
+      "command": "printf 'PROXY_MATRIX_17\\n'",
+      "output": "PROXY_MATRIX_17\n",
+      "exitCode": 0,
+      "completedAt": 1791614204,
+      "status": "completed"
+    },
+    {
+      "index": 18,
+      "callId": "tool_mBd0Vk0WRfRPNv5rPRDae1ti",
+      "command": "printf 'PROXY_MATRIX_18\\n'",
+      "output": "PROXY_MATRIX_18\n",
+      "exitCode": 0,
+      "completedAt": 1791614208,
+      "status": "completed"
+    },
+    {
+      "index": 19,
+      "callId": "tool_bilj3CZwaUCyEqPqdiVLGgBy",
+      "command": "printf 'PROXY_MATRIX_19\\n'",
+      "output": "PROXY_MATRIX_19\n",
+      "exitCode": 0,
+      "completedAt": 1791614212,
+      "status": "completed"
+    },
+    {
+      "index": 20,
+      "callId": "tool_q7klc53XvmFD6lT4E1IF5pJn",
+      "command": "printf 'PROXY_MATRIX_20\\n'",
+      "output": "PROXY_MATRIX_20\n",
+      "exitCode": 0,
+      "completedAt": 1791614214,
+      "status": "completed"
+    }
+  ]
+}

@@ -511,6 +511,85 @@ async fn selected_upstream_failure_is_typed_and_never_fails_over() {
     assert_eq!(transport_b.calls.load(Ordering::SeqCst), 0);
 }
 
+struct ToolEchoStreamingTransport;
+
+impl ClaudeMessagesStreamingTransport for ToolEchoStreamingTransport {
+    fn execute_stream<'a>(
+        &'a self,
+        request: &'a ClaudeMessagesRequest,
+        _timeout: Duration,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ClaudeMessagesStreamResponse, ClaudeMessagesTransportFailure>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            let body: serde_json::Value = serde_json::from_slice(request.body()).unwrap();
+            let alias = body["tools"][0]["name"].as_str().unwrap();
+            assert!(alias.starts_with("mcp__"));
+            let wire = format!(
+                "event: message_start\ndata: {{\"type\":\"message_start\",\"message\":{{\"id\":\"msg\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"usage\":{{\"input_tokens\":1,\"output_tokens\":0}}}}}}\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"{alias}\",\"input\":{{}}}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":0}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n"
+            );
+            let (sender, receiver) = mpsc::channel(8);
+            tokio::spawn(async move {
+                // Break JSON and SSE delimiters across transport chunks.
+                for chunk in wire.as_bytes().chunks(7) {
+                    if sender.send(Ok(chunk.to_vec())).await.is_err() {
+                        break;
+                    }
+                }
+            });
+            Ok(ClaudeMessagesStreamResponse::new(200, None, receiver))
+        })
+    }
+}
+
+#[tokio::test]
+async fn oauth_tool_stream_round_trips_twenty_successive_calls_per_harness_tool() {
+    let cooldowns = Arc::new(MemoryCooldownStore::default());
+    let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));
+    let executor = account_executor(
+        "account-a",
+        Arc::new(FixedMessagesTransport::new(200, b"unused")),
+        Some(Arc::new(ToolEchoStreamingTransport)),
+        conductor,
+    );
+    let adapter = adapter(vec![("account-a", executor)], cooldowns);
+    for tool in ["Bash", "Read", "exec_command"] {
+        let mut history = Vec::new();
+        for turn in 0..20 {
+            let mut input = request("account-a", true);
+            input.payload = serde_json::to_vec(&serde_json::json!({
+                "model": input.model,
+                "tools": [{"name": tool, "input_schema": {"type": "object"}}],
+                "messages": history,
+            }))
+            .unwrap();
+            let mut response = adapter.execute_stream(input).await.unwrap();
+            let mut received = Vec::new();
+            while let Some(chunk) = response.chunks.recv().await {
+                assert!(chunk.error.is_none(), "{tool} turn {turn}");
+                received.extend_from_slice(&chunk.payload);
+            }
+            let wire = std::str::from_utf8(&received).unwrap();
+            let starts: Vec<serde_json::Value> = wire
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .map(|data| serde_json::from_str(data).unwrap())
+                .filter(|data: &serde_json::Value| data["type"] == "content_block_start")
+                .collect();
+            assert_eq!(starts.len(), 1, "{tool} turn {turn}: {wire}");
+            assert_eq!(starts[0]["content_block"]["name"], tool, "turn {turn}");
+            assert!(wire.contains("\n\nevent: content_block_stop\n"));
+            history.push(serde_json::json!({"role": "assistant", "content": [starts[0]["content_block"].clone()]}));
+            history.push(serde_json::json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_1", "content": "ok"}]}));
+        }
+    }
+}
+
 #[tokio::test]
 async fn stream_forwards_bootstrap_and_terminal_transport_error() {
     let cooldowns = Arc::new(MemoryCooldownStore::default());

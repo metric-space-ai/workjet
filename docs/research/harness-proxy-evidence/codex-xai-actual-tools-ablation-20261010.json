@@ -1,0 +1,55 @@
+{
+  "observedAt": "2026-10-10T01:31:43.493Z",
+  "requestModel": "grok-4.7",
+  "results": [
+    {
+      "case": "actual-tools",
+      "status": 502,
+      "upstream": "400",
+      "errorClass": "network-provider"
+    },
+    {
+      "case": "without-web-search",
+      "status": 502,
+      "upstream": "400",
+      "errorClass": "network-provider"
+    },
+    {
+      "case": "native-shell-only",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "minimal-native-shell",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "all-tools-minimal",
+      "status": 502,
+      "upstream": "400",
+      "errorClass": "network-provider"
+    },
+    {
+      "case": "native-shell-no-metadata",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "native-shell-no-reasoning",
+      "status": 200,
+      "upstream": "200",
+      "errorClass": null
+    },
+    {
+      "case": "shell-and-search",
+      "status": 502,
+      "upstream": "400",
+      "errorClass": "network-provider"
+    }
+  ],
+  "noLocalToolsExecuted": true
+}

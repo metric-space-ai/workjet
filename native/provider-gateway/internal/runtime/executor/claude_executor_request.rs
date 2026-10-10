@@ -821,7 +821,9 @@ fn visit_message_tool_names(root: &mut Value, mut visit: impl FnMut(&mut Value, 
 
 fn mutate_response_tool_names(body: &[u8], mut map: impl FnMut(&str) -> Option<String>) -> Vec<u8> {
     let Ok(mut root) = serde_json::from_slice::<Value>(body) else {
-        return body.to_vec();
+        // Buffered Responses translation also requests an Anthropic SSE body.
+        // Restore its names before the response converter sees the tool calls.
+        return mutate_stream_tool_name(body, map);
     };
     let mut changed = false;
     if let Some(parts) = root.get_mut("content").and_then(Value::as_array_mut) {
@@ -852,6 +854,28 @@ fn mutate_response_tool_names(body: &[u8], mut map: impl FnMut(&str) -> Option<S
 }
 
 fn mutate_stream_tool_name(line: &[u8], mut map: impl FnMut(&str) -> Option<String>) -> Vec<u8> {
+    // The tracked transport returns complete SSE frames, including event/id
+    // lines and the blank separator. Rewrite data lines without consuming any
+    // framing bytes; a data-only frame still needs its separator downstream.
+    let mut output = Vec::with_capacity(line.len());
+    for segment in line.split_inclusive(|byte| *byte == b'\n') {
+        let mut end = segment.len();
+        if segment.last() == Some(&b'\n') {
+            end -= 1;
+            if end > 0 && segment[end - 1] == b'\r' {
+                end -= 1;
+            }
+        }
+        output.extend_from_slice(&mutate_stream_tool_name_line(&segment[..end], &mut map));
+        output.extend_from_slice(&segment[end..]);
+    }
+    output
+}
+
+fn mutate_stream_tool_name_line(
+    line: &[u8],
+    map: &mut impl FnMut(&str) -> Option<String>,
+) -> Vec<u8> {
     let trimmed = trim_ascii(line);
     let (sse, payload) = trimmed
         .strip_prefix(b"data:")
@@ -863,8 +887,8 @@ fn mutate_stream_tool_name(line: &[u8], mut map: impl FnMut(&str) -> Option<Stri
         return line.to_vec();
     };
     let changed = match block.get("type").and_then(Value::as_str) {
-        Some("tool_use") => replace_object_field(block, "name", &mut map),
-        Some("tool_reference") => replace_object_field(block, "tool_name", &mut map),
+        Some("tool_use") => replace_object_field(block, "name", map),
+        Some("tool_reference") => replace_object_field(block, "tool_name", map),
         _ => false,
     };
     if !changed {

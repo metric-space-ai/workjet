@@ -1,0 +1,40 @@
+{
+  "recordedAt": "2026-10-10T04:00:53.913Z",
+  "model": "gpt-6.1-sol",
+  "requestSha256": "6435b42a7c45c37ef3cdb22e273059f70942ad68e39dac0b47d6739b7e752ad5",
+  "outcomes": [
+    {
+      "variant": "original",
+      "httpStatus": 400,
+      "upstreamStatus": null,
+      "error": {
+        "message": "Codex upstream rejected the request",
+        "type": "invalid_request_error"
+      },
+      "hasTool": false,
+      "responseBytes": 90
+    },
+    {
+      "variant": "instructions-only",
+      "httpStatus": 400,
+      "upstreamStatus": null,
+      "error": {
+        "message": "Codex upstream rejected the request",
+        "type": "invalid_request_error"
+      },
+      "hasTool": false,
+      "responseBytes": 90
+    },
+    {
+      "variant": "system-to-instructions",
+      "httpStatus": 400,
+      "upstreamStatus": null,
+      "error": {
+        "message": "Codex upstream rejected the request",
+        "type": "invalid_request_error"
+      },
+      "hasTool": false,
+      "responseBytes": 90
+    }
+  ]
+}

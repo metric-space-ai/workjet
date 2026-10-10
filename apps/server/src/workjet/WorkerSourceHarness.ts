@@ -211,6 +211,7 @@ export async function installWorkerSourceRoute(
       return;
     }
     const requestPath = new URL(req.url || "/", "http://127.0.0.1").pathname;
+    // Existing Claude routes remain pinned to Messages; native profiles opt in to translation.
     const legacyMessages = messages && pin.nativeProfile === undefined;
     const protocol =
       requestPath === "/v1/messages" && !legacyMessages

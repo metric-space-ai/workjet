@@ -300,7 +300,7 @@ describe("ProviderRuntimeIngestion", () => {
       },
       createdAt,
     });
-    let threadConfig = options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG;
+    let threadConfig: WorkjetThreadConfig = options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG;
     if (threadConfig.schemaVersion === 2 && threadConfig.team?.role === "specialist") {
       const snapshot = await runtime.runPromise(snapshotQuery.getSnapshot());
       const supervisor = snapshot.threads.find((entry) =>

@@ -13,6 +13,7 @@ import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { sanitizeThreadTitle } from "./TextGenerationUtils.ts";
 import { makeClaudeTextGeneration } from "./ClaudeTextGeneration.ts";
+import type { TextGenerationEnvironmentResolver } from "./TextGenerationRouting.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const ClaudeTextGenerationTestLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -55,6 +56,10 @@ function makeFakeClaudeBinary(dir: string) {
         '  printf "%s\\n" "CLAUDE_CONFIG_DIR was $CLAUDE_CONFIG_DIR" >&2',
         "  exit 5",
         "fi",
+        'if [ -n "$WORKJET_FAKE_CLAUDE_BASE_URL_MUST_BE" ] && [ "$ANTHROPIC_BASE_URL" != "$WORKJET_FAKE_CLAUDE_BASE_URL_MUST_BE" ]; then',
+        '  printf "%s\\n" "gateway URL mismatch" >&2',
+        "  exit 6",
+        "fi",
         'if [ -n "$WORKJET_FAKE_CLAUDE_STDERR" ]; then',
         '  printf "%s\\n" "$WORKJET_FAKE_CLAUDE_STDERR" >&2',
         "fi",
@@ -77,6 +82,8 @@ function withFakeClaudeEnv<A, E, R>(
     argsMustNotContain?: string;
     stdinMustContain?: string;
     configDirMustBe?: string;
+    baseUrlMustBe?: string;
+    resolveEnvironment?: TextGenerationEnvironmentResolver;
     claudeConfig?: Partial<ClaudeSettings>;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
@@ -85,6 +92,7 @@ function withFakeClaudeEnv<A, E, R>(
     const fs = yield* FileSystem.FileSystem;
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-claude-text-" });
     const binDir = yield* makeFakeClaudeBinary(tempDir);
+    const previousBaseUrlMustBe = process.env.WORKJET_FAKE_CLAUDE_BASE_URL_MUST_BE;
     const previousPath = process.env.PATH;
     const previousOutput = process.env.WORKJET_FAKE_CLAUDE_OUTPUT;
     const previousExitCode = process.env.WORKJET_FAKE_CLAUDE_EXIT_CODE;
@@ -97,6 +105,8 @@ function withFakeClaudeEnv<A, E, R>(
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         process.env.PATH = `${binDir}:${previousPath ?? ""}`;
+        if (input.baseUrlMustBe !== undefined) process.env.WORKJET_FAKE_CLAUDE_BASE_URL_MUST_BE = input.baseUrlMustBe;
+        else delete process.env.WORKJET_FAKE_CLAUDE_BASE_URL_MUST_BE;
         process.env.WORKJET_FAKE_CLAUDE_OUTPUT = input.output;
 
         if (input.exitCode !== undefined) {
@@ -138,6 +148,8 @@ function withFakeClaudeEnv<A, E, R>(
       () =>
         Effect.sync(() => {
           process.env.PATH = previousPath;
+          if (previousBaseUrlMustBe === undefined) delete process.env.WORKJET_FAKE_CLAUDE_BASE_URL_MUST_BE;
+          else process.env.WORKJET_FAKE_CLAUDE_BASE_URL_MUST_BE = previousBaseUrlMustBe;
 
           if (previousOutput === undefined) {
             delete process.env.WORKJET_FAKE_CLAUDE_OUTPUT;
@@ -184,7 +196,7 @@ function withFakeClaudeEnv<A, E, R>(
     );
 
     const config = decodeClaudeSettings(input.claudeConfig ?? {});
-    const textGeneration = yield* makeClaudeTextGeneration(config);
+    const textGeneration = yield* makeClaudeTextGeneration(config, undefined, input.resolveEnvironment);
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
 }
@@ -341,5 +353,33 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
           expect(generated.title).toBe("New thread");
         }),
     ),
+  );
+});
+
+it.layer(ClaudeTextGenerationTestLayer)("Claude routed text generation", (it) => {
+  it.effect("passes the selected model's gateway environment while preserving the configured CLI home", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-claude-routed-text-" });
+      const endpoint = "http://127.0.0.1:1";
+      const models: string[] = [];
+      yield* withFakeClaudeEnv({
+        output: JSON.stringify({ structured_output: { title: "Gateway route" } }),
+        argsMustContain: "--model gpt-6.1-sol",
+        configDirMustBe: home,
+        baseUrlMustBe: endpoint,
+        claudeConfig: { homePath: home },
+        resolveEnvironment: (model) => Effect.sync(() => {
+          models.push(model);
+          return { ...process.env, ANTHROPIC_BASE_URL: endpoint, CLAUDE_CONFIG_DIR: "/unused-routing-home" };
+        }),
+      }, (generation) => Effect.gen(function* () {
+        const result = yield* generation.generateThreadTitle({
+          cwd: process.cwd(), message: "Explain the gateway", modelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), "gpt-6.1-sol"),
+        });
+        expect(result.title).toBe("Gateway route");
+      }));
+      expect(models).toEqual(["gpt-6.1-sol"]);
+    }).pipe(Effect.scoped),
   );
 });

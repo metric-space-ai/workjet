@@ -1231,6 +1231,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           resumeCursor?: ProviderSession["resumeCursor"];
           runtimeMode?: ProviderSession["runtimeMode"];
           providerInstanceId?: ProviderSession["providerInstanceId"];
+          model?: ProviderSession["model"];
         } = {};
         overrides.providerInstanceId = dieOnMissingBindingInstanceId(
           "ProviderService.listSessions",
@@ -1249,6 +1250,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               `ProviderService.listSessions: thread '${session.threadId}' is active on provider instance '${session.providerInstanceId}' but persisted binding names '${overrides.providerInstanceId}'.`,
             ),
           );
+        }
+        const persistedModelSelection = readPersistedModelSelection(binding.runtimePayload);
+        if (
+          session.model === undefined &&
+          persistedModelSelection !== undefined &&
+          persistedModelSelection.instanceId === session.providerInstanceId
+        ) {
+          overrides.model = persistedModelSelection.model;
         }
         if (session.resumeCursor === undefined && binding.resumeCursor !== undefined) {
           overrides.resumeCursor = binding.resumeCursor;

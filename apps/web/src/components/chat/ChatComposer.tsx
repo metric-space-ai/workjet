@@ -1203,10 +1203,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
 
   /**
-   * The Computer ("Rechner") control, selectable in BOTH modes. On a draft,
-   * choosing a computer moves the draft to that computer's environment; on a
-   * started server thread the control is disabled with the reason — moving a
-   * live session between machines is a separate project.
+   * Computer selection moves drafts directly. Existing conversations carry
+   * their completed history to the destination for a fresh session on the next
+   * turn. Running turns and unavailable routes supply their concrete reason.
    */
   const composerComputerDisabledReason =
     computerChangeDisabledReason ??

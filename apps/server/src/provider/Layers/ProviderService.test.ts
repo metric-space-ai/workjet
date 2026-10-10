@@ -1132,6 +1132,42 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("uses the persisted requested model only when the active adapter omits it", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-optional-session-model");
+      const session = yield* provider.startSession(threadId, {
+        providerInstanceId: codexInstanceId,
+        threadId,
+        modelSelection: { instanceId: codexInstanceId, model: "gpt-5-codex" },
+        runtimeMode: "approval-required",
+      });
+      assert.equal(session.model, undefined);
+      const sessions = yield* provider.listSessions();
+      assert.equal(sessions.find((entry) => entry.threadId === threadId)?.model, "gpt-5-codex");
+
+      routing.codex.listSessions.mockImplementationOnce(() =>
+        Effect.succeed([{ ...session, model: "gpt-5.4" }]),
+      );
+      const reportedSessions = yield* provider.listSessions();
+      assert.equal(reportedSessions.find((entry) => entry.threadId === threadId)?.model, "gpt-5.4");
+      yield* provider.stopSession({ threadId });
+
+      const unselectedThreadId = asThreadId("thread-unknown-session-model");
+      yield* provider.startSession(unselectedThreadId, {
+        providerInstanceId: codexInstanceId,
+        threadId: unselectedThreadId,
+        runtimeMode: "approval-required",
+      });
+      const unselectedSessions = yield* provider.listSessions();
+      assert.equal(
+        unselectedSessions.find((entry) => entry.threadId === unselectedThreadId)?.model,
+        undefined,
+      );
+      yield* provider.stopSession({ threadId: unselectedThreadId });
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

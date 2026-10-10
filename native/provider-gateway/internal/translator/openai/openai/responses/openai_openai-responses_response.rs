@@ -44,6 +44,7 @@ struct OaiToResponsesState {
     func_args_done: HashMap<String, bool>,
     func_item_done: HashMap<String, bool>,
     custom_tool_names: HashSet<String>,
+    boxed_function_names: HashSet<String>,
     prompt_tokens: i64,
     cached_tokens: i64,
     completion_tokens: i64,
@@ -199,6 +200,7 @@ pub fn convert_openai_chat_completions_response_to_openai_responses(
         st.func_args_done.clear();
         st.func_item_done.clear();
         st.custom_tool_names = responses_custom_tool_names(request_for_namespace);
+        st.boxed_function_names = tools::responses_boxed_function_names(request_for_namespace);
         st.prompt_tokens = 0;
         st.cached_tokens = 0;
         st.completion_tokens = 0;
@@ -781,7 +783,8 @@ fn emit_pending_function_args(
     if !st.func_item_added.get(key).copied().unwrap_or(false) {
         return;
     }
-    if st.func_item_custom.get(key).copied().unwrap_or(false) {
+    if st.func_item_custom.get(key).copied().unwrap_or(false)
+        || (st.func_names.get(key).is_some_and(|name| st.boxed_function_names.contains(name)) && !st.func_args_done.get(key).copied().unwrap_or(false)) {
         return;
     }
     let Some(args) = st.func_args_buf.get(key) else {
@@ -846,6 +849,17 @@ fn finalize_choice(
         });
         for key in keys {
             emit_tool_item_force(st, &key, request_for_namespace, out, next_seq);
+            if !st.func_args_done.get(&key).copied().unwrap_or(false)
+                && st.func_names.get(&key).is_some_and(|name| st.boxed_function_names.contains(name)) {
+                let Some(arguments) = tools::unwrap_boxed_function_arguments(st.func_args_buf.get(&key).map(String::as_str).unwrap_or("")) else {
+                    let event = json!({"type":"response.failed","sequence_number":next_seq(),"response":{"status":"failed","error":{"code":"invalid_tool_input","message":"Provider returned invalid wrapped function input"}}});
+                    out.push(sse_event_data("response.failed", &serde_json::to_vec(&event).unwrap()));
+                    st.completed_emitted = true;
+                    return;
+                };
+                st.func_args_buf.insert(key.clone(), arguments);
+                st.func_args_done.insert(key.clone(), true);
+            }
             emit_pending_function_args(st, &key, out, next_seq);
             let call_id = match st.func_call_ids.get(&key) {
                 Some(value) if !value.is_empty() => value.clone(),
@@ -1296,6 +1310,12 @@ pub fn convert_openai_chat_completions_response_to_openai_responses_non_stream(
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string();
+                        let args = if tools::responses_boxed_function_names(request_for_namespace).contains(&name) {
+                            let Some(arguments) = tools::unwrap_boxed_function_arguments(&args) else {
+                                return serde_json::to_vec(&json!({"error":{"code":"invalid_tool_input","message":"Provider returned invalid wrapped function input"}})).unwrap();
+                            };
+                            arguments
+                        } else { args };
                         let is_custom_tool = custom_tool_names.contains(&name);
                         let item = if is_custom_tool {
                             json!({

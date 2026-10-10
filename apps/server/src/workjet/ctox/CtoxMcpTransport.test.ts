@@ -202,3 +202,28 @@ describe("shared CTOX MCP transport", () => {
     }),
   );
 });
+
+it.effect(
+  "distinguishes rejected authentication without retrying or disclosing response data",
+  () =>
+    Effect.gen(function* () {
+      for (const [status, reason] of [
+        [401, "authentication-required"],
+        [403, "connection-unavailable"],
+        [503, "connection-unavailable"],
+      ] as const) {
+        const remote = fakeDaemon(() => new Response("private authentication details", { status }));
+        const error = yield* Effect.flip(remote.transport.probe(target, []));
+        expect(error).toMatchObject({ reason });
+        expect(remote.calls).toHaveLength(1);
+        expect(
+          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(error),
+        ).not.toContain("private");
+        const service = yield* DecisionHubMcpClient.pipe(
+          Effect.provide(decisionHubLayer),
+          Effect.provideService(HttpClient.HttpClient, remote.client),
+        );
+        expect(yield* Effect.flip(service.probe(target, []))).toMatchObject({ reason });
+      }
+    }),
+);

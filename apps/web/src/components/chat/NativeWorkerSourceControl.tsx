@@ -131,7 +131,14 @@ export function NativeWorkerSourceControl(props: {
     void connectRef.current();
   }, [scope, props.unavailable, query.isPending, busy, bound, request === null]);
 
-  const currentError = error?.scope === scope ? error.message : null;
+  const currentError = bound
+    ? null
+    : ((error?.scope === scope ? error.message : null) ??
+      (!query.isPending && source !== undefined && !ready
+        ? source.status === "needs_auth"
+          ? "Worker connection needs authorization. Reconnect project workers."
+          : "The worker connection is unavailable. Reconnect project workers."
+        : null));
   return (
     <span
       className="inline-flex shrink-0 items-center text-xs"

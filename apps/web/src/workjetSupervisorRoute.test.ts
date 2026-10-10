@@ -1,7 +1,11 @@
 import fixture from "../../../packages/contracts/src/fixtures/workjet-supervisor-route-display-v1.json" with { type: "json" };
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
-import { ProjectId, SupervisorRouteDisplay, type CtoxWorkjetProjectControlResult } from "@workjet/contracts";
+import {
+  ProjectId,
+  SupervisorRouteDisplay,
+  type CtoxWorkjetProjectControlResult,
+} from "@workjet/contracts";
 import { readSupervisorRoute, supervisorRouteLabel } from "./workjetSupervisorRoute";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
 const route = Schema.decodeUnknownSync(SupervisorRouteDisplay)(
@@ -54,7 +58,8 @@ describe("Supervisor route reader", () => {
       "project.supervisor.route.read.v1",
     ]);
     expect(state.phase).toBe("ready");
-    if (route.configured === null) throw new Error("Pinned route fixture must include a configured Luma");
+    if (route.configured === null)
+      throw new Error("Pinned route fixture must include a configured Luma");
     expect(supervisorRouteLabel(state).model).toContain(
       `Configured · ${route.configured.harness} · ${route.configured.model}`,
     );

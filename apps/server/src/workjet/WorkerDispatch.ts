@@ -126,7 +126,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       case "role-not-authorized":
         return "Worker dispatch is not authorized for this provider session.";
       case "execution-policy-invalid":
-        return "The execution policy must reference the parent thread's project and verified team membership.";
+        return "The execution policy must reference the parent thread's project and saved team membership.";
       case "parent-unavailable":
         return "The parent thread is unavailable for worker dispatch.";
       case "parent-not-orchestrator":
@@ -379,10 +379,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           (saved.value.request.harness ?? "codex-cli") !== profile.harness ||
           saved.value.request.llmRouteId !== profile.llmRouteId ||
           saved.value.request.modelSelection.model !== profile.modelId ||
-          !NodeUtil.isDeepStrictEqual(
-            saved.value.request.executionPolicy,
-            executionPolicy,
-          ) ||
+          !NodeUtil.isDeepStrictEqual(saved.value.request.executionPolicy, executionPolicy) ||
           saved.value.request.enabledCapabilityIds.some(
             (id) => !profile.capabilityIds.includes(id),
           ) ||

@@ -307,7 +307,10 @@ it.effect("preserves the project policy at the local worker's provider boundary"
           ...teamParent,
           workjetConfig: {
             ...teamConfig,
-            team: { ...teamConfig.team, role },
+            team:
+              role === "supervisor"
+                ? { ...teamConfig.team, role, parentThreadId: null }
+                : teamConfig.team,
             executionPolicy,
           },
         },
@@ -323,34 +326,50 @@ it.effect("preserves the project policy at the local worker's provider boundary"
       expect(create?.workjetConfig).toMatchObject({ schemaVersion: 2, executionPolicy });
       expect(create?.runtimeMode).toBe(parent.runtimeMode);
       const rejected = yield* Effect.flip(
-        requireEnforcedExecutionPolicy("startSession", ProviderDriverKind.make("codex"), create?.workjetConfig),
+        requireEnforcedExecutionPolicy(
+          "startSession",
+          ProviderDriverKind.make("codex"),
+          create?.workjetConfig,
+        ),
       );
       expect(rejected.issue).toContain("unsupported");
     }
   }),
 );
 
-it.effect("rejects policy references outside the saved parent project and team before side effects", () =>
-  Effect.gen(function* () {
-    const executionPolicy = {
-      mode: "autonomous-worktree" as const,
-      projectId: parent.projectId,
-      revision: 7,
-    };
-    for (const config of [
-      { ...teamConfig, executionPolicy: { ...executionPolicy, projectId: ProjectId.make("foreign-project") } },
-      { ...teamConfig, executionPolicy, team: undefined },
-      { ...teamConfig, executionPolicy, team: { ...teamConfig.team, threadId: ThreadId.make("foreign-thread") } },
-    ]) {
-      const h = makeHarness({ currentParent: { ...teamParent, workjetConfig: config } });
-      const service = yield* h.service;
-      const rejected = yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation" }));
-      expect(rejected.reason).toBe("execution-policy-invalid");
-      expect(h.commands).toEqual([]);
-      expect(h.worktreeCreates).toEqual([]);
-      expect(h.remoteRequests).toEqual([]);
-    }
-  }),
+it.effect(
+  "rejects policy references outside the saved parent project and team before side effects",
+  () =>
+    Effect.gen(function* () {
+      const executionPolicy = {
+        mode: "autonomous-worktree" as const,
+        projectId: parent.projectId,
+        revision: 7,
+      };
+      const { team: _team, ...withoutTeam } = teamConfig;
+      for (const config of [
+        {
+          ...teamConfig,
+          executionPolicy: { ...executionPolicy, projectId: ProjectId.make("foreign-project") },
+        },
+        { ...withoutTeam, executionPolicy },
+        {
+          ...teamConfig,
+          executionPolicy,
+          team: { ...teamConfig.team, threadId: ThreadId.make("foreign-thread") },
+        },
+      ]) {
+        const h = makeHarness({ currentParent: { ...teamParent, workjetConfig: config } });
+        const service = yield* h.service;
+        const rejected = yield* Effect.flip(
+          service.dispatch(invocation, { task: "Fix documentation" }),
+        );
+        expect(rejected.reason).toBe("execution-policy-invalid");
+        expect(h.commands).toEqual([]);
+        expect(h.worktreeCreates).toEqual([]);
+        expect(h.remoteRequests).toEqual([]);
+      }
+    }),
 );
 
 it.effect("does not recover an unscoped worker from matching team metadata alone", () =>
@@ -360,7 +379,11 @@ it.effect("does not recover an unscoped worker from matching team metadata alone
         ...teamParent,
         workjetConfig: {
           ...teamConfig,
-          executionPolicy: { mode: "autonomous-worktree", projectId: parent.projectId, revision: 7 },
+          executionPolicy: {
+            mode: "autonomous-worktree",
+            projectId: parent.projectId,
+            revision: 7,
+          },
         },
       },
       failCreateAttempts: 2,
@@ -369,56 +392,69 @@ it.effect("does not recover an unscoped worker from matching team metadata alone
       workerProjection: "matching",
     });
     const service = yield* h.service;
-    expect((yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation" }))).reason)
-      .toBe("rollback-failed");
+    expect(
+      (yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation" }))).reason,
+    ).toBe("rollback-failed");
     expect(h.worktreeCreates).toHaveLength(1);
     expect(h.worktreeRemovals).toEqual([]);
   }),
 );
 
-it.effect("reconciles only the exact parent policy revision across a lost remote acknowledgement", () =>
-  Effect.gen(function* () {
-    const executionPolicy = {
-      mode: "autonomous-worktree" as const,
-      projectId: parent.projectId,
-      revision: 7,
-    };
-    for (const original of [undefined, executionPolicy]) {
-      const savedParent: OrchestrationThread = {
-        ...teamParent,
-        workjetConfig: { ...teamConfig, ...(original === undefined ? {} : { executionPolicy: original }) },
+it.effect(
+  "reconciles only the exact parent policy revision across a lost remote acknowledgement",
+  () =>
+    Effect.gen(function* () {
+      const executionPolicy = {
+        mode: "autonomous-worktree" as const,
+        projectId: parent.projectId,
+        revision: 7,
       };
-      const input = { currentParent: savedParent, remoteSource: true, remoteReplyLost: true };
-      const h = makeHarness(input);
-      const service = yield* h.service.pipe(Effect.provide(computerCatalogLayer));
-      const task = { task: "Fix documentation", computerId: remoteComputer.id };
-      const pending = yield* Effect.flip(service.dispatch(invocation, task));
-      expect(pending.reason).toBe("remote-dispatch-pending");
-      const request = h.remoteRequests[0]!;
-      expect(request.executionPolicy).toEqual(original);
-      expect(Object.hasOwn(request, "executionPolicy")).toBe(original !== undefined);
-      const changed = { ...executionPolicy, revision: 8 };
-      expect(yield* remoteWorkerRequestDigest({ ...request, executionPolicy: changed }))
-        .not.toBe(yield* remoteWorkerRequestDigest(request));
-      for (const replacement of [changed, ...(original === undefined ? [] : [undefined])]) {
-        input.currentParent = {
-          ...savedParent,
-          workjetConfig: { ...teamConfig, ...(replacement === undefined ? {} : { executionPolicy: replacement }) },
+      for (const original of [undefined, executionPolicy]) {
+        const savedParent: OrchestrationThread = {
+          ...teamParent,
+          workjetConfig: {
+            ...teamConfig,
+            ...(original === undefined ? {} : { executionPolicy: original }),
+          },
         };
-        const rejected = yield* Effect.flip(
-          service.dispatch(invocation, { ...task, remoteRequestId: pending.remoteRequestId! }),
+        const input = { currentParent: savedParent, remoteSource: true, remoteReplyLost: true };
+        const h = makeHarness(input);
+        const service = yield* h.service.pipe(Effect.provide(computerCatalogLayer));
+        const task = { task: "Fix documentation", computerId: remoteComputer.id };
+        const pending = yield* Effect.flip(service.dispatch(invocation, task));
+        expect(pending.reason).toBe("remote-dispatch-pending");
+        const request = h.remoteRequests[0]!;
+        expect(request.executionPolicy).toEqual(original);
+        expect(Object.hasOwn(request, "executionPolicy")).toBe(original !== undefined);
+        const changed = { ...executionPolicy, revision: 8 };
+        expect(yield* remoteWorkerRequestDigest({ ...request, executionPolicy: changed })).not.toBe(
+          yield* remoteWorkerRequestDigest(request),
         );
-        expect(rejected.reason).toBe("remote-dispatch-failed");
+        for (const replacement of [changed, ...(original === undefined ? [] : [undefined])]) {
+          input.currentParent = {
+            ...savedParent,
+            workjetConfig: {
+              ...teamConfig,
+              ...(replacement === undefined ? {} : { executionPolicy: replacement }),
+            },
+          };
+          const rejected = yield* Effect.flip(
+            service.dispatch(invocation, { ...task, remoteRequestId: pending.remoteRequestId! }),
+          );
+          expect(rejected.reason).toBe("remote-dispatch-failed");
+        }
+        input.currentParent = savedParent;
+        expect(
+          (yield* service.dispatch(invocation, {
+            ...task,
+            remoteRequestId: pending.remoteRequestId!,
+          })).workerThreadId,
+        ).toBe(request.requestId);
+        expect(h.remoteRequests).toHaveLength(1);
+        expect(h.commands).toEqual([]);
+        expect(h.worktreeCreates).toEqual([]);
       }
-      input.currentParent = savedParent;
-      expect((yield* service.dispatch(invocation, {
-        ...task, remoteRequestId: pending.remoteRequestId!,
-      })).workerThreadId).toBe(request.requestId);
-      expect(h.remoteRequests).toHaveLength(1);
-      expect(h.commands).toEqual([]);
-      expect(h.worktreeCreates).toEqual([]);
-    }
-  }),
+    }),
 );
 
 const environmentId = EnvironmentId.make("environment-local");

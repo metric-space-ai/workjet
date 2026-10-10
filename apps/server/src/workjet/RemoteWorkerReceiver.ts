@@ -535,7 +535,9 @@ export const make = Effect.gen(function* () {
           managedInstructions: request.managedInstructions,
           enabledCapabilityIds: request.enabledCapabilityIds,
           capabilityBindings: [],
-          ...(request.executionPolicy === undefined ? {} : { executionPolicy: request.executionPolicy }),
+          ...(request.executionPolicy === undefined
+            ? {}
+            : { executionPolicy: request.executionPolicy }),
           ...(request.parentTeamRole
             ? {
                 team: {

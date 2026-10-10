@@ -24,6 +24,7 @@ const config: WorkjetThreadConfig = {
   ...DEFAULT_WORKJET_THREAD_CONFIG,
   team: {
     role: "specialist",
+    domain: "rendering",
     projectId: ProjectId.make("Molecularity"),
     threadId: ThreadId.make("rendering-parent"),
     parentThreadId: ThreadId.make("supervisor"),
@@ -63,7 +64,14 @@ describe("persistent worker goal display", () => {
     "does not show a goal loop or board on %s threads",
     (role) => {
       if (config.schemaVersion !== 2 || !config.team) throw new Error("Invalid fixture");
-      expect(html({ ...config, team: { ...config.team, role } })).toBe("");
+      const identity = {
+        projectId: config.team.projectId, threadId: config.team.threadId,
+        goal: config.team.goal, createdAt: config.team.createdAt,
+      };
+      const team = role === "supervisor"
+        ? { ...identity, role, parentThreadId: null }
+        : { ...identity, role, parentThreadId: ThreadId.make("parent"), packageId: "one-pr" };
+      expect(html({ ...config, team })).toBe("");
     },
   );
   it("does not turn an imported idle thread into an active loop", () => {

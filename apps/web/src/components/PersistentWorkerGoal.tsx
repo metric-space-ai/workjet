@@ -1,7 +1,7 @@
 import type { WorkjetThreadConfig, WorkjetThreadGoal } from "@workjet/contracts";
 
 type LoopState = {
-  readonly sessionStatus?: string | null;
+  readonly sessionStatus?: string | null | undefined;
   readonly hasPendingApprovals?: boolean;
   readonly hasPendingUserInput?: boolean;
 };

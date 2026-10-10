@@ -155,6 +155,28 @@ describe("automatic supervisor worker connection", () => {
     expect(props.bindConnection).toHaveBeenCalledWith(connection);
     expect(provision).not.toHaveBeenCalled();
   });
+
+  it("keeps recovery visible when a saved source expires and its replacement is already ready", () => {
+    const replacement = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    state.data = {
+      connections: [
+        { ...connection, status: "needs_auth", reason: "authentication-required" },
+        replacement,
+      ],
+    };
+    const html = render({ config: boundConfig });
+    expect(html).toContain('aria-label="Reconnect project workers"');
+    expect(html).toContain("A replacement worker connection is ready.");
+    expect(html).not.toContain("data-workjet-worker-source-connection-id=");
+    state.effects.forEach((effect) => effect());
+    expect(props.bindConnection).toHaveBeenCalledExactlyOnceWith(replacement);
+    expect(provision).not.toHaveBeenCalled();
+  });
 });
 
 it("shows reconnect for a previously bound source whose authorization was rejected", () => {

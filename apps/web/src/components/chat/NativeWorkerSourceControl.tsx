@@ -175,7 +175,14 @@ export function NativeWorkerSourceControl(props: {
         ? source.status === "needs_auth"
           ? "Worker connection needs authorization. Reconnect project workers."
           : "The worker connection is unavailable. Reconnect project workers."
-        : null));
+        : !query.isPending &&
+            ready &&
+            props.config.schemaVersion === 2 &&
+            props.config.capabilityBindings.some(
+              (binding) => binding.capabilityId === "ctox-business-os",
+            )
+          ? "A replacement worker connection is ready. Reconnect this thread to use it."
+          : null));
   return (
     <span
       className="inline-flex shrink-0 items-center text-xs"

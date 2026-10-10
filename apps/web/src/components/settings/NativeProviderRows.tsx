@@ -8,6 +8,11 @@ import type {
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useInstanceProviders } from "./useInstanceProviders";
+import {
+  WORKJET_GATEWAY_PROVIDERS,
+  WORKJET_GATEWAY_PROVIDER_ICONS,
+  WORKJET_GATEWAY_PROVIDER_LABELS,
+} from "./WorkjetGatewayAccounts";
 const columns =
   "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
 
@@ -73,15 +78,19 @@ function ProviderModels({
 function ModelCheckStatus({
   probe,
   model,
+  supported,
   disabled,
   check,
 }: {
   readonly probe: WorkjetNativeModelProbe | undefined;
   readonly model: string;
+  readonly supported: boolean;
   readonly disabled: boolean;
   readonly check: () => void;
 }) {
-  const title = probe
+  const title = !supported
+    ? "This CTOX version does not support native Hi checks for this provider."
+    : probe
     ? (probe.status === "ok"
         ? "Hi check passed"
         : (probe.failure?.replaceAll("_", " ") ?? "Check unavailable")) +
@@ -149,7 +158,7 @@ function NativeAccountRow({
       <div role="row" className={columns + " min-h-12 py-1.5"}>
         <div role="cell" className="min-w-0 text-xs" title={account.id}>
           <span>Account {account.id.slice(0, 8)}</span>
-          <p className="text-[11px] text-muted-foreground">OAuth · {label}</p>
+          <p className="text-[11px] text-muted-foreground">CTOX · {label}</p>
         </div>
         <div role="cell" className="flex min-w-0 flex-wrap gap-1">
           {selected.map((model) => (
@@ -180,7 +189,9 @@ function NativeAccountRow({
               <ModelCheckStatus
                 model={model}
                 probe={account.modelChecks?.find((probe) => probe.modelId === model)}
+                supported={account.provider === "claude"}
                 disabled={
+                  account.provider !== "claude" ||
                   busy ||
                   !account.enabled ||
                   !account.credentialReady ||
@@ -371,10 +382,38 @@ export function NativeProviderRowsView({
   readonly state: ReturnType<typeof useInstanceProviders>;
   readonly label: string;
 }) {
+  if (state.connectionFailure) return null;
+  const providers = [...new Set(state.registry?.accounts.map((account) => account.provider) ?? [])];
+  return (
+    <div role="rowgroup" aria-label={`CTOX provider accounts on ${label}`}>
+      {state.error && !state.errorAccountId && (
+        <p role="alert" className="py-1 text-xs text-destructive">{state.error}</p>
+      )}
+      {(providers.length > 0 ? providers : [""]).map((provider) => (
+        <NativeProviderGroup key={provider} provider={provider} state={state} label={label} />
+      ))}
+    </div>
+  );
+}
+
+function NativeProviderGroup({
+  state,
+  label,
+  provider,
+}: {
+  readonly state: ReturnType<typeof useInstanceProviders>;
+  readonly label: string;
+  readonly provider: string;
+}) {
   const [checkingAll, setCheckingAll] = useState(false);
   const registry = state.registry;
-  const accounts = registry?.accounts.filter((account) => account.provider === "claude") ?? [];
+  const accounts = registry?.accounts.filter((account) => account.provider === provider) ?? [];
+  const knownProvider = WORKJET_GATEWAY_PROVIDERS.find((entry) => entry === provider);
+  const ProviderIcon = knownProvider ? WORKJET_GATEWAY_PROVIDER_ICONS[knownProvider] : undefined;
+  const providerLabel = knownProvider ? WORKJET_GATEWAY_PROVIDER_LABELS[knownProvider] : provider || "CTOX accounts";
+  const checksSupported = provider === "claude";
   const checkAll = async () => {
+    if (!checksSupported) return;
     setCheckingAll(true);
     try {
       for (const account of accounts) {
@@ -391,7 +430,7 @@ export function NativeProviderRowsView({
   const refresh = async () => {
     const current = await state.refresh();
     for (const account of current?.accounts ?? []) {
-      if (account.provider === "claude" && account.enabled && account.credentialReady)
+      if (account.provider === provider && account.enabled && account.credentialReady)
         await state.run({
           action: "instance.providers.observe",
           accountId: account.id,
@@ -403,12 +442,13 @@ export function NativeProviderRowsView({
   return (
     <div
       role="rowgroup"
-      aria-label={`CTOX provider accounts on ${label}`}
+      aria-label={`${providerLabel} accounts on ${label}`}
       className="border-b border-border/50"
     >
       <div role="row" className={columns + " min-h-9 py-1.5"}>
-        <div role="cell" className="text-xs font-medium">
-          Claude · {label}
+        <div role="cell" className="flex items-center gap-1.5 text-xs font-medium">
+          {ProviderIcon && <ProviderIcon className="size-4 shrink-0" />}
+          {providerLabel} · {label}
         </div>
         <div
           role="cell"
@@ -419,6 +459,7 @@ export function NativeProviderRowsView({
             size="xs"
             variant="ghost"
             disabled={
+              !checksSupported ||
               state.busy ||
               checkingAll ||
               !accounts.some(
@@ -452,34 +493,31 @@ export function NativeProviderRowsView({
           </Button>
         </div>
       </div>
-      {state.error && !state.errorAccountId && (
-        <p role="alert" className="py-1 text-xs text-destructive">
-          {state.error}
-        </p>
-      )}
+
       {registry && accounts.length > 0 && (
         <div role="row" className={columns + " py-1"}>
           <div role="cell" className="text-xs text-muted-foreground">
             Shared models
           </div>
           <ProviderModels
-            provider="claude"
+            provider={provider}
             registry={registry}
             busy={state.busy}
             select={(models) => {
               void (async () => {
                 const current = await state.run({
                   action: "instance.providers.models.select",
-                  provider: "claude",
+                  provider,
                   models,
                   expectedRevision: registry.revision,
                 });
                 const previous =
-                  registry.providers.find((provider) => provider.provider === "claude")
+                  registry.providers.find((entry) => entry.provider === provider)
                     ?.selection ?? [];
+                if (!checksSupported) return;
                 for (const account of current?.accounts ?? []) {
                   if (
-                    account.provider !== "claude" ||
+                    account.provider !== provider ||
                     !account.enabled ||
                     !account.credentialReady ||
                     !account.modelCatalog.fresh

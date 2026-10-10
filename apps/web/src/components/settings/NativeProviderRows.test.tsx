@@ -59,10 +59,18 @@ function html(
   busy = false,
   error?: string,
 ) {
+  return registryHtml({ ...registry, accounts: [account] }, busy, error, error ? accountId : undefined);
+}
+function registryHtml(
+  current: WorkjetNativeProviderRegistry,
+  busy = false,
+  error?: string,
+  errorAccountId?: string,
+) {
   vi.mocked(useInstanceProviders).mockReturnValue({
-    registry: { ...registry, accounts: [account] },
+    registry: current,
     error,
-    errorAccountId: error ? accountId : undefined,
+    errorAccountId,
     busy,
     run: vi.fn(async (): Promise<WorkjetNativeProviderRegistry | undefined> => undefined),
     check: vi.fn(async () => undefined),
@@ -71,6 +79,54 @@ function html(
   return renderToStaticMarkup(<NativeProviderRows instanceId="managed:welsch" label="Welsch" />);
 }
 describe("Native provider account rows", () => {
+  const apiAccount: WorkjetNativeProviderAccount = {
+    ...registry.accounts[0]!,
+    id: "native-api-fixture",
+    provider: "zai",
+    controls: { canEnable: false, canRemove: false },
+    nativeAccountReference: {
+      accountId: "native-api-fixture",
+      holderInstanceId,
+      accountRevision: 3,
+    },
+    modelCatalog: { ...registry.accounts[0]!.modelCatalog, models: ["glm-5.3-flash"] },
+    effectiveModels: ["glm-5.3-flash"],
+  };
+  const apiSelection = { provider: "zai", selection: ["glm-5.3-flash"] };
+
+  it("shows a real non-Claude account with its own shared live models and holder controls", () => {
+    const rendered = registryHtml({ ...registry, providers: [apiSelection], accounts: [apiAccount] });
+    expect(rendered).toContain("Z.ai (GLM) · Welsch");
+    expect(rendered).toContain("glm-5.3-flash");
+    expect(rendered).toContain('aria-label="Models for zai on CTOX"');
+    expect(rendered).not.toContain("OAuth");
+    expect(rendered).not.toContain('role="switch"');
+    expect(control(rendered, "Check glm-5.3-flash")).toContain("disabled");
+    expect(rendered).toContain("does not support native Hi checks for this provider");
+    expect(rendered).not.toContain("Model check passed");
+    expect(control(rendered, "Permanently remove instance account native-api-fixture")).toContain("disabled");
+  });
+  it("keeps provider model fields separate and shows a shared refresh failure once", () => {
+    const rendered = registryHtml({
+      ...registry,
+      accounts: [registry.accounts[0]!, apiAccount],
+      providers: [...registry.providers, apiSelection],
+    }, false, "The instance refresh failed.");
+    expect(rendered).toContain('aria-label="Models for claude on CTOX"');
+    expect(rendered).toContain('aria-label="Models for zai on CTOX"');
+    expect(rendered).toContain("claude-opus-5-5");
+    expect(rendered).toContain("glm-5.3-flash");
+    expect(rendered.match(/role="alert"/g)).toHaveLength(1);
+    expect(rendered).toContain("The instance refresh failed.");
+  });
+  it("retains an unfamiliar native provider using its real public identity", () => {
+    const account = { ...apiAccount, provider: "ctox_proxy" };
+    const rendered = registryHtml({ ...registry, accounts: [account], providers: [{ ...apiSelection, provider: "ctox_proxy" }] });
+    expect(rendered).toContain("ctox_proxy · Welsch");
+    expect(rendered).toContain('aria-label="Models for ctox_proxy on CTOX"');
+    expect(rendered).toContain("glm-5.3-flash");
+  });
+
   it("shows an actual green Hi status and measured latency instead of a catalog-derived claim", () => {
     const rendered = html({
       ...registry.accounts[0]!,

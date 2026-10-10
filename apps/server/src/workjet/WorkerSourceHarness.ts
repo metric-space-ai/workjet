@@ -13,7 +13,8 @@ const Route = Schema.Struct({
 });
 export type WorkerSourceHarnessRoute = typeof Route.Type;
 const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Schema.Boolean) });
-const Reply = Schema.Struct({ requestJson: Schema.String });
+const Reply = Schema.Struct({ requestJson: Schema.String, contentType: Schema.optionalKey(Schema.Literals(["application/json", "text/event-stream"])) });
+const nativeProtocols = { "/v1/messages": "messages", "/v1/chat/completions": "chat-completions" } as const;
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
 export interface WorkerSourceHarness {
   readonly isRevoked: () => boolean;
@@ -105,7 +106,8 @@ export async function installWorkerSourceRoute(
       res.writeHead(403).end();
       return;
     }
-    if (req.method !== "POST" || req.url !== "/v1/responses") {
+    const protocol = req.url === "/v1/messages" ? nativeProtocols["/v1/messages"] : req.url === "/v1/chat/completions" ? nativeProtocols["/v1/chat/completions"] : undefined;
+    if (req.method !== "POST" || (req.url !== "/v1/responses" && protocol === undefined)) {
       res.writeHead(404).end();
       return;
     }
@@ -140,13 +142,21 @@ export async function installWorkerSourceRoute(
         await source(
           "infer",
           {
-            requestJson: JSON.stringify({ ...(json as Record<string, unknown>), stream: false }),
+            ...(protocol === undefined ? {} : { protocol }),
+            requestJson: protocol === undefined ? JSON.stringify({ ...(json as Record<string, unknown>), stream: false }) : JSON.stringify(json),
           },
           controller.signal,
         ),
       );
-      const result = Schema.decodeUnknownSync(Response)(JSON.parse(reply.requestJson));
       if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
+      if (protocol !== undefined) {
+        const expected = request.stream ? "text/event-stream" : "application/json";
+        if (reply.contentType !== expected || Buffer.byteLength(reply.requestJson) > 1024 * 1024)
+          throw new Error("Invalid native worker response");
+        res.writeHead(200, { "content-type": expected, "cache-control": "no-store" }).end(reply.requestJson);
+        return;
+      }
+      const result = Schema.decodeUnknownSync(Response)(JSON.parse(reply.requestJson));
       if (request.stream) {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
         const event = (type: string, data: Record<string, unknown>) =>

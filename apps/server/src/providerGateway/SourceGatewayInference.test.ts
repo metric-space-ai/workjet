@@ -112,7 +112,7 @@ const input: WorkjetGatewayInferenceInput = {
     stream: false,
   }),
 };
-const fixture = () => {
+const fixture = (forwardProtocol?: Parameters<typeof makeSourceGatewayInference>[0]["forwardProtocol"]) => {
   const events: string[] = [];
   const deadlines: number[] = [];
   let scoped = catalog;
@@ -155,6 +155,7 @@ const fixture = () => {
         afterForward();
         return encodeJson({ output: [{ text: "result" }] });
       }),
+    ...(forwardProtocol === undefined ? {} : { forwardProtocol }),
     now: Effect.sync(() => now),
   });
   return {
@@ -463,4 +464,55 @@ describe("source gateway inference", () => {
       expect(f.events).toEqual([]);
     }),
   );
+});
+
+describe("source native protocols", () => {
+  it.effect.each(["messages", "chat-completions", "responses"] as const)(
+    "revalidates the same pinned authority around twenty %s tool turns",
+    protocol => Effect.gen(function* () {
+      const calls: string[] = [];
+      const f = fixture((selected, request, deadline, actualProtocol) => Effect.sync(() => {
+        expect(selected).toEqual({ target, ...references });
+        expect(deadline).toBe(input.permit.expiresAtMs);
+        expect(actualProtocol).toBe(protocol);
+        calls.push(request);
+        return { requestJson: "native events", contentType: "text/event-stream" as const };
+      }));
+      for (let turn = 0; turn < 20; turn++) {
+        const requestJson = encodeJson({
+          model: input.permit.binding.modelRef.modelId,
+          stream: true,
+          ...(protocol === "responses" ? { input: [{ role: "user", content: String(turn) }] }
+            : { messages: [{ role: "user", content: String(turn) }] }),
+        });
+        expect(yield* f.consumer.infer({ ...input, protocol, requestJson })).toEqual({
+          requestJson: "native events", contentType: "text/event-stream",
+        });
+        expect(calls.at(-1)).toBe(requestJson);
+      }
+      expect(calls).toHaveLength(20);
+      expect(f.events).toEqual(Array.from({ length: 20 }, () => ["catalog", "native", "catalog", "native"]).flat());
+    }),
+  );
+  it.effect("rejects wrong native shapes and withholds results after revocation", () => Effect.gen(function* () {
+    let forwards = 0;
+    const f = fixture(() => Effect.sync(() => {
+      forwards++;
+      f.scope({ ...catalog, accounts: [] });
+      return { requestJson: "private result", contentType: "application/json" as const };
+    }));
+    for (const body of [
+      { model: input.permit.binding.modelRef.modelId, input: [] },
+      { model: input.permit.binding.modelRef.modelId, messages: [], stream: "true" },
+      { model: input.permit.binding.modelRef.modelId, messages: [], conversation: "foreign" },
+    ]) {
+      expect(yield* reason(f.consumer.infer({ ...input, protocol: "messages", requestJson: encodeJson(body) }))).toBe("invalid-request");
+    }
+    expect(forwards).toBe(0);
+    expect(yield* reason(f.consumer.infer({
+      ...input, protocol: "messages",
+      requestJson: encodeJson({ model: input.permit.binding.modelRef.modelId, messages: [], stream: false }),
+    }))).toBe("grant-unavailable");
+    expect(forwards).toBe(1);
+  }));
 });

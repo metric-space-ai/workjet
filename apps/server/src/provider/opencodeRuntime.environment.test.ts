@@ -33,9 +33,10 @@ const observeSpawnedConfiguration = (environment?: NodeJS.ProcessEnv) =>
         ...(environment === undefined ? {} : { environment }),
       });
       const response = yield* Effect.promise(() => fetch(server.url).then((r) => r.text()));
-      return Schema.decodeUnknownSync(
+      const parsed = yield* Schema.decodeUnknownEffect(
         Schema.fromJsonString(Schema.Struct({ configuration: Schema.String })),
-      )(response).configuration;
+      )(response);
+      return parsed.configuration;
     }).pipe(Effect.provide(OpenCodeRuntimeLive), Effect.provide(NodeServices.layer)),
   );
 

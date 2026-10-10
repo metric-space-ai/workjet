@@ -9,10 +9,13 @@
 import { HostProcessArchitecture, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
@@ -79,8 +82,18 @@ export const make = Effect.gen(function* () {
     ),
     Effect.orElseSucceed(() => false),
   );
-  // Do not inspect provider identities until the user opts in.
-  let identifier: string | null | undefined;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const crypto = yield* Crypto.Crypto;
+  // Capture local services now; inspect identities only after consent.
+  const resolveIdentifier = yield* Effect.cached(
+    getTelemetryIdentifier.pipe(
+      Effect.provideService(ServerConfig.ServerConfig, serverConfig),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+      Effect.provideService(Crypto.Crypto, crypto),
+    ),
+  );
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
@@ -117,7 +130,7 @@ export const make = Effect.gen(function* () {
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
     if (!(yield* hasConsent)) return;
-    identifier ??= yield* getTelemetryIdentifier;
+    const identifier = yield* resolveIdentifier;
     if (!identifier) return;
 
     const payload = {

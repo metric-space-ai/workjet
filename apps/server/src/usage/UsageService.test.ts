@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as ServerConfig from "../config.ts";
@@ -13,6 +14,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as UsageService from "./UsageService.ts";
 import catalog from "./catalog/model-rates.json" with { type: "json" };
 import { parseRateTable, priceUsage } from "./usagePricing.ts";
+
+const encodeFixtureJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 it.layer(NodeServices.layer)("bundled usage pricing", (it) => {
   it.effect(
@@ -58,7 +61,7 @@ it.layer(NodeServices.layer)("bundled usage pricing", (it) => {
         assert.equal(typeof unknownModel, "string");
         yield* fileSystem.writeFileString(
           path.join(config.stateDir, "usage-model-rates.json"),
-          JSON.stringify({
+          encodeFixtureJson({
             fetchedAtMs: 0,
             document: {
               [knownModel]: {
@@ -72,7 +75,7 @@ it.layer(NodeServices.layer)("bundled usage pricing", (it) => {
           path.join(transcriptDir, "session.jsonl"),
           [knownModel, unknownModel]
             .map((model, index) =>
-              JSON.stringify({
+              encodeFixtureJson({
                 type: "assistant",
                 timestamp: "2026-10-10T12:00:00.000Z",
                 sessionId: "offline-fixture",

@@ -170,12 +170,20 @@ fn ordinary_object_tools_keep_their_original_argument_shape() {
 fn terminal_done_unwraps_or_rejects_without_a_finish_reason() {
     let original = serde_json::to_vec(&json!({"tools":[{"type":"namespace","name":"mcp__workjet","tools":[{"type":"function","name":"guide","parameters":{"type":"array","items":{"type":"string"}}}]}]})).unwrap();
     let events = exchange_until_done(&original, r#"{"input":["valid"]}"#, false);
-    let done = events.iter().find(|e| e["type"] == "response.function_call_arguments.done").unwrap();
+    let done = events
+        .iter()
+        .find(|e| e["type"] == "response.function_call_arguments.done")
+        .unwrap();
     assert_eq!(done["arguments"], r#"["valid"]"#);
-    let completed = events.iter().find(|e| e["type"] == "response.completed").unwrap();
-    assert_eq!(completed["response"]["output"][0]["arguments"], r#"["valid"]"#);
+    let completed = events
+        .iter()
+        .find(|e| e["type"] == "response.completed")
+        .unwrap();
+    assert_eq!(
+        completed["response"]["output"][0]["arguments"],
+        r#"["valid"]"#
+    );
     let invalid = exchange_until_done(&original, r#"{"wrong":"input"}"#, false);
     assert!(invalid.iter().any(|e| e["type"] == "response.failed"));
     assert!(!invalid.iter().any(|e| e["type"] == "response.completed"));
 }
-

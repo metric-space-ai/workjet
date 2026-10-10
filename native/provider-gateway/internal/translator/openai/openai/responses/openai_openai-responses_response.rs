@@ -111,7 +111,11 @@ pub fn convert_openai_chat_completions_response_to_openai_responses(
             }
             if !st.completed_emitted {
                 st.completed_emitted = true;
-                output.push(build_responses_completed_event(st, request_for_namespace, &mut next_seq));
+                output.push(build_responses_completed_event(
+                    st,
+                    request_for_namespace,
+                    &mut next_seq,
+                ));
             }
             st.sequence_number = counter;
             return output;
@@ -1334,8 +1338,7 @@ pub fn convert_openai_chat_completions_response_to_openai_responses_non_stream(
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .to_string();
-                        let args = if boxed_function_names.contains(&name)
-                        {
+                        let args = if boxed_function_names.contains(&name) {
                             let Some(arguments) = tools::unwrap_boxed_function_arguments(&args)
                             else {
                                 return serde_json::to_vec(&json!({"error":{"code":"invalid_tool_input","message":"Provider returned invalid wrapped function input"}})).unwrap();

@@ -12,6 +12,7 @@ import { extractJsonObject } from "@workjet/shared/schemaJson";
 
 import { TextGenerationError } from "@workjet/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
+import { resolveTextGenerationEnvironment, type TextGenerationEnvironmentResolver } from "./TextGenerationRouting.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -37,6 +38,7 @@ const isTextGenerationError = Schema.is(TextGenerationError);
 export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(function* (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  resolveEnvironment?: TextGenerationEnvironmentResolver,
 ) {
   const crypto = yield* Crypto.Crypto;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -60,10 +62,11 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
       const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
+      const commandEnvironment = yield* resolveTextGenerationEnvironment(operation, modelSelection.model, environment, resolveEnvironment);
       const outputRef = yield* Ref.make("");
       const runtime = yield* makeGrokAcpRuntime({
         grokSettings,
-        environment,
+        environment: commandEnvironment,
         childProcessSpawner: commandSpawner,
         cwd,
         clientInfo: { name: "workjet-git-text", version: "0.0.0" },

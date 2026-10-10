@@ -8,6 +8,7 @@ import { SourceControlProviderRegistry } from "../sourceControl/SourceControlPro
 import { WorkerSubmission } from "./WorkerSubmission.ts";
 import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
 import { WorkerPullRequestStore, type WorkerPullRequestReceipt } from "./WorkerPullRequestStore.ts";
+const decodeSubmission = Schema.decodeUnknownEffect(WorkerSubmission);
 
 /** Retain a verified submission on the source before the stopped target retires.
  * The existing source cycle can observe its later terminal state after target archival. */
@@ -15,7 +16,7 @@ export const retainRemoteWorkerOutcome = Effect.fn("retainRemoteWorkerOutcome")(
   request: RemoteWorkerRequest, payload: unknown,
 ) {
   const fail = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
-  const notice = yield* Schema.decodeUnknownEffect(WorkerSubmission)(payload).pipe(Effect.mapError(fail));
+  const notice = yield* decodeSubmission(payload).pipe(Effect.mapError(fail));
   const broker = yield* RemoteWorkerBroker;
   const saved = yield* broker.read(request.requestId);
   if (Option.isNone(saved) || saved.value.response?.outcome.status !== "dispatched")

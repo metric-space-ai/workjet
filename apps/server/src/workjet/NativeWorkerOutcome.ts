@@ -25,6 +25,7 @@ export const NativeWorkerTerminalReceipt = Schema.Struct({
   new RegExp(`^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/${receipt.pull_request.number}$`).test(receipt.pull_request.url)
   || "Outcome must match an isolated branch and exact GitHub PR URL"));
 export type NativeWorkerTerminalReceipt = typeof NativeWorkerTerminalReceipt.Type;
+const decodeTerminalReceipt = Schema.decodeUnknownEffect(NativeWorkerTerminalReceipt);
 
 export const terminalReceiptFrom = Effect.fn("NativeWorkerOutcome.fromPersistedReceipt")(function* (
   receipt: WorkerPullRequestReceipt,
@@ -36,7 +37,7 @@ export const terminalReceiptFrom = Effect.fn("NativeWorkerOutcome.fromPersistedR
       receipt.branchRef !== startup.branch ||
       receipt.executionStopped !== 1)
     return yield* fail();
-  return yield* Schema.decodeUnknownEffect(NativeWorkerTerminalReceipt)({
+  return yield* decodeTerminalReceipt({
     schema: "ctox.workjet.worker-outcome.v1",
     worker_thread_id: receipt.threadId,
     environment_id: startup.environmentId,

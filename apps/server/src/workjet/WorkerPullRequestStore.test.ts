@@ -114,7 +114,7 @@ describe("native worker PR receipts", () => {
   });
 });
 
-it.effect("pages only stopped terminal receipts and retains them across service reconstruction", () =>
+it.effect("pages stopped submissions including open PRs and retains them across service reconstruction", () =>
   database(Effect.gen(function* () {
     yield* runMigrations();
     const store = yield* WorkerPullRequestStore;
@@ -128,6 +128,6 @@ it.effect("pages only stopped terminal receipts and retains them across service 
     assert.equal(first[0]?.threadId, "worker-00");
     assert.equal(first.at(-1)?.threadId, "worker-15");
     const reconstructed = yield* make;
-    assert.deepEqual((yield* reconstructed.listStopped("worker-15")).map((row) => row.threadId), ["worker-16"]);
-    assert.deepEqual(yield* reconstructed.listStopped("worker-16"), []);
+    assert.deepEqual((yield* reconstructed.listStopped("worker-15")).map((row) => row.threadId), ["worker-16", "worker-18"]);
+    assert.deepEqual(yield* reconstructed.listStopped("worker-18"), []);
   })));

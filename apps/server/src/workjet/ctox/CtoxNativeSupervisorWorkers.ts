@@ -34,6 +34,9 @@ const OutcomeAcknowledgement = Schema.Struct({
   registration_revision: Schema.Int,
   receipt: NativeWorkerTerminalReceipt,
 });
+const decodeOutcome = Schema.decodeUnknownEffect(NativeWorkerTerminalReceipt);
+const encodeOutcome = Schema.encodeEffect(NativeWorkerTerminalReceipt);
+const decodeOutcomeAcknowledgement = Schema.decodeUnknownEffect(OutcomeAcknowledgement);
 const decodeRegistration = Schema.decodeUnknownEffect(NativeSupervisorSourceRegistration);
 const decodePoll = Schema.decodeUnknownEffect(PollReceipt);
 const decodeComplete = Schema.decodeUnknownEffect(CompleteReceipt);
@@ -98,7 +101,7 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       startup: RemoteWorkerResult,
       outcome: NativeWorkerTerminalReceipt,
     ) {
-      const receipt = yield* Schema.decodeUnknownEffect(NativeWorkerTerminalReceipt)(outcome).pipe(Effect.mapError(failure));
+      const receipt = yield* decodeOutcome(outcome).pipe(Effect.mapError(failure));
       if (registration.state !== "active" || registration.sourceInstanceId !== scope.instanceId ||
           startup.parent.environmentId !== registration.sourceEnvironmentId ||
           startup.parent.threadId !== registration.sourceSupervisorThreadId ||
@@ -111,8 +114,8 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
         registration_id: registration.registrationId,
         revision: registration.revision,
         intent_id: startup.workerThreadId,
-        receipt: yield* Schema.encodeEffect(NativeWorkerTerminalReceipt)(receipt).pipe(Effect.mapError(failure)),
-      }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(OutcomeAcknowledgement)), Effect.mapError(failure));
+        receipt: yield* encodeOutcome(receipt).pipe(Effect.mapError(failure)),
+      }).pipe(Effect.flatMap(decodeOutcomeAcknowledgement), Effect.mapError(failure));
       if (acknowledged.registration_revision !== registration.revision ||
           !NodeUtil.isDeepStrictEqual(acknowledged.receipt, receipt)) return yield* failure();
       return acknowledged.accepted_at_ms;

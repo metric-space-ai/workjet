@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { NativeWorkerTerminalReceipt, terminalReceiptFrom } from "./NativeWorkerOutcome.ts";
 import { persisted, startup } from "./nativeWorkerOutcomeFixture.ts";
+const isTerminalReceipt = Schema.is(NativeWorkerTerminalReceipt);
 it.effect("maps only the exact stopped terminal native receipt, without paths, models or credentials", () =>
   Effect.gen(function* () {
     const outcome = yield* terminalReceiptFrom(persisted, startup);
@@ -18,5 +19,5 @@ it.effect("maps only the exact stopped terminal native receipt, without paths, m
       { ...persisted, prUrl: "https://github.com/owner/repo/pull/8" },
     ]) assert.equal((yield* terminalReceiptFrom(altered, startup).pipe(Effect.result))._tag, "Failure");
     const foreign = { ...outcome, execution_stopped: false };
-    assert.equal(Schema.is(NativeWorkerTerminalReceipt)(foreign), false);
+    assert.equal(isTerminalReceipt(foreign), false);
   }));

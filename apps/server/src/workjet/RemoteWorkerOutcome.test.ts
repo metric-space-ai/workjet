@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { assert, it } from "@effect/vitest";
-import { RemoteWorkerDispatchError, type ChangeRequest } from "@workjet/contracts";
+import { RemoteWorkerDispatchError, type ChangeRequest, type ThreadId } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -46,7 +46,7 @@ it.effect("persists stopped submission on source and observes merge after target
     } as unknown as SourceControlProviderRegistry["Service"];
     const invoke = (payload: unknown) => retainRemoteWorkerOutcome(worker, payload).pipe(
       Effect.provideService(RemoteWorkerBroker, {
-        read: (id) => remote.get("outbound", id).pipe(Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "source-unavailable" }))),
+        read: (id: ThreadId) => remote.get("outbound", id).pipe(Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "source-unavailable" }))),
       } as unknown as RemoteWorkerBroker["Service"]),
       Effect.provideService(ProjectionSnapshotQuery, query),
       Effect.provideService(SourceControlProviderRegistry, registry),

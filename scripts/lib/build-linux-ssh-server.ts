@@ -5,6 +5,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import { isCurrentGithubLinuxSshReceipt } from "./github-ssh-build-receipt.ts";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15"];
@@ -37,8 +38,12 @@ export async function stagePrebuiltLinuxSshServer(input: {
   const hash = await fileDigest(archive);
   if (
     receipt.exit !== 0 ||
-    receipt.host !== "gpu3" ||
-    receipt.owner !== input.owner ||
+    !(
+      (receipt.host === "gpu3" &&
+        process.env.GITHUB_ACTIONS !== "true" &&
+        receipt.owner === input.owner) ||
+      isCurrentGithubLinuxSshReceipt(receipt, input.owner)
+    ) ||
     receipt.workjetSourceCommit !== source ||
     receipt.workjetLockSha256 !==
       (await fileDigest(NodePath.join(input.repoRoot, "pnpm-lock.yaml"))) ||

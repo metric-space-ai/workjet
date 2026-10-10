@@ -31,7 +31,9 @@ const ToolReply = Schema.Struct({
   execution_ready: Schema.Literal(false),
 });
 const decodeArguments = Schema.decodeUnknownPromise(HookArguments, { onExcessProperty: "error" });
-const decodeGoalArguments = Schema.decodeUnknownPromise(GoalHookArguments, { onExcessProperty: "error" });
+const decodeGoalArguments = Schema.decodeUnknownPromise(GoalHookArguments, {
+  onExcessProperty: "error",
+});
 const decodeId = Schema.decodeUnknownSync(Id);
 const decodeBinding = Schema.decodeUnknownSync(
   Schema.Struct({ offerId: Uuid, controllerId: Uuid }),
@@ -195,19 +197,21 @@ export function createNativeSupervisorSdkTools(options: {
     (input) => execute("worker_dispatch", input),
     { alwaysLoad: true },
   );
-  const goal = options.includeConfirmedGoalRead === true
-    ? tool(
-        "confirmed_goal_read",
-        "Read the Owner-confirmed project goal and saved Core step progress. Partial results are not completed work.",
-        { [NONCE]: z.string().uuid().optional() },
-        (input) => execute("confirmed_goal_read", input),
-        { alwaysLoad: true },
-      )
-    : undefined;
+  const goal =
+    options.includeConfirmedGoalRead === true
+      ? tool(
+          "confirmed_goal_read",
+          "Read the Owner-confirmed project goal and saved Core step progress. Partial results are not completed work.",
+          { [NONCE]: z.string().uuid().optional() },
+          (input) => execute("confirmed_goal_read", input),
+          { alwaysLoad: true },
+        )
+      : undefined;
   const admitted = goal === undefined ? [worker] : [worker, goal];
-  const instructions = options.includeConfirmedGoalRead === true
-    ? "Use mcp__workjet_native__confirmed_goal_read with empty arguments before acting to read the Owner-confirmed project goal and actual saved Core step progress. A null confirmed_goal means no goal is confirmed; do not invent one. Partial results are not completed work. Request workers through mcp__workjet_native__worker_dispatch."
-    : "The available native tool is mcp__workjet_native__worker_dispatch.";
+  const instructions =
+    options.includeConfirmedGoalRead === true
+      ? "Use mcp__workjet_native__confirmed_goal_read with empty arguments before acting to read the Owner-confirmed project goal and actual saved Core step progress. A null confirmed_goal means no goal is confirmed; do not invent one. Partial results are not completed work. Request workers through mcp__workjet_native__worker_dispatch."
+      : "The available native tool is mcp__workjet_native__worker_dispatch.";
   const server = createSdkMcpServer({
     name: "workjet_native",
     version: "1.0.0",

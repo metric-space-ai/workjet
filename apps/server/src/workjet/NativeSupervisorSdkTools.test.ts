@@ -30,9 +30,10 @@ function fixture(
             state: "tool_result",
             operation_id: operation.operation_id,
             native_tool: operation.native_tool,
-            result: operation.native_tool === "confirmed_goal_read"
-              ? { confirmed_goal: null }
-              : { intent: { intentId: "fixture-intent" } },
+            result:
+              operation.native_tool === "confirmed_goal_read"
+                ? { confirmed_goal: null }
+                : { intent: { intentId: "fixture-intent" } },
             execution_ready: false,
           };
         }),
@@ -53,8 +54,12 @@ function fixture(
     extra: unknown,
   ) => ReturnType<ReturnType<typeof tool>["handler"]>;
   const registrations = vi.mocked(tool).mock.calls.slice(registrationStart);
-  const handler = registrations.find((call) => call[0] === "worker_dispatch")?.[3] as Handler | undefined;
-  const goalHandler = registrations.find((call) => call[0] === "confirmed_goal_read")?.[3] as Handler | undefined;
+  const handler = registrations.find((call) => call[0] === "worker_dispatch")?.[3] as
+    | Handler
+    | undefined;
+  const goalHandler = registrations.find((call) => call[0] === "confirmed_goal_read")?.[3] as
+    | Handler
+    | undefined;
   if (!handler) throw new Error("SDK tool was not registered.");
   const hook = (change: Partial<PreToolUseHookInput> = {}) => ({
     hook_event_name: "PreToolUse" as const,
@@ -68,7 +73,18 @@ function fixture(
   });
   const before = (input: HookInput) =>
     bridge.beforeTool(input, undefined, { signal: AbortSignal.timeout(1000) });
-  return { bridge, handler, goalHandler, registrations, before, hook, transport, calls, offerId, controllerId };
+  return {
+    bridge,
+    handler,
+    goalHandler,
+    registrations,
+    before,
+    hook,
+    transport,
+    calls,
+    offerId,
+    controllerId,
+  };
 }
 it.each([
   { tool_name: "Bash" },
@@ -170,18 +186,29 @@ it("does not register or admit the confirmed-goal reader without native admissio
   const { before, hook, goalHandler, registrations, transport } = fixture();
   expect(registrations.map((call) => call[0])).toEqual(["worker_dispatch"]);
   expect(goalHandler).toBeUndefined();
-  expect(await before(hook({ tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {} })))
-    .toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+  expect(
+    await before(hook({ tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {} })),
+  ).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
   expect(transport.request).not.toHaveBeenCalled();
 });
 it.each([
   { confirmed_goal: null },
-  { confirmed_goal: { revision: 3, status: "active", steps: [{ status: "running", result: "Saved partial evidence" }] } },
+  {
+    confirmed_goal: {
+      revision: 3,
+      status: "active",
+      steps: [{ status: "running", result: "Saved partial evidence" }],
+    },
+  },
 ])("returns the actual confirmed-goal result without inventing completion: %o", async (result) => {
   const { before, hook, goalHandler, transport, offerId, controllerId } = fixture(
     async (_id, operation) => ({
-      version: 1, state: "tool_result", operation_id: operation.operation_id,
-      native_tool: "confirmed_goal_read", result, execution_ready: false,
+      version: 1,
+      state: "tool_result",
+      operation_id: operation.operation_id,
+      native_tool: "confirmed_goal_read",
+      result,
+      execution_ready: false,
     }),
     true,
   );
@@ -198,52 +225,84 @@ it.each([
   });
   expect(transport.request).toHaveBeenCalledTimes(1);
   expect(transport.request.mock.calls[0]?.[1]).toEqual({
-    version: 1, action: "tool_call", offer_id: offerId, controller_id: controllerId,
-    operation_id: expect.any(String), native_tool: "confirmed_goal_read", tool_arguments_json: "{}",
+    version: 1,
+    action: "tool_call",
+    offer_id: offerId,
+    controller_id: controllerId,
+    operation_id: expect.any(String),
+    native_tool: "confirmed_goal_read",
+    tool_arguments_json: "{}",
   });
 });
 it.each([
-  { project_id: "foreign-project" }, { actor: "owner" }, { root: "/foreign-root" },
-  { controller_id: NodeCrypto.randomUUID() }, { action: "confirm_goal" },
+  { project_id: "foreign-project" },
+  { actor: "owner" },
+  { root: "/foreign-root" },
+  { controller_id: NodeCrypto.randomUUID() },
+  { action: "confirm_goal" },
   { _workjet_sdk_call: NodeCrypto.randomUUID() },
 ])("rejects caller-selected goal authority or correlation: %o", async (tool_input) => {
   const { before, hook, transport } = fixture(undefined, true);
-  expect(await before(hook({ tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input })))
-    .toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+  expect(
+    await before(hook({ tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input })),
+  ).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
   expect(transport.request).not.toHaveBeenCalled();
 });
 it("does not reuse one hook or nonce across the two fixed native tools", async () => {
   const { before, hook, handler, goalHandler, transport } = fixture(undefined, true);
   const workerInput = updatedInput(await before(hook()));
   expect(await goalHandler!(workerInput!, {})).toMatchObject({ isError: true });
-  expect(await before(hook({ tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {} })))
-    .toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
-  const goalInput = updatedInput(await before(hook({
-    tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {}, tool_use_id: "goal-use",
-  })));
+  expect(
+    await before(hook({ tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {} })),
+  ).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+  const goalInput = updatedInput(
+    await before(
+      hook({
+        tool_name: "mcp__workjet_native__confirmed_goal_read",
+        tool_input: {},
+        tool_use_id: "goal-use",
+      }),
+    ),
+  );
   expect(await handler(goalInput!, {})).toMatchObject({ isError: true });
   expect(transport.request).not.toHaveBeenCalled();
 });
 it.each([{ session_id: "foreign-session" }, { agent_id: "subagent" }])(
-  "rejects goal reads outside the observed parent session: %o", async (change) => {
+  "rejects goal reads outside the observed parent session: %o",
+  async (change) => {
     const { before, hook, transport } = fixture(undefined, true);
-    expect(await before(hook({
-      tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {}, ...change,
-    }))).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    expect(
+      await before(
+        hook({
+          tool_name: "mcp__workjet_native__confirmed_goal_read",
+          tool_input: {},
+          ...change,
+        }),
+      ),
+    ).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
     expect(transport.request).not.toHaveBeenCalled();
   },
 );
 it("retires a goal read with a foreign tool reply without replacing its operation", async () => {
   const { before, hook, goalHandler, transport, bridge } = fixture(
     async (_id, operation) => ({
-      version: 1, state: "tool_result", operation_id: operation.operation_id,
-      native_tool: "worker_dispatch", result: {}, execution_ready: false,
+      version: 1,
+      state: "tool_result",
+      operation_id: operation.operation_id,
+      native_tool: "worker_dispatch",
+      result: {},
+      execution_ready: false,
     }),
     true,
   );
-  const input = updatedInput(await before(hook({
-    tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {},
-  })));
+  const input = updatedInput(
+    await before(
+      hook({
+        tool_name: "mcp__workjet_native__confirmed_goal_read",
+        tool_input: {},
+      }),
+    ),
+  );
   expect(await goalHandler!(input!, {})).toMatchObject({ isError: true });
   expect(await bridge.failure).toBeInstanceOf(Error);
   expect(await goalHandler!(input!, {})).toMatchObject({ isError: true });
@@ -252,12 +311,17 @@ it("retires a goal read with a foreign tool reply without replacing its operatio
 it("shares the existing 32-call budget across both native tools", async () => {
   const { before, hook } = fixture(undefined, true);
   for (let index = 0; index < 32; index++)
-    expect(await before(hook({
-      tool_use_id: `mixed-tool-${index}`,
-      ...(index % 2 === 0
-        ? { tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {} }
-        : {}),
-    }))).toMatchObject({ hookSpecificOutput: { permissionDecision: "allow" } });
-  expect(await before(hook({ tool_use_id: "over-budget" })))
-    .toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    expect(
+      await before(
+        hook({
+          tool_use_id: `mixed-tool-${index}`,
+          ...(index % 2 === 0
+            ? { tool_name: "mcp__workjet_native__confirmed_goal_read", tool_input: {} }
+            : {}),
+        }),
+      ),
+    ).toMatchObject({ hookSpecificOutput: { permissionDecision: "allow" } });
+  expect(await before(hook({ tool_use_id: "over-budget" }))).toMatchObject({
+    hookSpecificOutput: { permissionDecision: "deny" },
+  });
 });

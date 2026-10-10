@@ -1847,6 +1847,17 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+        <SettingsRow
+          {...searchableSetting("posthog-consent")}
+          description="Allow this environment to send anonymous feature usage and platform details to PostHog (normally us.i.posthog.com) to improve Workjet. Off by default; turn off to stop uploads."
+          control={
+            <Switch
+              checked={settings.posthogConsent}
+              onCheckedChange={(checked) => updateSettings({ posthogConsent: checked })}
+              aria-label="Send usage analytics to PostHog"
+            />
+          }
+        />
         {isElectron ? (
           <SettingsRow
             title="Dev and Ops introduction"

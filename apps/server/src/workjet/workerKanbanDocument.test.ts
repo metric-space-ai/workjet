@@ -6,7 +6,7 @@ import {
 } from "@workjet/contracts";
 import { parseSlideDocument } from "@workjet/slide-engine/schema";
 import * as Schema from "effect/Schema";
-import { expect, it } from "vitest";
+import { expect, it } from "@effect/vitest";
 import { createWorkerKanbanSlideDocument } from "./workerKanbanDocument.ts";
 
 const decodeDocumentJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -37,9 +37,7 @@ const input = {
   kanban,
 };
 function decode(snapshot: WorkjetWorkerKanbanSlideDocument) {
-  return parseSlideDocument(
-    decodeDocumentJson(snapshot.documentJson),
-  );
+  return parseSlideDocument(decodeDocumentJson(snapshot.documentJson));
 }
 
 it("produces a canonical meeting-readable board and a digest of the persisted bytes", () => {
@@ -61,7 +59,9 @@ it("produces a canonical meeting-readable board and a digest of the persisted by
   expect(table.mobileStrategy).toBe("cards");
   expect(document.slides[0]!.sourceRefs[0]!.locator).toContain("goal revision 2 · iteration 3");
   expect(document.createdBy).toEqual({ mode: "import" });
-  expect(snapshot.sha256).toBe(NodeCrypto.createHash("sha256").update(snapshot.documentJson).digest("hex"));
+  expect(snapshot.sha256).toBe(
+    NodeCrypto.createHash("sha256").update(snapshot.documentJson).digest("hex"),
+  );
   expect(createWorkerKanbanSlideDocument(input)).toEqual(snapshot);
 });
 

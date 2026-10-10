@@ -1,8 +1,8 @@
 // Workjet fork delta: the one canonical list of scene3d ids. `schema.ts` (block sceneId)
 // and `excalidraw/canvas-schema.ts` (embed sceneId) both read it from here, so a new scene
 // id can never be accepted by one schema and rejected by the other.
-import { businessSceneIdValues } from "./business-data";
-import type { ModellSceneKey } from "./modell-types";
+import { businessSceneIdValues } from "./business-data.ts";
+import type { ModellSceneKey } from "./modell-keys.ts";
 
 /** The learnordie lecture scenes; fixed visualisations without caller data. */
 export const modellSceneIdValues = [

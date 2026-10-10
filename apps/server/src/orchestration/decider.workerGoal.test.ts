@@ -131,11 +131,7 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       const goal = result.threads[0]!.workjetConfig;
       expect(goal.schemaVersion === 2 && goal.goal?.status).toBe("active");
       if (goal.schemaVersion !== 2) throw new Error("unexpected old config");
-      expect(
-        yield* decodeGoalJson(
-          yield* encodeGoalJson(goal.goal!),
-        ),
-      ).toEqual(goal.goal);
+      expect(yield* decodeGoalJson(yield* encodeGoalJson(goal.goal!))).toEqual(goal.goal);
       expect(goal.goal?.pendingContinuation).toBeNull();
     }),
   );
@@ -162,15 +158,9 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       const { slideDocument, ...cards } = config.goal.kanban;
       expect(cards).toEqual(kanban);
       expect(slideDocument.schemaVersion).toBe("learnordie.slide.v1");
-      expect(
-        yield* decodeGoalJson(
-          yield* encodeGoalJson(config.goal),
-        ),
-      ).toEqual(config.goal);
+      expect(yield* decodeGoalJson(yield* encodeGoalJson(config.goal))).toEqual(config.goal);
       // Old card-only journal records remain readable.
-      expect(
-        yield* decodeGoal({ ...config.goal, kanban }),
-      ).toEqual({ ...config.goal, kanban });
+      expect(yield* decodeGoal({ ...config.goal, kanban })).toEqual({ ...config.goal, kanban });
       // A caller cannot replace the canonical document or claim a verified outcome.
       const spoofed = yield* apply(model, {
         ...command,

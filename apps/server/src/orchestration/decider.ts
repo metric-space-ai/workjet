@@ -1114,12 +1114,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             "Only the current active persistent worker iteration may update a mini-kanban with unique card IDs.",
         });
       }
+      const objective = config.goal.objective;
       const slideDocument = yield* Effect.try({
         try: () =>
           createWorkerKanbanSlideDocument({
             threadId: thread.id,
             title: thread.title,
-            objective: config.goal.objective,
+            objective,
             kanban: command.kanban,
           }),
         catch: () =>

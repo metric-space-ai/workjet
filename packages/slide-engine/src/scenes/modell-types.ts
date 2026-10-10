@@ -1,17 +1,8 @@
 import type { Group, Object3D } from "three";
 
-export const modellSceneKeys = [
-  "morph",
-  "miniature",
-  "law",
-  "limits",
-  "runtime",
-  "learning",
-  "language",
-  "transfer"
-] as const;
-
-export type ModellSceneKey = (typeof modellSceneKeys)[number];
+import type { ModellSceneKey } from "./modell-keys.ts";
+export { modellSceneKeys } from "./modell-keys.ts";
+export type { ModellSceneKey } from "./modell-keys.ts";
 
 export type ModellSceneState = {
   playing: boolean;

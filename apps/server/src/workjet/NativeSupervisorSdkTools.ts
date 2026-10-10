@@ -9,7 +9,9 @@ import type { NativeSupervisorSourceTransport } from "./NativeSupervisorSourceTr
 const NAME = "mcp__workjet_native__worker_dispatch";
 const NONCE = "_workjet_sdk_call";
 const Id = Schema.String.check(Schema.isPattern(/^[!-~]{1,256}$/));
-const Uuid = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i));
+const Uuid = Schema.String.check(
+  Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+);
 const Arguments = Schema.Struct({
   task: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16384)),
   title: Schema.optional(Schema.String.check(Schema.isMaxLength(200))),
@@ -26,6 +28,10 @@ const ToolReply = Schema.Struct({
   execution_ready: Schema.Literal(false),
 });
 const decodeArguments = Schema.decodeUnknownPromise(HookArguments, { onExcessProperty: "error" });
+const decodeId = Schema.decodeUnknownSync(Id);
+const decodeBinding = Schema.decodeUnknownSync(
+  Schema.Struct({ offerId: Uuid, controllerId: Uuid }),
+);
 const decodeReply = Schema.decodeUnknownPromise(ToolReply, { onExcessProperty: "error" });
 
 /** One original SDK/controller tool bridge. Only real SDK PreToolUse callbacks
@@ -37,18 +43,23 @@ export function createNativeSupervisorSdkTools(options: {
   readonly transport: Pick<NativeSupervisorSourceTransport, "request">;
   readonly currentSdkSessionId: () => string | undefined;
 }) {
-  Schema.decodeUnknownSync(Schema.Struct({ offerId: Uuid, controllerId: Uuid }))(options);
+  decodeBinding(options);
   const request = options.transport.request.bind(options.transport);
-  const calls = new Map<string, {
-    readonly nonce: string;
-    readonly operationId: string;
-    readonly argumentsJson: string;
-    response?: Promise<Awaited<ReturnType<typeof decodeReply>>>;
-  }>();
+  const calls = new Map<
+    string,
+    {
+      readonly nonce: string;
+      readonly operationId: string;
+      readonly argumentsJson: string;
+      response?: Promise<Awaited<ReturnType<typeof decodeReply>>>;
+    }
+  >();
   let fault: Error | undefined;
   let retired = false;
   let resolveFailure!: (error: Error) => void;
-  const failure = new Promise<Error>((resolve) => { resolveFailure = resolve; });
+  const failure = new Promise<Error>((resolve) => {
+    resolveFailure = resolve;
+  });
   const fail = () => {
     if (!fault) {
       fault = new Error("Original native Supervisor tool is unavailable; outcome may be unknown.");
@@ -64,37 +75,51 @@ export function createNativeSupervisorSdkTools(options: {
     },
   };
   const beforeTool: HookCallback = async (input) => {
-    if (input.hook_event_name !== "PreToolUse" || input.tool_name !== NAME ||
-        input.agent_id !== undefined || fault || retired ||
-        !options.currentSdkSessionId() || input.session_id !== options.currentSdkSessionId())
+    if (
+      input.hook_event_name !== "PreToolUse" ||
+      input.tool_name !== NAME ||
+      input.agent_id !== undefined ||
+      fault ||
+      retired ||
+      !options.currentSdkSessionId() ||
+      input.session_id !== options.currentSdkSessionId()
+    )
       return deny;
     try {
-      Schema.decodeUnknownSync(Id)(input.tool_use_id);
+      decodeId(input.tool_use_id);
       const args = await decodeArguments(input.tool_input);
       const { [NONCE]: suppliedNonce, ...nativeArgs } = args;
       const json = JSON.stringify(nativeArgs);
       if (Buffer.byteLength(json) > 65536) return deny;
       const previous = calls.get(input.tool_use_id);
       if (previous) {
-        if (previous.argumentsJson !== json ||
-            (suppliedNonce !== undefined && suppliedNonce !== previous.nonce))
+        if (
+          previous.argumentsJson !== json ||
+          (suppliedNonce !== undefined && suppliedNonce !== previous.nonce)
+        )
           return deny;
       } else {
         if (suppliedNonce !== undefined || calls.size >= 32) return deny;
         calls.set(input.tool_use_id, {
-          nonce: NodeCrypto.randomUUID(), operationId: NodeCrypto.randomUUID(), argumentsJson: json,
+          nonce: NodeCrypto.randomUUID(),
+          operationId: NodeCrypto.randomUUID(),
+          argumentsJson: json,
         });
       }
       const captured = calls.get(input.tool_use_id)!;
-      return { hookSpecificOutput: {
-        hookEventName: "PreToolUse", permissionDecision: "allow",
-        updatedInput: { ...nativeArgs, [NONCE]: captured.nonce },
-      } };
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          updatedInput: { ...nativeArgs, [NONCE]: captured.nonce },
+        },
+      };
     } catch {
       return deny;
     }
   };
-  const worker = tool("worker_dispatch",
+  const worker = tool(
+    "worker_dispatch",
     "Request one owned worker through the registered project Source. Startup is not completed work.",
     {
       task: z.string().min(1).max(16384),
@@ -104,19 +129,35 @@ export function createNativeSupervisorSdkTools(options: {
       [NONCE]: z.string().uuid().optional(),
     },
     async (input) => {
-      const unavailable = { isError: true, content: [{ type: "text" as const,
-        text: "Original native Supervisor tool is unavailable. No replacement dispatch was attempted." }] };
+      const unavailable = {
+        isError: true,
+        content: [
+          {
+            type: "text" as const,
+            text: "Original native Supervisor tool is unavailable. No replacement dispatch was attempted.",
+          },
+        ],
+      };
       if (fault || retired || !options.currentSdkSessionId()) return unavailable;
       const { [NONCE]: nonce, ...args } = input;
       const captured = [...calls.values()].find((call) => call.nonce === nonce);
       if (!captured || captured.argumentsJson !== JSON.stringify(args)) return unavailable;
       captured.response ??= (async () => {
-        const reply = await decodeReply(await request(NodeCrypto.randomUUID(), {
-          version: 1, action: "tool_call", offer_id: options.offerId,
-          controller_id: options.controllerId, operation_id: captured.operationId,
-          native_tool: "worker_dispatch", tool_arguments_json: captured.argumentsJson,
-        }));
-        if (reply.operation_id !== captured.operationId || Buffer.byteLength(JSON.stringify(reply.result)) > 65536)
+        const reply = await decodeReply(
+          await request(NodeCrypto.randomUUID(), {
+            version: 1,
+            action: "tool_call",
+            offer_id: options.offerId,
+            controller_id: options.controllerId,
+            operation_id: captured.operationId,
+            native_tool: "worker_dispatch",
+            tool_arguments_json: captured.argumentsJson,
+          }),
+        );
+        if (
+          reply.operation_id !== captured.operationId ||
+          Buffer.byteLength(JSON.stringify(reply.result)) > 65536
+        )
           throw fail();
         return reply;
       })();
@@ -127,16 +168,26 @@ export function createNativeSupervisorSdkTools(options: {
         fail();
         return unavailable;
       }
-    }, { alwaysLoad: true });
+    },
+    { alwaysLoad: true },
+  );
   const server = createSdkMcpServer({
-    name: "workjet_native", version: "1.0.0", tools: [worker], alwaysLoad: true,
-    instructions: "Only worker_dispatch is supported by this original native controller. Report other requested operations as unsupported.",
+    name: "workjet_native",
+    version: "1.0.0",
+    tools: [worker],
+    alwaysLoad: true,
+    instructions:
+      "Only worker_dispatch is supported by this original native controller. Report other requested operations as unsupported.",
   });
   return {
-    server, beforeTool, failure,
+    server,
+    beforeTool,
+    failure,
     async close() {
       retired = true;
-      await Promise.allSettled([...calls.values()].flatMap((call) => call.response ? [call.response] : []));
+      await Promise.allSettled(
+        [...calls.values()].flatMap((call) => (call.response ? [call.response] : [])),
+      );
       await server.instance.close();
       if (fault) throw fault;
     },

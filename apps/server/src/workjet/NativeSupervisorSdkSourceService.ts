@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off -- Resolve private paths for the original service-owned Source child.
-import * as Path from "node:path";
+import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -11,7 +11,8 @@ import { acquireNativeSupervisorSourceTransport } from "./NativeSupervisorSource
 import { runNextNativeSupervisorSdkTurn } from "./NativeSupervisorSdkExecutor.ts";
 
 export class NativeSupervisorSdkSourceServiceError extends Schema.TaggedErrorClass<NativeSupervisorSdkSourceServiceError>()(
-  "NativeSupervisorSdkSourceServiceError", {
+  "NativeSupervisorSdkSourceServiceError",
+  {
     reason: Schema.Literals(["retired", "turn-active", "sdk-failed"]),
   },
 ) {}
@@ -33,7 +34,7 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
   const source = yield* acquireNativeSupervisorSourceTransport({
     executable: plan.runtime.ctoxExecutable,
     originalNativeRoot: plan.runtime.nativeRoot,
-    ipcDirectory: Path.join(options.privateServiceDirectory, "source"),
+    ipcDirectory: NodePath.join(options.privateServiceDirectory, "source"),
     selected: {
       instanceId: plan.selection.nativeInstanceId,
       computerId: plan.selection.computerId,
@@ -43,24 +44,32 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
   const lifetime = new AbortController();
   let retired = false;
   let active: Promise<Awaited<ReturnType<typeof runNextNativeSupervisorSdkTurn>>> | undefined;
-  yield* Effect.addFinalizer(() => Effect.promise(async () => {
-    retired = true;
-    lifetime.abort(new Error("Original Source service scope closed."));
-    if (active) await active.catch(() => {});
-  }));
+  yield* Effect.addFinalizer(() =>
+    Effect.promise(async () => {
+      retired = true;
+      lifetime.abort(new Error("Original Source service scope closed."));
+      if (active) await active.catch(() => {});
+    }),
+  );
   const runNext = Effect.fn("NativeSupervisorSdkSourceService.runNext")(function* () {
     if (retired) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "retired" });
     if (active) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "turn-active" });
     const running = runNextNativeSupervisorSdkTurn({
-      source, sdkExecutable: options.sdkExecutable,
-      privateStateDirectory: Path.join(options.privateServiceDirectory, "sdk"),
+      source,
+      sdkExecutable: options.sdkExecutable,
+      privateStateDirectory: NodePath.join(options.privateServiceDirectory, "sdk"),
       serviceSignal: lifetime.signal,
     });
     active = running;
     // Caller cancellation cannot clear custody of a still-running private query.
     void running.then(
-      () => { if (active === running) active = undefined; },
-      () => { retired = true; if (active === running) active = undefined; },
+      () => {
+        if (active === running) active = undefined;
+      },
+      () => {
+        retired = true;
+        if (active === running) active = undefined;
+      },
     );
     return yield* Effect.tryPromise({
       try: () => running,

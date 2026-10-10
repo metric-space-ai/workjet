@@ -108,12 +108,14 @@ describe("resolveThreadCapabilityContext", () => {
         kanban: {
           goalRevision: 3,
           iteration: 2,
-          cards: [{
-            id: "verified",
-            title: "Verify the installed workflow",
-            status: "doing",
-            evidence: "PR #305",
-          }],
+          cards: [
+            {
+              id: "verified",
+              title: "Verify the installed workflow",
+              status: "doing",
+              evidence: "PR #305",
+            },
+          ],
           updatedAt: "2026-10-10T00:30:00.000Z",
         },
       },
@@ -124,7 +126,9 @@ describe("resolveThreadCapabilityContext", () => {
     expect(context.compiledManagedPrompt).not.toContain("Original team objective.");
     expect(context.compiledManagedPrompt).toContain("Durable Workjet goal status: paused.");
     expect(context.compiledManagedPrompt).toContain("only an explicit Owner resume");
-    expect(context.compiledManagedPrompt).toContain("verified: doing — Verify the installed workflow (PR #305)");
+    expect(context.compiledManagedPrompt).toContain(
+      "verified: doing — Verify the installed workflow (PR #305)",
+    );
   });
 
   it("resolves the default config to the collective prompt baseline", () => {

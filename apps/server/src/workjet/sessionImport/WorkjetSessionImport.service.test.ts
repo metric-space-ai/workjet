@@ -303,7 +303,7 @@ describe("session import search inventory", () => {
           expect(sourceRace.previewReads.filter((path) => path.startsWith(root))).toHaveLength(
             reads,
           );
-          console.info(
+          yield* Effect.logInfo(
             `UX-013 602-session search: cold=${coldMs.toFixed(1)}ms warm=${warmMs.toFixed(1)}ms`,
           );
           expect(coldMs).toBeLessThan(2_000);

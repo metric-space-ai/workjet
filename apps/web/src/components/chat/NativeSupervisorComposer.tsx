@@ -56,6 +56,9 @@ import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
+import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
+import { supervisorRouteLabel } from "../../workjetSupervisorRoute";
+
 export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
   readonly config: WorkjetThreadConfig;
@@ -69,6 +72,7 @@ export function NativeSupervisorComposer(props: {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
+  const routeLabel = supervisorRouteLabel(useSupervisorRouteDisplay(props.scope));
   const [prompt, setPrompt] = useState("");
   const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
   const [capabilityRetry, setCapabilityRetry] = useState(0);
@@ -916,16 +920,16 @@ export function NativeSupervisorComposer(props: {
               <ComposerControl
                 type="button"
                 aria-disabled="true"
-                title="Execution and model are managed by this project's CTOX instance."
+                title={routeLabel.title}
               >
-                Instance model
+                {routeLabel.model}
               </ComposerControl>
               <ComposerControl
                 type="button"
                 aria-disabled="true"
                 title={props.instanceId ?? "No connected instance"}
               >
-                Project instance
+                {routeLabel.computer}
               </ComposerControl>
             </>
           }

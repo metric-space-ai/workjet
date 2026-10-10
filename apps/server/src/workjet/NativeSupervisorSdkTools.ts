@@ -4,10 +4,13 @@ import * as NodeCrypto from "node:crypto";
 import { createSdkMcpServer, tool, type HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import * as Schema from "effect/Schema";
 import * as z from "zod";
+import { createNativeSupervisorConfirmedGoalReader } from "./NativeSupervisorConfirmedGoalReader.ts";
 import type { NativeSupervisorSourceTransport } from "./NativeSupervisorSourceTransport.ts";
 
-const NAME = "mcp__workjet_native__worker_dispatch";
+const WORKER_NAME = "mcp__workjet_native__worker_dispatch";
+const GOAL_NAME = "mcp__workjet_native__confirmed_goal_read";
 const NONCE = "_workjet_sdk_call";
+type NativeTool = "worker_dispatch" | "confirmed_goal_read";
 const Id = Schema.String.check(Schema.isPattern(/^[!-~]{1,256}$/));
 const Uuid = Schema.String.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
@@ -19,15 +22,22 @@ const Arguments = Schema.Struct({
   worker_profile_id: Schema.optional(Schema.String.check(Schema.isMaxLength(256))),
 });
 const HookArguments = Schema.Struct({ ...Arguments.fields, [NONCE]: Schema.optional(Uuid) });
+const GoalHookArguments = Schema.Struct({
+  item_index: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 99 }))),
+  [NONCE]: Schema.optional(Uuid),
+});
 const ToolReply = Schema.Struct({
   version: Schema.Literal(1),
   state: Schema.Literal("tool_result"),
   operation_id: Uuid,
-  native_tool: Schema.Literal("worker_dispatch"),
+  native_tool: Schema.Literals(["worker_dispatch", "confirmed_goal_read"]),
   result: Schema.Unknown,
   execution_ready: Schema.Literal(false),
 });
 const decodeArguments = Schema.decodeUnknownPromise(HookArguments, { onExcessProperty: "error" });
+const decodeGoalArguments = Schema.decodeUnknownPromise(GoalHookArguments, {
+  onExcessProperty: "error",
+});
 const decodeId = Schema.decodeUnknownSync(Id);
 const decodeBinding = Schema.decodeUnknownSync(
   Schema.Struct({ offerId: Uuid, controllerId: Uuid }),
@@ -42,16 +52,21 @@ export function createNativeSupervisorSdkTools(options: {
   readonly controllerId: string;
   readonly transport: Pick<NativeSupervisorSourceTransport, "request">;
   readonly currentSdkSessionId: () => string | undefined;
+  /** True only when this original native claim advertised the fixed reader. */
+  readonly includeConfirmedGoalRead?: boolean;
+  /** Scope from the actual original native offer, never model input. */
+  readonly goalScope?: { readonly projectId: string; readonly supervisorThreadId: string };
 }) {
   decodeBinding(options);
   const request = options.transport.request.bind(options.transport);
   const calls = new Map<
     string,
     {
+      readonly nativeTool: NativeTool;
       readonly nonce: string;
       readonly operationId: string;
       readonly argumentsJson: string;
-      response?: Promise<Awaited<ReturnType<typeof decodeReply>>>;
+      response?: Promise<string>;
     }
   >();
   let fault: Error | undefined;
@@ -67,6 +82,42 @@ export function createNativeSupervisorSdkTools(options: {
     }
     return fault;
   };
+  const requestTool = async (
+    nativeTool: NativeTool,
+    operationId: string,
+    argumentsJson: string,
+  ) => {
+    if (fault || retired || !options.currentSdkSessionId()) throw fail();
+    const reply = await decodeReply(
+      await request(NodeCrypto.randomUUID(), {
+        version: 1,
+        action: "tool_call",
+        offer_id: options.offerId,
+        controller_id: options.controllerId,
+        operation_id: operationId,
+        native_tool: nativeTool,
+        tool_arguments_json: argumentsJson,
+      }),
+    );
+    if (
+      reply.operation_id !== operationId ||
+      reply.native_tool !== nativeTool ||
+      Buffer.byteLength(JSON.stringify(reply)) > 65536
+    )
+      throw fail();
+    return reply.result;
+  };
+  if (options.includeConfirmedGoalRead === true && options.goalScope === undefined)
+    throw new Error("Original native confirmed-goal offer scope is missing.");
+  const goalReader =
+    options.includeConfirmedGoalRead === true && options.goalScope !== undefined
+      ? createNativeSupervisorConfirmedGoalReader({
+          ...options.goalScope,
+          requestPage: (operationId, argumentsJson) =>
+            requestTool("confirmed_goal_read", operationId, argumentsJson),
+        })
+      : undefined;
+  let goalReads = Promise.resolve();
   const deny = {
     hookSpecificOutput: {
       hookEventName: "PreToolUse" as const,
@@ -77,7 +128,6 @@ export function createNativeSupervisorSdkTools(options: {
   const beforeTool: HookCallback = async (input) => {
     if (
       input.hook_event_name !== "PreToolUse" ||
-      input.tool_name !== NAME ||
       input.agent_id !== undefined ||
       fault ||
       retired ||
@@ -85,15 +135,25 @@ export function createNativeSupervisorSdkTools(options: {
       input.session_id !== options.currentSdkSessionId()
     )
       return deny;
+    const nativeTool: NativeTool | undefined =
+      input.tool_name === WORKER_NAME
+        ? "worker_dispatch"
+        : input.tool_name === GOAL_NAME && options.includeConfirmedGoalRead === true
+          ? "confirmed_goal_read"
+          : undefined;
+    if (nativeTool === undefined) return deny;
     try {
       decodeId(input.tool_use_id);
-      const args = await decodeArguments(input.tool_input);
+      const args = await (nativeTool === "worker_dispatch" ? decodeArguments : decodeGoalArguments)(
+        input.tool_input,
+      );
       const { [NONCE]: suppliedNonce, ...nativeArgs } = args;
       const json = JSON.stringify(nativeArgs);
       if (Buffer.byteLength(json) > 65536) return deny;
       const previous = calls.get(input.tool_use_id);
       if (previous) {
         if (
+          previous.nativeTool !== nativeTool ||
           previous.argumentsJson !== json ||
           (suppliedNonce !== undefined && suppliedNonce !== previous.nonce)
         )
@@ -101,6 +161,7 @@ export function createNativeSupervisorSdkTools(options: {
       } else {
         if (suppliedNonce !== undefined || calls.size >= 32) return deny;
         calls.set(input.tool_use_id, {
+          nativeTool,
           nonce: NodeCrypto.randomUUID(),
           operationId: NodeCrypto.randomUUID(),
           argumentsJson: json,
@@ -118,6 +179,52 @@ export function createNativeSupervisorSdkTools(options: {
       return deny;
     }
   };
+  const execute = async (nativeTool: NativeTool, input: Readonly<Record<string, unknown>>) => {
+    const unavailable = {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text: "Original native Supervisor tool is unavailable. No replacement operation was attempted.",
+        },
+      ],
+    };
+    if (fault || retired || !options.currentSdkSessionId()) return unavailable;
+    const { [NONCE]: nonce, ...args } = input;
+    const captured = [...calls.values()].find((call) => call.nonce === nonce);
+    if (
+      !captured ||
+      captured.nativeTool !== nativeTool ||
+      captured.argumentsJson !== JSON.stringify(args)
+    )
+      return unavailable;
+    captured.response ??=
+      captured.nativeTool === "confirmed_goal_read"
+        ? (() => {
+            const read = goalReads.then(async () => {
+              const local = await decodeGoalArguments(input);
+              if (!goalReader) throw fail();
+              return JSON.stringify(await goalReader.read(captured.operationId, local.item_index));
+            });
+            // Serial reads keep one full snapshot outside model history. A
+            // protocol failure still retires this original bridge; no retry.
+            goalReads = read.then(
+              () => {},
+              () => {},
+            );
+            return read;
+          })()
+        : requestTool(captured.nativeTool, captured.operationId, captured.argumentsJson).then(
+            (result) => JSON.stringify(result),
+          );
+    try {
+      const text = await captured.response;
+      return { content: [{ type: "text" as const, text }] };
+    } catch {
+      fail();
+      return unavailable;
+    }
+  };
   const worker = tool(
     "worker_dispatch",
     "Request one owned worker through the registered project Source. Startup is not completed work.",
@@ -128,59 +235,37 @@ export function createNativeSupervisorSdkTools(options: {
       worker_profile_id: z.string().max(256).optional(),
       [NONCE]: z.string().uuid().optional(),
     },
-    async (input) => {
-      const unavailable = {
-        isError: true,
-        content: [
-          {
-            type: "text" as const,
-            text: "Original native Supervisor tool is unavailable. No replacement dispatch was attempted.",
-          },
-        ],
-      };
-      if (fault || retired || !options.currentSdkSessionId()) return unavailable;
-      const { [NONCE]: nonce, ...args } = input;
-      const captured = [...calls.values()].find((call) => call.nonce === nonce);
-      if (!captured || captured.argumentsJson !== JSON.stringify(args)) return unavailable;
-      captured.response ??= (async () => {
-        const reply = await decodeReply(
-          await request(NodeCrypto.randomUUID(), {
-            version: 1,
-            action: "tool_call",
-            offer_id: options.offerId,
-            controller_id: options.controllerId,
-            operation_id: captured.operationId,
-            native_tool: "worker_dispatch",
-            tool_arguments_json: captured.argumentsJson,
-          }),
-        );
-        if (
-          reply.operation_id !== captured.operationId ||
-          Buffer.byteLength(JSON.stringify(reply.result)) > 65536
-        )
-          throw fail();
-        return reply;
-      })();
-      try {
-        const reply = await captured.response;
-        return { content: [{ type: "text" as const, text: JSON.stringify(reply.result) }] };
-      } catch {
-        fail();
-        return unavailable;
-      }
-    },
+    (input) => execute("worker_dispatch", input),
     { alwaysLoad: true },
   );
+  const goal =
+    options.includeConfirmedGoalRead === true
+      ? tool(
+          "confirmed_goal_read",
+          "Read the verified Owner-confirmed goal reference/status and one actual item/step. Native pages stay outside model history. Omit item_index for the first unfinished step, or select an index 0..99. Snapshot EOF is not work completion; oversized context is reported explicitly.",
+          {
+            item_index: z.number().int().min(0).max(99).optional(),
+            [NONCE]: z.string().uuid().optional(),
+          },
+          (input) => execute("confirmed_goal_read", input),
+          { alwaysLoad: true },
+        )
+      : undefined;
+  const admitted = goal === undefined ? [worker] : [worker, goal];
+  const instructions =
+    options.includeConfirmedGoalRead === true
+      ? "Use mcp__workjet_native__confirmed_goal_read with empty arguments before acting. It verifies the full native snapshot outside model history and returns bounded actual goal/item/step context; item_index selects another confirmed item. A null confirmed_goal means no goal is confirmed. Changed/unavailable/capacity states require an explicit fresh read, not another Source. item_exceeds_model_budget is unsupported context, not completed work. Snapshot verification and partial evidence never mean goal, step, SDK turn or worker completion. Core owns existing step emission; do not duplicate already emitted work. Request workers through mcp__workjet_native__worker_dispatch."
+      : "The available native tool is mcp__workjet_native__worker_dispatch.";
   const server = createSdkMcpServer({
     name: "workjet_native",
     version: "1.0.0",
-    tools: [worker],
+    tools: admitted,
     alwaysLoad: true,
-    instructions:
-      "Only worker_dispatch is supported by this original native controller. Report other requested operations as unsupported.",
+    instructions,
   });
   return {
     server,
+    instructions,
     beforeTool,
     failure,
     async close() {
@@ -188,6 +273,7 @@ export function createNativeSupervisorSdkTools(options: {
       await Promise.allSettled(
         [...calls.values()].flatMap((call) => (call.response ? [call.response] : [])),
       );
+      goalReader?.close();
       await server.instance.close();
       if (fault) throw fault;
     },

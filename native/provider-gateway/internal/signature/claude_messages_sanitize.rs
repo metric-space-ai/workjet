@@ -150,7 +150,9 @@ mod tests {
             let id = format!("call_{index}");
             let tool = serde_json::json!({"type":"tool_use","id":id,"name":"greppy","input":{"command":format!("printf PROXY_MATRIX_{index:02}")}});
             let result = serde_json::json!({"type":"tool_result","tool_use_id":id,"content":format!("PROXY_MATRIX_{index:02}"),"is_error":false});
-            messages.push(serde_json::json!({"role":"assistant","content":[{"type":"text","text":""},tool]}));
+            messages.push(
+                serde_json::json!({"role":"assistant","content":[{"type":"text","text":""},tool]}),
+            );
             messages.push(serde_json::json!({"role":"user","content":[result]}));
             let input = serde_json::to_vec(&serde_json::json!({"messages":messages})).unwrap();
             let (output, report) = sanitize_claude_messages_for_claude_upstream(&input);
@@ -160,7 +162,10 @@ mod tests {
             assert_eq!(report.dropped_blocks, index);
             for (original, sanitized) in messages.iter().skip(1).zip(replay.iter().skip(1)) {
                 if original["role"] == "assistant" {
-                    assert_eq!(sanitized["content"], serde_json::json!([original["content"][1]]));
+                    assert_eq!(
+                        sanitized["content"],
+                        serde_json::json!([original["content"][1]])
+                    );
                 } else {
                     assert_eq!(sanitized, original);
                 }

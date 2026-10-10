@@ -72,6 +72,7 @@ import {
   useUpdateClientSettings,
   useUpdatePrimarySettings,
 } from "../../hooks/useSettings";
+import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -1752,6 +1753,7 @@ function LegacyFeaturesSection() {
 }
 
 export function GeneralSettingsPanel() {
+  const projectLanguage = useProjectOverviewLanguage();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
@@ -1817,9 +1819,9 @@ export function GeneralSettingsPanel() {
       />
       <SettingsSection title="General">
         <SettingsRow
-          title={settings.interfaceLanguage === "en" ? "Project language" : "Projektsprache"}
+          title={projectLanguage === "en" ? "Project language" : "Projektsprache"}
           description={
-            settings.interfaceLanguage === "en"
+            projectLanguage === "en"
               ? "Language of the project overview and its navigation."
               : "Sprache der Projektübersicht und ihrer Navigation."
           }
@@ -1831,7 +1833,10 @@ export function GeneralSettingsPanel() {
                   updateClientSettings({ interfaceLanguage: value });
               }}
             >
-              <SelectTrigger aria-label="Projektsprache" className="w-40">
+              <SelectTrigger
+                aria-label={projectLanguage === "de" ? "Projektsprache" : "Project language"}
+                className="w-40"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectPopup>

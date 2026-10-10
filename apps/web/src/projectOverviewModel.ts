@@ -26,7 +26,12 @@ export function projectOverviewWorkerState(
 }
 export function isRunningProjectOneShot(thread: EnvironmentThreadShell) {
   return (
-    projectTeamSectionOf(thread) !== "workers" || projectOverviewWorkerState(thread) === "running"
+    projectTeamSectionOf(thread) !== "workers" ||
+    thread.session?.status === "running" ||
+    thread.session?.status === "starting" ||
+    thread.backgroundLiveness === "working" ||
+    thread.hasPendingApprovals ||
+    thread.hasPendingUserInput
   );
 }
 export type ProjectOverviewPr = {
@@ -45,10 +50,18 @@ export type ProjectOverviewGoal = {
 };
 export function projectGoalSentence(goal: string): string {
   const paragraph = goal.trim().split(/\n\s*\n/u)[0] ?? "";
-  return paragraph
+  const normalized = paragraph
     .replace(/^#+\s*/u, "")
+    .replace(/^\d+[.)]\s*/u, "")
     .replace(/\s+/gu, " ")
     .trim();
+  return (
+    new Intl.Segmenter(undefined, { granularity: "sentence" })
+      .segment(normalized)
+      [Symbol.iterator]()
+      .next()
+      .value?.segment.trim() ?? normalized
+  );
 }
 /** Only authoritative project scope, saved goals and evidenced values feed the owner overview. */
 export function buildProjectOwnerOverview(input: {
@@ -87,13 +100,22 @@ export function buildProjectOwnerOverview(input: {
     : parents.flatMap((thread) => {
         const team =
           thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
-        return team?.goal.trim()
+        const goal =
+          thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined;
+        return (goal?.objective ?? team?.goal)?.trim()
           ? [
               {
                 id: thread.environmentId + ":" + thread.id,
-                title: projectGoalSentence(team.goal),
+                title: projectGoalSentence(goal?.objective ?? team!.goal),
                 owner: thread.title,
-                state: text[projectOverviewWorkerState(thread)],
+                state:
+                  goal?.status === "complete"
+                    ? text.completed
+                    : goal?.status === "blocked"
+                      ? text.disrupted
+                      : goal?.status === "paused"
+                        ? text.waiting
+                        : text[projectOverviewWorkerState(thread)],
                 thread,
               },
             ]
@@ -135,6 +157,14 @@ export function buildProjectOwnerOverview(input: {
         }
       : null;
   const exit = exitModelPresentation(project.configuration?.exitModel, project.id);
+  const savedGoals = parents.map((thread) =>
+    thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined,
+  );
+  const openTaskCount =
+    input.openTaskCount ??
+    (!confirmed && savedGoals.length > 0 && savedGoals.every((goal) => goal !== undefined)
+      ? savedGoals.filter((goal) => goal?.status !== "complete").length
+      : null);
   const kpis = [
     {
       id: "project",
@@ -151,8 +181,13 @@ export function buildProjectOwnerOverview(input: {
     {
       id: "tasks",
       label: text.openTasks,
-      value: input.openTaskCount == null ? null : String(input.openTaskCount),
-      explanation: input.openTaskCount == null ? text.unavailableTasks : text.unavailableDelta,
+      value: openTaskCount === null ? null : String(openTaskCount),
+      explanation:
+        openTaskCount === null
+          ? text.unavailableTasks
+          : (language === "de"
+              ? "Gespeicherte Worker-Ziele, die noch nicht erledigt sind. "
+              : "Saved worker goals that are not complete. ") + text.unavailableDelta,
     },
     {
       id: "exit",
@@ -162,6 +197,7 @@ export function buildProjectOwnerOverview(input: {
     },
   ];
   const history = all
+    .filter((thread) => projectTeamSectionOf(thread) !== "workers")
     .flatMap((thread) => {
       const role = text[projectTeamSectionOf(thread)];
       const events = [
@@ -221,7 +257,7 @@ export function buildProjectOwnerOverview(input: {
     links: [
       { label: text.repository, url: overview.repositoryUrl },
       { label: text.website, url: overview.websiteUrl },
-    ].filter((link): link is { label: string; url: string } => Boolean(link.url)),
+    ].flatMap((link) => (link.url ? [{ label: link.label, url: link.url }] : [])),
   };
 }
 export type ProjectOwnerOverview = ReturnType<typeof buildProjectOwnerOverview>;

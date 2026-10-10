@@ -130,7 +130,9 @@ export function ProjectOverviewView(props: {
                     role="cell"
                     className="col-span-2 break-words leading-5 [overflow-wrap:anywhere] sm:col-span-1"
                   >
-                    {goal.title}
+                    <span className="line-clamp-2" title={goal.title}>
+                      {goal.title}
+                    </span>
                   </div>
                   <div role="cell" className="min-w-0 break-words text-xs text-muted-foreground">
                     {goal.thread ? (

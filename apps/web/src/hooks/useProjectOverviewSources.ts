@@ -46,7 +46,8 @@ export function useProjectOverviewSources(instanceId: string | null, projectId: 
           result.response.projectId === projectId &&
           "kpis" in result.response
         ) {
-          setState((value) => ({ ...value, kpis: result.response.kpis }));
+          const kpis = result.response.kpis;
+          setState((value) => ({ ...value, kpis }));
         } else setState((value) => ({ ...value, failed: true }));
       },
       () => {

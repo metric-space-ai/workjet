@@ -353,7 +353,7 @@ it.effect("keeps a newly authorized source usable after a late rejection of the 
           }),
       },
       transport: {
-        probe: () => Effect.void,
+        probe: () => Effect.succeed(undefined),
         callTool: () =>
           checks === 0
             ? Effect.fail(new CtoxMcpTransportError({ reason: "authentication-required" }))

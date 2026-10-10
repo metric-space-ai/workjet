@@ -9,7 +9,7 @@ import {
 } from "./WorkerSourceNativeProfile.ts";
 import { Schema } from "effect";
 import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
-import type { WorkerSubmission } from "./WorkerSubmission.ts"
+import type { WorkerSubmission } from "./WorkerSubmission.ts";
 
 const Route = Schema.Struct({
   sourceEnvironmentId: Schema.NonEmptyString,
@@ -206,8 +206,8 @@ export async function installWorkerSourceRoute(
       res.writeHead(403).end();
       return;
     }
-<<<<<<< HEAD
     const requestPath = new URL(req.url || "/", "http://127.0.0.1").pathname;
+    // Existing Claude routes remain pinned to Messages; native profiles opt in to translation.
     const legacyMessages = messages && pin.nativeProfile === undefined;
     const protocol =
       requestPath === "/v1/messages" && !legacyMessages
@@ -217,14 +217,6 @@ export async function installWorkerSourceRoute(
           : undefined;
     const inventory = req.method === "GET" && requestPath === "/v1/workjet/computers";
     const models = req.method === "GET" && requestPath === "/v1/models";
-=======
-    // Legacy Claude routes pin Messages; adding native routes must not change that boundary.
-    if (messages && req.url === "/v1/responses") {
-      res.writeHead(404).end();
-      return;
-    }
-    const inventory = req.method === "GET" && req.url === "/v1/workjet/computers";
->>>>>>> origin/main
     if (
       !inventory &&
       !models &&

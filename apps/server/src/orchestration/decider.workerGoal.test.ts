@@ -20,6 +20,11 @@ import { decideOrchestrationCommand } from "./decider.ts";
 import { projectEvent } from "./projector.ts";
 import { initialWorkerGoal } from "../workjet/workerGoal.ts";
 
+const goalJson = Schema.fromJsonString(WorkjetThreadGoal);
+const decodeGoalJson = Schema.decodeUnknownEffect(goalJson);
+const encodeGoalJson = Schema.encodeEffect(goalJson);
+const decodeGoal = Schema.decodeUnknownEffect(WorkjetThreadGoal);
+
 const NOW = "2026-10-09T21:00:00.000Z";
 const id = ThreadId.make("persistent-parent");
 const projectId = ProjectId.make("molecularity");
@@ -126,11 +131,7 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       const goal = result.threads[0]!.workjetConfig;
       expect(goal.schemaVersion === 2 && goal.goal?.status).toBe("active");
       if (goal.schemaVersion !== 2) throw new Error("unexpected old config");
-      expect(
-        yield* Schema.decodeUnknownEffect(Schema.fromJsonString(WorkjetThreadGoal))(
-          yield* Schema.encodeEffect(Schema.fromJsonString(WorkjetThreadGoal))(goal.goal!),
-        ),
-      ).toEqual(goal.goal);
+      expect(yield* decodeGoalJson(yield* encodeGoalJson(goal.goal!))).toEqual(goal.goal);
       expect(goal.goal?.pendingContinuation).toBeNull();
     }),
   );
@@ -152,7 +153,30 @@ it.layer(NodeServices.layer)("persistent goal journal", (it) => {
       };
       const result = yield* apply(model, command);
       const config = result.threads[0]!.workjetConfig;
-      expect(config.schemaVersion === 2 && config.goal?.kanban).toEqual(kanban);
+      if (config.schemaVersion !== 2 || !config.goal?.kanban?.slideDocument)
+        throw new Error("missing durable kanban document");
+      const { slideDocument, ...cards } = config.goal.kanban;
+      expect(cards).toEqual(kanban);
+      expect(slideDocument.schemaVersion).toBe("learnordie.slide.v1");
+      expect(yield* decodeGoalJson(yield* encodeGoalJson(config.goal))).toEqual(config.goal);
+      // Old card-only journal records remain readable.
+      expect(yield* decodeGoal({ ...config.goal, kanban })).toEqual({ ...config.goal, kanban });
+      // A caller cannot replace the canonical document or claim a verified outcome.
+      const spoofed = yield* apply(model, {
+        ...command,
+        kanban: {
+          ...kanban,
+          slideDocument: {
+            schemaVersion: "learnordie.slide.v1",
+            documentJson: '{"claimed":"verified"}',
+            sha256: "0".repeat(64),
+          },
+        },
+      });
+      const spoofedConfig = spoofed.threads[0]!.workjetConfig;
+      expect(
+        spoofedConfig.schemaVersion === 2 && spoofedConfig.goal?.kanban?.slideDocument,
+      ).toEqual(slideDocument);
       for (const next of [
         { ...kanban, iteration: 1 },
         { ...kanban, goalRevision: 1 },

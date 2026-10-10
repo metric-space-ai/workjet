@@ -1,5 +1,6 @@
 import {
   CommandId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   EventId,
   ProjectId,
@@ -19,6 +20,8 @@ import { OrchestrationEventStoreLive } from "../../persistence/Layers/Orchestrat
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { initialWorkerGoal } from "../../workjet/workerGoal.ts";
+import { createWorkerKanbanSlideDocument } from "../../workjet/workerKanbanDocument.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import {
   ORCHESTRATION_PROJECTOR_NAMES,
@@ -175,6 +178,62 @@ layer("OrchestrationProjectionPipeline Workjet configuration", (it) => {
       assert.equal(bootstrappedRow.interactionMode, "plan");
       assert.equal(bootstrappedRow.branch, "workjet/config");
       assert.equal(bootstrappedRow.updatedAt, UPDATED_AT);
+
+      const kanban = {
+        goalRevision: 0,
+        iteration: 0,
+        updatedAt: UPDATED_AT,
+        cards: [{ id: "verify", title: "Verify durable evidence", status: "doing" as const }],
+      };
+      const parentConfig = {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        schemaVersion: 2,
+        team: {
+          projectId: ProjectId.make("project-workjet"),
+          threadId: THREAD_ID,
+          role: "specialist",
+          parentThreadId: ThreadId.make("project-supervisor"),
+          domain: "persistence",
+          goal: "Verify the persisted outcome.",
+          createdAt: NOW,
+        },
+        goal: {
+          ...initialWorkerGoal("Verify the persisted outcome.", UPDATED_AT),
+          kanban: {
+            ...kanban,
+            slideDocument: createWorkerKanbanSlideDocument({
+              threadId: THREAD_ID,
+              title: "Persisted Workjet thread",
+              objective: "Verify the persisted outcome.",
+              kanban,
+            }),
+          },
+        },
+      } satisfies WorkjetThreadConfigType;
+      const boardSet = yield* eventStore.append({
+        type: "thread.workjet-config-set",
+        eventId: EventId.make("event-parent-board-set"),
+        aggregateKind: "thread",
+        aggregateId: THREAD_ID,
+        occurredAt: UPDATED_AT,
+        commandId: CommandId.make("command-parent-board-set"),
+        causationEventId: null,
+        correlationId: CommandId.make("command-parent-board-set"),
+        metadata: {},
+        payload: { threadId: THREAD_ID, workjetConfig: parentConfig, updatedAt: UPDATED_AT },
+      });
+      yield* pipeline.projectEvent(boardSet);
+      yield* pipeline.projectEvent(boardSet);
+      const boardRow = (yield* readThreadRow())[0];
+      if (!boardRow) return yield* Effect.die("Expected the parent board projection.");
+      assert.deepEqual(decodeStoredWorkjetConfig(boardRow.workjetConfigJson), parentConfig);
+
+      yield* sql`DELETE FROM projection_threads WHERE thread_id = ${THREAD_ID}`;
+      yield* sql`DELETE FROM projection_state WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.threads}`;
+      yield* pipeline.bootstrap;
+      const replayedBoardRow = (yield* readThreadRow())[0];
+      if (!replayedBoardRow) return yield* Effect.die("Expected the replayed parent board.");
+      assert.deepEqual(decodeStoredWorkjetConfig(replayedBoardRow.workjetConfigJson), parentConfig);
     }),
   );
 });

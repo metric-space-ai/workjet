@@ -1,6 +1,6 @@
-import "../zod-config";
+import "../zod-config.ts";
 import { z } from "zod";
-import { scene3dSceneIdValues } from "../scenes/scene-ids";
+import { scene3dSceneIdValues } from "../scenes/scene-ids.ts";
 
 export const CANVAS_VERSION = "learnordie.excalidraw.v1" as const;
 export const CANVAS_WIDTH = 1600;

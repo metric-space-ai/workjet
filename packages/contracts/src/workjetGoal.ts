@@ -24,10 +24,19 @@ export const WorkjetWorkerKanbanCard = Schema.Struct({
   status: Schema.Literals(["todo", "doing", "done", "blocked"]),
   evidence: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(2000))),
 });
+/** Server-generated canonical SlideDocument; older card-only snapshots remain readable. */
+export const WorkjetWorkerKanbanSlideDocument = Schema.Struct({
+  schemaVersion: Schema.Literal("learnordie.slide.v1"),
+  documentJson: TrimmedNonEmptyString.check(Schema.isMaxLength(131072)),
+  sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+});
+export type WorkjetWorkerKanbanSlideDocument = typeof WorkjetWorkerKanbanSlideDocument.Type;
+
 export const WorkjetWorkerKanban = Schema.Struct({
   goalRevision: NonNegativeInt,
   iteration: NonNegativeInt,
   cards: Schema.Array(WorkjetWorkerKanbanCard).check(Schema.isMaxLength(30)),
+  slideDocument: Schema.optional(WorkjetWorkerKanbanSlideDocument),
   updatedAt: IsoDateTime,
 });
 export type WorkjetWorkerKanban = typeof WorkjetWorkerKanban.Type;

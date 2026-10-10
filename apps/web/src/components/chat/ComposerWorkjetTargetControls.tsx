@@ -8,9 +8,8 @@
  *                   · System Prompt · Tools · Upload.
  *
  * The computer ("Rechner") control is SELECTABLE in both modes: on a draft it
- * moves the draft to the chosen computer's environment through the existing
- * draft environment-change path; on a started server thread selection is locked
- * with a stated reason. Computer details remain reachable in the same popup.
+ * moves the draft or continues a completed conversation in that computer's
+ * project checkout. Computer details remain reachable in the same popup.
  * It never silently no-ops — a computer where this logical project is not
  * available renders as a disabled option that says so. This is deliberately
  * not described as device pairing: a Workjet installation can be connected
@@ -66,12 +65,10 @@ import { Textarea } from "../ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
- * Why the computer control refuses on a started thread. Mid-session migration
- * means moving a live provider session between machines — a separate project,
- * not a dropdown.
+ * A running turn must finish before a fresh session can continue its history elsewhere.
  */
 export const COMPOSER_COMPUTER_LOCKED_REASON =
-  "This thread already runs on its computer. Moving a started session to another computer is a separate project.";
+  "Finish the current turn before switching computers.";
 
 /** The option hint for a connected computer this project has no environment on. */
 export const COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT =

@@ -629,11 +629,10 @@ const make = Effect.gen(function* () {
       : undefined;
     const persistedContinuation = readHistoryContinuation(persistedBinding?.runtimePayload);
     const transferredContinuation =
-      readHistoryContinuation(persistedBinding?.runtimePayload, "computerContinuation") ??
       readHistoryContinuation(
         thread.activities.findLast((activity) => activity.kind === "provider.history.transfer")
           ?.payload,
-      );
+      ) ?? readHistoryContinuation(persistedBinding?.runtimePayload, "computerContinuation");
     const newHistoryTransfer =
       transferredContinuation !== undefined &&
       transferredContinuation.transferId !== persistedContinuation?.transferId;

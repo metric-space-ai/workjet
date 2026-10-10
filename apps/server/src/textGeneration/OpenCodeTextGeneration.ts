@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -185,13 +186,20 @@ interface SharedOpenCodeTextGenerationServerState {
    */
   serverScope: Scope.Closeable | null;
   binaryPath: string | null;
+  environmentKey: string | null;
   activeRequests: number;
   idleCloseFiber: Fiber.Fiber<void, never> | null;
+}
+
+export interface OpenCodeTextGenerationRouting {
+  readonly resolveEnvironment: (model: string) => Effect.Effect<NodeJS.ProcessEnv, unknown>;
+  readonly resolveModel: (model: string) => Effect.Effect<string, unknown>;
 }
 
 export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration")(function* (
   openCodeSettings: OpenCodeSettings,
   environment?: NodeJS.ProcessEnv,
+  routing?: OpenCodeTextGenerationRouting,
 ) {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const openCodeRuntime = yield* OpenCodeRuntime.OpenCodeRuntime;
@@ -204,6 +212,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     server: null,
     serverScope: null,
     binaryPath: null,
+    environmentKey: null,
     activeRequests: 0,
     idleCloseFiber: null,
   };
@@ -213,6 +222,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     sharedServerState.server = null;
     sharedServerState.serverScope = null;
     sharedServerState.binaryPath = null;
+    sharedServerState.environmentKey = null;
     if (scope !== null) {
       yield* Scope.close(scope, Exit.void).pipe(Effect.ignore);
     }
@@ -249,6 +259,8 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
 
   const acquireSharedServer = (input: {
     readonly binaryPath: string;
+    readonly environment: NodeJS.ProcessEnv;
+    readonly environmentKey: string;
     readonly operation:
       | "generateCommitMessage"
       | "generatePrContent"
@@ -259,6 +271,13 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       Effect.gen(function* () {
         yield* cancelIdleCloseFiber();
 
+        if (sharedServerState.server !== null && sharedServerState.environmentKey !== input.environmentKey) {
+          if (sharedServerState.activeRequests > 0) return yield* new TextGenerationError({
+            operation: input.operation,
+            detail: "The gateway changed during another OpenCode request. Retry after it finishes.",
+          });
+          yield* closeSharedServer();
+        }
         const existingServer = sharedServerState.server;
         if (existingServer !== null) {
           if (
@@ -301,7 +320,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
                 openCodeRuntime
                   .startOpenCodeServerProcess({
                     binaryPath: input.binaryPath,
-                    environment: resolvedEnvironment,
+                    environment: input.environment,
                   })
                   .pipe(
                     Effect.provideService(Scope.Scope, serverScope),
@@ -325,6 +344,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             sharedServerState.server = server;
             sharedServerState.serverScope = serverScope;
             sharedServerState.binaryPath = input.binaryPath;
+            sharedServerState.environmentKey = input.environmentKey;
             sharedServerState.activeRequests = 1;
             return server;
           }),
@@ -366,7 +386,13 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     readonly modelSelection: ModelSelection;
     readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
   }) {
-    const parsedModel = OpenCodeRuntime.parseOpenCodeModelSlug(input.modelSelection.model);
+    const routeError = (cause: unknown) => new TextGenerationError({
+      operation: input.operation, detail: "OpenCode gateway routing failed for text generation.", cause,
+    });
+    const model = routing ? yield* routing.resolveModel(input.modelSelection.model).pipe(Effect.mapError(routeError)) : input.modelSelection.model;
+    const commandEnvironment = routing ? yield* routing.resolveEnvironment(input.modelSelection.model).pipe(Effect.mapError(routeError)) : resolvedEnvironment;
+    const environmentKey = routing ? createHash("sha256").update(JSON.stringify(Object.entries(commandEnvironment).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b)))).digest("hex") : "static";
+    const parsedModel = OpenCodeRuntime.parseOpenCodeModelSlug(model);
     if (!parsedModel) {
       return yield* new TextGenerationError({
         operation: input.operation,
@@ -502,6 +528,8 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
         : yield* Effect.acquireUseRelease(
             acquireSharedServer({
               binaryPath: openCodeSettings.binaryPath,
+              environment: commandEnvironment,
+              environmentKey,
               operation: input.operation,
             }),
             runAgainstServer,

@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -17,6 +18,9 @@ import * as TextGeneration from "./TextGeneration.ts";
 const runtimeMock = {
   state: {
     startCalls: [] as string[],
+    startEnvironments: [] as NodeJS.ProcessEnv[],
+    promptModels: [] as Array<{ providerID: string; modelID: string } | undefined>,
+    beforePrompt: undefined as (() => Promise<void>) | undefined,
     promptUrls: [] as string[],
     authHeaders: [] as Array<string | null>,
     closeCalls: [] as string[],
@@ -29,6 +33,9 @@ const runtimeMock = {
   },
   reset() {
     this.state.startCalls.length = 0;
+    this.state.startEnvironments.length = 0;
+    this.state.promptModels.length = 0;
+    this.state.beforePrompt = undefined;
     this.state.promptUrls.length = 0;
     this.state.authHeaders.length = 0;
     this.state.closeCalls.length = 0;
@@ -40,11 +47,12 @@ const runtimeMock = {
 };
 
 const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntimeShape = {
-  startOpenCodeServerProcess: ({ binaryPath }) =>
+  startOpenCodeServerProcess: ({ binaryPath, environment }) =>
     Effect.gen(function* () {
       const index = runtimeMock.state.startCalls.length + 1;
       const url = `http://127.0.0.1:${4_300 + index}`;
       runtimeMock.state.startCalls.push(binaryPath);
+      runtimeMock.state.startEnvironments.push({ ...environment });
       // The production runtime binds server lifetime to the caller's scope.
       // Mirror that here so the closeCalls probe observes scope close.
       yield* Effect.addFinalizer(() =>
@@ -73,7 +81,11 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntimeShape = {
           }
           return runtimeMock.state.sessionResult ?? { data: { id: `${baseUrl}/session` } };
         },
-        prompt: async () => {
+        prompt: async (input: { model?: { providerID: string; modelID: string } }) => {
+          runtimeMock.state.promptModels.push(input.model);
+          const beforePrompt = runtimeMock.state.beforePrompt;
+          runtimeMock.state.beforePrompt = undefined;
+          if (beforePrompt) await beforePrompt();
           runtimeMock.state.promptUrls.push(baseUrl);
           runtimeMock.state.authHeaders.push(
             serverPassword ? `Basic ${btoa(`opencode:${serverPassword}`)}` : null,
@@ -169,9 +181,10 @@ const EXISTING_SERVER_OPENCODE_SETTINGS = Schema.decodeSync(OpenCodeSettings)({
 function withOpenCodeTextGeneration<A, E, R>(
   settings: OpenCodeSettings,
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
+  routing?: OpenCodeTextGeneration.OpenCodeTextGenerationRouting,
 ) {
   return Effect.gen(function* () {
-    const textGeneration = yield* OpenCodeTextGeneration.makeOpenCodeTextGeneration(settings);
+    const textGeneration = yield* OpenCodeTextGeneration.makeOpenCodeTextGeneration(settings, undefined, routing);
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
 }
@@ -454,3 +467,62 @@ it.layer(OpenCodeTextGenerationExistingServerTestLayer)(
     );
   },
 );
+
+it.layer(OpenCodeTextGenerationTestLayer)("OpenCode routed text generation", (it) => {
+  const input = { ...DEFAULT_COMMIT_MESSAGE_INPUT, modelSelection: { instanceId: ProviderInstanceId.make("opencode"), model: "claude-opus-5-5" } };
+  it.effect("maps raw gateway models and restarts the warm server after its endpoint changes", () => {
+    let endpoint = "http://127.0.0.1:4301/v1";
+    const selected: string[] = [];
+    return withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) => Effect.gen(function* () {
+      yield* generation.generateCommitMessage(input);
+      yield* generation.generateCommitMessage(input);
+      expect(runtimeMock.state.startCalls).toHaveLength(1);
+      endpoint = "http://127.0.0.1:4302/v1";
+      yield* generation.generateCommitMessage(input);
+      expect(runtimeMock.state.startCalls).toHaveLength(2);
+      expect(runtimeMock.state.closeCalls).toEqual(["http://127.0.0.1:4301"]);
+      expect(runtimeMock.state.startEnvironments.map(env => env.OPENAI_BASE_URL)).toEqual(["http://127.0.0.1:4301/v1", "http://127.0.0.1:4302/v1"]);
+      expect(runtimeMock.state.promptModels).toEqual(Array(3).fill({ providerID: "workjet-gateway-claude", modelID: "claude-opus-5-5" }));
+      expect(selected).toEqual(Array(3).fill("claude-opus-5-5"));
+    }), {
+      resolveEnvironment: () => Effect.succeed({ OPENAI_BASE_URL: endpoint }),
+      resolveModel: model => Effect.sync(() => { selected.push(model); return "workjet-gateway-claude/" + model; }),
+    });
+  });
+
+  it.effect("rejects a changed gateway route while the previous server has an active request", () => {
+    let endpoint = "http://127.0.0.1:4301/v1";
+    let markStarted = () => {};
+    let finish = () => {};
+    const started = new Promise<void>(resolve => { markStarted = resolve; });
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    runtimeMock.state.beforePrompt = () => { markStarted(); return pending; };
+    return withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) => Effect.gen(function* () {
+      const first = yield* generation.generateCommitMessage(input).pipe(Effect.forkScoped);
+      yield* Effect.promise(() => started);
+      endpoint = "http://127.0.0.1:4302/v1";
+      const error = yield* Effect.flip(generation.generateCommitMessage(input));
+      expect(error).toBeInstanceOf(TextGenerationError);
+      expect(error.detail).toContain("gateway changed");
+      expect(runtimeMock.state.startCalls).toHaveLength(1);
+      expect(runtimeMock.state.closeCalls).toHaveLength(0);
+      finish();
+      yield* Fiber.join(first);
+    }).pipe(Effect.ensuring(Effect.sync(() => finish()))), {
+      resolveEnvironment: () => Effect.succeed({ OPENAI_BASE_URL: endpoint }),
+      resolveModel: model => Effect.succeed("workjet-gateway-claude/" + model),
+    });
+  });
+
+  it.effect("fails before starting a server when the gateway cannot resolve the selected model", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) => Effect.gen(function* () {
+      const error = yield* Effect.flip(generation.generateCommitMessage(input));
+      expect(error).toBeInstanceOf(TextGenerationError);
+      expect(error.detail).toBe("OpenCode gateway routing failed for text generation.");
+      expect(runtimeMock.state.startCalls).toHaveLength(0);
+    }), {
+      resolveEnvironment: () => Effect.succeed({}),
+      resolveModel: () => Effect.fail(new Error("gateway catalog unavailable")),
+    }),
+  );
+});

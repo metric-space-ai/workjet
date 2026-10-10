@@ -917,11 +917,7 @@ export function NativeSupervisorComposer(props: {
           }
           manual={
             <>
-              <ComposerControl
-                type="button"
-                aria-disabled="true"
-                title={routeLabel.title}
-              >
+              <ComposerControl type="button" aria-disabled="true" title={routeLabel.title}>
                 {routeLabel.model}
               </ComposerControl>
               <ComposerControl

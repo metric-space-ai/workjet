@@ -513,7 +513,7 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
 
-  onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => Promise<boolean> | void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
@@ -573,7 +573,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
-    isServerThread: _isServerThread,
+    isServerThread,
     isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
@@ -702,10 +702,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ),
     [providerStatuses, settings],
   );
-  const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
+  const selectedProviderByThreadId = isServerThread
+    ? (activeThreadModelSelection?.instanceId ?? null)
+    : (composerDraft.activeProvider ?? null);
   const threadProvider =
-    activeThread?.session?.providerInstanceId ??
     activeThreadModelSelection?.instanceId ??
+    activeThread?.session?.providerInstanceId ??
     activeProjectDefaultModelSelection?.instanceId ??
     null;
   const explicitSelectedInstanceId = selectedProviderByThreadId ?? threadProvider;
@@ -737,15 +739,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Resolve which configured instance the composer is currently targeting.
   // Priority:
-  //   1. The composer draft's `activeProvider` — the user's unsaved pick
-  //      from the model picker (must win, otherwise the UI appears to
-  //      ignore picker selections).
-  //   2. Thread's persisted instance id (server-side saved selection).
+  // Existing threads use their saved instance directly. New local drafts:
+  //   1. The composer draft's activeProvider.
+  //   2. Thread's initial instance id.
   //   3. Project default's instance id.
   //   4. First enabled entry matching the current driver kind.
   //   5. First enabled entry overall / default instance for the kind.
   //
   const selectedInstanceId = useMemo<ProviderInstanceId>(() => {
+    if (isServerThread && activeThreadModelSelection) return activeThreadModelSelection.instanceId;
     const candidates: Array<string | null | undefined> = [
       composerDraft.activeProvider,
       activeThread?.session?.providerInstanceId,
@@ -788,6 +790,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThread?.session?.providerInstanceId,
     activeThreadModelSelection?.instanceId,
     composerDraft.activeProvider,
+    isServerThread,
     lockedContinuationGroupKey,
     lockedProvider,
     providerInstanceEntries,
@@ -814,6 +817,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProvider,
     selectedInstanceId,
     threadModelSelection: activeThreadModelSelection,
+    preferThreadModelSelection: isServerThread,
     projectModelSelection: activeProjectDefaultModelSelection,
     settings,
   });
@@ -958,8 +962,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Persisted with the draft (F1): the worker's model lands in the shared
   // per-instance selection, so a component-local worker choice that dies on
   // unmount left the bar in "Manual" WITH the worker's model — a corrupted
-  // state the operator measured. The draft store is the single owner now.
-  const selectedWorkjetWorkerId = composerDraft.workjetWorkerId ?? null;
+  // state the operator measured. Existing threads additionally require the
+  // saved route and active computer to match before showing this profile as selected.
+  const draftWorker = workjetWorkers.find((worker) => worker.id === composerDraft.workjetWorkerId);
+  const selectedWorkjetWorkerId =
+    isServerThread &&
+    draftWorker &&
+    (draftWorker.modelId !== activeThreadModelSelection?.model ||
+      providerInstanceIdForHarness(draftWorker.harness) !==
+        activeThreadModelSelection?.instanceId ||
+      workjetComputers.find((computer) => computer.id === draftWorker.computerId)?.environmentId !==
+        environmentId)
+      ? null
+      : (composerDraft.workjetWorkerId ?? null);
   const setWorkjetWorkerSelection = useComposerDraftStore(
     (store) => store.setWorkjetWorkerSelection,
   );
@@ -1088,13 +1103,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const manualInstructionsReturnRef = useRef<string | null>(null);
   const manualWorkjetConfigReturnRef = useRef<WorkjetThreadConfig | null>(null);
   const handleSelectWorkjetWorker = useCallback(
-    (workerId: string | null) => {
+    async (workerId: string | null) => {
       if (draftWorkjetConfig.ctoxCrewChat !== undefined && workerId !== selectedWorkjetWorkerId) {
         toastManager.add({
           type: "info",
           title: "Open a new thread to choose a different Luma.",
         });
         return;
+      }
+      const worker =
+        workerId === null
+          ? undefined
+          : workjetWorkers.find((candidate) => candidate.id === workerId);
+      const instanceId = worker ? providerInstanceIdForHarness(worker.harness) : null;
+      if (workerId !== null && (!worker || instanceId === null || !worker.modelId)) return;
+      const targetInstance = instanceId === null ? null : ProviderInstanceId.make(instanceId);
+      const manualReturn = composerDraft.workjetManualReturn;
+      // Save the route before applying the profile or copying history to another computer.
+      if (worker && targetInstance) {
+        if ((await onProviderModelSelect(targetInstance, worker.modelId)) === false) return;
+      } else if (manualReturn !== null) {
+        if ((await onProviderModelSelect(manualReturn.provider, manualReturn.model)) === false)
+          return;
       }
       // A different choice invalidates the local bar edits: extras belong to
       // the newly chosen worker, and a worker carries its own task text.
@@ -1118,19 +1148,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // Back to Manual: restore the model that was chosen BEFORE the worker
         // took over the shared selection — without this, the worker's model
         // stays behind masquerading as a manual choice (F1).
-        const manualReturn = composerDraft.workjetManualReturn;
         setWorkjetWorkerSelection(composerDraftTarget, null, null);
         setComposerDraftWorkjetConfig(
           composerDraftTarget,
           manualWorkjetConfigReturnRef.current ?? DEFAULT_WORKJET_THREAD_CONFIG,
         );
         manualWorkjetConfigReturnRef.current = null;
-        if (manualReturn !== null) {
-          onProviderModelSelect(manualReturn.provider, manualReturn.model);
-        }
         return;
       }
-      const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
       if (worker === undefined) return;
       const modelRules = primaryWorkjet.modelPrompts
         .find((entry) => entry.modelId === worker.modelId)
@@ -1174,10 +1199,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
       }
 
-      const instanceId = providerInstanceIdForHarness(worker.harness);
-      if (instanceId === null || !worker.modelId) return;
-      const targetInstance = ProviderInstanceId.make(instanceId);
-      onProviderModelSelect(targetInstance, worker.modelId);
+      if (targetInstance === null) return;
 
       // Effort too, but only where the provider offers that exact value. The
       // Workjet list and a provider's own options are not the same list and
@@ -3560,6 +3582,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           });
         },
       }}
+      disabledReason={getModelDisabledReason(selectedInstanceId, selectedModel)}
       configuredInstanceIds={configuredProviderInstanceIds}
       configuredDriverKinds={configuredProviderDriverKinds}
       unavailableHint={
@@ -4105,7 +4128,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       environmentId={environmentId}
                       workers={workjetWorkers}
                       selectedWorkerId={selectedWorkjetWorkerId}
-                      disabled={effectiveWorkjetCapabilityDisabled}
+                      disabled={
+                        effectiveWorkjetCapabilityDisabled ||
+                        getModelDisabledReason(selectedInstanceId, selectedModel) !== null
+                      }
                       onSelectWorker={handleSelectWorkjetWorker}
                       onOpenWorkjetSettings={onOpenWorkjetSettings}
                     />

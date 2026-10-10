@@ -323,6 +323,16 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
     reason: "Launch configuration transport is an internal sync value.",
   },
   {
+    path: "apps/web/src/components/PersistentWorkerKanban.tsx",
+    context: /learnordie-dark-room/u,
+    reason: "The slide-engine theme identifier is an internal stylesheet name.",
+  },
+  {
+    path: "apps/web/src/fixtures/persistent-worker-goal.fixture.tsx",
+    context: /learnordie-dark-room/u,
+    reason: "The fixture selects the slide-engine theme by its internal identifier.",
+  },
+  {
     path: "apps/desktop/src/ctox/CtoxBusinessOsShell.ts",
     context: /(?:\/rxdb\/|transport:\s*["']?webrtc)/iu,
     reason: "The packaged shell loader uses an internal sync asset contract.",

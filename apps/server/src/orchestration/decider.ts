@@ -1279,6 +1279,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.goal.set":
+    case "thread.goal.assign":
     case "thread.goal.advance": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
       const config = thread.workjetConfig;
@@ -1294,6 +1295,33 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       const previous = config.goal;
+      if (command.type === "thread.goal.assign") {
+        const supervisor = yield* requireThread({
+          readModel,
+          command,
+          threadId: command.supervisorThreadId,
+        });
+        const team =
+          supervisor.workjetConfig.schemaVersion === 2 ? supervisor.workjetConfig.team : undefined;
+        if (
+          supervisor.archivedAt !== null ||
+          supervisor.deletedAt !== null ||
+          team?.role !== "supervisor" ||
+          team.threadId !== supervisor.id ||
+          team.projectId !== supervisor.projectId ||
+          supervisor.projectId !== thread.projectId ||
+          config.team.threadId !== thread.id ||
+          config.team.projectId !== thread.projectId ||
+          config.team.parentThreadId !== supervisor.id ||
+          command.status !== (previous?.status ?? "active")
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Supervisor assignment requires the current project/Parent binding and preserves Owner-stopped goals.",
+          });
+        }
+      }
       if (
         command.expectedRevision !== undefined &&
         command.expectedRevision !== previous?.revision

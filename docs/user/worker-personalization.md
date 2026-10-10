@@ -28,3 +28,19 @@ the worker connection is ready. Ordinary supervisor messages remain available in
 
 Connect from the desktop app. If the connection is unavailable later, choose **Connect workers** again;
 existing Business OS permissions still apply.
+
+## Persistent Worker goals
+
+A Persistent Worker keeps its assignment visible above its conversation, including imported threads.
+Before its goal loop starts, the header says that no goal is set; importing a conversation does not start work automatically.
+Use **Ziel festlegen** to save an objective and start the loop. **Ziel ändern**, **Pausieren** and **Fortsetzen** control the saved goal.
+A failed save retains your draft. A paused worker stays paused when its objective changes.
+
+The project Supervisor can assign or change a bound Persistent Worker's objective with
+`workjet_update_goal {action: "set", threadId, objective, expectedRevision?}`.
+The Supervisor cannot change a worker outside its project or resume a worker stopped by its Owner.
+
+The loop state and iteration count come from the saved thread state. At each iteration's start the worker records
+its mini-kanban with `workjet_worker_kanban`. Workjet displays that retained Slide-Engine board above the conversation.
+A previous iteration remains labelled as an earlier snapshot until a new one is recorded.
+Cards and completed turns report activity; they do not verify goal completion. Supervisors and One-Shot Workers have no mini-kanban.

@@ -114,5 +114,5 @@ export function DeckRenderer({
 
 function currentSlide(document: SlideDocument, currentSlideId: string | undefined) {
   if (!currentSlideId) return document.slides.slice(0, 1);
-  return [document.slides.find((slide) => slide.id === currentSlideId) ?? document.slides[0]].filter(Boolean);
+  return [document.slides.find((slide) => slide.id === currentSlideId) ?? document.slides[0]].filter((slide): slide is NonNullable<typeof slide> => slide !== undefined);
 }

@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { OpenCodeRuntime, OpenCodeRuntimeLive } from "./opencodeRuntime.ts";
 
 const fixture = `#!/usr/bin/env node
@@ -31,8 +32,10 @@ const observeSpawnedConfiguration = (environment?: NodeJS.ProcessEnv) =>
         binaryPath,
         ...(environment === undefined ? {} : { environment }),
       });
-      const response = yield* Effect.promise(() => fetch(server.url).then((r) => r.json()));
-      return response.configuration as string;
+      const response = yield* Effect.promise(() => fetch(server.url).then((r) => r.text()));
+      return Schema.decodeUnknownSync(
+        Schema.fromJsonString(Schema.Struct({ configuration: Schema.String })),
+      )(response).configuration;
     }).pipe(Effect.provide(OpenCodeRuntimeLive), Effect.provide(NodeServices.layer)),
   );
 

@@ -10,6 +10,8 @@ import * as Schema from "effect/Schema";
 const REQUEST_BYTES = 262_144;
 const RESPONSE_BYTES = 1_048_576;
 const OPERATION_TIMEOUT_MS = 15_000;
+// Four existing-account probes can each take 20s readiness + 10s proof + 10s consumer RPC.
+const STARTUP_TIMEOUT_MS = 300_000;
 const MAX_QUEUED = 16;
 const RequestId = Schema.String.check(Schema.isPattern(/^[!-~]{1,256}$/));
 const Request = Schema.Struct({
@@ -17,11 +19,23 @@ const Request = Schema.Struct({
   requestId: RequestId,
   params: Schema.Tuple([Schema.Record(Schema.String, Schema.Unknown)]),
 });
+const SourceFacts = Schema.Struct({
+  version: Schema.Literal(1),
+  targetId: Schema.String,
+  instanceId: Schema.String,
+  publicIdentity: Schema.String,
+  accountEpoch: Schema.Unknown,
+  peerId: Schema.String,
+  generation: Schema.Unknown,
+  consumer: Schema.Record(Schema.String, Schema.Unknown),
+});
+const decodeConsumer = Schema.decodeUnknownPromise(Schema.Struct({ computerId: Schema.String }));
 const Ready = Schema.Struct({
   protocolVersion: Schema.Literal(1),
   endpoint: Schema.String,
   transportReady: Schema.Literal(true),
   executionReady: Schema.Literal(false),
+  source: Schema.optional(SourceFacts),
 });
 const Response = Schema.Struct({
   version: Schema.Literal(1),
@@ -53,39 +67,56 @@ export class NativeSupervisorSourceTransportError extends Schema.TaggedErrorClas
       "shutdown-incomplete",
     ]),
     requestId: Schema.optional(Schema.String),
+    stage: Schema.optional(Schema.Literals(["spawn", "readiness", "private-endpoint", "connect"])),
   },
 ) {}
 
 /** Internal retained enrollment reference, never a client/wire input or authority.
  * Native validates the original encrypted enrollment and current Source association.
  * Missing mapping must fail setup; computer/instance labels cannot replace targetId. */
-export interface NativeSupervisorSourceEnrollment {
+export type NativeSupervisorSourceEnrollment = {
   readonly executable: string;
-  readonly targetId: string;
   readonly originalNativeRoot: string;
   readonly ipcDirectory: string;
-}
+} & (
+  | { readonly targetId: string; readonly selected?: never }
+  | {
+      readonly targetId?: never;
+      readonly selected: { readonly instanceId: string; readonly computerId: string };
+    }
+);
 export interface NativeSupervisorSourceTransport {
   readonly processId: number;
   readonly endpoint: string;
+  /** Actual bounded child startup frame for private retainStarted validation. */
+  readonly startup: typeof Ready.Type;
   readonly executionReady: false;
+  /** Non-secret association snapshot; never constructs execution authority. */
+  readonly source?: typeof SourceFacts.Type;
   /** Caller retains the immutable operation UUID. No automatic replay/reconnect. */
   readonly request: (requestId: string, operation: Record<string, unknown>) => Promise<unknown>;
   /** Only this owned transport process exited; never an SDK stop witness. */
-  readonly close: () => Promise<{ readonly exitCode: number | null; readonly signal: string | null }>;
+  readonly close: () => Promise<{
+    readonly exitCode: number | null;
+    readonly signal: string | null;
+  }>;
 }
-const failure = (
-  reason: NativeSupervisorSourceTransportError["reason"],
-  requestId?: string,
-) => new NativeSupervisorSourceTransportError({ reason, ...(requestId ? { requestId } : {}) });
+const failure = (reason: NativeSupervisorSourceTransportError["reason"], requestId?: string) =>
+  new NativeSupervisorSourceTransportError({ reason, ...(requestId ? { requestId } : {}) });
 
 function deadline<A>(promise: Promise<A>, ms: number, error: NativeSupervisorSourceTransportError) {
   return new Promise<A>((resolve, reject) => {
     const timer = setTimeout(() => reject(error), ms);
     timer.unref();
     promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (cause) => { clearTimeout(timer); reject(cause); },
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (cause) => {
+        clearTimeout(timer);
+        reject(cause);
+      },
     );
   });
 }
@@ -100,16 +131,43 @@ export async function openNativeSupervisorSourceTransport(
     !NodePath.isAbsolute(enrollment.executable) ||
     !NodePath.isAbsolute(enrollment.originalNativeRoot) ||
     !NodePath.isAbsolute(enrollment.ipcDirectory) ||
-    !enrollment.targetId || enrollment.targetId.includes("\0")
-  ) throw failure("invalid-input");
-  const child = NodeChildProcess.spawn(enrollment.executable, [
-    "sync", "supervisor-source", enrollment.targetId, enrollment.ipcDirectory,
-    "--root", enrollment.originalNativeRoot,
-  ], { stdio: ["ignore", "pipe", "pipe"] });
+    (enrollment.selected
+      ? [enrollment.selected.instanceId, enrollment.selected.computerId].some(
+          (value) =>
+            !value || value.length > 256 || value.trim() !== value || /[\x00-\x1f\x7f]/.test(value),
+        )
+      : !enrollment.targetId || enrollment.targetId.includes("\0"))
+  )
+    throw failure("invalid-input");
+  const child = NodeChildProcess.spawn(
+    enrollment.executable,
+    enrollment.selected
+      ? [
+          "sync",
+          "supervisor-source-selected",
+          enrollment.selected.instanceId,
+          enrollment.selected.computerId,
+          enrollment.ipcDirectory,
+          "--root",
+          enrollment.originalNativeRoot,
+        ]
+      : [
+          "sync",
+          "supervisor-source",
+          enrollment.targetId,
+          enrollment.ipcDirectory,
+          "--root",
+          enrollment.originalNativeRoot,
+        ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
   child.stderr.resume();
   let exited = false;
   const exit = new Promise<{ exitCode: number | null; signal: string | null }>((resolve) => {
-    child.once("close", (exitCode, signal) => { exited = true; resolve({ exitCode, signal }); });
+    child.once("close", (exitCode, signal) => {
+      exited = true;
+      resolve({ exitCode, signal });
+    });
   });
   // Error listeners are attached before startup; stderr never becomes a credential-bearing error.
   const startup = new Promise<string>((resolve, reject) => {
@@ -118,7 +176,8 @@ export async function openNativeSupervisorSourceTransport(
       child.stdout.off("data", data);
       child.off("error", error);
       child.off("close", closed);
-      if (cause) reject(cause); else resolve(line!);
+      if (cause) reject(cause);
+      else resolve(line!);
     };
     const data = (chunk: Buffer) => {
       buffered = Buffer.concat([buffered, chunk]);
@@ -138,33 +197,61 @@ export async function openNativeSupervisorSourceTransport(
     return deadline(exit, OPERATION_TIMEOUT_MS, failure("shutdown-incomplete"));
   };
   let socket: NodeNet.Socket | undefined;
+  let stage: NonNullable<NativeSupervisorSourceTransportError["stage"]> = "spawn";
   try {
-    const line = await deadline(startup, OPERATION_TIMEOUT_MS, failure("startup-failed"));
-    const ready = await decodeReady(line).catch(() => { throw failure("startup-failed"); });
+    stage = "readiness";
+    const line = await deadline(startup, STARTUP_TIMEOUT_MS, failure("startup-failed"));
+    const ready = await decodeReady(line).catch(() => {
+      throw failure("startup-failed");
+    });
+    child.stdout.resume();
+    if (enrollment.selected) {
+      if (!ready.source || ready.source.instanceId !== enrollment.selected.instanceId)
+        throw failure("startup-failed");
+      const consumer = await decodeConsumer(ready.source.consumer);
+      if (consumer.computerId !== enrollment.selected.computerId) throw failure("startup-failed");
+    } else if (ready.source && ready.source.targetId !== enrollment.targetId) {
+      throw failure("startup-failed");
+    }
+    stage = "private-endpoint";
     const directory = await NodeFSP.realpath(enrollment.ipcDirectory);
     const dir = await NodeFSP.lstat(directory);
     const endpoint = await NodeFSP.lstat(ready.endpoint);
     const uid = process.getuid?.();
     if (
-      uid === undefined || !dir.isDirectory() || dir.uid !== uid || (dir.mode & 0o777) !== 0o700 ||
-      !NodePath.isAbsolute(ready.endpoint) || NodePath.dirname(ready.endpoint) !== directory ||
-      !endpoint.isSocket() || endpoint.uid !== uid || (endpoint.mode & 0o777) !== 0o600 ||
+      uid === undefined ||
+      !dir.isDirectory() ||
+      dir.uid !== uid ||
+      (dir.mode & 0o777) !== 0o700 ||
+      !NodePath.isAbsolute(ready.endpoint) ||
+      NodePath.dirname(ready.endpoint) !== directory ||
+      !endpoint.isSocket() ||
+      endpoint.uid !== uid ||
+      (endpoint.mode & 0o777) !== 0o600 ||
       exited
-    ) throw failure("startup-failed");
+    )
+      throw failure("startup-failed");
+    stage = "connect";
     const connection = NodeNet.createConnection(ready.endpoint);
     socket = connection;
-    await deadline(new Promise<void>((resolve, reject) => {
-      connection.once("connect", resolve);
-      connection.once("error", () => reject(failure("startup-failed")));
-    }), OPERATION_TIMEOUT_MS, failure("startup-failed"));
+    await deadline(
+      new Promise<void>((resolve, reject) => {
+        connection.once("connect", resolve);
+        connection.once("error", () => reject(failure("startup-failed")));
+      }),
+      OPERATION_TIMEOUT_MS,
+      failure("startup-failed"),
+    );
     let closed = false;
-    let active: {
-      requestId: string;
-      resolve: (reply: unknown) => void;
-      reject: (error: NativeSupervisorSourceTransportError) => void;
-      timer: ReturnType<typeof setTimeout>;
-      decoding: boolean;
-    } | undefined;
+    let active:
+      | {
+          requestId: string;
+          resolve: (reply: unknown) => void;
+          reject: (error: NativeSupervisorSourceTransportError) => void;
+          timer: ReturnType<typeof setTimeout>;
+          decoding: boolean;
+        }
+      | undefined;
     let received = Buffer.alloc(0);
     let tail: Promise<unknown> = Promise.resolve();
     let queued = 0;
@@ -191,8 +278,11 @@ export async function openNativeSupervisorSourceTransport(
       if (received.length < length + 4) return;
       pending.decoding = true;
       let json: string;
-      try { json = new TextDecoder("utf-8", { fatal: true }).decode(received.subarray(4)); }
-      catch { return retire(); }
+      try {
+        json = new TextDecoder("utf-8", { fatal: true }).decode(received.subarray(4));
+      } catch {
+        return retire();
+      }
       received = Buffer.alloc(0);
       void decodeResponse(json).then((response) => {
         if (active !== pending || closed) return;
@@ -207,17 +297,26 @@ export async function openNativeSupervisorSourceTransport(
     return {
       processId: child.pid!,
       endpoint: ready.endpoint,
+      startup: ready,
       executionReady: false,
+      ...(ready.source ? { source: ready.source } : {}),
       request(requestId, operation) {
-        if (closed || queued >= MAX_QUEUED) return Promise.reject(failure("transport-lost", requestId));
+        if (closed || queued >= MAX_QUEUED)
+          return Promise.reject(failure("transport-lost", requestId));
         queued++;
         const response = tail.then(async () => {
           if (closed) throw failure("transport-lost", requestId);
-          const input = await decodeRequest({ version: 1, requestId, params: [operation] })
-            .catch(() => { throw failure("invalid-input", requestId); });
+          const input = await decodeRequest({ version: 1, requestId, params: [operation] }).catch(
+            () => {
+              throw failure("invalid-input", requestId);
+            },
+          );
           let bytes: Buffer;
-          try { bytes = Buffer.from(JSON.stringify(input)); }
-          catch { throw failure("invalid-input", requestId); }
+          try {
+            bytes = Buffer.from(JSON.stringify(input));
+          } catch {
+            throw failure("invalid-input", requestId);
+          }
           if (bytes.length > REQUEST_BYTES) throw failure("invalid-input", requestId);
           // Awaited validation must not let local retirement race a subsequent write.
           if (closed || exited) throw failure("transport-lost", requestId);
@@ -229,21 +328,28 @@ export async function openNativeSupervisorSourceTransport(
             timer.unref();
             active = { requestId, resolve, reject, timer, decoding: false };
             // From the attempted write onward EOF/unavailable is an ambiguous outcome.
-            connection.write(frame, (error) => { if (error) retire(); });
+            connection.write(frame, (error) => {
+              if (error) retire();
+            });
           });
         });
         tail = response.catch(() => undefined);
-        return response.finally(() => { queued--; });
+        return response.finally(() => {
+          queued--;
+        });
       },
       close() {
-        if (!closing) { retire(); closing = stopChild(); }
+        if (!closing) {
+          retire();
+          closing = stopChild();
+        }
         return closing;
       },
     };
   } catch {
     socket?.destroy();
     await stopChild();
-    throw failure("startup-failed");
+    throw new NativeSupervisorSourceTransportError({ reason: "startup-failed", stage });
   }
 }
 
@@ -254,12 +360,13 @@ export const acquireNativeSupervisorSourceTransport = Effect.fn(
   return yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: () => openNativeSupervisorSourceTransport(enrollment),
-      catch: (cause) => cause instanceof NativeSupervisorSourceTransportError
-        ? cause : failure("startup-failed"),
+      catch: (cause) =>
+        Schema.is(NativeSupervisorSourceTransportError)(cause) ? cause : failure("startup-failed"),
     }),
-    (transport) => Effect.tryPromise({
-      try: () => transport.close(),
-      catch: () => failure("shutdown-incomplete"),
-    }).pipe(Effect.orDie),
+    (transport) =>
+      Effect.tryPromise({
+        try: () => transport.close(),
+        catch: () => failure("shutdown-incomplete"),
+      }).pipe(Effect.orDie),
   );
 });

@@ -10,7 +10,15 @@ directory. Workjet computer IDs, guest sessions, managed instance IDs and labels
 are not substitutes. No public client setting or automatic account selection is
 introduced. Missing original enrollment mapping remains an explicit setup gap.
 
-The native command is `ctox sync supervisor-source TARGET IPC_DIRECTORY --root ROOT`.
+For a retained exact target, the command is
+`ctox sync supervisor-source TARGET IPC_DIRECTORY --root ROOT`. When native
+supports the protected existing-account selector (CTOX #566), the service uses
+`ctox sync supervisor-source-selected INSTANCE COMPUTER IPC_DIRECTORY --root ROOT`
+and checks the emitted native instance and computer association in that same
+owned process. No separate lookup generation, new pairing or account guess is
+used. The emitted original Source facts remain observations, not execution
+permission; epoch/generation fields are opaque and never reconstructed as
+native authority. The managed native executable/root locator is still required.
 The client consumes the actual emitted endpoint and checks private directory /
 socket rights and current UID. One bounded Unix socket serializes requests using
 the merged CTOX #560 four-byte big-endian framing, 256 KiB requests and 1 MiB

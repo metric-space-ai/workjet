@@ -4,12 +4,24 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 
-const [command, subcommand, targetId, directory, rootFlag, root] = process.argv.slice(2);
-if (command !== "sync" || subcommand !== "supervisor-source" || rootFlag !== "--root" || !root)
+const [command, subcommand, first, second, third, fourth, fifth] = process.argv.slice(2);
+const selected = subcommand === "supervisor-source-selected";
+const targetId = selected ? "resolved-fixture-target" : first;
+const instanceId = selected ? first : "fixture-native-instance";
+const computerId = selected ? second : "fixture-native-computer";
+const directory = selected ? third : second;
+const rootFlag = selected ? fourth : third;
+const root = selected ? fifth : fourth;
+if (
+  command !== "sync" ||
+  (!selected && subcommand !== "supervisor-source") ||
+  rootFlag !== "--root" ||
+  !root
+)
   process.exit(2);
 await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
 await NodeFSP.chmod(directory, 0o700);
-const endpoint = NodePath.join(directory, "fixture-authority.sock");
+const endpoint = NodePath.join(await NodeFSP.realpath(directory), "s.sock");
 const sockets = new Set();
 const server = NodeNet.createServer((socket) => {
   sockets.add(socket);
@@ -23,22 +35,31 @@ const server = NodeNet.createServer((socket) => {
     if (buffered.length < length + 4) return;
     const request = JSON.parse(buffered.subarray(4, length + 4).toString("utf8"));
     buffered = buffered.subarray(length + 4);
-    await NodeFSP.appendFile(NodePath.join(directory, "requests.jsonl"),
-      JSON.stringify({ requestId: request.requestId, action: request.params[0].action }) + "\n");
+    await NodeFSP.appendFile(
+      NodePath.join(directory, "requests.jsonl"),
+      JSON.stringify({ requestId: request.requestId, action: request.params[0].action }) + "\n",
+    );
     const action = request.params[0].action;
-    if (action === "eof") { socket.destroy(); return; }
+    if (action === "eof") {
+      socket.destroy();
+      return;
+    }
     if (action === "oversized-response") {
       const header = Buffer.alloc(4);
       header.writeUInt32BE(1_048_577, 0);
-      socket.write(header); return;
+      socket.write(header);
+      return;
     }
-    const response = Buffer.from(JSON.stringify({
-      version: 1,
-      requestId: action === "wrong-id" ? "foreign-request" : request.requestId,
-      result: action === "unavailable"
-        ? { kind: "unavailable", code: "native_supervisor_source_unavailable" }
-        : { kind: "reply", reply: { fixture: true, action, args: process.argv.slice(2) } },
-    }));
+    const response = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        requestId: action === "wrong-id" ? "foreign-request" : request.requestId,
+        result:
+          action === "unavailable"
+            ? { kind: "unavailable", code: "native_supervisor_source_unavailable" }
+            : { kind: "reply", reply: { fixture: true, action, args: process.argv.slice(2) } },
+      }),
+    );
     const frame = Buffer.alloc(response.length + 4);
     frame.writeUInt32BE(response.length, 0);
     response.copy(frame, 4);
@@ -47,10 +68,26 @@ const server = NodeNet.createServer((socket) => {
 });
 await new Promise((resolve) => server.listen(endpoint, resolve));
 await NodeFSP.chmod(endpoint, 0o600);
-process.stdout.write(JSON.stringify({
-  protocolVersion: 1, endpoint, transportReady: true,
-  executionReady: targetId === "invalid-ready",
-}) + "\n");
+process.stdout.write(
+  JSON.stringify({
+    protocolVersion: 1,
+    endpoint,
+    transportReady: true,
+    executionReady: targetId === "invalid-ready",
+    source: {
+      version: 1,
+      targetId,
+      instanceId: instanceId === "mismatched-instance" ? "foreign-fixture-instance" : instanceId,
+      publicIdentity: "fixture-identity",
+      accountEpoch: 1,
+      peerId: "fixture-peer",
+      generation: 1,
+      consumer: {
+        computerId: computerId === "mismatched-computer" ? "foreign-fixture-computer" : computerId,
+      },
+    },
+  }) + "\n",
+);
 process.on("SIGTERM", () => {
   for (const socket of sockets) socket.destroy();
   server.close(() => process.exit(0));

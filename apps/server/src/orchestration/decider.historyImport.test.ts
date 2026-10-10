@@ -125,7 +125,7 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
           sourceEnvironmentId: EnvironmentId.make("source-computer"),
           sourceLabel: "Source computer",
           messages: bootstrapCommand.messages,
-          createdAt: NOW,
+          createdAt: COPY_AT,
         },
       });
       const events = Array.isArray(result) ? result : [result];
@@ -160,7 +160,7 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
           sourceEnvironmentId: EnvironmentId.make("source-computer"),
           sourceLabel: "Source computer",
           messages: bootstrapCommand.messages,
-          createdAt: NOW,
+          createdAt: COPY_AT,
         };
         const thread = readModel.threads[0]!;
         const busy = {
@@ -301,7 +301,7 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
           sourceEnvironmentId: EnvironmentId.make("source-computer"),
           sourceLabel: "Source computer",
           messages: bootstrapCommand.messages,
-          createdAt: NOW,
+          createdAt: COPY_AT,
         },
       }).pipe(Effect.flip);
       expect(failure).toMatchObject({
@@ -472,7 +472,7 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
           commandId: CommandId.make("next-archive-batch"),
           threadId: THREAD_ID,
           messages: bootstrapCommand.messages,
-          createdAt: NOW,
+          createdAt: COPY_AT,
         },
         readModel: saved,
       });

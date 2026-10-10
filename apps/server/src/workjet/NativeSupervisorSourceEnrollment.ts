@@ -13,8 +13,8 @@ import { ServerSecretStore, isSecretAlreadyExistsError } from "../auth/ServerSec
 import { ServerSettingsService } from "../serverSettings.ts";
 import { DecisionHubConnectionRegistry } from "./decisionHub/DecisionHubConnectionRegistry.ts";
 
-const NativeId = Schema.String.check(Schema.isPattern(/^[^\x00-\x20\x7f]+$/));
-const AbsoluteNativePath = Schema.String.check(Schema.isPattern(/^\/[^\x00\r\n]+$/));
+const NativeId = Schema.String.check(Schema.isPattern(/^[^\p{Cc}\p{Zl}\p{Zp}]+$/u));
+const AbsoluteNativePath = Schema.String.check(Schema.isPattern(/^\/[^\p{Cc}\p{Zl}\p{Zp}]*$/u));
 const Epoch = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 /** These are separate managed inputs. A UI instance ID or remote daemon root
@@ -82,6 +82,20 @@ const StoredEnrollment = Schema.Struct({
 const StoredJson = Schema.fromJsonString(StoredEnrollment);
 const encode = Schema.encodeEffect(StoredJson);
 const decode = Schema.decodeUnknownEffect(StoredJson);
+const decodeSelection = Schema.decodeUnknownEffect(NativeSupervisorSourceSelection);
+const decodeRuntime = Schema.decodeUnknownEffect(NativeSupervisorManagedRuntime);
+const decodeStartup = Schema.decodeUnknownEffect(NativeSupervisorSourceStartup);
+const decodeIdentity = Schema.decodeUnknownEffect(NativeEnrollmentIdentity);
+const decodeAbsolutePath = Schema.decodeUnknownEffect(AbsoluteNativePath);
+const encodeKey = Schema.encodeSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      environmentId: EnvironmentId,
+      computerId: WorkjetComputerId,
+      connectionId: WorkjetConnectionId,
+    }),
+  ),
+);
 
 export class NativeSupervisorSourceEnrollmentError extends Schema.TaggedErrorClass<NativeSupervisorSourceEnrollmentError>()(
   "NativeSupervisorSourceEnrollmentError",
@@ -101,7 +115,7 @@ const failure = (reason: NativeSupervisorSourceEnrollmentError["reason"]) =>
   new NativeSupervisorSourceEnrollmentError({ reason });
 const mappingKey = (selection: NativeSupervisorSourceSelection) =>
   `native-supervisor-enrollment-${NodeCrypto.createHash("sha256")
-    .update(Schema.encodeSync(Schema.fromJsonString(Schema.Struct({ environmentId: EnvironmentId, computerId: WorkjetComputerId, connectionId: WorkjetConnectionId })))(selection))
+    .update(encodeKey(selection))
     .digest("hex")}`;
 
 /** Source-service-only plan. No endpoint, credential or execution authority is
@@ -115,7 +129,7 @@ export const nativeSupervisorSourceArguments = (
   plan: NativeSupervisorSourcePlan,
   privateIpcDirectory: string,
 ): Effect.Effect<ReadonlyArray<string>, NativeSupervisorSourceEnrollmentError> =>
-  Schema.decodeUnknownEffect(AbsoluteNativePath)(privateIpcDirectory).pipe(
+  decodeAbsolutePath(privateIpcDirectory).pipe(
     Effect.mapError(() => failure("source-mismatch")),
     Effect.map((directory) => [
       "sync",
@@ -132,7 +146,10 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
   "NativeSupervisorSourceEnrollment.make",
 )(function* (dependencies: {
   readonly settings: Pick<ServerSettingsService["Service"], "getSettings">;
-  readonly connections: Pick<DecisionHubConnectionRegistry["Service"], "list" | "resolveReadyTarget">;
+  readonly connections: Pick<
+    DecisionHubConnectionRegistry["Service"],
+    "list" | "resolveReadyTarget"
+  >;
   readonly secrets: Pick<ServerSecretStore["Service"], "get" | "create">;
 }) {
   const mutex = yield* Semaphore.make(1);
@@ -190,7 +207,10 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
     runtime: NativeSupervisorManagedRuntime,
     retained: typeof StoredEnrollment.Type | null,
   ) => {
-    const plan = Object.freeze({ selection: Object.freeze(selection), runtime: Object.freeze(runtime) });
+    const plan = Object.freeze({
+      selection: Object.freeze(selection),
+      runtime: Object.freeze(runtime),
+    });
     plans.set(plan, retained);
     return plan;
   };
@@ -199,12 +219,12 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
     selectionInput: NativeSupervisorSourceSelection,
     runtimeInput: NativeSupervisorManagedRuntime,
   ) {
-    const selection = yield* Schema.decodeUnknownEffect(NativeSupervisorSourceSelection)(
-      selectionInput,
-    ).pipe(Effect.mapError(() => failure("selection-unavailable")));
-    const runtime = yield* Schema.decodeUnknownEffect(NativeSupervisorManagedRuntime)(
-      runtimeInput,
-    ).pipe(Effect.mapError(() => failure("runtime-unconfigured")));
+    const selection = yield* decodeSelection(selectionInput).pipe(
+      Effect.mapError(() => failure("selection-unavailable")),
+    );
+    const runtime = yield* decodeRuntime(runtimeInput).pipe(
+      Effect.mapError(() => failure("runtime-unconfigured")),
+    );
     yield* current(selection);
     const retained = yield* read(selection);
     if (retained !== null && !NodeUtil.isDeepStrictEqual(retained.runtime, runtime))
@@ -215,9 +235,9 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
   const resolve = Effect.fn("NativeSupervisorSourceEnrollment.resolve")(function* (
     selectionInput: NativeSupervisorSourceSelection,
   ) {
-    const selection = yield* Schema.decodeUnknownEffect(NativeSupervisorSourceSelection)(
-      selectionInput,
-    ).pipe(Effect.mapError(() => failure("selection-unavailable")));
+    const selection = yield* decodeSelection(selectionInput).pipe(
+      Effect.mapError(() => failure("selection-unavailable")),
+    );
     yield* current(selection);
     const retained = yield* read(selection);
     if (retained === null) return yield* failure("runtime-unconfigured");
@@ -229,9 +249,9 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
     startupInput: unknown,
   ) {
     if (!plans.has(plan)) return yield* failure("source-mismatch");
-    const startup = yield* Schema.decodeUnknownEffect(NativeSupervisorSourceStartup)(
-      startupInput,
-    ).pipe(Effect.mapError(() => failure("source-mismatch")));
+    const startup = yield* decodeStartup(startupInput).pipe(
+      Effect.mapError(() => failure("source-mismatch")),
+    );
     if (
       startup.source.instanceId !== plan.selection.nativeInstanceId ||
       startup.source.consumer.computerId !== plan.selection.computerId
@@ -239,10 +259,15 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
       return yield* failure("source-mismatch");
     // Strip ephemeral generation, revisions and any unknown stdout fields.
     // Only the original enrollment identity survives a managed service restart.
-    const identity = yield* Schema.decodeUnknownEffect(NativeEnrollmentIdentity)(
-      startup.source,
-    ).pipe(Effect.mapError(() => failure("source-mismatch")));
-    const record = { version: 1 as const, selection: plan.selection, runtime: plan.runtime, identity };
+    const identity = yield* decodeIdentity(startup.source).pipe(
+      Effect.mapError(() => failure("source-mismatch")),
+    );
+    const record = {
+      version: 1 as const,
+      selection: plan.selection,
+      runtime: plan.runtime,
+      identity,
+    };
     const original = plans.get(plan);
     if (original && !NodeUtil.isDeepStrictEqual(original, record))
       return yield* failure("source-mismatch");
@@ -265,8 +290,7 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
         );
     }
     const committed = yield* read(plan.selection);
-    if (!NodeUtil.isDeepStrictEqual(committed, record))
-      return yield* failure("source-mismatch");
+    if (!NodeUtil.isDeepStrictEqual(committed, record)) return yield* failure("source-mismatch");
     // Registry changes during native startup or durable creation must fail closed.
     yield* current(plan.selection);
     plans.set(plan, record);
@@ -274,9 +298,12 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
   });
 
   return {
-    prepare: (selection: NativeSupervisorSourceSelection, runtime: NativeSupervisorManagedRuntime) =>
-      prepare(selection, runtime).pipe(mutex.withPermits(1)),
-    resolve: (selection: NativeSupervisorSourceSelection) => resolve(selection).pipe(mutex.withPermits(1)),
+    prepare: (
+      selection: NativeSupervisorSourceSelection,
+      runtime: NativeSupervisorManagedRuntime,
+    ) => prepare(selection, runtime).pipe(mutex.withPermits(1)),
+    resolve: (selection: NativeSupervisorSourceSelection) =>
+      resolve(selection).pipe(mutex.withPermits(1)),
     retainStarted: (plan: NativeSupervisorSourcePlan, startup: unknown) =>
       retainStarted(plan, startup).pipe(mutex.withPermits(1)),
   };
@@ -284,7 +311,7 @@ export const makeNativeSupervisorSourceEnrollment = Effect.fn(
 
 export class NativeSupervisorSourceEnrollment extends Context.Service<
   NativeSupervisorSourceEnrollment,
-  Effect.Success<typeof makeNativeSupervisorSourceEnrollment>
+  Effect.Success<ReturnType<typeof makeNativeSupervisorSourceEnrollment>>
 >()("workjet/workjet/NativeSupervisorSourceEnrollment") {}
 
 export const layer = Layer.effect(

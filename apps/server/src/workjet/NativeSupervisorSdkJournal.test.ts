@@ -245,7 +245,7 @@ it.effect(
           isError: false,
         },
       ]);
-      expect(records.every(record => !("content" in record))).toBe(true);
+      expect(records.every((record) => !("content" in record))).toBe(true);
       fixture.finish();
       yield* Effect.promise(() => fixture.closed);
       yield* Effect.promise(() => journal.sdkStreamJoined());
@@ -319,7 +319,9 @@ it.effect(
       });
       const fixture = yield* fixtureChild();
       journal.captureOwnedSdkChild(fixture.child);
-      yield* Effect.promise(() => journal.observeSdkMessage(initFixture("original-session"), undefined));
+      yield* Effect.promise(() =>
+        journal.observeSdkMessage(initFixture("original-session"), undefined),
+      );
       yield* Effect.promise(() => journal.turnSubmitted("original-turn"));
       yield* Effect.promise(async () => {
         for (let index = 3; index < 512; index++)

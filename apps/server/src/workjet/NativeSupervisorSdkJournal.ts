@@ -112,8 +112,16 @@ export class NativeSupervisorSdkJournal {
   /** Only the adapter's actual spawn callback supplies this process object.
    * A captured PID alone, empty process list or terminated DTO cannot call it. */
   captureOwnedSdkChild(child: NodeChildProcess.ChildProcess): void {
-    if (!child.pid || !Number.isInteger(child.pid) || this.children.has(child.pid) ||
-      this.children.size >= 8 || this.sessionId || this.resultSeen || this.streamJoined || this.fault)
+    if (
+      !child.pid ||
+      !Number.isInteger(child.pid) ||
+      this.children.has(child.pid) ||
+      this.children.size >= 8 ||
+      this.sessionId ||
+      this.resultSeen ||
+      this.streamJoined ||
+      this.fault
+    )
       throw this.fail(new Error("Original SDK child unavailable or already captured."));
     const pid = child.pid;
     const state = { child, closed: false };
@@ -136,8 +144,12 @@ export class NativeSupervisorSdkJournal {
   }
   async observeSdkMessage(message: SDKMessage, currentTurnId: string | undefined): Promise<void> {
     if (message.type === "system" && message.subtype === "init") {
-      if (this.sessionId || this.resultSeen || this.streamJoined ||
-        ![...this.children.values()].some(child => !child.closed))
+      if (
+        this.sessionId ||
+        this.resultSeen ||
+        this.streamJoined ||
+        ![...this.children.values()].some((child) => !child.closed)
+      )
         throw this.fail(new Error("Original SDK init/session changed."));
       this.sessionId = message.session_id;
       await this.append({ kind: "sdk-init", sessionId: message.session_id, initId: message.uuid });
@@ -146,7 +158,8 @@ export class NativeSupervisorSdkJournal {
     if (!currentTurnId || currentTurnId !== this.submittedTurnId) return;
     if (message.type !== "assistant" && message.type !== "result") return;
     if (message.type === "assistant" && message.parent_tool_use_id !== null) return;
-    if (this.resultSeen || this.streamJoined) throw this.fail(new Error("Original SDK result/stream already ended."));
+    if (this.resultSeen || this.streamJoined)
+      throw this.fail(new Error("Original SDK result/stream already ended."));
     if (!this.sessionId || message.session_id !== this.sessionId || this.children.size === 0)
       throw this.fail(new Error("Original SDK session unavailable."));
     if (message.type === "assistant") {

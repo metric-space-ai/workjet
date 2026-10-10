@@ -1489,7 +1489,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         );
         if (options?.dispatchPromptInBackground) {
           yield* completePrompt.pipe(Effect.ignore, Effect.forkIn(prepared.scope));
-          return { threadId: input.threadId, turnId: prepared.turnId, resumeCursor: prepared.resumeCursor };
+          return {
+            threadId: input.threadId,
+            turnId: prepared.turnId,
+            resumeCursor: prepared.resumeCursor,
+          };
         }
         return yield* completePrompt;
       });

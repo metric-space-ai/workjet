@@ -300,6 +300,25 @@ describe("ProviderRuntimeIngestion", () => {
       },
       createdAt,
     });
+    const team = options?.threadWorkjetConfig?.schemaVersion === 2
+      ? options.threadWorkjetConfig.team
+      : undefined;
+    if (team && team.parentThreadId !== null) {
+      await dispatch({
+        type: "thread.create", commandId: CommandId.make("cmd-supervisor-create"),
+        threadId: team.parentThreadId, projectId: asProjectId("project-1"), title: "Supervisor",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required", branch: null, worktreePath: null, createdAt,
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2,
+          team: {
+            projectId: asProjectId("project-1"), threadId: team.parentThreadId, role: "supervisor",
+            parentThreadId: null, goal: "Coordinate the real project work.", createdAt,
+          },
+        },
+      });
+    }
     await dispatch({
       type: "thread.create",
       commandId: CommandId.make("cmd-thread-create"),

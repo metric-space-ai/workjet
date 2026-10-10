@@ -3110,6 +3110,7 @@ describe("ClaudeAdapterLive", () => {
       const session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: ProviderDriverKind.make("claudeAgent"),
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
         runtimeMode: "full-access",
         workjetConfig: {
           ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2,

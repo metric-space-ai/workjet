@@ -106,6 +106,8 @@ const harness = Effect.fn("test.goalHarness")(function* (
     streamDomainEvents: Stream.fromPubSub(events),
     readEvents: () => Stream.empty,
     latestSequence: Effect.sync(() => sequence),
+    runWorkerRetirementIfSubmitted: () =>
+      Effect.die("The persistent goal reactor must not retire One-Shot Workers."),
     runTurnStartIfActive: <A, E, R>(
       threadId: ThreadId,
       action: Effect.Effect<A, E, R>,

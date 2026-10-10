@@ -108,7 +108,7 @@ export const make = Effect.gen(function* () {
   const markExecutionStopped = (threadId: ThreadId) =>
     sql`
       UPDATE workjet_worker_pull_requests SET execution_stopped = 1
-      WHERE thread_id = ${threadId} AND state IN ('merged', 'closed')
+      WHERE thread_id = ${threadId}
     `.pipe(
       Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.markExecutionStopped")),
       Effect.asVoid,

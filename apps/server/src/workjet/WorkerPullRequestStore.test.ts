@@ -59,7 +59,7 @@ describe("native worker PR receipts", () => {
         assert.equal(yield* store.observe({ ...observation, prNumber: 8 }), false);
         assert.equal(yield* store.observe({ ...observation, worktreePath: "/foreign" }), false);
         yield* store.markExecutionStopped(threadId);
-        assert.equal(Option.getOrThrow(yield* store.get(threadId)).executionStopped, 0);
+        assert.equal(Option.getOrThrow(yield* store.get(threadId)).executionStopped, 1);
         assert.equal(yield* store.observe({ ...observation, state: "closed" }), true);
         assert.equal(yield* store.observe(observation), false);
         assert.equal(yield* store.observe({ ...observation, state: "merged" }), false);

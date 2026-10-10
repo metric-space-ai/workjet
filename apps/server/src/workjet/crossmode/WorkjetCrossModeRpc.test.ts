@@ -88,7 +88,20 @@ const thread = (options: {
     runtimeMode: "local",
     interactionMode: "chat",
     messages: [],
-    workjetConfig: { role: options.role ?? "orchestrator" },
+    workjetConfig: {
+      schemaVersion: 2,
+      role: "standard",
+      ...(options.role === "standard"
+        ? {}
+        : {
+            team: {
+              role: "supervisor",
+              threadId: options.threadId,
+              projectId: "project-1",
+              parentThreadId: null,
+            },
+          }),
+    },
   }) as unknown as OrchestrationThread;
 
 interface Recorder {

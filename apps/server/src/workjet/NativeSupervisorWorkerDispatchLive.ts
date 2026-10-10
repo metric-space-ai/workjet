@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
+  canCoordinateWorkjet,
   RemoteWorkerDispatchError,
   RemoteWorkerResult,
   type NativeSupervisorWorkerIntent,
@@ -83,7 +84,7 @@ export const make = Effect.gen(function* () {
     if (
       parent.deletedAt !== null ||
       parent.archivedAt !== null ||
-      parent.workjetConfig.role !== "orchestrator" ||
+      !canCoordinateWorkjet(parent.workjetConfig) ||
       (parent.workjetConfig.schemaVersion === 2 && parent.workjetConfig.team?.role !== "supervisor")
     )
       return yield* failure();

@@ -64,7 +64,7 @@ describe("immediate thread model selection", () => {
       },
       session: { providerInstanceId: codex.instanceId, providerName: "Codex CLI", status: "idle" },
       latestTurn: null,
-    } as EnvironmentThreadShell;
+    } as unknown as EnvironmentThreadShell;
     const parent: EnvironmentThreadShell = {
       ...worker,
       id: parentId,

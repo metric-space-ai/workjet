@@ -6819,10 +6819,12 @@ function ChatViewContent(props: ChatViewProps) {
 
   const getModelDisabledReason = useCallback(
     () =>
-      visibleWorkjetConfig?.ctoxCrewChat !== undefined || nativeSupervisorThread
+      (visibleWorkjetConfig?.schemaVersion === 2 &&
+        visibleWorkjetConfig.ctoxCrewChat !== undefined) ||
+      nativeSupervisorThread
         ? "This route is managed by the project's instance."
         : null,
-    [nativeSupervisorThread, visibleWorkjetConfig?.ctoxCrewChat],
+    [nativeSupervisorThread, visibleWorkjetConfig],
   );
   const onProviderModelSelect = useCallback(
     async (instanceId: ProviderInstanceId, model: string): Promise<boolean> => {

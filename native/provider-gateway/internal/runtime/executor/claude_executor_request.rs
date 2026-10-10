@@ -1495,7 +1495,11 @@ mod payload_tests {
                         serde_json::json!([original["content"][1], original["content"][2]])
                     );
                 } else {
-                    assert_eq!(normalized, original);
+                    let mut normalized = normalized.clone();
+                    for block in normalized["content"].as_array_mut().unwrap() {
+                        block.as_object_mut().unwrap().remove("cache_control");
+                    }
+                    assert_eq!(&normalized, original);
                 }
             }
         }

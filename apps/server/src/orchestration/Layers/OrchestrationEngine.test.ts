@@ -132,7 +132,7 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
-  it("archives a closed worker from a native receipt while retaining its source and fences later starts", async () => {
+  it("archives a submitted open PR while retaining worker source and fencing later starts", async () => {
     const environmentId = EnvironmentId.make("worker-pr-environment");
     const system = await createOrchestrationSystem(environmentId);
     const projectId = ProjectId.make("worker-pr-project");
@@ -196,13 +196,58 @@ describe("OrchestrationEngine", () => {
           }),
         );
       // A renderer-supplied PR in config is not native evidence.
+      let unverifiedStop = false;
+      expect(
+        await system.run(
+          system.engine.runWorkerRetirementIfSubmitted(
+            workerId,
+            Effect.sync(() => {
+              unverifiedStop = true;
+              return true;
+            }),
+          ),
+        ),
+      ).toBe(false);
+      expect(unverifiedStop).toBe(false);
       await expect(archive("worker-pr-no-native-proof")).rejects.toThrow();
+      const startAcknowledged = await system.run(Deferred.make<void>());
+      const allowStartAck = await system.run(Deferred.make<void>());
+      let providerLive = false;
+      const starting = system.run(
+        system.engine.runTurnStartIfActive(
+          workerId,
+          Effect.gen(function* () {
+            yield* Deferred.succeed(startAcknowledged, undefined);
+            yield* Deferred.await(allowStartAck);
+            providerLive = true;
+          }),
+        ),
+      );
+      await system.run(Deferred.await(startAcknowledged));
       await system.run(system.sql`
         INSERT INTO workjet_worker_pull_requests
           (thread_id, worktree_path, branch_ref, provider, pr_number, pr_url, head_oid, state)
         VALUES (${workerId}, ${worktreePath}, ${branch}, 'github', 7, ${pullRequest.url},
-          ${"a".repeat(40)}, 'closed')
+          ${"a".repeat(40)}, 'open')
       `);
+      let retirementRan = false;
+      const retiring = system.run(
+        system.engine.runWorkerRetirementIfSubmitted(
+          workerId,
+          Effect.sync(() => {
+            expect(providerLive).toBe(true);
+            providerLive = false;
+            retirementRan = true;
+            return true;
+          }),
+        ),
+      );
+      await system.run(Effect.yieldNow);
+      expect(retirementRan).toBe(false);
+      await system.run(Deferred.succeed(allowStartAck, undefined));
+      expect(await starting).toBe(true);
+      expect(await retiring).toBe(true);
+      expect(providerLive).toBe(false);
       await expect(archive("worker-pr-execution-not-stopped")).rejects.toThrow();
       const start = () =>
         system.run(
@@ -221,7 +266,18 @@ describe("OrchestrationEngine", () => {
             createdAt: now(),
           }),
         );
-      await expect(start()).rejects.toThrow("pull request is complete");
+      await expect(start()).rejects.toThrow("submitted");
+      let sent = false;
+      const admitted = await system.run(
+        system.engine.runTurnStartIfActive(
+          workerId,
+          Effect.sync(() => {
+            sent = true;
+          }),
+        ),
+      );
+      expect(admitted).toBe(false);
+      expect(sent).toBe(false);
       await system.run(system.sql`
         UPDATE workjet_worker_pull_requests SET execution_stopped = 1, branch_ref = 'foreign'
         WHERE thread_id = ${workerId}
@@ -244,7 +300,7 @@ describe("OrchestrationEngine", () => {
             threadId: workerId,
           }),
         ),
-      ).rejects.toThrow("pull request is complete");
+      ).rejects.toThrow("submitted");
     } finally {
       await system.dispose();
     }
@@ -1312,7 +1368,18 @@ describe("OrchestrationEngine", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          team: {
+            role: "specialist",
+            threadId: ThreadId.make("thread-1"),
+            projectId: asProjectId("project-1"),
+            parentThreadId: (await system.readModel()).threads[0]!.id,
+            domain: "test",
+            goal: "Retain deterministic read model",
+            createdAt,
+          },
+        },
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -2025,7 +2092,22 @@ describe("OrchestrationEngine", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          team: {
+            role: "specialist",
+            threadId: ThreadId.make("thread-atomic"),
+            projectId: asProjectId("project-atomic"),
+            parentThreadId: ThreadId.make(
+              (await runtime.runPromise(Stream.runCollect(engine.readEvents(0)))).find(
+                (event) => event.type === "thread.created",
+              )!.aggregateId,
+            ),
+            domain: "test",
+            goal: "Retain atomic projection rollback",
+            createdAt,
+          },
+        },
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,

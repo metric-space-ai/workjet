@@ -50,6 +50,7 @@ import {
 } from "../../provider/Services/ProviderService.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
+import { persistentThreadConfigForTest } from "../persistentThreadTestFixture.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
@@ -300,22 +301,16 @@ describe("ProviderRuntimeIngestion", () => {
       },
       createdAt,
     });
-    let threadConfig: WorkjetThreadConfig =
-      options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG;
-    if (threadConfig.schemaVersion === 2 && threadConfig.team?.role === "specialist") {
-      const snapshot = await runtime.runPromise(snapshotQuery.getSnapshot());
-      const supervisor = snapshot.threads.find(
-        (entry) =>
-          entry.projectId === asProjectId("project-1") &&
-          entry.workjetConfig.schemaVersion === 2 &&
-          entry.workjetConfig.team?.role === "supervisor",
+    const persistentConfig = async (
+      id: ThreadId,
+      config: WorkjetThreadConfig = DEFAULT_WORKJET_THREAD_CONFIG,
+    ) =>
+      persistentThreadConfigForTest(
+        await runtime!.runPromise(snapshotQuery.getSnapshot()),
+        asProjectId("project-1"),
+        id,
+        config,
       );
-      if (!supervisor) throw new Error("Project creation did not produce its durable supervisor.");
-      threadConfig = {
-        ...threadConfig,
-        team: { ...threadConfig.team, parentThreadId: supervisor.id },
-      };
-    }
     await dispatch({
       type: "thread.create",
       commandId: CommandId.make("cmd-thread-create"),
@@ -327,7 +322,10 @@ describe("ProviderRuntimeIngestion", () => {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-      workjetConfig: threadConfig,
+      workjetConfig: await persistentConfig(
+        ThreadId.make("thread-1"),
+        options?.threadWorkjetConfig,
+      ),
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: null,
@@ -360,6 +358,7 @@ describe("ProviderRuntimeIngestion", () => {
     return {
       engine,
       dispatch,
+      persistentConfig,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
       emit: provider.emit,
       setProviderSession: provider.setSession,
@@ -1400,7 +1399,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: "plan",
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: await harness.persistentConfig(sourceThreadId),
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -1436,7 +1435,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: await harness.persistentConfig(targetThreadId),
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -1590,7 +1589,7 @@ describe("ProviderRuntimeIngestion", () => {
             model: "gpt-5-codex",
           },
           interactionMode: "plan",
-          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          workjetConfig: await harness.persistentConfig(sourceThreadId),
           runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
@@ -1829,7 +1828,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: "plan",
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: await harness.persistentConfig(sourceThreadId),
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
@@ -1865,7 +1864,7 @@ describe("ProviderRuntimeIngestion", () => {
           model: "gpt-5-codex",
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+        workjetConfig: await harness.persistentConfig(targetThreadId),
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,

@@ -475,6 +475,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         const orchestrationEngine = {
           readEvents: () => Stream.empty,
           runTurnStartIfActive: (_threadId, start) => Effect.as(start, true),
+          runWorkerRetirementIfSubmitted: (_threadId, stop) => stop,
           dispatch: () => Effect.succeed({ sequence: 1 }),
           streamDomainEvents: Stream.fromQueue(events),
           latestSequence: Effect.succeed(0),
@@ -669,6 +670,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           Layer.succeed(OrchestrationEngineService, {
             readEvents: () => Stream.empty,
             runTurnStartIfActive: (_threadId, start) => Effect.as(start, true),
+            runWorkerRetirementIfSubmitted: (_threadId, stop) => stop,
             dispatch: () => Effect.succeed({ sequence: 1 }),
             streamDomainEvents: Stream.fromQueue(events),
             latestSequence: Effect.succeed(0),

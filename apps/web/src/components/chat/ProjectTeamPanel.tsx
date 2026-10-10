@@ -42,8 +42,13 @@ export function ProjectTeamPanel(props: {
       {(
         [
           ["supervisor", "Supervisor", "border-primary/50", "No supervisor yet."],
-          ["specialist", "Parents", "border-emerald-500/50", "No parents yet."],
-          ["worker", "Workers", "border-amber-500/50", "No workers yet."],
+          [
+            "specialist",
+            "Persistent Worker",
+            "border-emerald-500/50",
+            "No persistent workers yet.",
+          ],
+          ["worker", "One-Shot Worker", "border-amber-500/50", "No one-shot workers yet."],
         ] as const
       ).map(([role, label, accent, empty]) => {
         const group = members.filter(
@@ -161,7 +166,13 @@ export function ProjectTeamPanel(props: {
       data-workjet-team-toolbar={props.compact ? "compact" : undefined}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <strong className="capitalize">{team.role}</strong>
+        <strong>
+          {team.role === "supervisor"
+            ? "Supervisor"
+            : team.role === "specialist"
+              ? "Persistent Worker"
+              : "One-Shot Worker"}
+        </strong>
         {team.role === "specialist" ? <span>{team.domain}</span> : null}
         {props.compact ? null : (
           <span>
@@ -203,7 +214,7 @@ export function ProjectTeamPanel(props: {
       {props.compact ? null : directory}
       {team.role === "supervisor" ? (
         <details className="mt-2">
-          <summary>Add domain specialist</summary>
+          <summary>Add persistent worker</summary>
           <form
             className="mt-2 grid gap-2"
             onSubmit={(event) => {
@@ -219,7 +230,7 @@ export function ProjectTeamPanel(props: {
             }}
           >
             <input
-              aria-label="Specialist domain"
+              aria-label="Persistent worker domain"
               required
               maxLength={256}
               value={domain}
@@ -227,7 +238,7 @@ export function ProjectTeamPanel(props: {
               className="rounded border p-2"
             />
             <textarea
-              aria-label="Specialist goal"
+              aria-label="Persistent worker goal"
               required
               maxLength={4096}
               value={goal}
@@ -235,7 +246,7 @@ export function ProjectTeamPanel(props: {
               className="rounded border p-2"
             />
             <button type="submit" disabled={busy || !domain.trim() || !goal.trim()}>
-              Add specialist
+              Add persistent worker
             </button>
           </form>
         </details>

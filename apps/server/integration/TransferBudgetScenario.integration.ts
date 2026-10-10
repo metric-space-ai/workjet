@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
+import { persistentThreadConfigForTest } from "../src/orchestration/persistentThreadTestFixture.ts";
 import {
   CommandId,
   defaultInstanceIdForDriver,
@@ -79,7 +79,11 @@ export const seedTransferBudgetHistory = Effect.fn("TransferBudget.seedHistory")
     modelSelection,
     runtimeMode: "approval-required",
     interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-    workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+    workjetConfig: persistentThreadConfigForTest(
+      yield* harness.snapshotQuery.getSnapshot(),
+      TRANSFER_PROJECT_ID,
+      TRANSFER_THREAD_ID,
+    ),
     branch: "main",
     worktreePath: harness.workspaceDir,
     createdAt: turnTimestamp(0),

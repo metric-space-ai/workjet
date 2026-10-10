@@ -295,11 +295,20 @@ const parent = {
   runtimeMode: "auto-accept-edits",
   interactionMode: "plan",
   workjetConfig: {
-    schemaVersion: 1,
-    role: "orchestrator",
+    schemaVersion: 2,
+    role: "standard",
     parent: null,
     managedInstructions: "Keep changes bounded.",
     enabledCapabilityIds: ["greppy", "web-search"],
+    capabilityBindings: [],
+    team: {
+      projectId: ProjectId.make("project-1"),
+      threadId: parentThreadId,
+      role: "supervisor",
+      parentThreadId: null,
+      goal: "Coordinate the project",
+      createdAt: "2026-08-15T12:34:56.000Z",
+    },
   },
   branch: "feature/work",
   worktreePath: "/workspace/worktree",
@@ -418,6 +427,7 @@ const makeHarness = (input?: {
   readonly workerProjection?: "matching" | "mismatched";
   readonly failWorktreeRemove?: boolean;
   readonly failBranchDelete?: boolean;
+  readonly missingDelegationStorage?: boolean;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
   const remoteRequests: RemoteWorkerRequest[] = [];
@@ -427,12 +437,18 @@ const makeHarness = (input?: {
   const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
   const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
   let idIndex = 0;
+  const ordinals = new Map<string, number>();
   let createFailures = input?.failCreateAttempts ?? 0;
   const sources: WorkerDispatchSources = {
     // Deterministic and unbounded, so a second dispatch in the same harness gets
     // genuinely fresh identifiers instead of reusing the first worker's id.
     randomUUID: Effect.sync(() => nthId(idIndex++)),
     nowIso: Effect.succeed(now),
+    nextWorkerOrdinal: (_parent, workerId) =>
+      Effect.sync(() => {
+        if (!ordinals.has(workerId)) ordinals.set(workerId, ordinals.size + 1);
+        return ordinals.get(workerId)!;
+      }),
   };
   const engine = {
     dispatch: (command: OrchestrationCommand, options?: OrchestrationDispatchOptions) => {
@@ -638,8 +654,43 @@ const makeHarness = (input?: {
             } as unknown as GitVcsDriver["Service"]),
           )
       : (effect: ReturnType<typeof makeWorkerDispatchWithSources>) => effect;
+    const providedSnapshotStore = yield* Effect.serviceOption(WorkjetSnapshotStore);
+    const providedMeshIdentity = yield* Effect.serviceOption(WorkjetMeshIdentity);
+    const delegationSources = (effect: ReturnType<typeof makeWorkerDispatchWithSources>) =>
+      input?.missingDelegationStorage
+        ? effect
+        : effect.pipe(
+            Effect.provideService(
+              WorkjetSnapshotStore,
+              Option.getOrElse(
+                providedSnapshotStore,
+                () =>
+                  ({
+                    put: (prompt: string) =>
+                      Effect.succeed({
+                        snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+                        digest: WorkjetContentDigest.make("a".repeat(64)),
+                        byteLength: prompt.length,
+                      }),
+                  }) as unknown as WorkjetSnapshotStore["Service"],
+              ),
+            ),
+            Effect.provideService(
+              WorkjetMeshIdentity,
+              Option.getOrElse(
+                providedMeshIdentity,
+                () =>
+                  ({
+                    workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+                    signRoutingEnvelope: (envelope: object) =>
+                      Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+                  }) as unknown as WorkjetMeshIdentity["Service"],
+              ),
+            ),
+          );
     return yield* makeWorkerDispatchWithSources(sources).pipe(
       remoteSources,
+      delegationSources,
       Effect.provideService(OrchestrationEngineService, engine),
       Effect.provideService(OrchestrationCommandReceiptRepository, receipts),
       Effect.provideService(WorkjetMailboxStore, mailbox),
@@ -834,7 +885,20 @@ for (const receiptStatus of ["missing", "unavailable"] as const) {
 const workerPathFor = (threadId: string) =>
   `${worktreeRoot}/repository-hash/${workerRefFor(threadId).replace(/[^A-Za-z0-9._-]+/g, "-")}`;
 
-it.effect("dispatches exact normal create and turn-start commands with inherited state", () =>
+it.effect("requires durable delegation storage before creating a local team worker checkout", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ missingDelegationStorage: true });
+    const service = yield* harness.service;
+    const error = yield* Effect.flip(
+      service.dispatch(invocation, { task: "Never bypass the durable start." }),
+    );
+    expect(error.reason).toBe("create-failed");
+    expect(harness.commands).toEqual([]);
+    expect(harness.worktreeCreates).toEqual([]);
+  }),
+);
+
+it.effect("atomically creates the worker and queues its first turn with inherited state", () =>
   Effect.gen(function* () {
     const { commands, service } = makeHarness();
     const workerDispatch = yield* service;
@@ -858,7 +922,7 @@ it.effect("dispatches exact normal create and turn-start commands with inherited
         commandId: ids[1],
         threadId: ids[0],
         projectId: parent.projectId,
-        title: deriveWorkerTitle(task),
+        title: deriveWorkerTitle(1, parent.title, inheritedModel.model),
         modelSelection: inheritedModel,
         runtimeMode: "auto-accept-edits",
         interactionMode: "plan",
@@ -869,23 +933,18 @@ it.effect("dispatches exact normal create and turn-start commands with inherited
           managedInstructions: "Keep changes bounded.",
           enabledCapabilityIds: ["greppy", "web-search"],
           capabilityBindings: [],
+          team: {
+            projectId: parent.projectId,
+            threadId: ThreadId.make(ids[0]),
+            role: "worker",
+            parentThreadId,
+            packageId: ThreadId.make(ids[0]),
+            goal: task,
+            createdAt: now,
+          },
         },
         branch: workerRefFor(ids[0]),
         worktreePath: workerPathFor(ids[0]),
-        createdAt: now,
-      },
-      {
-        type: "thread.turn.start",
-        commandId: ids[2],
-        threadId: ids[0],
-        message: {
-          messageId: ids[3],
-          role: "user",
-          text: task,
-          attachments: [],
-        },
-        runtimeMode: "auto-accept-edits",
-        interactionMode: "plan",
         createdAt: now,
       },
     ]);
@@ -1013,7 +1072,7 @@ it.effect("accepts a capability subset and canonical model override including op
     expect(result.modelSelection).toEqual(override);
     expect(result.enabledCapabilityIds).toEqual(["web-search"]);
     expect(commands[0]).toMatchObject({
-      title: "Focused review",
+      title: deriveWorkerTitle(1, parent.title, override.model),
       modelSelection: override,
       workjetConfig: { enabledCapabilityIds: ["web-search"] },
     });
@@ -1047,6 +1106,7 @@ it.effect("never delegates Decision Hub or its CTOX binding to a child worker", 
         parent: null,
         managedInstructions: "Keep changes bounded.",
         enabledCapabilityIds: ["greppy", "decision-hub"],
+        team: parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined,
         capabilityBindings: [
           {
             capabilityId: "decision-hub",
@@ -1083,7 +1143,7 @@ it.effect(
     Effect.gen(function* () {
       const staleParent = {
         ...parent,
-        workjetConfig: { ...parent.workjetConfig, role: "standard", parent: null },
+        workjetConfig: { ...parent.workjetConfig, role: "standard", parent: null, team: undefined },
       } as unknown as OrchestrationThread;
       for (const [harnessInput, reason] of [
         [{ currentParent: staleParent }, "parent-not-orchestrator"],
@@ -1177,69 +1237,66 @@ it.effect("a team worker cannot redelegate through a stale orchestrator role", (
     const error = yield* service
       .dispatch(invocation, { task: "Do not redelegate." })
       .pipe(Effect.flip);
-    expect(error.reason).toBe("role-not-authorized");
+    expect(error.reason).toBe("parent-not-orchestrator");
     expect(harness.worktreeCreates).toEqual([]);
     expect(harness.commands).toEqual([]);
   }),
 );
 
-it.effect("denies a stale invocation role even when the persisted parent is an orchestrator", () =>
+it.effect("uses the current team role regardless of a legacy provider role switch", () =>
   Effect.gen(function* () {
     for (const workjetRole of ["standard", "worker", undefined] as const) {
       const { commands, service } = makeHarness();
       const workerDispatch = yield* service;
       const { workjetRole: _role, ...invocationWithoutRole } = invocation;
-      const scoped = {
-        ...invocationWithoutRole,
-        ...(workjetRole === undefined ? {} : { workjetRole }),
-      };
-      const error = yield* workerDispatch
-        .dispatch(scoped, { task: "Secret denied task." })
-        .pipe(Effect.flip);
-      expect(error.reason).toBe("role-not-authorized");
-      expect(JSON.stringify(error)).not.toContain("Secret denied task");
-      expect(commands).toEqual([]);
+      const result = yield* workerDispatch.dispatch(
+        {
+          ...invocationWithoutRole,
+          ...(workjetRole === undefined ? {} : { workjetRole }),
+        },
+        { task: "Bounded package." },
+      );
+      expect(result.status).toBe("dispatched");
+      expect(commands[0]?.type).toBe("thread.create");
     }
   }),
 );
 
-it.effect("retains a failed dispatch's source after bounded turn-start rollback", () =>
-  Effect.gen(function* () {
-    const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
-    const createService = yield* createFailure.service;
-    const createError = yield* createService
-      .dispatch(invocation, { task: "Sensitive create task." })
-      .pipe(Effect.flip);
-    expect(createError.reason).toBe("rollback-failed");
-    expect(createFailure.commands.map(({ type }) => type)).toEqual(["thread.create"]);
+it.effect(
+  "retains a failed atomic create and leaves first-turn execution to the durable executor",
+  () =>
+    Effect.gen(function* () {
+      const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
+      const createService = yield* createFailure.service;
+      const createError = yield* createService
+        .dispatch(invocation, { task: "Sensitive create task." })
+        .pipe(Effect.flip);
+      expect(createError.reason).toBe("rollback-failed");
+      expect(createFailure.commands.map(({ type }) => type)).toEqual([
+        "thread.create",
+        "thread.create",
+      ]);
 
-    const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
-    const turnService = yield* turnFailure.service;
-    const turnError = yield* turnService
-      .dispatch(invocation, { task: "Sensitive turn task." })
-      .pipe(Effect.flip);
-    expect(turnError.reason).toBe("rollback-failed");
-    expect(turnFailure.commands.map(({ type }) => type)).toEqual([
-      "thread.create",
-      "thread.turn.start",
-    ]);
-    expect(JSON.stringify(turnError)).not.toContain("downstream secret");
-    expect(JSON.stringify(turnError)).not.toContain("Sensitive turn task");
+      const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
+      const turnService = yield* turnFailure.service;
+      const turnResult = yield* turnService.dispatch(invocation, { task: "Sensitive turn task." });
+      expect(turnResult.status).toBe("dispatched");
+      expect(turnFailure.commands.map(({ type }) => type)).toEqual(["thread.create"]);
+      expect(JSON.stringify(turnResult)).not.toContain("Sensitive turn task");
 
-    const rollbackFailure = makeHarness({
-      failCommandTypes: ["thread.turn.start", "thread.delete"],
-      turnReceiptStatus: "rejected",
-    });
-    const rollbackService = yield* rollbackFailure.service;
-    const rollbackError = yield* rollbackService
-      .dispatch(invocation, { task: "Sensitive rollback task." })
-      .pipe(Effect.flip);
-    expect(rollbackError.reason).toBe("rollback-failed");
-    expect(rollbackFailure.worktreeRemovals).toEqual([]);
-    expect(rollbackFailure.branchDeletions).toEqual([]);
-    expect(JSON.stringify(rollbackError)).not.toContain("downstream secret");
-    expect(JSON.stringify(rollbackError)).not.toContain("Sensitive rollback task");
-  }),
+      const rollbackFailure = makeHarness({
+        failCommandTypes: ["thread.turn.start", "thread.delete"],
+        turnReceiptStatus: "rejected",
+      });
+      const rollbackService = yield* rollbackFailure.service;
+      const rollbackResult = yield* rollbackService.dispatch(invocation, {
+        task: "Sensitive rollback task.",
+      });
+      expect(rollbackResult.status).toBe("dispatched");
+      expect(rollbackFailure.worktreeRemovals).toEqual([]);
+      expect(rollbackFailure.branchDeletions).toEqual([]);
+      expect(JSON.stringify(rollbackResult)).not.toContain("Sensitive rollback task");
+    }),
 );
 
 it.effect("creates one isolated worker worktree beneath the configured storage root", () =>
@@ -1320,11 +1377,8 @@ it.effect("retains checkout and ref when rollback cannot safely remove them", ()
   Effect.gen(function* () {
     const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
     const turnService = yield* turnFailure.service;
-    const turnError = yield* turnService
-      .dispatch(invocation, { task: "Rolled back task." })
-      .pipe(Effect.flip);
-
-    expect(turnError.reason).toBe("rollback-failed");
+    const turnResult = yield* turnService.dispatch(invocation, { task: "Rolled back task." });
+    expect(turnResult.status).toBe("dispatched");
     expect(turnFailure.worktreeRemovals).toEqual([]);
     expect(turnFailure.branchDeletions).toEqual([]);
 
@@ -1340,7 +1394,7 @@ it.effect("retains checkout and ref when rollback cannot safely remove them", ()
   }),
 );
 
-for (const stage of ["create", "turn"] as const) {
+for (const stage of ["create"] as const) {
   it.effect(`rolls back a durably rejected ${stage} before returning its bounded error`, () =>
     Effect.gen(function* () {
       const harness = makeHarness({
@@ -1359,30 +1413,21 @@ for (const stage of ["create", "turn"] as const) {
       expect(harness.branchDeletions).toEqual([
         { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
       ]);
-      expect(harness.commands.map(({ type }) => type)).toEqual(
-        stage === "create"
-          ? ["thread.create"]
-          : ["thread.create", "thread.turn.start", "thread.delete"],
-      );
+      expect(harness.commands.map(({ type }) => type)).toEqual(["thread.create", "thread.create"]);
     }),
   );
 }
 
-it.effect("keeps an accepted first turn after its acknowledgement is lost", () =>
+it.effect("keeps an accepted atomic worker create after its acknowledgement is lost", () =>
   Effect.gen(function* () {
     const harness = makeHarness({
-      failCommandTypes: ["thread.turn.start"],
-      turnReceiptStatus: "accepted",
+      failCommandTypes: ["thread.create"],
+      createReceiptStatus: "accepted",
     });
     const service = yield* harness.service;
-    const error = yield* service
-      .dispatch(invocation, { task: "Accepted, not acknowledged." })
-      .pipe(Effect.flip);
-    expect(error.reason).toBe("rollback-failed");
-    expect(harness.commands.map(({ type }) => type)).toEqual([
-      "thread.create",
-      "thread.turn.start",
-    ]);
+    const result = yield* service.dispatch(invocation, { task: "Accepted, not acknowledged." });
+    expect(result.status).toBe("dispatched");
+    expect(harness.commands.map(({ type }) => type)).toEqual(["thread.create", "thread.create"]);
     expect(harness.worktreeRemovals).toEqual([]);
     expect(harness.branchDeletions).toEqual([]);
   }),

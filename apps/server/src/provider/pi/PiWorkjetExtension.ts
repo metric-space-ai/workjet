@@ -50,11 +50,12 @@ export default async function(pi) {
   if (!initialized.ok) throw new Error("Workjet MCP initialization returned HTTP " + initialized.status);
   const listed = await request("tools/list", {}, AbortSignal.timeout(30000));
   for (const tool of listed.tools) {
+    const boxed = tool.inputSchema.type !== "object";
     pi.registerTool({
       name: tool.name, label: tool.title || tool.name, description: tool.description || tool.name,
-      parameters: tool.inputSchema,
+      parameters: boxed ? { type: "object", properties: { input: tool.inputSchema }, required: ["input"], additionalProperties: false } : tool.inputSchema,
       async execute(toolCallId, args, signal) {
-        const result = await request("tools/call", { name: tool.name, arguments: args }, signal);
+        const result = await request("tools/call", { name: tool.name, arguments: boxed ? args.input : args }, signal);
         if (result.isError) throw new Error(result.content?.filter(part => part.type === "text").map(part => part.text).join("\n") || "Workjet MCP tool failed");
         return { content: result.content || [], details: result.structuredContent || {} };
       },

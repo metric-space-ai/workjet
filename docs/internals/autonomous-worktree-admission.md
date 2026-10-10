@@ -29,6 +29,18 @@ No policy is accepted from the worker-dispatch MCP input. These checks preserve
 the policy at the provider boundary; they do not verify native current policy
 or supply a sandbox permit.
 
+The source copies the same reference into
+`RemoteWorkerNativeBinding.executionPolicy`. Native issue, claim, revalidation
+and renewal receive that immutable reference. The client rejects a missing,
+added, foreign-project or changed reference before resolving account grants
+or contacting native, and rejects a native receipt that omits or substitutes
+it. The persisted intent and receipt retain the reference across recovery;
+revocation still uses the original binding after an account grant is removed.
+An older native that rejects the new optional binding cannot admit this mode.
+The native producer must additionally verify current Owner policy/revision and
+actual enrolled team provenance at every usage. Echoing the reference alone
+does not supply that authority, a sandbox witness or a supported policy mode.
+
 The common provider boundary currently **rejects this mode for every harness**.
 No supported autonomous-worktree policy mode is advertised. In particular,
 `full-access`, Codex's `workspace-write`, Claude's `acceptEdits`, and a

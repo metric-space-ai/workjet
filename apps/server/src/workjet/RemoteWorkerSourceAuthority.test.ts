@@ -233,3 +233,31 @@ it.effect("lost native ACK retries the same saved request, execution and renewal
     assert.equal(calls.length, callCount, "revoked persisted lease never reaches native again");
   }).pipe(Effect.provide(testLayer)),
 );
+
+it.effect("preserves the native policy in durable intent and forbids policy loss on recovery", () =>
+  Effect.gen(function* () {
+    const store = yield* RemoteWorkerAuthorityStore;
+    const original = yield* intentFor;
+    const policy = { mode: "autonomous-worktree" as const, projectId: request.project.id, revision: 4 };
+    const scopedRequest = { ...request, executionPolicy: policy };
+    const intent = {
+      ...original,
+      request: scopedRequest,
+      binding: {
+        ...original.binding,
+        requestDigest: yield* remoteWorkerRequestDigest(scopedRequest),
+        executionPolicy: policy,
+      },
+    };
+    yield* store.prepare(intent);
+    const saved = Option.getOrThrow(yield* store.get(request.requestId));
+    assert.deepEqual(saved.intent.binding.executionPolicy, policy);
+    const receipt = receiptFor(intent);
+    yield* store.saveReceipt(request.requestId, null, receipt);
+    const recovered = Option.getOrThrow(yield* store.get(request.requestId));
+    assert.deepEqual(recovered.receipt?.binding.executionPolicy, policy);
+    assert.equal((yield* Effect.flip(store.prepare(original)))._tag, "RemoteWorkerDispatchError");
+    const { executionPolicy: _policy, ...unscoped } = intent.binding;
+    assert.equal((yield* Effect.flip(store.saveReceipt(request.requestId, receipt, { ...receipt, binding: unscoped })))._tag, "RemoteWorkerDispatchError");
+  }).pipe(Effect.provide(testLayer)),
+);

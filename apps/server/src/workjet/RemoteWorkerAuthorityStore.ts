@@ -72,6 +72,9 @@ export const make = Effect.gen(function* () {
     if (
       row.intent.request.requestId !== id ||
       row.intent.binding.requestId !== id ||
+      !NodeUtil.isDeepStrictEqual(
+        row.intent.binding.executionPolicy,
+        row.intent.request.executionPolicy) ||
       (row.receipt !== null && !NodeUtil.isDeepStrictEqual(row.receipt.binding, row.intent.binding))
     )
       return yield* invalid();
@@ -94,6 +97,9 @@ export const make = Effect.gen(function* () {
       binding.sourceInstanceId !== scope.instanceId ||
       binding.targetEnvironmentId !== request.targetEnvironmentId ||
       binding.projectId !== request.project.id ||
+      !NodeUtil.isDeepStrictEqual(binding.executionPolicy, request.executionPolicy) ||
+      (binding.executionPolicy !== undefined &&
+        binding.executionPolicy.projectId !== binding.projectId) ||
       binding.repositoryHead !== request.revision
     )
       return yield* invalid();

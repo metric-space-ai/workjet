@@ -161,6 +161,9 @@ export const make = Effect.gen(function* () {
             repositoryUrl: request.project.repository.locator.remoteUrl,
             repositoryHead: request.revision,
             workspaceKey: request.requestId,
+            ...(request.executionPolicy === undefined
+              ? {}
+              : { executionPolicy: request.executionPolicy }),
             credentialRef: selected.credentialRef,
             providerRef: selected.providerRef,
             modelRef: selected.modelRef,

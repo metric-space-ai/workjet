@@ -36,26 +36,46 @@ export function PersistentWorkerGoal({
   const summary = `${status} · ${counter}`;
   if (compact) {
     return (
-      <span className="mt-1 block min-w-0 text-xs font-normal" data-workjet-persistent-goal="compact">
-        <span className="block line-clamp-2 text-foreground/80" title={goal.objective}>{goal.objective}</span>
+      <span
+        className="mt-1 block min-w-0 text-xs font-normal"
+        data-workjet-persistent-goal="compact"
+      >
+        <span className="block line-clamp-2 text-foreground/80" title={goal.objective}>
+          {goal.objective}
+        </span>
         <span className="block text-[11px] text-muted-foreground">{summary}</span>
       </span>
     );
   }
   return (
-    <details className="shrink-0 border-b border-border px-3 py-2 sm:px-5" data-workjet-persistent-goal="thread">
+    <details
+      className="shrink-0 border-b border-border px-3 py-2 sm:px-5"
+      data-workjet-persistent-goal="thread"
+    >
       <summary className="cursor-pointer text-xs marker:text-muted-foreground">
         <span className="ml-1 font-medium">Goal</span>
         <span className="ml-2 text-muted-foreground">{summary} · Workjet loop</span>
-        <span className="mt-1 block line-clamp-2 text-sm" title={goal.objective}>{goal.objective}</span>
+        <span className="mt-1 block line-clamp-2 text-sm" title={goal.objective}>
+          {goal.objective}
+        </span>
       </summary>
       <div className="mt-2 max-h-36 space-y-1 overflow-y-auto text-xs text-muted-foreground">
         <p className="whitespace-pre-wrap text-foreground/80">{goal.objective}</p>
-        <p>Saved goal · r{goal.revision} · <time dateTime={goal.updatedAt}>{new Intl.DateTimeFormat("en-GB", {
-          dateStyle: "medium", timeStyle: "short",
-        }).format(new Date(goal.updatedAt))}</time></p>
-        {goal.reason ? <p className="whitespace-pre-wrap">Reported result / reason: {goal.reason}</p> : null}
-        {goal.lastCompletedTurnId ? <p title={goal.lastCompletedTurnId}>Last recorded turn · {goal.lastCompletedTurnId}</p> : null}
+        <p>
+          Saved goal · r{goal.revision} ·{" "}
+          <time dateTime={goal.updatedAt}>
+            {new Intl.DateTimeFormat("en-GB", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            }).format(new Date(goal.updatedAt))}
+          </time>
+        </p>
+        {goal.reason ? (
+          <p className="whitespace-pre-wrap">Reported result / reason: {goal.reason}</p>
+        ) : null}
+        {goal.lastCompletedTurnId ? (
+          <p title={goal.lastCompletedTurnId}>Last recorded turn · {goal.lastCompletedTurnId}</p>
+        ) : null}
       </div>
     </details>
   );

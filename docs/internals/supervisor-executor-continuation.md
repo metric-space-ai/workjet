@@ -20,6 +20,16 @@ lease. Workjet's `runClaimedCrewTurn` binds the provider conversation to the adm
 attempt, harness and executor. An arbitrary local selection must not rewrite those
 identities.
 
+Crew verified the current supported native configuration path: `project.upsert`
+uses `supervisor_luma_id` with omission to retain the selection, null to use the
+instance default, or an exact stored Luma ID to select it. A later
+`project.supervisor.turn.submit` creates a new native attempt in the same bound
+thread. These operations configure a future attempt; they do not replace an
+already claimed executor, move its resume identity, or issue a continuation CAS
+receipt. The original admitted controller remains immutable. Keep configuration
+and actual execution facts separate in the UI. This clarification is based on
+Crew's native contract review, not installed executor-switch acceptance.
+
 Ordinary thread continuation (#322) and connected-environment transcript transfer
 (#324) do not establish native Supervisor or claimed Crew support.
 

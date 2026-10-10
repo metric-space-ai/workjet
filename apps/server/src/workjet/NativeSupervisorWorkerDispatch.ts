@@ -61,22 +61,31 @@ const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailabl
  * existing dispatch; neither a renderer lifetime nor a new executor is involved. */
 export function makeNativeSupervisorWorkerDispatch(dependencies: Dependencies) {
   const registered = new Map<string, NativeSupervisorSourceRegistration>();
-  const retryAfter = new Map<string, number>();
+  const registrationRetryAfter = new Map<string, number>();
+  const pollRetryAfter = new Map<string, number>();
   const runCycle = Effect.gen(function* () {
     const now = yield* dependencies.now ?? Clock.currentTimeMillis;
     const sources = yield* dependencies.sources;
     if (sources.length > 32) return yield* failure();
     const liveScopes = new Set(sources.map(({ scope }) => scopeKey(scope)));
-    for (const saved of retryAfter.keys()) if (!liveScopes.has(saved)) retryAfter.delete(saved);
+    for (const saved of pollRetryAfter.keys())
+      if (!liveScopes.has(saved)) pollRetryAfter.delete(saved);
     const live = new Set(sources.map(key));
     for (const saved of registered.keys()) if (!live.has(saved)) registered.delete(saved);
+    for (const saved of registrationRetryAfter.keys())
+      if (!live.has(saved)) registrationRetryAfter.delete(saved);
     for (const source of sources) {
-      if (registered.has(key(source)) || (retryAfter.get(scopeKey(source.scope)) ?? 0) > now)
+      if (registered.has(key(source)) || (registrationRetryAfter.get(key(source)) ?? 0) > now)
         continue;
       yield* dependencies.register(source).pipe(
-        Effect.tap((receipt) => Effect.sync(() => registered.set(key(source), receipt))),
+        Effect.tap((receipt) =>
+          Effect.sync(() => {
+            registered.set(key(source), receipt);
+            registrationRetryAfter.delete(key(source));
+          }),
+        ),
         Effect.tapError(() =>
-          Effect.sync(() => retryAfter.set(scopeKey(source.scope), now + SOURCE_RETRY_MS)),
+          Effect.sync(() => registrationRetryAfter.set(key(source), now + SOURCE_RETRY_MS)),
         ),
         Effect.ignore,
       );
@@ -85,13 +94,13 @@ export function makeNativeSupervisorWorkerDispatch(dependencies: Dependencies) {
     for (const source of sources)
       if (registered.has(key(source))) scopes.set(scopeKey(source.scope), source.scope);
     for (const scope of scopes.values()) {
-      if ((retryAfter.get(scopeKey(scope)) ?? 0) > now) continue;
+      if ((pollRetryAfter.get(scopeKey(scope)) ?? 0) > now) continue;
       yield* Effect.gen(function* () {
         const intents = yield* dependencies
           .poll(scope)
           .pipe(
             Effect.tapError(() =>
-              Effect.sync(() => retryAfter.set(scopeKey(scope), now + SOURCE_RETRY_MS)),
+              Effect.sync(() => pollRetryAfter.set(scopeKey(scope), now + SOURCE_RETRY_MS)),
             ),
           );
         if (intents.length > 1) return yield* failure();
@@ -121,7 +130,7 @@ export function makeNativeSupervisorWorkerDispatch(dependencies: Dependencies) {
     if (dependencies.reportOutcomes) {
       const current = sources.flatMap((source) => {
         const registration = registered.get(key(source));
-        return registration === undefined || (retryAfter.get(scopeKey(source.scope)) ?? 0) > now
+        return registration === undefined || (pollRetryAfter.get(scopeKey(source.scope)) ?? 0) > now
           ? []
           : [{ source, registration }];
       });

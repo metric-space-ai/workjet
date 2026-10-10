@@ -196,67 +196,113 @@ it.effect(
     }),
 );
 
-it.effect("backs off a failed shared scope while other instance workers keep polling", () =>
+it.effect("backs off only the denied source while its instance keeps polling and reporting", () =>
   Effect.gen(function* () {
     const f = fixture();
     let now = 0;
     const attempts: string[] = [];
-    let otherPolls = 0;
-    const other = {
+    let polls = 0;
+    const reports: string[][] = [];
+    const healthy = {
       ...source,
-      scope: { ...source.scope, connectionId: WorkjetConnectionId.make("other") },
+      source: { ...source.source, sourceSupervisorThreadId: ThreadId.make("healthy") },
     };
     const service = makeNativeSupervisorWorkerDispatch({
       ...f.dependencies,
       now: Effect.sync(() => now),
-      sources: Effect.succeed([
-        source,
-        {
-          ...source,
-          source: { ...source.source, sourceSupervisorThreadId: ThreadId.make("second") },
-        },
-        other,
-      ]),
+      sources: Effect.succeed([source, healthy]),
       register: (value) => {
-        attempts.push(value.scope.connectionId);
-        return value.scope.connectionId === source.scope.connectionId
+        attempts.push(value.source.sourceSupervisorThreadId);
+        return value.source.sourceSupervisorThreadId === source.source.sourceSupervisorThreadId
           ? Effect.fail(failure())
           : Effect.succeed({ ...registration, ...value.source });
       },
       poll: () => {
-        otherPolls++;
+        polls++;
         return Effect.succeed([]);
       },
+      reportOutcomes: (sources) =>
+        Effect.sync(() => {
+          reports.push(sources.map(({ source }) => source.source.sourceSupervisorThreadId));
+        }),
     });
     yield* service.runCycle;
     yield* service.runCycle;
     now = 59_999;
     yield* service.runCycle;
-    assert.deepEqual(attempts, ["native", "other"]);
-    assert.equal(otherPolls, 3);
+    assert.deepEqual(attempts, ["supervisor", "healthy"]);
+    assert.equal(polls, 3);
+    assert.deepEqual(reports, [["healthy"], ["healthy"], ["healthy"]]);
     now = 60_000;
     yield* service.runCycle;
-    assert.deepEqual(attempts, ["native", "other", "native"]);
+    assert.deepEqual(attempts, ["supervisor", "healthy", "supervisor"]);
+    assert.equal(polls, 4);
+    assert.deepEqual(reports[3], ["healthy"]);
   }),
 );
-it.effect("backs off a failed poll without delaying completion ACK retries", () =>
+it.effect("drops registration backoff when the actual source binding changes", () =>
   Effect.gen(function* () {
     const f = fixture();
-    let now = 0;
-    let polls = 0;
+    let current = source;
+    const attempts: string[] = [];
     const service = makeNativeSupervisorWorkerDispatch({
       ...f.dependencies,
-      now: Effect.sync(() => now),
-      poll: () => {
-        polls++;
+      now: Effect.succeed(0),
+      sources: Effect.sync(() => [current]),
+      register: (value) => {
+        attempts.push(value.source.sourceSupervisorThreadId);
         return Effect.fail(failure());
       },
     });
     yield* service.runCycle;
+    current = {
+      ...source,
+      source: { ...source.source, sourceSupervisorThreadId: ThreadId.make("replacement") },
+    };
     yield* service.runCycle;
-    assert.equal(polls, 1);
+    current = source;
+    yield* service.runCycle;
+    assert.deepEqual(attempts, ["supervisor", "replacement", "supervisor"]);
+  }),
+);
+it.effect("backs off polling and outcomes only for the instance whose poll failed", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    let now = 0;
+    const polls: string[] = [];
+    const reports: string[][] = [];
+    const other = {
+      ...source,
+      scope: { ...source.scope, instanceId: "other-instance" },
+    };
+    const service = makeNativeSupervisorWorkerDispatch({
+      ...f.dependencies,
+      now: Effect.sync(() => now),
+      sources: Effect.succeed([source, other]),
+      poll: (scope) => {
+        polls.push(scope.instanceId);
+        return scope.instanceId === source.scope.instanceId
+          ? Effect.fail(failure())
+          : Effect.succeed([]);
+      },
+      reportOutcomes: (sources) =>
+        Effect.sync(() => {
+          reports.push(sources.map(({ source }) => source.scope.instanceId));
+        }),
+    });
+    yield* service.runCycle;
+    yield* service.runCycle;
+    now = 59_999;
+    yield* service.runCycle;
+    assert.deepEqual(polls, [
+      "managed:source",
+      "other-instance",
+      "other-instance",
+      "other-instance",
+    ]);
+    assert.deepEqual(reports, [["other-instance"], ["other-instance"], ["other-instance"]]);
     now = 60_000;
     yield* service.runCycle;
-    assert.equal(polls, 2);
+    assert.deepEqual(polls.slice(-2), ["managed:source", "other-instance"]);
   }),
 );

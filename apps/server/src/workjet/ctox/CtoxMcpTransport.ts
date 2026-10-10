@@ -83,6 +83,7 @@ const nativeErrorCodes = new Set([
 ]);
 const nativeWorkerErrors = new Map<string, string>([
   ["source supervisor is not registered natively", "native-supervisor-unregistered"],
+  ["native supervisor history missing", "native-supervisor-history-missing"],
   ["source supervisor belongs to another project", "native-project-mismatch"],
   ["native supervisor provenance changed", "native-supervisor-provenance-changed"],
   ["native worker dispatch policy denied", "native-policy-denied"],

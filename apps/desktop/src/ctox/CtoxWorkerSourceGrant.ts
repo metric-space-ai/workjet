@@ -105,7 +105,7 @@ export async function issueWorkjetWorkerSourceGrant(
             allowExternalEffects: false,
             rateLimitPerMinute: 30,
             allowedModules: ["ctox"],
-            allowedCollections: ["__ctox_no_access__"],
+            allowedCollections: ["workjet_luma_configuration"],
             allowedTools: [...WORKJET_WORKER_SOURCE_TOOLS],
             deniedTools: [],
           },

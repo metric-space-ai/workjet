@@ -43,7 +43,7 @@ describe("additional Workjet worker source client", () => {
         allowExternalEffects: false,
         rateLimitPerMinute: 30,
         allowedModules: ["ctox"],
-        allowedCollections: ["__ctox_no_access__"],
+        allowedCollections: ["workjet_luma_configuration"],
         allowedTools: [
           "business_os.remote_worker_admission",
           "business_os.workjet_worker_dispatch",

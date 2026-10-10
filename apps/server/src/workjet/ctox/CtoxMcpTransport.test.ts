@@ -234,6 +234,12 @@ it.effect("classifies native JSON-RPC failures on HTTP 200 without exposing nati
         "internal_error",
         "native-supervisor-unregistered",
       ],
+      ["native supervisor history missing", "internal_error", "native-supervisor-history-missing"],
+      [
+        "native supervisor history missing: private token=secret",
+        "internal_error",
+        "internal_error",
+      ],
       ["private policy details", "permission_denied", "permission_denied"],
       ["private token=secret", "private-code", "remote-error"],
     ] as const) {

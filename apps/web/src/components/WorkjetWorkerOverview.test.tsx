@@ -131,7 +131,7 @@ describe("WorkjetWorkerOverview", () => {
       providerName: "Codex CLI",
       sessionStatus: "idle",
     });
-    expect(buildWorkerOverviewRows([worker], envA, orchestratorId)[0]).toMatchObject({
+    expect(buildWorkerOverviewRows([orchestrator, worker], envA, orchestratorId)[0]).toMatchObject({
       providerName: "grok",
       model: "grok-4.7",
     });

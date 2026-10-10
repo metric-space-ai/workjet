@@ -65,11 +65,18 @@ describe("immediate thread model selection", () => {
       session: { providerInstanceId: codex.instanceId, providerName: "Codex CLI", status: "idle" },
       latestTurn: null,
     } as EnvironmentThreadShell;
-    expect(buildWorkerOverviewRows([worker], ref.environmentId, parentId)[0]).toMatchObject({
-      model: grok.model,
-      providerName: grok.instanceId,
-      environmentLabel: ref.environmentId,
-    });
+    const parent: EnvironmentThreadShell = {
+      ...worker,
+      id: parentId,
+      workjetConfig: { ...worker.workjetConfig, role: "orchestrator", parent: null },
+    };
+    expect(buildWorkerOverviewRows([parent, worker], ref.environmentId, parentId)[0]).toMatchObject(
+      {
+        model: grok.model,
+        providerName: grok.instanceId,
+        environmentLabel: ref.environmentId,
+      },
+    );
   });
 
   it("does not turn a stale local draft into a valid selection after a failed save", async () => {

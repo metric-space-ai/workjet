@@ -133,6 +133,6 @@ describe("native instance model checks", () => {
         new AbortController().signal,
         leaking,
       ),
-    ).rejects.toThrow("Native model check unavailable");
+    ).rejects.toThrow("Model check unavailable");
   });
 });

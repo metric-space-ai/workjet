@@ -2,7 +2,7 @@
 
 ## Result and scope
 
-**21/21 required live cells pass**: all seven requested harnesses execute twenty strictly sequential native tools with Claude Opus, GPT Sol and Grok. Additional Kimi cells pass in Codex, Claude Code, Pi and OpenCode; Codex also passes GLM. The final Claude core-model retests record explicit gateway routing and pass twenty calls each. Remote routing has focused integration coverage; native remote-worker and integrated settings UI acceptance remain open.
+**21/21 required live cells pass**, plus **all seven Kimi cells** and **Codex/GLM**: 29 distinct harness/model cells, each with twenty strictly sequential native tools. The final Claude core-model retests record explicit gateway routing and pass twenty calls each. Remote routing has focused integration coverage; native remote-worker and integrated settings UI acceptance remain open.
 
 Michael requested every harness through Workjet's existing Rust CLIProxyAPI, using models from real connected accounts. Work is confined to the durable `~/.local/state/workjet-launchpads/harness-proxy-fix` clone, based on `519aaba16528e4534dd948ac3e3cd184c099083b`. The supervisor merges; this thread has made no merge or installed-app replacement.
 
@@ -61,6 +61,20 @@ Keeping a connected model when switching routed harnesses is intentional (`apps/
 
 The evidence checks actual native calls and matching results, strict sequential execution, exact numbered printf output, success status and no tool errors. Every harness uses the real account-backed Rust host. No HTTP-only or mocked result counts as a live cell.
 
+| Harness | kimi-for-coding | glm-5.3-flash | MiniMax provider |
+| --- | --- | --- | --- |
+| Claude Code | Pass 20/20 | Upstream 503 before tools | Not run; account unavailable |
+| Codex CLI | Pass 20/20 | Pass 20/20 at recorded time | Not run; account unavailable |
+| Grok CLI / Grok Build | Pass 20/20 | Not run after account failure | Not run; account unavailable |
+| OpenCode | Pass 20/20 | Not run after account failure | Not run; account unavailable |
+| Greppy | Pass 20/20 | Not run after account failure | Not run; account unavailable |
+| MiniMax Code | Pass 20/20 | Not run after account failure | Not run; account unavailable |
+| Pi | Pass 20/20 | Not run after account failure | Not run; account unavailable |
+
+The MiniMax column identifies the provider family, not an invented model ID. Its available-account probe returned 503. The required core-model cells and additional Kimi cells use exact IDs returned by connected real accounts. The MiniMax Code harness is distinct from the currently unavailable MiniMax model-provider account.
+
+Additional Kimi native proofs: [Grok](harness-proxy-evidence/grok-kimi-20261010-native-tool-results.json), [Greppy](harness-proxy-evidence/greppy-kimi-20261010-native-tool-results.json), [MiniMax Code](harness-proxy-evidence/minimax-code-kimi-20261010-native-tool-results.json). These use the same final candidate as the fresh Claude, Pi and OpenCode runs.
+
 - Claude: [Opus](harness-proxy-evidence/claude-opus-20261009-native-tool-results.json), [restart continuation](harness-proxy-evidence/claude-opus-continuation-20261010-native-tool-results.json), [GPT](harness-proxy-evidence/claude-gpt-sol-20261010-native-tool-results.json), [Grok](harness-proxy-evidence/claude-grok-20261010-native-tool-results.json). The first Opus Workjet completion receipt was missing; its native history supplies that result.
 - Codex: [Opus](harness-proxy-evidence/codex-opus-20261009-native-tool-results.json), [GPT](harness-proxy-evidence/codex-gpt-sol-20261009-native-tool-results.json), [Grok](harness-proxy-evidence/codex-grok-20261010-native-tool-results.json).
 - Grok: [Opus](harness-proxy-evidence/grok-opus-20261010-native-tool-results.json), [GPT](harness-proxy-evidence/grok-gpt-sol-20261010-native-tool-results.json), [Grok](harness-proxy-evidence/grok-grok-20261010-native-tool-results.json). Each proof matches twenty native ACP calls/results to twenty Workjet receipts.
@@ -84,6 +98,6 @@ The bounded paired RC browser reaches `/settings/harnesses` but stays on “Load
 
 Greppy 0.4.1's ACP agent rejects every nonempty `mcpServers` list with -32602, despite advertised stdio MCP support. Its upstream owner has the immutable report; Workjet's managed-MCP guard remains. Integrated UI and universal remote worker acceptance remain open. Earlier Greppy/Grok stopped after eighteen tools with an upstream stream error; a transparent native diagnostic run and a fresh ordinary product run both completed twenty. Earlier MiniMax Code/Grok executed twenty-one successful tools, repeating marker 03; a fresh ordinary run completed exactly twenty. These attempts are retained rather than counted as passes. A fresh [MiniMax probe](harness-proxy-evidence/minimax-live-capacity-20261010.json) returns 503, no API-key account currently available; it does not establish a current quota error. Its owner must restore account availability. Actual live-list models [GLM](harness-proxy-evidence/zai-live-capacity-20261010.json) and [Kimi](harness-proxy-evidence/kimi-live-capacity-20261010.json) both return upstream 200 with model output.
 
-The later explicit-route Claude/GLM run at 06:16–06:19 UTC returns 503, “no API-key account is currently available for this model”, with zero tools. The earlier Codex/GLM proof remains valid for its recorded time. This later account-availability failure is retained, and new GLM matrix cells require the owner's account recovery. No model ID or successful result is invented to cover unavailable accounts.
+The later explicit-route [Claude/GLM run](harness-proxy-evidence/claude-glm-account-unavailable-20261010.json) at 06:16–06:19 UTC returns 503, “no API-key account is currently available for this model”, with zero tools. The earlier Codex/GLM proof remains valid for its recorded time. This later account-availability failure is retained, and new GLM matrix cells require the owner's account recovery. No model ID or successful result is invented to cover unavailable accounts.
 
 The supervisor owns merges and coordinated publication/pinning/installation. This task preserves the Monday supervisor execution path through optional/additive changes, private profiles and no installed-profile edits.

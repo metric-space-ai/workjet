@@ -404,7 +404,7 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
         <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
           <div
             role="row"
-            className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
+            className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
           >
             <span role="columnheader">Provider / account</span>
             <span role="columnheader">Models</span>

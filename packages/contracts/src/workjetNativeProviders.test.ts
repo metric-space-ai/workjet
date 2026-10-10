@@ -44,6 +44,38 @@ const account = {
   inferenceVerified: false,
 };
 describe("native provider public contract", () => {
+  it("decodes holder capabilities explicitly and keeps older registries read-only", () => {
+    expect(decodeAccount(account).controls).toBeUndefined();
+    expect(
+      decodeAccount({ ...account, controls: { canEnable: true, canRemove: false } }).controls,
+    ).toEqual({ canEnable: true, canRemove: false });
+    expect(() =>
+      decodeAccount({ ...account, controls: { canEnable: "yes", canRemove: true } }),
+    ).toThrow();
+    expect(() => decodeAccount({ ...account, controls: { canEnable: true } })).toThrow();
+  });
+  it("requires both current revisions and a boolean for account lifecycle mutations", () => {
+    const base = {
+      version: 1,
+      operationId: reference.accountId,
+      accountId: reference.accountId,
+      expectedAccountRevision: 3,
+      expectedRevision: 7,
+    };
+    const enable = { ...base, action: "instance.providers.account.enable", enabled: false };
+    const remove = { ...base, action: "instance.providers.account.remove" };
+    expect(decodeRequest(enable)).toEqual(enable);
+    expect(decodeRequest(remove)).toEqual(remove);
+    for (const invalid of [
+      { ...enable, enabled: undefined },
+      { ...enable, enabled: "false" },
+      { ...enable, expectedAccountRevision: 0 },
+      { ...remove, expectedRevision: undefined },
+      { ...remove, expectedRevision: -1 },
+    ])
+      expect(() => decodeRequest(invalid)).toThrow();
+  });
+
   it("retains catalog evidence without promoting it to inference verification", () => {
     const registry = decodeRegistry({
       ok: true,

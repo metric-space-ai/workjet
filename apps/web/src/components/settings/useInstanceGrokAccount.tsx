@@ -19,7 +19,7 @@ import { Button } from "../ui/button";
 
 type Check = NonNullable<WorkjetInstanceGrokResponse["check"]>;
 const columns =
-  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3";
+  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
 const remedies: Readonly<Record<NonNullable<Check["errorCode"]>, string>> = {
   timeout: "The model did not answer within 20 seconds. Retry the check.",
   missing_credential: "Sign in with your Grok Build subscription.",

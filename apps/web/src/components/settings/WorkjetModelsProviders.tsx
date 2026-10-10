@@ -435,7 +435,7 @@ export function WorkjetModelsKeyForm({
 }
 
 const MODELS_TABLE_COLUMNS =
-  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3";
+  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
 
 function AccountRow({
   account,

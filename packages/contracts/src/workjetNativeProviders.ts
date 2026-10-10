@@ -19,6 +19,8 @@ const actions = [
   "instance.providers.observe",
   "instance.providers.models.select",
   "instance.providers.models.exclude",
+  "instance.providers.account.enable",
+  "instance.providers.account.remove",
 ] as const;
 export const WorkjetNativeProviderRequests = [
   Schema.Struct({
@@ -46,6 +48,21 @@ export const WorkjetNativeProviderRequests = [
     models: Models,
     expectedRevision: Counter,
   }),
+  Schema.Struct({
+    ...base,
+    action: Schema.Literal("instance.providers.account.enable"),
+    accountId: Id,
+    expectedAccountRevision: Revision,
+    expectedRevision: Counter,
+    enabled: Schema.Boolean,
+  }),
+  Schema.Struct({
+    ...base,
+    action: Schema.Literal("instance.providers.account.remove"),
+    accountId: Id,
+    expectedAccountRevision: Revision,
+    expectedRevision: Counter,
+  }),
 ] as const;
 export const WorkjetNativeProviderRequest = Schema.Union(WorkjetNativeProviderRequests);
 export type WorkjetNativeProviderRequest = typeof WorkjetNativeProviderRequest.Type;
@@ -62,6 +79,9 @@ export const WorkjetNativeProviderAccount = Schema.Struct({
   holder: Schema.Struct({ kind: Schema.Literal("ctox_instance"), id: Id }),
   provider: Id,
   enabled: Schema.Boolean,
+  controls: Schema.optionalKey(
+    Schema.Struct({ canEnable: Schema.Boolean, canRemove: Schema.Boolean }),
+  ),
   credentialReady: Schema.Boolean,
   revision: Revision,
   observedAtMs: Revision,

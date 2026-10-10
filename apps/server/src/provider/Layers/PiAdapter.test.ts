@@ -89,6 +89,12 @@ describe("Pi native RPC adapter", () => {
     await runTest((directory) =>
       Effect.gen(function* () {
         const adapter = yield* makePiAdapter(adapterInput(directory));
+        const completed = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.type === "turn.completed"),
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkChild({ startImmediately: true }),
+        );
         const started = yield* adapter.streamEvents.pipe(
           Stream.filter((event) => event.type === "item.started"),
           Stream.take(1),
@@ -107,6 +113,7 @@ describe("Pi native RPC adapter", () => {
         yield* Fiber.join(started);
         yield* adapter.interruptTurn(threadId, undefined);
         yield* Fiber.join(turn);
+        expect(yield* Fiber.join(completed)).toHaveLength(1);
         expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
       }),
     );
@@ -134,11 +141,13 @@ describe("Pi native RPC adapter", () => {
         });
         expect(receipt.turnId).toBeDefined();
         expect((yield* adapter.listSessions())[0]?.status).toBe("running");
-        const overlap = yield* adapter.sendTurn({
-          threadId,
-          input: "SECOND",
-          modelSelection,
-        }).pipe(Effect.flip);
+        const overlap = yield* adapter
+          .sendTurn({
+            threadId,
+            input: "SECOND",
+            modelSelection,
+          })
+          .pipe(Effect.flip);
         expect(overlap.message).toContain("active turn");
         yield* adapter.interruptTurn(threadId, receipt.turnId);
         expect(yield* Fiber.join(completed)).toHaveLength(1);

@@ -2487,6 +2487,20 @@ describe("ClaudeAdapterLive", () => {
         { type: "system", subtype: "plugin_install", session_id: "session", uuid: "pi" },
         { type: "system", subtype: "memory_recall", session_id: "session", uuid: "mr" },
         { type: "system", subtype: "elicitation_complete", session_id: "session", uuid: "ec" },
+        {
+          type: "system",
+          subtype: "per_turn_effort_changed",
+          per_turn_effort_active: false,
+          session_id: "session",
+          uuid: "effort-inactive",
+        },
+        {
+          type: "system",
+          subtype: "per_turn_effort_changed",
+          per_turn_effort_active: true,
+          session_id: "session",
+          uuid: "effort-active",
+        },
         { type: "prompt_suggestion", suggestion: "try this", session_id: "session", uuid: "ps" },
         {
           type: "system",

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { assert, it } from "@effect/vitest";
-import { RemoteWorkerDispatchError } from "@workjet/contracts";
+import { RemoteWorkerDispatchError, type RemoteWorkerResult } from "@workjet/contracts";
+import type { RegisteredNativeWorkerSource } from "./NativeSupervisorWorkerDispatch.ts";
+import type { NativeWorkerTerminalReceipt } from "./NativeWorkerOutcome.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { makeNativeWorkerOutcomePublisher } from "./NativeWorkerOutcomePublisher.ts";
@@ -20,8 +22,8 @@ function fixture() {
       response: { requestId: worker.requestId, outcome: { status: "dispatched" as const, result: startup } },
     }) : Option.none()),
     currentSource: () => Effect.sync(() => current),
-    report: () => Effect.gen(function* () {
-      reports.push(receipt.state);
+    report: (_source: RegisteredNativeWorkerSource, _startup: RemoteWorkerResult, outcome: NativeWorkerTerminalReceipt) => Effect.gen(function* () {
+      reports.push(outcome.pull_request.state);
       if (lostAck) { lostAck = false; return yield* new RemoteWorkerDispatchError({ reason: "source-unavailable" }); }
       return 123;
     }),
@@ -63,4 +65,26 @@ it.effect("rejects an unbounded candidate page and never polls without registere
     assert.equal((yield* publisher.run(registered).pipe(Effect.result))._tag, "Failure");
     yield* publisher.run([]);
     assert.deepEqual(f.reports, []);
+  }));
+
+it.effect("refreshes a retained open PR to terminal without a live target and replays after restart", () =>
+  Effect.gen(function* () {
+    const f = fixture();
+    f.changeReceipt({ ...persisted, state: "open" });
+    let state: "open" | "merged" = "open";
+    let refreshes = 0;
+    const dependencies = { ...f.dependencies,
+      refresh: (receipt: WorkerPullRequestReceipt) => Effect.sync(() => {
+        refreshes++; return { ...receipt, state };
+      }),
+    };
+    const publisher = makeNativeWorkerOutcomePublisher(dependencies);
+    yield* publisher.run(registered);
+    assert.deepEqual(f.reports, []);
+    state = "merged";
+    yield* publisher.run(registered); yield* publisher.run(registered);
+    assert.deepEqual(f.reports, ["merged"]);
+    yield* makeNativeWorkerOutcomePublisher(dependencies).run(registered);
+    assert.equal(refreshes, 3);
+    assert.deepEqual(f.reports, ["merged", "merged"]);
   }));

@@ -14,7 +14,7 @@ function renderSection(
     registry: undefined,
     error: providerError,
     errorAccountId: undefined,
-    connectionFailure: providerFailure,
+    ...(providerFailure ? { connectionFailure: providerFailure } : {}),
     busy: false,
     run: vi.fn(async () => undefined),
     check: vi.fn(async () => undefined),

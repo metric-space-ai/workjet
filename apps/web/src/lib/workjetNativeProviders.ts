@@ -174,7 +174,7 @@ export async function checkInstanceModel(
     if (error instanceof NativeProviderFailure || error instanceof WorkjetProjectControlError)
       throw error;
     throw new NativeProviderFailure(
-      "Native model check unavailable. Check the connection, account and installed CTOX version.",
+      "Model check unavailable. Check the connection, account and installed CTOX version.",
     );
   } finally {
     if (timer !== undefined) clearTimeout(timer);

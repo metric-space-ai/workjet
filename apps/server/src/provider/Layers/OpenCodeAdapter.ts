@@ -325,11 +325,12 @@ export interface OpenCodeAdapterLiveOptions {
    * spawns itself; an instance configured with an external `serverUrl` is
    * rejected before this point by the driver.
    */
-  readonly resolveSessionModel?: (model?: string) => Effect.Effect<string, ProviderGatewayRoutingError>;
-  readonly resolveSessionEnvironment?: (model?: string) => Effect.Effect<
-    NodeJS.ProcessEnv,
-    ProviderGatewayRoutingError
-  >;
+  readonly resolveSessionModel?: (
+    model?: string,
+  ) => Effect.Effect<string, ProviderGatewayRoutingError>;
+  readonly resolveSessionEnvironment?: (
+    model?: string,
+  ) => Effect.Effect<NodeJS.ProcessEnv, ProviderGatewayRoutingError>;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
 }

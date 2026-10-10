@@ -73,7 +73,11 @@ export const WorkjetGatewayAdmissionInput = Schema.Struct({
   permit: WorkjetRemoteWorkerPermit,
 });
 export type WorkjetGatewayAdmissionInput = typeof WorkjetGatewayAdmissionInput.Type;
-export const WorkjetGatewayInferenceProtocol = Schema.Literals(["responses", "messages", "chat-completions"]);
+export const WorkjetGatewayInferenceProtocol = Schema.Literals([
+  "responses",
+  "messages",
+  "chat-completions",
+]);
 export type WorkjetGatewayInferenceProtocol = typeof WorkjetGatewayInferenceProtocol.Type;
 export const WorkjetGatewayInferenceInput = Schema.Struct({
   ...WorkjetGatewayAdmissionInput.fields,

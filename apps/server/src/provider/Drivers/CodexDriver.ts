@@ -191,7 +191,9 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         resolveSessionEnvironment,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
-      const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv, (model) => resolveSessionEnvironment({ model }));
+      const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv, (model) =>
+        resolveSessionEnvironment({ model }),
+      );
 
       // Build a managed snapshot whose settings never change — mutations come
       // in as instance rebuilds from the registry rather than in-place

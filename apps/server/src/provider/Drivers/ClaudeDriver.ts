@@ -186,7 +186,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
-      const textGeneration = yield* makeClaudeTextGeneration(effectiveConfig, processEnv, (model) => resolveSessionEnvironment({ model }));
+      const textGeneration = yield* makeClaudeTextGeneration(effectiveConfig, processEnv, (model) =>
+        resolveSessionEnvironment({ model }),
+      );
 
       // Per-instance capabilities cache: keyed on binary + resolved HOME so
       // account-specific probes never share auth metadata across instances.

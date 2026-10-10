@@ -21,7 +21,10 @@ import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../pathExpansion.ts";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { resolveTextGenerationEnvironment, type TextGenerationEnvironmentResolver } from "./TextGenerationRouting.ts";
+import {
+  resolveTextGenerationEnvironment,
+  type TextGenerationEnvironmentResolver,
+} from "./TextGenerationRouting.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -180,7 +183,12 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     const outputPath = yield* writeTempFile(operation, "codex-output", "");
 
     const runCodexCommand = Effect.fn("runCodexJson.runCodexCommand")(function* () {
-      const commandEnvironment = yield* resolveTextGenerationEnvironment(operation, modelSelection.model, resolvedEnvironment, resolveEnvironment);
+      const commandEnvironment = yield* resolveTextGenerationEnvironment(
+        operation,
+        modelSelection.model,
+        resolvedEnvironment,
+        resolveEnvironment,
+      );
       const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, commandEnvironment);
       const reasoningEffort =
         getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??

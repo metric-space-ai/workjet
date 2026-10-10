@@ -201,7 +201,11 @@ function withFakeCodexEnv<A, E, R>(
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-codex-text-" });
     const codexPath = yield* makeFakeCodexBinary(tempDir, input);
     const config = decodeCodexSettings({ binaryPath: codexPath, launchArgs: input.launchArgs });
-    const textGeneration = yield* makeCodexTextGeneration(config, input.environment, input.resolveEnvironment);
+    const textGeneration = yield* makeCodexTextGeneration(
+      config,
+      input.environment,
+      input.resolveEnvironment,
+    );
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
 }
@@ -681,20 +685,27 @@ it.layer(CodexTextGenerationTestLayer)("Codex routed text generation", (it) => {
       {
         output: JSON.stringify({ title: "Gateway route" }),
         requireArg: "--config model_provider=workjet-gateway",
-        resolveEnvironment: (model) => Effect.sync(() => {
-          selected.push(model);
-          return { ...process.env, WORKJET_CODEX_LAUNCH_ARGS: "--config model_provider=workjet-gateway" };
-        }),
+        resolveEnvironment: (model) =>
+          Effect.sync(() => {
+            selected.push(model);
+            return {
+              ...process.env,
+              WORKJET_CODEX_LAUNCH_ARGS: "--config model_provider=workjet-gateway",
+            };
+          }),
       },
-      (generation) => Effect.gen(function* () {
-        for (const model of ["claude-opus-5-5", "gpt-6.1-sol"]) {
-          const result = yield* generation.generateThreadTitle({
-            cwd: process.cwd(), message: "Explain the gateway", modelSelection: createModelSelection(ProviderInstanceId.make("codex"), model),
-          });
-          expect(result.title).toBe("Gateway route");
-        }
-        expect(selected).toEqual(["claude-opus-5-5", "gpt-6.1-sol"]);
-      }),
+      (generation) =>
+        Effect.gen(function* () {
+          for (const model of ["claude-opus-5-5", "gpt-6.1-sol"]) {
+            const result = yield* generation.generateThreadTitle({
+              cwd: process.cwd(),
+              message: "Explain the gateway",
+              modelSelection: createModelSelection(ProviderInstanceId.make("codex"), model),
+            });
+            expect(result.title).toBe("Gateway route");
+          }
+          expect(selected).toEqual(["claude-opus-5-5", "gpt-6.1-sol"]);
+        }),
     );
   });
 
@@ -702,16 +713,28 @@ it.layer(CodexTextGenerationTestLayer)("Codex routed text generation", (it) => {
     withFakeCodexEnv(
       {
         output: JSON.stringify({ title: "Unrouted fallback" }),
-        resolveEnvironment: () => Effect.fail(new Error("gateway unavailable")),
+        resolveEnvironment: () =>
+          Effect.fail(new TextGenerationError({
+            operation: "generateThreadTitle",
+            detail: "gateway unavailable",
+          })),
       },
-      (generation) => Effect.gen(function* () {
-        const error = yield* Effect.flip(generation.generateThreadTitle({
-          cwd: process.cwd(), message: "Explain the gateway", modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "claude-opus-5-5"),
-        }));
-        expect(error).toBeInstanceOf(TextGenerationError);
-        expect(error.operation).toBe("generateThreadTitle");
-        expect(error.detail).toBe("Provider gateway routing failed for text generation.");
-      }),
+      (generation) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(
+            generation.generateThreadTitle({
+              cwd: process.cwd(),
+              message: "Explain the gateway",
+              modelSelection: createModelSelection(
+                ProviderInstanceId.make("codex"),
+                "claude-opus-5-5",
+              ),
+            }),
+          );
+          expect(error).toBeInstanceOf(TextGenerationError);
+          expect(error.operation).toBe("generateThreadTitle");
+          expect(error.detail).toBe("Provider gateway routing failed for text generation.");
+        }),
     ),
   );
 });

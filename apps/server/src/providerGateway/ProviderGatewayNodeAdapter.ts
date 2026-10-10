@@ -5,7 +5,11 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
-import type { WorkjetGatewayModelBinding, WorkjetGatewayInferenceProtocol, WorkjetGatewayInferenceResult } from "@workjet/contracts";
+import type {
+  WorkjetGatewayModelBinding,
+  WorkjetGatewayInferenceProtocol,
+  WorkjetGatewayInferenceResult,
+} from "@workjet/contracts";
 import { discoverKimiConnection } from "./KimiConnection.ts";
 import { discoverZaiConnection } from "./ZaiConnection.ts";
 import { discoverApiKeyModels } from "./ApiKeyModelConnection.ts";
@@ -88,7 +92,11 @@ export async function forwardSourceGatewayProtocol(
     throw new Error("invalid gateway endpoint");
   const remaining = deadlineMs - Date.now();
   if (remaining <= 0) throw new Error("expired");
-  const paths = { responses: "/v1/responses", messages: "/v1/messages", "chat-completions": "/v1/chat/completions" };
+  const paths = {
+    responses: "/v1/responses",
+    messages: "/v1/messages",
+    "chat-completions": "/v1/chat/completions",
+  };
   const response = await fetch(new URL(paths[protocol], url), {
     method: "POST",
     redirect: "error",
@@ -119,19 +127,27 @@ export async function forwardSourceGatewayProtocol(
       if (frames.pop()?.trim()) throw new Error("incomplete native event stream");
       let completed = false;
       for (const frame of frames) {
-        const data = frame.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
+        const data = frame
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("\n");
         if (!data) continue;
         if (data === "[DONE]") {
           if (protocol === "chat-completions") completed = true;
           continue;
         }
         const event: unknown = JSON.parse(data);
-        if (typeof event !== "object" || event === null || Array.isArray(event)) throw new Error("invalid native event");
+        if (typeof event !== "object" || event === null || Array.isArray(event))
+          throw new Error("invalid native event");
         const value = event as Record<string, unknown>;
         if (value.error != null || value.type === "error" || value.type === "response.failed")
           throw new Error("failed native event stream");
-        if ((protocol === "responses" && value.type === "response.completed") ||
-            (protocol === "messages" && value.type === "message_stop")) completed = true;
+        if (
+          (protocol === "responses" && value.type === "response.completed") ||
+          (protocol === "messages" && value.type === "message_stop")
+        )
+          completed = true;
       }
       if (!completed) throw new Error("incomplete native event stream");
       return { requestJson: body, contentType: "text/event-stream" };
@@ -139,8 +155,17 @@ export async function forwardSourceGatewayProtocol(
     const parsed: unknown = JSON.parse(body);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
     const result = parsed as Record<string, unknown>;
-    if (result.error != null || result.status === "failed" ||
-        !Array.isArray(protocol === "responses" ? result.output : protocol === "messages" ? result.content : result.choices))
+    if (
+      result.error != null ||
+      result.status === "failed" ||
+      !Array.isArray(
+        protocol === "responses"
+          ? result.output
+          : protocol === "messages"
+            ? result.content
+            : result.choices,
+      )
+    )
       throw new Error("invalid response");
     return { requestJson: body, contentType: "application/json" };
   } finally {
@@ -156,8 +181,16 @@ export async function forwardSourceGatewayResponses(
   deadlineMs: number,
   signal?: AbortSignal,
 ): Promise<string> {
-  const result = await forwardSourceGatewayProtocol(endpoint, selected, requestJson, deadlineMs, "responses", signal);
-  if (result.contentType !== "application/json") throw new Error("expected buffered Responses JSON");
+  const result = await forwardSourceGatewayProtocol(
+    endpoint,
+    selected,
+    requestJson,
+    deadlineMs,
+    "responses",
+    signal,
+  );
+  if (result.contentType !== "application/json")
+    throw new Error("expected buffered Responses JSON");
   return result.requestJson;
 }
 

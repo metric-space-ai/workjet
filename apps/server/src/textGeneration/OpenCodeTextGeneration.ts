@@ -32,6 +32,7 @@ import {
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
+import type { TextGenerationRoutingError } from "./TextGenerationRouting.ts";
 
 const OPENCODE_TEXT_GENERATION_IDLE_TTL = "30 seconds";
 
@@ -192,8 +193,8 @@ interface SharedOpenCodeTextGenerationServerState {
 }
 
 export interface OpenCodeTextGenerationRouting {
-  readonly resolveEnvironment: (model: string) => Effect.Effect<NodeJS.ProcessEnv, unknown>;
-  readonly resolveModel: (model: string) => Effect.Effect<string, unknown>;
+  readonly resolveEnvironment: (model: string) => Effect.Effect<NodeJS.ProcessEnv, TextGenerationRoutingError>;
+  readonly resolveModel: (model: string) => Effect.Effect<string, TextGenerationRoutingError>;
 }
 
 export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration")(function* (
@@ -271,11 +272,16 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       Effect.gen(function* () {
         yield* cancelIdleCloseFiber();
 
-        if (sharedServerState.server !== null && sharedServerState.environmentKey !== input.environmentKey) {
-          if (sharedServerState.activeRequests > 0) return yield* new TextGenerationError({
-            operation: input.operation,
-            detail: "The gateway changed during another OpenCode request. Retry after it finishes.",
-          });
+        if (
+          sharedServerState.server !== null &&
+          sharedServerState.environmentKey !== input.environmentKey
+        ) {
+          if (sharedServerState.activeRequests > 0)
+            return yield* new TextGenerationError({
+              operation: input.operation,
+              detail:
+                "The gateway changed during another OpenCode request. Retry after it finishes.",
+            });
           yield* closeSharedServer();
         }
         const existingServer = sharedServerState.server;
@@ -386,12 +392,31 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     readonly modelSelection: ModelSelection;
     readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
   }) {
-    const routeError = (cause: unknown) => new TextGenerationError({
-      operation: input.operation, detail: "OpenCode gateway routing failed for text generation.", cause,
-    });
-    const model = routing ? yield* routing.resolveModel(input.modelSelection.model).pipe(Effect.mapError(routeError)) : input.modelSelection.model;
-    const commandEnvironment = routing ? yield* routing.resolveEnvironment(input.modelSelection.model).pipe(Effect.mapError(routeError)) : resolvedEnvironment;
-    const environmentKey = routing ? createHash("sha256").update(JSON.stringify(Object.entries(commandEnvironment).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b)))).digest("hex") : "static";
+    const routeError = (cause: unknown) =>
+      new TextGenerationError({
+        operation: input.operation,
+        detail: "OpenCode gateway routing failed for text generation.",
+        cause,
+      });
+    const model = routing
+      ? yield* routing.resolveModel(input.modelSelection.model).pipe(Effect.mapError(routeError))
+      : input.modelSelection.model;
+    const commandEnvironment = routing
+      ? yield* routing
+          .resolveEnvironment(input.modelSelection.model)
+          .pipe(Effect.mapError(routeError))
+      : resolvedEnvironment;
+    const environmentKey = routing
+      ? createHash("sha256")
+          .update(
+            Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(
+              Object.entries(commandEnvironment)
+                .filter(([, value]) => value !== undefined)
+                .sort(([a], [b]) => a.localeCompare(b)),
+            ),
+          )
+          .digest("hex")
+      : "static";
     const parsedModel = OpenCodeRuntime.parseOpenCodeModelSlug(model);
     if (!parsedModel) {
       return yield* new TextGenerationError({

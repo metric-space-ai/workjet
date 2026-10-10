@@ -184,7 +184,11 @@ function withOpenCodeTextGeneration<A, E, R>(
   routing?: OpenCodeTextGeneration.OpenCodeTextGenerationRouting,
 ) {
   return Effect.gen(function* () {
-    const textGeneration = yield* OpenCodeTextGeneration.makeOpenCodeTextGeneration(settings, undefined, routing);
+    const textGeneration = yield* OpenCodeTextGeneration.makeOpenCodeTextGeneration(
+      settings,
+      undefined,
+      routing,
+    );
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
 }
@@ -469,60 +473,106 @@ it.layer(OpenCodeTextGenerationExistingServerTestLayer)(
 );
 
 it.layer(OpenCodeTextGenerationTestLayer)("OpenCode routed text generation", (it) => {
-  const input = { ...DEFAULT_COMMIT_MESSAGE_INPUT, modelSelection: { instanceId: ProviderInstanceId.make("opencode"), model: "claude-opus-5-5" } };
-  it.effect("maps raw gateway models and restarts the warm server after its endpoint changes", () => {
-    let endpoint = "http://127.0.0.1:4301/v1";
-    const selected: string[] = [];
-    return withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) => Effect.gen(function* () {
-      yield* generation.generateCommitMessage(input);
-      yield* generation.generateCommitMessage(input);
-      expect(runtimeMock.state.startCalls).toHaveLength(1);
-      endpoint = "http://127.0.0.1:4302/v1";
-      yield* generation.generateCommitMessage(input);
-      expect(runtimeMock.state.startCalls).toHaveLength(2);
-      expect(runtimeMock.state.closeCalls).toEqual(["http://127.0.0.1:4301"]);
-      expect(runtimeMock.state.startEnvironments.map(env => env.OPENAI_BASE_URL)).toEqual(["http://127.0.0.1:4301/v1", "http://127.0.0.1:4302/v1"]);
-      expect(runtimeMock.state.promptModels).toEqual(Array(3).fill({ providerID: "workjet-gateway-claude", modelID: "claude-opus-5-5" }));
-      expect(selected).toEqual(Array(3).fill("claude-opus-5-5"));
-    }), {
-      resolveEnvironment: () => Effect.succeed({ OPENAI_BASE_URL: endpoint }),
-      resolveModel: model => Effect.sync(() => { selected.push(model); return "workjet-gateway-claude/" + model; }),
-    });
-  });
+  const input = {
+    ...DEFAULT_COMMIT_MESSAGE_INPUT,
+    modelSelection: { instanceId: ProviderInstanceId.make("opencode"), model: "claude-opus-5-5" },
+  };
+  it.effect(
+    "maps raw gateway models and restarts the warm server after its endpoint changes",
+    () => {
+      let endpoint = "http://127.0.0.1:4301/v1";
+      const selected: string[] = [];
+      return withOpenCodeTextGeneration(
+        DEFAULT_OPENCODE_SETTINGS,
+        (generation) =>
+          Effect.gen(function* () {
+            yield* generation.generateCommitMessage(input);
+            yield* generation.generateCommitMessage(input);
+            expect(runtimeMock.state.startCalls).toHaveLength(1);
+            endpoint = "http://127.0.0.1:4302/v1";
+            yield* generation.generateCommitMessage(input);
+            expect(runtimeMock.state.startCalls).toHaveLength(2);
+            expect(runtimeMock.state.closeCalls).toEqual(["http://127.0.0.1:4301"]);
+            expect(runtimeMock.state.startEnvironments.map((env) => env.OPENAI_BASE_URL)).toEqual([
+              "http://127.0.0.1:4301/v1",
+              "http://127.0.0.1:4302/v1",
+            ]);
+            expect(runtimeMock.state.promptModels).toEqual(
+              Array(3).fill({ providerID: "workjet-gateway-claude", modelID: "claude-opus-5-5" }),
+            );
+            expect(selected).toEqual(Array(3).fill("claude-opus-5-5"));
+          }),
+        {
+          resolveEnvironment: () => Effect.succeed({ OPENAI_BASE_URL: endpoint }),
+          resolveModel: (model) =>
+            Effect.sync(() => {
+              selected.push(model);
+              return "workjet-gateway-claude/" + model;
+            }),
+        },
+      );
+    },
+  );
 
-  it.effect("rejects a changed gateway route while the previous server has an active request", () => {
-    let endpoint = "http://127.0.0.1:4301/v1";
-    let markStarted = () => {};
-    let finish = () => {};
-    const started = new Promise<void>(resolve => { markStarted = resolve; });
-    const pending = new Promise<void>(resolve => { finish = resolve; });
-    runtimeMock.state.beforePrompt = () => { markStarted(); return pending; };
-    return withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) => Effect.gen(function* () {
-      const first = yield* generation.generateCommitMessage(input).pipe(Effect.forkScoped);
-      yield* Effect.promise(() => started);
-      endpoint = "http://127.0.0.1:4302/v1";
-      const error = yield* Effect.flip(generation.generateCommitMessage(input));
-      expect(error).toBeInstanceOf(TextGenerationError);
-      expect(error.detail).toContain("gateway changed");
-      expect(runtimeMock.state.startCalls).toHaveLength(1);
-      expect(runtimeMock.state.closeCalls).toHaveLength(0);
-      finish();
-      yield* Fiber.join(first);
-    }).pipe(Effect.ensuring(Effect.sync(() => finish()))), {
-      resolveEnvironment: () => Effect.succeed({ OPENAI_BASE_URL: endpoint }),
-      resolveModel: model => Effect.succeed("workjet-gateway-claude/" + model),
-    });
-  });
+  it.effect(
+    "rejects a changed gateway route while the previous server has an active request",
+    () => {
+      let endpoint = "http://127.0.0.1:4301/v1";
+      let markStarted = () => {};
+      let finish = () => {};
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      runtimeMock.state.beforePrompt = () => {
+        markStarted();
+        return pending;
+      };
+      return withOpenCodeTextGeneration(
+        DEFAULT_OPENCODE_SETTINGS,
+        (generation) =>
+          Effect.gen(function* () {
+            const first = yield* generation.generateCommitMessage(input).pipe(Effect.forkScoped);
+            yield* Effect.promise(() => started);
+            endpoint = "http://127.0.0.1:4302/v1";
+            const error = yield* Effect.flip(generation.generateCommitMessage(input));
+            expect(error).toBeInstanceOf(TextGenerationError);
+            expect(error.detail).toContain("gateway changed");
+            expect(runtimeMock.state.startCalls).toHaveLength(1);
+            expect(runtimeMock.state.closeCalls).toHaveLength(0);
+            finish();
+            yield* Fiber.join(first);
+          }).pipe(Effect.ensuring(Effect.sync(() => finish()))),
+        {
+          resolveEnvironment: () => Effect.succeed({ OPENAI_BASE_URL: endpoint }),
+          resolveModel: (model) => Effect.succeed("workjet-gateway-claude/" + model),
+        },
+      );
+    },
+  );
 
-  it.effect("fails before starting a server when the gateway cannot resolve the selected model", () =>
-    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (generation) => Effect.gen(function* () {
-      const error = yield* Effect.flip(generation.generateCommitMessage(input));
-      expect(error).toBeInstanceOf(TextGenerationError);
-      expect(error.detail).toBe("OpenCode gateway routing failed for text generation.");
-      expect(runtimeMock.state.startCalls).toHaveLength(0);
-    }), {
-      resolveEnvironment: () => Effect.succeed({}),
-      resolveModel: () => Effect.fail(new Error("gateway catalog unavailable")),
-    }),
+  it.effect(
+    "fails before starting a server when the gateway cannot resolve the selected model",
+    () =>
+      withOpenCodeTextGeneration(
+        DEFAULT_OPENCODE_SETTINGS,
+        (generation) =>
+          Effect.gen(function* () {
+            const error = yield* Effect.flip(generation.generateCommitMessage(input));
+            expect(error).toBeInstanceOf(TextGenerationError);
+            expect(error.detail).toBe("OpenCode gateway routing failed for text generation.");
+            expect(runtimeMock.state.startCalls).toHaveLength(0);
+          }),
+        {
+          resolveEnvironment: () => Effect.succeed({}),
+          resolveModel: () =>
+            Effect.fail(new TextGenerationError({
+              operation: "generateCommitMessage",
+              detail: "gateway catalog unavailable",
+            })),
+        },
+      ),
   );
 });

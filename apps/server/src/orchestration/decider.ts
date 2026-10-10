@@ -1114,6 +1114,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             "Only the current active persistent worker iteration may update a mini-kanban with unique card IDs.",
         });
       }
+      if (
+        config.goal.kanban?.goalRevision === command.kanban.goalRevision &&
+        config.goal.kanban.iteration === command.kanban.iteration
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail:
+            "The mini-kanban is already saved for this goal iteration. Continue with the retained snapshot; its next update belongs to the next iteration.",
+        });
+      }
       const objective = config.goal.objective;
       const slideDocument = yield* Effect.try({
         try: () =>

@@ -1035,7 +1035,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (worker !== undefined) {
       // Model rules travel with every worker on this model (the Swift app's
       // Modellregeln), ahead of the worker's own task.
-      const modelRules = settings.workjet.modelPrompts
+      const modelRules = primaryWorkjet.modelPrompts
         .find((entry) => entry.modelId === worker.modelId)
         ?.prompt.trim();
       payload = {
@@ -1046,7 +1046,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,
           workers: workjetWorkers,
-          graph: settings.workjet.workerGraph,
+          graph: primaryWorkjet.workerGraph,
         }),
       };
     } else if (draftManagedInstructions !== null) {
@@ -1066,8 +1066,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftWorkerCapabilityIds,
     onWorkjetConfigApply,
     selectedWorkjetWorkerId,
-    settings.workjet.modelPrompts,
-    settings.workjet.workerGraph,
+    primaryWorkjet.modelPrompts,
+    primaryWorkjet.workerGraph,
     workjetWorkers,
   ]);
   /**
@@ -1113,7 +1113,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
       const worker = workjetWorkers.find((candidate) => candidate.id === workerId);
       if (worker === undefined) return;
-      const modelRules = settings.workjet.modelPrompts
+      const modelRules = primaryWorkjet.modelPrompts
         .find((entry) => entry.modelId === worker.modelId)
         ?.prompt.trim();
       setComposerDraftWorkjetConfig(composerDraftTarget, {
@@ -1123,7 +1123,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,
           workers: workjetWorkers,
-          graph: settings.workjet.workerGraph,
+          graph: primaryWorkjet.workerGraph,
         }),
         enabledCapabilityIds: worker.capabilityIds,
         capabilityBindings: worker.capabilityBindings,
@@ -1196,8 +1196,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setWorkjetWorkerSelection,
       workjetComputers,
       workjetWorkers,
-      settings.workjet.modelPrompts,
-      settings.workjet.workerGraph,
+      primaryWorkjet.modelPrompts,
+      primaryWorkjet.workerGraph,
       draftWorkjetConfig,
     ],
   );
@@ -1221,7 +1221,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     workerModeActive,
     workerComputerId: selectedWorkjetWorker?.computerId ?? null,
     activeEnvironmentId: environmentId,
-    selectedComputerId: settings.workjet.selectedComputerId,
+    selectedComputerId: primaryWorkjet.selectedComputerId,
   });
   const composerSelectedComputerId = composerComputerResolution.computer?.id ?? null;
   // Worker mode surfaces the mismatch instead of lying: the worker names a

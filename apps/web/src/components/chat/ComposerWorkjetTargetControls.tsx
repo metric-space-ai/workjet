@@ -207,7 +207,7 @@ export function ComposerComputerChoiceList(
           {props.mismatchNote}
         </p>
       ) : null}
-      {props.computers.length === 0 ? (
+      {props.computers.length === 0 && (props.registeredComputers?.length ?? 0) === 0 ? (
         <p className="px-2 py-2 text-xs text-muted-foreground">
           No computers — add one in Settings → Computers
         </p>

@@ -103,6 +103,7 @@ describe("computer popup selection and details", () => {
             hostingMode: "self_hosted",
             status: "assigned",
             capabilities: [],
+            selfHostedColocation: false,
           },
         ],
       }),

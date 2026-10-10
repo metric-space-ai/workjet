@@ -467,7 +467,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             shell: spawnCommand.shell,
             env: {
               ...input.environment,
-              OPENCODE_CONFIG_CONTENT: OPENCODE_EMPTY_CONFIG_CONTENT,
+              OPENCODE_CONFIG_CONTENT:
+                input.environment?.OPENCODE_CONFIG_CONTENT ?? OPENCODE_EMPTY_CONFIG_CONTENT,
             },
             extendEnv: input.environment === undefined,
           }),

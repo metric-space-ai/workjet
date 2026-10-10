@@ -20,6 +20,10 @@ import { resolveSpawnCommand } from "@workjet/shared/shell";
 import { TextGenerationError } from "@workjet/contracts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
+  resolveTextGenerationEnvironment,
+  type TextGenerationEnvironmentResolver,
+} from "./TextGenerationRouting.ts";
+import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -61,6 +65,7 @@ const decodeClaudeOutputEnvelope = Schema.decodeEffect(Schema.fromJsonString(Cla
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
+  resolveEnvironment?: TextGenerationEnvironmentResolver,
 ) {
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
@@ -157,6 +162,18 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         : undefined;
 
     const runClaudeCommand = Effect.fn("runClaudeJson.runClaudeCommand")(function* () {
+      const routed = yield* resolveTextGenerationEnvironment(
+        operation,
+        modelSelection.model,
+        claudeEnvironment,
+        resolveEnvironment,
+      );
+      const commandEnvironment = {
+        ...routed,
+        ...(claudeEnvironment.CLAUDE_CONFIG_DIR
+          ? { CLAUDE_CONFIG_DIR: claudeEnvironment.CLAUDE_CONFIG_DIR }
+          : {}),
+      };
       const spawnCommand = yield* resolveSpawnCommand(
         claudeSettings.binaryPath || "claude",
         [
@@ -171,10 +188,10 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           ...(settingsJson ? ["--settings", settingsJson] : []),
           "--dangerously-skip-permissions",
         ],
-        { env: claudeEnvironment },
+        { env: commandEnvironment },
       );
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: claudeEnvironment,
+        env: commandEnvironment,
         cwd,
         shell: spawnCommand.shell,
         stdin: {

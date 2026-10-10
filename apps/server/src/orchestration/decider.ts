@@ -1,3 +1,4 @@
+import * as NodeUtil from "node:util";
 import {
   EventId,
   CommandId,
@@ -9,6 +10,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
   retainWorkjetCtoxBinding,
+  withoutInheritedWorkjetSupervisorJournals,
   retainWorkjetWorkerPullRequest,
   type OrchestrationCommand,
   type OrchestrationEvent,
@@ -1406,10 +1408,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const previousConfig = withoutInheritedWorkjetSupervisorJournals(thread.workjetConfig);
+      let requestedConfig = command.workjetConfig;
+      // Migrate only a parent's receipt already copied into this child. A new
+      // foreign receipt still reaches the ownership guard below.
       if (
-        command.workjetConfig.schemaVersion === 2 &&
-        command.workjetConfig.ctoxSupervisorTurn &&
-        command.workjetConfig.ctoxSupervisorTurn.intent.threadId !== command.threadId
+        previousConfig !== thread.workjetConfig &&
+        thread.workjetConfig.schemaVersion === 2 &&
+        requestedConfig.schemaVersion === 2 &&
+        NodeUtil.isDeepStrictEqual(
+          requestedConfig.ctoxSupervisorTurn,
+          thread.workjetConfig.ctoxSupervisorTurn,
+        ) &&
+        NodeUtil.isDeepStrictEqual(
+          requestedConfig.ctoxSupervisorPreviousTurns,
+          thread.workjetConfig.ctoxSupervisorPreviousTurns,
+        )
+      )
+        requestedConfig = withoutInheritedWorkjetSupervisorJournals(requestedConfig);
+      if (
+        requestedConfig.schemaVersion === 2 &&
+        requestedConfig.ctoxSupervisorTurn &&
+        requestedConfig.ctoxSupervisorTurn.intent.threadId !== command.threadId
       ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -1426,17 +1446,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: "Persistent goal state cannot be discarded by a legacy settings update.",
         });
       }
-      const retainedPr = retainWorkjetWorkerPullRequest(
-        thread.workjetConfig,
-        command.workjetConfig,
-      );
+      const retainedPr = retainWorkjetWorkerPullRequest(thread.workjetConfig, requestedConfig);
       if (retainedPr.error !== null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
           detail: retainedPr.error,
         });
       }
-      const retained = retainWorkjetCtoxBinding(thread.workjetConfig, retainedPr.config);
+      const retained = retainWorkjetCtoxBinding(previousConfig, retainedPr.config);
       if (retained.error !== null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,

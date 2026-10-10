@@ -63,7 +63,35 @@ export function workjetCtoxWorkerSourceSuccessor(
   return candidates[0] ? { connection: candidates[0], error: null } : { error: null };
 }
 
-/** Rotate only credential references, retaining disabled tools, journals and receipts. */
+/** A child inherits authority references, never its parent's native turn receipts. */
+export function withoutInheritedWorkjetSupervisorJournals(
+  config: WorkjetThreadConfig,
+): WorkjetThreadConfig {
+  if (
+    config.schemaVersion !== 2 ||
+    !config.team ||
+    config.team.role === "supervisor" ||
+    config.team.parentThreadId === config.team.threadId
+  )
+    return config;
+  const team = config.team;
+  const inherited = (journal: WorkjetSupervisorJournal) =>
+    journal.intent.threadId === team.parentThreadId && journal.intent.projectId === team.projectId;
+  let retained = config;
+  if (retained.ctoxSupervisorTurn && inherited(retained.ctoxSupervisorTurn)) {
+    const { ctoxSupervisorTurn: _inheritedTurn, ...rest } = retained;
+    retained = rest;
+  }
+  const history = retained.ctoxSupervisorPreviousTurns;
+  if (history?.some(inherited)) {
+    const { ctoxSupervisorPreviousTurns: _inheritedHistory, ...rest } = retained;
+    const ownHistory = history.filter((journal) => !inherited(journal));
+    retained = ownHistory.length ? { ...rest, ctoxSupervisorPreviousTurns: ownHistory } : rest;
+  }
+  return retained;
+}
+
+/** Rotate credential references while preserving the receiving thread's own receipts. */
 export function rotateWorkjetCtoxWorkerSource(
   config: WorkjetThreadConfig,
   connections: readonly WorkjetConnectionSummary[],
@@ -72,8 +100,9 @@ export function rotateWorkjetCtoxWorkerSource(
   readonly changed: boolean;
   readonly error: string | null;
 } {
-  const normalized = normalizeWorkjetThreadConfig(config);
-  let changed = false;
+  const scoped = withoutInheritedWorkjetSupervisorJournals(config);
+  const normalized = normalizeWorkjetThreadConfig(scoped);
+  let changed = scoped !== config;
   let error: string | null = null;
   const capabilityBindings = normalized.capabilityBindings.map((binding) => {
     if (binding.capabilityId !== "ctox-business-os") return binding;
@@ -96,7 +125,7 @@ export function rotateWorkjetCtoxWorkerSource(
     }
   }
   if (error || !changed) return { config, changed: false, error };
-  const retained = retainWorkjetCtoxBinding(config, {
+  const retained = retainWorkjetCtoxBinding(scoped, {
     ...normalized,
     capabilityBindings,
     ...(ctoxCrewChat ? { ctoxCrewChat } : {}),

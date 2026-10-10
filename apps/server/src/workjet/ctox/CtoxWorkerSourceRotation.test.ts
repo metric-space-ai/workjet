@@ -93,6 +93,15 @@ function threads() {
         : {
             ...config,
             role: "worker" as const,
+            team: {
+              role: "worker" as const,
+              projectId: ProjectId.make("molecularity"),
+              threadId: ThreadId.make(id),
+              parentThreadId: ThreadId.make("supervisor"),
+              packageId: id,
+              goal: "Existing task",
+              createdAt: "2026-10-10T00:00:00.000Z",
+            },
             parent: {
               environmentId: EnvironmentId.make("this-computer"),
               threadId: ThreadId.make("supervisor"),
@@ -125,14 +134,21 @@ describe("automatic worker-source rotation", () => {
               expect(options?.expectedWorkjetConfig).toBe(thread.workjetConfig);
               thread.workjetConfig = command.workjetConfig;
               writes++;
-              if (writes === 3) yield* Deferred.succeed(completed, undefined);
+              if (writes === 5) yield* Deferred.succeed(completed, undefined);
               return { sequence: writes };
             }),
         });
-        expect(writes).toBe(0);
+        expect(writes).toBe(2);
+        for (const thread of existing.filter((entry) => entry.id !== "supervisor")) {
+          const next = normalizeWorkjetThreadConfig(thread.workjetConfig);
+          expect(next.ctoxSupervisorTurn).toBeUndefined();
+          expect(next.ctoxSupervisorPreviousTurns).toBeUndefined();
+          expect(next.capabilityBindings[0]?.target.connectionId).toBe(old.connectionId);
+        }
         connections = [old, ready];
         yield* PubSub.publish(changes, undefined);
         yield* Deferred.await(completed);
+        expect(writes).toBe(5);
         for (const thread of existing) {
           const next = normalizeWorkjetThreadConfig(thread.workjetConfig);
           expect(next.capabilityBindings[0]?.target.connectionId).toBe(ready.connectionId);
@@ -140,12 +156,17 @@ describe("automatic worker-source rotation", () => {
             ...normalizeWorkjetThreadConfig(config).ctoxCrewChat,
             connectionId: ready.connectionId,
           });
-          expect(next.ctoxSupervisorTurn).toBe(
-            normalizeWorkjetThreadConfig(config).ctoxSupervisorTurn,
-          );
-          expect(next.ctoxSupervisorPreviousTurns).toEqual(
-            normalizeWorkjetThreadConfig(config).ctoxSupervisorPreviousTurns,
-          );
+          if (thread.id === "supervisor") {
+            expect(next.ctoxSupervisorTurn).toBe(
+              normalizeWorkjetThreadConfig(config).ctoxSupervisorTurn,
+            );
+            expect(next.ctoxSupervisorPreviousTurns).toEqual(
+              normalizeWorkjetThreadConfig(config).ctoxSupervisorPreviousTurns,
+            );
+          } else {
+            expect(next.ctoxSupervisorTurn).toBeUndefined();
+            expect(next.ctoxSupervisorPreviousTurns).toBeUndefined();
+          }
         }
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

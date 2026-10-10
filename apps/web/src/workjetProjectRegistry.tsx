@@ -140,6 +140,7 @@ export function mergeWorkjetProjectProjection(
 ): WorkjetProjectRegistrySnapshot {
   if (current.presentationInstanceId !== presentationInstanceId) return current;
   return {
+    ...current,
     presentationInstanceId,
     phase: "ready",
     projects: [...current.projects.filter((candidate) => candidate.id !== project.id), project],

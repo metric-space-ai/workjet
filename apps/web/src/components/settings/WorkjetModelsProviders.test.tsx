@@ -134,6 +134,7 @@ describe("Provider account table", () => {
     expect(rendered).toContain("Instance Welsch");
     expect(rendered).toContain("This computer");
     expect(rendered).toContain("navigation_commit");
+    expect(rendered).toContain("The instance page could not be loaded.");
     expect(rendered).toContain("Reconnect");
     expect(rendered).not.toContain("guest_failed");
     expect(rendered).not.toContain("Not loaded");

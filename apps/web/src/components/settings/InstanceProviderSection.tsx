@@ -4,6 +4,7 @@ import { NativeProviderRowsView } from "./NativeProviderRows";
 import { Button } from "../ui/button";
 import {
   describeGuestPreparationStage,
+  describeGuestPreparationReason,
   describeWorkjetProjectControlFailure,
   workjetUiLanguage,
   type WorkjetProjectControlFailure,
@@ -44,12 +45,15 @@ export function InstanceConnectionStatus({
         <summary className="cursor-pointer">{de ? "Grund" : "Reason"}</summary>
         <p className="py-1">{describeWorkjetProjectControlFailure(failure, null, language)}</p>
         {diagnostic && (
-          <p data-workjet-diagnostic-stage={diagnostic.stage}>
-            {de ? "Stufe" : "Stage"}: {describeGuestPreparationStage(diagnostic.stage, language)} (
-            {diagnostic.stage})
-            {diagnostic.errorCode !== undefined ? ` · Electron ${diagnostic.errorCode}` : ""}
-            {diagnostic.httpStatus !== undefined ? ` · HTTP ${diagnostic.httpStatus}` : ""}
-          </p>
+          <div>
+            <p>{describeGuestPreparationReason(diagnostic, language)}</p>
+            <p data-workjet-diagnostic-stage={diagnostic.stage}>
+              {de ? "Stufe" : "Stage"}: {describeGuestPreparationStage(diagnostic.stage, language)}{" "}
+              ({diagnostic.stage})
+              {diagnostic.errorCode !== undefined ? ` · Electron ${diagnostic.errorCode}` : ""}
+              {diagnostic.httpStatus !== undefined ? ` · HTTP ${diagnostic.httpStatus}` : ""}
+            </p>
+          </div>
         )}
       </details>
     </div>

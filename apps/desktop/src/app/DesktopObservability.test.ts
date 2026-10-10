@@ -92,7 +92,10 @@ describe("DesktopObservability", () => {
         ),
       );
       const contents = yield* fileSystem.readFileString(tracePath);
-      const records = contents.trim().split("\n").map(decodeTraceRecordLine);
+      const records = contents
+        .trim()
+        .split("\n")
+        .map((line) => decodeTraceRecordLine(line));
       const record = records.find((entry) => entry.name === "ctox.guest.preparation.failed");
       assert.deepEqual(record?.attributes, {
         component: "CtoxGuestManager",

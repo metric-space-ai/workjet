@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { guestPreparationDiagnostic } from "./CtoxGuestDiagnostics";
+import { guestPreparationDiagnostic } from "./CtoxGuestDiagnostics.js";
 
 describe("guest preparation diagnostics", () => {
   it("retains the navigation stage and numeric Electron failure", () => {

@@ -59,7 +59,7 @@ describe("Workjet project registry", () => {
       action: "project.list" as const,
       projects: [project],
       count: 1,
-      truncated: false,
+      truncated: false as const,
     };
     applyWorkjetProjectRegistryResult("managed:welsch", { _tag: "completed", response });
     const confirmedAt = readWorkjetProjectRegistry("managed:welsch").lastUpdatedAt;

@@ -38,10 +38,10 @@ export class WorkjetProjectControlError extends Error {
 
 export function workjetUiLanguage(): "de" | "en" {
   const language =
-    typeof document !== "undefined" && document.documentElement.lang
-      ? document.documentElement.lang
-      : typeof navigator !== "undefined"
-        ? navigator.language
+    typeof navigator !== "undefined" && navigator.language
+      ? navigator.language
+      : typeof document !== "undefined"
+        ? document.documentElement.lang
         : "en";
   return language.toLowerCase().startsWith("de") ? "de" : "en";
 }
@@ -64,6 +64,62 @@ export function describeGuestPreparationStage(
     session_events: ["Sitzungsereignisse verbinden", "Session events"],
   };
   return labels[stage][language === "de" ? 0 : 1]!;
+}
+
+export function describeGuestPreparationReason(
+  diagnostic: CtoxGuestPreparationDiagnostic,
+  language = workjetUiLanguage(),
+): string {
+  const reason = diagnostic.reason;
+  switch (reason) {
+    case "peer_unavailable":
+    case "request_timeout":
+    case "network_unavailable":
+    case "owner_session_not_ready":
+    case "project_control_not_ready":
+    case "supervisor_control_not_ready":
+      return describeWorkjetProjectControlFailure(
+        { _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason } },
+        null,
+        language,
+      );
+    default: {
+      const messages = {
+        unknown: ["Keine genauere Ursache aufgezeichnet.", "No additional cause recorded."],
+        exception: ["Die Vorbereitung ist fehlgeschlagen.", "Connection preparation failed."],
+        unsupported_action: [
+          "Die Instanz unterstützt diese Aktion noch nicht.",
+          "The instance does not support this action yet.",
+        ],
+        did_fail_load: [
+          "Die Instanzseite konnte nicht geladen werden.",
+          "The instance page could not be loaded.",
+        ],
+        blocked_navigation: [
+          "Die Navigation der Instanzseite wurde abgelehnt.",
+          "The instance page navigation was rejected.",
+        ],
+        destroyed: ["Die Instanzansicht wurde geschlossen.", "The instance view was closed."],
+        navigation_timeout: [
+          "Die Instanzseite hat nicht rechtzeitig geladen.",
+          "The instance page did not load in time.",
+        ],
+        load_url: [
+          "Die Instanzseite konnte nicht geöffnet werden.",
+          "The instance page could not be opened.",
+        ],
+        navigation_setup: [
+          "Das Laden der Instanzseite konnte nicht vorbereitet werden.",
+          "The instance page navigation could not be prepared.",
+        ],
+        unexpected_origin: [
+          "Die Instanzseite hat eine unerwartete Adresse geöffnet.",
+          "The instance page opened an unexpected origin.",
+        ],
+      };
+      return messages[reason][language === "de" ? 0 : 1]!;
+    }
+  }
 }
 
 /** Only safe typed classifications enter user-facing connection messages. */

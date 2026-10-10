@@ -31,6 +31,7 @@ export function createProjectRegistryRefresh(run: () => Promise<boolean | void>)
     }
     running = (async () => {
       do {
+        clearTimer();
         queued = false;
         try {
           schedule((await run()) !== false);

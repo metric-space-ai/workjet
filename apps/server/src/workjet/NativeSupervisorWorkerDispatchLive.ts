@@ -121,22 +121,28 @@ export const make = Effect.gen(function* () {
     now: Clock.currentTimeMillis,
     listStopped: (after) => pullRequests.listStopped(after).pipe(Effect.mapError(failure)),
     readStartup: broker.read,
-    refresh: (receipt, startup) => Effect.gen(function* () {
-      const saved = yield* broker.read(receipt.threadId);
-      if (Option.isNone(saved)) return yield* failure();
-      return yield* refreshRemoteWorkerOutcome(receipt, startup, saved.value.request).pipe(
-        Effect.provideService(ProjectionSnapshotQuery, query),
-        Effect.provideService(SourceControlProviderRegistry, sourceControl),
-        Effect.provideService(WorkerPullRequestStore, pullRequests),
-      );
-    }),
-    currentSource: (worker) => Effect.gen(function* () {
-      const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
-      const parent = model.threads.find((thread) => thread.id === worker.request.parent.threadId);
-      if (!parent || parent.projectId !== worker.request.project.id ||
-          worker.request.parent.environmentId !== (yield* environment.getEnvironmentId)) return yield* failure();
-      return yield* sourceFor(parent);
-    }),
+    refresh: (receipt, startup) =>
+      Effect.gen(function* () {
+        const saved = yield* broker.read(receipt.threadId);
+        if (Option.isNone(saved)) return yield* failure();
+        return yield* refreshRemoteWorkerOutcome(receipt, startup, saved.value.request).pipe(
+          Effect.provideService(ProjectionSnapshotQuery, query),
+          Effect.provideService(SourceControlProviderRegistry, sourceControl),
+          Effect.provideService(WorkerPullRequestStore, pullRequests),
+        );
+      }),
+    currentSource: (worker) =>
+      Effect.gen(function* () {
+        const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
+        const parent = model.threads.find((thread) => thread.id === worker.request.parent.threadId);
+        if (
+          !parent ||
+          parent.projectId !== worker.request.project.id ||
+          worker.request.parent.environmentId !== (yield* environment.getEnvironmentId)
+        )
+          return yield* failure();
+        return yield* sourceFor(parent);
+      }),
     report: ({ source, registration }, startup, receipt) =>
       native.reportOutcome(source.scope, registration, startup, receipt),
   });

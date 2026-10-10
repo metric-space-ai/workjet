@@ -102,12 +102,16 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       outcome: NativeWorkerTerminalReceipt,
     ) {
       const receipt = yield* decodeOutcome(outcome).pipe(Effect.mapError(failure));
-      if (registration.state !== "active" || registration.sourceInstanceId !== scope.instanceId ||
-          startup.parent.environmentId !== registration.sourceEnvironmentId ||
-          startup.parent.threadId !== registration.sourceSupervisorThreadId ||
-          startup.workerThreadId !== receipt.worker_thread_id ||
-          startup.environmentId !== receipt.environment_id ||
-          startup.computerId !== receipt.computer_id || startup.branch !== receipt.branch)
+      if (
+        registration.state !== "active" ||
+        registration.sourceInstanceId !== scope.instanceId ||
+        startup.parent.environmentId !== registration.sourceEnvironmentId ||
+        startup.parent.threadId !== registration.sourceSupervisorThreadId ||
+        startup.workerThreadId !== receipt.worker_thread_id ||
+        startup.environmentId !== receipt.environment_id ||
+        startup.computerId !== receipt.computer_id ||
+        startup.branch !== receipt.branch
+      )
         return yield* failure();
       const acknowledged = yield* invoke(scope, {
         action: "report_outcome",
@@ -116,8 +120,11 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
         intent_id: startup.workerThreadId,
         receipt: yield* encodeOutcome(receipt).pipe(Effect.mapError(failure)),
       }).pipe(Effect.flatMap(decodeOutcomeAcknowledgement), Effect.mapError(failure));
-      if (acknowledged.registration_revision !== registration.revision ||
-          !NodeUtil.isDeepStrictEqual(acknowledged.receipt, receipt)) return yield* failure();
+      if (
+        acknowledged.registration_revision !== registration.revision ||
+        !NodeUtil.isDeepStrictEqual(acknowledged.receipt, receipt)
+      )
+        return yield* failure();
       return acknowledged.accepted_at_ms;
     }),
     complete: Effect.fn("CtoxNativeSupervisorWorkers.complete")(function* (

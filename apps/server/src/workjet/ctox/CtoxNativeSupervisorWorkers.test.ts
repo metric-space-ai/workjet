@@ -200,37 +200,86 @@ it.effect("completes only the exact parent, worker intent and matching native AC
   }),
 );
 
-it.effect("publishes only an exact current-source terminal receipt and verifies the immutable native ACK", () =>
-  Effect.gen(function* () {
-    if (dispatched.status !== "dispatched") return yield* Effect.die("dispatched fixture required");
-    const f = fixture();
-    const outcome: import("../NativeWorkerOutcome.ts").NativeWorkerTerminalReceipt = {
-      schema: "ctox.workjet.worker-outcome.v1", worker_thread_id: intent.intentId,
-      environment_id: dispatched.environmentId, computer_id: dispatched.computerId,
-      branch: dispatched.branch, execution_stopped: true,
-      pull_request: { provider: "github", number: 7, url: "https://github.com/owner/repo/pull/7", head_oid: "a".repeat(40), state: "merged" },
-    };
-    const ack = { provenance: "authenticated_source_report", accepted_at_ms: 123, registration_revision: registration.revision, receipt: outcome };
-    f.reply(ack);
-    assert.equal(yield* f.client.reportOutcome(scope, registration, dispatched, outcome), 123);
-    assert.deepEqual(f.calls.at(-1)?.args, {
-      action: "report_outcome", registration_id: registration.registrationId,
-      revision: registration.revision, intent_id: intent.intentId, receipt: outcome,
-    });
-    f.rotate(); yield* f.client.reportOutcome(scope, registration, dispatched, outcome);
-    assert.equal(f.calls.at(-1)?.token, "new-current-owner-token");
-    const count = f.calls.length;
-    for (const altered of [
-      { ...outcome, environment_id: "foreign" }, { ...outcome, computer_id: "foreign" },
-      { ...outcome, branch: "foreign" }, { ...outcome, worker_thread_id: "foreign" },
-    ]) assert.equal((yield* f.client.reportOutcome(scope, registration, dispatched, altered).pipe(Effect.result))._tag, "Failure");
-    assert.equal(f.calls.length, count);
-    for (const reply of [{ ...ack, registration_revision: 4 }, { ...ack, receipt: { ...outcome, pull_request: { ...outcome.pull_request, head_oid: "b".repeat(40) } } }]) {
-      f.reply(reply);
-      assert.equal((yield* f.client.reportOutcome(scope, registration, dispatched, outcome).pipe(Effect.result))._tag, "Failure");
-    }
-    f.disconnect();
-    const disconnected = f.calls.length;
-    assert.equal((yield* f.client.reportOutcome(scope, registration, dispatched, outcome).pipe(Effect.result))._tag, "Failure");
-    assert.equal(f.calls.length, disconnected);
-  }));
+it.effect(
+  "publishes only an exact current-source terminal receipt and verifies the immutable native ACK",
+  () =>
+    Effect.gen(function* () {
+      if (dispatched.status !== "dispatched")
+        return yield* Effect.die("dispatched fixture required");
+      const f = fixture();
+      const outcome: import("../NativeWorkerOutcome.ts").NativeWorkerTerminalReceipt = {
+        schema: "ctox.workjet.worker-outcome.v1",
+        worker_thread_id: intent.intentId,
+        environment_id: dispatched.environmentId,
+        computer_id: dispatched.computerId,
+        branch: dispatched.branch,
+        execution_stopped: true,
+        pull_request: {
+          provider: "github",
+          number: 7,
+          url: "https://github.com/owner/repo/pull/7",
+          head_oid: "a".repeat(40),
+          state: "merged",
+        },
+      };
+      const ack = {
+        provenance: "authenticated_source_report",
+        accepted_at_ms: 123,
+        registration_revision: registration.revision,
+        receipt: outcome,
+      };
+      f.reply(ack);
+      assert.equal(yield* f.client.reportOutcome(scope, registration, dispatched, outcome), 123);
+      assert.deepEqual(f.calls.at(-1)?.args, {
+        action: "report_outcome",
+        registration_id: registration.registrationId,
+        revision: registration.revision,
+        intent_id: intent.intentId,
+        receipt: outcome,
+      });
+      f.rotate();
+      yield* f.client.reportOutcome(scope, registration, dispatched, outcome);
+      assert.equal(f.calls.at(-1)?.token, "new-current-owner-token");
+      const count = f.calls.length;
+      for (const altered of [
+        { ...outcome, environment_id: "foreign" },
+        { ...outcome, computer_id: "foreign" },
+        { ...outcome, branch: "foreign" },
+        { ...outcome, worker_thread_id: "foreign" },
+      ])
+        assert.equal(
+          (yield* f.client
+            .reportOutcome(scope, registration, dispatched, altered)
+            .pipe(Effect.result))._tag,
+          "Failure",
+        );
+      assert.equal(f.calls.length, count);
+      for (const reply of [
+        { ...ack, registration_revision: 4 },
+        {
+          ...ack,
+          receipt: {
+            ...outcome,
+            pull_request: { ...outcome.pull_request, head_oid: "b".repeat(40) },
+          },
+        },
+      ]) {
+        f.reply(reply);
+        assert.equal(
+          (yield* f.client
+            .reportOutcome(scope, registration, dispatched, outcome)
+            .pipe(Effect.result))._tag,
+          "Failure",
+        );
+      }
+      f.disconnect();
+      const disconnected = f.calls.length;
+      assert.equal(
+        (yield* f.client
+          .reportOutcome(scope, registration, dispatched, outcome)
+          .pipe(Effect.result))._tag,
+        "Failure",
+      );
+      assert.equal(f.calls.length, disconnected);
+    }),
+);

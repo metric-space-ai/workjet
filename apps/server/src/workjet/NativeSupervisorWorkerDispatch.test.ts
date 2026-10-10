@@ -174,19 +174,24 @@ it.effect(
     }),
 );
 
-it.effect("reports retained outcomes in the existing cycle even when there are no new intents", () =>
-  Effect.gen(function* () {
-    const f = fixture();
-    let reports = 0;
-    const service = makeNativeSupervisorWorkerDispatch({
-      ...f.dependencies, poll: () => Effect.succeed([]),
-      reportOutcomes: (sources) => Effect.sync(() => {
-        reports++;
-        assert.equal(sources.length, 2);
-        assert.equal(sources[0]?.registration.registrationId, registration.registrationId);
-      }),
-    });
-    yield* service.runCycle;
-    assert.equal(reports, 1);
-    assert.deepEqual(f.dispatched, []);
-  }));
+it.effect(
+  "reports retained outcomes in the existing cycle even when there are no new intents",
+  () =>
+    Effect.gen(function* () {
+      const f = fixture();
+      let reports = 0;
+      const service = makeNativeSupervisorWorkerDispatch({
+        ...f.dependencies,
+        poll: () => Effect.succeed([]),
+        reportOutcomes: (sources) =>
+          Effect.sync(() => {
+            reports++;
+            assert.equal(sources.length, 2);
+            assert.equal(sources[0]?.registration.registrationId, registration.registrationId);
+          }),
+      });
+      yield* service.runCycle;
+      assert.equal(reports, 1);
+      assert.deepEqual(f.dispatched, []);
+    }),
+);

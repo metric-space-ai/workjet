@@ -20,10 +20,16 @@ export const NativeWorkerTerminalReceipt = Schema.Struct({
     head_oid: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)),
     state: Schema.Literals(["merged", "closed"]),
   }),
-}).check(Schema.makeFilter((receipt) =>
-  receipt.branch === `workjet/worker/${receipt.worker_thread_id}` &&
-  new RegExp(`^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/${receipt.pull_request.number}$`).test(receipt.pull_request.url)
-  || "Outcome must match an isolated branch and exact GitHub PR URL"));
+}).check(
+  Schema.makeFilter(
+    (receipt) =>
+      (receipt.branch === `workjet/worker/${receipt.worker_thread_id}` &&
+        new RegExp(
+          `^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/${receipt.pull_request.number}$`,
+        ).test(receipt.pull_request.url)) ||
+      "Outcome must match an isolated branch and exact GitHub PR URL",
+  ),
+);
 export type NativeWorkerTerminalReceipt = typeof NativeWorkerTerminalReceipt.Type;
 const decodeTerminalReceipt = Schema.decodeUnknownEffect(NativeWorkerTerminalReceipt);
 
@@ -32,10 +38,12 @@ export const terminalReceiptFrom = Effect.fn("NativeWorkerOutcome.fromPersistedR
   startup: RemoteWorkerResult,
 ) {
   const fail = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
-  if (receipt.threadId !== startup.workerThreadId ||
-      receipt.worktreePath !== startup.worktreePath ||
-      receipt.branchRef !== startup.branch ||
-      receipt.executionStopped !== 1)
+  if (
+    receipt.threadId !== startup.workerThreadId ||
+    receipt.worktreePath !== startup.worktreePath ||
+    receipt.branchRef !== startup.branch ||
+    receipt.executionStopped !== 1
+  )
     return yield* fail();
   return yield* decodeTerminalReceipt({
     schema: "ctox.workjet.worker-outcome.v1",
@@ -45,8 +53,11 @@ export const terminalReceiptFrom = Effect.fn("NativeWorkerOutcome.fromPersistedR
     branch: receipt.branchRef,
     execution_stopped: true,
     pull_request: {
-      provider: receipt.provider, number: receipt.prNumber, url: receipt.prUrl,
-      head_oid: receipt.headOid, state: receipt.state,
+      provider: receipt.provider,
+      number: receipt.prNumber,
+      url: receipt.prUrl,
+      head_oid: receipt.headOid,
+      state: receipt.state,
     },
   }).pipe(Effect.mapError(fail));
 });

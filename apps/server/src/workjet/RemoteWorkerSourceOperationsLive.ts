@@ -183,8 +183,12 @@ export const make = Effect.gen(function* () {
                 Effect.provideService(OrchestrationEngineService, engine),
                 Effect.provideService(SourceControlProviderRegistry, sourceControl.value),
               );
-              if (typeof payload === "object" && payload !== null && "pullRequest" in payload &&
-                  (payload.pullRequest as { provider?: unknown })?.provider === "github") {
+              if (
+                typeof payload === "object" &&
+                payload !== null &&
+                "pullRequest" in payload &&
+                (payload.pullRequest as { provider?: unknown })?.provider === "github"
+              ) {
                 // Retirement is cleanup; current source authority is re-read by the native publisher.
                 yield* retainRemoteWorkerOutcome(request, payload).pipe(
                   Effect.provideService(ProjectionSnapshotQuery, query),

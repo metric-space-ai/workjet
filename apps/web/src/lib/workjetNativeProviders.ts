@@ -1,6 +1,8 @@
 import {
   WorkjetLlmRouteId,
   WorkjetNativeProviderResponse,
+  WorkjetNativeModelCheckResponse,
+  type WorkjetNativeModelProbe,
   type WorkjetLlmRoute,
   type WorkjetNativeProviderAccount,
   type WorkjetNativeProviderRegistry,
@@ -113,6 +115,50 @@ export async function requestInstanceProviders(
     if (onAbort) signal.removeEventListener("abort", onAbort);
   }
 }
+export async function checkInstanceModel(
+  instanceId: string,
+  accountId: string,
+  accountRevision: number,
+  modelId: string,
+  signal: AbortSignal,
+  port?: WorkjetProjectControlPort,
+): Promise<WorkjetNativeModelProbe> {
+  signal.throwIfAborted();
+  const operationId = newCommandId();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    const result = await Promise.race([
+      requestWorkjetProjectControl(instanceId, { version: 1, action: "instance.providers.models.check",
+        operationId, accountId, expectedAccountRevision: accountRevision, modelId }, port),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new NativeProviderFailure(
+          "Model check timed out. Check the connection and try again.",
+        )), 30_000);
+        onAbort = () => reject(new DOMException("Cancelled", "AbortError"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      }),
+    ]);
+    signal.throwIfAborted();
+    if (result._tag !== "completed") throw new WorkjetProjectControlError(result, instanceId);
+    const response = Schema.decodeUnknownSync(WorkjetNativeModelCheckResponse)(result.response);
+    if (response.operationId !== operationId || response.accountId !== accountId
+      || response.accountRevision !== accountRevision || response.probe.modelId !== modelId)
+      throw new NativeProviderFailure("The model check response belongs to another account or request.");
+    return response.probe;
+  } catch (error) {
+    if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+    if (error instanceof NativeProviderFailure || error instanceof WorkjetProjectControlError) throw error;
+    throw new NativeProviderFailure(
+      "Native model check unavailable. Check the connection, account and installed CTOX version.",
+    );
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
 export function nativeAccountForRoute(
   route: WorkjetLlmRoute | undefined,
   accounts: readonly WorkjetNativeProviderAccount[],

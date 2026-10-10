@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -12,43 +12,49 @@ import {
   requirePersistedEnforcedExecutionPolicy,
 } from "./executionPolicy.ts";
 
+const decodeConfig = Schema.decodeUnknownSync(WorkjetThreadConfig);
+
 describe("autonomous worktree execution admission", () => {
-  it("decodes a project policy reference without treating it as a grant", async () => {
-    const config = Schema.decodeUnknownSync(WorkjetThreadConfig)({
-      ...DEFAULT_WORKJET_THREAD_CONFIG,
-      schemaVersion: 2,
-      executionPolicy: {
-        mode: "autonomous-worktree",
-        projectId: ProjectId.make("owner-project"),
-        revision: 2,
-      },
-    });
-    await expect(
-      Effect.runPromise(
+  it.effect("decodes a project policy reference without treating it as a grant", () =>
+    Effect.gen(function* () {
+      const config = decodeConfig({
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        schemaVersion: 2,
+        executionPolicy: {
+          mode: "autonomous-worktree",
+          projectId: ProjectId.make("owner-project"),
+          revision: 2,
+        },
+      });
+      const result = yield* Effect.result(
         requireEnforcedExecutionPolicy("startSession", ProviderDriverKind.make("claudeAgent"), config),
-      ),
-    ).rejects.toThrow(/no enforced team-worktree/);
-  });
-
-  it("preserves legacy behavior and does not invent support from a provider name", async () => {
-    for (const provider of ["codex", "claudeAgent", "grok", "opencode", "minimax", "greppy", "pi"]) {
-      await Effect.runPromise(
-        requireEnforcedExecutionPolicy("startSession", ProviderDriverKind.make(provider), DEFAULT_WORKJET_THREAD_CONFIG),
       );
-    }
-    await Effect.runPromise(requirePersistedEnforcedExecutionPolicy("recover", ProviderDriverKind.make("codex"), {}));
-    await Effect.runPromise(requirePersistedEnforcedExecutionPolicy("recover", ProviderDriverKind.make("codex"), { workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG }));
-  });
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") expect(result.failure.issue).toMatch(/no enforced team-worktree/);
+    }),
+  );
 
-  it("rejects malformed and future persisted policy references without dropping them", async () => {
-    for (const executionPolicy of [null, {}, { mode: "future-mode" }, { mode: "autonomous-worktree", revision: 9 }]) {
-      await expect(
-        Effect.runPromise(
+  it.effect("preserves legacy behavior and does not invent support from a provider name", () =>
+    Effect.gen(function* () {
+      for (const provider of ["codex", "claudeAgent", "grok", "opencode", "minimax", "greppy", "pi"]) {
+        yield* requireEnforcedExecutionPolicy("startSession", ProviderDriverKind.make(provider), DEFAULT_WORKJET_THREAD_CONFIG);
+      }
+      yield* requirePersistedEnforcedExecutionPolicy("recover", ProviderDriverKind.make("codex"), {});
+      yield* requirePersistedEnforcedExecutionPolicy("recover", ProviderDriverKind.make("codex"), { workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG });
+    }),
+  );
+
+  it.effect("rejects malformed and future persisted policy references without dropping them", () =>
+    Effect.gen(function* () {
+      for (const executionPolicy of [null, {}, { mode: "future-mode" }, { mode: "autonomous-worktree", revision: 9 }]) {
+        const result = yield* Effect.result(
           requirePersistedEnforcedExecutionPolicy("recover", ProviderDriverKind.make("codex"), {
             workjetConfig: { schemaVersion: 999, executionPolicy },
           }),
-        ),
-      ).rejects.toThrow(/Full access is not an alternative/);
-    }
-  });
+        );
+        expect(result._tag).toBe("Failure");
+        if (result._tag === "Failure") expect(result.failure.issue).toMatch(/Full access is not an alternative/);
+      }
+    }),
+  );
 });

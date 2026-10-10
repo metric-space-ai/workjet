@@ -991,7 +991,6 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
-
   it.effect("native goal inspection and stop never recover a closed Owner session", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

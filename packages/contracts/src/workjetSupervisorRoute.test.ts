@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
+import fixture from "./fixtures/workjet-supervisor-route-display-v1.json" with { type: "json" };
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import { CommandId, ProjectId } from "./baseSchemas.ts";
 import { CtoxWorkjetProjectControlRequest, CtoxWorkjetProjectControlResponse, isWorkjetSupervisorReceiptForRequest } from "./ctox.ts";
 import * as routes from "./workjetSupervisorRoute.generated.ts";
-const fixture = JSON.parse(readFileSync(new URL("./fixtures/workjet-supervisor-route-display-v1.json", import.meta.url), "utf8"));
+
 const decodeReply = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse, { onExcessProperty: "error" });
 const request = { action: "project.supervisor.route.read.v1" as const, commandId: CommandId.make("read-route"), projectId: ProjectId.make("project"), threadId: "cc6cfe73-2824-4360-9daf-3b3efb079931" };
-const route = fixture.valid_cases.find((item: { type: string }) => item.type === "SupervisorRouteDisplay").value;
+const route = Schema.decodeUnknownSync(routes.SupervisorRouteDisplay)(fixture.valid_cases.find((item) => item.type === "SupervisorRouteDisplay")?.value);
 const reply = { ...request, contract: "ctox.workjet.supervisor.route-display.v1", route };
 describe("native Supervisor route display", () => {
   it("matches the pinned native valid and private-field rejection corpus", () => {

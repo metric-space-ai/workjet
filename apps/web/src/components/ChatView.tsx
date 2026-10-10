@@ -177,6 +177,7 @@ import {
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
+import { PersistentWorkerGoal } from "./PersistentWorkerGoal";
 import { ProjectNativeSyncStatus } from "../localProjectRegistration";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
@@ -7108,6 +7109,12 @@ function ChatViewContent(props: ChatViewProps) {
           />
         </WorkjetHeaderContent>
         <ProjectNativeSyncStatus project={activeProject ?? null} />
+        <PersistentWorkerGoal
+          config={activeServerThread?.workjetConfig ?? null}
+          sessionStatus={activeServerThread?.session?.status}
+          hasPendingApprovals={pendingApprovals.length > 0}
+          hasPendingUserInput={pendingUserInputs.length > 0}
+        />
 
         <ThreadErrorBanner
           error={visibleThreadError}

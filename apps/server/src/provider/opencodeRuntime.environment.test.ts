@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeAssert from "node:assert/strict";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -24,11 +24,11 @@ const observeSpawnedConfiguration = (environment?: NodeJS.ProcessEnv) =>
   Effect.scoped(
     Effect.gen(function* () {
       const directory = yield* Effect.acquireRelease(
-        Effect.promise(() => NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "opencode-env-"))),
-        (directory) => Effect.promise(() => NodeFS.rm(directory, { recursive: true, force: true })),
+        Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "opencode-env-"))),
+        (directory) => Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
       );
       const binaryPath = NodePath.join(directory, "opencode-fixture.mjs");
-      yield* Effect.promise(() => NodeFS.writeFile(binaryPath, fixture, { mode: 0o700 }));
+      yield* Effect.promise(() => NodeFSP.writeFile(binaryPath, fixture, { mode: 0o700 }));
       const runtime = yield* OpenCodeRuntime;
       const server = yield* runtime.startOpenCodeServerProcess({
         binaryPath,

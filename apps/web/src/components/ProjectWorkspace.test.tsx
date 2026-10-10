@@ -115,6 +115,19 @@ const markup = (threads: readonly EnvironmentThreadShell[], language: "de" | "en
   );
 
 describe("owner project overview", () => {
+  it("keeps an inactive one-shot's old failure out of the project's current disruptions", () => {
+    const failedWorker = {
+      ...worker,
+      session: { ...worker.session, status: "error" },
+    } as EnvironmentThreadShell;
+    expect(overview([supervisor, failedWorker]).disruptions).toEqual([]);
+    expect(overview([supervisor, failedWorker]).all).toContain(failedWorker);
+    const failedParent = {
+      ...specialist,
+      session: { ...specialist.session, status: "error" },
+    } as EnvironmentThreadShell;
+    expect(overview([supervisor, failedParent]).disruptions).toEqual([failedParent]);
+  });
   it("does not attribute the supervisor's Luma or the control computer to a native specialist", () => {
     const crew = {
       ...specialist,

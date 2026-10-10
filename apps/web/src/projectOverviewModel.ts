@@ -246,7 +246,9 @@ export function buildProjectOwnerOverview(input: {
     goals,
     confirmed: confirmed !== null,
     decisions: members.filter((thread) => thread.hasPendingApprovals || thread.hasPendingUserInput),
-    disruptions: members.filter((thread) => projectOverviewWorkerState(thread) === "disrupted"),
+    disruptions: [...supervisors, ...parents, ...workers].filter(
+      (thread) => projectOverviewWorkerState(thread) === "disrupted",
+    ),
     kpis,
     merged,
     history,

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -411,7 +411,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
           .pipe(Effect.mapError(routeError))
       : resolvedEnvironment;
     const environmentKey = routing
-      ? createHash("sha256")
+      ? NodeCrypto.createHash("sha256")
           .update(
             yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
               Object.entries(commandEnvironment)

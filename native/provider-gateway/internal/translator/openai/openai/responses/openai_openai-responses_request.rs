@@ -100,6 +100,7 @@ fn collect_input_messages(items: &[Value], root: &Value, messages: &mut Vec<Vec<
         }
     }
 
+    let boxed_functions = super::tools::responses_boxed_function_names(&serde_json::to_vec(root).unwrap_or_default());
     let mut pending_tool_calls: Vec<Value> = Vec::new();
     let mut pending_tool_call_ids: Vec<String> = Vec::new();
     let mut pending_reasoning: String = String::new();
@@ -314,7 +315,8 @@ fn collect_input_messages(items: &[Value], root: &Value, messages: &mut Vec<Vec<
                 }
                 if let Some(arguments) = item.get("arguments") {
                     if let Some(value) = arguments.as_str() {
-                        tool_call["function"]["arguments"] = Value::String(value.to_string());
+                        let name = tool_call["function"]["name"].as_str().unwrap_or("");
+                        tool_call["function"]["arguments"] = Value::String(if boxed_functions.contains(name) { super::tools::wrap_boxed_function_arguments(value).unwrap_or_else(|| value.to_owned()) } else { value.to_owned() });
                     }
                 }
                 pending_tool_calls.push(tool_call);

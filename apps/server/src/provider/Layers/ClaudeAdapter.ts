@@ -3052,6 +3052,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           threadId: context.session.threadId,
           turnId: asCanonicalTurnId(context.turnState.turnId),
           payload: { metadata: { workjetAuthorModel: authorModel } },
+          ...(context.session.providerInstanceId !== undefined
+            ? { providerInstanceId: context.session.providerInstanceId }
+            : {}),
           providerRefs: nativeProviderRefs(context),
           raw: {
             source: "claude.sdk.message",

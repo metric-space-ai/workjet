@@ -3113,7 +3113,7 @@ describe("ClaudeAdapterLive", () => {
         providerInstanceId: ProviderInstanceId.make("claudeAgent"),
         runtimeMode: "full-access",
         workjetConfig: {
-          ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2,
+          ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2, role: "orchestrator",
           team: {
             projectId: ProjectId.make("parent-project"), threadId: THREAD_ID,
             role: "specialist", parentThreadId: ThreadId.make("supervisor"),

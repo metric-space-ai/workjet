@@ -311,7 +311,7 @@ describe("ProviderRuntimeIngestion", () => {
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required", branch: null, worktreePath: null, createdAt,
         workjetConfig: {
-          ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2,
+          ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2, role: "orchestrator",
           team: {
             projectId: asProjectId("project-1"), threadId: team.parentThreadId, role: "supervisor",
             parentThreadId: null, goal: "Coordinate the real project work.", createdAt,
@@ -415,7 +415,7 @@ describe("ProviderRuntimeIngestion", () => {
     const harness = await createHarness({
       hideThreadDetail: true,
       threadWorkjetConfig: {
-        ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2,
+        ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2, role: "orchestrator",
         team: {
           projectId: asProjectId("project-1"), threadId: asThreadId("thread-1"),
           role: "specialist", parentThreadId: asThreadId("supervisor"),

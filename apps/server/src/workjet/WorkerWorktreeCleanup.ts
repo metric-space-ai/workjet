@@ -271,7 +271,10 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
         custody === null ||
         intent.workerId !== threadId ||
         intent.projectId !== context.projectId ||
-        intent.sourceCwd !== cwd ||
+        !path.isAbsolute(intent.sourceCwd) ||
+        path.resolve(intent.sourceCwd) !== intent.sourceCwd ||
+        worktreePath === intent.sourceCwd ||
+        isStrictlyWithin(path, worktreePath, intent.sourceCwd) ||
         intent.branch !== workerRefName ||
         intent.destination !== worktreePath ||
         path.dirname(custody.worktreePath) !== path.dirname(worktreePath) ||

@@ -49,7 +49,8 @@ export function workerSourceNativeProfile(input: {
     endpoint.search ||
     endpoint.hash ||
     endpoint.pathname !== "/v1"
-  ) throw new Error("Invalid source-only native harness profile");
+  )
+    throw new Error("Invalid source-only native harness profile");
   const root = input.baseUrl.slice(0, -3);
   const home = NodePath.join(input.directory, "home");
   const environment: Record<string, string> = {
@@ -66,14 +67,26 @@ export function workerSourceNativeProfile(input: {
     XAI_API_KEY: "",
     MINIMAX_API_KEY: "",
   };
-  const common = { harness: input.harness, model: input.model, directory: input.directory, environment };
+  const common = {
+    harness: input.harness,
+    model: input.model,
+    directory: input.directory,
+    environment,
+  };
   const files: { name: string; content: string }[] = [];
   switch (input.harness) {
     case "claude-code":
-      Object.assign(environment, { ANTHROPIC_BASE_URL: root, ANTHROPIC_AUTH_TOKEN: input.apiKey, CLAUDE_CONFIG_DIR: NodePath.join(input.directory, "claude") });
+      Object.assign(environment, {
+        ANTHROPIC_BASE_URL: root,
+        ANTHROPIC_AUTH_TOKEN: input.apiKey,
+        CLAUDE_CONFIG_DIR: NodePath.join(input.directory, "claude"),
+      });
       break;
     case "grok-cli":
-      Object.assign(environment, { GROK_MODELS_BASE_URL: input.baseUrl, XAI_API_KEY: input.apiKey });
+      Object.assign(environment, {
+        GROK_MODELS_BASE_URL: input.baseUrl,
+        XAI_API_KEY: input.apiKey,
+      });
       break;
     case "greppy":
       Object.assign(environment, { GREPPY_ENDPOINT: root, GREPPY_API_KEY: input.apiKey });
@@ -81,30 +94,50 @@ export function workerSourceNativeProfile(input: {
     case "opencode":
       environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({
         enabled_providers: ["workjet-source"],
-        provider: { "workjet-source": {
-          npm: "@ai-sdk/openai", name: "Workjet source",
-          options: { baseURL: input.baseUrl, apiKey: input.apiKey },
-          models: { [input.model]: { name: input.model } },
-        } },
+        provider: {
+          "workjet-source": {
+            npm: "@ai-sdk/openai",
+            name: "Workjet source",
+            options: { baseURL: input.baseUrl, apiKey: input.apiKey },
+            models: { [input.model]: { name: input.model } },
+          },
+        },
       });
       return { ...common, model: `workjet-source/${input.model}`, files };
     case "minimax-code":
       environment.MINIMAX_DATA_DIR = input.directory;
-      files.push({ name: "config.yaml", content: JSON.stringify({
-        defaultModel: `custom_provider:workjet-source/${input.model}`,
-        custom_provider: { "workjet-source": {
-          name: "Workjet source", kind: "custom", enabled: true, api: "anthropic-messages",
-          options: { baseURL: root, apiKey: input.apiKey, authMode: "api-key" },
-          models: { [input.model]: {} },
-        } },
-      }) });
+      files.push({
+        name: "config.yaml",
+        content: JSON.stringify({
+          defaultModel: `custom_provider:workjet-source/${input.model}`,
+          custom_provider: {
+            "workjet-source": {
+              name: "Workjet source",
+              kind: "custom",
+              enabled: true,
+              api: "anthropic-messages",
+              options: { baseURL: root, apiKey: input.apiKey, authMode: "api-key" },
+              models: { [input.model]: {} },
+            },
+          },
+        }),
+      });
       break;
     case "pi-code":
       environment.PI_CODING_AGENT_DIR = input.directory;
-      files.push({ name: "models.json", content: JSON.stringify({ providers: {
-        "workjet-source": { baseUrl: input.baseUrl, api: "openai-responses", apiKey: input.apiKey,
-          models: [{ id: input.model, name: input.model }] },
-      } }) });
+      files.push({
+        name: "models.json",
+        content: JSON.stringify({
+          providers: {
+            "workjet-source": {
+              baseUrl: input.baseUrl,
+              api: "openai-responses",
+              apiKey: input.apiKey,
+              models: [{ id: input.model, name: input.model }],
+            },
+          },
+        }),
+      });
       return { ...common, provider: "workjet-source", files };
     case "codex-cli":
       environment.WORKJET_WORKER_SOURCE_KEY = input.apiKey;

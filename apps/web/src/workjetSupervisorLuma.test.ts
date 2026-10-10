@@ -74,16 +74,15 @@ describe("native Supervisor Luma selection", () => {
       const response = {
         ...original.response,
         commandId: kind === "command" ? CommandId.make("foreign-command") : commandId,
-        project: {
-          ...original.response.project,
-          id: kind === "project" ? ProjectId.make("foreign-project") : scope.projectId,
-          supervisorLumaId:
-            kind === "luma"
-              ? "different-worker"
-              : kind === "legacy"
-                ? undefined
-                : "molecularity-supervisor",
-        },
+        project:
+          kind === "legacy"
+            ? { id: scope.projectId, title: project.title }
+            : {
+                ...original.response.project,
+                id: kind === "project" ? ProjectId.make("foreign-project") : scope.projectId,
+                supervisorLumaId:
+                  kind === "luma" ? "different-worker" : "molecularity-supervisor",
+              },
       };
       const port = vi
         .fn<WorkjetProjectControlPort>()

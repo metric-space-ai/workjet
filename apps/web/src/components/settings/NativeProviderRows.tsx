@@ -299,7 +299,7 @@ export function NativeProviderRows({
           Claude · {label}
         </div>
         <div role="cell" className="text-xs text-muted-foreground">
-          {accounts.length} instance accounts
+          {registry ? `${accounts.length} instance accounts` : "Accounts not loaded"}
         </div>
         <div role="cell" />
         <div role="cell" />

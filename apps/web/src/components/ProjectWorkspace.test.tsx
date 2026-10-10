@@ -181,6 +181,8 @@ describe("owner project overview", () => {
         "Übergabe docs/HANDOFF.md, Aufgaben 2 und 4: XPBD gegen Zentral-Differenzen vergleichen (V2/V4), dann Bruch xpbd1_fracture_v1.rs prüfen. Ergebnisse als PRs.",
       ),
     ).toBe("XPBD gegen Zentral-Differenzen vergleichen, dann Bruch prüfen.");
+    if (specialist.workjetConfig.schemaVersion !== 2)
+      throw new Error("Expected current worker config");
     const full = "Molecularity bauen (glslc fehlt).";
     const thread = {
       ...specialist,

@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ComposerBar } from "./ComposerBar";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import { ComposerWorkerControl } from "./ComposerWorkerControl";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerDictationButton } from "./ComposerDictationButton";
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 function render(workerMode = false) {
   return renderToStaticMarkup(

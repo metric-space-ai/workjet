@@ -18,6 +18,8 @@ const stream = vi.hoisted(() => ({
   cancel: vi.fn(),
 }));
 const capture = vi.hoisted(() => ({ finish: vi.fn(async () => {}), cancel: vi.fn() }));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: <T,>(initial: T) => {
@@ -89,7 +91,7 @@ describe("composer microphone", () => {
     const microphone = button(null, true);
     expect(microphone.props.disabled).toBe(false);
     await microphone.props.onClick();
-    expect(window.location.hash).toBe("#/settings/speech");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: "/settings/speech" });
     expect(requestSpeechSettings).not.toHaveBeenCalled();
     expect(captureJourFixeMicrophone).not.toHaveBeenCalled();
   });
@@ -99,7 +101,7 @@ describe("composer microphone", () => {
       status: { ...configured.status, stt: "unavailable" },
     });
     await button().props.onClick();
-    expect(window.location.hash).toBe("#/settings/speech");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: "/settings/speech" });
     expect(stream.open).not.toHaveBeenCalled();
     expect(captureJourFixeMicrophone).not.toHaveBeenCalled();
   });

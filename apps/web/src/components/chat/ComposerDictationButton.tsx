@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { MicIcon, SquareIcon } from "lucide-react";
 import { ComposerControl } from "./ComposerControl";
 import { ComposerDictationStream } from "../../lib/composerDictation";
@@ -21,13 +22,14 @@ export function ComposerDictationButton(props: {
   readonly disabled?: boolean;
   readonly onTranscript: (text: string) => void;
 }) {
+  const navigate = useNavigate();
   const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "finishing">("idle");
   const [error, setError] = useState<string | null>(null);
   const session = useRef<DictationSession | null>(null);
   const currentProps = useRef(props);
   currentProps.current = props;
   const settings = () => {
-    window.location.hash = "#/settings/speech";
+    void navigate({ to: "/settings/speech" });
   };
   const dispose = () => {
     const current = session.current;

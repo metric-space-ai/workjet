@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
@@ -8,6 +8,7 @@ import {
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { NativeSupervisorComposer } from "./NativeSupervisorComposer";
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 const threadId = ThreadId.make("e28290b0-7b0a-4d19-a242-f27041fadb84");
 const projectId = ProjectId.make("71462c13-b395-402f-b6c8-788b405783e7");

@@ -906,7 +906,7 @@ export function NativeSupervisorComposer(props: {
             <ComposerControl
               type="button"
               aria-disabled="true"
-              title="Managed by the project instance. Luma selection requires an instance update."
+              title="Configure the Supervisor Luma in project settings. This instance owns the execution route."
             >
               Supervisor
             </ComposerControl>

@@ -80,7 +80,7 @@ it("reports oversized selected context explicitly, without truncating the saved 
     snapshot_verified: true, context_state: "item_exceeds_model_budget",
     confirmed_goal: { goal: accepted.goal, status: "active" },
   });
-  expect(result.confirmed_goal).not.toHaveProperty("item");
+  expect(result).not.toHaveProperty("confirmed_goal.item");
   expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(8192);
   reader.close();
 });

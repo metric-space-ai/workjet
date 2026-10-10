@@ -6,7 +6,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterEach, beforeEach, it } from "@effect/vitest";
-import { vi } from "vitest";
+import { vi } from "vite-plus/test";
 import { stagePrebuiltLinuxSshServer } from "./build-linux-ssh-server.ts";
 
 // These fixtures represent an admitted local gpu3 build, including when the suite runs on CI.

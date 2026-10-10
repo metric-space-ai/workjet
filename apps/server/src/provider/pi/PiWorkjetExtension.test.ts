@@ -76,7 +76,10 @@ describe("Pi Workjet MCP extension", () => {
         });
       expect(message.method).toBe("tools/call");
       calls.push(message.params);
-      const output = message.params.name === "workjet_fixture_union" ? JSON.stringify(message.params.arguments) : message.params.arguments.command;
+      const output =
+        message.params.name === "workjet_fixture_union"
+          ? JSON.stringify(message.params.arguments)
+          : message.params.arguments.command;
       const wire = `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: output }], structuredContent: { ok: true } } })}\r\n\r\n`;
       const bytes = new TextEncoder().encode(wire);
       return new Response(

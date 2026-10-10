@@ -85,6 +85,33 @@ pub fn sanitize_claude_messages_for_claude_upstream(
     }
 }
 
+/// Normalize only empty text for live models absent from the static metadata table.
+pub fn normalize_claude_empty_message_text(payload: &[u8]) -> Vec<u8> {
+    let Ok(mut root) = serde_json::from_slice::<Value>(payload) else {
+        return payload.to_vec();
+    };
+    let Some(messages) = root.get_mut("messages").and_then(Value::as_array_mut) else {
+        return payload.to_vec();
+    };
+    let mut changed = false;
+    for message in messages {
+        let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        let before = parts.len();
+        parts.retain(|part| {
+            !(part.get("type").and_then(Value::as_str) == Some("text")
+                && part.get("text").and_then(Value::as_str) == Some(""))
+        });
+        changed |= parts.len() != before;
+    }
+    if changed {
+        serde_json::to_vec(&root).unwrap_or_else(|_| payload.to_vec())
+    } else {
+        payload.to_vec()
+    }
+}
+
 fn strip_tool_signature_fields(part: &mut Value) -> bool {
     let Some(object) = part.as_object_mut() else {
         return false;

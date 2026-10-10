@@ -297,7 +297,14 @@ describe("owner project overview", () => {
       />,
     );
     expect(html).toContain('data-workjet-project-overview="real-project"');
-    expect(html).toContain("Jour fixe beitreten");
+    expect(html).toContain(
+      projectOverviewLanguage(
+        "system",
+        typeof navigator === "undefined" ? "de" : navigator.language,
+      ) === "de"
+        ? "Jour fixe beitreten"
+        : "Join Jour fixe",
+    );
   });
   it("resolves the saved UI setting before the browser language", () => {
     expect(projectOverviewLanguage("de", "en-US")).toBe("de");

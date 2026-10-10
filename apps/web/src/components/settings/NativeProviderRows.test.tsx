@@ -102,9 +102,11 @@ describe("Native provider account rows", () => {
     expect(rendered).not.toContain("OAuth");
     expect(rendered).not.toContain('role="switch"');
     expect(control(rendered, "Check glm-5.3-flash")).toContain("disabled");
-    expect(rendered).toContain("does not support native Hi checks for this provider");
+    expect(rendered).toContain("Native Hi checks are not yet available for this provider");
     expect(rendered).not.toContain("Model check passed");
     expect(control(rendered, "Permanently remove instance account native-api-fixture")).toContain("disabled");
+    expect(rendered).toContain("Removal is not available for this account.");
+    expect(rendered).not.toContain("Update CTOX");
   });
   it("keeps provider model fields separate and shows a shared refresh failure once", () => {
     const rendered = registryHtml({

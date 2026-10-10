@@ -89,7 +89,7 @@ function ModelCheckStatus({
   readonly check: () => void;
 }) {
   const title = !supported
-    ? "This CTOX version does not support native Hi checks for this provider."
+    ? "Native Hi checks are not yet available for this provider."
     : probe
     ? (probe.status === "ok"
         ? "Hi check passed"
@@ -285,7 +285,7 @@ function NativeAccountRow({
               </span>
             </label>
           ) : (
-            <span className="text-[11px]" title="Update CTOX to manage this account here.">
+            <span className="text-[11px]" title={account.controls ? "Activation changes are not available for this account." : "Update CTOX to manage this account here."}>
               {account.enabled ? "On" : "Off"}
             </span>
           )}
@@ -314,7 +314,9 @@ function NativeAccountRow({
             title={
               canRemove
                 ? "Remove this account and its credentials"
-                : "Update CTOX to remove this account here."
+                : account.controls
+                  ? "Removal is not available for this account."
+                  : "Update CTOX to remove this account here."
             }
             data-workjet-action={`models.instance.account.${account.id}.remove-start`}
             onClick={() => setConfirmRemove(true)}

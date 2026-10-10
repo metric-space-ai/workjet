@@ -1086,9 +1086,23 @@ export function isWorkjetSupervisorReceiptForRequest(
   return response.action === "project.supervisor.turn.submit";
 }
 
+export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
+  stage: Schema.Literals(["execute"]),
+  reason: Schema.Literals([
+    "peer_unavailable",
+    "request_timeout",
+    "network_unavailable",
+    "owner_session_not_ready",
+    "project_control_not_ready",
+    "supervisor_control_not_ready",
+  ]),
+});
+export type CtoxWorkjetProjectControlDiagnostic = typeof CtoxWorkjetProjectControlDiagnostic.Type;
+
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
+    diagnostic: Schema.optionalKey(CtoxWorkjetProjectControlDiagnostic),
     discovery: Schema.optionalKey(
       Schema.Struct({
         code: CtoxManagedDiscoveryFailureCode,

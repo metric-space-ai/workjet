@@ -19,6 +19,7 @@ import type {
 } from "@workjet/contracts";
 import {
   CtoxWorkjetProjectControlResponse,
+  CtoxWorkjetProjectControlDiagnostic,
   CtoxWorkjetComputerControlResponse,
   isWorkjetSupervisorReceiptForRequest,
   isWorkjetJourFixeReceiptForRequest,
@@ -115,6 +116,9 @@ const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.
 const decodeWorkjetDeviceWebRtcResponse = Schema.decodeUnknownEffect(WorkjetDeviceWebRtcResponseV1);
 const decodeWorkjetProjectControlResponse = Schema.decodeUnknownEffect(
   CtoxWorkjetProjectControlResponse,
+);
+const decodeWorkjetProjectControlDiagnostic = Schema.decodeUnknownEffect(
+  CtoxWorkjetProjectControlDiagnostic,
 );
 const decodeWorkjetSessionControlResponse = Schema.decodeUnknownEffect(
   CtoxWorkjetSessionControlResponse,
@@ -817,7 +821,10 @@ function isSuccessfulCtoxNavigationCommit(
 export function describeCtoxGuestFailure(error: unknown): {
   readonly name: string;
   readonly code: string | number | null;
-  readonly reason: string;
+  readonly reason:
+    | CtoxWorkjetProjectControlDiagnostic["reason"]
+    | "unsupported_action"
+    | "exception";
 } {
   const value = typeof error === "object" && error !== null ? error : undefined;
   const rawCode = value === undefined ? undefined : (value as { code?: unknown }).code;
@@ -846,7 +853,14 @@ export function describeCtoxGuestFailure(error: unknown): {
           ? "project_control_not_ready"
           : message === "Workjet supervisor control is not ready."
             ? "supervisor_control_not_ready"
-            : "exception",
+            : message === "Native WebRTC peer is not connected" || code === "PEER_UNAVAILABLE"
+              ? "peer_unavailable"
+              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) ||
+                  code === "REQUEST_TIMEOUT"
+                ? "request_timeout"
+                : message === "Failed to fetch" || message === "fetch failed"
+                  ? "network_unavailable"
+                  : "exception",
   };
 }
 
@@ -2046,7 +2060,12 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             Effect.succeed(
               failure.reason === "unsupported_action"
                 ? { status: "unsupported" as const }
-                : undefined,
+                : failure.reason !== "exception"
+                  ? {
+                      status: "failed" as const,
+                      diagnostic: { stage: "execute" as const, reason: failure.reason },
+                    }
+                  : undefined,
             ),
           ),
           Effect.timeoutOption("30 seconds"),
@@ -2083,6 +2102,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: status };
         }
         if (typeof raw !== "object" || raw === null || status !== "completed") {
+          const diagnostic =
+            typeof raw === "object" && raw !== null
+              ? (raw as { readonly diagnostic?: unknown }).diagnostic
+              : undefined;
+          const reason = yield* decodeWorkjetProjectControlDiagnostic(diagnostic).pipe(
+            Effect.option,
+          );
           yield* Effect.logWarning("CTOX project control response invalid", {
             instanceId,
             action: request.action,
@@ -2090,7 +2116,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             status: status === "failed" ? "failed" : "invalid",
             ...describeCtoxGuestFailure(raw),
           });
-          return { _tag: "failed", code: "guest_failed" };
+          return {
+            _tag: "failed",
+            code: "guest_failed",
+            ...(Option.isSome(reason) ? { diagnostic: reason.value } : {}),
+          };
         }
         const response = (raw as { readonly result?: unknown }).result;
         // Native Meeting snapshots have a 1 MiB metadata ceiling. Other

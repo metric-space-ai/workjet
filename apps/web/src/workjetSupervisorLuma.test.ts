@@ -80,8 +80,7 @@ describe("native Supervisor Luma selection", () => {
             : {
                 ...original.response.project,
                 id: kind === "project" ? ProjectId.make("foreign-project") : scope.projectId,
-                supervisorLumaId:
-                  kind === "luma" ? "different-worker" : "molecularity-supervisor",
+                supervisorLumaId: kind === "luma" ? "different-worker" : "molecularity-supervisor",
               },
       };
       const port = vi

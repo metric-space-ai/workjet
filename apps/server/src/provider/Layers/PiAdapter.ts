@@ -77,7 +77,6 @@ interface SessionContext {
   assistantIndex: number;
   turnError: string | undefined;
   importedHistoryKey: string | undefined;
-  managedPrompt: string | undefined;
 }
 
 export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
@@ -250,6 +249,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
             "Choose a connected gateway model for this Pi instance.",
           );
         const managed = readMcpProviderSession(inputStart.threadId);
+        const managedPrompt = (
+          managed?.compiledManagedPrompt || inputStart.workjetConfig?.managedInstructions
+        )?.trim();
         if (managed?.activeWorkjetMcpCapabilityIds.length && !input.extensionPath)
           return yield* error("startSession", "The Pi Workjet MCP extension is unavailable.");
         const model = inputStart.modelSelection.model;
@@ -309,6 +311,12 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
               selected.model,
               "--session-dir",
               sessionDirectory,
+              ...(managedPrompt
+                ? [
+                    "--append-system-prompt",
+                    `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
+                  ]
+                : []),
               ...(input.extensionPath ? ["--extension", input.extensionPath] : []),
               ...(resume ? ["--session", resume] : []),
             ],
@@ -351,8 +359,6 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
             assistantIndex: 0,
             turnError: undefined,
             importedHistoryKey: undefined,
-            managedPrompt:
-              managed?.compiledManagedPrompt || inputStart.workjetConfig?.managedInstructions,
           };
           sessions.set(inputStart.threadId, ctx);
           yield* rpc.events.pipe(
@@ -413,16 +419,12 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
         historyKey && historyKey !== ctx.importedHistoryKey
           ? `<imported_conversation>\n${turn.importedHistory!.map((message) => `${message.role}:\n${message.text}`).join("\n\n")}\n</imported_conversation>\n\n`
           : "";
-      const managed = ctx.managedPrompt
-        ? `<workjet_managed_instructions>\n${ctx.managedPrompt}\n</workjet_managed_instructions>\n\n`
-        : "";
-      yield* ctx.rpc.request("prompt", { message: managed + history + turn.input }).pipe(
+      yield* ctx.rpc.request("prompt", { message: history + turn.input }).pipe(
         Effect.tapError((cause) => {
           ctx.turnError = cause.message;
           return finish(ctx);
         }),
       );
-      ctx.managedPrompt = undefined;
       ctx.importedHistoryKey = historyKey;
       // Native RPC acknowledges dispatch before agent_end; return that receipt now.
       const state = yield* ctx.rpc.request("get_state").pipe(

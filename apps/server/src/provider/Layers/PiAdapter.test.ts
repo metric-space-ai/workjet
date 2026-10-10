@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vite-plus/test";
+import { clearMcpProviderSession, setMcpProviderSession } from "../../mcp/McpProviderSession.ts";
 import { makePiAdapter } from "./PiAdapter.ts";
 
 const instanceId = ProviderInstanceId.make("pi_gateway");
@@ -29,6 +30,7 @@ async function runTest<A, E>(
       test(directory).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     );
   } finally {
+    clearMcpProviderSession(threadId);
     await fs.rm(directory, { recursive: true, force: true });
   }
 }
@@ -62,6 +64,131 @@ describe("Pi native RPC adapter", () => {
       expect(resolved).toBe(false);
     }));
   });
+  it.each(["Supervisor", "Persistent Worker", "One-Shot Worker"])(
+    "passes the compiled %s rules through the system channel on launch and resume",
+    async (role) => {
+      await runTest((directory) =>
+        Effect.gen(function* () {
+          const compiled = `Managed ${role} rules.\nKeep this role on every turn.`;
+          const registerPrompt = (prompt: string) =>
+            setMcpProviderSession({
+              environmentId: EnvironmentId.make("pi-system-prompt-test"),
+              threadId,
+              providerSessionId: "pi-managed-session",
+              providerInstanceId: instanceId,
+              endpoint: "http://127.0.0.1/mcp",
+              authorizationHeader: "Bearer test-token",
+              activeWorkjetMcpCapabilityIds: [],
+              compiledManagedPrompt: prompt,
+            });
+          registerPrompt(`  ${compiled}  `);
+          const adapter = yield* makePiAdapter(adapterInput(directory));
+          const config = {
+            schemaVersion: 2 as const,
+            role: "standard" as const,
+            parent: null,
+            managedInstructions: "Uncompiled fallback must not replace the compiled role.",
+            enabledCapabilityIds: [],
+            capabilityBindings: [],
+            ctoxSession: null,
+          };
+          const first = yield* adapter.startSession({
+            threadId,
+            cwd: directory,
+            runtimeMode: "full-access",
+            modelSelection,
+            workjetConfig: config,
+          });
+          const startupFile = path.join(directory, "fixture-startup.json");
+          const startup = JSON.parse(yield* Effect.promise(() => fs.readFile(startupFile, "utf8")));
+          expect(startup.appendSystemPrompt).toBe(
+            `<workjet_managed_instructions>\n${compiled}\n</workjet_managed_instructions>`,
+          );
+          expect(startup.replacesSystemPrompt).toBe(false);
+          const sendAndFinish = (message: string) =>
+            Effect.gen(function* () {
+              const completed = yield* adapter.streamEvents.pipe(
+                Stream.filter((event) => event.type === "turn.completed"),
+                Stream.take(1),
+                Stream.runCollect,
+                Effect.forkChild({ startImmediately: true }),
+              );
+              const receipt = yield* adapter.sendTurn({ threadId, input: message, modelSelection });
+              expect(yield* Fiber.join(completed)).toHaveLength(1);
+              return receipt;
+            });
+          yield* sendAndFinish("FIRST");
+          const second = yield* sendAndFinish("SECOND");
+          expect((yield* adapter.readThread(threadId)).turns.flatMap((turn) => turn.items)).toEqual([
+            { role: "user", content: "FIRST" },
+            { role: "user", content: "SECOND" },
+          ]);
+          expect((yield* adapter.stopSession(threadId))?.terminated).toBe(true);
+          registerPrompt(`${compiled}\nUpdated instructions for the resumed session.`);
+          yield* adapter.startSession({
+            threadId,
+            cwd: directory,
+            runtimeMode: "full-access",
+            modelSelection,
+            workjetConfig: config,
+            resumeCursor: second.resumeCursor ?? first.resumeCursor,
+            resumePolicy: "require-existing",
+          });
+          const resumedStartup = JSON.parse(
+            yield* Effect.promise(() => fs.readFile(startupFile, "utf8")),
+          );
+          expect(resumedStartup.appendSystemPrompt).toContain(
+            "Updated instructions for the resumed session.",
+          );
+          expect(resumedStartup.replacesSystemPrompt).toBe(false);
+          yield* sendAndFinish("THIRD");
+          expect((yield* adapter.readThread(threadId)).turns.flatMap((turn) => turn.items)).toEqual([
+            { role: "user", content: "FIRST" },
+            { role: "user", content: "SECOND" },
+            { role: "user", content: "THIRD" },
+          ]);
+        }),
+      );
+    },
+  );
+
+  it.each(["   ", "  Custom managed instructions  "])(
+    "uses the direct config fallback and omits an empty native system append (%j)",
+    async (managedInstructions) => {
+      await runTest((directory) =>
+        Effect.gen(function* () {
+          const adapter = yield* makePiAdapter(adapterInput(directory));
+          yield* adapter.startSession({
+            threadId,
+            cwd: directory,
+            runtimeMode: "full-access",
+            modelSelection,
+            workjetConfig: {
+              schemaVersion: 2,
+              role: "standard",
+              parent: null,
+              managedInstructions,
+              enabledCapabilityIds: [],
+              capabilityBindings: [],
+              ctoxSession: null,
+            },
+          });
+          const startup = JSON.parse(
+            yield* Effect.promise(() =>
+              fs.readFile(path.join(directory, "fixture-startup.json"), "utf8"),
+            ),
+          );
+          expect(startup.appendSystemPrompt).toBe(
+            managedInstructions.trim()
+              ? `<workjet_managed_instructions>\n${managedInstructions.trim()}\n</workjet_managed_instructions>`
+              : null,
+          );
+          expect(startup.replacesSystemPrompt).toBe(false);
+        }),
+      );
+    },
+  );
+
   it("projects twenty consecutive tool results and resumes the same durable native conversation", async () => {
     await runTest((directory) =>
       Effect.gen(function* () {

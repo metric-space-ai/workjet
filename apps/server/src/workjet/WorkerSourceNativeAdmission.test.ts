@@ -4,6 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { it } from "@effect/vitest";
 import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import {
@@ -131,7 +132,12 @@ for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-cod
         expect(profile?.environment.WORKJET_SOURCE_ISOLATED).toBe("true");
         expect(profile?.environment.WORKJET_WORKER_SOURCE_KEY).toBe(f.route.apiKey);
         expect(profile?.environment.HOME).toBe(f.route.nativeProfile!.environment.HOME);
-        expect(JSON.stringify(profile)).not.toMatch(/target-(?:anthropic|xai)-secret|target-secret/);
+        const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
+          profile,
+        );
+        expect(encoded).not.toMatch(
+          /target-(?:anthropic|xai)-secret|target-secret/,
+        );
         expect(profile?.environment.WORKJET_TARGET_SECRET).toBeUndefined();
       }
       expect(f.admitted() - before).toBe(20);
@@ -152,11 +158,13 @@ for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-cod
     }),
   );
 }
-it.effect("keeps local sessions unchanged and denies foreign restarts without a matching source", () =>
-  Effect.gen(function* () {
-    expect(
-      yield* run({ threadId: ThreadId.make("local-native"), runtimeMode: "full-access" }, "grok"),
-    ).toBeUndefined();
-    yield* rejects(run(input("missing-native-source"), "grok"), "unavailable or mismatched");
-  }),
+it.effect(
+  "keeps local sessions unchanged and denies foreign restarts without a matching source",
+  () =>
+    Effect.gen(function* () {
+      expect(
+        yield* run({ threadId: ThreadId.make("local-native"), runtimeMode: "full-access" }, "grok"),
+      ).toBeUndefined();
+      yield* rejects(run(input("missing-native-source"), "grok"), "unavailable or mismatched");
+    }),
 );

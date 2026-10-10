@@ -101,28 +101,34 @@ const environment = (log: string) => Effect.succeed({ ...process.env, MINIMAX_TE
 
 describe("MiniMax Code adapter protocol fixture", () => {
   it.live("acknowledges routed dispatch before the native ACP prompt completes", () =>
-    runTest((cwd, binaryPath, log) => Effect.gen(function* () {
-      const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), {
-        instanceId, dispatchPromptInBackground: true,
-        resolveSessionEnvironment: () => environment(log),
-      });
-      const waiting = yield* Deferred.make<void>();
-      const consumer = yield* adapter.streamEvents.pipe(
-        Stream.runForEach(event => event.type === "content.delta" && event.payload.delta === "waiting"
-          ? Deferred.succeed(waiting, undefined).pipe(Effect.asVoid) : Effect.void),
-        Effect.forkChild({ startImmediately: true }),
-      );
-      yield* adapter.startSession(input(cwd));
-      const receipt = yield* adapter.sendTurn(turn("wait-for-cancel"));
-      yield* Deferred.await(waiting);
-      expect(receipt.threadId).toBe(threadId);
-      expect((yield* adapter.listSessions())[0]?.status).toBe("running");
-      const overlap = yield* adapter.sendTurn(turn("overlapping turn")).pipe(Effect.flip);
-      expect(overlap.message).toContain("already answering");
-      yield* adapter.interruptTurn(threadId);
-      expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
-      yield* Fiber.interrupt(consumer);
-    })),
+    runTest((cwd, binaryPath, log) =>
+      Effect.gen(function* () {
+        const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), {
+          instanceId,
+          dispatchPromptInBackground: true,
+          resolveSessionEnvironment: () => environment(log),
+        });
+        const waiting = yield* Deferred.make<void>();
+        const consumer = yield* adapter.streamEvents.pipe(
+          Stream.runForEach((event) =>
+            event.type === "content.delta" && event.payload.delta === "waiting"
+              ? Deferred.succeed(waiting, undefined).pipe(Effect.asVoid)
+              : Effect.void,
+          ),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* adapter.startSession(input(cwd));
+        const receipt = yield* adapter.sendTurn(turn("wait-for-cancel"));
+        yield* Deferred.await(waiting);
+        expect(receipt.threadId).toBe(threadId);
+        expect((yield* adapter.listSessions())[0]?.status).toBe("running");
+        const overlap = yield* adapter.sendTurn(turn("overlapping turn")).pipe(Effect.flip);
+        expect(overlap.message).toContain("already answering");
+        yield* adapter.interruptTurn(threadId);
+        expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
+        yield* Fiber.interrupt(consumer);
+      }),
+    ),
   );
 
   it.live(

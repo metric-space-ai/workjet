@@ -5,7 +5,8 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import * as Schema from "effect/Schema";
 
 const Id = Schema.String.check(Schema.isPattern(/^[!-~]{1,256}$/));
-const Header = { version: Schema.Literal(1), sequence: Schema.Int };
+const MAX_OBSERVATIONS = 512;
+const Header = { version: Schema.Literal(1), sequence: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: MAX_OBSERVATIONS - 1 })) };
 export const NativeSupervisorSdkObservation = Schema.Union([
   Schema.Struct({ ...Header, kind: Schema.Literal("child-spawned"), pid: Schema.Int }),
   Schema.Struct({ ...Header, kind: Schema.Literal("child-closed"), pid: Schema.Int,
@@ -28,7 +29,9 @@ const decode = Schema.decodeUnknownPromise(NativeSupervisorSdkObservation, { onE
 export class NativeSupervisorSdkJournal {
   private sequence = 0;
   private tail: Promise<void> = Promise.resolve();
-  private faulted = false;
+  private fault: Error | undefined;
+  private resolveFailure!: (error: Error) => void;
+  readonly failure = new Promise<Error>(resolve => { this.resolveFailure = resolve; });
   private readonly children = new Map<number, { child: NodeChildProcess.ChildProcess; closed: boolean }>();
   private readonly changes = new Set<() => void>();
   private sessionId: string | undefined;
@@ -37,24 +40,39 @@ export class NativeSupervisorSdkJournal {
   private queryCloseReturned = false;
   constructor(private readonly sink: (observation: NativeSupervisorSdkObservation) => Promise<void>) {}
 
+  private fail(cause: unknown): Error {
+    if (!this.fault) {
+      this.fault = cause instanceof Error ? cause : new Error("Original SDK observation failed.");
+      this.resolveFailure(this.fault);
+      this.notify();
+    }
+    return this.fault;
+  }
+
   private append(record: Record<string, unknown>): Promise<void> {
+    if (this.fault || this.sequence >= MAX_OBSERVATIONS) {
+      const failed = Promise.reject(this.fail(new Error("Original SDK observation limit reached.")));
+      void failed.catch(() => {});
+      return failed;
+    }
     const input = { version: 1, sequence: this.sequence++, ...record };
     this.tail = this.tail.then(async () => {
+      if (this.fault) throw this.fault;
       const event = await decode(input);
       await this.sink(Object.freeze(event));
     });
     // Preserve rejection for the caller/drain while handling fire-and-forget child callbacks.
-    void this.tail.catch(() => { this.faulted = true; this.notify(); });
+    void this.tail.catch(cause => { this.fail(cause); });
     return this.tail;
   }
   private notify() { for (const changed of this.changes) changed(); }
-  currentSdkSessionId(): string | undefined { return this.faulted ? undefined : this.sessionId; }
+  currentSdkSessionId(): string | undefined { return this.fault ? undefined : this.sessionId; }
 
   /** Only the adapter's actual spawn callback supplies this process object.
    * A captured PID alone, empty process list or terminated DTO cannot call it. */
   captureOwnedSdkChild(child: NodeChildProcess.ChildProcess): void {
     if (!child.pid || !Number.isInteger(child.pid) || this.children.has(child.pid))
-      throw new Error("Original SDK child unavailable or already captured.");
+      throw this.fail(new Error("Original SDK child unavailable or already captured."));
     const pid = child.pid;
     const state = { child, closed: false };
     this.children.set(pid, state);
@@ -73,7 +91,7 @@ export class NativeSupervisorSdkJournal {
   async observeSdkMessage(message: SDKMessage, currentTurnId: string | undefined): Promise<void> {
     if (message.type === "system" && message.subtype === "init") {
       if (this.children.size === 0 || (this.sessionId && this.sessionId !== message.session_id))
-        throw new Error("Original SDK init/session changed.");
+        throw this.fail(new Error("Original SDK init/session changed."));
       this.sessionId = message.session_id;
       await this.append({ kind: "sdk-init", sessionId: message.session_id, initId: message.uuid });
       return;
@@ -81,7 +99,7 @@ export class NativeSupervisorSdkJournal {
     if (!currentTurnId || currentTurnId !== this.submittedTurnId) return;
     if (message.type !== "assistant" && message.type !== "result") return;
     if (!this.sessionId || message.session_id !== this.sessionId || this.children.size === 0)
-      throw new Error("Original SDK session unavailable.");
+      throw this.fail(new Error("Original SDK session unavailable."));
     if (message.type === "assistant") {
       if (message.parent_tool_use_id !== null) return;
       await this.append({ kind: "parent-assistant", sessionId: message.session_id,
@@ -109,9 +127,9 @@ export class NativeSupervisorSdkJournal {
     signal.throwIfAborted();
     const ready = () => this.children.size > 0 && this.streamJoined && this.queryCloseReturned &&
       [...this.children.values()].every(value => value.closed);
-    if (!ready() && !this.faulted) await new Promise<void>(resolve => {
+    if (!ready() && !this.fault) await new Promise<void>(resolve => {
       const changed = () => {
-        if (ready() || this.faulted || signal.aborted) {
+        if (ready() || this.fault || signal.aborted) {
           this.changes.delete(changed); signal.removeEventListener("abort", changed); resolve();
         }
       };
@@ -120,6 +138,7 @@ export class NativeSupervisorSdkJournal {
       changed();
     });
     signal.throwIfAborted();
+    if (this.fault) throw this.fault;
     await new Promise<void>((resolve, reject) => {
       const abort = () => { signal.removeEventListener("abort", abort); reject(signal.reason); };
       signal.addEventListener("abort", abort, { once: true });

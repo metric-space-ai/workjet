@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Actual owned Node child fixtures, not actual SDK/model/authority evidence.
 import * as NodeChildProcess from "node:child_process";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { DEFAULT_MODEL } from "@workjet/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { NativeSupervisorSdkJournal, type NativeSupervisorSdkObservation } from "./NativeSupervisorSdkJournal.ts";
@@ -67,7 +69,6 @@ it.effect("waits for every actually captured child and refuses duplicate capture
     const second = yield* fixtureChild();
     journal.captureOwnedSdkChild(first.child);
     journal.captureOwnedSdkChild(second.child);
-    expect(() => journal.captureOwnedSdkChild(first.child)).toThrow("already captured");
     yield* Effect.promise(() => journal.sdkStreamJoined());
     yield* Effect.promise(() => journal.sdkQueryCloseReturned());
     let drained = false;
@@ -79,6 +80,7 @@ it.effect("waits for every actually captured child and refuses duplicate capture
     second.finish();
     yield* Effect.promise(() => stopped);
     expect(drained).toBe(true);
+    expect(() => journal.captureOwnedSdkChild(first.child)).toThrow("already captured");
   }).pipe(Effect.scoped),
 );
 it.effect("sink failure cannot become a successful observed drain", () =>
@@ -111,5 +113,112 @@ it.effect("abort bounds a sink that has not returned after the captured child/qu
     const pending = journal.drain(abort.signal).then(() => "unexpected-success", () => "aborted");
     abort.abort(new Error("fixture-sink-deadline"));
     expect(yield* Effect.promise(() => pending)).toBe("aborted");
+  }).pipe(Effect.scoped),
+);
+
+const initFixture = (sessionId: string) => ({
+  type: "system", subtype: "init", session_id: sessionId, uuid: "init-observation",
+  model: DEFAULT_MODEL,
+}) as unknown as SDKMessage;
+const assistantFixture = (sessionId: string, parentToolUseId: string | null = null) => ({
+  type: "assistant", session_id: sessionId, uuid: "assistant-observation",
+  parent_tool_use_id: parentToolUseId,
+  message: { id: "upstream-message-observation", model: DEFAULT_MODEL,
+    content: [{ type: "text", text: "fixture body excluded from metadata" }] },
+}) as unknown as SDKMessage;
+
+it.effect("keeps actual parent message/result anchors and omits requested model, bodies and subagent replies", () =>
+  Effect.gen(function* () {
+    const records: Array<NativeSupervisorSdkObservation> = [];
+    const journal = new NativeSupervisorSdkJournal(async record => { records.push(record); });
+    const fixture = yield* fixtureChild();
+    journal.captureOwnedSdkChild(fixture.child);
+    yield* Effect.promise(() => journal.observeSdkMessage(initFixture("original-session"), undefined));
+    expect(journal.currentSdkSessionId()).toBe("original-session");
+    yield* Effect.promise(() => journal.turnSubmitted("original-turn"));
+    yield* Effect.promise(() => journal.observeSdkMessage(assistantFixture("original-session", "subagent-tool"), "original-turn"));
+    yield* Effect.promise(() => journal.observeSdkMessage(assistantFixture("original-session"), "another-turn"));
+    yield* Effect.promise(() => journal.observeSdkMessage(assistantFixture("original-session"), "original-turn"));
+    yield* Effect.promise(() => journal.observeSdkMessage({
+      type: "result", subtype: "success", session_id: "original-session",
+      uuid: "result-observation", is_error: false,
+    } as unknown as SDKMessage, "original-turn"));
+    expect(records.slice(1)).toEqual([
+      { version: 1, sequence: 1, kind: "sdk-init", sessionId: "original-session", initId: "init-observation" },
+      { version: 1, sequence: 2, kind: "turn-submitted", turnId: "original-turn" },
+      { version: 1, sequence: 3, kind: "parent-assistant", sessionId: "original-session",
+        turnId: "original-turn", messageId: "upstream-message-observation",
+        messageModel: DEFAULT_MODEL, assistantId: "assistant-observation" },
+      { version: 1, sequence: 4, kind: "sdk-result", sessionId: "original-session",
+        turnId: "original-turn", resultId: "result-observation", subtype: "success", isError: false },
+    ]);
+    expect(JSON.stringify(records)).not.toContain("fixture body excluded");
+    fixture.finish();
+    yield* Effect.promise(() => fixture.closed);
+    yield* Effect.promise(() => journal.sdkStreamJoined());
+    yield* Effect.promise(() => journal.sdkQueryCloseReturned());
+    yield* Effect.promise(() => journal.drain(new AbortController().signal));
+  }).pipe(Effect.scoped),
+);
+it.effect("invalidates a replaced SDK session and never drains it successfully", () =>
+  Effect.gen(function* () {
+    const journal = new NativeSupervisorSdkJournal(async () => {});
+    const fixture = yield* fixtureChild();
+    journal.captureOwnedSdkChild(fixture.child);
+    yield* Effect.promise(() => journal.observeSdkMessage(initFixture("original-session"), undefined));
+    const failed = yield* Effect.promise(() => journal.observeSdkMessage(initFixture("replaced-session"), undefined).then(
+      () => undefined, cause => cause,
+    ));
+    expect(failed).toBeInstanceOf(Error);
+    expect(yield* Effect.promise(() => journal.failure)).toBe(failed);
+    expect(journal.currentSdkSessionId()).toBeUndefined();
+    const outcome = yield* Effect.promise(() => journal.drain(new AbortController().signal).then(
+      () => "unexpected-success", () => "invalid-session",
+    ));
+    expect(outcome).toBe("invalid-session");
+    fixture.finish();
+    yield* Effect.promise(() => fixture.closed);
+  }).pipe(Effect.scoped),
+);
+it.effect("rejects an init without an actual child and a parent reply without the original init", () =>
+  Effect.gen(function* () {
+    const empty = new NativeSupervisorSdkJournal(async () => {});
+    const missingChild = yield* Effect.promise(() => empty.observeSdkMessage(initFixture("original-session"), undefined).then(
+      () => undefined, cause => cause,
+    ));
+    expect(missingChild).toBeInstanceOf(Error);
+    const journal = new NativeSupervisorSdkJournal(async () => {});
+    const fixture = yield* fixtureChild();
+    journal.captureOwnedSdkChild(fixture.child);
+    yield* Effect.promise(() => journal.turnSubmitted("original-turn"));
+    const missingInit = yield* Effect.promise(() => journal.observeSdkMessage(assistantFixture("original-session"), "original-turn").then(
+      () => undefined, cause => cause,
+    ));
+    expect(missingInit).toBeInstanceOf(Error);
+    expect(journal.currentSdkSessionId()).toBeUndefined();
+    fixture.finish();
+    yield* Effect.promise(() => fixture.closed);
+  }).pipe(Effect.scoped),
+);
+it.effect("bounds observations at the native sequence limit without throwing from child-close callbacks", () =>
+  Effect.gen(function* () {
+    const records: Array<NativeSupervisorSdkObservation> = [];
+    const journal = new NativeSupervisorSdkJournal(async record => { records.push(record); });
+    const fixture = yield* fixtureChild();
+    journal.captureOwnedSdkChild(fixture.child);
+    yield* Effect.promise(async () => {
+      for (let index = 1; index < 512; index++) await journal.turnSubmitted(`control-${index}`);
+    });
+    expect(records).toHaveLength(512);
+    expect(records.at(-1)?.sequence).toBe(511);
+    fixture.finish();
+    yield* Effect.promise(() => fixture.closed);
+    const failure = yield* Effect.promise(() => journal.failure);
+    expect(failure.message).toContain("observation limit");
+    expect(records).toHaveLength(512);
+    const outcome = yield* Effect.promise(() => journal.drain(new AbortController().signal).then(
+      () => "unexpected-success", () => "bounded-failure",
+    ));
+    expect(outcome).toBe("bounded-failure");
   }).pipe(Effect.scoped),
 );

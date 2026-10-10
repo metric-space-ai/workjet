@@ -64,11 +64,11 @@ const Claim = Schema.Struct({
   deadline_ms: Deadline,
   native_tools: Schema.Array(
     Schema.Struct({
-      name: Schema.Literal("worker_dispatch"),
+      name: Schema.Literals(["worker_dispatch", "confirmed_goal_read"]),
       description: Schema.String,
       inputSchema: Schema.Unknown,
     }),
-  ).check(Schema.isMinLength(1), Schema.isMaxLength(1)),
+  ).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
   execution_ready: Schema.Literal(false),
 });
 const decodePoll = Schema.decodeUnknownPromise(Poll, { onExcessProperty: "error" });
@@ -93,6 +93,8 @@ export async function runNextNativeSupervisorSdkTurn(options: {
   readonly sdkExecutable: string;
   readonly privateStateDirectory: string;
   readonly serviceSignal: AbortSignal;
+  /** Private opt-in only for a qualified native with the confirmed-goal contract. */
+  readonly includeConfirmedGoalRead?: boolean;
 }): Promise<NativeSupervisorSdkTurnDrain | null> {
   options.serviceSignal.throwIfAborted();
   const request = options.source.request.bind(options.source);
@@ -113,6 +115,7 @@ export async function runNextNativeSupervisorSdkTurn(options: {
       version: 1,
       action: "claim",
       offer_id: offer.offer_id,
+      ...(options.includeConfirmedGoalRead === true ? { include_confirmed_goal_read: true } : {}),
     }),
   );
   if (
@@ -121,6 +124,15 @@ export async function runNextNativeSupervisorSdkTurn(options: {
     claim.deadline_ms !== offer.deadline_ms
   )
     throw new Error("Original Supervisor offer changed during claim.");
+  const toolNames = claim.native_tools.map((descriptor) => descriptor.name);
+  if (
+    toolNames.filter((name) => name === "worker_dispatch").length !== 1 ||
+    new Set(toolNames).size !== toolNames.length ||
+    (toolNames.includes("confirmed_goal_read") && options.includeConfirmedGoalRead !== true) ||
+    (options.includeConfirmedGoalRead === true && !toolNames.includes("confirmed_goal_read"))
+  )
+    throw new Error("Original Supervisor claim has an unsupported native tool set.");
+  const includeConfirmedGoalRead = toolNames.includes("confirmed_goal_read");
   const lifetime = Math.min(claim.deadline_ms - Date.now(), 300000);
   if (lifetime <= 0) throw new Error("Original Supervisor claim expired.");
   if (
@@ -155,6 +167,7 @@ export async function runNextNativeSupervisorSdkTurn(options: {
     controllerId: claim.controller_id,
     transport: options.source,
     currentSdkSessionId: () => journal.currentSdkSessionId(),
+    includeConfirmedGoalRead,
   });
   let broker: Awaited<ReturnType<typeof openNativeSupervisorModelBroker>>;
   try {
@@ -289,7 +302,8 @@ export async function runNextNativeSupervisorSdkTurn(options: {
             goal: "Carry out the original native Supervisor assignment and preserve its confirmed project goal.",
             createdAt: new Date().toISOString(),
           }),
-          "The available native tool is mcp__workjet_native__worker_dispatch. Other operations are unsupported on this controller; report that explicitly. Never reconstruct native authority or claim completed work from a startup acknowledgement.",
+          tools.instructions,
+          "Other operations are unsupported on this controller; report that explicitly. Never reconstruct native authority or claim completed work from a startup acknowledgement.",
         ].join("\n\n"),
         tools: [],
         allowedTools: [],

@@ -123,6 +123,24 @@ it.effect(
       });
     }).pipe(Effect.scoped),
 );
+it.effect("passes a qualified native goal-reader opt-in only through the private service", () =>
+  Effect.gen(function* () {
+    const original = fixture();
+    vi.mocked(runNextNativeSupervisorSdkTurn).mockResolvedValueOnce(null);
+    const service = yield* openSelectedNativeSupervisorSdkSourceService({
+      enrollment: original.enrollment,
+      selection: original.selection,
+      privateServiceDirectory: "/isolated-fixture/service",
+      sdkExecutable: "/fixture/sdk.js",
+      includeConfirmedGoalRead: true,
+    });
+    expect(yield* service.runNext()).toBeNull();
+    expect(vi.mocked(runNextNativeSupervisorSdkTurn).mock.calls[0]?.[0]).toMatchObject({
+      source: original.source,
+      includeConfirmedGoalRead: true,
+    });
+  }).pipe(Effect.scoped),
+);
 it.effect("retains a caller-interrupted query and joins it before the Source finalizer", () =>
   Effect.gen(function* () {
     const fixtureValue = fixture();

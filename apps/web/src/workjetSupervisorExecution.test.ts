@@ -288,25 +288,47 @@ describe("selected native message reader", () => {
   it("opts into native Messages text and retains the actual command/task/attempt", async () => {
     const journals: WorkjetSupervisorJournal[] = [];
     const result = await readWorkjetSupervisorPublicExecutionPage(
-      saved, response.commandId, { save: async (journal) => { journals.push(journal); } }, undefined,
+      saved,
+      response.commandId,
+      {
+        save: async (journal) => {
+          journals.push(journal);
+        },
+      },
+      undefined,
       async (instanceId, request) => {
         expect(instanceId).toBe(saved.intent.instanceId);
-        if (request.action !== "project.supervisor.turn.watch") throw new Error("No submit allowed");
+        if (request.action !== "project.supervisor.turn.watch")
+          throw new Error("No submit allowed");
         expect(request.targetCommandId).toBe(saved.turn!.commandId);
-        expect(request.executionPage).toEqual({ include_public_text: true, include_native_message_text: true });
+        expect(request.executionPage).toEqual({
+          include_public_text: true,
+          include_native_message_text: true,
+        });
         return {
           _tag: "completed",
           response: {
-            ...response, commandId: request.commandId,
+            ...response,
+            commandId: request.commandId,
             executionPage: {
-              ...page, native_message_text_supported: true,
-              events: [{
-                ...event, kind: "worker.native_message_text", native_message_text: {
-                  execution_key: "native-execution", model_operation_id: "native-operation",
-                  native_message_id: "upstream-message", upstream_request_id: "upstream-request",
-                  model: DEFAULT_MODEL, offset: 0, text: "Partial native text", completed: true,
+              ...page,
+              native_message_text_supported: true,
+              events: [
+                {
+                  ...event,
+                  kind: "worker.native_message_text",
+                  native_message_text: {
+                    execution_key: "native-execution",
+                    model_operation_id: "native-operation",
+                    native_message_id: "upstream-message",
+                    upstream_request_id: "upstream-request",
+                    model: DEFAULT_MODEL,
+                    offset: 0,
+                    text: "Partial native text",
+                    completed: true,
+                  },
                 },
-              }],
+              ],
             },
           },
         };
@@ -316,29 +338,45 @@ describe("selected native message reader", () => {
     expect(journals).toHaveLength(1);
     expect(journals[0]?.turn).toEqual(saved.turn); // message_stop cannot close the running task.
     if (result._tag === "completed" && result.response.action === response.action)
-      expect(result.response.executionPage?.events[0]?.native_message_text?.native_message_id).toBe("upstream-message");
+      expect(result.response.executionPage?.events[0]?.native_message_text?.native_message_id).toBe(
+        "upstream-message",
+      );
   });
   it("removes only unsupported text opt-ins during bounded same-attempt compatibility reads", async () => {
     const seen: string[] = [];
     const requestedAttempt = "native-attempt";
     const cursor = page.next_cursor;
     const result = await readWorkjetSupervisorPublicExecutionPage(
-      saved, response.commandId, { save: async () => {} },
-      { include_native_message_text: true, include_public_text: true, attempt_id: requestedAttempt, cursor },
+      saved,
+      response.commandId,
+      { save: async () => {} },
+      {
+        include_native_message_text: true,
+        include_public_text: true,
+        attempt_id: requestedAttempt,
+        cursor,
+      },
       async (instanceId, request) => {
         expect(instanceId).toBe(saved.intent.instanceId);
-        if (request.action !== "project.supervisor.turn.watch") throw new Error("No submit allowed");
+        if (request.action !== "project.supervisor.turn.watch")
+          throw new Error("No submit allowed");
         expect(request.targetCommandId).toBe(saved.turn!.commandId);
         expect(request.executionPage?.attempt_id).toBe(requestedAttempt);
         expect(request.executionPage?.cursor).toEqual(cursor);
         seen.push(request.commandId);
-        if (request.executionPage?.include_native_message_text || request.executionPage?.include_public_text)
+        if (
+          request.executionPage?.include_native_message_text ||
+          request.executionPage?.include_public_text
+        )
           return { _tag: "failed", code: "unsupported" };
         return {
-          _tag: "completed", response: {
-            ...response, commandId: request.commandId,
+          _tag: "completed",
+          response: {
+            ...response,
+            commandId: request.commandId,
             executionPage: {
-              ...page, events: [{ ...event, id: "next-event", sequence: 13 }],
+              ...page,
+              events: [{ ...event, id: "next-event", sequence: 13 }],
               next_cursor: { after_sequence: 13, after_event_id: "next-event" },
             },
           },
@@ -353,8 +391,14 @@ describe("selected native message reader", () => {
   it("does not retry native text reads denied by actual authority", async () => {
     let calls = 0;
     const result = await readWorkjetSupervisorPublicExecutionPage(
-      saved, response.commandId, { save: async () => {} }, undefined,
-      async () => { calls++; return { _tag: "failed", code: "authentication_required" }; },
+      saved,
+      response.commandId,
+      { save: async () => {} },
+      undefined,
+      async () => {
+        calls++;
+        return { _tag: "failed", code: "authentication_required" };
+      },
     );
     expect(calls).toBe(1);
     expect(result).toEqual({ _tag: "failed", code: "authentication_required" });

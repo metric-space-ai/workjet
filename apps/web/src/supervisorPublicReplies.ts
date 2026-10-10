@@ -118,7 +118,13 @@ export function reconstructSupervisorPublicReplies(
 }
 
 const nativeReplyId = (attemptId: string, chunk: WorkjetSupervisorNativeMessageText) =>
-  JSON.stringify(["native-message", attemptId, chunk.execution_key, chunk.model_operation_id, chunk.native_message_id]);
+  JSON.stringify([
+    "native-message",
+    attemptId,
+    chunk.execution_key,
+    chunk.model_operation_id,
+    chunk.native_message_id,
+  ]);
 
 /** Native upstream message identities stay separate from SDK/provider turn and item IDs.
  * Message completion is not Supervisor task, SDK query or goal completion. */
@@ -138,10 +144,18 @@ export function reconstructSupervisorNativeMessageReplies(
       if (replies.size >= 256) break;
       entry = {
         reply: {
-          id, source: "native-message", executionKey: chunk.execution_key,
-          modelOperationId: chunk.model_operation_id, nativeMessageId: chunk.native_message_id,
-          model: chunk.model, upstreamRequestId: chunk.upstream_request_id, phase: "assistant",
-          text: "", completed: false, truncated: false, incomplete: false,
+          id,
+          source: "native-message",
+          executionKey: chunk.execution_key,
+          modelOperationId: chunk.model_operation_id,
+          nativeMessageId: chunk.native_message_id,
+          model: chunk.model,
+          upstreamRequestId: chunk.upstream_request_id,
+          phase: "assistant",
+          text: "",
+          completed: false,
+          truncated: false,
+          incomplete: false,
         },
         chars: [],
       };
@@ -165,7 +179,8 @@ export function reconstructSupervisorNativeMessageReplies(
       entry.reply.upstreamRequestId !== chunk.upstream_request_id ||
       overlap < 0 ||
       (chunk.completed && chunk.offset + chars.length < entry.chars.length) ||
-      chars.slice(0, Math.max(0, overlap))
+      chars
+        .slice(0, Math.max(0, overlap))
         .some((char, index) => entry.chars[chunk.offset + index] !== char) ||
       (entry.reply.completed && (chars.length > overlap || !chunk.completed))
     ) {

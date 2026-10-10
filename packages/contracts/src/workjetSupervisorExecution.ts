@@ -65,7 +65,8 @@ export const WorkjetSupervisorNativeMessageText = Schema.Struct({
   offset: safeInteger(0).check(Schema.isLessThanOrEqualTo(65536)),
   text: Schema.String.check(
     Schema.makeFilter(
-      (text) => Array.from(text).length <= 4096 || "A native text chunk exceeds 4096 Unicode characters.",
+      (text) =>
+        Array.from(text).length <= 4096 || "A native text chunk exceeds 4096 Unicode characters.",
     ),
   ),
   completed: Schema.Boolean,
@@ -144,7 +145,8 @@ export function isWorkjetSupervisorExecutionPageForRequest(
 ): boolean {
   if (
     (request.include_public_text !== true && page.public_text_supported !== undefined) ||
-    (request.include_native_message_text !== true && page.native_message_text_supported !== undefined) ||
+    (request.include_native_message_text !== true &&
+      page.native_message_text_supported !== undefined) ||
     page.command_id !== turn.commandId ||
     page.task_id !== turn.taskId ||
     page.events.length > (request.limit ?? 25) ||
@@ -180,6 +182,8 @@ export function nextWorkjetSupervisorExecutionPageRequest(
     ...(page.next_cursor ? { cursor: page.next_cursor } : {}),
     limit: 25,
     ...(page.public_text_supported !== undefined ? { include_public_text: true } : {}),
-    ...(page.native_message_text_supported !== undefined ? { include_native_message_text: true } : {}),
+    ...(page.native_message_text_supported !== undefined
+      ? { include_native_message_text: true }
+      : {}),
   };
 }

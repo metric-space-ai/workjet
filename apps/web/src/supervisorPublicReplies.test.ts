@@ -158,10 +158,20 @@ function nativeEvent(
   change: Partial<WorkjetSupervisorNativeMessageText> = {},
 ): WorkjetSupervisorExecutionEvent {
   return {
-    id, sequence: 1, kind: "worker.native_message_text", title: "Native text", created_at_ms: 0,
+    id,
+    sequence: 1,
+    kind: "worker.native_message_text",
+    title: "Native text",
+    created_at_ms: 0,
     native_message_text: {
-      execution_key: "execution", model_operation_id: "operation", native_message_id: "message",
-      model: DEFAULT_MODEL, upstream_request_id: "request", offset: 0, text: "Hi 🦊", completed: false,
+      execution_key: "execution",
+      model_operation_id: "operation",
+      native_message_id: "message",
+      model: DEFAULT_MODEL,
+      upstream_request_id: "request",
+      offset: 0,
+      text: "Hi 🦊",
+      completed: false,
       ...change,
     },
   };
@@ -171,18 +181,28 @@ describe("native upstream Supervisor message reconstruction", () => {
     const events = [nativeEvent("one"), nativeEvent("two", { offset: 4, text: "!" })];
     const reply = reconstructSupervisorNativeMessageReplies("attempt", events)[0];
     expect(reply).toMatchObject({
-      source: "native-message", executionKey: "execution", modelOperationId: "operation",
-      nativeMessageId: "message", upstreamRequestId: "request", model: DEFAULT_MODEL,
-      text: "Hi 🦊!", completed: false, incomplete: false,
+      source: "native-message",
+      executionKey: "execution",
+      modelOperationId: "operation",
+      nativeMessageId: "message",
+      upstreamRequestId: "request",
+      model: DEFAULT_MODEL,
+      text: "Hi 🦊!",
+      completed: false,
+      incomplete: false,
     });
     expect(reply).not.toHaveProperty("turnId");
     expect(reply).not.toHaveProperty("itemId");
-    expect(reconstructSupervisorNativeMessageReplies("attempt", structuredClone(events))).toEqual([reply]);
+    expect(reconstructSupervisorNativeMessageReplies("attempt", structuredClone(events))).toEqual([
+      reply,
+    ]);
   });
   it("deduplicates exact backfill and treats message stop only as message completion", () => {
     const one = nativeEvent("one");
     const replies = reconstructSupervisorNativeMessageReplies("attempt", [
-      one, one, nativeEvent("done", { offset: 4, text: "", completed: true }),
+      one,
+      one,
+      nativeEvent("done", { offset: 4, text: "", completed: true }),
     ]);
     expect(replies).toMatchObject([{ text: "Hi 🦊", completed: true, incomplete: false }]);
     expect(replies[0]).not.toHaveProperty("terminal");
@@ -192,13 +212,18 @@ describe("native upstream Supervisor message reconstruction", () => {
     { offset: 7, text: "gap", completed: true },
     { offset: 0, text: "conflicting overlap" },
   ])("preserves the last prefix instead of merging a conflicting native chunk: %o", (change) => {
-    expect(reconstructSupervisorNativeMessageReplies("attempt", [nativeEvent("one"), nativeEvent("two", change)]))
-      .toMatchObject([{ text: "Hi 🦊", incomplete: true, completed: false }]);
+    expect(
+      reconstructSupervisorNativeMessageReplies("attempt", [
+        nativeEvent("one"),
+        nativeEvent("two", change),
+      ]),
+    ).toMatchObject([{ text: "Hi 🦊", incomplete: true, completed: false }]);
   });
   it("marks both entries incomplete when a retained event changes native identity", () => {
     const events = [nativeEvent("same"), nativeEvent("same", { native_message_id: "other" })];
-    expect(reconstructSupervisorNativeMessageReplies("attempt", events).map((reply) => reply.incomplete))
-      .toEqual([true, true]);
+    expect(
+      reconstructSupervisorNativeMessageReplies("attempt", events).map((reply) => reply.incomplete),
+    ).toEqual([true, true]);
   });
   it("separates native executions, model operations and worker attempts", () => {
     const events = [
@@ -208,18 +233,28 @@ describe("native upstream Supervisor message reconstruction", () => {
     ];
     const replies = reconstructSupervisorNativeMessageReplies("attempt", events);
     expect(new Set(replies.map((reply) => reply.id)).size).toBe(3);
-    expect(reconstructSupervisorNativeMessageReplies("other-attempt", events)[0]?.id).not.toBe(replies[0]?.id);
+    expect(reconstructSupervisorNativeMessageReplies("other-attempt", events)[0]?.id).not.toBe(
+      replies[0]?.id,
+    );
   });
   it("retains native/provider event order without converting native metadata", () => {
     const replies = reconstructSupervisorReplies("attempt", [
-      nativeEvent("native"), event("provider", { text: "Provider reply" }),
+      nativeEvent("native"),
+      event("provider", { text: "Provider reply" }),
       nativeEvent("next", { native_message_id: "next-message", text: "Next native reply" }),
     ]);
-    expect(replies.map((reply) => reply.text)).toEqual(["Hi 🦊", "Provider reply", "Next native reply"]);
+    expect(replies.map((reply) => reply.text)).toEqual([
+      "Hi 🦊",
+      "Provider reply",
+      "Next native reply",
+    ]);
   });
   it("rejects text appended after the upstream message ended", () => {
-    expect(reconstructSupervisorNativeMessageReplies("attempt", [
-      nativeEvent("done", { completed: true }), nativeEvent("late", { offset: 4, text: "!" }),
-    ])).toMatchObject([{ text: "Hi 🦊", completed: true, incomplete: true }]);
+    expect(
+      reconstructSupervisorNativeMessageReplies("attempt", [
+        nativeEvent("done", { completed: true }),
+        nativeEvent("late", { offset: 4, text: "!" }),
+      ]),
+    ).toMatchObject([{ text: "Hi 🦊", completed: true, incomplete: true }]);
   });
 });

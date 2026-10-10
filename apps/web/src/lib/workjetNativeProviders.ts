@@ -32,6 +32,19 @@ export type NativeProviderInput =
       readonly expectedAccountRevision: number;
       readonly models: readonly string[];
       readonly expectedRevision: number;
+    }
+  | {
+      readonly action: "instance.providers.account.enable";
+      readonly accountId: string;
+      readonly expectedAccountRevision: number;
+      readonly expectedRevision: number;
+      readonly enabled: boolean;
+    }
+  | {
+      readonly action: "instance.providers.account.remove";
+      readonly accountId: string;
+      readonly expectedAccountRevision: number;
+      readonly expectedRevision: number;
     };
 class NativeProviderFailure extends Error {}
 const decode = Schema.decodeUnknownSync(WorkjetNativeProviderResponse);
@@ -71,6 +84,23 @@ export async function requestInstanceProviders(
       throw new NativeProviderFailure(
         "The account response belongs to another request. Refresh accounts.",
       );
+    if (
+      input.action === "instance.providers.account.enable" ||
+      input.action === "instance.providers.account.remove"
+    ) {
+      const account = response.registry.accounts.find((entry) => entry.id === input.accountId);
+      const applied =
+        response.registry.revision > input.expectedRevision &&
+        (input.action === "instance.providers.account.remove"
+          ? account === undefined
+          : account !== undefined &&
+            account.revision > input.expectedAccountRevision &&
+            account.enabled === input.enabled);
+      if (!applied)
+        throw new NativeProviderFailure(
+          "The instance has not confirmed this account change. Refresh accounts before trying again.",
+        );
+    }
     return response.registry;
   } catch (error) {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");

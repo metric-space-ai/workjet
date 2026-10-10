@@ -10,7 +10,7 @@ export function useInstanceProviders(instanceId: string | null) {
     instanceId: string;
     registry: WorkjetNativeProviderRegistry;
   }>();
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ accountId: string | null; message: string }>();
   const [busy, setBusy] = useState(false);
   const alive = useRef(false);
   const controller = useRef<AbortController | undefined>(undefined);
@@ -30,9 +30,11 @@ export function useInstanceProviders(instanceId: string | null) {
         }
       } catch (failure) {
         if (!active.signal.aborted && alive.current)
-          setError(
-            failure instanceof Error ? failure.message : "Instance accounts could not be read.",
-          );
+          setError({
+            accountId: "accountId" in input ? input.accountId : null,
+            message:
+              failure instanceof Error ? failure.message : "Instance accounts could not be read.",
+          });
       } finally {
         if (controller.current === active && !active.signal.aborted && alive.current)
           setBusy(false);
@@ -55,7 +57,8 @@ export function useInstanceProviders(instanceId: string | null) {
   const refresh = useCallback(() => run({ action: "instance.providers.adopt" }), [run]);
   return {
     registry: snapshot?.instanceId === instanceId ? snapshot.registry : undefined,
-    error,
+    error: error?.message,
+    errorAccountId: error?.accountId,
     busy,
     run,
     refresh,

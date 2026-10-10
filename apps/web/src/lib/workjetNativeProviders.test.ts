@@ -58,6 +58,90 @@ const registry = Schema.decodeUnknownSync(WorkjetNativeProviderRegistry)({
 const account = registry.accounts[0]!;
 describe("native account Luma composition", () => {
   afterEach(() => vi.useRealTimers());
+  it("accepts account mutations only after a newer correlated registry confirms the change", async () => {
+    const enable = {
+      action: "instance.providers.account.enable",
+      accountId: account.id,
+      expectedAccountRevision: account.revision,
+      expectedRevision: registry.revision,
+      enabled: false,
+    } as const;
+    const remove = {
+      action: "instance.providers.account.remove",
+      accountId: account.id,
+      expectedAccountRevision: account.revision,
+      expectedRevision: registry.revision,
+    } as const;
+    const changed = {
+      ...registry,
+      revision: 1,
+      accounts: [
+        {
+          ...account,
+          enabled: false,
+          revision: 4,
+          nativeAccountReference: { ...reference, accountRevision: 4 },
+        },
+      ],
+    };
+    const respond = (snapshot: typeof registry) =>
+      vi.fn<WorkjetProjectControlPort>(async (_instance, input) => {
+        if (
+          input.action !== "instance.providers.account.enable" &&
+          input.action !== "instance.providers.account.remove"
+        )
+          throw new Error("Unexpected action");
+        return {
+          _tag: "completed",
+          response: {
+            version: 1,
+            action: input.action,
+            operationId: input.operationId,
+            registry: snapshot,
+          },
+        };
+      });
+    expect(
+      await requestInstanceProviders(
+        "managed:welsch",
+        enable,
+        new AbortController().signal,
+        respond(changed),
+      ),
+    ).toEqual(changed);
+    const removed = { ...registry, revision: 1, accounts: [] };
+    expect(
+      await requestInstanceProviders(
+        "managed:welsch",
+        remove,
+        new AbortController().signal,
+        respond(removed),
+      ),
+    ).toEqual(removed);
+    for (const snapshot of [
+      registry,
+      { ...changed, revision: 0 },
+      { ...changed, accounts: [account] },
+      { ...changed, accounts: [] },
+    ])
+      await expect(
+        requestInstanceProviders(
+          "managed:welsch",
+          enable,
+          new AbortController().signal,
+          respond(snapshot),
+        ),
+      ).rejects.toThrow("has not confirmed this account change");
+    await expect(
+      requestInstanceProviders(
+        "managed:welsch",
+        remove,
+        new AbortController().signal,
+        respond(changed),
+      ),
+    ).rejects.toThrow("has not confirmed this account change");
+  });
+
   it("adds native-only routes without substituting local gateway authority", () => {
     const legacy = {
       id: WorkjetLlmRouteId.make("legacy"),

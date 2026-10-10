@@ -9,3 +9,5 @@ Each model shows the result of a minimal server-side inference check for that ex
 Re-login appears when an active subscription account rejects credentials. API-key accounts offer replacement at the masked key or after an authentication error. Limits are provider-reported readings, with reset and observation time in the tooltip; an em dash means the provider does not report a reading. Account scheduling and session affinity use the standard gateway policy.
 
 Usage below the table combines recorded requests by model across providers for 7 or 30 days. Missing token or limit readings remain unknown.
+
+CTOX instance accounts expose their own controls when the connected instance supports them. Toggle an account directly in its row. The trash can asks for confirmation there and removes that account, its credentials and its account-specific model settings. The row changes only after the instance confirms the new state. If the connection fails, refresh accounts before retrying. Older instances keep account state read-only until CTOX is updated. Shared models remain available to other accounts of the same provider.

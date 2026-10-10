@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { assert, it } from "@effect/vitest";
-import { RemoteWorkerDispatchError, type RemoteWorkerResult } from "@workjet/contracts";
+import { RemoteWorkerDispatchError, WorkjetComputerId, type RemoteWorkerResult } from "@workjet/contracts";
 import type { RegisteredNativeWorkerSource } from "./NativeSupervisorWorkerDispatch.ts";
 import type { NativeWorkerTerminalReceipt } from "./NativeWorkerOutcome.ts";
 import * as Effect from "effect/Effect";
@@ -12,6 +12,7 @@ function fixture() {
   let receipt: WorkerPullRequestReceipt = persisted;
   let current = source;
   let hasStartup = true;
+  let acknowledgement = startup;
   let lostAck = false;
   const reports: string[] = [];
   const dependencies = {
@@ -19,7 +20,7 @@ function fixture() {
     refresh: (saved: WorkerPullRequestReceipt) => Effect.succeed(saved),
     readStartup: () => Effect.succeed(hasStartup ? Option.some({
       request: worker, worktreePath: startup.worktreePath,
-      response: { requestId: worker.requestId, outcome: { status: "dispatched" as const, result: startup } },
+      response: { requestId: worker.requestId, outcome: { status: "dispatched" as const, result: acknowledgement } },
     }) : Option.none()),
     currentSource: () => Effect.sync(() => current),
     report: (_source: RegisteredNativeWorkerSource, _startup: RemoteWorkerResult, outcome: NativeWorkerTerminalReceipt) => Effect.gen(function* () {
@@ -30,6 +31,7 @@ function fixture() {
   };
   return { dependencies, reports, changeReceipt: (value: WorkerPullRequestReceipt) => { receipt = value; },
     revoke: () => { current = { ...source, scope: { ...source.scope, instanceId: "replacement" } }; },
+    changeStartup: (value: RemoteWorkerResult) => { acknowledgement = value; },
     noStartup: () => { hasStartup = false; }, loseAck: () => { lostAck = true; },
   };
 }
@@ -98,4 +100,19 @@ it.effect("re-reads source authority after provider observation and refuses a bi
     });
     yield* publisher.run(registered);
     assert.deepEqual(f.reports, []);
+  }));
+
+it.effect("refuses a startup acknowledgement for a different worker, target or parent", () =>
+  Effect.gen(function* () {
+    for (const wrong of [
+      { ...startup, workerThreadId: worker.parent.threadId },
+      { ...startup, environmentId: worker.parent.environmentId },
+      { ...startup, computerId: WorkjetComputerId.make("foreign-computer") },
+      { ...startup, parent: { ...startup.parent, threadId: worker.requestId } },
+      { ...startup, parent: { ...startup.parent, environmentId: worker.targetEnvironmentId } },
+    ]) {
+      const f = fixture(); f.changeStartup(wrong);
+      yield* makeNativeWorkerOutcomePublisher(f.dependencies).run(registered);
+      assert.deepEqual(f.reports, []);
+    }
   }));

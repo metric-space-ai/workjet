@@ -67,6 +67,10 @@ it.effect("persists stopped submission on source and observes merge after target
     yield* invoke(notice);
     const submission = Option.getOrThrow(yield* store.get(worker.requestId));
     assert.deepEqual(submission, { ...persisted, state: "open" });
+    candidates = [{ ...pr, headCommitOid: "b".repeat(40) }];
+    assert.equal((yield* invoke({ ...notice, headOid: "b".repeat(40) }).pipe(Effect.result))._tag, "Failure");
+    assert.deepEqual(Option.getOrThrow(yield* store.get(worker.requestId)), submission);
+    candidates = [pr];
     yield* invoke(notice); // Lost source acknowledgement retries the same durable identity.
     assert.deepEqual(Option.getOrThrow(yield* store.get(worker.requestId)), submission);
     const restarted = yield* makePullRequestStore; // Fresh service uses the persisted database.

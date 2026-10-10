@@ -4,6 +4,11 @@ import path from 'node:path';
 const option = name => process.argv[process.argv.indexOf(name) + 1];
 const sessionFile = process.argv.includes('--session') ? option('--session') : path.join(option('--session-dir'), 'fixture-session.jsonl');
 fs.mkdirSync(path.dirname(sessionFile), {recursive:true});
+fs.writeFileSync(path.join(option('--session-dir'), 'fixture-startup.json'), JSON.stringify({
+ appendSystemPrompt: process.argv.includes('--append-system-prompt') ? option('--append-system-prompt') : null,
+ replacesSystemPrompt: process.argv.includes('--system-prompt'),
+ sessionFile,
+}));
 if (!fs.existsSync(sessionFile)) fs.writeFileSync(sessionFile, '');
 let provider = option('--provider'), model = option('--model'), active = false;
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n');

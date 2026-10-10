@@ -54,7 +54,10 @@ fn promotes_additional_tools_and_qualifies_namespaces() {
     .unwrap();
     let body: Value = serde_json::from_slice(&prepared.body).unwrap();
     assert_eq!(body["tools"][0]["name"], "collaboration__spawn_agent");
-    assert_eq!(body["tools"][0]["parameters"]["oneOf"][0]["type"], "object");
+    assert_eq!(
+        body["tools"][0]["parameters"]["properties"]["input"]["oneOf"][0]["type"],
+        "object"
+    );
     assert!(body["input"].as_array().unwrap().is_empty());
     assert_eq!(
         prepared.namespace_tools["collaboration__spawn_agent"].namespace,
@@ -84,7 +87,10 @@ fn normalizes_custom_tool_history() {
     let prepared = prepare_xai_responses_body(br#"{"input":[{"type":"custom_tool_call","name":"shell","input":"ls"},{"type":"custom_tool_call_output","output":"ok"}]}"#, XaiRequestPolicy { model:"grok", ..Default::default() }).unwrap();
     let body: Value = serde_json::from_slice(&prepared.body).unwrap();
     assert_eq!(body["input"][0]["type"], "function_call");
-    assert_eq!(body["input"][0]["arguments"], "ls");
+    assert_eq!(
+        serde_json::from_str::<Value>(body["input"][0]["arguments"].as_str().unwrap()).unwrap(),
+        json!({"input":"ls"})
+    );
     assert_eq!(body["input"][1]["type"], "function_call_output");
 }
 

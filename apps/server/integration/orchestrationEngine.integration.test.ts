@@ -158,6 +158,15 @@ const seedProjectAndThread = (harness: OrchestrationIntegrationHarness) =>
       worktreePath: harness.workspaceDir,
       createdAt,
     });
+    // Recorded provider turns are driven by this test, without autonomous goal continuation.
+    yield* harness.engine.dispatch({
+      type: "thread.goal.set",
+      commandId: CommandId.make("cmd-replay-goal-pause"),
+      threadId: THREAD_ID,
+      status: "paused",
+      reason: "Replay the explicit provider lifecycle commands.",
+      createdAt,
+    });
   });
 
 const startTurn = (input: {
@@ -841,6 +850,14 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
           entry.activities.some((activity) => activity.turnId === "turn-2"),
         8000,
       );
+      yield* harness.waitForReceipt(
+        (receipt): receipt is TurnProcessingQuiescedReceipt =>
+          receipt.type === "turn.processing.quiesced" &&
+          receipt.threadId === THREAD_ID &&
+          receipt.checkpointTurnCount === 2,
+      );
+      yield* harness.drainProviderRuntime;
+      yield* harness.drainCheckpointReactor;
 
       yield* harness.engine.dispatch({
         type: "thread.checkpoint.revert",

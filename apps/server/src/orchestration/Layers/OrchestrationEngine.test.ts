@@ -2146,7 +2146,7 @@ describe("OrchestrationEngine", () => {
     ]);
 
     const retryResult = await runtime.runPromise(engine.dispatch(turnStartCommand));
-    expect(retryResult.sequence).toBe(5);
+    expect(retryResult.sequence).toBe(6);
 
     const eventsAfterRetry = await runtime.runPromise(
       Stream.runCollect(engine.readEvents(0)).pipe(
@@ -2157,12 +2157,13 @@ describe("OrchestrationEngine", () => {
       "project.created",
       "thread.created", // durable supervisor
       "thread.created",
+      "thread.workjet-config-set", // persistent goal initializes atomically with the first turn
       "thread.message-sent",
       "thread.turn-start-requested",
     ]);
     expect(
       eventsAfterRetry.filter((event) => event.commandId === turnStartCommand.commandId),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
 
     await runtime.dispose();
   });

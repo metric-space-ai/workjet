@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MODEL,
   DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   ProjectId,
@@ -15,8 +16,8 @@ export function readModelForTest(): OrchestrationReadModel {
   const base: OrchestrationThread = {
     id,
     projectId,
-    title: "[Worker1@Project supervisor]: gpt-6.1-sol",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" },
+    title: `[Worker1@Project supervisor]: ${DEFAULT_MODEL}`,
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
     runtimeMode: "full-access",
     interactionMode: "default",
     workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,

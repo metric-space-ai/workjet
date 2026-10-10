@@ -213,13 +213,14 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
     )
       return yield* removalError("identity");
     yield* runCaptured(captured, "publish", [destination]);
-      const observed = yield* capture(destination, "isolated");
-      if (
-        observed.worktreeDev !== captured.worktreeDev ||
-        observed.worktreeIno !== captured.worktreeIno ||
-        observed.adminDev !== captured.adminDev ||
-        observed.adminIno !== captured.adminIno
-      ) return yield* removalError("identity");
+    const observed = yield* capture(destination, "isolated");
+    if (
+      observed.worktreeDev !== captured.worktreeDev ||
+      observed.worktreeIno !== captured.worktreeIno ||
+      observed.adminDev !== captured.adminDev ||
+      observed.adminIno !== captured.adminIno
+    )
+      return yield* removalError("identity");
     // Preserve the persisted identities after an atomic move. A fresh
     // observation must match them and cannot adopt a replacement.
     return { ...captured, worktreePath: destination, adminPath: path.join(destination, ".git") };
@@ -247,14 +248,17 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
       );
       if (captured.kind === "isolated") {
         const observed = yield* capture(recovery.recoveryWorktreePath, "isolated").pipe(
-          Effect.mapError(() => new NativeWorkerWorktreeRemovalError({ reason: "identity", ...recovery })),
+          Effect.mapError(
+            () => new NativeWorkerWorktreeRemovalError({ reason: "identity", ...recovery }),
+          ),
         );
         if (
           observed.worktreeDev !== captured.worktreeDev ||
           observed.worktreeIno !== captured.worktreeIno ||
           observed.adminDev !== captured.adminDev ||
           observed.adminIno !== captured.adminIno
-        ) return yield* new NativeWorkerWorktreeRemovalError({ reason: "identity", ...recovery });
+        )
+          return yield* new NativeWorkerWorktreeRemovalError({ reason: "identity", ...recovery });
       }
       return { ...recovery, recoveryLocationStatus: "verified" as const };
     });

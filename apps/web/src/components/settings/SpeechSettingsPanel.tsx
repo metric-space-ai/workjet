@@ -164,12 +164,12 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               {!config
                 ? unloadedLabel
                 : pending
-                ? "Checking…"
-                : checked
-                  ? "Voice checked · " + check.latencyMs + " ms"
-                  : check
-                    ? check.errorClass
-                    : "Not checked"}
+                  ? "Checking…"
+                  : checked
+                    ? "Voice checked · " + check.latencyMs + " ms"
+                    : check
+                      ? check.errorClass
+                      : "Not checked"}
             </span>
           }
         />
@@ -372,10 +372,10 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
             !config
               ? "Speech settings have not been loaded."
               : sttCheck?.state === "error"
-              ? (remedies[sttCheck.errorClass ?? ""] ?? "Transcription failed. Retry the check.")
-              : sttCheck?.state === "ok"
-                ? "Measured from audio end to final transcript; microphone and connection setup are separate."
-                : "Not checked — selecting a path does not verify live transcription."
+                ? (remedies[sttCheck.errorClass ?? ""] ?? "Transcription failed. Retry the check.")
+                : sttCheck?.state === "ok"
+                  ? "Measured from audio end to final transcript; microphone and connection setup are separate."
+                  : "Not checked — selecting a path does not verify live transcription."
           }
           control={
             <div className="flex items-center gap-3">
@@ -402,10 +402,10 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 {!config
                   ? unloadedLabel
                   : sttPending
-                  ? "Checking…"
-                  : sttCheck?.state === "ok"
-                    ? sttCheck.latencyMs + " ms"
-                    : (sttCheck?.errorClass ?? "Not checked")}
+                    ? "Checking…"
+                    : sttCheck?.state === "ok"
+                      ? sttCheck.latencyMs + " ms"
+                      : (sttCheck?.errorClass ?? "Not checked")}
               </span>
               <Button
                 size="sm"

@@ -229,8 +229,9 @@ export const make = Effect.gen(function* () {
     if (request.harness === "claude-code" && sourceHarness === undefined)
       return yield* failure("source-unavailable");
     if (sourceHarness !== undefined) {
-      if (sourceHarness.harness !== (request.harness ?? "codex-cli"))
-        return yield* failure("source-unavailable");
+      if (sourceHarness.harness !== (request.harness ?? "codex-cli")) return yield* failure("source-unavailable");
+      // The five additional profiles remain inactive until their source-aware adapters are installed.
+      if (sourceHarness.harness !== "codex-cli" && sourceHarness.harness !== "claude-code") return yield* failure("computer-unavailable");
       if (Option.isNone(providerInstances)) return yield* failure("computer-unavailable");
       const selected = remoteWorkerRuntimeSelection(
         request,

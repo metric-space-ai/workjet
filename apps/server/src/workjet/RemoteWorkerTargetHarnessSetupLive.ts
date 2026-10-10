@@ -12,6 +12,8 @@ import * as Clock from "effect/Clock";
 import * as Semaphore from "effect/Semaphore";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
+import { ServerConfig } from "../config.ts";
+import * as Path from "effect/Path";
 import { RemoteWorkerTargetHarnessSetup } from "./RemoteWorkerConnectionBootstrap.ts";
 import { remoteWorkerRequestDigest } from "./ctox/CtoxRemoteWorkerAdmission.ts";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
@@ -30,6 +32,8 @@ export const targetWorkerBindingMatches = (
 
 export const make = Effect.gen(function* () {
   const targetEnvironmentId = yield* (yield* ServerEnvironment).getEnvironmentId;
+  const server = yield* ServerConfig;
+  const path = yield* Path.Path;
   const http = yield* HttpClient.HttpClient;
   const mutex = yield* Semaphore.make(1);
   const install = Effect.fn("RemoteWorkerTargetHarnessSetup.install")(function* (
@@ -80,6 +84,7 @@ export const make = Effect.gen(function* () {
           requestDigest,
           modelId: binding.modelRef.modelId,
           harness: request.harness ?? "codex-cli",
+          ...(request.harness === undefined || request.harness === "codex-cli" || request.harness === "claude-code" ? {} : { nativeProfile: { harness: request.harness, directory: path.join(server.stateDir, "worker-source-profiles", requestDigest) } }),
         }),
       catch: failure,
     }).pipe(Effect.timeout("15 seconds"), Effect.mapError(failure));

@@ -7,7 +7,11 @@ import {
 } from "@workjet/contracts";
 import jourFixeFixture from "../../../../packages/contracts/src/workjetJourFixeMeeting.fixture.json" with { type: "json" };
 import * as NodeVM from "node:vm";
-import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
+import type {
+  CtoxManagedDiscoveryResult,
+  CtoxManagedInstance,
+  WorkjetExitModelAssessment,
+} from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -3056,6 +3060,68 @@ describe("CtoxGuestManager", () => {
         { ...response, commandId: "other-command" },
         { ...response, project: { ...response.project, id: "other-project" } },
         { ...response, project: { ...response.project, title: "other-title" } },
+      ]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
+      }
+      harness.views[0]?.executeJavaScript.mockResolvedValue({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("correlates an exit assessment and rejects stale or foreign receipts", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
+      const request = {
+        action: "project.exit_model.refresh" as const,
+        commandId: CommandId.make("refresh-exit"),
+        projectId: ProjectId.make("project-one"),
+        resources: {
+          hoursPerWeek: 20,
+          monthlyBudgetEur: 300,
+          comparisonMode: "project_specific" as const,
+        },
+      };
+      const assessment: WorkjetExitModelAssessment = {
+        contract: "ctox.workjet.exit_model.v1",
+        project_id: request.projectId,
+        run_id: "blocked-run",
+        as_of: "2026-10-08",
+        exit_date: "2031-10-08",
+        refresh_due: "2026-11-08",
+        status: "blocked",
+        missing_inputs: ["confirmed_resource_plan"],
+        findings: [],
+        sources: [],
+        plan_summary: null,
+        result: null,
+        scenarios: [],
+        history: [],
+      };
+      const response = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        assessment,
+      };
+      for (const result of [
+        { ...response, commandId: "another-command" },
+        { ...response, projectId: "foreign-project" },
+        { ...response, action: "project.exit_model.read" },
+        { ...response, assessment: { ...assessment, project_id: "foreign-project" } },
+        { ...response, assessment: { ...assessment, status: "provisional" } },
       ]) {
         harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result });
         assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {

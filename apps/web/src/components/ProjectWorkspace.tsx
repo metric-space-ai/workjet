@@ -1,5 +1,6 @@
 import { ProjectSupervisorLumaSummary } from "./ProjectSupervisorLumaField";
 import { useState } from "react";
+import { ProjectExitModelPanel } from "./ProjectExitModel";
 import { NativeJourFixeRoom } from "./NativeJourFixeRoom";
 import { effectiveSnoozed } from "@workjet/client-runtime/state/thread-settled";
 import { selectThreadsForProjectScope } from "@workjet/client-runtime/state/worker-overview";
@@ -210,6 +211,12 @@ export function ProjectWorkspace({
             ) : null,
           )}
         </dl>
+        <ProjectExitModelPanel
+          key={project.key}
+          projectId={project.id}
+          instanceId={project.native ? (ctoxInstanceId ?? null) : null}
+          assessment={project.configuration?.exitModel ?? null}
+        />
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-6">
             {intervals.length > 0 && (

@@ -1210,7 +1210,8 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(
         yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
         {
-          _tag: "failed", code: "guest_failed",
+          _tag: "failed",
+          code: "guest_failed",
           diagnostic: { stage: "execute", reason: "request_timeout" },
         },
       );

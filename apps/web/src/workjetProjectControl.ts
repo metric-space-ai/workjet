@@ -39,10 +39,11 @@ export function describeWorkjetProjectControlFailure(
     const messages = {
       peer_unavailable: "The CTOX data connection is not connected yet. Retry connection.",
       request_timeout: "The CTOX data request timed out. Retry connection.",
-      network_unavailable: "The CTOX guest could not reach the network. Retry connection.",
+      network_unavailable: "The CTOX connection could not reach the network. Retry connection.",
       owner_session_not_ready: "The CTOX Owner session is not ready. Retry connection.",
       project_control_not_ready: "The CTOX project connection is still starting. Retry connection.",
-      supervisor_control_not_ready: "The CTOX Supervisor connection is still starting. Retry connection.",
+      supervisor_control_not_ready:
+        "The CTOX Supervisor connection is still starting. Retry connection.",
     };
     return messages[failure.diagnostic.reason];
   }

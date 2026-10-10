@@ -117,6 +117,7 @@ const decodeWorkjetDeviceWebRtcResponse = Schema.decodeUnknownEffect(WorkjetDevi
 const decodeWorkjetProjectControlResponse = Schema.decodeUnknownEffect(
   CtoxWorkjetProjectControlResponse,
 );
+const decodeWorkjetProjectControlDiagnostic = Schema.decodeUnknownEffect(CtoxWorkjetProjectControlDiagnostic);
 const decodeWorkjetSessionControlResponse = Schema.decodeUnknownEffect(
   CtoxWorkjetSessionControlResponse,
 );
@@ -852,11 +853,12 @@ export function describeCtoxGuestFailure(error: unknown): {
             ? "supervisor_control_not_ready"
             : message === "Native WebRTC peer is not connected" || code === "PEER_UNAVAILABLE"
               ? "peer_unavailable"
-              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT"
+              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) ||
+                  code === "REQUEST_TIMEOUT"
                 ? "request_timeout"
                 : message === "Failed to fetch" || message === "fetch failed"
                   ? "network_unavailable"
-            : "exception",
+                  : "exception",
   };
 }
 
@@ -2061,7 +2063,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
                       status: "failed" as const,
                       diagnostic: { stage: "execute" as const, reason: failure.reason },
                     }
-                : undefined,
+                  : undefined,
             ),
           ),
           Effect.timeoutOption("30 seconds"),
@@ -2102,9 +2104,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             typeof raw === "object" && raw !== null
               ? (raw as { readonly diagnostic?: unknown }).diagnostic
               : undefined;
-          const reason = yield* Schema.decodeUnknownEffect(CtoxWorkjetProjectControlDiagnostic)(
-            diagnostic,
-          ).pipe(Effect.option);
+          const reason = yield* decodeWorkjetProjectControlDiagnostic(diagnostic).pipe(Effect.option);
           yield* Effect.logWarning("CTOX project control response invalid", {
             instanceId,
             action: request.action,
@@ -2113,7 +2113,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             ...describeCtoxGuestFailure(raw),
           });
           return {
-            _tag: "failed", code: "guest_failed",
+            _tag: "failed",
+            code: "guest_failed",
             ...(Option.isSome(reason) ? { diagnostic: reason.value } : {}),
           };
         }

@@ -33,10 +33,13 @@ describe("project instance failure display", () => {
     );
   });
   it("explains a classified data-plane timeout without showing guest exception text", () => {
-    expect(describeWorkjetProjectControlFailure({
-      _tag: "failed", code: "guest_failed",
-      diagnostic: { stage: "execute", reason: "request_timeout" },
-    })).toBe("The CTOX data request timed out. Retry connection.");
+    expect(
+      describeWorkjetProjectControlFailure({
+        _tag: "failed",
+        code: "guest_failed",
+        diagnostic: { stage: "execute", reason: "request_timeout" },
+      }),
+    ).toBe("The CTOX data request timed out. Retry connection.");
   });
 });
 
@@ -105,7 +108,8 @@ describe("listWorkjetProjects", () => {
 describe("classified project list failures", () => {
   it("does not repeat a known peer failure as two legacy queries", async () => {
     const failure = {
-      _tag: "failed", code: "guest_failed",
+      _tag: "failed",
+      code: "guest_failed",
       diagnostic: { stage: "execute", reason: "peer_unavailable" },
     } as const;
     const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);

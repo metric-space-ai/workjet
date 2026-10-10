@@ -290,7 +290,7 @@ export function ProjectOverviewView(props: {
           ) : (
             <p className="text-muted-foreground">{text.noNextMeeting}</p>
           )}
-          {props.onOpenJourFixe && (
+          <div>
             <button
               type="button"
               onClick={props.onOpenJourFixe}
@@ -301,7 +301,10 @@ export function ProjectOverviewView(props: {
             >
               {text.join}
             </button>
-          )}
+            {!props.onOpenJourFixe && (
+              <p className="mt-2 text-xs text-muted-foreground">{text.meetingConnectionRequired}</p>
+            )}
+          </div>
         </Card>
         <Card title={text.lastMeeting}>
           {data.lastMeeting ? (

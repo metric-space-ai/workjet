@@ -1,19 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Bounded Node loopback adapter for the external Codex process; source identity is schema validated and scoped by its owning Effect service.
 import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
-import * as NodeFs from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import {
   workerSourceNativeProfile,
   type WorkerSourceNativeProfile,
 } from "./WorkerSourceNativeProfile.ts";
 import { Schema } from "effect";
-<<<<<<< HEAD
-import { WorkjetComputerInventory, type RemoteWorkerHarness } from "@workjet/contracts";
-import type { WorkerSubmission } from "./WorkerSubmission.ts";
-=======
 import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
->>>>>>> 01f6b8b2b (feat(harness): prepare private source profiles behind admission)
+import type { WorkerSubmission } from "./WorkerSubmission.ts";
 
 const Route = Schema.Struct({
   sourceEnvironmentId: Schema.NonEmptyString,
@@ -352,7 +348,7 @@ export async function installWorkerSourceRoute(
         baseUrl,
         apiKey,
       });
-      await NodeFs.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });
+      await NodeFSP.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });
       for (const directory of [
         nativeProfile.environment.HOME,
         nativeProfile.environment.XDG_CONFIG_HOME,
@@ -360,12 +356,12 @@ export async function installWorkerSourceRoute(
         nativeProfile.environment.XDG_CACHE_HOME,
         NodePath.join(nativeProfile.directory, "sessions"),
       ]) {
-        await NodeFs.mkdir(directory!, { recursive: true, mode: 0o700 });
+        await NodeFSP.mkdir(directory!, { recursive: true, mode: 0o700 });
       }
       for (const file of nativeProfile.files) {
         const destination = NodePath.join(nativeProfile.directory, file.name);
-        await NodeFs.writeFile(destination + ".stage", file.content, { mode: 0o600 });
-        await NodeFs.rename(destination + ".stage", destination);
+        await NodeFSP.writeFile(destination + ".stage", file.content, { mode: 0o600 });
+        await NodeFSP.rename(destination + ".stage", destination);
       }
     }
   } catch {

@@ -1,9 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off -- Real source admission HTTP boundary.
 import * as NodeHttp from "node:http";
-import * as NodeFs from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import * as NodeOs from "node:os";
+import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
+import { it } from "@effect/vitest";
+import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
@@ -12,7 +14,7 @@ import {
   ThreadId,
   type ProviderSessionStartInput,
 } from "@workjet/contracts";
-import { afterEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, expect, vi } from "vite-plus/test";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 import { admitWorkerSourceNativeProfile } from "./WorkerSourceNativeAdmission.ts";
@@ -39,15 +41,27 @@ const run = (
   value: ProviderSessionStartInput,
   driver: NonNullable<ReturnType<typeof workerSourceDriver>>,
 ) =>
-  Effect.runPromise(
-    admitWorkerSourceNativeProfile(value, ProviderDriverKind.make(driver)).pipe(
-      Effect.provideService(ServerEnvironment, {
-        getEnvironmentId: Effect.succeed(EnvironmentId.make("target")),
-        getDescriptor: Effect.die("unused descriptor"),
-      }),
-    ),
+  admitWorkerSourceNativeProfile(value, ProviderDriverKind.make(driver)).pipe(
+    Effect.provideService(ServerEnvironment, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("target")),
+      getDescriptor: Effect.die("unused descriptor"),
+    }),
   );
-async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "greppy" | "pi-code") {
+const rejects = (effect: ReturnType<typeof run>, issue: string) =>
+  effect.pipe(
+    Effect.result,
+    Effect.map((result) => {
+      expect(result).toMatchObject({
+        _tag: "Failure",
+        failure: { issue: expect.stringContaining(issue) },
+      });
+    }),
+  );
+async function fixture(
+  harness: "grok-cli" | "opencode" | "minimax-code" | "greppy" | "pi-code",
+  platform: NodeJS.Platform,
+  tmpdir: string | undefined,
+) {
   let allowed = true;
   let admitted = 0;
   const server = NodeHttp.createServer(async (req, res) => {
@@ -66,13 +80,13 @@ async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "grep
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no listener");
-  const directory = await NodeFs.mkdtemp(
+  const directory = await NodeFSP.mkdtemp(
     NodePath.join(
-      process.env.TMPDIR ?? (process.platform === "darwin" ? "/Volumes/tmp" : NodeOs.tmpdir()),
+      tmpdir ?? (platform === "darwin" ? "/Volumes/tmp" : NodeOS.tmpdir()),
       "native-admission-",
     ),
   );
-  cleanups.push(() => NodeFs.rm(directory, { recursive: true, force: true }));
+  cleanups.push(() => NodeFSP.rm(directory, { recursive: true, force: true }));
   const thread = "admission-" + harness;
   const route = await installWorkerSourceRoute(
     thread,
@@ -103,41 +117,46 @@ async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "grep
   };
 }
 for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-code"] as const) {
-  it(`admits ${harness} repeatedly without inheriting target accounts`, async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "target-anthropic-secret");
-    vi.stubEnv("XAI_API_KEY", "target-xai-secret");
-    vi.stubEnv("WORKJET_TARGET_SECRET", "target-secret");
-    const f = await fixture(harness);
-    const before = f.admitted();
-    for (let index = 0; index < 20; index++) {
-      const profile = await run(f.value, workerSourceDriver(harness)!);
-      expect(profile?.environment.WORKJET_SOURCE_ISOLATED).toBe("true");
-      expect(profile?.environment.WORKJET_WORKER_SOURCE_KEY).toBe(f.route.apiKey);
-      expect(profile?.environment.HOME).toBe(f.route.nativeProfile!.environment.HOME);
-      expect(JSON.stringify(profile)).not.toMatch(/target-(?:anthropic|xai)-secret|target-secret/);
-      expect(profile?.environment.WORKJET_TARGET_SECRET).toBeUndefined();
-    }
-    expect(f.admitted() - before).toBe(20);
-    const beforeWrong = f.admitted();
-    await expect(
-      run(
-        { ...f.value, modelSelection: { ...f.value.modelSelection!, model: "grok-4.7" } },
-        workerSourceDriver(harness)!,
-      ),
-    ).rejects.toThrow("source model differs");
-    await expect(run(f.value, "codex")).rejects.toThrow("harness profile");
-    expect(f.admitted()).toBe(beforeWrong);
-    f.deny();
-    await expect(run(f.value, workerSourceDriver(harness)!)).rejects.toThrow("admission failed");
-    await f.route.revoke();
-    await expect(run(f.value, workerSourceDriver(harness)!)).rejects.toThrow("route is revoked");
-  });
-}
-it("keeps local sessions unchanged and denies foreign restarts without a matching source", async () => {
-  await expect(
-    run({ threadId: ThreadId.make("local-native"), runtimeMode: "full-access" }, "grok"),
-  ).resolves.toBeUndefined();
-  await expect(run(input("missing-native-source"), "grok")).rejects.toThrow(
-    "unavailable or mismatched",
+  it.effect(`admits ${harness} repeatedly without inheriting target accounts`, () =>
+    Effect.gen(function* () {
+      vi.stubEnv("ANTHROPIC_API_KEY", "target-anthropic-secret");
+      vi.stubEnv("XAI_API_KEY", "target-xai-secret");
+      vi.stubEnv("WORKJET_TARGET_SECRET", "target-secret");
+      const platform = yield* HostProcessPlatform;
+      const environment = yield* HostProcessEnvironment;
+      const f = yield* Effect.promise(() => fixture(harness, platform, environment.TMPDIR));
+      const before = f.admitted();
+      for (let index = 0; index < 20; index++) {
+        const profile = yield* run(f.value, workerSourceDriver(harness)!);
+        expect(profile?.environment.WORKJET_SOURCE_ISOLATED).toBe("true");
+        expect(profile?.environment.WORKJET_WORKER_SOURCE_KEY).toBe(f.route.apiKey);
+        expect(profile?.environment.HOME).toBe(f.route.nativeProfile!.environment.HOME);
+        expect(JSON.stringify(profile)).not.toMatch(/target-(?:anthropic|xai)-secret|target-secret/);
+        expect(profile?.environment.WORKJET_TARGET_SECRET).toBeUndefined();
+      }
+      expect(f.admitted() - before).toBe(20);
+      const beforeWrong = f.admitted();
+      yield* rejects(
+        run(
+          { ...f.value, modelSelection: { ...f.value.modelSelection!, model: "grok-4.7" } },
+          workerSourceDriver(harness)!,
+        ),
+        "source model differs",
+      );
+      yield* rejects(run(f.value, "codex"), "harness profile");
+      expect(f.admitted()).toBe(beforeWrong);
+      f.deny();
+      yield* rejects(run(f.value, workerSourceDriver(harness)!), "admission failed");
+      yield* Effect.promise(() => f.route.revoke());
+      yield* rejects(run(f.value, workerSourceDriver(harness)!), "route is revoked");
+    }),
   );
-});
+}
+it.effect("keeps local sessions unchanged and denies foreign restarts without a matching source", () =>
+  Effect.gen(function* () {
+    expect(
+      yield* run({ threadId: ThreadId.make("local-native"), runtimeMode: "full-access" }, "grok"),
+    ).toBeUndefined();
+    yield* rejects(run(input("missing-native-source"), "grok"), "unavailable or mismatched");
+  }),
+);

@@ -1,9 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off -- Real loopback HTTP fixture exercises the external Codex transport boundary.
 import * as NodeHttp from "node:http";
-import * as NodeFs from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import * as NodeOs from "node:os";
-import { afterEach, expect, it } from "vite-plus/test";
+import * as NodeOS from "node:os";
+import { afterEach, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -339,14 +342,17 @@ it("runs Claude Messages tool round trips through the same pinned source route",
     installWorkerSourceRoute(route.requestId, route, { ...pin, harness: "codex-cli" }),
   ).rejects.toThrow("substitution");
 });
-it("admits a source-only catalog and native API-key requests before forwarding unchanged SSE", async () => {
-  const directory = await NodeFs.mkdtemp(
+it.effect("admits a source-only catalog and native API-key requests before forwarding unchanged SSE", () => Effect.gen(function* () {
+  const platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcessEnvironment;
+  yield* Effect.promise(async () => {
+  const directory = await NodeFSP.mkdtemp(
     NodePath.join(
-      process.env.TMPDIR ?? (process.platform === "darwin" ? "/Volumes/tmp" : NodeOs.tmpdir()),
+      environment.TMPDIR ?? (platform === "darwin" ? "/Volumes/tmp" : NodeOS.tmpdir()),
       "worker-source-native-",
     ),
   );
-  cleanups.push(() => NodeFs.rm(directory, { recursive: true, force: true }));
+  cleanups.push(() => NodeFSP.rm(directory, { recursive: true, force: true }));
   let admitted = true;
   let inferred = 0;
   const server = NodeHttp.createServer(async (req, res) => {
@@ -394,12 +400,12 @@ it("admits a source-only catalog and native API-key requests before forwarding u
   const harness = await installWorkerSourceRoute(route.requestId, route, pin);
   cleanups.push(harness.revoke);
   const profile = JSON.parse(
-    await NodeFs.readFile(NodePath.join(directory, "config.yaml"), "utf8"),
+    await NodeFSP.readFile(NodePath.join(directory, "config.yaml"), "utf8"),
   );
   expect(profile.custom_provider["workjet-source"].options.apiKey).toBe(harness.apiKey);
   expect(Object.keys(profile.custom_provider["workjet-source"].models)).toEqual(["gpt-6.1-sol"]);
-  if (process.platform !== "win32")
-    expect((await NodeFs.stat(NodePath.join(directory, "config.yaml"))).mode & 0o077).toBe(0);
+  if (platform !== "win32")
+    expect((await NodeFSP.stat(NodePath.join(directory, "config.yaml"))).mode & 0o077).toBe(0);
   expect(
     (await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": "wrong-key" } })).status,
   ).toBe(403);
@@ -433,4 +439,5 @@ it("admits a source-only catalog and native API-key requests before forwarding u
   expect(
     (await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": harness.apiKey } })).status,
   ).toBe(502);
-});
+  });
+}));

@@ -25,7 +25,8 @@ const observeSpawnedConfiguration = (environment?: NodeJS.ProcessEnv) =>
     Effect.gen(function* () {
       const directory = yield* Effect.acquireRelease(
         Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "opencode-env-"))),
-        (directory) => Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
+        (directory) =>
+          Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
       );
       const binaryPath = NodePath.join(directory, "opencode-fixture.mjs");
       yield* Effect.promise(() => NodeFSP.writeFile(binaryPath, fixture, { mode: 0o700 }));

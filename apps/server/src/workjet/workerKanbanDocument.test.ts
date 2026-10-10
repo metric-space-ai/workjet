@@ -81,6 +81,13 @@ it("paginates the maximum board and validates bounded Unicode without altering s
   expect(Schema.encodeSync(Schema.fromJsonString(WorkjetWorkerKanban))(large)).toBe(before);
 });
 
+it("accepts valid objectives with whitespace-only note chunks", () => {
+  const objective = "Start" + " ".repeat(3200) + "finish";
+  const document = decode(createWorkerKanbanSlideDocument({ ...input, objective }));
+  expect(document.slides[0]!.speakerNotes!.every((note) => note.text.trim().length > 0)).toBe(true);
+  expect(document.slides[0]!.speakerNotes!.map((note) => note.text).join(" ")).toContain("finish");
+});
+
 it("keeps iteration identity stable while edits change the digest, and scopes identity by thread", () => {
   const first = createWorkerKanbanSlideDocument(input);
   const edited = createWorkerKanbanSlideDocument({

@@ -47,8 +47,8 @@ export function createWorkerKanbanSlideDocument(input: {
   const notes = Array.from({ length: Math.ceil(goalPoints.length / 800) }, (_, index) => ({
     id: "goal-note-" + index + "-" + key,
     kind: "talkingPoint" as const,
-    text: goalPoints.slice(index * 800, (index + 1) * 800).join(""),
-  }));
+    text: goalPoints.slice(index * 800, (index + 1) * 800).join("").trim(),
+  })).filter((note) => note.text.length > 0);
   const pageCount = Math.max(1, Math.ceil(rows.length / rowsPerSlide));
   const title = input.title.trim() || "Persistent worker";
   const document = parseSlideDocument({

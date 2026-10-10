@@ -714,10 +714,12 @@ it.layer(CodexTextGenerationTestLayer)("Codex routed text generation", (it) => {
       {
         output: JSON.stringify({ title: "Unrouted fallback" }),
         resolveEnvironment: () =>
-          Effect.fail(new TextGenerationError({
-            operation: "generateThreadTitle",
-            detail: "gateway unavailable",
-          })),
+          Effect.fail(
+            new TextGenerationError({
+              operation: "generateThreadTitle",
+              detail: "gateway unavailable",
+            }),
+          ),
       },
       (generation) =>
         Effect.gen(function* () {

@@ -446,9 +446,26 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             detail: "Only a target project creation can be a remote mirror.",
           });
         }
+        // Startup keeps the command model small. Computer continuation needs
+        // the complete persisted prefix under this command queue's fence.
+        let decisionReadModel = commandReadModel;
+        if (command.type === "thread.continuation.import" && existingThread) {
+          const detail = yield* projectionSnapshotQuery.getThreadDetailById(command.threadId);
+          if (Option.isNone(detail))
+            return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail: "The destination history could not be read. No history was copied.",
+            });
+          decisionReadModel = {
+            ...commandReadModel,
+            threads: commandReadModel.threads.map((thread) =>
+              thread.id === command.threadId ? detail.value : thread,
+            ),
+          };
+        }
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
-          readModel: commandReadModel,
+          readModel: decisionReadModel,
           environmentId,
           workerCleanupComplete,
           workerPullRequestTerminal,

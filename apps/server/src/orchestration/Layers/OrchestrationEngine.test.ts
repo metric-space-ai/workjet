@@ -1183,7 +1183,7 @@ describe("OrchestrationEngine", () => {
     }
   });
 
-  it("bootstraps command handling from persisted projections without reading the full snapshot", async () => {
+  it("keeps startup light and checks persisted history when continuing on another computer", async () => {
     let nextSequence = 8;
     const eventStore: OrchestrationEventStoreShape = {
       append: (event) =>
@@ -1244,7 +1244,20 @@ describe("OrchestrationEngine", () => {
           settledOverride: null,
           settledAt: null,
           deletedAt: null,
-          messages: [],
+          snoozedUntil: null,
+          snoozedAt: null,
+          messages: [
+            {
+              id: asMessageId("persisted-bootstrap-message"),
+              role: "user" as const,
+              text: "A decision already stored before startup",
+              attachments: [],
+              streaming: false,
+              turnId: null,
+              createdAt: "2026-03-03T00:00:03.000Z",
+              updatedAt: "2026-03-03T00:00:03.000Z",
+            },
+          ],
           proposedPlans: [],
           activities: [],
           checkpoints: [],
@@ -1298,7 +1311,7 @@ describe("OrchestrationEngine", () => {
           listDeletedWorkerWorktreeCleanupThreadIds: () => Effect.succeed([]),
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
-          getThreadDetailById: () => Effect.succeed(Option.none()),
+          getThreadDetailById: () => Effect.succeed(Option.some(projectionSnapshot.threads[0]!)),
           isThreadTurnTerminal: () => Effect.succeed(false),
           getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -1331,6 +1344,44 @@ describe("OrchestrationEngine", () => {
     );
 
     expect(result.sequence).toBe(8);
+    expect(await runtime.runPromise(engine.latestSequence)).toBe(8);
+    expect(fullSnapshotReadCount).toBe(0);
+
+    const failure = await runtime.runPromise(
+      engine
+        .dispatch({
+          type: "thread.continuation.import",
+          commandId: CommandId.make("bootstrap-conflicting-computer"),
+          threadId: ThreadId.make("thread-bootstrap"),
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          createThread: {
+            projectId: asProjectId("project-bootstrap"),
+            title: "Bootstrap Thread",
+            modelSelection: projectionSnapshot.threads[0]!.modelSelection,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+            branch: null,
+            worktreePath: null,
+            createdAt: now(),
+          },
+          messages: [
+            {
+              messageId: asMessageId("persisted-bootstrap-message"),
+              role: "user",
+              text: "Conflicting source decision",
+              createdAt: now(),
+            },
+          ],
+          createdAt: now(),
+        })
+        .pipe(Effect.flip),
+    );
+    expect(failure).toMatchObject({
+      _tag: "OrchestrationCommandInvariantError",
+      detail: expect.stringContaining("conflicting conversation history"),
+    });
     expect(await runtime.runPromise(engine.latestSequence)).toBe(8);
     expect(fullSnapshotReadCount).toBe(0);
 

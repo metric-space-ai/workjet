@@ -13,6 +13,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -432,6 +433,7 @@ const makeWsRpcLayer = (
       const crypto = yield* Crypto.Crypto;
       const workerPullRequestLifecycle = yield* Effect.serviceOption(WorkerPullRequestLifecycle);
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+      const fileSystem = yield* FileSystem.FileSystem;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
@@ -1613,6 +1615,25 @@ const makeWsRpcLayer = (
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
               const normalizedCommand = yield* normalizeDispatchCommand(command);
+              if (normalizedCommand.type === "thread.continuation.import") {
+                const project = yield* projectionSnapshotQuery.getProjectShellById(
+                  normalizedCommand.createThread.projectId,
+                );
+                const thread = yield* projectionSnapshotQuery.getThreadShellById(
+                  normalizedCommand.threadId,
+                );
+                const cwd =
+                  Option.getOrUndefined(thread)?.worktreePath ??
+                  Option.getOrUndefined(project)?.workspaceRoot;
+                const checkout = cwd
+                  ? yield* fileSystem.stat(cwd).pipe(Effect.option)
+                  : Option.none();
+                if (Option.isNone(checkout) || checkout.value.type !== "Directory")
+                  return yield* new OrchestrationDispatchCommandError({
+                    message:
+                      "The project checkout is missing or inaccessible on this computer. No history was copied.",
+                  });
+              }
               // Archive and settle both mean "done with this thread", so a
               // live provider session must not keep running background work
               // (PR monitors, dev servers, subagent fleets) after either

@@ -102,6 +102,122 @@ const freshReadModel: OrchestrationReadModel = {
   ],
 };
 it.layer(NodeServices.layer)("static history import decider", (it) => {
+  it.effect("switching back appends only the completed common transcript's new messages", () =>
+    Effect.gen(function* () {
+      const existing = bootstrapCommand.messages.slice(0, 1).map((message) => ({
+        id: message.messageId,
+        role: message.role,
+        text: message.text,
+        attachments: [],
+        turnId: null,
+        streaming: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      }));
+      const result = yield* decideOrchestrationCommand({
+        readModel: { ...readModel, threads: [{ ...readModel.threads[0]!, messages: existing }] },
+        command: {
+          type: "thread.continuation.import",
+          commandId: CommandId.make("switch-back"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages: bootstrapCommand.messages,
+          createdAt: NOW,
+        },
+      });
+      const events = Array.isArray(result) ? result : [result];
+      expect(
+        events
+          .filter((event) => event.type === "thread.message-sent")
+          .map((event) => event.payload.messageId),
+      ).toEqual([MessageId.make("reply-1")]);
+      expect(events.at(-1)).toMatchObject({
+        payload: {
+          activity: {
+            payload: {
+              historyContinuation: {
+                messageIds: bootstrapCommand.messages.map((message) => message.messageId),
+              },
+            },
+          },
+        },
+      });
+    }),
+  );
+
+  it.effect(
+    "rejects a busy destination, a missing checkout, and a newer destination transcript",
+    () =>
+      Effect.gen(function* () {
+        const command = {
+          type: "thread.continuation.import" as const,
+          commandId: CommandId.make("unsafe-switch"),
+          threadId: THREAD_ID,
+          createThread: bootstrapCommand.bootstrap!.createThread,
+          sourceEnvironmentId: EnvironmentId.make("source-computer"),
+          sourceLabel: "Source computer",
+          messages: bootstrapCommand.messages,
+          createdAt: NOW,
+        };
+        const thread = readModel.threads[0]!;
+        const busy = {
+          ...thread,
+          session: {
+            threadId: THREAD_ID,
+            status: "running" as const,
+            providerName: "codex" as const,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "approval-required" as const,
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: NOW,
+          },
+        };
+        const cases = [
+          { model: { ...readModel, threads: [busy] }, reason: "Finish the destination turn" },
+          {
+            model: {
+              ...freshReadModel,
+              projects: [{ ...freshReadModel.projects[0]!, workspaceRoot: null }],
+            },
+            reason: "needs its own checkout",
+          },
+          {
+            model: {
+              ...readModel,
+              threads: [
+                {
+                  ...thread,
+                  messages: Array.from({ length: 3 }, (_, index) => ({
+                    id: MessageId.make(`newer-${index}`),
+                    role: "user" as const,
+                    text: "Destination message",
+                    attachments: [],
+                    turnId: null,
+                    streaming: false,
+                    createdAt: NOW,
+                    updatedAt: NOW,
+                  })),
+                },
+              ],
+            },
+            reason: "newer conversation history",
+          },
+        ];
+        for (const { model, reason } of cases) {
+          const failure = yield* decideOrchestrationCommand({ readModel: model, command }).pipe(
+            Effect.flip,
+          );
+          expect(failure).toMatchObject({
+            _tag: "OrchestrationCommandInvariantError",
+            detail: expect.stringContaining(reason),
+          });
+        }
+      }),
+  );
+
   it.effect("copies a complete transcript atomically across multiple import batches", () =>
     Effect.gen(function* () {
       const messages = Array.from({ length: 450 }, (_, index) => ({

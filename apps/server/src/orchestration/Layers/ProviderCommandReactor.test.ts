@@ -3530,7 +3530,10 @@ describe("ProviderCommandReactor", () => {
   );
 
   it("uses copied computer history in a fresh session on the destination checkout", async () => {
-    const harness = await createHarness({ initialProviderSession: true });
+    const harness = await createHarness({
+      initialProviderSession: true,
+      projectWorkspaceRoot: "/destination-checkout",
+    });
     const now = "2026-01-01T00:00:00.000Z";
     const messages = [
       {
@@ -3590,6 +3593,7 @@ describe("ProviderCommandReactor", () => {
     await harness.drain();
     expect(harness.startSession.mock.calls.at(-1)?.[1]).toMatchObject({
       resumePolicy: "fresh",
+      cwd: "/destination-checkout",
       historyContinuation: {
         messageIds: messages.map((message) => message.messageId),
         pending: true,

@@ -115,6 +115,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const sttCheck = settings?.sttCheck;
   const sttPending = busy === "speech.settings.check.transcription";
   const disabled = busy !== undefined || !config;
+  const unloadedLabel = busy === "speech.settings.read" ? "Loading…" : "Not loaded";
   return (
     <SettingsSection
       title="Speech"
@@ -143,7 +144,13 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
             <span
               className="flex items-center gap-2 text-xs"
               role="status"
-              title={check ? "Checked " + check.checkedAt : "No successful audio check yet"}
+              title={
+                !config
+                  ? "Speech settings have not been loaded."
+                  : check
+                    ? "Checked " + check.checkedAt
+                    : "No successful audio check yet"
+              }
             >
               {pending ? (
                 <CircleDashedIcon className="size-4 animate-spin text-muted-foreground" />
@@ -154,22 +161,26 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               ) : (
                 <CircleDashedIcon className="size-4 text-muted-foreground" />
               )}
-              {pending
-                ? "Checking…"
-                : checked
-                  ? "Voice checked · " + check.latencyMs + " ms"
-                  : check
-                    ? check.errorClass
-                    : "Not checked"}
+              {!config
+                ? unloadedLabel
+                : pending
+                  ? "Checking…"
+                  : checked
+                    ? "Voice checked · " + check.latencyMs + " ms"
+                    : check
+                      ? check.errorClass
+                      : "Not checked"}
             </span>
           }
         />
         <SettingsRow
           title="API key"
           description={
-            settings?.status.mistral_credential_present
-              ? "Key stored securely in this instance."
-              : "No Mistral key saved."
+            !settings
+              ? "Credential status unavailable."
+              : settings.status.mistral_credential_present
+                ? "Key stored securely in this instance."
+                : "No Mistral key saved."
           }
           control={
             <form
@@ -193,7 +204,11 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 maxLength={4096}
                 className={controlClass + " w-full sm:w-64"}
                 placeholder={
-                  settings?.status.mistral_credential_present ? "Replace API key" : "Enter API key"
+                  !settings
+                    ? "Credential status unavailable"
+                    : settings.status.mistral_credential_present
+                      ? "Replace API key"
+                      : "Enter API key"
                 }
                 disabled={disabled}
                 onChange={(event) => setKey(event.target.value)}
@@ -210,7 +225,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
             <select
               aria-label="Narration path"
               className={controlClass + " w-full sm:w-64"}
-              value={config?.synthesis ?? "runtime"}
+              value={config?.synthesis ?? ""}
               disabled={disabled}
               onChange={(event) =>
                 config &&
@@ -220,6 +235,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 })
               }
             >
+              {!config && <option value="">{unloadedLabel}</option>}
               <option value="runtime">Configured local runtime</option>
               <option value="mistral">Mistral API</option>
               {config?.synthesis === "computer" && (
@@ -234,7 +250,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
             <select
               aria-label="Transcription path"
               className={controlClass + " w-full sm:w-64"}
-              value={config?.transcription ?? "runtime"}
+              value={config?.transcription ?? ""}
               disabled={disabled}
               onChange={(event) =>
                 config &&
@@ -244,6 +260,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 })
               }
             >
+              {!config && <option value="">{unloadedLabel}</option>}
               <option value="runtime">Configured local runtime</option>
               <option value="mistral">Mistral API</option>
               {config?.transcription === "computer" && (
@@ -265,7 +282,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                   config && configure({ ...config, voice_id: event.target.value || null })
                 }
               >
-                <option value="">Choose a saved voice</option>
+                <option value="">{config ? "Choose a saved voice" : unloadedLabel}</option>
                 {config?.voice_id && !voices.some((voice) => voice.id === config.voice_id) && (
                   <option value={config.voice_id}>Current voice · {config.voice_id}</option>
                 )}
@@ -297,7 +314,8 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 min={0.8}
                 max={1.5}
                 step={0.01}
-                value={rate}
+                value={config ? rate : ""}
+                placeholder="—"
                 disabled={disabled}
                 className={controlClass + " w-24 text-right tabular-nums"}
                 onChange={(event) => setRate(event.target.value)}
@@ -351,18 +369,26 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           title="Transcription check"
           description="Checks a short clip from the selected voice. No microphone recording."
           status={
-            sttCheck?.state === "error"
-              ? (remedies[sttCheck.errorClass ?? ""] ?? "Transcription failed. Retry the check.")
-              : sttCheck?.state === "ok"
-                ? "Measured from audio end to final transcript; microphone and connection setup are separate."
-                : "Not checked — selecting a path does not verify live transcription."
+            !config
+              ? "Speech settings have not been loaded."
+              : sttCheck?.state === "error"
+                ? (remedies[sttCheck.errorClass ?? ""] ?? "Transcription failed. Retry the check.")
+                : sttCheck?.state === "ok"
+                  ? "Measured from audio end to final transcript; microphone and connection setup are separate."
+                  : "Not checked — selecting a path does not verify live transcription."
           }
           control={
             <div className="flex items-center gap-3">
               <span
                 role="status"
                 className="flex items-center gap-1.5 text-xs"
-                title={sttCheck ? "Checked " + sttCheck.checkedAt : "No transcription check yet"}
+                title={
+                  !config
+                    ? "Speech settings have not been loaded."
+                    : sttCheck
+                      ? "Checked " + sttCheck.checkedAt
+                      : "No transcription check yet"
+                }
               >
                 {sttPending ? (
                   <CircleDashedIcon className="size-4 animate-spin text-muted-foreground" />
@@ -373,11 +399,13 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 ) : (
                   <CircleDashedIcon className="size-4 text-muted-foreground" />
                 )}
-                {sttPending
-                  ? "Checking…"
-                  : sttCheck?.state === "ok"
-                    ? sttCheck.latencyMs + " ms"
-                    : (sttCheck?.errorClass ?? "Not checked")}
+                {!config
+                  ? unloadedLabel
+                  : sttPending
+                    ? "Checking…"
+                    : sttCheck?.state === "ok"
+                      ? sttCheck.latencyMs + " ms"
+                      : (sttCheck?.errorClass ?? "Not checked")}
               </span>
               <Button
                 size="sm"

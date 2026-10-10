@@ -174,7 +174,9 @@ export function buildProjectOwnerOverview(input: {
       id: "project",
       label: primary?.label ?? text.projectKpi,
       value: primary?.value ?? null,
-      explanation: primary ? text.unavailableDelta : text.unavailableKpi,
+      explanation: primary
+        ? (metric?.status === "stale" ? text.staleMetric + " " : "") + text.unavailableDelta
+        : text.unavailableKpi,
     },
     {
       id: "prs",

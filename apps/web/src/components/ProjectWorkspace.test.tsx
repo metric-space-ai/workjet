@@ -115,6 +115,46 @@ const markup = (threads: readonly EnvironmentThreadShell[], language: "de" | "en
   );
 
 describe("owner project overview", () => {
+  it("labels stale native KPI values instead of implying a current measurement", () => {
+    const kpis = {
+      project_id: project.id,
+      revision: 1,
+      items: [
+        {
+          prompt: { kpi_id: "green-cases", prompt: "Count verified cases", revision: 1 },
+          result: {
+            status: "stale" as const,
+            snapshot: {
+              project_id: project.id,
+              kpi_id: "green-cases",
+              prompt_revision: 1,
+              label: "Messfälle grün",
+              display_value: "0 von 5",
+              unit: "",
+              sources: [
+                {
+                  kind: "github_metric" as const,
+                  project_id: project.id,
+                  connection_id: "github",
+                  metric_key: "verified.cases",
+                },
+              ],
+              freshness: {
+                calculated_at_ms: 1791399600000,
+                refresh_at_ms: 1791400200000,
+                fresh_until_ms: 1791400800000,
+              },
+            },
+          },
+        },
+      ],
+    };
+    expect(overview([], { kpis }).kpis[0]).toMatchObject({
+      value: "0 von 5",
+      explanation: expect.stringContaining("veraltet"),
+    });
+    expect(overview([], { kpis, language: "en" }).kpis[0]?.explanation).toContain("out of date");
+  });
   it("keeps the goal sentence separate from handoff paths and technical directions", () => {
     expect(
       projectGoalSentence(

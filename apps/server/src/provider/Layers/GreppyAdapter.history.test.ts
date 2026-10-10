@@ -238,25 +238,36 @@ it.effect("acknowledges routed dispatch while the ACP prompt remains pending", (
     const entered = yield* Deferred.make<void>();
     probe.promptGate = gate;
     probe.promptEntered = entered;
-    return yield* withAdapter((adapter, threadId) =>
-      Effect.gen(function* () {
-        const completed = yield* adapter.streamEvents.pipe(
-          Stream.filter(event => event.type === "turn.completed"), Stream.take(1),
-          Stream.runCollect, Effect.forkChild({ startImmediately: true }),
-        );
-        const receipt = yield* adapter.sendTurn({ threadId, input: "Read-only routed turn" });
-        yield* Deferred.await(entered);
-        expect(receipt.threadId).toBe(threadId);
-        expect((yield* adapter.listSessions())[0]?.status).toBe("running");
-        const overlap = yield* adapter.sendTurn({ threadId, input: "Overlapping turn" }).pipe(Effect.flip);
-        expect(overlap.message).toContain("already answering");
-        yield* Deferred.succeed(gate, undefined);
-        const events = yield* Fiber.join(completed);
-        expect(events[0]?.type).toBe("turn.completed");
-        expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
-      }), true);
-  }).pipe(Effect.ensuring(Effect.sync(() => {
-    probe.promptGate = undefined;
-    probe.promptEntered = undefined;
-  }))),
+    return yield* withAdapter(
+      (adapter, threadId) =>
+        Effect.gen(function* () {
+          const completed = yield* adapter.streamEvents.pipe(
+            Stream.filter((event) => event.type === "turn.completed"),
+            Stream.take(1),
+            Stream.runCollect,
+            Effect.forkChild({ startImmediately: true }),
+          );
+          const receipt = yield* adapter.sendTurn({ threadId, input: "Read-only routed turn" });
+          yield* Deferred.await(entered);
+          expect(receipt.threadId).toBe(threadId);
+          expect((yield* adapter.listSessions())[0]?.status).toBe("running");
+          const overlap = yield* adapter
+            .sendTurn({ threadId, input: "Overlapping turn" })
+            .pipe(Effect.flip);
+          expect(overlap.message).toContain("already answering");
+          yield* Deferred.succeed(gate, undefined);
+          const events = yield* Fiber.join(completed);
+          expect(events[0]?.type).toBe("turn.completed");
+          expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
+        }),
+      true,
+    );
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        probe.promptGate = undefined;
+        probe.promptEntered = undefined;
+      }),
+    ),
+  ),
 );

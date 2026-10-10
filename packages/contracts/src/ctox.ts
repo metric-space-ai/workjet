@@ -605,6 +605,7 @@ export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   description: Schema.optionalKey(Schema.NullOr(projectInfoText(4_096))),
   repoUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
   publicUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
+  supervisorLumaId: Schema.optionalKey(Schema.NullOr(CtoxProjectText(160))),
   info: Schema.optionalKey(Schema.NullOr(CtoxWorkjetProjectInfo)),
   jourFixe: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
 });
@@ -788,6 +789,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("project.list"),
     includeConfiguration: Schema.optionalKey(Schema.Boolean),
+    includeSupervisorLuma: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
     action: Schema.Literal("project.configure"),

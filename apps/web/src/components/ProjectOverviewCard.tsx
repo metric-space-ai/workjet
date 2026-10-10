@@ -16,6 +16,7 @@ import {
 } from "../projectKpis";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectOverviewEditor, type ProjectConfigurationValues } from "./ProjectOverviewEditor";
+import { ProjectSupervisorLumaField } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
@@ -344,6 +345,7 @@ export function ProjectOverviewCard({
                 configuration={project.configuration}
                 onSaveConfiguration={onSaveConfiguration}
                 onSave={onSave}
+                renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
                 onCancel={() => setEditing(false)}
                 kpis={scopedKpis}
                 onSaveKpis={onSaveKpis}

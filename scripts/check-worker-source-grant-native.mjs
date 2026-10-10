@@ -4,6 +4,7 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodeCrypto from "node:crypto";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeHttp from "node:http";
 import * as NodeModule from "node:module";
@@ -293,6 +294,11 @@ const payload = (response) => {
   NodeAssert.notEqual(response.body.result?.isError, true);
   return JSON.parse(response.body.result.content.find((block) => block.type === "text").text);
 };
+async function binarySha256(path) {
+  const hash = NodeCrypto.createHash("sha256");
+  for await (const chunk of NodeFS.createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
 let receipt;
 try {
   await Promise.race([
@@ -354,9 +360,7 @@ try {
     },
     revocation: { status: revoked.status },
     native: {
-      sha256: NodeCrypto.createHash("sha256")
-        .update(await NodeFSP.readFile(binary))
-        .digest("hex"),
+      sha256: await binarySha256(binary),
       session: session.sessionInfo,
       connectorPid: connector.pid,
     },

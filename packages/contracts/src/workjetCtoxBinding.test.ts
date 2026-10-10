@@ -24,6 +24,74 @@ const original = {
 };
 
 describe("CTOX thread identity and typed app access", () => {
+  const tenant = "322084e5-8239-48d7-b3c5-c5178fbe5822";
+  const oldId = WorkjetConnectionId.make(
+    `ctox-dev-worker-source:${tenant}:c1728006-7dcd-4c64-a0b7-e800251eb9a1`,
+  );
+  const newId = WorkjetConnectionId.make(
+    `ctox-dev-worker-source:${tenant}:41e130aa-2b02-46fe-953d-37e74a97f05a`,
+  );
+  const sourceConfig = (connectionId: WorkjetConnectionId, instanceId = "welsch.ctox.dev") => ({
+    ...original,
+    capabilityBindings: [
+      {
+        ...original.capabilityBindings[0]!,
+        target: { kind: "ctox-connection" as const, connectionId, instanceId },
+      },
+    ],
+  });
+
+  it("allows credential rotation within the original worker-source tenant and instance", () => {
+    expect(retainWorkjetCtoxBinding(sourceConfig(oldId), sourceConfig(newId)).error).toBeNull();
+  });
+
+  it("rejects another tenant, instance, malformed grant, local connection and duplicate binding", () => {
+    const before = sourceConfig(oldId);
+    for (const next of [
+      sourceConfig(
+        WorkjetConnectionId.make(newId.replace(tenant, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")),
+      ),
+      sourceConfig(newId, "foreign.ctox.dev"),
+      sourceConfig(WorkjetConnectionId.make(`ctox-dev-worker-source:${tenant}:invalid`)),
+      sourceConfig(WorkjetConnectionId.make("local-ctox")),
+      {
+        ...sourceConfig(newId),
+        capabilityBindings: [
+          ...before.capabilityBindings,
+          ...sourceConfig(newId).capabilityBindings,
+        ],
+      },
+    ])
+      expect(retainWorkjetCtoxBinding(before, next).error).not.toBeNull();
+    expect(
+      retainWorkjetCtoxBinding(sourceConfig(WorkjetConnectionId.make("local-ctox")), before).error,
+    ).not.toBeNull();
+  });
+
+  it("rotates private Crew credentials while retaining chat and instance identity", () => {
+    const before = {
+      ...sourceConfig(oldId),
+      ctoxCrewChat: { connectionId: oldId, instanceId: "welsch.ctox.dev", chatId: "private-chat" },
+    };
+    const next = {
+      ...sourceConfig(newId),
+      ctoxCrewChat: { ...before.ctoxCrewChat, connectionId: newId },
+    };
+    expect(retainWorkjetCtoxBinding(before, next).error).toBeNull();
+    expect(
+      retainWorkjetCtoxBinding(before, {
+        ...next,
+        ctoxCrewChat: { ...next.ctoxCrewChat, chatId: "another-chat" },
+      }).error,
+    ).not.toBeNull();
+    expect(
+      retainWorkjetCtoxBinding(before, {
+        ...next,
+        ctoxCrewChat: { ...next.ctoxCrewChat, instanceId: "another-instance" },
+      }).error,
+    ).not.toBeNull();
+  });
+
   it("retains identity when tools are disabled and rejects retargeting after reenabling", () => {
     const disabled = retainWorkjetCtoxBinding(original, {
       ...original,

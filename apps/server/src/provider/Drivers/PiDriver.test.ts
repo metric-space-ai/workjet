@@ -69,7 +69,7 @@ it.effect("loads MCP tools on a fresh admitted Source start without a target-loc
       (directory) => Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
     );
     let admissions = 0;
-    const calls: Array<{ name?: string; arguments?: { command: string } }> = [];
+    const calls: Array<NonNullable<ReturnType<typeof decodeWire>["params"]>> = [];
     const server = yield* Effect.acquireRelease(
       Effect.promise(async () => {
         const server = NodeHttp.createServer(async (request, response) => {

@@ -58,6 +58,8 @@ import * as RemoteWorkerBroker from "./workjet/RemoteWorkerBroker.ts";
 import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
 import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnectionBootstrap.ts";
 import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
+import * as IsolatedWorkerWorktree from "./workjet/IsolatedWorkerWorktree.ts";
+import * as IsolatedWorkerWorktreeStore from "./workjet/IsolatedWorkerWorktreeStore.ts";
 import * as RemoteWorkerAuthorityStore from "./workjet/RemoteWorkerAuthorityStore.ts";
 import * as RemoteWorkerComputerEnrollmentLive from "./workjet/RemoteWorkerComputerEnrollmentLive.ts";
 import * as RemoteWorkerSourceOperationsLive from "./workjet/RemoteWorkerSourceOperationsLive.ts";
@@ -455,8 +457,15 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive.pipe(Layer.provide(RemoteWorkerTargetAdmission.layer))),
 );
 
+const NativeWorkerWorktreeRemoverLayerLive = NativeWorkerWorktreeRemover.layer.pipe(
+  Layer.provide(ResourceMonitorBinary.layer),
+);
 const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
-  Layer.provide(NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer))),
+  Layer.provide(NativeWorkerWorktreeRemoverLayerLive),
+);
+const IsolatedWorkerWorktreeLayerLive = IsolatedWorkerWorktree.layer.pipe(
+  Layer.provide(IsolatedWorkerWorktreeStore.layer),
+  Layer.provide(NativeWorkerWorktreeRemoverLayerLive),
 );
 const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
@@ -483,6 +492,7 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
   Layer.provide(ServerSecretStore.layer),
 );
 const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
+  Layer.provide(IsolatedWorkerWorktreeLayerLive),
   Layer.provide(RemoteWorkerTargetAdmission.layer),
   Layer.provide(RemoteWorkerStore.layer),
   Layer.provide(WorktreeStorageLayerLive),

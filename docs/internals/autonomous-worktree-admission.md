@@ -92,7 +92,24 @@ quarantines checkout and private Git metadata together, records recovery
 locations, retains late writes, and never deletes a ref from the source
 project. A failed native response reports candidate recovery paths only.
 
-This is a prerequisite for isolated allocation and its durable receipt, not
-a sandbox witness or an enabled provider policy. Remote allocation still uses
-the existing linked-worktree path until that integration is complete. Every
-autonomous-worktree provider mode remains unsupported.
+For a remote request carrying the autonomous-worktree policy reference, the
+receiver now allocates a checkout with private Git metadata. It saves an immutable
+server-derived intent and a destination reservation in SQLite, prepares a sibling
+staging directory, and seeds only the requested commit and its reachable history.
+It copies no source refs, configuration, object alternates or hardlinks. Git
+preparation ignores inherited Git redirections, global/system configuration,
+templates, hooks and filesystem monitors.
+
+The receiver persists the staging directory and private Git metadata identities
+before native exclusive publication. On retry it verifies those original
+identities at either the staging or destination path, together with the unchanged
+HEAD, worker branch and clean checkout. A lost publication acknowledgement creates
+no second checkout. Foreign, replaced or missing directories are rejected and
+retained. Rejected-start rollback receives the same original custody; accepted
+create/turn receipts still reconcile without a second worker. Requests without
+the policy retain the existing linked-worktree path.
+
+This allocation and custody receipt is a prerequisite, not a sandbox witness,
+an enrolled native Parent or an enabled provider policy. Every autonomous-worktree
+provider mode remains unsupported; whole execution containment, native authority
+and installed GPU acceptance are still required.

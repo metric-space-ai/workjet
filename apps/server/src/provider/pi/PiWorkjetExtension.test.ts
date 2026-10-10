@@ -29,6 +29,7 @@ describe("Pi Workjet MCP extension", () => {
       required: ["command"],
       additionalProperties: false,
     };
+    const unionSchema = { anyOf: [schema, { type: "array", items: schema }] };
     vi.stubGlobal("fetch", async (_url: string, input: RequestInit) => {
       expect(new Headers(input.headers).get("Authorization")).toBe("Bearer fixture-token");
       if (input.method === "DELETE") {
@@ -65,12 +66,18 @@ describe("Pi Workjet MCP extension", () => {
                 description: "Echo the command",
                 inputSchema: schema,
               },
+              {
+                name: "workjet_fixture_union",
+                description: "Echo the original object or array",
+                inputSchema: unionSchema,
+              },
             ],
           },
         });
       expect(message.method).toBe("tools/call");
       calls.push(message.params);
-      const wire = `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: message.params.arguments.command }], structuredContent: { ok: true } } })}\r\n\r\n`;
+      const output = message.params.name === "workjet_fixture_union" ? JSON.stringify(message.params.arguments) : message.params.arguments.command;
+      const wire = `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: output }], structuredContent: { ok: true } } })}\r\n\r\n`;
       const bytes = new TextEncoder().encode(wire);
       return new Response(
         new ReadableStream({
@@ -101,6 +108,21 @@ describe("Pi Workjet MCP extension", () => {
       });
     expect(calls).toHaveLength(20);
     expect(cancelled).toBe(20);
+    expect(registered[1]?.parameters).toEqual({
+      type: "object",
+      properties: { input: unionSchema },
+      required: ["input"],
+      additionalProperties: false,
+    });
+    for (let n = 1; n <= 20; n++) {
+      const original = n % 2 ? { command: `union-${n}` } : [{ command: `union-${n}` }];
+      expect(await registered[1]!.execute(String(n), { input: original })).toEqual({
+        content: [{ type: "text", text: JSON.stringify(original) }],
+        details: { ok: true },
+      });
+      expect(calls.at(-1)).toEqual({ name: "workjet_fixture_union", arguments: original });
+    }
+    expect(cancelled).toBe(40);
   });
   it("fails initialization when the per-thread MCP authorization is rejected", async () => {
     vi.stubEnv("WORKJET_PI_MCP_ENDPOINT", "http://127.0.0.1:9000/mcp");

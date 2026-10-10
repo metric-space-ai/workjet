@@ -34,7 +34,11 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-import { initialWorkerGoal, prepareGoalContinuation, withoutGoalObservations } from "../workjet/workerGoal.ts";
+import {
+  initialWorkerGoal,
+  prepareGoalContinuation,
+  withoutGoalObservations,
+} from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
 import {
   requireProjectTeamLifecycle,
@@ -1210,7 +1214,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         const lastExecution = {
           ...observed,
           ...(retained && retained.state !== "running" && observed.state === "running"
-            ? { state: retained.state, sourceEventId: retained.sourceEventId, observedAt: retained.observedAt }
+            ? {
+                state: retained.state,
+                sourceEventId: retained.sourceEventId,
+                observedAt: retained.observedAt,
+              }
             : {}),
           author: observed.author ?? retained?.author ?? null,
         };

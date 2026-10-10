@@ -30,7 +30,8 @@ export function goalExecutionObservation(
     event.raw.method === "claude/assistant/model"
   ) {
     const decoded = decodeAssistantModel(event.payload.metadata);
-    if (Option.isNone(decoded) || retained?.author?.model === decoded.value.workjetAuthorModel) return undefined;
+    if (Option.isNone(decoded) || retained?.author?.model === decoded.value.workjetAuthorModel)
+      return undefined;
     state = retained?.state ?? "running";
     author = {
       model: decoded.value.workjetAuthorModel,

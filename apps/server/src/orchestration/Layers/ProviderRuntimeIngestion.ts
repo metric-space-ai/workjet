@@ -1663,20 +1663,22 @@ const make = Effect.gen(function* () {
         ) {
           const execution = goalExecutionObservation(event, config.goal.lastExecution);
           if (execution) {
-            yield* orchestrationEngine.dispatch({
-              type: "thread.goal.execution-observed",
-              commandId: yield* providerCommandId(event, "goal-execution-observed"),
-              threadId: thread.id,
-              execution,
-            }).pipe(
-              Effect.catch((error) =>
-                Effect.logDebug("goal producer observation rejected after a concurrent change", {
-                  threadId: thread.id,
-                  eventId: event.eventId,
-                  error,
-                }),
-              ),
-            );
+            yield* orchestrationEngine
+              .dispatch({
+                type: "thread.goal.execution-observed",
+                commandId: yield* providerCommandId(event, "goal-execution-observed"),
+                threadId: thread.id,
+                execution,
+              })
+              .pipe(
+                Effect.catch((error) =>
+                  Effect.logDebug("goal producer observation rejected after a concurrent change", {
+                    threadId: thread.id,
+                    eventId: event.eventId,
+                    error,
+                  }),
+                ),
+              );
           }
         }
       }

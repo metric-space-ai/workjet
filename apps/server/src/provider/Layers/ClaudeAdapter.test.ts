@@ -3113,35 +3113,60 @@ describe("ClaudeAdapterLive", () => {
         providerInstanceId: ProviderInstanceId.make("claudeAgent"),
         runtimeMode: "full-access",
         workjetConfig: {
-          ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2, role: "orchestrator",
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          schemaVersion: 2,
+          role: "orchestrator",
           team: {
-            projectId: ProjectId.make("parent-project"), threadId: THREAD_ID,
-            role: "specialist", parentThreadId: ThreadId.make("supervisor"),
-            domain: "harness", goal: "Deliver the bounded result.", createdAt: "2026-10-10T03:00:00.000Z",
+            projectId: ProjectId.make("parent-project"),
+            threadId: THREAD_ID,
+            role: "specialist",
+            parentThreadId: ThreadId.make("supervisor"),
+            domain: "harness",
+            goal: "Deliver the bounded result.",
+            createdAt: "2026-10-10T03:00:00.000Z",
           },
         },
       });
       const turn = yield* adapter.sendTurn({
-        threadId: session.threadId, input: "Perform the bounded work.", attachments: [],
+        threadId: session.threadId,
+        input: "Perform the bounded work.",
+        attachments: [],
       });
       harness.query.emit({
-        type: "assistant", session_id: "sdk-parent", uuid: "subagent-snapshot",
+        type: "assistant",
+        session_id: "sdk-parent",
+        uuid: "subagent-snapshot",
         parent_tool_use_id: "child-tool",
-        message: { id: "child-message", model: DEFAULT_MODEL, content: [{ type: "text", text: "child" }] },
+        message: {
+          id: "child-message",
+          model: DEFAULT_MODEL,
+          content: [{ type: "text", text: "child" }],
+        },
       } as unknown as SDKMessage);
       const assistant = {
-        type: "assistant", session_id: "sdk-parent", uuid: "parent-snapshot",
+        type: "assistant",
+        session_id: "sdk-parent",
+        uuid: "parent-snapshot",
         parent_tool_use_id: null,
-        message: { id: "parent-message", model: DEFAULT_MODEL, content: [{ type: "text", text: "done" }] },
+        message: {
+          id: "parent-message",
+          model: DEFAULT_MODEL,
+          content: [{ type: "text", text: "done" }],
+        },
       } as unknown as SDKMessage;
       harness.query.emit(assistant);
       harness.query.emit(assistant);
       harness.query.emit({
-        type: "result", subtype: "success", is_error: false, errors: [],
-        session_id: "sdk-parent", uuid: "parent-result",
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-parent",
+        uuid: "parent-result",
       } as unknown as SDKMessage);
       const actual = Array.from(yield* Fiber.join(events)).filter(
-        (event) => event.type === "thread.metadata.updated" &&
+        (event) =>
+          event.type === "thread.metadata.updated" &&
           event.raw?.method === "claude/assistant/model",
       );
       assert.equal(actual.length, 1);

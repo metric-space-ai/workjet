@@ -165,11 +165,14 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
     const instanceId = thread.session?.providerInstanceId;
     if (
       instanceId !== undefined &&
-      (goal.executor?.providerInstanceId !== instanceId || goal.executor.goalControl !== goalControl)
+      (goal.executor?.providerInstanceId !== instanceId ||
+        goal.executor.goalControl !== goalControl)
     ) {
       yield* engine.dispatch({
         type: "thread.goal.executor-observed",
-        commandId: CommandId.make(`server:goal-executor:${thread.id}:${goal.revision}:${instanceId}:${goalControl}`),
+        commandId: CommandId.make(
+          `server:goal-executor:${thread.id}:${goal.revision}:${instanceId}:${goalControl}`,
+        ),
         threadId: thread.id,
         expectedRevision: goal.revision,
         executor: {

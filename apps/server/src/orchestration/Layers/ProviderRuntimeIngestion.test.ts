@@ -300,16 +300,21 @@ describe("ProviderRuntimeIngestion", () => {
       },
       createdAt,
     });
-    let threadConfig: WorkjetThreadConfig = options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG;
+    let threadConfig: WorkjetThreadConfig =
+      options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG;
     if (threadConfig.schemaVersion === 2 && threadConfig.team?.role === "specialist") {
       const snapshot = await runtime.runPromise(snapshotQuery.getSnapshot());
-      const supervisor = snapshot.threads.find((entry) =>
-        entry.projectId === asProjectId("project-1") &&
-        entry.workjetConfig.schemaVersion === 2 &&
-        entry.workjetConfig.team?.role === "supervisor",
+      const supervisor = snapshot.threads.find(
+        (entry) =>
+          entry.projectId === asProjectId("project-1") &&
+          entry.workjetConfig.schemaVersion === 2 &&
+          entry.workjetConfig.team?.role === "supervisor",
       );
       if (!supervisor) throw new Error("Project creation did not produce its durable supervisor.");
-      threadConfig = { ...threadConfig, team: { ...threadConfig.team, parentThreadId: supervisor.id } };
+      threadConfig = {
+        ...threadConfig,
+        team: { ...threadConfig.team, parentThreadId: supervisor.id },
+      };
     }
     await dispatch({
       type: "thread.create",
@@ -407,43 +412,64 @@ describe("ProviderRuntimeIngestion", () => {
     const harness = await createHarness({
       hideThreadDetail: true,
       threadWorkjetConfig: {
-        ...DEFAULT_WORKJET_THREAD_CONFIG, schemaVersion: 2, role: "orchestrator",
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        schemaVersion: 2,
+        role: "orchestrator",
         team: {
-          projectId: asProjectId("project-1"), threadId: asThreadId("thread-1"),
-          role: "specialist", parentThreadId: asThreadId("supervisor"),
-          domain: "harness", goal: "Deliver the approved result.", createdAt: at,
+          projectId: asProjectId("project-1"),
+          threadId: asThreadId("thread-1"),
+          role: "specialist",
+          parentThreadId: asThreadId("supervisor"),
+          domain: "harness",
+          goal: "Deliver the approved result.",
+          createdAt: at,
         },
         goal: initialWorkerGoal("Deliver the approved result.", at),
       },
     });
     const base = {
-      provider: ProviderDriverKind.make("codex"), providerInstanceId: ProviderInstanceId.make("codex"),
-      threadId: asThreadId("thread-1"), turnId: asTurnId("actual-parent-turn"),
-      createdAt: at, providerRefs: {},
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("actual-parent-turn"),
+      createdAt: at,
+      providerRefs: {},
       raw: { source: "codex.app-server.notification", payload: {} },
     };
     harness.emit({
-      ...base, type: "turn.started", eventId: asEventId("parent-started"),
+      ...base,
+      type: "turn.started",
+      eventId: asEventId("parent-started"),
       payload: { model: DEFAULT_MODEL },
     });
-    const started = await waitForThread(harness.readModel, (thread) =>
-      thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.goal?.lastExecution?.state === "running",
+    const started = await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.workjetConfig.schemaVersion === 2 &&
+        thread.workjetConfig.goal?.lastExecution?.state === "running",
     );
     const startedConfig = started.workjetConfig;
     if (startedConfig.schemaVersion !== 2) throw new Error("missing goal");
     expect(startedConfig.goal?.lastExecution?.author).toBeNull();
     harness.emit({
-      ...base, type: "turn.completed", eventId: asEventId("parent-completed"),
+      ...base,
+      type: "turn.completed",
+      eventId: asEventId("parent-completed"),
       payload: { state: "completed" },
     });
-    const completed = await waitForThread(harness.readModel, (thread) =>
-      thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.goal?.lastExecution?.state === "completed",
+    const completed = await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.workjetConfig.schemaVersion === 2 &&
+        thread.workjetConfig.goal?.lastExecution?.state === "completed",
     );
     const config = completed.workjetConfig;
     if (config.schemaVersion !== 2) throw new Error("missing goal");
     expect(config.goal?.lastExecution).toMatchObject({
-      providerInstanceId: base.providerInstanceId, turnId: base.turnId,
-      sourceEventId: "parent-completed", author: null,
+      providerInstanceId: base.providerInstanceId,
+      turnId: base.turnId,
+      sourceEventId: "parent-completed",
+      author: null,
     });
     expect(config.goal?.status).toBe("active");
     expect(config.goal?.lastVerifiedProgress).toBeNull();

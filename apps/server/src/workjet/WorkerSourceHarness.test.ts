@@ -1,5 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off -- Real loopback HTTP fixture exercises the external Codex transport boundary.
 import * as NodeHttp from "node:http";
+import * as NodeFs from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeOs from "node:os";
 import { afterEach, expect, it } from "vite-plus/test";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 const cleanups: Array<() => Promise<void>> = [];
@@ -335,4 +338,53 @@ it("runs Claude Messages tool round trips through the same pinned source route",
   await expect(
     installWorkerSourceRoute(route.requestId, route, { ...pin, harness: "codex-cli" }),
   ).rejects.toThrow("substitution");
+});
+it("admits a source-only catalog and native API-key requests before forwarding unchanged SSE", async () => {
+  const directory = await NodeFs.mkdtemp(NodePath.join(process.env.TMPDIR ?? (process.platform === "darwin" ? "/Volumes/tmp" : NodeOs.tmpdir()), "worker-source-native-"));
+  cleanups.push(() => NodeFs.rm(directory, { recursive: true, force: true }));
+  let admitted = true;
+  let inferred = 0;
+  const server = NodeHttp.createServer(async (req, res) => {
+    expect(req.headers.authorization).toBe("Bearer native-source-capability");
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString());
+    if (!admitted) { res.writeHead(403).end(); return; }
+    if (body.operation === "infer") {
+      expect(body.payload.protocol).toBe("messages");
+      const request = JSON.parse(body.payload.requestJson);
+      expect(request.model).toBe("gpt-6.1-sol");
+      expect(request.stream).toBe(true);
+      inferred++;
+      const frame = `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: `call-${inferred}`, name: "Bash", input: { command: `printf 'PROXY_MATRIX_${String(inferred).padStart(2,"0")}\\n'` } } })}\n\n`;
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ contentType: "text/event-stream", requestJson: frame }));
+    } else res.writeHead(200, { "content-type": "application/json" }).end("{}");
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  cleanups.push(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("no listener");
+  const route = { sourceEnvironmentId: "source", targetEnvironmentId: "target", requestId: "native-profile-worker", requestDigest: "native-profile-digest", capability: "native-source-capability", port: address.port };
+  const pin = { targetEnvironmentId: "target", requestDigest: route.requestDigest, modelId: "gpt-6.1-sol", nativeProfile: { harness: "minimax-code" as const, directory } };
+  const harness = await installWorkerSourceRoute(route.requestId, route, pin);
+  cleanups.push(harness.revoke);
+  const profile = JSON.parse(await NodeFs.readFile(NodePath.join(directory,"config.yaml"),"utf8"));
+  expect(profile.custom_provider["workjet-source"].options.apiKey).toBe(harness.apiKey);
+  expect(Object.keys(profile.custom_provider["workjet-source"].models)).toEqual(["gpt-6.1-sol"]);
+  if (process.platform !== "win32") expect((await NodeFs.stat(NodePath.join(directory,"config.yaml"))).mode & 0o077).toBe(0);
+  expect((await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": "wrong-key" } })).status).toBe(403);
+  const catalog = await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": harness.apiKey } });
+  expect(await catalog.json()).toEqual({ object: "list", data: [{ id: "gpt-6.1-sol", object: "model", owned_by: "workjet-source" }] });
+  for (let n = 1; n <= 20; n++) {
+    const response = await fetch(harness.baseUrl + "/messages?beta=true", { method: "POST", headers: { "x-api-key": harness.apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: harness.model, stream: true }) });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    const frame = JSON.parse((await response.text()).split("\ndata: ")[1]!);
+    expect(frame.content_block.id).toBe(`call-${n}`);
+    expect(frame.content_block.name).toBe("Bash");
+  }
+  expect(inferred).toBe(20);
+  await expect(installWorkerSourceRoute(route.requestId, route, { ...pin, nativeProfile: { ...pin.nativeProfile, harness: "pi-code" } })).rejects.toThrow("substitution");
+  admitted = false;
+  expect((await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": harness.apiKey } })).status).toBe(502);
 });

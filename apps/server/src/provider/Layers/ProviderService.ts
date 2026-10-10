@@ -40,6 +40,10 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { withImportedHistoryContext } from "../importedHistoryContext.ts";
+import {
+  requireEnforcedExecutionPolicy,
+  requirePersistedEnforcedExecutionPolicy,
+} from "../executionPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import {
   increment,
@@ -511,6 +515,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     return yield* Effect.gen(function* () {
       const adapter = yield* registry.getByInstance(bindingInstanceId);
       const persistedWorkjetConfig = readPersistedWorkjetConfig(input.binding.runtimePayload);
+      yield* requirePersistedEnforcedExecutionPolicy(
+        input.operation,
+        adapter.provider,
+        input.binding.runtimePayload,
+      );
       const hasResumeCursor =
         input.binding.resumeCursor !== null && input.binding.resumeCursor !== undefined;
       const hasActiveSession = yield* adapter.hasSession(input.binding.threadId);
@@ -632,6 +641,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const instanceId = yield* requireBindingInstanceId(input.operation, binding);
     const adapter = yield* registry.getByInstance(instanceId);
 
+    if (input.allowRecovery) {
+      yield* requirePersistedEnforcedExecutionPolicy(
+        input.operation,
+        adapter.provider,
+        binding.runtimePayload,
+      );
+    }
     const hasRequestedSession = yield* adapter.hasSession(input.threadId);
     if (hasRequestedSession) {
       return {
@@ -772,6 +788,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
+        yield* requireEnforcedExecutionPolicy(
+          "ProviderService.startSession",
+          adapter.provider,
+          input.workjetConfig,
+        );
+        if (persistedBinding) {
+          yield* requirePersistedEnforcedExecutionPolicy(
+            "ProviderService.startSession",
+            adapter.provider,
+            persistedBinding.runtimePayload,
+          );
+        }
         yield* prepareMcpSession(threadId, resolvedInstanceId, input.workjetConfig, effectiveCwd);
         const session = yield* adapter
           .startSession({

@@ -44,11 +44,11 @@ A further account-pinned HTTP probe found that Claude's adaptive `output_config.
 
 ## Live acceptance matrix
 
-**3 of 12 minimum cells accepted.** Counts below are real tool executions. Failed cells retain their observed errors; pending cells have not run.
+**5 of 12 minimum cells accepted.** Counts below are real tool executions. Failed cells retain their observed errors; pending cells have not run.
 
 | Harness               | claude-opus-5-5              | gpt-6.1-sol                | grok-4.7                   |
 | --------------------- | ---------------------------- | -------------------------- | -------------------------- |
-| Claude Code           | Pass, 20/20                  | Fail, 1/20; upstream 400   | Fail, 0/20; upstream 502   |
+| Claude Code           | Pass, 20/20; continuation 20 | Pass, 20/20               | Pass, 20/20               |
 | Codex CLI             | Pass, 20/20                  | Pass, 20/20                | Fail, 0/20; upstream 502   |
 | Grok CLI / Grok Build | Fail, 0/20; empty completion | Fail, 0/20; Invalid params | Fail, 0/20; Invalid params |
 | OpenCode              | Pending, 0/20                | Pending, 0/20              | Pending, 0/20              |
@@ -63,7 +63,7 @@ The RC is an isolated Workjet 0.0.69 server running the locally compiled Rust ho
 - Codex / Grok: thread `7d6b8e01-943d-42cc-b932-96c757f00a09`; Claude / Grok: thread `3d25b692-8fd1-43d3-83e9-223d051eff37`. Both received `502 xAI upstream rejected the request` before a tool execution. A subsequent account-pinned live diagnostic returned 200 for minimal requests, Codex request fields and an ordinary function tool, but upstream 422 for a Responses custom tool. PR #307 supplies the missing custom-tool JSON wrapper, history conversion and stateful response restoration, including incremental SSE decoding. The healthy account does not require sign-in. Final regression and live retests remain pending.
 - Grok / Opus: thread `0d25daec-61b6-407a-9ec7-8d129981dafe` returned ready without a tool execution. Grok / GPT Sol (`754f040f-525d-4a10-9c2b-0deea37bcf48`) and Grok / Grok (`fa31a656-26c6-43da-958d-c015006bc700`) fail session model selection with `Invalid params`. Grok's empty completion is consistent with the absent Chat Completions endpoint; its raw GPT/Grok model IDs were absent from the cloaked gateway catalog. PR #288 addresses both gaps; live retests remain pending.
 
-These results were captured before the new argument-serialization, xAI custom-tool and Grok Chat Completions/catalog repairs were compiled into the RC. They remain the last measured results until those cells are rerun.
+On 2026-10-10 the native host was rebuilt from composed source `1be5e3a13` (SHA256 `f61b03f793f4bd512b50c8e11cadd01ec3f6d0deb255b066a5eb37c7c75e68be`). The isolated server still uses installed 0.0.69 JavaScript, whose source revision is unverified. The previously passing Opus native conversation resumed after normal server shutdown/restart and completed another [twenty matched Bash calls](harness-proxy-evidence/claude-opus-continuation-20261010-native-tool-results.json). Fresh Claude Code threads now pass [GPT Sol, twenty calls](harness-proxy-evidence/claude-gpt-sol-20261010-native-tool-results.json) and [Grok 4.7, twenty calls](harness-proxy-evidence/claude-grok-20261010-native-tool-results.json). Each proof checks twenty interleaved native calls/results, exact output markers and no tool errors. This confirms the argument serialization and effort repair in the real CLI. Other failed/pending cells retain their last measurements until rerun.
 
 Additional required harnesses: MiniMax Code, Greppy and Pi remain open. The installed supervisor's measured failures are retained above; no matrix cell is inferred green from the bridge regressions.
 

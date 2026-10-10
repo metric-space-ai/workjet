@@ -17,6 +17,7 @@ function fixture() {
   let now = 0;
   const reports: string[] = [];
   const dependencies = {
+    now: Effect.sync(() => now),
     listStopped: (after: string) => Effect.succeed(after === "" ? [receipt] : []),
     refresh: (saved: WorkerPullRequestReceipt) => Effect.succeed(saved),
     readStartup: () => Effect.succeed(hasStartup ? Option.some({

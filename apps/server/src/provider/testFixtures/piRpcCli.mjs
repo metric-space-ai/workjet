@@ -42,8 +42,7 @@ process.stdin.on("data", (chunk) => {
         break;
       case "get_messages":
         reply(request, {
-          messages: fs
-            .readFileSync(sessionFile, "utf8")
+          messages: NodeFS.readFileSync(sessionFile, "utf8")
             .split("\n")
             .filter(Boolean)
             .map(JSON.parse),

@@ -22,12 +22,15 @@ const instanceId = ProviderInstanceId.make("pi_gateway");
 const threadId = ThreadId.make("pi-native-transport");
 const modelSelection = { instanceId, model: "claude-opus-5-5" };
 const executable = NodeURL.fileURLToPath(new URL("../testFixtures/piRpcCli.mjs", import.meta.url));
-const decodeStartup = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
-  appendSystemPrompt: Schema.NullOr(Schema.String),
-  replacesSystemPrompt: Schema.Boolean,
-  sessionFile: Schema.String,
-})));
-
+const decodeStartup = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      appendSystemPrompt: Schema.NullOr(Schema.String),
+      replacesSystemPrompt: Schema.Boolean,
+      sessionFile: Schema.String,
+    }),
+  ),
+);
 
 function runTest<A, E>(
   test: (

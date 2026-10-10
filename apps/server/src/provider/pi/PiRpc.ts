@@ -26,14 +26,14 @@ export const makePiRpc = Effect.fn("makePiRpc")(function* (input: {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const command = yield* resolveSpawnCommand(input.binaryPath, [...input.args], {
     env: input.environment,
-    extendEnv: true,
+    extendEnv: input.environment.WORKJET_SOURCE_ISOLATED !== "true",
   });
   const child = yield* spawner
     .spawn(
       ChildProcess.make(command.command, command.args, {
         cwd: input.cwd,
         env: input.environment,
-        extendEnv: true,
+        extendEnv: input.environment.WORKJET_SOURCE_ISOLATED !== "true",
         shell: command.shell,
       }),
     )

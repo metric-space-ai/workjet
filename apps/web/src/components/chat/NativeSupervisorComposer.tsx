@@ -58,6 +58,7 @@ import type { WorkjetThreadConfig } from "@workjet/contracts";
 
 import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
 import { supervisorRouteLabel } from "../../workjetSupervisorRoute";
+import { NativeSupervisorRouteControls } from "./NativeSupervisorRouteControls";
 
 export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
@@ -73,6 +74,7 @@ export function NativeSupervisorComposer(props: {
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
   const routeLabel = supervisorRouteLabel(useSupervisorRouteDisplay(props.scope));
+  const [routeSaving, setRouteSaving] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
   const [capabilityRetry, setCapabilityRetry] = useState(0);
@@ -171,6 +173,7 @@ export function NativeSupervisorComposer(props: {
     const saved = journalRef.current;
     if (
       inFlight.current ||
+      (routeSaving && (operation === "send" || operation === "input")) ||
       current.unavailable ||
       target === null ||
       (saved !== null && !supervisorJournalMatchesScope(saved, target))
@@ -907,27 +910,13 @@ export function NativeSupervisorComposer(props: {
             </ComposerControl>
           }
           worker={
-            <ComposerControl
-              type="button"
-              aria-disabled="true"
-              title="Configure the Supervisor Luma in project settings. This instance owns the execution route."
-            >
-              Supervisor
-            </ComposerControl>
-          }
-          manual={
-            <>
-              <ComposerControl type="button" aria-disabled="true" title={routeLabel.title}>
-                {routeLabel.model}
-              </ComposerControl>
-              <ComposerControl
-                type="button"
-                aria-disabled="true"
-                title={props.instanceId ?? "No connected instance"}
-              >
-                {routeLabel.computer}
-              </ComposerControl>
-            </>
+            <NativeSupervisorRouteControls
+              key={JSON.stringify(props.scope)}
+              scope={props.scope}
+              disabled={disabled || busy || inputting || pending}
+              routeTitle={routeLabel.title}
+              onSavingChange={setRouteSaving}
+            />
           }
           status={
             <>
@@ -971,6 +960,7 @@ export function NativeSupervisorComposer(props: {
               aria-label="Send to Supervisor"
               disabled={
                 disabled ||
+                routeSaving ||
                 busy ||
                 bindingPending ||
                 (!inputting && conversationUnavailable) ||

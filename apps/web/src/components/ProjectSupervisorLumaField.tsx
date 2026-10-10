@@ -14,7 +14,9 @@ export type LumaFieldProps = {
 };
 
 /** The local server is only transport; profiles belong to the selected native instance. */
-function useProjectSupervisorLumas(): {
+export function useProjectSupervisorLumas(): {
+  readonly instanceId: string | null;
+  readonly instanceName: string | null;
   readonly phase: "loading" | "ready" | "unavailable";
   readonly profiles: readonly WorkjetWorkerProfile[];
 } {
@@ -59,6 +61,8 @@ function useProjectSupervisorLumas(): {
         ? "ready"
         : "unavailable";
   return {
+    instanceId: scope.presentationInstanceId,
+    instanceName: connection?.displayName ?? null,
     phase,
     profiles: phase === "ready" ? (snapshot.data?.configuration?.workerProfiles ?? []) : [],
   };

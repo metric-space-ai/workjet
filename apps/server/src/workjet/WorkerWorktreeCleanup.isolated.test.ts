@@ -143,7 +143,7 @@ const fixture = Effect.gen(function* () {
           return yield* new NativeWorkerWorktreeRemovalError({ reason: "identity" });
         yield* fs.writeFileString(
           path.join(destination, ".git", "workjet-rollback-receipt.json"),
-          yield* Schema.encodeEffect(Schema.UnknownFromJsonString)({
+          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
             schemaVersion: 1,
             kind: "isolated",
             reason: "rejected-dispatch",

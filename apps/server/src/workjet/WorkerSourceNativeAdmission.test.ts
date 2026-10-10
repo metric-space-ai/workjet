@@ -5,7 +5,11 @@ import * as NodePath from "node:path";
 import * as NodeOs from "node:os";
 import * as Effect from "effect/Effect";
 import {
-  DEFAULT_WORKJET_THREAD_CONFIG, EnvironmentId, ProviderInstanceId, ThreadId,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
   type ProviderSessionStartInput,
 } from "@workjet/contracts";
 import { afterEach, expect, it, vi } from "vite-plus/test";
@@ -21,21 +25,28 @@ afterEach(async () => {
 });
 function input(thread: string): ProviderSessionStartInput {
   return {
-    threadId: ThreadId.make(thread), runtimeMode: "full-access",
+    threadId: ThreadId.make(thread),
+    runtimeMode: "full-access",
     modelSelection: { instanceId: ProviderInstanceId.make("source"), model: "gpt-6.1-sol" },
     workjetConfig: {
-      ...DEFAULT_WORKJET_THREAD_CONFIG, role: "worker",
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      role: "worker",
       parent: { environmentId: EnvironmentId.make("source"), threadId: ThreadId.make("parent") },
     },
   };
 }
-const run = (value: ProviderSessionStartInput, driver: NonNullable<ReturnType<typeof workerSourceDriver>>) =>
-  Effect.runPromise(admitWorkerSourceNativeProfile(value, driver).pipe(
-    Effect.provideService(ServerEnvironment, {
-      getEnvironmentId: Effect.succeed(EnvironmentId.make("target")),
-      getDescriptor: Effect.die("unused descriptor"),
-    }),
-  ));
+const run = (
+  value: ProviderSessionStartInput,
+  driver: NonNullable<ReturnType<typeof workerSourceDriver>>,
+) =>
+  Effect.runPromise(
+    admitWorkerSourceNativeProfile(value, ProviderDriverKind.make(driver)).pipe(
+      Effect.provideService(ServerEnvironment, {
+        getEnvironmentId: Effect.succeed(EnvironmentId.make("target")),
+        getDescriptor: Effect.die("unused descriptor"),
+      }),
+    ),
+  );
 async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "greppy" | "pi-code") {
   let allowed = true;
   let admitted = 0;
@@ -55,21 +66,41 @@ async function fixture(harness: "grok-cli" | "opencode" | "minimax-code" | "grep
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no listener");
-  const directory = await NodeFs.mkdtemp(NodePath.join(
-    process.env.TMPDIR ?? (process.platform === "darwin" ? "/Volumes/tmp" : NodeOs.tmpdir()),
-    "native-admission-",
-  ));
+  const directory = await NodeFs.mkdtemp(
+    NodePath.join(
+      process.env.TMPDIR ?? (process.platform === "darwin" ? "/Volumes/tmp" : NodeOs.tmpdir()),
+      "native-admission-",
+    ),
+  );
   cleanups.push(() => NodeFs.rm(directory, { recursive: true, force: true }));
   const thread = "admission-" + harness;
-  const route = await installWorkerSourceRoute(thread, {
-    sourceEnvironmentId: "source", targetEnvironmentId: "target", requestId: thread,
-    requestDigest: "digest-" + harness, capability: "admission-capability", port: address.port,
-  }, {
-    targetEnvironmentId: "target", requestDigest: "digest-" + harness, modelId: "gpt-6.1-sol",
-    harness, nativeProfile: { harness, directory },
-  });
+  const route = await installWorkerSourceRoute(
+    thread,
+    {
+      sourceEnvironmentId: "source",
+      targetEnvironmentId: "target",
+      requestId: thread,
+      requestDigest: "digest-" + harness,
+      capability: "admission-capability",
+      port: address.port,
+    },
+    {
+      targetEnvironmentId: "target",
+      requestDigest: "digest-" + harness,
+      modelId: "gpt-6.1-sol",
+      harness,
+      nativeProfile: { harness, directory },
+    },
+  );
   cleanups.push(route.revoke);
-  return { route, value: input(thread), admitted: () => admitted, deny: () => { allowed = false; } };
+  return {
+    route,
+    value: input(thread),
+    admitted: () => admitted,
+    deny: () => {
+      allowed = false;
+    },
+  };
 }
 for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-code"] as const) {
   it(`admits ${harness} repeatedly without inheriting target accounts`, async () => {
@@ -88,8 +119,12 @@ for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-cod
     }
     expect(f.admitted() - before).toBe(20);
     const beforeWrong = f.admitted();
-    await expect(run({ ...f.value, modelSelection: { ...f.value.modelSelection!, model: "grok-4.7" } },
-      workerSourceDriver(harness)!)).rejects.toThrow("source model differs");
+    await expect(
+      run(
+        { ...f.value, modelSelection: { ...f.value.modelSelection!, model: "grok-4.7" } },
+        workerSourceDriver(harness)!,
+      ),
+    ).rejects.toThrow("source model differs");
     await expect(run(f.value, "codex")).rejects.toThrow("harness profile");
     expect(f.admitted()).toBe(beforeWrong);
     f.deny();
@@ -99,7 +134,10 @@ for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-cod
   });
 }
 it("keeps local sessions unchanged and denies foreign restarts without a matching source", async () => {
-  await expect(run({ threadId: ThreadId.make("local-native"), runtimeMode: "full-access" }, "grok"))
-    .resolves.toBeUndefined();
-  await expect(run(input("missing-native-source"), "grok")).rejects.toThrow("unavailable or mismatched");
+  await expect(
+    run({ threadId: ThreadId.make("local-native"), runtimeMode: "full-access" }, "grok"),
+  ).resolves.toBeUndefined();
+  await expect(run(input("missing-native-source"), "grok")).rejects.toThrow(
+    "unavailable or mismatched",
+  );
 });

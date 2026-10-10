@@ -84,7 +84,16 @@ export const make = Effect.gen(function* () {
           requestDigest,
           modelId: binding.modelRef.modelId,
           harness: request.harness ?? "codex-cli",
-          ...(request.harness === undefined || request.harness === "codex-cli" || request.harness === "claude-code" ? {} : { nativeProfile: { harness: request.harness, directory: path.join(server.stateDir, "worker-source-profiles", requestDigest) } }),
+          ...(request.harness === undefined ||
+          request.harness === "codex-cli" ||
+          request.harness === "claude-code"
+            ? {}
+            : {
+                nativeProfile: {
+                  harness: request.harness,
+                  directory: path.join(server.stateDir, "worker-source-profiles", requestDigest),
+                },
+              }),
         }),
       catch: failure,
     }).pipe(Effect.timeout("15 seconds"), Effect.mapError(failure));

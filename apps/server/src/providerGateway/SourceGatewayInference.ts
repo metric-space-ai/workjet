@@ -200,11 +200,16 @@ export function makeSourceGatewayInference(dependencies: {
         const request = body as Record<string, unknown>;
         if (
           request.model !== binding.modelRef.modelId ||
-          (request.stream !== undefined && (input.protocol === undefined ? request.stream !== false : typeof request.stream !== "boolean")) ||
+          (request.stream !== undefined &&
+            (input.protocol === undefined
+              ? request.stream !== false
+              : typeof request.stream !== "boolean")) ||
           (request.background !== undefined && request.background !== false) ||
           request.previous_response_id !== undefined ||
           request.conversation !== undefined ||
-          ((input.protocol ?? (input.workerRequest.harness === "claude-code" ? "messages" : "responses")) === "responses"
+          ((input.protocol ??
+            (input.workerRequest.harness === "claude-code" ? "messages" : "responses")) ===
+          "responses"
             ? request.input === undefined || request.messages !== undefined
             : !Array.isArray(request.messages) || request.input !== undefined)
         )
@@ -215,11 +220,24 @@ export function makeSourceGatewayInference(dependencies: {
     const authority = yield* requireAuthority(input);
     if (authority.permit.expiresAtMs - (yield* dependencies.now) < SOURCE_GATEWAY_TURN_TIMEOUT_MS)
       return yield* failure("native-admission-rejected");
-    const result = input.protocol === undefined
-      ? { requestJson: yield* dependencies.forward(authority.selected, input.requestJson, authority.permit.expiresAtMs, input.workerRequest.harness === "claude-code" ? "messages" : "responses") }
-      : dependencies.forwardProtocol === undefined
-        ? yield* failure("gateway-unavailable")
-        : yield* dependencies.forwardProtocol(authority.selected, input.requestJson, authority.permit.expiresAtMs, input.protocol);
+    const result =
+      input.protocol === undefined
+        ? {
+            requestJson: yield* dependencies.forward(
+              authority.selected,
+              input.requestJson,
+              authority.permit.expiresAtMs,
+              input.workerRequest.harness === "claude-code" ? "messages" : "responses",
+            ),
+          }
+        : dependencies.forwardProtocol === undefined
+          ? yield* failure("gateway-unavailable")
+          : yield* dependencies.forwardProtocol(
+              authority.selected,
+              input.requestJson,
+              authority.permit.expiresAtMs,
+              input.protocol,
+            );
     // A revoked/expired grant or native permit also prevents publication after the await.
     yield* requireAuthority({ ...input, permit: authority.permit });
     return result;

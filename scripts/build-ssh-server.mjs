@@ -12,6 +12,7 @@ import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.
 import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
 import { parseSshServerBuildArguments } from "./lib/ssh-server-build-arguments.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
+import { githubSshBuildIdentity } from "./lib/github-ssh-build-receipt.ts";
 import * as Effect from "effect/Effect";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/hostProcess";
@@ -26,6 +27,10 @@ const program = Effect.gen(function* () {
       );
 
     const root = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
+    const ciBuild = githubSshBuildIdentity();
+    const source = ciBuild
+      ? NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+      : undefined;
     const options = parseSshServerBuildArguments(process.argv.slice(2));
     const output = NodePath.resolve(
       options.output ?? NodePath.join(root, "apps/desktop/resources/ssh-servers"),
@@ -37,6 +42,9 @@ const program = Effect.gen(function* () {
       await NodeFSP.readFile(NodePath.join(root, "apps/server/package.json"), "utf8"),
     );
     const lock = parseYaml(await NodeFSP.readFile(NodePath.join(root, "pnpm-lock.yaml"), "utf8"));
+    const lockSha256 = NodeCrypto.createHash("sha256")
+      .update(await NodeFSP.readFile(NodePath.join(root, "pnpm-lock.yaml")))
+      .digest("hex");
     const nativeDependencies = Object.fromEntries(
       ["node-pty", "@ff-labs/fff-node"].map((name) => {
         const version = lock.importers["apps/server"].dependencies[name].version.split("(")[0];
@@ -204,6 +212,27 @@ const program = Effect.gen(function* () {
         `${digest}  ${filename}\n`,
       );
       console.log(`Packaged verified SSH server: ${filename}`);
+      if (ciBuild) {
+        const currentSource = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+        const currentLock = NodeCrypto.createHash("sha256")
+          .update(await NodeFSP.readFile(NodePath.join(root, "pnpm-lock.yaml")))
+          .digest("hex");
+        if (currentSource !== source || currentLock !== lockSha256)
+          throw new Error("SSH server source changed during its CI build.");
+        await NodeFSP.writeFile(
+          NodePath.join(output, `${filename}.build-receipt.json`),
+          JSON.stringify({
+            exit: 0,
+            host: "github-actions",
+            owner: ciBuild.owner,
+            task: `ssh-server-${platform}`,
+            github: ciBuild.github,
+            workjetSourceCommit: source,
+            workjetLockSha256: lockSha256,
+            workjetArchiveSha256: digest,
+          }, null, 2) + "\n",
+        );
+      }
     } finally {
       await NodeFSP.rm(stage, { recursive: true, force: true });
     }

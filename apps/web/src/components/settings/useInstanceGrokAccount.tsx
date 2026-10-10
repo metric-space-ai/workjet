@@ -14,6 +14,10 @@ import {
   type InstanceGrokInput,
 } from "../../lib/workjetInstanceGrok";
 import type { InstanceGrokAccountPresentation } from "./WorkjetModelsProviders";
+import {
+  WorkjetProjectControlError,
+  type WorkjetProjectControlFailure,
+} from "../../workjetProjectControl";
 import { WORKJET_GATEWAY_PROVIDER_ICONS } from "./WorkjetGatewayAccounts";
 import { Button } from "../ui/button";
 
@@ -38,6 +42,7 @@ export function useInstanceGrokAccount(
   const [checks, setChecks] = useState<Readonly<Record<string, Check>>>({});
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
+  const [connectionFailure, setConnectionFailure] = useState<WorkjetProjectControlFailure>();
   const [confirmRemove, setConfirmRemove] = useState(false);
   const alive = useRef(true);
   const controller = useRef<AbortController | undefined>(undefined);
@@ -62,16 +67,20 @@ export function useInstanceGrokAccount(
       controller.current = active;
       setBusy(input.action === "instance.grok.check" ? input.modelId : input.action);
       setError(undefined);
+      setConnectionFailure(undefined);
       try {
         const result = await requestInstanceGrok(instanceId, input, active.signal);
         if (active.signal.aborted || !alive.current) return undefined;
         apply(result);
         return result;
       } catch (failure) {
-        if (!active.signal.aborted)
-          setError(
-            failure instanceof Error ? failure.message : "Grok control failed. Retry the action.",
-          );
+        if (!active.signal.aborted && alive.current) {
+          if (failure instanceof WorkjetProjectControlError) setConnectionFailure(failure.failure);
+          else
+            setError(
+              failure instanceof Error ? failure.message : "Grok control failed. Retry the action.",
+            );
+        }
         return undefined;
       } finally {
         if (controller.current === active && !active.signal.aborted) setBusy(undefined);
@@ -378,7 +387,8 @@ export function useInstanceGrokAccount(
     </div>
   );
   return {
-    row,
+    row: connectionFailure ? null : row,
+    connectionFailure,
     label,
     installed: state?.installed ?? false,
     hasModels: !!state?.models.length,

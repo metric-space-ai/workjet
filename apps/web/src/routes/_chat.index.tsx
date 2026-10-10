@@ -30,6 +30,8 @@ import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverv
 import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
 import {
   configureWorkjetProject,
+  describeWorkjetProjectControlFailure,
+  workjetUiLanguage,
   readWorkjetGalleryOrder,
   readWorkjetProjectKpis,
   saveWorkjetProjectKpis,
@@ -61,7 +63,7 @@ import {
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
+import { LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
@@ -453,11 +455,12 @@ function IndexDraftLanding() {
       <ProjectGallery
         key={activeCtoxInstanceId ?? "local"}
         instanceId={activeCtoxInstanceId}
-        onRefresh={
-          activeCtoxInstanceId === null
-            ? undefined
-            : () => refreshWorkjetProjectRegistry(activeCtoxInstanceId)
+        registryStatus={
+          registry.refreshError
+            ? describeWorkjetProjectControlFailure(registry.refreshError, activeCtoxInstanceId)
+            : undefined
         }
+        lastUpdatedAt={registry.lastUpdatedAt}
         projectsUnavailable={registry.phase === "blocked" || registry.refreshFailed === true}
         projects={galleryProjects.map((project) => ({
           ...project,
@@ -562,16 +565,13 @@ function IndexDraftLanding() {
         <Empty className="flex-1">
           <EmptyHeader>
             <EmptyTitle>Couldn’t load projects</EmptyTitle>
-            <EmptyDescription>Reconnect to this instance to load your projects.</EmptyDescription>
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button size="sm" onClick={() => refreshWorkjetProjectRegistry(activeCtoxInstanceId)}>
-                <RotateCcwIcon className="size-4" />
-                Refresh projects
-              </Button>
-              <Button render={<Link to="/settings/computers" />} size="sm">
-                Open Computers
-              </Button>
-            </div>
+            <EmptyDescription>
+              {registry.refreshError
+                ? describeWorkjetProjectControlFailure(registry.refreshError, activeCtoxInstanceId)
+                : workjetUiLanguage() === "de"
+                  ? "Die Instanz ist zurzeit nicht erreichbar."
+                  : "The instance is currently unavailable."}
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       </SidebarInset>
@@ -582,11 +582,13 @@ function IndexDraftLanding() {
 function ProjectGallery({
   projects,
   instanceId,
-  onRefresh,
+  registryStatus,
+  lastUpdatedAt,
   projectsUnavailable,
 }: {
   readonly instanceId: string | null;
-  readonly onRefresh: (() => void) | undefined;
+  readonly registryStatus: string | undefined;
+  readonly lastUpdatedAt: number | undefined;
   readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
@@ -791,12 +793,6 @@ function ProjectGallery({
               <Button size="sm" variant="outline" onClick={() => setShowArchived((show) => !show)}>
                 {showArchived ? "All projects" : `Archived projects (${archivedCount})`}
               </Button>
-              {onRefresh ? (
-                <Button size="sm" variant="outline" onClick={onRefresh}>
-                  <RotateCcwIcon className="size-4" />
-                  Refresh projects
-                </Button>
-              ) : null}
               <Button size="sm" onClick={openAddProject}>
                 <PlusIcon className="size-4" />
                 Add project
@@ -829,14 +825,21 @@ function ProjectGallery({
           {projectsUnavailable ? (
             <div
               role="status"
-              className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm"
+              className="mb-4 text-xs text-muted-foreground"
               data-workjet-project-registry-stale=""
             >
-              <span>Project list is out of date</span>
-              {onRefresh && (
-                <Button size="sm" variant="ghost" onClick={onRefresh}>
-                  Refresh
-                </Button>
+              <span>
+                {registryStatus ??
+                  (workjetUiLanguage() === "de"
+                    ? "Die Instanz ist zurzeit nicht erreichbar."
+                    : "The instance is currently unavailable.")}
+              </span>
+              {lastUpdatedAt !== undefined && (
+                <span>
+                  {" "}
+                  · {workjetUiLanguage() === "de" ? "Letzter Stand" : "Last updated"}:{" "}
+                  {new Date(lastUpdatedAt).toLocaleString()}
+                </span>
               )}
             </div>
           ) : null}

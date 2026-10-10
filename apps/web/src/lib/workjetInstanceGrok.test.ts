@@ -21,6 +21,23 @@ const readPort = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => {
 });
 
 describe("native instance Grok consumer", () => {
+  it("preserves the typed instance preparation failure through the account consumer", async () => {
+    const failure = {
+      _tag: "failed",
+      code: "guest_failed",
+      preparation: { stage: "session", reason: "exception" },
+    } as const;
+    const port = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+    await expect(
+      requestInstanceGrok(
+        "managed:welsch",
+        { action: "instance.grok.read" },
+        new AbortController().signal,
+        port,
+      ),
+    ).rejects.toMatchObject({ failure });
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();

@@ -57,6 +57,23 @@ const registry = Schema.decodeUnknownSync(WorkjetNativeProviderRegistry)({
 });
 const account = registry.accounts[0]!;
 describe("native account Luma composition", () => {
+  it("preserves the typed instance preparation failure through the account consumer", async () => {
+    const failure = {
+      _tag: "failed",
+      code: "guest_failed",
+      preparation: { stage: "session", reason: "exception" },
+    } as const;
+    const port = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+    await expect(
+      requestInstanceProviders(
+        "managed:welsch",
+        { action: "instance.providers.read" },
+        new AbortController().signal,
+        port,
+      ),
+    ).rejects.toMatchObject({ failure });
+  });
+
   afterEach(() => vi.useRealTimers());
   it("accepts account mutations only after a newer correlated registry confirms the change", async () => {
     const enable = {

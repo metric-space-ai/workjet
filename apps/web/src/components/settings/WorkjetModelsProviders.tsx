@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import type {
   WorkjetGatewayAccountSummary,
   WorkjetGatewayApiKeyProvider,
@@ -64,6 +65,9 @@ export interface ModelsModelCheck {
 }
 
 export interface InstanceGrokAccountPresentation {
+  readonly connectionFailure?:
+    | import("../../workjetProjectControl").WorkjetProjectControlFailure
+    | undefined;
   readonly row: ReactNode;
   readonly label: string;
   readonly installed: boolean;
@@ -1020,8 +1024,10 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
               Actions
             </span>
           </div>
-          {state.instanceGrok?.row}
-          {state.nativeProviderRows}
+          {state.nativeProviderRows ?? state.instanceGrok?.row}
+          <div className="border-b border-border py-2 text-xs font-semibold">
+            {workjetUiLanguage() === "de" ? "Dieser Rechner" : "This computer"}
+          </div>
           {providers.map((provider) => {
             const providerAccounts = accounts.filter((account) => account.provider === provider);
             const models = state.catalog?.providerModels?.find(

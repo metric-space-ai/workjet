@@ -1086,6 +1086,44 @@ export function isWorkjetSupervisorReceiptForRequest(
   return response.action === "project.supervisor.turn.submit";
 }
 
+export const CtoxGuestPreparationReason = Schema.Literals([
+  "unknown",
+  "exception",
+  "unsupported_action",
+  "peer_unavailable",
+  "request_timeout",
+  "network_unavailable",
+  "owner_session_not_ready",
+  "project_control_not_ready",
+  "supervisor_control_not_ready",
+  "did_fail_load",
+  "blocked_navigation",
+  "destroyed",
+  "navigation_timeout",
+  "load_url",
+  "navigation_setup",
+  "unexpected_origin",
+]);
+export const CtoxGuestPreparationDiagnostic = Schema.Struct({
+  stage: Schema.Literals([
+    "discovery",
+    "launch",
+    "session",
+    "host_window",
+    "renderer_budget",
+    "create_view",
+    "request_guard",
+    "guest_handlers",
+    "attach",
+    "navigation_commit",
+    "session_events",
+  ]),
+  reason: CtoxGuestPreparationReason,
+  errorCode: Schema.optionalKey(Schema.Int),
+  httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+});
+export type CtoxGuestPreparationDiagnostic = typeof CtoxGuestPreparationDiagnostic.Type;
+
 export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
   stage: Schema.Literals(["execute"]),
   reason: Schema.Literals([
@@ -1103,6 +1141,7 @@ export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
     diagnostic: Schema.optionalKey(CtoxWorkjetProjectControlDiagnostic),
+    preparation: Schema.optionalKey(CtoxGuestPreparationDiagnostic),
     discovery: Schema.optionalKey(
       Schema.Struct({
         code: CtoxManagedDiscoveryFailureCode,
@@ -1935,6 +1974,7 @@ export const CtoxManagedGuestResult = Schema.Union([
   Schema.TaggedStruct("ready", { instanceId: CtoxManagedInstanceId }),
   Schema.TaggedStruct("revoked", {}),
   Schema.TaggedStruct("failed", {
+    preparation: Schema.optionalKey(CtoxGuestPreparationDiagnostic),
     code: Schema.Literals([
       "invalid_input",
       "launch_failed",

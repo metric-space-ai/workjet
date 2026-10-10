@@ -1,5 +1,6 @@
 import type {
   CommandId,
+  CtoxGuestPreparationDiagnostic,
   ProjectId,
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
@@ -20,34 +21,168 @@ function activeDesktopProjectPool(): WorkjetProjectPoolPort | undefined {
   return window.desktopBridge?.ctox?.ensurePooled;
 }
 
-/** Fixed discovery facts only; no response bodies or account material enter UI copy. */
-export function describeWorkjetProjectControlFailure(
-  failure: Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>,
-  instanceId: string | null = null,
+export type WorkjetProjectControlFailure = Extract<
+  CtoxWorkjetProjectControlResult,
+  { _tag: "failed" }
+>;
+
+export class WorkjetProjectControlError extends Error {
+  constructor(
+    readonly failure: WorkjetProjectControlFailure,
+    instanceId: string,
+  ) {
+    super(describeWorkjetProjectControlFailure(failure, instanceId));
+    this.name = "WorkjetProjectControlError";
+  }
+}
+
+export function workjetUiLanguage(): "de" | "en" {
+  const language =
+    typeof navigator !== "undefined" && navigator.language
+      ? navigator.language
+      : typeof document !== "undefined"
+        ? document.documentElement.lang
+        : "en";
+  return language.toLowerCase().startsWith("de") ? "de" : "en";
+}
+
+export function describeGuestPreparationStage(
+  stage: CtoxGuestPreparationDiagnostic["stage"],
+  language = workjetUiLanguage(),
 ): string {
+  const labels = {
+    discovery: ["Instanz finden", "Instance discovery"],
+    launch: ["Instanz starten", "Instance launch"],
+    session: ["Sitzung vorbereiten", "Session preparation"],
+    host_window: ["App-Fenster bereitstellen", "Host window"],
+    renderer_budget: ["Freien Instanzplatz bereitstellen", "Renderer capacity"],
+    create_view: ["Instanzansicht erstellen", "Instance view"],
+    request_guard: ["Geschützte Verbindung einrichten", "Request guard"],
+    guest_handlers: ["Instanzansicht vorbereiten", "Instance handlers"],
+    attach: ["Instanzansicht einbinden", "View attachment"],
+    navigation_commit: ["Instanzseite laden", "Instance page loading"],
+    session_events: ["Sitzungsereignisse verbinden", "Session events"],
+  };
+  return labels[stage][language === "de" ? 0 : 1]!;
+}
+
+export function describeGuestPreparationReason(
+  diagnostic: CtoxGuestPreparationDiagnostic,
+  language = workjetUiLanguage(),
+): string {
+  const reason = diagnostic.reason;
+  switch (reason) {
+    case "peer_unavailable":
+    case "request_timeout":
+    case "network_unavailable":
+    case "owner_session_not_ready":
+    case "project_control_not_ready":
+    case "supervisor_control_not_ready":
+      return describeWorkjetProjectControlFailure(
+        { _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason } },
+        null,
+        language,
+      );
+    default: {
+      const messages = {
+        unknown: ["Keine genauere Ursache aufgezeichnet.", "No additional cause recorded."],
+        exception: ["Die Vorbereitung ist fehlgeschlagen.", "Connection preparation failed."],
+        unsupported_action: [
+          "Die Instanz unterstützt diese Aktion noch nicht.",
+          "The instance does not support this action yet.",
+        ],
+        did_fail_load: [
+          "Die Instanzseite konnte nicht geladen werden.",
+          "The instance page could not be loaded.",
+        ],
+        blocked_navigation: [
+          "Die Navigation der Instanzseite wurde abgelehnt.",
+          "The instance page navigation was rejected.",
+        ],
+        destroyed: ["Die Instanzansicht wurde geschlossen.", "The instance view was closed."],
+        navigation_timeout: [
+          "Die Instanzseite hat nicht rechtzeitig geladen.",
+          "The instance page did not load in time.",
+        ],
+        load_url: [
+          "Die Instanzseite konnte nicht geöffnet werden.",
+          "The instance page could not be opened.",
+        ],
+        navigation_setup: [
+          "Das Laden der Instanzseite konnte nicht vorbereitet werden.",
+          "The instance page navigation could not be prepared.",
+        ],
+        unexpected_origin: [
+          "Die Instanzseite hat eine unerwartete Adresse geöffnet.",
+          "The instance page opened an unexpected origin.",
+        ],
+      };
+      return messages[reason][language === "de" ? 0 : 1]!;
+    }
+  }
+}
+
+/** Only safe typed classifications enter user-facing connection messages. */
+export function describeWorkjetProjectControlFailure(
+  failure: WorkjetProjectControlFailure,
+  instanceId: string | null = null,
+  language = workjetUiLanguage(),
+): string {
+  const de = language === "de";
   if (failure.code === "authentication_required")
     return instanceId?.startsWith("managed:")
-      ? "Sign in to ctox.dev to reconnect this project's instance."
-      : "Sign in to this CTOX instance to reconnect.";
-  if (failure.discovery !== undefined)
-    return `Instance discovery failed: ${failure.discovery.code}${failure.discovery.httpStatus === undefined ? "" : ` (HTTP ${failure.discovery.httpStatus})`}. Retry connection.`;
-  if (failure.code === "not_active")
-    return "This project's bound instance is unavailable. Check the CTOX connection.";
+      ? de
+        ? "Bei ctox.dev anmelden, um die Instanz zu verbinden."
+        : "Sign in to ctox.dev to reconnect this instance."
+      : de
+        ? "Bei der Instanz anmelden, um sie zu verbinden."
+        : "Sign in to this instance to reconnect.";
+  if (failure.preparation)
+    return de
+      ? `Die Instanzverbindung konnte nicht vorbereitet werden: ${describeGuestPreparationStage(failure.preparation.stage, language)}.`
+      : `The instance connection could not be prepared: ${describeGuestPreparationStage(failure.preparation.stage, language)}.`;
+  if (failure.discovery)
+    return de ? "Die Instanz konnte nicht erreicht werden." : "The instance could not be reached.";
   if (failure.code === "unsupported")
-    return "The connected CTOX instance does not support this action. Update its Business OS shell.";
-  if (failure.diagnostic !== undefined) {
+    return de
+      ? "Die Instanz unterstützt diese Aktion noch nicht. Business-OS-Shell aktualisieren."
+      : "The connected instance does not support this action. Update its Business OS shell.";
+  if (failure.diagnostic) {
     const messages = {
-      peer_unavailable: "The CTOX data connection is not connected yet. Retry connection.",
-      request_timeout: "The CTOX data request timed out. Retry connection.",
-      network_unavailable: "The CTOX connection could not reach the network. Retry connection.",
-      owner_session_not_ready: "The CTOX Owner session is not ready. Retry connection.",
-      project_control_not_ready: "The CTOX project connection is still starting. Retry connection.",
-      supervisor_control_not_ready:
-        "The CTOX Supervisor connection is still starting. Retry connection.",
+      peer_unavailable: [
+        "Die Datenverbindung zur Instanz ist noch nicht bereit.",
+        "The instance data connection is not connected yet.",
+      ],
+      request_timeout: [
+        "Die Datenabfrage hat zu lange gedauert.",
+        "The instance data request timed out.",
+      ],
+      network_unavailable: [
+        "Die Netzwerkverbindung zur Instanz ist gestört.",
+        "The instance connection could not reach the network.",
+      ],
+      owner_session_not_ready: [
+        "Die Sitzung des Eigentümers ist noch nicht bereit.",
+        "The instance Owner session is not ready.",
+      ],
+      project_control_not_ready: [
+        "Die Projektverbindung wird noch aufgebaut.",
+        "The instance project connection is still starting.",
+      ],
+      supervisor_control_not_ready: [
+        "Die Supervisor-Verbindung wird noch aufgebaut.",
+        "The instance Supervisor connection is still starting.",
+      ],
     };
-    return messages[failure.diagnostic.reason];
+    return messages[failure.diagnostic.reason][de ? 0 : 1]!;
   }
-  return `CTOX: ${failure.code}. Check the task and reconnect.`;
+  if (failure.code === "timeout")
+    return de
+      ? "Die Instanz hat nicht rechtzeitig geantwortet."
+      : "The instance did not respond in time.";
+  return de
+    ? "Die Verbindung zur Instanz ist gestört."
+    : "The connection to the instance is interrupted.";
 }
 
 export async function requestWorkjetProjectControl(
@@ -84,6 +219,7 @@ export async function listWorkjetProjects(
     configured._tag === "failed" &&
     configured.discovery === undefined &&
     configured.diagnostic === undefined &&
+    configured.preparation === undefined &&
     (configured.code === "unsupported" || configured.code === "guest_failed")
   ) {
     configured = await requestWorkjetProjectControl(
@@ -97,6 +233,7 @@ export async function listWorkjetProjects(
     configured._tag === "failed" &&
     configured.discovery === undefined &&
     configured.diagnostic === undefined &&
+    configured.preparation === undefined &&
     (configured.code === "unsupported" || configured.code === "guest_failed")
   ) {
     return requestWorkjetProjectControl(instanceId, { action: "project.list" }, port);

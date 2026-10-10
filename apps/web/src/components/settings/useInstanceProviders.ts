@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkjetNativeProviderRegistry } from "@workjet/contracts";
 import {
+  WorkjetProjectControlError,
+  type WorkjetProjectControlFailure,
+} from "../../workjetProjectControl";
+import {
   requestInstanceProviders,
   type NativeProviderInput,
 } from "../../lib/workjetNativeProviders";
@@ -10,7 +14,11 @@ export function useInstanceProviders(instanceId: string | null) {
     instanceId: string;
     registry: WorkjetNativeProviderRegistry;
   }>();
-  const [error, setError] = useState<{ accountId: string | null; message: string }>();
+  const [error, setError] = useState<{
+    accountId: string | null;
+    message: string;
+    failure?: WorkjetProjectControlFailure;
+  }>();
   const [busy, setBusy] = useState(false);
   const alive = useRef(false);
   const controller = useRef<AbortController | undefined>(undefined);
@@ -31,7 +39,13 @@ export function useInstanceProviders(instanceId: string | null) {
       } catch (failure) {
         if (!active.signal.aborted && alive.current)
           setError({
-            accountId: "accountId" in input ? input.accountId : null,
+            accountId:
+              failure instanceof WorkjetProjectControlError
+                ? null
+                : "accountId" in input
+                  ? input.accountId
+                  : null,
+            ...(failure instanceof WorkjetProjectControlError ? { failure: failure.failure } : {}),
             message:
               failure instanceof Error ? failure.message : "Instance accounts could not be read.",
           });
@@ -59,6 +73,7 @@ export function useInstanceProviders(instanceId: string | null) {
     registry: snapshot?.instanceId === instanceId ? snapshot.registry : undefined,
     error: error?.message,
     errorAccountId: error?.accountId,
+    ...(error?.failure ? { connectionFailure: error.failure } : {}),
     busy,
     run,
     refresh,

@@ -1,3 +1,4 @@
+import { NativeProviderRows } from "./NativeProviderRows";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@workjet/client-runtime/connection";
 import { safeErrorLogAttributes } from "@workjet/client-runtime/errors";
@@ -414,6 +415,7 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
             </span>
           </div>
           {grok.row}
+          <NativeProviderRows instanceId={instanceId} label={label} />
         </div>
       </div>
     </section>
@@ -434,7 +436,13 @@ function InstanceGatewayModels({
       : undefined;
   const label = instance?.displayName ?? "CTOX instance";
   const instanceGrok = useInstanceGrokAccount(instanceId, label);
-  return <WorkjetModelsProviders {...gateway} instanceGrok={instanceGrok} />;
+  return (
+    <WorkjetModelsProviders
+      {...gateway}
+      instanceGrok={instanceGrok}
+      nativeProviderRows={<NativeProviderRows instanceId={instanceId} label={label} />}
+    />
+  );
 }
 
 function SelectedEnvironmentProviderSettings({

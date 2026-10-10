@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Owned child fixtures; no actual model, native authority or installed execution proof.
 import * as NodeChildProcess from "node:child_process";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { DEFAULT_MODEL } from "@workjet/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { createNativeSupervisorSdkSourceJournal } from "./NativeSupervisorSdkSourceJournal.ts";
@@ -25,6 +27,22 @@ it.effect("sends ordered private original-controller callbacks and accepts only 
       await closed;
     }));
     journal.captureOwnedSdkChild(child);
+    yield* Effect.promise(() => journal.observeSdkMessage({ type: "system", subtype: "init",
+      session_id: "original-session", uuid: "init-observation", model: DEFAULT_MODEL,
+    } as unknown as SDKMessage, undefined));
+    yield* Effect.promise(() => journal.turnSubmitted("original-turn"));
+    yield* Effect.promise(() => journal.turnSubmitted("original-turn"));
+    yield* Effect.promise(() => journal.observeSdkMessage({ type: "assistant",
+      session_id: "subagent-session", uuid: "subagent-observation", parent_tool_use_id: "subagent-tool",
+      message: { id: "subagent-message", model: DEFAULT_MODEL },
+    } as unknown as SDKMessage, "original-turn"));
+    yield* Effect.promise(() => journal.observeSdkMessage({ type: "assistant",
+      session_id: "original-session", uuid: "assistant-observation", parent_tool_use_id: null,
+      message: { id: "upstream-message-observation", model: DEFAULT_MODEL },
+    } as unknown as SDKMessage, "original-turn"));
+    yield* Effect.promise(() => journal.observeSdkMessage({ type: "result", subtype: "success",
+      session_id: "original-session", uuid: "result-observation", is_error: false,
+    } as unknown as SDKMessage, "original-turn"));
     yield* Effect.promise(() => journal.sdkStreamJoined());
     yield* Effect.promise(() => journal.sdkQueryCloseReturned());
     child.stdin.end("finish");
@@ -34,14 +52,24 @@ it.effect("sends ordered private original-controller callbacks and accepts only 
       { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
         sdk_observation: { version: 1, sequence: 0, kind: "child-spawned", pid: child.pid } },
       { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
-        sdk_observation: { version: 1, sequence: 1, kind: "sdk-stream-joined" } },
+        sdk_observation: { version: 1, sequence: 1, kind: "sdk-init", session_id: "original-session", init_id: "init-observation" } },
       { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
-        sdk_observation: { version: 1, sequence: 2, kind: "sdk-query-close-returned" } },
+        sdk_observation: { version: 1, sequence: 2, kind: "turn-submitted", turn_id: "original-turn" } },
       { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
-        sdk_observation: { version: 1, sequence: 3, kind: "child-closed", pid: child.pid, exit_code: 0 } },
+        sdk_observation: { version: 1, sequence: 3, kind: "parent-assistant", session_id: "original-session", turn_id: "original-turn",
+          message_id: "upstream-message-observation", message_model: DEFAULT_MODEL, assistant_id: "assistant-observation" } },
+      { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
+        sdk_observation: { version: 1, sequence: 4, kind: "sdk-result", session_id: "original-session", turn_id: "original-turn",
+          result_id: "result-observation", subtype: "success", is_error: false } },
+      { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
+        sdk_observation: { version: 1, sequence: 5, kind: "sdk-stream-joined" } },
+      { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
+        sdk_observation: { version: 1, sequence: 6, kind: "sdk-query-close-returned" } },
+      { version: 1, action: "sdk_observe", offer_id: offerId, controller_id: controllerId,
+        sdk_observation: { version: 1, sequence: 7, kind: "child-closed", pid: child.pid, exit_code: 0 } },
     ]);
-    expect(new Set(operations.map(value => value.requestId)).size).toBe(4);
-    expect(journal.currentSdkSessionId()).toBeUndefined();
+    expect(new Set(operations.map(value => value.requestId)).size).toBe(8);
+    expect(journal.currentSdkSessionId()).toBe("original-session");
   }).pipe(Effect.scoped),
 );
 it.effect("rejects wrong acknowledgement sequence, execution claims, extra fields and native error envelopes", () =>

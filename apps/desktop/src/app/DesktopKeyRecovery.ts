@@ -23,11 +23,13 @@ const RecoveryRecord = Schema.Struct({
   clerkRetired: Schema.optionalKey(Schema.Boolean),
   ctoxRetired: Schema.optionalKey(Schema.Boolean),
   managedRepairStarted: Schema.optionalKey(Schema.Boolean),
+  managedRepairVersion: Schema.optionalKey(Schema.Literal(2)),
+  lastRepairLoginId: Schema.optionalKey(Schema.String),
   instanceRepairs: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
         instanceId: Schema.String,
-        state: Schema.Literals(["repairing", "repaired", "repair_failed"]),
+        state: Schema.Literals(["repairing", "repaired", "repair_failed", "login_required"]),
       }),
     ),
   ),
@@ -76,10 +78,15 @@ export class DesktopKeyRecovery extends Context.Service<
     readonly markCatalogReset?: Effect.Effect<void, DesktopKeyRecoveryError>;
     readonly beginManagedRepair?: (
       instanceIds: readonly string[],
+      generation?: string,
+    ) => Effect.Effect<boolean, DesktopKeyRecoveryError>;
+    readonly restartManagedRepairAfterLogin?: (
+      loginId: string,
     ) => Effect.Effect<boolean, DesktopKeyRecoveryError>;
     readonly recordInstanceRepair?: (
       instanceId: string,
-      state: "repaired" | "repair_failed",
+      state: "repaired" | "repair_failed" | "login_required",
+      generation?: string,
     ) => Effect.Effect<void, DesktopKeyRecoveryError>;
   }
 >()("@workjet/desktop/app/DesktopKeyRecovery") {}
@@ -150,6 +157,24 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
             instanceRepairs: record.instanceRepairs.map((entry) =>
               entry.state === "repairing" ? { ...entry, state: "repair_failed" as const } : entry,
             ),
+          };
+          yield* persist(record);
+        }
+        if (
+          record.managedRepairVersion === undefined &&
+          record.managedRepairStarted &&
+          record.instanceRepairs !== undefined &&
+          record.instanceRepairs.length > 0 &&
+          record.instanceRepairs.every((entry) => entry.state === "repair_failed")
+        ) {
+          record = {
+            ...record,
+            pendingLogin: true,
+            managedRepairVersion: 2,
+            instanceRepairs: record.instanceRepairs.map((entry) => ({
+              ...entry,
+              state: "login_required" as const,
+            })),
           };
           yield* persist(record);
         }
@@ -254,16 +279,22 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
   );
   return DesktopKeyRecovery.of({
     inspect,
-    beginManagedRepair: (instanceIds) =>
+    beginManagedRepair: (instanceIds, generation) =>
       Effect.andThen(
         inspect,
         lock.withPermit(
           Effect.gen(function* () {
-            if (record === undefined || record.managedRepairStarted) return false;
+            if (
+              record === undefined ||
+              record.managedRepairStarted ||
+              (generation !== undefined && record.generation !== generation)
+            )
+              return false;
             const updated = {
               ...record,
               pendingLogin: false,
               managedRepairStarted: true,
+              managedRepairVersion: 2 as const,
               instanceRepairs: instanceIds.map((instanceId) => ({
                 instanceId,
                 state: "repairing" as const,
@@ -275,14 +306,51 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           }),
         ),
       ),
-    recordInstanceRepair: (instanceId, state) =>
+    restartManagedRepairAfterLogin: (loginId) =>
       Effect.andThen(
         inspect,
         lock.withPermit(
           Effect.gen(function* () {
-            if (record === undefined || !record.managedRepairStarted) return;
+            if (record === undefined || record.lastRepairLoginId === loginId) return false;
+            if (
+              !record.instanceRepairs?.some(
+                (entry) => entry.state === "repair_failed" || entry.state === "login_required",
+              )
+            ) {
+              const updated = { ...record, lastRepairLoginId: loginId };
+              yield* persist(updated);
+              record = updated;
+              return false;
+            }
             const updated = {
               ...record,
+              generation: `${yield* Clock.currentTimeMillis}-${NodeCrypto.randomUUID()}`,
+              pendingLogin: true,
+              managedRepairStarted: false,
+              managedRepairVersion: 2 as const,
+              lastRepairLoginId: loginId,
+              instanceRepairs: [],
+            };
+            yield* persist(updated);
+            record = updated;
+            return true;
+          }),
+        ),
+      ),
+    recordInstanceRepair: (instanceId, state, generation) =>
+      Effect.andThen(
+        inspect,
+        lock.withPermit(
+          Effect.gen(function* () {
+            if (
+              record === undefined ||
+              !record.managedRepairStarted ||
+              (generation !== undefined && record.generation !== generation)
+            )
+              return;
+            const updated = {
+              ...record,
+              pendingLogin: record.pendingLogin || state === "login_required",
               instanceRepairs: (record.instanceRepairs ?? []).map((entry) =>
                 entry.instanceId === instanceId ? { instanceId, state } : entry,
               ),
@@ -336,7 +404,12 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
       inspect,
       lock.withPermit(
         Effect.gen(function* () {
-          if (record === undefined || !record.pendingLogin) return;
+          if (
+            record === undefined ||
+            !record.pendingLogin ||
+            record.instanceRepairs?.some((entry) => entry.state === "login_required")
+          )
+            return;
           const completed = { ...record, pendingLogin: false };
           yield* persist(completed);
           record = completed;

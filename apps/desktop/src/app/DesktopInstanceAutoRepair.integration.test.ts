@@ -158,7 +158,9 @@ for (const mode of ["ready", "signed_out", "partial_failure"] as const) {
         );
         const auth = Auth.CtoxDevAuth.of({
           refresh: Effect.sync(() =>
-            signedIn ? { _tag: "ready", instances: managed } : { _tag: "signed_out" },
+            signedIn
+              ? { _tag: "ready", instances: managed, sessionVerified: true }
+              : { _tag: "signed_out" },
           ),
           login: Effect.die("Automatic repair cannot open login"),
           logout: Effect.die("Automatic repair cannot log out"),

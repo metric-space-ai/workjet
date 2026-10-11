@@ -324,5 +324,5 @@ export async function discoverCtoxManagedInstances(
     return failure("invalid_response");
   }
   if (instances === undefined) return failure("invalid_response");
-  return { _tag: "ready", instances };
+  return { _tag: "ready", instances, sessionVerified: true };
 }

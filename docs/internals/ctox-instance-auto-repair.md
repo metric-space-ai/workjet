@@ -24,10 +24,21 @@ does not stop the others. A restart records interrupted attempts as failed and
 never reissues them. Normal launches of a failed repair are blocked before any
 network request, so periodic refresh cannot turn it into a retry storm.
 
-A signed-out or failed discovery does not claim the repair generation. The marker
-remains `pendingLogin: true`, and a later authenticated refresh can run the repair.
-An authentication success clears pendingLogin independently of individual repair
-failures. Accountless pairings remain visible with `status: "pairing_expired"` and
+Only a validated control-plane session-package response carries `sessionVerified: true`.
+Cached descriptors, signed-out discovery and failed discovery never claim a repair.
+The marker remains `pendingLogin: true`, and the UI receives `login_required`.
+
+A launch-token/config response with HTTP 401/403 or an authentication-required code
+records `login_required` and restores pendingLogin. The HTTP status is retained even
+if the response body is HTML or invalid JSON. Other failures remain `repair_failed`.
+
+Each completed account login has a main-process ID shared by coalesced callers.
+An authenticated discovery after that login can create one new repair generation
+for failed or login-required instances. Replaying that login ID cannot rearm it.
+The new generation releases the old launch block and ignores stale repair callbacks.
+Existing backup files and retired partition bookkeeping remain untouched. On
+startup, all-failed markers from #443 migrate once to pendingLogin/login_required;
+new-generation genuine failures retain their classification. Accountless pairings remain visible with `status: "pairing_expired"` and
 require explicit pairing; they are not automatically granted new credentials.
 Their original IDs can be retained by the existing replacement pairing path.
 

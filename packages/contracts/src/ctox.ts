@@ -392,7 +392,10 @@ const CtoxManagedDiscoveryHttpStatus = Schema.Int.check(
 const CtoxDiscoveryInstances = Schema.Array(CtoxManagedInstance).check(Schema.isMaxLength(1_000));
 
 export const CtoxManagedDiscoveryResult = Schema.Union([
-  Schema.TaggedStruct("ready", { instances: CtoxDiscoveryInstances }),
+  Schema.TaggedStruct("ready", {
+    instances: CtoxDiscoveryInstances,
+    sessionVerified: Schema.optionalKey(Schema.Literal(true)),
+  }),
   Schema.TaggedStruct("signed_out", {}),
   Schema.TaggedStruct("failed", {
     code: CtoxManagedDiscoveryFailureCode,

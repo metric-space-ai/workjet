@@ -434,11 +434,19 @@ describe("CtoxDevAuth", () => {
           {},
           "https://accounts.ctox.dev/dashboard?desktop=1&client=ctox-business-os-desktop&auth_completed=1",
         );
-        assert.deepEqual(yield* Fiber.join(loginFiber), {
-          _tag: "completed",
-          via: "url",
-          discovery: { _tag: "signed_out" },
-        });
+        const completed = yield* Fiber.join(loginFiber);
+        assert.equal(completed._tag, "completed");
+        if (completed._tag !== "completed") return;
+        assert.isString(completed.loginId);
+        assert.deepEqual(
+          { ...completed, loginId: undefined },
+          {
+            _tag: "completed",
+            via: "url",
+            discovery: { _tag: "signed_out" },
+            loginId: undefined,
+          },
+        );
         assert.strictEqual(loginWindow.close.mock.calls.length, 1);
         assert.strictEqual(loginWindow.listenerCount("closed"), 0);
         for (const event of [
@@ -480,6 +488,7 @@ describe("CtoxDevAuth", () => {
       const ready: CtoxManagedDiscoveryResult = {
         _tag: "ready",
         instances: [],
+        sessionVerified: true,
       };
       const fetchImpl = vi.fn(async () => response(200, { account: { tenants: [] } }));
       const harness = makeHarness({ fetchImpl });
@@ -490,16 +499,18 @@ describe("CtoxDevAuth", () => {
         const second = yield* Effect.forkChild(auth.login);
         const loginWindow = yield* waitForWindow(harness);
 
-        assert.deepEqual(yield* Fiber.join(first), {
+        const firstResult = yield* Fiber.join(first);
+        const secondResult = yield* Fiber.join(second);
+        assert.equal(firstResult._tag, "completed");
+        if (firstResult._tag !== "completed") return;
+        assert.isString(firstResult.loginId);
+        assert.deepEqual(firstResult, {
           _tag: "completed",
           via: "refresh",
           discovery: ready,
+          loginId: firstResult.loginId!,
         });
-        assert.deepEqual(yield* Fiber.join(second), {
-          _tag: "completed",
-          via: "refresh",
-          discovery: ready,
-        });
+        assert.deepEqual(secondResult, firstResult);
         assert.strictEqual(harness.create.mock.calls.length, 1);
         assert.strictEqual(loginWindow.listenerCount("closed"), 0);
         assert.strictEqual(loginWindow.webContentsListenerCount("did-fail-load"), 0);

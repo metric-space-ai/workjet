@@ -78,6 +78,17 @@ function harness(
 }
 
 describe("CtoxManagedLaunch", () => {
+  it.effect("malformed error objects remain typed launch failures", () => {
+    const fetchImpl = vi.fn(async () =>
+      response({ error: { toString: "invalid fixture member" } }),
+    );
+    return Effect.gen(function* () {
+      const launch = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+      const error = yield* launch.launch(descriptor).pipe(Effect.flip);
+      assert.equal(error.operation, "launch-token");
+      assert.isUndefined(error.reason);
+    }).pipe(Effect.provide(harness(fetchImpl)));
+  });
   it.effect("activates a recovered tenant through device auth and the one-use exchange", () => {
     const engine = makeControlDeviceClient({
       baseUrl: "https://ctox.dev",

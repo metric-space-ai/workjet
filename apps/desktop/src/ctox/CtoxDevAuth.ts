@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type { BrowserWindow, Cookie } from "electron";
+import * as NodeCrypto from "node:crypto";
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import { currentRecovery } from "../app/DesktopKeyRecovery.ts";
@@ -34,6 +35,7 @@ export type CtoxDevLoginResult =
   | {
       readonly _tag: "completed";
       readonly via: "url" | "refresh";
+      readonly loginId?: string;
       readonly discovery?: CtoxManagedDiscoveryResult;
     }
   | {
@@ -206,7 +208,10 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
       const response = await device?.recoverOnce();
       if (response === undefined) return undefined;
       return discoverCtoxManagedInstances({ baseUrl, fetchImpl: async () => response.clone() });
-    }).pipe(Effect.orElseSucceed(() => undefined));
+    }).pipe(
+      Effect.orElseSucceed(() => undefined),
+      Effect.withSpan("CtoxDevAuth.discovery", { attributes: { authentication: "device_key" } }),
+    );
     const refresh = Effect.gen(function* () {
       if (
         (yield* currentRecovery.pipe(Effect.orElseSucceed(() => undefined)))?.pendingLogin === true
@@ -219,6 +224,10 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
         discoverCtoxManagedInstances({
           baseUrl,
           fetchImpl: (url, init) => browserSession.fetch(url, init),
+        }),
+      ).pipe(
+        Effect.withSpan("CtoxDevAuth.discovery", {
+          attributes: { authentication: "account_session" },
         }),
       );
       if (discovery._tag === "signed_out") {
@@ -442,7 +451,9 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
               const session = await runPromise(accountSession);
               await device.enroll((url, init) => session.fetch(url, init)).catch(() => undefined);
             }
-            return result;
+            return result._tag === "completed"
+              ? { ...result, loginId: NodeCrypto.randomUUID() }
+              : result;
           })
           .finally(() => {
             if (activeLogin === current) activeLogin = undefined;

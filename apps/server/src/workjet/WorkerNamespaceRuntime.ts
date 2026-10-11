@@ -10,7 +10,11 @@ import type { WorkerNamespaceFileCapture } from "./WorkerNamespaceSpawn.ts";
 export class WorkerNamespaceRuntimeError extends Schema.TaggedErrorClass<WorkerNamespaceRuntimeError>()(
   "WorkerNamespaceRuntimeError",
   { issue: Schema.String, cause: Schema.Defect() },
-) {}
+) {
+  override get message(): string {
+    return this.issue;
+  }
+}
 
 /** Resolve only the server-configured command. Never mount its host HOME or
  * implicitly expose a package directory. Bundle-based CLIs need their own

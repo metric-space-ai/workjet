@@ -3,11 +3,15 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-import type { CtoxWorkjetComputerProjection } from "@workjet/contracts";
+import type { ComputerFacts, CtoxWorkjetComputerProjection } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { AddComputerInline, type AddComputerInlineProps } from "./AddComputerInline";
+import {
+  AddComputerInline,
+  sshCopyIdCommand,
+  type AddComputerInlineProps,
+} from "./AddComputerInline";
 import { buildRoleEnrollment, DEFAULT_COMPUTER_ROLES } from "./ComputerCapabilitiesEditor";
 
 const HERE = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -187,5 +191,108 @@ describe("role defaults (erkennen statt fragen)", () => {
         access: null,
       }),
     ).toThrow();
+  });
+});
+
+describe("erkannte Fakten im Hinzufügen-Panel", () => {
+  const GIB = 1024 ** 3;
+  const facts = (gpus: ComputerFacts["gpus"]): ComputerFacts => ({
+    checkedAt: "2026-10-12T00:00:00.000Z",
+    machineId: "machine-mac",
+    operatingSystem: "darwin",
+    architecture: "arm64",
+    cpuCores: 14,
+    ramBytes: 36 * GIB,
+    homeDirectory: "/Users/m",
+    workDirectory: "/Users/m/.workjet/computer-work",
+    freeBytes: 200 * GIB,
+    gpus,
+    toolchains: {},
+    codingTools: {},
+    warnings: [],
+  });
+  const gpuTag = (markup: string) =>
+    markup.match(/<[^>]*data-computer-role="gpu"[^>]*>/)?.[0] ?? "";
+
+  it("pre-ticks GPU when the computer has a detected GPU", () => {
+    const markup = renderToStaticMarkup(
+      <AddComputerInline
+        {...base}
+        segment="local"
+        knownComputer={() => ({
+          facts: facts([{ model: "Apple M3 Max", vramBytes: null, unifiedMemory: true }]),
+          identityFiles: [],
+        })}
+      />,
+    );
+    expect(gpuTag(markup)).toContain('aria-checked="true"');
+    expect(gpuTag(markup)).not.toContain('aria-disabled="true"');
+    expect(gpuTag(markup)).not.toContain(' data-disabled=""');
+    expect(markup).toContain("M3 Max · 36 GB");
+  });
+
+  it("leaves GPU off and disabled without a detected GPU", () => {
+    const markup = renderToStaticMarkup(
+      <AddComputerInline
+        {...base}
+        segment="local"
+        knownComputer={() => ({ facts: facts([]), identityFiles: [] })}
+      />,
+    );
+    expect(gpuTag(markup)).toContain('aria-checked="false"');
+    expect(markup).toContain('title="Keine GPU erkannt"');
+  });
+
+  it("offers the SSH keys from ~/.ssh as choices and selects the known one", () => {
+    const markup = renderToStaticMarkup(
+      <AddComputerInline
+        {...base}
+        sshKeys={[
+          { path: "/Users/m/.ssh/id_rsa", publicKeyFingerprint: "SHA256:rsa" },
+          { path: "/Users/m/.ssh/gpu_deploy", publicKeyFingerprint: "SHA256:deploy" },
+        ]}
+        knownComputer={() => ({ facts: null, identityFiles: ["/Users/m/.ssh/gpu_deploy"] })}
+      />,
+    );
+    expect(markup).toContain('data-slot="ssh-keys"');
+    expect(markup).toContain(">id_rsa<");
+    expect(markup).toContain(">gpu_deploy<");
+    expect(markup).toMatch(
+      /aria-pressed="true"[^>]*data-ssh-key="\/Users\/m\/\.ssh\/gpu_deploy"|data-ssh-key="\/Users\/m\/\.ssh\/gpu_deploy"[^>]*aria-pressed="true"/,
+    );
+    expect(
+      sshCopyIdCommand("/Users/m/.ssh/gpu_deploy", {
+        hostname: "10.20.0.4",
+        username: "ctox",
+        port: 2222,
+      }),
+    ).toBe("ssh-copy-id -i /Users/m/.ssh/gpu_deploy.pub -p 2222 ctox@10.20.0.4");
+  });
+
+  it("uses all detected CPUs and the detected GPU for the instance entry", () => {
+    const enrollment = buildRoleEnrollment({
+      computerId: "computer-gpu3",
+      displayName: "gpu3",
+      roles: { build: true, storage: false, gpu: true },
+      agentCapabilities: [],
+      access: {
+        host: "192.168.1.30",
+        port: 22,
+        username: "metricspace",
+        hostKeySha256: "SHA256:abc",
+        hostKeyAlgorithm: "ssh-ed25519",
+      },
+      facts: {
+        ...facts([{ model: "NVIDIA RTX A4500", vramBytes: 20 * GIB, unifiedMemory: false }]),
+        cpuCores: 32,
+      },
+    });
+    const build = enrollment.capabilityConfig.find((entry) => entry.kind === "build");
+    expect(build?.kind === "build" ? build.jobs : null).toBe(32);
+    expect(enrollment.capabilityConfig).toContainEqual({
+      kind: "gpu",
+      model: "NVIDIA RTX A4500",
+      vram_gib: 20,
+    });
   });
 });

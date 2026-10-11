@@ -1,4 +1,5 @@
 import type {
+  ComputerFacts,
   CtoxComputerOperationalCapability,
   CtoxWorkjetComputerProjection,
 } from "@workjet/contracts";
@@ -79,6 +80,39 @@ function clampInteger(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, Math.round(value)));
 }
 
+const GIB = 1024 ** 3;
+
+/** Ganze GB aus Bytes, mindestens 1. */
+export function gibOf(bytes: number): number {
+  return Math.max(1, Math.round(bytes / GIB));
+}
+
+/** „NVIDIA RTX A4500“ → „A4500“, „Apple M3 Max“ → „M3 Max“. */
+export function shortGpuModel(model: string): string {
+  return (
+    model
+      .replace(/^(?:NVIDIA\s+)?(?:GeForce\s+)?(?:RTX\s+)?/i, "")
+      .replace(/^Apple\s+/i, "")
+      .trim() || model
+  );
+}
+
+/** Erkannte GPU als GPU-Eintrag der Instanz; null ohne GPU oder ohne bekannte Speichergröße. */
+export function detectedGpuCapability(
+  facts: ComputerFacts | null | undefined,
+): GpuCapability | null {
+  const gpu = facts?.gpus[0];
+  if (!facts || !gpu) return null;
+  const bytes = gpu.vramBytes ?? (gpu.unifiedMemory ? facts.ramBytes : null);
+  if (bytes === null || bytes <= 0) return null;
+  return { kind: "gpu", model: gpu.model, vram_gib: gibOf(bytes) };
+}
+
+/** „Wenn eine GPU da ist, kann sie benutzt werden.“ */
+export function gpuDetected(facts: ComputerFacts | null | undefined): boolean {
+  return (facts?.gpus.length ?? 0) > 0;
+}
+
 /**
  * Build-, Speicher- und GPU-Eintrag mit Standards. „Wenn Build, dann alle
  * CPUs“: `jobs` folgt der CPU-Zahl, sobald sie bekannt ist.
@@ -91,10 +125,13 @@ export function buildRoleEnrollment(input: {
   readonly access: ComputerSshAccess | null;
   readonly native?: CtoxWorkjetComputerProjection | null;
   readonly cpuCount?: number | null;
+  /** Erkannte Fakten des Rechners: CPU-Zahl und GPU kommen von hier. */
+  readonly facts?: ComputerFacts | null;
 }): OperationalComputerEnrollment {
   const savedBuild = savedCapability(input.native, "build");
   const savedStorage = savedCapability(input.native, "storage");
-  const savedGpu = savedCapability(input.native, "gpu");
+  const savedGpu = savedCapability(input.native, "gpu") ?? detectedGpuCapability(input.facts);
+  const cpuCount = input.facts?.cpuCores ?? input.cpuCount ?? null;
   const endpointRef =
     savedBuild?.ssh_endpoint_ref ??
     (savedStorage?.protocol === "ssh" ? savedStorage.endpoint_ref : undefined) ??
@@ -105,10 +142,7 @@ export function buildRoleEnrollment(input: {
       kind: "build",
       ssh_endpoint_ref: endpointRef,
       slots: savedBuild?.slots ?? 1,
-      jobs:
-        input.cpuCount && input.cpuCount > 0
-          ? clampInteger(input.cpuCount, 1, 64)
-          : (savedBuild?.jobs ?? 2),
+      jobs: cpuCount && cpuCount > 0 ? clampInteger(cpuCount, 1, 64) : (savedBuild?.jobs ?? 2),
       lane_root: savedBuild?.lane_root ?? `${WORKJET_COMPUTER_ROOT}/build`,
       disk_floor_gib: savedBuild?.disk_floor_gib ?? 20,
       toolchains: savedBuild?.toolchains ?? ["rust-stable"],
@@ -172,6 +206,7 @@ export function ComputerRoleCheckboxes({
   disabled = false,
   endpointAvailable,
   gpuAvailable,
+  gpuDetail = null,
 }: {
   readonly value: ComputerRoles;
   readonly onChange: (next: ComputerRoles) => void;
@@ -180,6 +215,8 @@ export function ComputerRoleCheckboxes({
   readonly endpointAvailable: boolean;
   /** GPU nur, wenn eine erkannt oder schon gespeichert ist. */
   readonly gpuAvailable: boolean;
+  /** Erkannte GPU, z. B. „A4500 · 20 GB“. */
+  readonly gpuDetail?: string | null;
 }) {
   const entries = [
     { key: "build", label: "Build", enabled: endpointAvailable },
@@ -212,6 +249,11 @@ export function ComputerRoleCheckboxes({
             onCheckedChange={(checked) => onChange({ ...value, [entry.key]: checked === true })}
           />
           {entry.label}
+          {entry.key === "gpu" && gpuAvailable && gpuDetail ? (
+            <span className="text-muted-foreground" data-slot="computer-role-gpu-detail">
+              {gpuDetail}
+            </span>
+          ) : null}
         </label>
       ))}
     </fieldset>

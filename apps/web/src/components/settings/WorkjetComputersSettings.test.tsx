@@ -1,7 +1,16 @@
+// @effect-diagnostics nodeBuiltinImport:off - Der Test liest die Quelldatei direkt.
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+
 import {
   DEFAULT_WORKJET_CONFIGURATION,
   EnvironmentId,
   WorkjetComputerId,
+  type ComputerControlInput,
+  type ComputerControlResult,
+  type ComputerFacts,
+  type ComputerMetadata,
   type WorkjetComputer,
   type WorkjetHarnessAvailabilitySnapshot,
 } from "@workjet/contracts";
@@ -10,7 +19,13 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   applyAutomaticCurrentComputer,
+  changeComputerActive,
+  computerConnectionFor,
   findComputerForTarget,
+  knownComputerFacts,
+  removeComputerRow,
+  removedPathsSummary,
+  withComputerRecords,
   includeSavedComputers,
   mergeComputerRows,
   removeComputer,
@@ -37,6 +52,66 @@ const configurationWith = (...computers: ReadonlyArray<WorkjetComputer>) => ({
   ...DEFAULT_WORKJET_CONFIGURATION,
   computers,
 });
+
+const GIB = 1024 ** 3;
+const gpuFacts: ComputerFacts = {
+  checkedAt: "2026-10-12T00:00:00.000Z",
+  machineId: "machine-gpu3",
+  operatingSystem: "linux",
+  architecture: "x86_64",
+  cpuCores: 32,
+  ramBytes: 128 * GIB,
+  homeDirectory: "/home/metricspace",
+  workDirectory: "/home/metricspace/.workjet/computer-work",
+  freeBytes: 900 * GIB,
+  gpus: [{ model: "NVIDIA RTX A4500", vramBytes: 20 * GIB, unifiedMemory: false }],
+  toolchains: { rustc: "1.90.0" },
+  codingTools: {},
+  warnings: [],
+};
+
+function metadataWith(overrides: Partial<ComputerMetadata> = {}): ComputerMetadata {
+  return {
+    connection: {
+      _tag: "ssh",
+      target: { alias: "lan-gpu3", hostname: "192.168.1.30", username: "metricspace", port: 22 },
+    },
+    facts: null,
+    roles: { build: true, storage: false },
+    active: true,
+    hostKeyFingerprint: null,
+    identityFiles: [],
+    status: "ready",
+    error: null,
+    previousIds: [],
+    legacyRecords: [],
+    ...overrides,
+  };
+}
+
+function controlResult(
+  computers: ReadonlyArray<WorkjetComputer>,
+  removedPaths: ComputerControlResult["removedPaths"] = [],
+): ComputerControlResult {
+  return {
+    computers: computers.map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      environmentId: entry.environmentId,
+      metadata: entry.metadata ?? metadataWith(),
+      capacity: entry.metadata?.facts
+        ? {
+            concurrentBuilds: 1,
+            workersPerBuild: entry.metadata.facts.cpuCores,
+            useGpu: entry.metadata.facts.gpus.length > 0,
+            directory: entry.metadata.facts.workDirectory,
+            enoughFreeSpace: true,
+          }
+        : null,
+    })),
+    removedPaths,
+  };
+}
 
 describe("removing local computer connections", () => {
   const membership = (phase: "ready" | "loading" | "failed", assigned = false) => ({
@@ -204,17 +279,19 @@ describe("native computer capabilities", () => {
     expect(markup.match(/data-workjet-native-computer=/g)).toHaveLength(1);
   });
 
-  it("offers the trash can, active switch and ⋯ menu on every row, without dialogs", () => {
+  it("offers the trash can and ⋯ menu on every row and the active switch on each Workjet computer, without dialogs", () => {
     const markup = renderToStaticMarkup(
       <WorkjetComputersSettingsView
-        configuration={configurationWith(localComputer)}
+        configuration={configurationWith({
+          ...localComputer,
+          metadata: metadataWith({ connection: { _tag: "local" } }),
+        })}
         environments={[]}
         environmentsReady
         membership={membership}
         onChange={() => undefined}
-        isActive={() => true}
         onActiveChange={() => undefined}
-        onRemove={async () => null}
+        onRemove={async () => ({ tone: "ok", text: "Aus Workjet entfernt" })}
         onRecheck={() => undefined}
       />,
     );
@@ -222,7 +299,8 @@ describe("native computer capabilities", () => {
     expect(markup).toContain("Weitere Aktionen für computer-local");
     expect(markup).toContain('aria-label="flashstore24-nas entfernen"');
     expect(markup).toContain('aria-label="computer-local entfernen"');
-    expect(markup.match(/role="switch"/g)).toHaveLength(2);
+    // Der Instanz-Eintrag allein hat keinen Workjet-Datensatz, also keinen Schalter.
+    expect(markup.match(/role="switch"/g)).toHaveLength(1);
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain('role="alertdialog"');
   });
@@ -671,5 +749,192 @@ describe("one machine = one row", () => {
     );
     expect(markup.match(/data-workjet-(?:native-)?computer=/g)).toHaveLength(1);
     expect(markup).toContain('data-workjet-capability="build"');
+  });
+});
+
+describe("Rechner-Backend (erkennen statt fragen)", () => {
+  const gpu3: WorkjetComputer = {
+    ...computer("computer-gpu3", remoteEnvironmentId),
+    label: "gpu3-a4500",
+    metadata: metadataWith({ facts: gpuFacts }),
+  };
+  const row = { key: gpu3.id, computer: gpu3, native: null };
+  const viewOf = (configuration: ReturnType<typeof configurationWith>) =>
+    renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configuration}
+        environments={[]}
+        environmentsReady
+        onChange={() => undefined}
+        onActiveChange={() => undefined}
+        onRemove={async () => ({ tone: "ok", text: "" })}
+      />,
+    );
+
+  it("persists the active switch through setActive and greys the inactive row", async () => {
+    const control = vi.fn(async (input: ComputerControlInput) => {
+      expect(input).toEqual({ _tag: "setActive", id: "computer-gpu3", active: false });
+      return controlResult([{ ...gpu3, metadata: { ...gpu3.metadata!, active: false } }]);
+    });
+    const result = await changeComputerActive({ control, row, active: false });
+    expect(control).toHaveBeenCalledTimes(1);
+    const markup = viewOf(withComputerRecords(configurationWith(gpu3), result!.computers));
+    expect(markup).toContain('data-active="false"');
+    expect(markup).toContain("opacity-55");
+    expect(markup).toMatch(
+      /role="switch"[^>]*aria-checked="false"|aria-checked="false"[^>]*role="switch"/,
+    );
+    expect(await changeComputerActive({ control: undefined, row, active: true })).toBeNull();
+  });
+
+  it("keeps no client-side active overlay", () => {
+    const source = NodeFS.readFileSync(
+      NodePath.join(
+        NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+        "WorkjetComputersSettings.tsx",
+      ),
+      "utf8",
+    );
+    expect(source).not.toContain("workjet.computers.inactive");
+    expect(source).not.toContain("localStorage");
+  });
+
+  it("shows the switch state of a pending toggle before the backend answers", () => {
+    const markup = viewOf(withComputerRecords(configurationWith(gpu3), [], { [gpu3.id]: false }));
+    expect(markup).toContain('data-active="false"');
+  });
+
+  it("removes only from Workjet with mode workjet-only", async () => {
+    const control = vi.fn(async (_input: ComputerControlInput) => controlResult([]));
+    const removeConnection = vi.fn(async () => null);
+    const outcome = await removeComputerRow({
+      row,
+      mode: "workjet-only",
+      control,
+      unassign: null,
+      removeConnection,
+      removeWithoutBackend: async () => "nie",
+    });
+    expect(control).toHaveBeenCalledWith({
+      _tag: "remove",
+      id: "computer-gpu3",
+      mode: "workjet-only",
+    });
+    expect(removeConnection).toHaveBeenCalledWith(gpu3);
+    expect(outcome).toEqual({ tone: "ok", text: "Aus Workjet entfernt" });
+  });
+
+  it("removes the files too with mode workjet-and-files and reports the paths in one line", async () => {
+    const control = vi.fn(async (_input: ComputerControlInput) =>
+      controlResult(
+        [],
+        [
+          { path: "/home/m/.workjet/computer-work/runtime", status: "removed" },
+          { path: "/home/m/.workjet/computer-work/worktrees", status: "removed" },
+          { path: "/home/m/.workjet/computer-work/caches", status: "removed" },
+        ],
+      ),
+    );
+    const outcome = await removeComputerRow({
+      row,
+      mode: "workjet-and-files",
+      control,
+      unassign: null,
+      removeConnection: async () => null,
+      removeWithoutBackend: async () => "nie",
+    });
+    expect(control).toHaveBeenCalledWith({
+      _tag: "remove",
+      id: "computer-gpu3",
+      mode: "workjet-and-files",
+    });
+    expect(outcome).toEqual({ tone: "ok", text: "3 Pfade entfernt" });
+  });
+
+  it("keeps the connection when a path could not be removed", async () => {
+    const removeConnection = vi.fn(async () => null);
+    const outcome = await removeComputerRow({
+      row,
+      mode: "workjet-and-files",
+      control: async () =>
+        controlResult(
+          [{ ...gpu3, metadata: { ...gpu3.metadata!, active: false } }],
+          [
+            { path: "/a/runtime", status: "removed" },
+            { path: "/a/worktrees", status: "refused" },
+            { path: "/a/caches", status: "absent" },
+          ],
+        ),
+      unassign: null,
+      removeConnection,
+      removeWithoutBackend: async () => "nie",
+    });
+    expect(outcome).toEqual({ tone: "error", text: "1 Pfad nicht entfernt" });
+    expect(removeConnection).not.toHaveBeenCalled();
+    expect(removedPathsSummary([])).toEqual({ tone: "ok", text: "0 Pfade entfernt" });
+  });
+
+  it("shows detected GPU with VRAM, CPU count and derived build capacity as chips", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(gpu3)}
+        environments={[]}
+        environmentsReady
+        onChange={() => undefined}
+        capacities={{ [gpu3.id]: controlResult([gpu3]).computers[0]!.capacity }}
+      />,
+    );
+    expect(markup).toContain("GPU A4500 · 20 GB");
+    expect(markup).toContain("32 CPUs");
+    expect(markup).toContain('title="1 Build · 32 Jobs"');
+    expect(markup).not.toMatch(/<input[^>]*(jobs|slots)/i);
+  });
+
+  it("matches the instance entry by machine id instead of by name", () => {
+    const native = {
+      id: "native-anything",
+      displayName: "rack-07",
+      hostingMode: "workstation" as const,
+      status: "assigned" as const,
+      capabilities: ["build"],
+      detectedFacts: gpuFacts,
+      selfHostedColocation: false,
+    };
+    expect(mergeComputerRows([gpu3], [native])).toHaveLength(1);
+    // Gleicher Name, aber andere Maschine: nie zusammenführen.
+    const other = {
+      ...native,
+      displayName: "gpu3",
+      detectedFacts: { ...gpuFacts, machineId: "machine-other" },
+    };
+    expect(mergeComputerRows([gpu3], [other])).toHaveLength(2);
+    // Frühere ID des zusammengeführten Rechners.
+    const merged = { ...gpu3, metadata: { ...gpu3.metadata!, previousIds: ["env-old"] } };
+    expect(
+      mergeComputerRows(
+        [merged],
+        [{ ...native, id: "env-old", detectedFacts: undefined } as never],
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("builds the backend connection and finds known facts for the add panel", () => {
+    expect(
+      computerConnectionFor({
+        kind: "tailscale",
+        target: { alias: "gpu4", hostname: "100.120.16.93", username: null, port: null },
+        label: "",
+        roles: { build: true, storage: false, gpu: false },
+        hostKey: null,
+        identityFile: null,
+        gpuDecided: false,
+      }),
+    ).toEqual({
+      _tag: "tailscale",
+      target: { alias: "gpu4", hostname: "100.120.16.93", username: null, port: null },
+    });
+    expect(knownComputerFacts([gpu3], "ssh", "192.168.1.30", null)?.facts?.cpuCores).toBe(32);
+    expect(knownComputerFacts([gpu3], "ssh", "lan-gpu3", null)?.facts?.gpus).toHaveLength(1);
+    expect(knownComputerFacts([gpu3], "local", null, null)).toBeNull();
   });
 });

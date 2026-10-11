@@ -1,12 +1,15 @@
 /**
  * Isolierte Fixture für Einstellungen › Rechner (Screenshots, kein Backend).
- * Der Desktop-Bridge-Ersatz beantwortet nur Host-Schlüssel, Preflight und
- * tailnet mit festen Werten; nichts verbindet sich irgendwohin.
+ * Der Desktop-Bridge-Ersatz beantwortet nur Host-Schlüssel, Preflight,
+ * tailnet, SSH-Schlüssel und das Rechner-Backend mit festen Werten; nichts
+ * verbindet sich irgendwohin.
  */
 import {
   DEFAULT_WORKJET_CONFIGURATION,
   EnvironmentId,
   WorkjetComputerId,
+  type ComputerFacts,
+  type ComputerMetadata,
   type WorkjetComputer,
   type WorkjetConfiguration,
 } from "@workjet/contracts";
@@ -16,7 +19,7 @@ import { createRoot } from "react-dom/client";
 import { AddComputerInline, type AddComputerKind } from "../components/settings/AddComputerInline";
 import { ComputerProvisioningSection } from "../components/settings/ComputerProvisioningSection";
 import {
-  useComputerActiveOverlay,
+  knownComputerFacts,
   WorkjetComputersSettingsView,
 } from "../components/settings/WorkjetComputersSettings";
 import "../index.css";
@@ -58,6 +61,12 @@ const delay = <T,>(value: T, ms = 400) =>
   startProvisioningOperation: () => delay({ _tag: "failed", message: "Fixture" }),
   getProvisioningOperation: () => delay({ _tag: "missing" }),
   listProvisioningOperations: () => delay({ _tag: "found", operations: [] }),
+  listComputerSshKeys: () =>
+    delay([
+      { path: "/Users/michael/.ssh/id_ed25519", publicKeyFingerprint: "SHA256:7Hq2…ed25519" },
+      { path: "/Users/michael/.ssh/gpu_deploy", publicKeyFingerprint: "SHA256:Lk9x…deploy" },
+      { path: "/Users/michael/.ssh/id_rsa", publicKeyFingerprint: "SHA256:aa31…rsa" },
+    ]),
   discoverTailscalePeers: () =>
     delay({
       status: "available",
@@ -82,37 +91,136 @@ const gpu3Env = EnvironmentId.make("env-gpu3");
 const gpu4Env = EnvironmentId.make("env-gpu4");
 const vpsEnv = EnvironmentId.make("env-vps");
 
+const GIB = 1024 ** 3;
+const facts = (
+  machineId: string,
+  cpuCores: number,
+  ramGib: number,
+  gpus: ComputerFacts["gpus"],
+): ComputerFacts => ({
+  checkedAt: "2026-10-12T00:10:00.000Z",
+  machineId,
+  operatingSystem: "linux",
+  architecture: "x86_64",
+  cpuCores,
+  ramBytes: ramGib * GIB,
+  homeDirectory: "/home/metricspace",
+  workDirectory: "/home/metricspace/.workjet/computer-work",
+  freeBytes: 700 * GIB,
+  gpus,
+  toolchains: { rustc: "1.90.0", node: "24.3.0" },
+  codingTools: {},
+  warnings: [],
+});
+const metadata = (
+  connection: ComputerMetadata["connection"],
+  detected: ComputerFacts | null,
+  overrides: Partial<ComputerMetadata> = {},
+): ComputerMetadata => ({
+  connection,
+  facts: detected,
+  roles: { build: true, storage: false },
+  active: true,
+  hostKeyFingerprint: null,
+  identityFiles: [],
+  status: "ready",
+  error: null,
+  previousIds: [],
+  legacyRecords: [],
+  ...overrides,
+});
+const ssh = (alias: string, hostname: string, username: string) => ({
+  alias,
+  hostname,
+  username,
+  port: 22,
+});
+
 const computer = (
   id: string,
   label: string,
   environmentId: EnvironmentId,
   kind: WorkjetComputer["presentationKind"],
   harnesses: WorkjetComputer["harnesses"],
+  computerMetadata?: ComputerMetadata,
 ): WorkjetComputer => ({
   id: WorkjetComputerId.make(id),
   label,
   environmentId,
   presentationKind: kind,
   harnesses,
+  ...(computerMetadata ? { metadata: computerMetadata } : {}),
 });
 
 const initial: WorkjetConfiguration = {
   ...DEFAULT_WORKJET_CONFIGURATION,
   computers: [
-    computer("computer-mac", "MacBook Pro", local, "local", [
-      { harness: "claude-code", available: true },
-      { harness: "codex-cli", available: true },
-      { harness: "grok-cli", available: true },
-      { harness: "opencode", available: true },
-    ]),
-    computer("computer-gpu3", "gpu3-a4500", gpu3Env, "ssh", [
-      { harness: "claude-code", available: true },
-      { harness: "codex-cli", available: true },
-    ]),
-    computer("computer-gpu4", "gpu4", gpu4Env, "tailscale", [
-      { harness: "codex-cli", available: true },
-    ]),
-    computer("computer-vps", "vps-hetzner", vpsEnv, "ssh", []),
+    computer(
+      "computer-mac",
+      "MacBook Pro",
+      local,
+      "local",
+      [
+        { harness: "claude-code", available: true },
+        { harness: "codex-cli", available: true },
+        { harness: "grok-cli", available: true },
+        { harness: "opencode", available: true },
+      ],
+      metadata(
+        { _tag: "local" },
+        {
+          ...facts("machine-mac", 14, 36, [
+            { model: "Apple M3 Max", vramBytes: null, unifiedMemory: true },
+          ]),
+          operatingSystem: "darwin",
+          architecture: "arm64",
+        },
+        { roles: { build: false, storage: false } },
+      ),
+    ),
+    computer(
+      "computer-gpu3",
+      "gpu3-a4500",
+      gpu3Env,
+      "ssh",
+      [
+        { harness: "claude-code", available: true },
+        { harness: "codex-cli", available: true },
+      ],
+      metadata(
+        { _tag: "ssh", target: ssh("lan-gpu3", "192.168.1.30", "metricspace") },
+        facts("machine-gpu3", 32, 128, [
+          { model: "NVIDIA RTX A4500", vramBytes: 20 * GIB, unifiedMemory: false },
+        ]),
+        { identityFiles: ["/Users/michael/.ssh/gpu_deploy"] },
+      ),
+    ),
+    computer(
+      "computer-gpu4",
+      "gpu4",
+      gpu4Env,
+      "tailscale",
+      [{ harness: "codex-cli", available: true }],
+      metadata(
+        { _tag: "tailscale", target: ssh("gpu4", "100.120.16.93", "metricspace") },
+        facts("machine-gpu4", 24, 64, [
+          { model: "NVIDIA GeForce RTX 4090", vramBytes: 24 * GIB, unifiedMemory: false },
+        ]),
+        { roles: { build: true, storage: true } },
+      ),
+    ),
+    computer(
+      "computer-vps",
+      "vps-hetzner",
+      vpsEnv,
+      "ssh",
+      [],
+      metadata(
+        { _tag: "ssh", target: ssh("vps-hetzner", "49.12.0.10", "root") },
+        facts("machine-vps", 4, 8, []),
+        { active: false, roles: { build: false, storage: false } },
+      ),
+    ),
   ],
   selectedComputerId: WorkjetComputerId.make("computer-mac"),
 };
@@ -134,7 +242,6 @@ function Fixture() {
   const [segment, setSegment] = useState<AddComputerKind>(
     (query.get("add") as AddComputerKind | null) ?? "ssh",
   );
-  const overlay = useComputerActiveOverlay();
   const membershipPhase = query.get("membership") === "loading" ? "loading" : "ready";
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -188,6 +295,7 @@ function Fixture() {
               {
                 id: "native-gpu3",
                 displayName: "gpu3",
+                detectedFacts: facts("machine-gpu3", 32, 128, []),
                 hostingMode: "workstation",
                 status: "assigned",
                 capabilities: ["claude-code", "build", "gpu"],
@@ -216,10 +324,42 @@ function Fixture() {
               },
             ],
           }}
-          isActive={overlay.isActive}
-          onActiveChange={(row, active) => overlay.setActive(row.key, active)}
-          onRemove={async () => delay("Fixture: nichts entfernt.", 300)}
-          remoteRemoveAvailable={false}
+          capacities={Object.fromEntries(
+            configuration.computers.map((entry) => [
+              entry.id,
+              entry.metadata?.facts
+                ? {
+                    concurrentBuilds: 1 as const,
+                    workersPerBuild: entry.metadata.facts.cpuCores,
+                    useGpu: entry.metadata.facts.gpus.length > 0,
+                    directory: entry.metadata.facts.workDirectory,
+                    enoughFreeSpace: true,
+                  }
+                : null,
+            ]),
+          )}
+          onActiveChange={(row, active) =>
+            setConfiguration((current) => ({
+              ...current,
+              computers: current.computers.map((entry) =>
+                entry.id === row.computer?.id && entry.metadata
+                  ? { ...entry, metadata: { ...entry.metadata, active } }
+                  : entry,
+              ),
+            }))
+          }
+          onRemove={async (row, mode) => {
+            await delay(null, 600);
+            if (query.get("remove") === "fail" && mode === "workjet-and-files")
+              return { tone: "error" as const, text: "1 Pfad nicht entfernt" };
+            setConfiguration((current) => ({
+              ...current,
+              computers: current.computers.filter((entry) => entry.id !== row.computer?.id),
+            }));
+            return mode === "workjet-and-files"
+              ? { tone: "ok" as const, text: "3 Pfade entfernt" }
+              : { tone: "ok" as const, text: "Aus Workjet entfernt" };
+          }}
           onRecheck={() => undefined}
           onRetryMembership={() => undefined}
           renderRepair={(row) => (
@@ -271,6 +411,14 @@ function Fixture() {
               sshAliasesLoading={false}
               onRefreshSshAliases={() => undefined}
               rolesAvailable
+              sshKeys={[
+                { path: "/Users/michael/.ssh/id_ed25519", publicKeyFingerprint: "SHA256:7Hq2" },
+                { path: "/Users/michael/.ssh/gpu_deploy", publicKeyFingerprint: "SHA256:Lk9x" },
+                { path: "/Users/michael/.ssh/id_rsa", publicKeyFingerprint: "SHA256:aa31" },
+              ]}
+              knownComputer={(kind, hostname) =>
+                knownComputerFacts(configuration.computers, kind, hostname, local)
+              }
               discoverTailscalePeers={discoverTailscalePeers}
               inspectHostKey={() =>
                 delay({

@@ -14,22 +14,22 @@
  * nur schrumpfen: Eintrag löschen, sobald der Verstoß abgebaut ist.
  */
 // @effect-diagnostics nodeBuiltinImport:off - Der Wächter liest Quelldateien und die Baseline direkt.
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import { describe, expect, it } from "vite-plus/test";
 
 import { collectUiContractViolations } from "./uiContract.guard";
 
-const SRC_ROOT = dirname(fileURLToPath(import.meta.url));
+const SRC_ROOT = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 
 interface Baseline {
   readonly verstoesse: ReadonlyArray<string>;
 }
 
 function readBaseline(): ReadonlySet<string> {
-  const raw = readFileSync(join(SRC_ROOT, "uiContractBaseline.json"), "utf8");
+  const raw = NodeFS.readFileSync(NodePath.join(SRC_ROOT, "uiContractBaseline.json"), "utf8");
   const parsed = JSON.parse(raw) as Baseline;
   return new Set(parsed.verstoesse);
 }

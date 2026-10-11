@@ -1216,10 +1216,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           </div>
         ) : null}
         {workjetFile.status === "invalid" ? (
-          <SettingsRow
-            title="workjet.json ist ungültig"
-            className="text-warning"
-          />
+          <SettingsRow title="workjet.json ist ungültig" className="text-warning" />
         ) : null}
       </SettingsSection>
 

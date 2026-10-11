@@ -1,11 +1,13 @@
 # Workjet UI-Vertrag v1 (verbindlich, 11.10.2026)
 
 Grundlage:
+
 - Die Owner-Vorgaben von Michael.
 - Das Audit vom 11.10.2026: Kimi ×3 und Grok ×3, alle 356 UI-Dateien, 225 deduplizierte Befunde (findings-all.json).
 - Beide Modelle haben unabhängig voneinander dieselben Bausteine vorgeschlagen.
 
 Wer UI baut:
+
 - UI entwerfen und bauen NUR Kimi oder Grok.
 - Codex/GPT liefert nur Backend und Schnittstellen.
 
@@ -35,6 +37,7 @@ Ziel: Die Oberfläche ist aus einem Guss, einfach und verständlich. Sie zeigt I
    - Die Prop `description` entfällt. Ihre Erklärsätze werden gelöscht, nicht verschoben.
 
 Dazu gehören zwei kleine Elemente:
+
 - **Banner**: Icon, eine Zeile, ein bis zwei Buttons.
 - **Toast**: eine Zeile, höchstens eine Aktion als Button.
 
@@ -72,27 +75,27 @@ Michael: „wenn eine GPU da ist, kann sie benutzt werden, wenn Build, dann halt
 - Englisch bleibt nur bei Eigennamen und Modellnamen.
 - Feste Begriffe:
 
-  | Begriff | Bedeutung | Statt |
-  |---|---|---|
-  | Instanz | CTOX-Instanz | Instance, Business OS (als Ortsname), CTOX-Master |
-  | Rechner | Computer, Maschine | Computer, Machine |
-  | Luma, Plural Lumas | KI-Worker | Agent, Worker (sichtbar) |
-  | Projekt | – | Project |
-  | Regeltermin | – | Jour fixe (sichtbar) |
-  | Einstellungen | – | Settings |
-  | Modell, Harness | – | – |
+  | Begriff            | Bedeutung          | Statt                                             |
+  | ------------------ | ------------------ | ------------------------------------------------- |
+  | Instanz            | CTOX-Instanz       | Instance, Business OS (als Ortsname), CTOX-Master |
+  | Rechner            | Computer, Maschine | Computer, Machine                                 |
+  | Luma, Plural Lumas | KI-Worker          | Agent, Worker (sichtbar)                          |
+  | Projekt            | –                  | Project                                           |
+  | Regeltermin        | –                  | Jour fixe (sichtbar)                              |
+  | Einstellungen      | –                  | Settings                                          |
+  | Modell, Harness    | –                  | –                                                 |
 
 ## 5. Icons (lucide, eine Strichstärke, `size-4` in Zeilen, `size-3.5` in Leisten)
 
-| Begriff | Icon | Verboten |
-|---|---|---|
-| Instanz | Server bzw. Knoten (`server`) | – |
-| Rechner | Monitor (`monitor`) | – |
-| Luma | Person (`user-round` bzw. `bot` nur für Systemakteure) | Schraubenschlüssel |
-| Modell | Anbieterzeichen bzw. `cpu` | Glitzerstern, ✨ |
-| Harness | Terminal (`terminal`) | – |
-| Werkzeug | Schraubenschlüssel (`wrench`), NUR echte Werkzeuge | – |
-| Neu | Text-Chip „Neu“ | Glitzerstern |
+| Begriff  | Icon                                                   | Verboten           |
+| -------- | ------------------------------------------------------ | ------------------ |
+| Instanz  | Server bzw. Knoten (`server`)                          | –                  |
+| Rechner  | Monitor (`monitor`)                                    | –                  |
+| Luma     | Person (`user-round` bzw. `bot` nur für Systemakteure) | Schraubenschlüssel |
+| Modell   | Anbieterzeichen bzw. `cpu`                             | Glitzerstern, ✨   |
+| Harness  | Terminal (`terminal`)                                  | –                  |
+| Werkzeug | Schraubenschlüssel (`wrench`), NUR echte Werkzeuge     | –                  |
+| Neu      | Text-Chip „Neu“                                        | Glitzerstern       |
 
 ## 6. Version auf einen Blick
 
@@ -110,6 +113,7 @@ Michael: „wenn eine GPU da ist, kann sie benutzt werden, wenn Build, dann halt
 ## 8. Wächter (Pflicht, im Repo)
 
 Ein Test in apps/web schlägt fehl bei:
+
 - (a) `DialogDescription`, `EmptyDescription` oder `SettingsRow description` mit einem Satz über 12 Wörter;
 - (b) `hover:underline` bzw. `underline` auf `button` oder `a` mit onClick;
 - (c) den verbotenen Icon-Zuordnungen aus §5;

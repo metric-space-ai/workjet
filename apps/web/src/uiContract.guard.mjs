@@ -12,8 +12,8 @@
  * Schlüsselformat: `rule|datei|normalisierter Text` – ohne Zeilennummer,
  * damit Verschiebungen nicht als neue Verstöße zählen.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 const MAX_STATUS_WORDS = 12;
 
@@ -24,10 +24,10 @@ const ENGLISH_MARKERS =
   /\b(the|and|with|your|you|are|is|to|of|for|when|this|that|these|those|will|would|can|could|should|not|no|yes|new|add|edit|delete|remove|save|cancel|back|close|open|show|hide|loading|loaded|failed|error|settings|connect|connected|disconnect|create|created|update|updated|select|selected|choose|search|filter|name|description|status|version|available|unavailable|enabled|disabled|on|off|in|out|all|none|any|each|every|from|into|over|under|again|retry|try|click|press|enter|type|here|there|now|later|never|always)\b/i;
 
 function* walk(dir) {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of NodeFS.readdirSync(dir)) {
     if (entry === "node_modules" || entry.startsWith(".")) continue;
-    const full = join(dir, entry);
-    const stat = statSync(full);
+    const full = NodePath.join(dir, entry);
+    const stat = NodeFS.statSync(full);
     if (stat.isDirectory()) yield* walk(full);
     else yield full;
   }
@@ -142,8 +142,8 @@ export function collectUiContractViolations(srcRoot) {
     if (!/\.(ts|tsx)$/.test(file)) continue;
     if (/\.test\.(ts|tsx)$/.test(file)) continue;
     if (/uiContract/.test(file)) continue;
-    const rel = relative(srcRoot, file).split("\\").join("/");
-    const source = readFileSync(file, "utf8");
+    const rel = NodePath.relative(srcRoot, file).split("\\").join("/");
+    const source = NodeFS.readFileSync(file, "utf8");
     checkStatusBlocks(out, "a", rel, source, "DialogDescription");
     checkStatusBlocks(out, "a", rel, source, "EmptyDescription");
     checkSettingsRowDescription(out, rel, source);

@@ -68,8 +68,8 @@ describe("project exit assessment display", () => {
     expect(markup).toContain("Unternehmenswert");
     expect(markup).toContain("950k EUR");
     expect(markup).toContain("Finanzierung");
-    expect(markup).toContain("Plan budget · 60 months");
-    expect(markup).toContain("Proposed monthly budget");
+    expect(markup).toContain("Plan-Budget · 60 Monate");
+    expect(markup).toContain("Monatsbudget (Vorschlag)");
     expect(markup).toContain("https://example.org/synthetic-evidence");
     expect(markup).toContain("Synthetic test assumptions");
   });

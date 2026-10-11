@@ -60,8 +60,8 @@ describe("custom model draft submission", () => {
     );
 
     expect(markup).toContain('value="UnlistedProvider/unfinished"');
-    expect(markup).toContain("Use model");
-    expect(markup).toContain("Discard");
+    expect(markup).toContain("Modell verwenden");
+    expect(markup).toContain("Verwerfen");
     expect(apply).not.toHaveBeenCalled();
   });
 });

@@ -48,7 +48,7 @@ export function ComposerDictationButton(props: {
   const fail = (reason: unknown) => {
     dispose();
     setPhase("idle");
-    setError(reason instanceof Error ? reason.message : "Dictation failed. Open Speech settings.");
+    setError(reason instanceof Error ? reason.message : "Diktat fehlgeschlagen");
   };
   const finish = async () => {
     const current = session.current;
@@ -130,14 +130,14 @@ export function ComposerDictationButton(props: {
       <ComposerControl
         type="button"
         className="size-7 justify-center px-0"
-        aria-label={phase === "recording" ? "Stop dictation" : "Dictate message"}
+        aria-label={phase === "recording" ? "Diktat beenden" : "Diktieren"}
         aria-pressed={phase === "recording"}
         disabled={
           (props.disabled && props.instanceId !== null && phase !== "recording") ||
           phase === "starting" ||
           phase === "finishing"
         }
-        title={phase === "recording" ? "Stop dictation" : "Dictate message"}
+        title={phase === "recording" ? "Diktat beenden" : "Diktieren"}
         onClick={() => (phase === "recording" ? finish() : start())}
       >
         {phase === "recording" ? (
@@ -152,10 +152,10 @@ export function ComposerDictationButton(props: {
           className="absolute bottom-full right-0 mb-1 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs"
         >
           {phase === "recording"
-            ? "Listening…"
+            ? "Hört zu …"
             : phase === "starting"
-              ? "Connecting microphone…"
-              : "Transcribing…"}
+              ? "Mikrofon wird verbunden …"
+              : "Wird transkribiert …"}
         </span>
       ) : null}
       {error ? (
@@ -165,7 +165,7 @@ export function ComposerDictationButton(props: {
         >
           {error}{" "}
           <button type="button" className="underline" onClick={settings}>
-            Speech settings
+            Spracheinstellungen
           </button>
         </span>
       ) : null}

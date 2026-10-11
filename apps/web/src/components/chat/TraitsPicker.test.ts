@@ -47,14 +47,14 @@ function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>) {
 describe("buildTraitsTriggerDisplay", () => {
   it("omits fast mode from the label entirely when it is off", () => {
     expect(display([EFFORT, fastModeDescriptor(false), CONTEXT_WINDOW])).toEqual({
-      label: "Effort High · Context 1M",
+      label: "Aufwand High · Kontext 1M",
       showFastModeIcon: false,
     });
   });
 
   it("shows the bolt instead of a text label when fast mode is on", () => {
     expect(display([EFFORT, fastModeDescriptor(true), CONTEXT_WINDOW])).toEqual({
-      label: "Effort High · Context 1M",
+      label: "Aufwand High · Kontext 1M",
       showFastModeIcon: true,
     });
   });
@@ -70,11 +70,11 @@ describe("buildTraitsTriggerDisplay", () => {
     );
 
     expect(display([EFFORT, serviceTier])).toEqual({
-      label: "Effort High",
+      label: "Aufwand High",
       showFastModeIcon: false,
     });
     expect(display([EFFORT, { ...serviceTier, currentValue: "priority" }])).toEqual({
-      label: "Effort High",
+      label: "Aufwand High",
       showFastModeIcon: true,
     });
   });
@@ -87,14 +87,14 @@ describe("buildTraitsTriggerDisplay", () => {
       currentValue: true,
     };
     expect(display([EFFORT, thinking])).toEqual({
-      label: "Effort High · Thinking On",
+      label: "Aufwand High · Thinking An",
       showFastModeIcon: false,
     });
   });
 
   it("falls back to a text label when fast mode is the only trait", () => {
     expect(display([fastModeDescriptor(true)])).toEqual({
-      label: "Fast",
+      label: "Schnell",
       showFastModeIcon: false,
     });
     expect(display([fastModeDescriptor(false)])).toEqual({
@@ -127,6 +127,6 @@ describe("buildTraitsTriggerDisplay", () => {
         primarySelectDescriptorId: "reasoningEffort",
         ultrathinkPromptControlled: true,
       }),
-    ).toEqual({ label: "Effort Ultrathink", showFastModeIcon: true });
+    ).toEqual({ label: "Aufwand Ultrathink", showFastModeIcon: true });
   });
 });

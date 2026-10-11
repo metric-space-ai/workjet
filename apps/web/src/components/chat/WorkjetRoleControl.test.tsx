@@ -168,8 +168,7 @@ describe("executeWorkjetRoleChange", () => {
     expect(notifyFailure).toHaveBeenCalledTimes(1);
     expect(WORKJET_ROLE_FAILURE_TOAST).toEqual({
       type: "error",
-      title: "Could not change the Workjet role",
-      description: "This thread kept its previous role.",
+      title: "Workjet-Rolle nicht geändert",
       data: { hideCopyButton: true },
     });
     expect(JSON.stringify(WORKJET_ROLE_FAILURE_TOAST)).not.toContain("private server details");
@@ -213,7 +212,7 @@ describe("WorkjetRoleControl", () => {
   it("renders a two-state radio group reflecting the current role", () => {
     const codeMarkup = renderControl(baseProps);
     expect(codeMarkup).toContain('role="radiogroup"');
-    expect(codeMarkup).toContain('aria-label="Workjet thread role"');
+    expect(codeMarkup).toContain('aria-label="Workjet-Rolle"');
     expect(codeMarkup).toContain('data-workjet-role="standard"');
     expect(codeMarkup).toContain('data-workjet-role="orchestrator"');
     expect(codeMarkup).not.toContain('data-workjet-role="worker"');
@@ -289,7 +288,7 @@ describe("WorkjetRoleControl", () => {
     const onOpenSettings = vi.fn();
     const markup = renderControl(baseProps);
     expect(markup).toContain('data-workjet-settings-gear="true"');
-    expect(markup).toContain('aria-label="Workjet settings"');
+    expect(markup).toContain('aria-label="Workjet-Einstellungen"');
 
     const [gear, ...rest] = collectByAttribute(
       WorkjetRoleControl({ ...baseProps, onOpenSettings }),
@@ -325,7 +324,7 @@ describe("WorkjetRoleControl compact variant", () => {
     expect(text).toContain("Orchestrator");
     expect(text).not.toContain("Luma");
     expect(text).toContain(WORKJET_ROLE_NEXT_SESSION_HINT);
-    expect(text).toContain("Workjet settings");
+    expect(text).toContain("Workjet-Einstellungen");
 
     const [radioGroup] = collectByAttribute(content, "onValueChange");
     (radioGroup?.props["onValueChange"] as (value: string) => void)("orchestrator");

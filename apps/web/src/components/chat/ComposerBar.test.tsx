@@ -48,13 +48,13 @@ describe("shared composer bar", () => {
   it("orders attachment-only plus, Manuell, harness, model, computer, gear, mic and send", () => {
     const html = render();
     const labels = [
-      'aria-label="Add images or project files"',
+      'aria-label="Anhang hinzufügen"',
       ">Manuell<",
       ">Harness<",
       ">Modell<",
       ">Rechner<",
       'aria-label="Optionen"',
-      'aria-label="Dictate message"',
+      'aria-label="Diktieren"',
       ">Send<",
     ];
     const positions = labels.map((label) => html.indexOf(label));
@@ -69,6 +69,6 @@ describe("shared composer bar", () => {
     expect(html).not.toContain(">Manuell<");
     for (const label of ["Harness", "Modell", "Rechner"]) expect(html).not.toContain(`>${label}<`);
     expect(html).toContain('aria-label="Optionen"');
-    expect(html).toContain('aria-label="Dictate message"');
+    expect(html).toContain('aria-label="Diktieren"');
   });
 });

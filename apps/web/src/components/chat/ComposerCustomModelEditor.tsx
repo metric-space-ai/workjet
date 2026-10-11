@@ -26,11 +26,11 @@ export function ComposerCustomModelEditor({
       }}
     >
       <label className="grid min-w-0 gap-1.5 text-sm">
-        Model ID
+        Modell-ID
         <Input
           value={value}
-          aria-label="Custom model ID"
-          placeholder="Model ID"
+          aria-label="Eigene Modell-ID"
+          placeholder="Modell-ID"
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}
@@ -39,10 +39,10 @@ export function ComposerCustomModelEditor({
       </label>
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onDiscard}>
-          Discard
+          Verwerfen
         </Button>
         <Button type="submit" disabled={value.trim().length === 0}>
-          Use model
+          Modell verwenden
         </Button>
       </div>
     </form>

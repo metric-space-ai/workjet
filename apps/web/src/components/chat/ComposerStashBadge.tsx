@@ -24,7 +24,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
     <button
       type="button"
       data-prompt-stash-badge="true"
-      aria-label={`Stashed prompts: ${props.count}. Open stash.`}
+      aria-label={`Zwischenablage: ${props.count}`}
       aria-expanded={props.menuOpen}
       className={cn(
         "absolute -top-3 right-4 z-10 inline-flex cursor-pointer items-center gap-1.5 rounded-full border bg-popover px-2.5 py-0.5 text-xs shadow-sm",
@@ -40,7 +40,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       onClick={props.onToggleMenu}
     >
       <BookmarkIcon className="size-3" aria-hidden="true" />
-      Stash
+      Ablage
       <span
         key={props.pulseKey}
         className={cn(

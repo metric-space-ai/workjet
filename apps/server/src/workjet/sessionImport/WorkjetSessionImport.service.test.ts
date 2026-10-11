@@ -7,8 +7,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_RUNTIME_MODE,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   ProjectId,
+  ThreadId,
   type OrchestrationCommand,
   type OrchestrationProjectShell,
   type OrchestrationThread,
@@ -206,7 +209,7 @@ const withFixture = <A, E>(
         getShellSnapshot: () =>
           Effect.succeed({
             projects: [...projects.values()],
-            threads: [],
+            threads: [...threads.values()],
             snapshotSequence: 0,
             updatedAt: NOW,
           }),
@@ -440,6 +443,72 @@ describe("legacy provider session titles", () => {
 });
 
 describe("project-directed static session imports", () => {
+  it.effect("inherits the target project's default and retained supervisor policy", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(root, "sessions", "policy.jsonl"),
+            transcript("Project policy import"),
+          ),
+        );
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        yield* service.importSessions({
+          projectId: ProjectId.make("project-a"),
+          candidateIds: [candidateId],
+        });
+        const first = commands.find((command) => command.type === "thread.history.import");
+        expect(
+          first?.type === "thread.history.import" && first.bootstrap?.createThread.runtimeMode,
+        ).toBe(DEFAULT_RUNTIME_MODE);
+        const supervisorId = ThreadId.make("project-b-supervisor");
+        const executionPolicy = {
+          mode: "autonomous-worktree" as const,
+          projectId: ProjectId.make("project-b"),
+          revision: 3,
+        };
+        threads.set(supervisorId, {
+          ...threads.values().next().value!,
+          id: supervisorId,
+          projectId: ProjectId.make("project-b"),
+          runtimeMode: "auto",
+          archivedAt: null,
+          deletedAt: null,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            executionPolicy,
+            team: {
+              role: "supervisor",
+              threadId: supervisorId,
+              projectId: ProjectId.make("project-b"),
+              parentThreadId: null,
+              goal: "Own project B",
+              createdAt: NOW,
+            },
+          },
+        });
+        yield* service.importSessions({
+          projectId: ProjectId.make("project-b"),
+          candidateIds: [candidateId],
+        });
+        const second = commands.filter((command) => command.type === "thread.history.import")[1];
+        if (second?.type !== "thread.history.import") throw new Error("import command");
+        expect(second.bootstrap?.createThread.runtimeMode).toBe("auto");
+        expect(second.bootstrap?.createThread.workjetConfig).toEqual({
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          executionPolicy,
+        });
+        expect(second.bootstrap?.createThread.workjetConfig).not.toHaveProperty("team");
+        const count = commands.length;
+        yield* service.importSessions({
+          projectId: ProjectId.make("project-b"),
+          candidateIds: [candidateId],
+        });
+        expect(commands).toHaveLength(count);
+      }),
+    ),
+  );
+
   it.effect("assigns a source cwd below an existing project without creating a project", () =>
     withFixture(({ root, service, projects, commands }) =>
       Effect.gen(function* () {

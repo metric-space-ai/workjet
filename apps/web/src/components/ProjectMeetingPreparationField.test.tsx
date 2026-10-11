@@ -16,7 +16,7 @@ describe("meeting preparation configuration", () => {
     expect(markup).toContain('value="grok-4.7" selected');
     expect(markup).toContain('value="24"');
     expect(markup).toContain('value="2"');
-    expect(markup).toContain("Kein passender Worker konfiguriert");
+    expect(markup).toContain("Keine passende Luma");
     for (const harness of ["grok-cli", "opencode", "pi-code"])
       expect(markup).toContain(`value="${harness}" disabled`);
     expect(markup).toContain("Worktree-Begrenzung fehlt");

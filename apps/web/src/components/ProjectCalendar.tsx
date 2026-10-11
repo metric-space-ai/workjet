@@ -501,7 +501,7 @@ function MonthGrid({
                   onClick={() => onOpenDay(date)}
                   className="px-1 text-left text-xs text-muted-foreground hover:text-foreground"
                 >
-                  {dayEvents.length - 3} more
+                  {dayEvents.length - 3} weitere
                 </button>
               ) : null}
             </div>

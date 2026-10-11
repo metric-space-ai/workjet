@@ -95,7 +95,7 @@ export function MeetingPreparationField({
             }}
           >
             {!models.includes(config.model) && (
-              <option value={config.model}>{config.model} · Worker nicht konfiguriert</option>
+              <option value={config.model}>{config.model} · Luma fehlt</option>
             )}
             {models.map((model) => (
               <option key={model} value={model}>
@@ -106,9 +106,9 @@ export function MeetingPreparationField({
         </label>
       </div>
       <label className="grid min-w-0 gap-1 text-xs">
-        Worker und Kontoroute
+        Luma und Kontoroute
         <select
-          aria-label="Vorbereitungs-Worker"
+          aria-label="Vorbereitungs-Luma"
           className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
           value={config.workerProfileId ?? ""}
           onChange={(e) => {
@@ -117,9 +117,9 @@ export function MeetingPreparationField({
             onChange({ ...rest, ...(selected ? { workerProfileId: selected.id } : {}) });
           }}
         >
-          <option value="">Passenden Worker verwenden</option>
+          <option value="">Passende Luma</option>
           {config.workerProfileId && !available.some((p) => p.id === config.workerProfileId) && (
-            <option value={config.workerProfileId}>Gespeicherter Worker nicht verfügbar</option>
+            <option value={config.workerProfileId}>Gespeicherte Luma fehlt</option>
           )}
           {available.map((p) => (
             <option key={p.id} value={p.id}>
@@ -184,9 +184,9 @@ export function MeetingPreparationField({
       <p className="break-words text-xs text-muted-foreground" role="status">
         {oneShotHarnessUnavailableReason(config.harness) ??
           (phase === "loading"
-            ? "Worker-Konfiguration wird geladen …"
+            ? "Lumas werden geladen …"
             : available.length === 0
-              ? "Kein passender Worker konfiguriert."
+              ? "Keine passende Luma"
               : "")}
       </p>
     </fieldset>

@@ -135,7 +135,11 @@ function hasOpenBlockingRequest(thread: {
  */
 export function threadHasQueuedTurnStart(
   thread: {
-    readonly messages: ReadonlyArray<{ readonly id?: string; readonly role: string; readonly createdAt: string }>;
+    readonly messages: ReadonlyArray<{
+      readonly id?: string;
+      readonly role: string;
+      readonly createdAt: string;
+    }>;
     readonly latestTurn: {
       readonly requestedAt: string;
       readonly startedAt: string | null;
@@ -148,7 +152,8 @@ export function threadHasQueuedTurnStart(
 ): boolean {
   const latestUserMessageAtMs = thread.messages.reduce(
     (latest, message) =>
-      message.role === "user" || (message.role === "system" && message.id?.startsWith("server:supervisor-tick:"))
+      message.role === "user" ||
+      (message.role === "system" && message.id?.startsWith("server:supervisor-tick:"))
         ? Math.max(latest, Date.parse(message.createdAt))
         : latest,
     Number.NEGATIVE_INFINITY,
@@ -1502,58 +1507,125 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const config = thread.workjetConfig;
       const project = readModel.projects.find((item) => item.id === thread.projectId);
       if (
-        config.schemaVersion !== 2 || config.team?.role !== "supervisor" ||
-        config.team.projectId !== thread.projectId || config.team.threadId !== thread.id ||
-        thread.deletedAt !== null || thread.archivedAt !== null ||
-        !project || project.deletedAt !== null || project.overview?.archived
-      ) return [];
-      const dueAt = supervisorTickDueAt(thread.createdAt, project.overview?.supervisorTick, config.supervisorTick);
-      if (dueAt === null || dueAt !== Date.parse(command.scheduledAt) || dueAt > Date.parse(command.createdAt)) return [];
+        config.schemaVersion !== 2 ||
+        config.team?.role !== "supervisor" ||
+        config.team.projectId !== thread.projectId ||
+        config.team.threadId !== thread.id ||
+        thread.deletedAt !== null ||
+        thread.archivedAt !== null ||
+        !project ||
+        project.deletedAt !== null ||
+        project.overview?.archived
+      )
+        return [];
+      const dueAt = supervisorTickDueAt(
+        thread.createdAt,
+        project.overview?.supervisorTick,
+        config.supervisorTick,
+      );
+      if (
+        dueAt === null ||
+        dueAt !== Date.parse(command.scheduledAt) ||
+        dueAt > Date.parse(command.createdAt)
+      )
+        return [];
       const busy =
         thread.latestTurn?.state === "running" ||
         thread.session?.activeTurnId != null ||
-        thread.session?.status === "starting" || thread.session?.status === "running" ||
+        thread.session?.status === "starting" ||
+        thread.session?.status === "running" ||
         hasOpenBlockingRequest(thread) ||
-        (config.supervisorTick?.lastControlAt != null && thread.session?.status !== "error" &&
-          Date.parse(thread.latestTurn?.requestedAt ?? thread.createdAt) < Date.parse(config.supervisorTick.lastControlAt)) ||
+        (config.supervisorTick?.lastControlAt != null &&
+          thread.session?.status !== "error" &&
+          Date.parse(thread.latestTurn?.requestedAt ?? thread.createdAt) <
+            Date.parse(config.supervisorTick.lastControlAt)) ||
         threadHasQueuedTurnStart(thread, command.createdAt, Number.POSITIVE_INFINITY);
       const state = {
         lastTickAt: command.createdAt,
-        lastControlAt: busy ? config.supervisorTick?.lastControlAt ?? null : command.createdAt,
-        outcome: busy ? "skipped-busy" as const : "started" as const,
+        lastControlAt: busy ? (config.supervisorTick?.lastControlAt ?? null) : command.createdAt,
+        outcome: busy ? ("skipped-busy" as const) : ("started" as const),
       };
       const base = yield* withEventBase({
-        aggregateKind: "thread", aggregateId: thread.id,
-        occurredAt: command.createdAt, commandId: command.commandId,
+        aggregateKind: "thread",
+        aggregateId: thread.id,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
       });
-      const events: Array<Omit<OrchestrationEvent, "sequence">> = [{
-        ...base, type: "thread.workjet-config-set",
-        payload: { threadId: thread.id, workjetConfig: { ...config, supervisorTick: state }, updatedAt: command.createdAt },
-      }, {
-        ...(yield* withEventBase({ aggregateKind: "thread", aggregateId: thread.id, occurredAt: command.createdAt, commandId: command.commandId })),
-        type: "thread.activity-appended",
-        payload: { threadId: thread.id, activity: {
-          id: EventId.make(command.commandId + ":activity"), tone: "info",
-          kind: "supervisor.control-round",
-          summary: busy ? "Kontrollrunde übersprungen: Supervisor beschäftigt" : "Kontrollrunde gestartet",
-          payload: { ...state, scheduledAt: command.scheduledAt },
-          turnId: null, createdAt: command.createdAt,
-        }, createdAt: command.createdAt },
-      }];
+      const events: Array<Omit<OrchestrationEvent, "sequence">> = [
+        {
+          ...base,
+          type: "thread.workjet-config-set",
+          payload: {
+            threadId: thread.id,
+            workjetConfig: { ...config, supervisorTick: state },
+            updatedAt: command.createdAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.activity-appended",
+          payload: {
+            threadId: thread.id,
+            activity: {
+              id: EventId.make(command.commandId + ":activity"),
+              tone: "info",
+              kind: "supervisor.control-round",
+              summary: busy
+                ? "Kontrollrunde übersprungen: Supervisor beschäftigt"
+                : "Kontrollrunde gestartet",
+              payload: { ...state, scheduledAt: command.scheduledAt },
+              turnId: null,
+              createdAt: command.createdAt,
+            },
+            createdAt: command.createdAt,
+          },
+        },
+      ];
       if (busy) return events;
       const messageId = MessageId.make(command.commandId);
-      events.push({
-        ...(yield* withEventBase({ aggregateKind: "thread", aggregateId: thread.id, occurredAt: command.createdAt, commandId: command.commandId })),
-        type: "thread.message-sent",
-        payload: { threadId: thread.id, messageId, role: "system", text: command.text,
-          attachments: [], turnId: null, streaming: false,
-          createdAt: command.createdAt, updatedAt: command.createdAt },
-      }, {
-        ...(yield* withEventBase({ aggregateKind: "thread", aggregateId: thread.id, occurredAt: command.createdAt, commandId: command.commandId })),
-        type: "thread.turn-start-requested",
-        payload: { threadId: thread.id, messageId, runtimeMode: thread.runtimeMode,
-          interactionMode: thread.interactionMode, createdAt: command.createdAt },
-      });
+      events.push(
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.message-sent",
+          payload: {
+            threadId: thread.id,
+            messageId,
+            role: "system",
+            text: command.text,
+            attachments: [],
+            turnId: null,
+            streaming: false,
+            createdAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.turn-start-requested",
+          payload: {
+            threadId: thread.id,
+            messageId,
+            runtimeMode: thread.runtimeMode,
+            interactionMode: thread.interactionMode,
+            createdAt: command.createdAt,
+          },
+        },
+      );
       return events;
     }
 

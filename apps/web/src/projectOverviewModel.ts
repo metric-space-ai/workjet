@@ -275,7 +275,10 @@ export function buildProjectOwnerOverview(input: {
     supervisorTick: {
       createdAt: supervisors[0]?.createdAt ?? null,
       configuration: overview.supervisorTick,
-      state: supervisors[0]?.workjetConfig.schemaVersion === 2 ? supervisors[0].workjetConfig.supervisorTick : undefined,
+      state:
+        supervisors[0]?.workjetConfig.schemaVersion === 2
+          ? supervisors[0].workjetConfig.supervisorTick
+          : undefined,
     },
     ownerDecisions: confirmed?.confirmed_at_ms
       ? [

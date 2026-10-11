@@ -31,9 +31,14 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
-        Layer.provideMerge(Layer.succeed(SupervisorTickReactor, {
-          start: () => { started.push("supervisor-tick-reactor"); return Effect.void; },
-        })), 
+        Layer.provideMerge(
+          Layer.succeed(SupervisorTickReactor, {
+            start: () => {
+              started.push("supervisor-tick-reactor");
+              return Effect.void;
+            },
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(WorkerSupervisorDecisionReactor, {
             start: () => {

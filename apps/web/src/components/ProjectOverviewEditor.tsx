@@ -147,7 +147,7 @@ export function ProjectOverviewEditor({
         } catch {
           setState({
             pending: false,
-            message: "Check the URLs and meeting settings.",
+            message: "Check the URLs, meeting settings and supervisor cadence (1–10080 minutes).",
           });
           return;
         }
@@ -228,10 +228,15 @@ export function ProjectOverviewEditor({
               type="checkbox"
               checked={(draft.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION).enabled}
               disabled={state.pending}
-              onChange={(event) => setDraft((current) => ({
-                ...current,
-                supervisorTick: { ...(current.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION), enabled: event.target.checked },
-              }))}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  supervisorTick: {
+                    ...(current.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION),
+                    enabled: event.target.checked,
+                  },
+                }))
+              }
             />
             An
           </label>
@@ -246,11 +251,18 @@ export function ProjectOverviewEditor({
               step={1}
               required
               disabled={state.pending}
-              value={(draft.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION).intervalMinutes}
-              onChange={(event) => setDraft((current) => ({
-                ...current,
-                supervisorTick: { ...(current.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION), intervalMinutes: Number(event.target.value) },
-              }))}
+              value={
+                (draft.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION).intervalMinutes
+              }
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  supervisorTick: {
+                    ...(current.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION),
+                    intervalMinutes: Number(event.target.value),
+                  },
+                }))
+              }
             />
             Minuten
           </label>

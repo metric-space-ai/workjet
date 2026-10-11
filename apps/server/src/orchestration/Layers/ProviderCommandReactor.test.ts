@@ -28,6 +28,7 @@ import {
   TurnId,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Exit from "effect/Exit";
@@ -1934,7 +1935,7 @@ describe("ProviderCommandReactor", () => {
     const supervisor = model.threads.find((thread) =>
       thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.team?.role === "supervisor",
     )!;
-    const due = new Date(Date.parse(supervisor.createdAt) + 30 * 60000).toISOString();
+    const due = DateTime.formatIso(DateTime.makeUnsafe(Date.parse(supervisor.createdAt) + 30 * 60000));
     await Effect.runPromise(harness.engine.dispatch({
       type: "thread.supervisor.tick",
       commandId: CommandId.make("server:supervisor-tick:provider-test"),

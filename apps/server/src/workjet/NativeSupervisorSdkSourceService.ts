@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-// @effect-diagnostics nodeBuiltinImport:off -- Resolve private paths for the original service-owned Source child.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off -- Resolve private paths for the original service-owned Source child.
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
+import { type ProjectId } from "@workjet/contracts";
+import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { UsageService } from "../usage/UsageService.ts";
+import { currentProjectTokenBudgetContext } from "../usage/projectTokenBudgetContext.ts";
 import {
   type NativeSupervisorManagedRuntime,
   type NativeSupervisorSourceEnrollment,
@@ -58,11 +63,70 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
       if (active) await active.catch(() => {});
     }),
   );
+  const budgetQuery = yield* Effect.serviceOption(ProjectionSnapshotQuery);
+  const budgetUsage = yield* Effect.serviceOption(UsageService);
+  const readTokenBudgetContext =
+    Option.isSome(budgetQuery) && Option.isSome(budgetUsage)
+      ? (projectId: ProjectId) =>
+          Effect.runPromise(
+            currentProjectTokenBudgetContext(projectId).pipe(
+              Effect.provideService(ProjectionSnapshotQuery, budgetQuery.value),
+              Effect.provideService(UsageService, budgetUsage.value),
+              Effect.catchCause(() => Effect.succeed(null)),
+            ),
+          )
+      : undefined;
+  const observeAssistantUsage =
+    Option.isSome(budgetQuery) &&
+    Option.isSome(budgetUsage) &&
+    budgetUsage.value.recordAssistantUsage
+      ? async (
+          projectId: ProjectId,
+          message: import("@anthropic-ai/claude-agent-sdk").SDKAssistantMessage,
+        ) => {
+          const model = await Effect.runPromise(budgetQuery.value.getCommandReadModel());
+          const supervisors = model.threads.filter(
+            (thread) =>
+              thread.workjetConfig.schemaVersion === 2 &&
+              thread.workjetConfig.team?.role === "supervisor" &&
+              (thread.projectId === projectId ||
+                thread.workjetConfig.ctoxProject?.nativeProjectId === projectId),
+          );
+          if (supervisors.length !== 1 || !message.message.usage) return;
+          const record = budgetUsage.value.recordAssistantUsage!;
+          await Effect.runPromise(
+            record({
+              threadId: supervisors[0]!.id,
+              sessionId: message.session_id,
+              messageId: message.message.id,
+              model: message.message.model,
+              createdAt: new Date().toISOString(),
+              usage: {
+                input_tokens: message.message.usage.input_tokens,
+                output_tokens: message.message.usage.output_tokens,
+                ...(message.message.usage.cache_read_input_tokens == null
+                  ? {}
+                  : {
+                      cache_read_input_tokens: message.message.usage.cache_read_input_tokens,
+                    }),
+                ...(message.message.usage.cache_creation_input_tokens == null
+                  ? {}
+                  : {
+                      cache_creation_input_tokens:
+                        message.message.usage.cache_creation_input_tokens,
+                    }),
+              },
+            }),
+          );
+        }
+      : undefined;
   const runNext = Effect.fn("NativeSupervisorSdkSourceService.runNext")(function* () {
     if (retired) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "retired" });
     if (active) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "turn-active" });
     const running = runNextNativeSupervisorSdkTurn({
       source,
+      ...(readTokenBudgetContext ? { readTokenBudgetContext } : {}),
+      ...(observeAssistantUsage ? { observeAssistantUsage } : {}),
       sdkExecutable: options.sdkExecutable,
       privateStateDirectory: NodePath.join(options.privateServiceDirectory, "sdk"),
       serviceSignal: lifetime.signal,

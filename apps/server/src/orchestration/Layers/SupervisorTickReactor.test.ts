@@ -31,6 +31,7 @@ import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityRes
 import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
 import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { makeSupervisorTickReactor } from "./SupervisorTickReactor.ts";
+import { UsageService } from "../../usage/UsageService.ts";
 
 function runtimeLayer(db: string, dir: string) {
   return OrchestrationLayerLive.pipe(
@@ -135,7 +136,9 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
                   websiteUrl: null,
                   slots: [null, null, null],
                   repositoryUrl: "https://github.com/metric-space-ai/workjet",
+                  tokenBudget: { limitBillions: 2.3, revision: 0, jourFixe: null },
                 },
+                expectedTokenBudgetRevision: 0,
               });
               const model = yield* query.getCommandReadModel();
               const supervisor = model.threads[0]!;
@@ -187,6 +190,48 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
               const reactor = yield* makeSupervisorTickReactor.pipe(
                 Effect.provide(
                   Layer.mergeAll(
+                    Layer.succeed(
+                      UsageService,
+                      UsageService.of({
+                        readSummary: (input) =>
+                          Effect.succeed({
+                            contractVersion: 4,
+                            readAt: errorAt,
+                            timeZone: input.timeZone,
+                            sinceDay: input.sinceDay,
+                            untilDay: input.untilDay,
+                            buckets: [
+                              {
+                                day: input.sinceDay,
+                                provider: "codex",
+                                model: DEFAULT_MODEL,
+                                totals: {
+                                  uncachedInputTokens: 2e9,
+                                  cachedInputTokens: 0.3e9,
+                                  outputTokens: 0.46e9,
+                                  cacheCreationTokens: 0,
+                                  reasoningTokens: 0,
+                                },
+                                costUsd: 0,
+                                cacheSavingsUsd: 0,
+                                costSource: "unpriced",
+                                records: 1,
+                                unpricedRecords: 1,
+                                sessions: 1,
+                              },
+                            ],
+                            projectThreads: [],
+                            sources: [],
+                            pricing: {
+                              status: "unavailable",
+                              source: "fixture",
+                              fetchedAt: null,
+                              knownModels: 0,
+                            },
+                            scanDurationMs: 0,
+                          }),
+                      }),
+                    ),
                     Layer.mock(GitHubCli)({
                       execute: () => {
                         reads++;
@@ -255,6 +300,9 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
               expect(text).toContain("provider.timeout");
               expect(text).toContain("Repair startup");
               expect(text).toContain('"readyUnmerged":true');
+              expect(text).toContain('"consumedTokens":2760000000');
+              expect(text).toContain('"limitBillions":2.3');
+              expect(text).toMatch(/"usedPercent":120(?:[.,}])/u);
               expect(text).not.toContain("unavailable");
               expect(reads).toBeGreaterThanOrEqual(1);
               expect(reads).toBeLessThanOrEqual(2);

@@ -95,6 +95,12 @@ export async function runNextNativeSupervisorSdkTurn(options: {
   readonly serviceSignal: AbortSignal;
   /** Private opt-in only for a qualified native with the confirmed-goal contract. */
   readonly includeConfirmedGoalRead?: boolean;
+  readonly readTokenBudgetContext?: (projectId: ProjectId) => Promise<string | null>;
+  /** Actual SDK messages only; usage is retained by the existing priced UsageService. */
+  readonly observeAssistantUsage?: (
+    projectId: ProjectId,
+    message: import("@anthropic-ai/claude-agent-sdk").SDKAssistantMessage,
+  ) => Promise<void>;
 }): Promise<NativeSupervisorSdkTurnDrain | null> {
   options.serviceSignal.throwIfAborted();
   const request = options.source.request.bind(options.source);
@@ -294,6 +300,9 @@ export async function runNextNativeSupervisorSdkTurn(options: {
       if (timeout) clearTimeout(timeout);
     }
   };
+  const tokenBudgetContext = await options
+    .readTokenBudgetContext?.(ProjectId.make(offer.route.project_id))
+    .catch(() => null);
   try {
     runtime = query({
       prompt: input(),
@@ -310,6 +319,7 @@ export async function runNextNativeSupervisorSdkTurn(options: {
             goal: "Carry out the original native Supervisor assignment and preserve its confirmed project goal.",
             createdAt: new Date().toISOString(),
           }),
+          ...(tokenBudgetContext ? [tokenBudgetContext] : []),
           tools.instructions,
           "Other operations are unsupported on this controller; report that explicitly. Never reconstruct native authority or claim completed work from a startup acknowledgement.",
         ].join("\n\n"),
@@ -342,6 +352,10 @@ export async function runNextNativeSupervisorSdkTurn(options: {
       try {
         for await (const message of actualRuntime) {
           await journal.observeSdkMessage(message, turnId);
+          if (message.type === "assistant")
+            await options
+              .observeAssistantUsage?.(ProjectId.make(offer.route.project_id), message)
+              .catch(() => {});
           if (message.type === "result") {
             resultSeen = true;
             break;

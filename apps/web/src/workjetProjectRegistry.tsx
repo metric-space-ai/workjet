@@ -11,7 +11,10 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useActiveWorkjetScope, subscribeActiveWorkjetHostContext } from "./activeWorkjetScope";
 import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
 import { listWorkjetProjects } from "./workjetProjectControl";
-import { LocalProjectRegistrationSynchronizer } from "./localProjectRegistration";
+import {
+  LocalProjectRegistrationSynchronizer,
+  ProjectTokenBudgetSourceSynchronizer,
+} from "./localProjectRegistration";
 import {
   createProjectRegistryRefresh,
   subscribeProjectRegistryWarmGuest,
@@ -24,6 +27,8 @@ export interface WorkjetProjectRegistrySnapshot {
   readonly selectedProjectId: string | null;
   readonly refreshFailed?: boolean;
   readonly lastUpdatedAt?: number | undefined;
+  /** Only a successful source query in this session confirms calendar synchronization. */
+  readonly sourceConfirmed?: boolean;
   readonly refreshError?: Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>;
 }
 
@@ -315,6 +320,7 @@ export function applyWorkjetProjectRegistryResult(
     presentationInstanceId,
     phase: "ready",
     projects: result.response.projects,
+    sourceConfirmed: true,
     lastUpdatedAt: Date.now(),
     selectedProjectId: resolveSelectedWorkjetProjectId(
       result.response.projects,
@@ -376,7 +382,12 @@ export function WorkjetProjectRegistrySynchronizer() {
       window.removeEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);
     };
   }, [presentationInstanceId]);
-  return <LocalProjectRegistrationSynchronizer />;
+  return (
+    <>
+      <LocalProjectRegistrationSynchronizer />
+      <ProjectTokenBudgetSourceSynchronizer />
+    </>
+  );
 }
 
 export function __resetWorkjetProjectRegistryForTests(

@@ -62,6 +62,7 @@ describe("Workjet project registry", () => {
       truncated: false as const,
     };
     applyWorkjetProjectRegistryResult("managed:welsch", { _tag: "completed", response });
+    expect(readWorkjetProjectRegistry("managed:welsch").sourceConfirmed).toBe(true);
     const confirmedAt = readWorkjetProjectRegistry("managed:welsch").lastUpdatedAt;
     let online = false;
     const controller = createProjectRegistryRefresh(async () => {
@@ -111,6 +112,7 @@ describe("Workjet project registry", () => {
       selectedProjectId: project.id,
     });
     __resetWorkjetProjectRegistryForTests();
+    expect(loadingWorkjetProjectRegistry("managed:welsch").sourceConfirmed).toBeUndefined();
     expect(loadingWorkjetProjectRegistry("managed:welsch")).toMatchObject({
       phase: "ready",
       projects: [project],

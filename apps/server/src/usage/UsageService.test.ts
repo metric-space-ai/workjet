@@ -9,6 +9,8 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
 import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as UsageService from "./UsageService.ts";
@@ -24,6 +26,7 @@ it.layer(NodeServices.layer)("bundled usage pricing", (it) => {
       const requests: string[] = [];
       const runtime = UsageService.layer.pipe(
         Layer.provideMerge(ServerSettings.layerTest()),
+        Layer.provideMerge(SqlitePersistenceMemory),
         Layer.provideMerge(
           ServerConfig.layerTest(process.cwd(), { prefix: "workjet-offline-usage-" }),
         ),
@@ -90,6 +93,101 @@ it.layer(NodeServices.layer)("bundled usage pricing", (it) => {
             )
             .join("\n") + "\n",
         );
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, created_at, updated_at, workjet_config_json) VALUES
+          ('known-worker', 'usage-project', 'Known worker', '{}', '2026-10-10T10:00:00Z', '2026-10-10T10:00:00Z', '{"team":{"role":"worker"}}'),
+          ('unknown-supervisor', 'usage-project', 'Unknown supervisor', '{}', '2026-10-10T10:00:00Z', '2026-10-10T10:00:00Z', '{"team":{"role":"supervisor"}}'),
+          ('no-turns', 'usage-project', 'No turns', '{}', '2026-10-10T10:00:00Z', '2026-10-10T10:00:00Z', '{}')`;
+        yield* sql`INSERT INTO projection_thread_sessions (thread_id, status, provider_name, updated_at)
+          VALUES ('known-worker', 'ready', 'claudeAgent', '2026-10-10T10:00:00Z')`;
+        yield* sql`INSERT INTO provider_session_runtime (thread_id, provider_name, adapter_key, status, last_seen_at, resume_cursor_json)
+          VALUES ('known-worker', 'claudeAgent', 'claudeAgent', 'ready', '2026-10-10T10:00:00Z', '{"resume":"offline-fixture"}')`;
+        yield* sql`INSERT INTO projection_turns (thread_id, turn_id, state, requested_at, checkpoint_files_json)
+          VALUES ('unknown-supervisor', 'missing-turn', 'completed', '2026-10-10T13:00:00Z', '[]')`;
+        const projectSummary = yield* usage.readSummary({
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-17"),
+          sinceTime: "2026-10-10T12:00:00Z",
+          untilTime: "2026-10-17T12:00:00Z",
+          timeZone: "UTC",
+        });
+        assert.equal(projectSummary.buckets.length, 2);
+        assert.isTrue(
+          projectSummary.buckets.every(
+            (bucket) => bucket.threadId === "known-worker" && bucket.role === "worker",
+          ),
+        );
+        assert.deepEqual(
+          projectSummary.projectThreads?.map((thread) => [thread.threadId, thread.status]),
+          [
+            ["known-worker", "measured"],
+            ["unknown-supervisor", "unknown"],
+            ["no-turns", "no-turns"],
+          ],
+        );
+        // Changing harness and deleting its runtime must retain already consumed project usage.
+        yield* sql`UPDATE provider_session_runtime SET provider_name = 'codex', resume_cursor_json = '{"threadId":"next-session"}' WHERE thread_id = 'known-worker'`;
+        yield* sql`DELETE FROM provider_session_runtime WHERE thread_id = 'known-worker'`;
+        yield* sql`DELETE FROM projection_thread_sessions WHERE thread_id = 'known-worker'`;
+        yield* sql`UPDATE projection_threads SET archived_at = '2026-10-11T00:00:00Z' WHERE thread_id = 'known-worker'`;
+        const afterCleanup = yield* usage.readSummary({
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-17"),
+          sinceTime: "2026-10-10T12:00:00Z",
+          untilTime: "2026-10-17T12:00:00Z",
+          timeZone: "UTC",
+        });
+        assert.deepEqual(afterCleanup.buckets, projectSummary.buckets);
+        const recordAssistantUsage = usage.recordAssistantUsage;
+        if (!recordAssistantUsage) throw new Error("Usage observation writer is unavailable");
+        for (let copy = 0; copy < 2; copy++)
+          yield* recordAssistantUsage({
+            threadId: "known-worker",
+            sessionId: "sdk-fixture-session",
+            messageId: "sdk-message",
+            model: knownModel,
+            createdAt: "2026-10-10T12:01:00Z",
+            usage: { input_tokens: 40, output_tokens: 5, cache_read_input_tokens: 10 },
+          });
+        const sdkUsage = yield* usage.readSummary({
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-17"),
+          timeZone: "UTC",
+        });
+        assert.equal(
+          sdkUsage.buckets.reduce((sum, bucket) => sum + bucket.records, 0),
+          3,
+        );
+        assert.equal(
+          sdkUsage.buckets.reduce(
+            (sum, bucket) =>
+              sum +
+              bucket.totals.uncachedInputTokens +
+              bucket.totals.cachedInputTokens +
+              bucket.totals.outputTokens,
+            0,
+          ),
+          355,
+        );
+        const boundary = yield* usage.readSummary({
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-03"),
+          untilDay: UsageDay.make("2026-10-10"),
+          sinceTime: "2026-10-03T12:00:00Z",
+          untilTime: "2026-10-10T12:00:00Z",
+          timeZone: "UTC",
+        });
+        assert.deepEqual(boundary.buckets, []);
+        const foreign = yield* usage.readSummary({
+          projectId: "foreign-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-10"),
+          timeZone: "UTC",
+        });
+        assert.deepEqual(foreign.buckets, []);
         const input = {
           sinceDay: UsageDay.make("2026-10-10"),
           untilDay: UsageDay.make("2026-10-10"),

@@ -8,7 +8,7 @@
     "ensure:electron": "node scripts/ensure-electron-runtime.mjs",
     "start": "node scripts/start-electron.mjs",
     "typecheck": "tsgo --noEmit",
-    "test": "vp test run --passWithNoTests",
+    "test": "node --test scripts/wait-for-resources.test.mjs && vp test run --passWithNoTests --exclude scripts/wait-for-resources.test.mjs",
     "smoke-test": "node scripts/smoke-test.mjs",
     "smoke-test:turn": "node scripts/smoke-test.mjs --with-turn"
   },

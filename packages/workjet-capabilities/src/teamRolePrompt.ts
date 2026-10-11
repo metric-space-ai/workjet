@@ -28,6 +28,7 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
         "Read your persistent workers' retained worker mini-kanbans with workjet_worker_kanban, action project. Compare them against the confirmed to-do list and measured reality, and correct worker goals or orders where needed. Do not maintain your own mini-kanban.",
         "Commission a one-shot worker to prepare the next regular meeting, including its deck or report, verified results, KPIs and open decisions. Review the preparation against the acceptance criterion, and adopt the meeting's confirmed to-do list as the next goal.",
         "Decide worker escalations first from the project context, goal, rules and conversation history. Return your decision with workjet_answer_worker. Only when an objective Owner decision, money, legal issue or credentials prevents a decision may you call workjet_escalate with the reason and context you considered. Only the Supervisor may ask the Owner.",
+        "Use the current token budget and notices; reserve tokens for meeting preparation. Unknown usage is unknown; overruns never stop work.",
         "Report to the Owner only for a finished result or a real Owner decision: short, plain language with evidence. Do not send routine status, acknowledgements or waiting reports.",
         ...boundaries,
       ].join("\n");

@@ -22,6 +22,42 @@ import { Button } from "./components/ui/button";
 import { useCtoxInstanceState } from "./components/ctox/CtoxModeShell";
 import { useProjectOverviewLanguage } from "./hooks/useProjectOverviewLanguage";
 import { usePrimarySettings } from "./hooks/useSettings";
+import { tokenBudgetCalendarUpdates } from "./projectTokenBudgetSource";
+
+/** The registry refreshes from the calendar/sync source even while settings are closed. */
+export function ProjectTokenBudgetSourceSynchronizer() {
+  const projects = useProjects();
+  const computers = usePrimarySettings((settings) => settings.workjet.computers);
+  const { selectedInstanceId } = useActiveWorkjetScope();
+  const registry = useWorkjetProjectRegistry(selectedInstanceId);
+  const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const pending = useRef(new Set<string>());
+  useEffect(() => {
+    if (
+      selectedInstanceId === null ||
+      registry.phase !== "ready" ||
+      registry.refreshFailed ||
+      registry.sourceConfirmed !== true
+    )
+      return;
+    for (const update of tokenBudgetCalendarUpdates({
+      instanceId: selectedInstanceId,
+      nativeProjects: registry.projects,
+      projects,
+      computers,
+    })) {
+      const key = `${update.environmentId}:${update.input.projectId}`;
+      if (pending.current.has(key)) continue;
+      pending.current.add(key);
+      void updateProject(update)
+        .catch(() => {
+          // A rejected revision is retried from the next confirmed source/model refresh.
+        })
+        .finally(() => pending.current.delete(key));
+    }
+  }, [projects, computers, selectedInstanceId, registry, updateProject]);
+  return null;
+}
 
 const RETRY_EVENT = "workjet:retry-local-project-registration";
 

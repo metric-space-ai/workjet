@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MODEL,
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageBucket,
@@ -8,7 +9,32 @@ import {
 } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
+import { mergeUsage, usageSourceFingerprintKey, type EnvironmentUsage } from "./usageMerge.ts";
+
+it("deduplicates a shared root while retaining a private SDK root of the same provider", () => {
+  const sources = [
+    { provider: "claude" as const, hostId: "host", homePath: "/shared" },
+    { provider: "claude" as const, hostId: "host", homePath: "/private-sdk" },
+  ];
+  const roots = summary([], sources);
+  const shared = bucket({
+    model: DEFAULT_MODEL,
+    sourceKey: usageSourceFingerprintKey(roots.sources[0]!.fingerprint),
+  });
+  const privateSdk = bucket({
+    model: DEFAULT_MODEL,
+    sourceKey: usageSourceFingerprintKey(roots.sources[1]!.fingerprint),
+  });
+  const merged = mergeUsage(
+    [
+      environment("a", summary([shared], [sources[0]!])),
+      environment("b", { ...roots, buckets: [shared, privateSdk] }),
+    ],
+    USAGE_CONTRACT_VERSION,
+  );
+  expect(merged.totalTokens).toBe(2320);
+  expect(merged.records).toBe(10);
+});
 
 function bucket(overrides: Partial<UsageBucket> = {}): UsageBucket {
   return {
@@ -74,6 +100,40 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 }
 
 describe("mergeUsage", () => {
+  it("uses the same physical-source dedupe for project thread breakdowns and totals", () => {
+    const claude = bucket({
+      projectId: "project",
+      threadId: "parent",
+      role: "specialist",
+      model: DEFAULT_MODEL,
+    });
+    const codex = bucket({
+      provider: "codex",
+      projectId: "project",
+      threadId: "worker",
+      role: "worker",
+      model: DEFAULT_MODEL,
+    });
+    const shared = { provider: "claude" as const, hostId: "mac", homePath: "/fixture/claude" };
+    const result = mergeUsage(
+      [
+        environment("env-a", summary([claude], [shared])),
+        environment(
+          "env-b",
+          summary(
+            [claude, codex],
+            [shared, { provider: "codex", hostId: "gpu", homePath: "/fixture/codex" }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(result.projectThreads?.reduce((sum, thread) => sum + thread.totalTokens, 0)).toBe(
+      result.totalTokens,
+    );
+    expect(result.projectThreads).toHaveLength(2);
+    expect(result.totalTokens).toBe(2320);
+  });
   it("retains missing price counts per model for the unknown cost label", () => {
     const merged = mergeUsage(
       [

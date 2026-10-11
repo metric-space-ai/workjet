@@ -53,6 +53,8 @@ import {
   requireProjectTeamOwnership,
 } from "./projectTeamInvariants.ts";
 
+import { reviseTokenBudgetOverview } from "@workjet/shared/projectTokenBudget";
+
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
 // Session adoption takes seconds; a user message still unadopted after this
@@ -402,6 +404,25 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "project.meta.update": {
+      const previousProject = readModel.projects.find(
+        (project) => project.id === command.projectId,
+      );
+      const revisedOverview =
+        command.overview === undefined
+          ? undefined
+          : yield* Effect.try({
+              try: () =>
+                reviseTokenBudgetOverview(
+                  previousProject?.overview,
+                  command.overview!,
+                  command.expectedTokenBudgetRevision,
+                ),
+              catch: () =>
+                new OrchestrationCommandInvariantError({
+                  commandType: command.type,
+                  detail: "Token budget changed. Reload project settings and try again.",
+                }),
+            });
       const registration = readModel.projects.find(
         (project) => project.id === command.projectId,
       )?.ctoxRegistration;
@@ -454,7 +475,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { defaultThreadEnvMode: command.defaultThreadEnvMode }
             : {}),
           ...(command.faviconPath !== undefined ? { faviconPath: command.faviconPath } : {}),
-          ...(command.overview !== undefined ? { overview: command.overview } : {}),
+          ...(revisedOverview !== undefined ? { overview: revisedOverview } : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
           updatedAt: occurredAt,
         },
@@ -2228,6 +2249,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
       return [unsettledEvent, sessionSetEvent];
+    }
+
+    case "thread.message.system.add": {
+      yield* requireThread({ readModel, command, threadId: command.threadId });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: command.messageId,
+          role: "system",
+          text: command.text,
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
     }
 
     case "thread.message.assistant.delta": {

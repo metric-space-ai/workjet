@@ -106,6 +106,7 @@ import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
+import { ProjectTokenBudget } from "./ProjectTokenBudget";
 import { isRunningProjectOneShot, projectOverviewWorkerState } from "../projectOverviewModel";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -3894,6 +3895,19 @@ export default function Sidebar() {
                                 data-workjet-action={`project.select:${project.id}`}
                               >
                                 <span className="min-w-0 truncate">{project.title}</span>
+                                <span className="ml-auto">
+                                  <ProjectTokenBudget
+                                    project={{
+                                      key: project.id,
+                                      id: project.id,
+                                      title: project.title,
+                                      native: true,
+                                      local:
+                                        sidebarProjects.find((local) => local.id === project.id) ??
+                                        null,
+                                    }}
+                                  />
+                                </span>
                               </MenuRadioItem>
                             ))
                           : projectGroups.map((project) => (
@@ -3903,6 +3917,22 @@ export default function Sidebar() {
                                 closeOnClick
                               >
                                 <span className="min-w-0 truncate">{project.displayName}</span>
+                                <span className="ml-auto">
+                                  <ProjectTokenBudget
+                                    project={{
+                                      key: project.projectKey,
+                                      id: project.id,
+                                      title: project.displayName,
+                                      native: false,
+                                      local:
+                                        projects.find(
+                                          (local) =>
+                                            local.id === project.id &&
+                                            local.environmentId === project.environmentId,
+                                        ) ?? null,
+                                    }}
+                                  />
+                                </span>
                               </MenuRadioItem>
                             ))}
                       </MenuRadioGroup>

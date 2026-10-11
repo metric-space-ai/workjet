@@ -151,6 +151,7 @@ import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts
 import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinary.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as ProjectTokenBudgetMonitor from "./usage/ProjectTokenBudgetMonitor.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import * as RemoteWorkerTargetAdmission from "./workjet/RemoteWorkerTargetAdmission.ts";
 import { acquireProfileOwnership } from "./profileOwnership.ts";
@@ -213,7 +214,10 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
 );
 
-const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+const UsageLayerLive = UsageService.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
+  Layer.provide(SqlitePersistenceLayerLive),
+);
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(
   ResourceTelemetryLayerLive,
@@ -326,7 +330,9 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(PersistentGoalReactorLive),
   Layer.provideMerge(WorkerSupervisorDecisionReactorLive),
-  Layer.provideMerge(SupervisorTickReactorLive.pipe(Layer.provide(GitHubCli.layer))),
+  Layer.provideMerge(
+    SupervisorTickReactorLive.pipe(Layer.provide(GitHubCli.layer), Layer.provide(UsageLayerLive)),
+  ),
   Layer.provideMerge(
     // Worker worktree release is a thread-deletion reaction, so its service is
     // provided directly to the reactor that consumes `thread.deleted`.
@@ -536,6 +542,10 @@ const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.
 const RuntimeCoreFoundationLive = Layer.mergeAll(
   ReactorLayerLive,
   WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
+  ProjectTokenBudgetMonitor.layer.pipe(
+    Layer.provide(UsageLayerLive),
+    Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+  ),
 ).pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(WorktreeStorageLayerLive),

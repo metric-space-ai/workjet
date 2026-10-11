@@ -4,6 +4,7 @@ import {
   type CtoxWorkjetJourFixe,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
+import type { ProjectTokenBudgetStatus } from "../usage/projectTokenBudgetStatus.ts";
 
 const Check = Schema.Struct({
   status: Schema.optionalKey(Schema.String),
@@ -76,6 +77,7 @@ export function supervisorTickSituation(input: {
   escalations: readonly { threadId: string; decisionKey: string; createdAtMs: number }[];
   changes: readonly { threadId: string; occurredAt: string }[];
   meetingMinutes: number | null;
+  tokenBudget?: ProjectTokenBudgetStatus;
 }) {
   const clip = (value: string | null | undefined, limit = 500) => value?.slice(0, limit) ?? null;
   const members = input.threads.filter(
@@ -162,8 +164,16 @@ export function supervisorTickSituation(input: {
     }),
     escalations,
     errorsAndTimeouts: errors.map((e) => ({ ...e, summary: clip(e.summary) })),
-    tokenBudget: null,
-    tokenBudgetStatus: "Budget nicht konfiguriert",
+    tokenBudget: input.tokenBudget ?? null,
+    tokenBudgetStatus: input.tokenBudget
+      ? input.tokenBudget.usageStatus === "unavailable"
+        ? "Token-Verbrauch unbekannt"
+        : input.tokenBudget.usageStatus === "incomplete"
+          ? "Token-Verbrauch unvollständig"
+          : input.tokenBudget.limitBillions === null
+            ? "Verbrauch erfasst, kein Limit"
+            : "Verbrauch erfasst"
+      : "Budget nicht konfiguriert",
     minutesUntilNextRegularMeeting: input.meetingMinutes,
     sourceErrors: input.sourceErrors,
     limits: { pullRequests: 100, errors: 50, changes: 100, kanbanCardsPerWorker: 20 },

@@ -85,7 +85,8 @@ export function projectTeamStatus(thread: {
     thread.backgroundLiveness === "working"
   )
     return { label: "Arbeitet", dot: "bg-amber-400" };
-  if (thread.backgroundLiveness === "monitoring") return { label: "Überwacht", dot: "bg-blue-400" };
+  if (thread.backgroundLiveness === "monitoring")
+    return { label: "Beobachtet", dot: "bg-blue-400" };
   return { label: "Bereit", dot: "bg-muted-foreground/50" };
 }
 

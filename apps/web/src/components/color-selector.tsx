@@ -91,7 +91,7 @@ export function ColorSelector({
             }}
             tabIndex={0}
             role="button"
-            aria-label={`Select ${color} color`}
+            aria-label={`Farbe ${color} wählen`}
             aria-pressed={selectedColor === color}
           />
         );

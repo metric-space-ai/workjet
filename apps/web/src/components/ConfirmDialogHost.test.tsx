@@ -8,6 +8,12 @@ describe("inline confirmation copy", () => {
   it.each([
     ["Unterhaltung „Fix login“ löschen?", "Unterhaltung „Fix login“ löschen?", "Löschen"],
     ["3 Unterhaltungen löschen?", "3 Unterhaltungen löschen?", "Löschen"],
+    ["1 Unterhaltung löschen?", "1 Unterhaltung löschen?", "Löschen"],
+    [
+      "Projekt „workjet“ und 4 Unterhaltungen löschen?\nPfad: /repo",
+      "Projekt „workjet“ und 4 Unterhaltungen löschen?",
+      "Löschen",
+    ],
     ["2 Unterhaltungen archivieren?", "2 Unterhaltungen archivieren?", "Archivieren"],
     ["Projekt „workjet“ entfernen?\nPfad: /repo", "Projekt „workjet“ entfernen?", "Entfernen"],
     ["Worktree ebenfalls löschen?\n/tmp/wt", "Worktree ebenfalls löschen?", "Löschen"],

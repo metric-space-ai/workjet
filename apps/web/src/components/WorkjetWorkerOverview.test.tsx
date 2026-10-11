@@ -178,8 +178,8 @@ describe("WorkjetWorkerOverview", () => {
     // Provider binding shown when present; model always shown.
     expect(markup).toContain("claude · gpt-5.6-sol");
     // Turn state labels derived from session/latestTurn.
-    expect(markup).toContain("Running");
-    expect(markup).toContain("Completed");
+    expect(markup).toContain("Läuft");
+    expect(markup).toContain("Fertig");
   });
 
   it("renders nothing when the open thread is not an orchestrator", () => {

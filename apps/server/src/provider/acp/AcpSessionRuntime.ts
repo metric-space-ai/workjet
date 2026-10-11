@@ -872,8 +872,8 @@ export const make = (
                 namespaceFailure
                   ? Effect.fail(namespaceFailure)
                   : Cause.hasInterruptsOnly(cause)
-                  ? Effect.succeed(cancelledResponse)
-                  : Effect.failCause(cause),
+                    ? Effect.succeed(cancelledResponse)
+                    : Effect.failCause(cause),
               ),
               // Closing a rejected Source is not a successful turn or Owner cancellation.
               Effect.flatMap((response) =>

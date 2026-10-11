@@ -241,7 +241,6 @@ function ToastDescriptionAndExpandable({
               className={cn(
                 "min-w-0 select-none wrap-break-word text-muted-foreground",
                 errorDescriptionClampClass(toastType, toastDescription),
-                "underline-offset-2 decoration-muted-foreground/60 group-hover:underline",
               )}
               data-slot="toast-description"
             />
@@ -560,8 +559,11 @@ function Toasts({ position }: { position: ToastPosition }) {
       <Toast.Viewport
         className={cn(
           "fixed z-40 mx-auto flex w-[calc(100%-var(--toast-inset)*2)] max-w-90 [--toast-header-offset:52px] [--toast-inset:--spacing(4)] sm:[--toast-inset:--spacing(8)]",
-          // Vertical positioning
-          "data-[position*=top]:top-[calc(var(--toast-inset)+var(--toast-header-offset))]",
+          // Vertical positioning. Auf schmalen Viewports docken Top-Toasts
+          // unten an, damit sie Kopfzeile und Inhalt nicht abdecken
+          // (UI-Vertrag §7, Befund grok-p3-006).
+          "max-sm:data-[position*=top]:bottom-(--toast-inset) max-sm:data-[position*=top]:top-auto",
+          "sm:data-[position*=top]:top-[calc(var(--toast-inset)+var(--toast-header-offset))]",
           "data-[position*=bottom]:bottom-(--toast-inset)",
           // Horizontal positioning
           "data-[position*=left]:left-(--toast-inset)",

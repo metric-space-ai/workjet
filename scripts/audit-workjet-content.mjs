@@ -318,6 +318,22 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
     reason: "Registry transport fields are an internal sync contract.",
   },
   {
+    path: "apps/web/src/components/settings/businessOsPairing.ts",
+    context: /transport:\s*"webrtc"|rxdb-webrtc/iu,
+    reason: "Pairing payload transport fields are an internal sync contract.",
+  },
+  {
+    path: "apps/web/src/components/settings/WorkjetComputersSettings.tsx",
+    context:
+      /\bnative\b(?:\?)?\.id|native:\$\{|data-workjet-native-computer|\(native\)|computer: null, native/u,
+    reason: "Instance-reported computer records are identifiers, not displayed copy.",
+  },
+  {
+    path: "apps/web/src/fixtures/rechner.fixture.tsx",
+    context: /native-[a-z0-9-]+/u,
+    reason: "Fixture identifiers for instance-reported computers.",
+  },
+  {
     path: "apps/desktop/src/ctox/CtoxLaunchConfig.ts",
     context: /transport.*webrtc/iu,
     reason: "Launch configuration transport is an internal sync value.",

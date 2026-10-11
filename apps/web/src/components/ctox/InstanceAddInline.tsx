@@ -329,7 +329,7 @@ export function InstanceAddPanel({
             />
           </Field>
           <Field>
-            <FieldLabel>Signaling-Server</FieldLabel>
+            <FieldLabel>Server</FieldLabel>
             <Input
               autoComplete="off"
               maxLength={32_768}

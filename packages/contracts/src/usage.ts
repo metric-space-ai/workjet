@@ -191,13 +191,17 @@ export const UsageSummary = Schema.Struct({
   sinceDay: UsageDay,
   untilDay: UsageDay,
   buckets: Schema.Array(UsageBucket),
-  projectThreads: Schema.optional(Schema.Array(Schema.Struct({
-    projectId: TrimmedNonEmptyString,
-    threadId: TrimmedNonEmptyString,
-    title: Schema.String,
-    role: Schema.String,
-    status: Schema.Literals(["measured", "unknown", "no-turns"]),
-  }))),
+  projectThreads: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        projectId: TrimmedNonEmptyString,
+        threadId: TrimmedNonEmptyString,
+        title: Schema.String,
+        role: Schema.String,
+        status: Schema.Literals(["measured", "unknown", "no-turns"]),
+      }),
+    ),
+  ),
   sources: Schema.Array(UsageSource),
   pricing: UsagePricing,
   /** Wall-clock cost of the scan, surfaced in diagnostics. */

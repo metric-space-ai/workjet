@@ -105,20 +105,42 @@ it.layer(NodeServices.layer)("bundled usage pricing", (it) => {
         yield* sql`INSERT INTO projection_turns (thread_id, turn_id, state, requested_at, checkpoint_files_json)
           VALUES ('unknown-supervisor', 'missing-turn', 'completed', '2026-10-10T13:00:00Z', '[]')`;
         const projectSummary = yield* usage.readSummary({
-          projectId: "usage-project", sinceDay: UsageDay.make("2026-10-10"), untilDay: UsageDay.make("2026-10-17"),
-          sinceTime: "2026-10-10T12:00:00Z", untilTime: "2026-10-17T12:00:00Z", timeZone: "UTC",
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-17"),
+          sinceTime: "2026-10-10T12:00:00Z",
+          untilTime: "2026-10-17T12:00:00Z",
+          timeZone: "UTC",
         });
         assert.equal(projectSummary.buckets.length, 2);
-        assert.isTrue(projectSummary.buckets.every(bucket => bucket.threadId === "known-worker" && bucket.role === "worker"));
-        assert.deepEqual(projectSummary.projectThreads?.map(thread => [thread.threadId, thread.status]), [
-          ["known-worker", "measured"], ["unknown-supervisor", "unknown"], ["no-turns", "no-turns"],
-        ]);
+        assert.isTrue(
+          projectSummary.buckets.every(
+            (bucket) => bucket.threadId === "known-worker" && bucket.role === "worker",
+          ),
+        );
+        assert.deepEqual(
+          projectSummary.projectThreads?.map((thread) => [thread.threadId, thread.status]),
+          [
+            ["known-worker", "measured"],
+            ["unknown-supervisor", "unknown"],
+            ["no-turns", "no-turns"],
+          ],
+        );
         const boundary = yield* usage.readSummary({
-          projectId: "usage-project", sinceDay: UsageDay.make("2026-10-03"), untilDay: UsageDay.make("2026-10-10"),
-          sinceTime: "2026-10-03T12:00:00Z", untilTime: "2026-10-10T12:00:00Z", timeZone: "UTC",
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-03"),
+          untilDay: UsageDay.make("2026-10-10"),
+          sinceTime: "2026-10-03T12:00:00Z",
+          untilTime: "2026-10-10T12:00:00Z",
+          timeZone: "UTC",
         });
         assert.deepEqual(boundary.buckets, []);
-        const foreign = yield* usage.readSummary({ projectId: "foreign-project", sinceDay: UsageDay.make("2026-10-10"), untilDay: UsageDay.make("2026-10-10"), timeZone: "UTC" });
+        const foreign = yield* usage.readSummary({
+          projectId: "foreign-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-10"),
+          timeZone: "UTC",
+        });
         assert.deepEqual(foreign.buckets, []);
         const input = {
           sinceDay: UsageDay.make("2026-10-10"),

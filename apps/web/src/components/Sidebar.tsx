@@ -3896,10 +3896,17 @@ export default function Sidebar() {
                               >
                                 <span className="min-w-0 truncate">{project.title}</span>
                                 <span className="ml-auto">
-                                  <ProjectTokenBudget project={{
-                                    key: project.id, id: project.id, title: project.title, native: true,
-                                    local: sidebarProjects.find(local => local.id === project.id) ?? null,
-                                  }} />
+                                  <ProjectTokenBudget
+                                    project={{
+                                      key: project.id,
+                                      id: project.id,
+                                      title: project.title,
+                                      native: true,
+                                      local:
+                                        sidebarProjects.find((local) => local.id === project.id) ??
+                                        null,
+                                    }}
+                                  />
                                 </span>
                               </MenuRadioItem>
                             ))
@@ -3911,10 +3918,20 @@ export default function Sidebar() {
                               >
                                 <span className="min-w-0 truncate">{project.displayName}</span>
                                 <span className="ml-auto">
-                                  <ProjectTokenBudget project={{
-                                    key: project.projectKey, id: project.id, title: project.displayName, native: false,
-                                    local: projects.find(local => local.id === project.id && local.environmentId === project.environmentId) ?? null,
-                                  }} />
+                                  <ProjectTokenBudget
+                                    project={{
+                                      key: project.projectKey,
+                                      id: project.id,
+                                      title: project.displayName,
+                                      native: false,
+                                      local:
+                                        projects.find(
+                                          (local) =>
+                                            local.id === project.id &&
+                                            local.environmentId === project.environmentId,
+                                        ) ?? null,
+                                    }}
+                                  />
                                 </span>
                               </MenuRadioItem>
                             ))}

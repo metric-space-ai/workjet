@@ -76,14 +76,36 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 
 describe("mergeUsage", () => {
   it("uses the same physical-source dedupe for project thread breakdowns and totals", () => {
-    const claude = bucket({ projectId: "project", threadId: "parent", role: "specialist", model: DEFAULT_MODEL });
-    const codex = bucket({ provider: "codex", projectId: "project", threadId: "worker", role: "worker", model: DEFAULT_MODEL });
+    const claude = bucket({
+      projectId: "project",
+      threadId: "parent",
+      role: "specialist",
+      model: DEFAULT_MODEL,
+    });
+    const codex = bucket({
+      provider: "codex",
+      projectId: "project",
+      threadId: "worker",
+      role: "worker",
+      model: DEFAULT_MODEL,
+    });
     const shared = { provider: "claude" as const, hostId: "mac", homePath: "/fixture/claude" };
-    const result = mergeUsage([
-      environment("env-a", summary([claude], [shared])),
-      environment("env-b", summary([claude, codex], [shared, { provider: "codex", hostId: "gpu", homePath: "/fixture/codex" }])),
-    ], USAGE_CONTRACT_VERSION);
-    expect(result.projectThreads?.reduce((sum, thread) => sum + thread.totalTokens, 0)).toBe(result.totalTokens);
+    const result = mergeUsage(
+      [
+        environment("env-a", summary([claude], [shared])),
+        environment(
+          "env-b",
+          summary(
+            [claude, codex],
+            [shared, { provider: "codex", hostId: "gpu", homePath: "/fixture/codex" }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(result.projectThreads?.reduce((sum, thread) => sum + thread.totalTokens, 0)).toBe(
+      result.totalTokens,
+    );
     expect(result.projectThreads).toHaveLength(2);
     expect(result.totalTokens).toBe(2320);
   });

@@ -869,8 +869,18 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const budgetContext = yield* currentProjectTokenBudgetContext(thread.projectId, thread.workjetConfig).pipe(Effect.catchCause(() => Effect.succeed(null)));
-    const normalizedInput = toNonEmptyProviderInput(budgetContext ? `[Workjet system context]\n${budgetContext}\n\n${input.messageText ?? ""}` : input.messageText);
+    const budgetContext = yield* currentProjectTokenBudgetContext(
+      thread.projectId,
+      thread.workjetConfig,
+    ).pipe(
+      Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
+      Effect.catchCause(() => Effect.succeed(null)),
+    );
+    const normalizedInput = toNonEmptyProviderInput(
+      budgetContext
+        ? `[Workjet system context]\n${budgetContext}\n\n${input.messageText ?? ""}`
+        : input.messageText,
+    );
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()

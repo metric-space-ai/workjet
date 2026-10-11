@@ -14,8 +14,9 @@ export const ProjectBudgetMeeting = Schema.Struct({
   timezone: Schema.String.check(
     Schema.makeFilter((zone) => {
       try {
-        new Intl.DateTimeFormat("en", { timeZone: zone });
-        return true;
+        return (
+          new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone.length > 0
+        );
       } catch {
         return "Use a valid IANA timezone.";
       }

@@ -54,7 +54,11 @@ export function ProjectOverviewEditor({
 }) {
   const id = useId();
   const [draft, setDraft] = useState(() => overviewDraft(overview));
-  const [budget, setBudget] = useState(() => overview?.tokenBudget?.limitBillions == null ? "" : overview.tokenBudget.limitBillions.toFixed(1).replace(".", ","));
+  const [budget, setBudget] = useState(() =>
+    overview?.tokenBudget?.limitBillions == null
+      ? ""
+      : overview.tokenBudget.limitBillions.toFixed(1).replace(".", ","),
+  );
   const [state, setState] = useState({ pending: false, message: "" });
   const [supervisorLumaId, setSupervisorLumaId] = useState<string | null>(
     configuration?.supervisorLumaId ?? null,
@@ -86,7 +90,11 @@ export function ProjectOverviewEditor({
   const cancel = () => {
     if (onCancel) return onCancel();
     setDraft(overviewDraft(overview));
-    setBudget(overview?.tokenBudget?.limitBillions == null ? "" : overview.tokenBudget.limitBillions.toFixed(1).replace(".", ","));
+    setBudget(
+      overview?.tokenBudget?.limitBillions == null
+        ? ""
+        : overview.tokenBudget.limitBillions.toFixed(1).replace(".", ","),
+    );
     setSupervisorLumaId(configuration?.supervisorLumaId ?? null);
     setInfo({
       ...configuration?.info,
@@ -119,9 +127,16 @@ export function ProjectOverviewEditor({
             tokenBudget: {
               limitBillions: parseTokenBudgetBillions(budget),
               revision: overview?.tokenBudget?.revision ?? 0,
-              jourFixe: configuration && onSaveConfiguration
-                ? (meeting.enabled ? { weekday: meeting.weekday, time: meeting.time, timezone: meeting.timezone.trim() } : null)
-                : overview?.tokenBudget?.jourFixe ?? null,
+              jourFixe:
+                configuration && onSaveConfiguration
+                  ? meeting.enabled
+                    ? {
+                        weekday: meeting.weekday,
+                        time: meeting.time,
+                        timezone: meeting.timezone.trim(),
+                      }
+                    : null
+                  : (overview?.tokenBudget?.jourFixe ?? null),
             },
           };
           if (configuration && onSaveConfiguration) {
@@ -203,13 +218,25 @@ export function ProjectOverviewEditor({
       }}
     >
       <div className="grid items-center gap-x-3 gap-y-2 sm:grid-cols-[6rem_minmax(0,1fr)]">
-        <label className="text-xs text-muted-foreground" htmlFor={`${id}-token-budget`}>Token-Budget je Zyklus</label>
+        <label className="text-xs text-muted-foreground" htmlFor={`${id}-token-budget`}>
+          Token-Budget je Zyklus
+        </label>
         <div className="grid gap-1">
           <div className="flex items-center gap-2">
-            <Input id={`${id}-token-budget`} inputMode="decimal" value={budget} onChange={event => setBudget(event.target.value)} placeholder="2,3" disabled={state.pending} aria-describedby={`${id}-budget-help`} />
+            <Input
+              id={`${id}-token-budget`}
+              inputMode="decimal"
+              value={budget}
+              onChange={(event) => setBudget(event.target.value)}
+              placeholder="2,3"
+              disabled={state.pending}
+              aria-describedby={`${id}-budget-help`}
+            />
             <span className="text-xs">B</span>
           </div>
-          <p id={`${id}-budget-help`} className="text-xs text-muted-foreground">Milliarden Tokens je Regeltermin-Zyklus. Leer = kein Limit. Kein automatischer Abbruch.</p>
+          <p id={`${id}-budget-help`} className="text-xs text-muted-foreground">
+            Milliarden Tokens je Regeltermin-Zyklus. Leer = kein Limit. Kein automatischer Abbruch.
+          </p>
         </div>
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-repository`}>
           Repository

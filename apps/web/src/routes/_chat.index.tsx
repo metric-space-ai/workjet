@@ -316,7 +316,11 @@ function IndexDraftLanding() {
         if (overview !== undefined) {
           const saved = await updateProject({
             environmentId: target.environmentId,
-            input: { projectId: target.projectId, overview, expectedTokenBudgetRevision: overview.tokenBudget?.revision ?? 0 },
+            input: {
+              projectId: target.projectId,
+              overview,
+              expectedTokenBudgetRevision: overview.tokenBudget?.revision ?? 0,
+            },
           });
           if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
         }
@@ -547,7 +551,11 @@ function IndexDraftLanding() {
                 }
                 const result = await updateProject({
                   environmentId: local.environmentId,
-                  input: { projectId: local.id, overview, expectedTokenBudgetRevision: overview.tokenBudget?.revision ?? 0 },
+                  input: {
+                    projectId: local.id,
+                    overview,
+                    expectedTokenBudgetRevision: overview.tokenBudget?.revision ?? 0,
+                  },
                 });
                 return result._tag === "Success";
               },

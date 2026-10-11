@@ -295,7 +295,9 @@ export async function runNextNativeSupervisorSdkTurn(options: {
       if (timeout) clearTimeout(timeout);
     }
   };
-  const tokenBudgetContext = await options.readTokenBudgetContext?.(ProjectId.make(offer.route.project_id)).catch(() => null);
+  const tokenBudgetContext = await options
+    .readTokenBudgetContext?.(ProjectId.make(offer.route.project_id))
+    .catch(() => null);
   try {
     runtime = query({
       prompt: input(),

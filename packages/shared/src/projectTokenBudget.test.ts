@@ -5,7 +5,7 @@ import {
   projectTokenTotal,
   reachedTokenBudgetThresholds,
   tokenBudgetNotice,
-} from "./projectTokenBudget";
+} from "./projectTokenBudget.ts";
 describe("project token cycles", () => {
   it.each(["2,3", "2.3"])("parses %s in billions", (value) =>
     expect(parseTokenBudgetBillions(value)).toBe(2.3),

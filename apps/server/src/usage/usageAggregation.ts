@@ -111,7 +111,10 @@ export class UsageAggregator {
    * can derive per-window facts (distinct sessions, for one) from the records
    * that landed rather than everything the mtime prefilter happened to admit.
    */
-  add(record: UsageRecord, attribution?: { projectId: string; threadId: string; role: string }): boolean {
+  add(
+    record: UsageRecord,
+    attribution?: { projectId: string; threadId: string; role: string },
+  ): boolean {
     if (record.dedupeKey !== null) {
       if (this.#seen.has(record.dedupeKey)) {
         this.#duplicatesDropped += 1;
@@ -180,7 +183,15 @@ export class UsageAggregator {
   finish(): AggregateResult {
     const buckets: UsageBucket[] = [];
     for (const [key, bucket] of this.#buckets) {
-      const [day = "", hourStart = "", provider = "", model = "", projectId = "", threadId = "", role = ""] = key.split("\u0000");
+      const [
+        day = "",
+        hourStart = "",
+        provider = "",
+        model = "",
+        projectId = "",
+        threadId = "",
+        role = "",
+      ] = key.split("\u0000");
       buckets.push({
         ...(projectId === "" ? {} : { projectId, threadId, role }),
         day: day as UsageDay,

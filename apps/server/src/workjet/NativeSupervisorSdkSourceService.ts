@@ -65,13 +65,17 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
   );
   const budgetQuery = yield* Effect.serviceOption(ProjectionSnapshotQuery);
   const budgetUsage = yield* Effect.serviceOption(UsageService);
-  const readTokenBudgetContext = Option.isSome(budgetQuery) && Option.isSome(budgetUsage)
-    ? (projectId: ProjectId) => Effect.runPromise(currentProjectTokenBudgetContext(projectId).pipe(
-        Effect.provideService(ProjectionSnapshotQuery, budgetQuery.value),
-        Effect.provideService(UsageService, budgetUsage.value),
-        Effect.catchCause(() => Effect.succeed(null)),
-      ))
-    : undefined;
+  const readTokenBudgetContext =
+    Option.isSome(budgetQuery) && Option.isSome(budgetUsage)
+      ? (projectId: ProjectId) =>
+          Effect.runPromise(
+            currentProjectTokenBudgetContext(projectId).pipe(
+              Effect.provideService(ProjectionSnapshotQuery, budgetQuery.value),
+              Effect.provideService(UsageService, budgetUsage.value),
+              Effect.catchCause(() => Effect.succeed(null)),
+            ),
+          )
+      : undefined;
   const runNext = Effect.fn("NativeSupervisorSdkSourceService.runNext")(function* () {
     if (retired) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "retired" });
     if (active) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "turn-active" });

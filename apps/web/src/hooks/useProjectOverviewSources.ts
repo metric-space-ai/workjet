@@ -3,7 +3,7 @@ import { ProjectId, type WorkjetJourFixeMeeting } from "@workjet/contracts";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession } from "../lib/jourFixeNative";
 import { readWorkjetProjectKpis } from "../workjetProjectControl";
-import { newCommandId } from "../lib/utils";
+
 import type { PromptedProjectKpis } from "../projectKpis";
 
 export function useProjectOverviewSources(instanceId: string | null, projectId: string) {
@@ -35,14 +35,12 @@ export function useProjectOverviewSources(instanceId: string | null, projectId: 
         if (current()) setState((value) => ({ ...value, failed: true }));
       },
     );
-    const commandId = newCommandId();
-    void readWorkjetProjectKpis(instanceId, ProjectId.make(projectId), commandId).then(
+    void readWorkjetProjectKpis(instanceId, ProjectId.make(projectId)).then(
       (result) => {
         if (!current()) return;
         if (
           result._tag === "completed" &&
           result.response.action === "project.kpis.read" &&
-          result.response.commandId === commandId &&
           result.response.projectId === projectId &&
           "kpis" in result.response
         ) {

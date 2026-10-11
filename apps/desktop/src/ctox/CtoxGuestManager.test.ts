@@ -1142,6 +1142,139 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect(
+    "shares four identical project reads, survives one caller cancellation, and does not cache the result",
+    () => {
+      const harness = makeGuestHarness();
+      const entered = Promise.withResolvers<void>();
+      const pending = Promise.withResolvers<unknown>();
+      const response = {
+        action: "project.list" as const,
+        projects: [],
+        count: 0,
+        truncated: false as const,
+      };
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.ensurePooled(descriptor.id);
+        const execute = harness.views[0]!.executeJavaScript;
+        execute.mockClear();
+        execute.mockImplementationOnce(() => {
+          entered.resolve();
+          return pending.promise;
+        });
+        const first = yield* Effect.forkChild(
+          manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        );
+        yield* Effect.promise(() => entered.promise);
+        const siblings = yield* Effect.forkChild(
+          Effect.all(
+            Array.from({ length: 3 }, () =>
+              manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+            ),
+            { concurrency: "unbounded" },
+          ),
+        );
+        yield* TestClock.adjust(0);
+        expect(execute).toHaveBeenCalledOnce();
+        yield* Fiber.interrupt(first);
+        pending.resolve({ status: "completed", result: response });
+        assert.deepEqual(
+          yield* Fiber.join(siblings),
+          Array.from({ length: 3 }, () => ({ _tag: "completed" as const, response })),
+        );
+        execute.mockResolvedValueOnce({ status: "completed", result: response });
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          { _tag: "completed", response },
+        );
+        expect(execute).toHaveBeenCalledTimes(2);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect("clears a shared read at the desktop deadline so the next attempt executes", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    const stalled = Promise.withResolvers<unknown>();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const execute = harness.views[0]!.executeJavaScript;
+      execute.mockClear();
+      execute.mockImplementationOnce(() => {
+        entered.resolve();
+        return stalled.promise;
+      });
+      const reading = yield* Effect.forkChild(
+        manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      yield* TestClock.adjust("30 seconds");
+      assert.deepEqual(yield* Fiber.join(reading), { _tag: "failed", code: "timeout" });
+      const response = {
+        action: "project.list" as const,
+        projects: [],
+        count: 0,
+        truncated: false as const,
+      };
+      execute.mockResolvedValueOnce({ status: "completed", result: response });
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        { _tag: "completed", response },
+      );
+      expect(execute).toHaveBeenCalledTimes(2);
+      stalled.resolve({ status: "completed", result: response });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("keeps read parameters and fresh renderer authority separate", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    const oldPending = Promise.withResolvers<unknown>();
+    const response = {
+      action: "project.list" as const,
+      projects: [],
+      count: 0,
+      truncated: false as const,
+    };
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const old = harness.views[0]!;
+      old.executeJavaScript.mockClear();
+      old.executeJavaScript.mockImplementationOnce(() => {
+        entered.resolve();
+        return oldPending.promise;
+      });
+      const reading = yield* Effect.forkChild(
+        manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      old.executeJavaScript.mockResolvedValueOnce({ status: "completed", result: response });
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, {
+          action: "project.list",
+          includeConfiguration: true,
+        }),
+        { _tag: "completed", response },
+      );
+      expect(old.executeJavaScript).toHaveBeenCalledTimes(2);
+      yield* manager.deactivate;
+      yield* manager.ensurePooled(descriptor.id);
+      harness.views[1]!.executeJavaScript.mockResolvedValueOnce({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        { _tag: "completed", response },
+      );
+      oldPending.resolve({ status: "completed", result: response });
+      assert.deepEqual(yield* Fiber.join(reading), { _tag: "failed", code: "not_active" });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("opens a Jour fixe from a cold hidden guest and recreates a destroyed guest", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {

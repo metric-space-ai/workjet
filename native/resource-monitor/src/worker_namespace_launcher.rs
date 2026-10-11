@@ -174,13 +174,22 @@ pub(crate) mod linux {
         let mut aliases = std::collections::BTreeMap::new();
         if let Ok(entries) = fs::read_dir("/usr/bin") {
             for entry in entries.flatten() {
-                let Ok(alias) = fs::read_link(entry.path()) else { continue };
+                let Ok(alias) = fs::read_link(entry.path()) else {
+                    continue;
+                };
                 if alias.parent() != Some(Path::new("/etc/alternatives")) {
                     continue;
                 }
-                let Ok(executable) = fs::canonicalize(entry.path()) else { continue };
-                let Ok(metadata) = fs::metadata(&executable) else { continue };
-                if executable.starts_with("/usr") && metadata.is_file() && metadata.mode() & 0o111 != 0 {
+                let Ok(executable) = fs::canonicalize(entry.path()) else {
+                    continue;
+                };
+                let Ok(metadata) = fs::metadata(&executable) else {
+                    continue;
+                };
+                if executable.starts_with("/usr")
+                    && metadata.is_file()
+                    && metadata.mode() & 0o111 != 0
+                {
                     aliases.insert(alias, executable);
                 }
             }

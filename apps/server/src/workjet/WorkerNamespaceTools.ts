@@ -16,7 +16,10 @@ import {
 } from "./WorkerNamespaceSpawn.ts";
 
 const error = (cause: unknown) =>
-  new AcpErrors.AcpTransportError({ detail: typeof cause === "string" ? cause : "Confined worker tool failed", cause });
+  new AcpErrors.AcpTransportError({
+    detail: typeof cause === "string" ? cause : "Confined worker tool failed",
+    cause,
+  });
 const MAX_TEXT = 4 * 1024 * 1024;
 const MAX_TERMINAL_OUTPUT = 1024 * 1024;
 
@@ -48,7 +51,14 @@ export const workerToolOutputText = (output: Output): string => {
   while (last >= start && (output.bytes[last]! & 0xc0) === 0x80) last--;
   if (last >= start) {
     const lead = output.bytes[last]!;
-    const expected = lead >= 0xc2 && lead <= 0xdf ? 2 : lead >= 0xe0 && lead <= 0xef ? 3 : lead >= 0xf0 && lead <= 0xf4 ? 4 : 1;
+    const expected =
+      lead >= 0xc2 && lead <= 0xdf
+        ? 2
+        : lead >= 0xe0 && lead <= 0xef
+          ? 3
+          : lead >= 0xf0 && lead <= 0xf4
+            ? 4
+            : 1;
     if (end - last < expected) end = last;
   }
   return new TextDecoder().decode(output.bytes.subarray(start, end));
@@ -79,24 +89,29 @@ type Operation =
     };
 
 const identitySchema = Schema.Struct({ device: Schema.String, inode: Schema.String });
-const toolRequestSchema = Schema.fromJsonString(Schema.Struct({
-  version: Schema.Literal(1),
-  worktree: Schema.Struct({ path: Schema.String, identity: identitySchema }),
-  hostNetwork: identitySchema,
-  operation: Schema.Union([
-    Schema.Struct({
-      kind: Schema.Literal("read"), path: Schema.String,
-      line: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
-      limit: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
-    }),
-    Schema.Struct({ kind: Schema.Literal("write"), path: Schema.String }),
-    Schema.Struct({
-      kind: Schema.Literal("terminal"), command: Schema.String,
-      args: Schema.Array(Schema.String), cwd: Schema.String,
-      env: Schema.Record(Schema.String, Schema.String),
-    }),
-  ]),
-}));
+const toolRequestSchema = Schema.fromJsonString(
+  Schema.Struct({
+    version: Schema.Literal(1),
+    worktree: Schema.Struct({ path: Schema.String, identity: identitySchema }),
+    hostNetwork: identitySchema,
+    operation: Schema.Union([
+      Schema.Struct({
+        kind: Schema.Literal("read"),
+        path: Schema.String,
+        line: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
+        limit: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
+      }),
+      Schema.Struct({ kind: Schema.Literal("write"), path: Schema.String }),
+      Schema.Struct({
+        kind: Schema.Literal("terminal"),
+        command: Schema.String,
+        args: Schema.Array(Schema.String),
+        cwd: Schema.String,
+        env: Schema.Record(Schema.String, Schema.String),
+      }),
+    ]),
+  }),
+);
 
 /** Always launch the captured helper in a fresh kernel namespace, never daemon FS or a host shell.
  * A capture is internal physical evidence, not an Owner/project execution-policy grant.
@@ -174,8 +189,9 @@ export const makeWorkerNamespaceTools = (
       );
       const collect = (stream: Stream.Stream<Uint8Array, unknown>, limit: number) =>
         stream.pipe(
-          Stream.runFold((): Output => ({ bytes: new Uint8Array(0), truncated: false }), (old, chunk) =>
-            appendWorkerToolOutput(old, chunk, limit),
+          Stream.runFold(
+            (): Output => ({ bytes: new Uint8Array(0), truncated: false }),
+            (old, chunk) => appendWorkerToolOutput(old, chunk, limit),
           ),
           Effect.mapError(error),
         );

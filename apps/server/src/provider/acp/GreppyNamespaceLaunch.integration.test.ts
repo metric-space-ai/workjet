@@ -113,8 +113,11 @@ const fixture = async () => {
       cwd: workspace,
       runtimeMode: "approval-required",
       modelSelection: { instanceId: ProviderInstanceId.make("greppy"), model: "gpt-6.1-sol" },
-      workjetConfig: {
-        ...DEFAULT_WORKJET_THREAD_CONFIG,
+      workjetConfig: Schema.decodeUnknownSync(WorkjetThreadConfig)({
+        schemaVersion: 2,
+        managedInstructions: "",
+        enabledCapabilityIds: [],
+        capabilityBindings: [],
         role: "worker",
         parent: { environmentId: EnvironmentId.make("source"), threadId: ThreadId.make("parent") },
         executionPolicy: {
@@ -122,7 +125,7 @@ const fixture = async () => {
           projectId: ProjectId.make("fixture-project"),
           revision: 1,
         },
-      },
+      }),
     };
     return {
       root,

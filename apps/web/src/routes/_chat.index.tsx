@@ -105,6 +105,15 @@ import {
   resolveProjectTeamModelSelection,
 } from "../providerInstances";
 import { createPersistentWorkerConfig } from "./-projectWorkerConfig";
+import {
+  ProjectCloneFields,
+  ProjectComputerSelect,
+  ProjectCreateRequirementLine,
+  ProjectCreateSourceSegment,
+  ProjectFolderFields,
+} from "../components/ProjectCreateSources";
+import type { ProjectCreateSource } from "../components/ProjectCreateSources.logic";
+import { useProjectCreateSources } from "../components/useProjectCreateSources";
 import { threadEnvironment } from "../state/threads";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -1012,10 +1021,12 @@ function resolvePreselectedProjectInstance(
 }
 
 /**
- * Inline „Projekt anlegen“ (drei Orte, keine Popups): name, instance and the
- * primary action in the footer. The project is saved locally with a pending
- * CTOX registration (the native registration loop confirms it), then its
- * overview opens. Other places ask for this panel via the command bus.
+ * Inline „Projekt anlegen“ (drei Orte, keine Popups). A segment picks the
+ * source: „Neu“ (name only), „Aus Ordner“ (a folder on a connected computer,
+ * via the system folder chooser or path suggestions) or „Repository klonen“
+ * (URL or provider repository into a target folder). The project is saved
+ * with a pending CTOX registration (the native registration loop confirms
+ * it), then its overview opens. Other places ask for this panel via the bus.
  */
 function InlineProjectCreate({
   className,
@@ -1027,6 +1038,7 @@ function InlineProjectCreate({
   readonly triggerAction?: string;
 }) {
   const mode = useCtoxMode();
+  const navigate = useNavigate();
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const primaryEnvironment = usePrimaryEnvironment();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -1034,9 +1046,13 @@ function InlineProjectCreate({
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const [open, setOpen] = useState(() => consumeProjectCreateRequest() || defaultOpen);
   useEffect(() => onProjectCreateRequest(() => setOpen(true)), []);
+  const [source, setSource] = useState<ProjectCreateSource>("new");
+  const sources = useProjectCreateSources({ active: open, source });
   const [title, setTitle] = useState("");
+  const [titleEdited, setTitleEdited] = useState(false);
   const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const attemptRef = useRef<{
     key: string;
@@ -1052,6 +1068,17 @@ function InlineProjectCreate({
       ? chosenInstanceId
       : resolvePreselectedProjectInstance(options, activeCtoxInstanceId);
   const instanceLabel = options.find((option) => option.id === instanceId)?.label ?? null;
+  const effectiveTitle = source === "new" || titleEdited ? title : sources.derivedTitle;
+
+  const activateInstance = async (targetInstanceId: string) => {
+    if (targetInstanceId === readActiveWorkjetScope().selectedInstanceId) return;
+    const instance =
+      mode.discovery !== "loading" && mode.discovery._tag === "ready"
+        ? mode.discovery.instances.find((candidate) => candidate.id === targetInstanceId)
+        : undefined;
+    if (instance === undefined || !(await mode.select(instance)))
+      throw new Error("Instanz nicht erreichbar.");
+  };
 
   const submit = async () => {
     const trimmed = title.trim();
@@ -1059,14 +1086,7 @@ function InlineProjectCreate({
     setPending(true);
     setError(null);
     try {
-      if (instanceId !== readActiveWorkjetScope().selectedInstanceId) {
-        const instance =
-          mode.discovery !== "loading" && mode.discovery._tag === "ready"
-            ? mode.discovery.instances.find((candidate) => candidate.id === instanceId)
-            : undefined;
-        if (instance === undefined || !(await mode.select(instance)))
-          throw new Error("Instanz nicht erreichbar.");
-      }
+      await activateInstance(instanceId);
       const environmentId = primaryEnvironmentId;
       if (
         environmentId === null ||
@@ -1112,6 +1132,78 @@ function InlineProjectCreate({
     }
   };
 
+  /** „Aus Ordner“ and „Repository klonen“: working copy first, then the project. */
+  const submitFromSource = async () => {
+    const trimmed = effectiveTitle.trim();
+    if (!trimmed || pending || instanceId === null || !sources.ready) return;
+    setPending(true);
+    setError(null);
+    try {
+      await activateInstance(instanceId);
+      setProgress(source === "clone" ? "Repository wird geklont …" : "Projekt wird angelegt …");
+      const workspaceRoot = await sources.resolveWorkspaceRoot();
+      setProgress("Projekt wird angelegt …");
+      const created = await sources.createWorkspaceProject({
+        title: trimmed,
+        workspaceRoot,
+        instanceId,
+      });
+      setTitle("");
+      setTitleEdited(false);
+      sources.reset();
+      setSource("new");
+      setOpen(false);
+      toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
+      if (readActiveWorkjetScope().selectedInstanceId === instanceId)
+        selectProjectOverviewRef(
+          instanceId,
+          scopeProjectRef(created.environmentId, created.projectId),
+        );
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
+    } finally {
+      setProgress(null);
+      setPending(false);
+    }
+  };
+
+  const pickFolder = async () => {
+    setError(null);
+    try {
+      await sources.pickFolder();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Ordner nicht gewählt.");
+    }
+  };
+
+  const computerSelect = (
+    <ProjectComputerSelect
+      options={sources.computerOptions}
+      value={sources.environmentId}
+      onChange={sources.setEnvironmentId}
+    />
+  );
+  const needsComputer = source !== "new" && !sources.hasConnectedComputer;
+  const requirement =
+    options.length === 0 ? (
+      <ProjectCreateRequirementLine
+        text="Keine Instanz verbunden"
+        actionLabel="Einstellungen › Instanzen"
+        onAction={() => void navigate({ to: "/settings/business-os" })}
+      />
+    ) : needsComputer ? (
+      <ProjectCreateRequirementLine
+        text="Kein Rechner verbunden"
+        actionLabel="Einstellungen › Rechner"
+        onAction={() => void navigate({ to: "/settings/computers" })}
+      />
+    ) : null;
+  const status = error ?? progress ?? requirement ?? undefined;
+  const submitDisabled =
+    effectiveTitle.trim().length === 0 ||
+    instanceId === null ||
+    (source !== "new" && !sources.ready);
+
   return (
     <div className={cn("w-full", className)}>
       <InlinePanel
@@ -1121,23 +1213,58 @@ function InlineProjectCreate({
           setOpen(next);
           if (!next) setError(null);
         }}
+        segment={
+          <ProjectCreateSourceSegment
+            value={source}
+            disabled={pending}
+            onChange={(next) => {
+              setSource(next);
+              setError(null);
+            }}
+          />
+        }
         submitLabel="Anlegen"
-        submitDisabled={title.trim().length === 0 || instanceId === null}
+        submitDisabled={submitDisabled}
         busy={pending}
-        status={error ?? undefined}
-        statusTone="error"
-        onSubmit={() => void submit()}
+        status={status}
+        statusTone={error !== null ? "error" : "neutral"}
+        onSubmit={() => void (source === "new" ? submit() : submitFromSource())}
       >
+        {source === "folder" ? (
+          <ProjectFolderFields
+            computer={computerSelect}
+            path={sources.folderPath}
+            onPathChange={sources.setFolderPath}
+            onPick={sources.canPickFolder ? () => void pickFolder() : null}
+            picking={sources.picking}
+            suggestions={sources.folderSuggestions}
+            onSuggestion={sources.selectFolderSuggestion}
+          />
+        ) : source === "clone" ? (
+          <ProjectCloneFields
+            computer={computerSelect}
+            providers={sources.cloneProviders}
+            provider={sources.cloneProvider}
+            onProviderChange={sources.setCloneProvider}
+            repository={sources.repository}
+            onRepositoryChange={sources.setRepository}
+            baseDirectory={sources.baseDirectory}
+            onBaseDirectoryChange={sources.setBaseDirectory}
+          />
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]">
           <label className="grid gap-1 text-sm">
             Name
             <Input
-              autoFocus
+              autoFocus={source === "new"}
               aria-label="Projektname"
               maxLength={256}
-              value={title}
+              value={effectiveTitle}
               data-workjet-action={triggerAction}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => {
+                setTitle(event.target.value);
+                setTitleEdited(true);
+              }}
             />
           </label>
           <div className="grid gap-1 text-sm">

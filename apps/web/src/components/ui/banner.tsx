@@ -1,6 +1,7 @@
 /**
  * Banner (UI-Vertrag §1): Icon, eine Zeile, ein bis zwei Buttons.
- * Keine Absätze, keine Überschrift.
+ * Keine Absätze, keine Überschrift. Bei schmaler Breite bricht der Text um,
+ * statt abgeschnitten zu werden; die Buttons bleiben immer sichtbar.
  */
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -35,16 +36,16 @@ function Banner({ icon: Icon, children, action, secondaryAction, className }: Ba
       role="status"
     >
       <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate" data-slot="banner-text">
+      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]" data-slot="banner-text">
         {children}
       </span>
       {secondaryAction ? (
-        <Button size="sm" variant="outline" onClick={secondaryAction.onClick}>
+        <Button size="sm" variant="outline" className="shrink-0" onClick={secondaryAction.onClick}>
           {secondaryAction.label}
         </Button>
       ) : null}
       {action ? (
-        <Button size="sm" onClick={action.onClick}>
+        <Button size="sm" className="shrink-0" onClick={action.onClick}>
           {action.label}
         </Button>
       ) : null}

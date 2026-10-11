@@ -152,16 +152,38 @@ describe("WorkjetCapabilityMenu", () => {
       greppyEnabled: true,
       onGreppyEnabledChange,
     });
-    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`);
+    const toggle = findByLabel(content, WORKJET_GREPPY_DISPLAY_NAME);
     expect(toggle.props.checked).toBe(true);
     expect(toggle.props.disabled).toBeFalsy();
+    // A plain checkbox entry, never a Switch component inside the menu.
+    expect(toggle.props.variant).toBeUndefined();
     (toggle.props.onCheckedChange as (checked: boolean) => void)(false);
     expect(onGreppyEnabledChange).toHaveBeenCalledWith(false);
   });
 
+  it("names every tool in German and never passes catalog product names through", () => {
+    const text = textContent(
+      WorkjetCapabilityMenuItems({
+        ...baseMenuProps,
+        onCapabilityEnabledChange: vi.fn(),
+        enabledCapabilityIds: [],
+        workjetRole: "standard",
+        onWorkjetRoleChange: vi.fn(),
+      }),
+    );
+    for (const label of ["Greppy", "Websuche", "Browser", "Entscheidungszentrale"]) {
+      expect(text).toContain(label);
+    }
+    expect(text).toContain("Instanz-Werkzeug");
+    expect(text).toContain("Lumas steuern");
+    for (const raw of ["Orchestrator", "Decision Hub", "CTOX Business OS", "Web Search"]) {
+      expect(text).not.toContain(raw);
+    }
+  });
+
   it("keeps catalog descriptions in the tooltip, never as sentences in the list", () => {
     const content = WorkjetCapabilityMenuItems(baseMenuProps);
-    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`);
+    const toggle = findByLabel(content, WORKJET_GREPPY_DISPLAY_NAME);
     expect(toggle.props.title).toBe(WORKJET_GREPPY_DESCRIPTION);
     const list = textContent(content);
     expect(list).toContain(WORKJET_GREPPY_DISPLAY_NAME);
@@ -172,10 +194,11 @@ describe("WorkjetCapabilityMenu", () => {
   it("disables activation during an in-flight change and exposes its status", () => {
     const props = { ...baseMenuProps, busy: true };
     const content = WorkjetCapabilityMenuItems(props);
-    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`);
+    const toggle = findByLabel(content, WORKJET_GREPPY_DISPLAY_NAME);
     expect(toggle.props.disabled).toBe(true);
     expect(toggle.props["aria-busy"]).toBe(true);
-    expect(textContent(content)).toContain("Aktualisiert…");
+    // No status line inside the menu; busy is carried by aria-busy only.
+    expect(textContent(content)).not.toContain("Aktualisiert");
     const trigger = renderToStaticMarkup(<WorkjetCapabilityMenu {...props} />);
     expect(trigger).toContain('aria-label="Werkzeuge"');
     expect(trigger).toContain('aria-busy="true"');
@@ -183,7 +206,7 @@ describe("WorkjetCapabilityMenu", () => {
     expect(
       findByLabel(
         WorkjetCapabilityMenuItems({ ...baseMenuProps, disabled: true }),
-        `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`,
+        WORKJET_GREPPY_DISPLAY_NAME,
       ).props.disabled,
     ).toBe(true);
   });
@@ -195,6 +218,9 @@ describe("WorkjetCapabilityMenu", () => {
     expect(markup).not.toContain("Tools for this chat");
     const compact = WorkjetCapabilityMenu({ ...baseMenuProps, compact: true });
     expect(textContent(compact)).toContain("Werkzeuge");
+    // The submenu trigger is a simple entry: no "1 an" / "aus" status.
+    const trigger = findByLabel(compact, "Werkzeuge");
+    expect(textContent(trigger).trim()).toBe("Werkzeuge");
   });
 
   it("allows the root Orchestrator switch but keeps a child Luma's role managed", () => {
@@ -205,13 +231,13 @@ describe("WorkjetCapabilityMenu", () => {
       workjetRole: "standard" as const,
       onWorkjetRoleChange,
     };
-    const toggle = findByLabel(WorkjetCapabilityMenuItems(props), "Orchestrator für diesen Chat");
+    const toggle = findByLabel(WorkjetCapabilityMenuItems(props), "Lumas steuern");
     expect(toggle.props.checked).toBe(false);
     (toggle.props.onCheckedChange as (checked: boolean) => void)(true);
     expect(onWorkjetRoleChange).toHaveBeenCalledWith("orchestrator");
     const managed = findByLabel(
       WorkjetCapabilityMenuItems({ ...props, workjetRole: "worker" }),
-      "Orchestrator für diesen Chat",
+      "Lumas steuern",
     );
     expect(managed.props.disabled).toBe(true);
   });
@@ -223,12 +249,12 @@ describe("WorkjetCapabilityMenu", () => {
       onDecisionHubConnectionChange: vi.fn(),
     };
     const disabled = WorkjetCapabilityMenuItems({ ...props, enabledCapabilityIds: [] });
-    expect(() => findByLabel(disabled, "Decision Hub Instanz")).toThrow();
+    expect(() => findByLabel(disabled, "Instanz der Entscheidungszentrale")).toThrow();
     const missing = WorkjetCapabilityMenuItems({
       ...props,
       enabledCapabilityIds: ["decision-hub"],
     });
-    expect(textContent(missing)).toContain("Keine CTOX-Verbindung");
+    expect(textContent(missing)).toContain("Keine Instanz");
     expect(props.onDecisionHubConnectionChange).not.toHaveBeenCalled();
   });
 
@@ -241,7 +267,7 @@ describe("WorkjetCapabilityMenu", () => {
     expect(() =>
       findByLabel(
         WorkjetCapabilityMenuItems({ ...props, enabledCapabilityIds: [] }),
-        "CTOX Business OS Instanz",
+        "Instanz des Instanz-Werkzeugs",
       ),
     ).toThrow();
     const enabled = WorkjetCapabilityMenuItems({
@@ -258,10 +284,11 @@ describe("WorkjetCapabilityMenu", () => {
         },
       ],
     });
-    const selector = findByLabel(enabled, "CTOX Business OS Instanz");
+    const selector = findByLabel(enabled, "Instanz des Instanz-Werkzeugs");
     expect(textContent(selector)).toContain("Source instance");
-    expect(textContent(selector)).toContain("bereit");
-    expect(() => findByLabel(enabled, "Decision Hub Instanz")).toThrow();
+    // The status is a tooltip, never a second text in the entry.
+    expect(textContent(selector)).not.toContain("bereit");
+    expect(() => findByLabel(enabled, "Instanz der Entscheidungszentrale")).toThrow();
     (selector.props.onValueChange as (value: string) => void)("ctox-dev:tenant-source");
     expect(props.onCtoxBusinessOsConnectionChange).toHaveBeenCalledWith("ctox-dev:tenant-source");
   });
@@ -273,9 +300,26 @@ describe("WorkjetCapabilityMenu", () => {
       onCtoxBusinessOsConnectionChange: vi.fn(),
       enabledCapabilityIds: ["ctox-business-os"] as const,
     };
-    expect(textContent(WorkjetCapabilityMenuItems(props))).toContain("Keine CTOX-Verbindung");
-    const locked = WorkjetCapabilityMenuItems({ ...props, ctoxBusinessOsConnectionLocked: true });
-    expect(textContent(locked)).toContain("Instanz fest");
+    expect(textContent(WorkjetCapabilityMenuItems(props))).toContain("Keine Instanz");
+    const locked = WorkjetCapabilityMenuItems({
+      ...props,
+      ctoxBusinessOsConnectionLocked: true,
+      ctoxBusinessOsConnections: [
+        {
+          connectionId: WorkjetConnectionId.make("ctox-dev:tenant-source"),
+          instanceId: "source.ctox.dev",
+          displayName: "Source instance",
+          source: "ctox_dev",
+          status: "ready",
+          reason: null,
+        },
+      ],
+    });
+    expect(textContent(locked)).not.toContain("Instanz fest");
+    const selector = findByLabel(locked, "Instanz des Instanz-Werkzeugs");
+    const item = (selector.props.children as ReadonlyArray<InspectableElement>)[0];
+    expect(item?.props.disabled).toBe(true);
+    expect(item?.props.title).toBe("Instanz fest");
   });
 });
 
@@ -410,22 +454,20 @@ describe("worker source connection action", () => {
   it("offers the normal product connect action when no connection exists", () => {
     const onConnect = vi.fn();
     const items = WorkjetCapabilityMenuItems({ ...props, onCtoxBusinessOsConnect: onConnect });
-    const action = findByLabel(items, "Business OS verbinden");
+    const action = findByLabel(items, "Instanz verbinden");
     expect(action.props.disabled).toBeFalsy();
     (action.props.onClick as () => void)();
     expect(onConnect).toHaveBeenCalledOnce();
   });
 
-  it("disables duplicate connection attempts and exposes a safe failure", () => {
+  it("disables duplicate connection attempts; a failure is a toast, not a menu line", () => {
     const items = WorkjetCapabilityMenuItems({
       ...props,
       onCtoxBusinessOsConnect: vi.fn(),
       ctoxBusinessOsConnecting: true,
-      ctoxBusinessOsConnectError: "Check account permissions.",
     });
-    expect(findByLabel(items, "Business OS verbinden").props.disabled).toBe(true);
+    expect(findByLabel(items, "Instanz verbinden").props.disabled).toBe(true);
     expect(textContent(items)).toContain("Verbindet");
-    expect(textContent(items)).toContain("Check account permissions.");
   });
 
   it("does not offer a replacement grant for a pinned thread or an unavailable desktop bridge", () => {
@@ -434,7 +476,7 @@ describe("worker source connection action", () => {
       onCtoxBusinessOsConnect: vi.fn(),
       ctoxBusinessOsConnectionLocked: true,
     });
-    expect(() => findByLabel(pinned, "Business OS verbinden")).toThrow();
-    expect(() => findByLabel(WorkjetCapabilityMenuItems(props), "Business OS verbinden")).toThrow();
+    expect(() => findByLabel(pinned, "Instanz verbinden")).toThrow();
+    expect(() => findByLabel(WorkjetCapabilityMenuItems(props), "Instanz verbinden")).toThrow();
   });
 });

@@ -107,10 +107,12 @@ describe("computer dropdown entries", () => {
       ],
     });
     const text = textOf(tree);
-    expect(text).toContain("online");
-    expect(text).toContain("offline");
+    // German connection words, never online/offline.
+    expect(text).toContain("verbunden");
+    expect(text).toContain("getrennt");
+    expect(text).not.toContain("online");
+    expect(text).not.toContain("offline");
     expect(text).toContain("gpu1-a6000");
-    expect(text).toContain("keine Verbindung");
     // The full reason stays reachable as the entry's tooltip, never as a sentence.
     expect(radioItem(tree, "remote").props.title).toBe("gpu3 is offline.");
     expect(radioItem(tree, "remote").props.disabled).toBe(true);
@@ -151,7 +153,9 @@ describe("computer dropdown entries", () => {
       (radioGroup(tree).props.onValueChange as (value: string) => void)(id);
     }
     expect(select).not.toHaveBeenCalled();
-    expect(textOf(tree)).toContain(COMPOSER_COMPUTER_LOCKED_REASON);
+    // The reason is the entries' tooltip, never a status sentence in the menu.
+    expect(textOf(tree)).not.toContain(COMPOSER_COMPUTER_LOCKED_REASON);
+    expect(radioItem(tree, "local").props.title).toBe(COMPOSER_COMPUTER_LOCKED_REASON);
   });
 
   it("moves an available draft through the explicit selection", () => {
@@ -184,7 +188,7 @@ describe("computer dropdown entries", () => {
       ...base,
       computerAvailability: { local: { status: "Not connected", reason: "Not connected" } },
     });
-    expect(choices.map((choice) => choice.meta)).toEqual(["nicht verbunden", "Projekt fehlt"]);
+    expect(choices.map((choice) => choice.meta)).toEqual(["getrennt", "Projekt fehlt"]);
   });
 });
 
@@ -500,9 +504,8 @@ describe("harness and model dropdown entries", () => {
     expect(onSelectHarness).toHaveBeenCalledWith("claude-code");
   });
 
-  it("groups models by provider and offers a custom model ID inline", () => {
+  it("groups catalog models by provider and offers no typed model ID", () => {
     const onSelectModel = vi.fn();
-    const onEditCustomModel = vi.fn();
     const tree = ComposerModelMenuItems({
       models: [
         { ...model("gpt-5.6-sol", ["acc-openai"]), providers: ["codex"], displayName: "GPT Sol" },
@@ -510,51 +513,52 @@ describe("harness and model dropdown entries", () => {
       modelsUnavailableReason: null,
       selectedModelId: "my-private-model",
       onSelectModel,
-      onEditCustomModel,
     });
     const text = textOf(tree);
     expect(text).toContain("Codex (OpenAI)");
     expect(text).toContain("GPT Sol");
-    expect(text).toContain("my-private-model");
-    expect(text).toContain("eigene ID");
+    expect(text).not.toContain("my-private-model");
+    expect(text).not.toContain("eigene ID");
+    expect(text).not.toContain("Eigene Modell-ID");
+    // No raw model ID as a tooltip either.
+    expect(radioItem(tree, "gpt-5.6-sol").props.title).toBeUndefined();
     (radioGroup(tree).props.onValueChange as (value: string) => void)("gpt-5.6-sol");
     expect(onSelectModel).toHaveBeenCalledWith("gpt-5.6-sol");
-    const custom = flatten(tree).find((element) => element.props.onClick === onEditCustomModel);
-    expect(textOf(custom)).toContain("Eigene Modell-ID");
   });
 
-  it("never offers a custom ID for a native catalog", () => {
-    const text = textOf(
-      ComposerModelMenuItems({
-        modelSource: "native",
-        models: [],
-        modelsUnavailableReason: "Run mcode login",
-        selectedModelId: "foreign-model",
-        onSelectModel: () => undefined,
-        onEditCustomModel: () => undefined,
-      }),
-    );
-    expect(text).toContain("Run mcode login");
-    expect(text).not.toContain("Eigene Modell-ID");
+  it("shows an empty catalog as one simple disabled entry, the reason only as tooltip", () => {
+    const tree = ComposerModelMenuItems({
+      modelSource: "native",
+      models: [],
+      modelsUnavailableReason: "Run mcode login",
+      selectedModelId: "foreign-model",
+      onSelectModel: () => undefined,
+    });
+    const text = textOf(tree);
+    expect(text).toContain("Keine Modelle");
+    expect(text).not.toContain("Run mcode login");
     expect(text).not.toContain("foreign-model");
+    // The empty entry carries the reason for its tooltip (a disabled MenuItem).
+    const empty = flatten(tree).find((element) => element.props.reason === "Run mcode login");
+    expect(empty).toBeDefined();
   });
 
-  it("edits a custom model ID inline in the bar", () => {
+  it("has no inline model-ID input and no raw ID on the model trigger", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView
         configuredInstanceIds={new Set(["claudeAgent"])}
         selectedHarness="claude-code"
         onSelectHarness={() => undefined}
-        models={[]}
+        models={[{ ...model("gpt-5.6-sol", []), displayName: "GPT Sol" }]}
         modelsUnavailableReason={null}
         selectedModelId="gpt-5.6-sol"
         onSelectModel={() => undefined}
-        customModelEditor={{ draft: "my-model", onDraftChange: () => undefined }}
       />,
     );
-    expect(markup).toContain('data-composer-custom-model-inline="true"');
-    expect(markup).toContain('aria-label="Modell-ID"');
-    expect(markup).toContain('value="my-model"');
+    expect(markup).not.toContain("data-composer-custom-model-inline");
+    expect(markup).not.toContain('aria-label="Modell-ID"');
+    expect(markup).not.toContain('title="gpt-5.6-sol"');
+    expect(markup).toContain("GPT Sol");
   });
 });
 

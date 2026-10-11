@@ -224,9 +224,29 @@ export const workjetComposerCapabilityList = (): ReadonlyArray<{
 }> =>
   workjetComposerCapabilities([]).map(({ manifest }) => ({
     id: manifest.id,
-    displayName: manifest.metadata.displayName,
+    displayName: workjetCapabilityDisplayName(manifest.id, manifest.metadata.displayName),
     description: manifest.metadata.description,
   }));
+
+/**
+ * Sichtbare deutsche Werkzeugnamen. Der Katalog liefert englische
+ * Produktnamen („Decision Hub“, „CTOX Business OS“, „Web Search“); die
+ * Oberfläche reicht sie nie roh durch. Eigennamen wie Greppy bleiben.
+ */
+export const WORKJET_CAPABILITY_LABELS: Readonly<Record<string, string>> = {
+  greppy: "Greppy",
+  "web-search": "Websuche",
+  "web-stack-browser": "Browser",
+  "decision-hub": "Entscheidungszentrale",
+  "ctox-business-os": "Instanz-Werkzeug",
+};
+
+export function workjetCapabilityDisplayName(id: string, fallback: string): string {
+  return WORKJET_CAPABILITY_LABELS[id] ?? fallback;
+}
+
+/** Sichtbarer Name der Orchestrator-Rolle im Werkzeug-Menü. */
+export const WORKJET_ORCHESTRATOR_TOGGLE_LABEL = "Lumas steuern";
 
 export interface WorkjetCapabilityMenuProps {
   readonly compact?: boolean;
@@ -248,42 +268,14 @@ export interface WorkjetCapabilityMenuProps {
   readonly ctoxBusinessOsConnectionLocked?: boolean | undefined;
   readonly onCtoxBusinessOsConnect?: (() => void) | undefined;
   readonly ctoxBusinessOsConnecting?: boolean | undefined;
-  readonly ctoxBusinessOsConnectError?: string | null | undefined;
   readonly onCtoxBusinessOsConnectionChange?: ((connectionId: string) => void) | undefined;
   /** Thread role belongs in this settings menu, never in the main composer bar. */
   readonly workjetRole?: WorkjetThreadRole | null | undefined;
   readonly onWorkjetRoleChange?: ((role: WorkjetSelectableRole) => void) | undefined;
 }
 
-/** Kurzer Status rechts im Menüeintrag. */
-function ItemMeta({ children }: { readonly children: ReactNode }) {
-  return (
-    <span className="ms-auto shrink-0 truncate ps-3 text-muted-foreground text-xs">{children}</span>
-  );
-}
-
-function StatusLine({
-  children,
-  tone = "neutral",
-}: {
-  readonly children: ReactNode;
-  readonly tone?: "neutral" | "warning";
-}) {
-  return (
-    <p
-      role={tone === "warning" ? "alert" : "status"}
-      className={
-        tone === "warning"
-          ? "max-w-72 px-2 py-1.5 text-warning text-xs"
-          : "max-w-72 px-2 py-1.5 text-muted-foreground text-xs"
-      }
-    >
-      {children}
-    </p>
-  );
-}
-
-function connectionStatusLabel(status: string): string {
+/** Verbindungsstatus einer Instanz, deutsch und kurz. */
+export function workjetConnectionStatusLabel(status: string): string {
   switch (status) {
     case "ready":
       return "bereit";
@@ -292,15 +284,21 @@ function connectionStatusLabel(status: string): string {
     case "unavailable":
       return "nicht verfügbar";
     default:
-      return status;
+      return "unbekannt";
   }
 }
 
+/** Ein leerer Zustand als einfacher, gesperrter Eintrag (kein Statussatz). */
+function EmptyItem({ children }: { readonly children: ReactNode }) {
+  return <MenuItem disabled>{children}</MenuItem>;
+}
+
 /**
- * Die Einträge des Werkzeug-Dropdowns: ein Schalter je Werkzeug (Name, kein
- * Erklärsatz; die Katalogbeschreibung steht im Tooltip), bei aktivem Decision
- * Hub bzw. CTOX Business OS die Instanz als Auswahl. Hook-frei, damit Tests
- * den Baum direkt prüfen können.
+ * Die Einträge des Werkzeug-Dropdowns, nur einfache Einträge: ein Haken je
+ * Werkzeug (Name, kein Erklärsatz; die Katalogbeschreibung steht im Tooltip),
+ * bei aktiver Entscheidungszentrale bzw. aktivem Instanz-Werkzeug die Instanz
+ * als Auswahl. Keine Schalter, Statuszeilen oder Meter im Menü. Hook-frei,
+ * damit Tests den Baum direkt prüfen können.
  */
 export function WorkjetCapabilityMenuItems(props: WorkjetCapabilityMenuProps) {
   const disabled = props.disabled === true || props.busy;
@@ -326,29 +324,25 @@ export function WorkjetCapabilityMenuItems(props: WorkjetCapabilityMenuProps) {
     <div aria-busy={props.busy || undefined} data-workjet-tools-menu="true">
       {showRole ? (
         <MenuCheckboxItem
-          variant="switch"
           data-workjet-setting="orchestrator"
           data-workjet-role-setting="true"
-          aria-label="Orchestrator für diesen Chat"
+          aria-label={WORKJET_ORCHESTRATOR_TOGGLE_LABEL}
           aria-busy={props.busy || undefined}
+          title={props.workjetRole === "worker" ? "Vom Eltern-Chat festgelegt" : undefined}
           checked={props.workjetRole === "orchestrator"}
           disabled={disabled || props.workjetRole === "worker"}
           onCheckedChange={(checked) =>
             props.onWorkjetRoleChange?.(checked ? "orchestrator" : "standard")
           }
         >
-          <span className="flex min-w-0 items-baseline">
-            <span className="min-w-0 truncate">Orchestrator</span>
-            {props.workjetRole === "worker" ? <ItemMeta>vom Eltern-Chat</ItemMeta> : null}
-          </span>
+          {WORKJET_ORCHESTRATOR_TOGGLE_LABEL}
         </MenuCheckboxItem>
       ) : null}
       {capabilities.map((capability) => (
         <MenuCheckboxItem
           key={capability.id}
-          variant="switch"
           data-workjet-setting={capability.id}
-          aria-label={`${capability.displayName} für diesen Chat`}
+          aria-label={capability.displayName}
           aria-busy={props.busy || undefined}
           title={capability.description}
           checked={isEnabled(capability.id)}
@@ -365,12 +359,12 @@ export function WorkjetCapabilityMenuItems(props: WorkjetCapabilityMenuProps) {
       {isEnabled("decision-hub") ? (
         <MenuGroup>
           <MenuSeparator />
-          <MenuGroupLabel>Decision Hub</MenuGroupLabel>
+          <MenuGroupLabel>{workjetCapabilityDisplayName("decision-hub", "")}</MenuGroupLabel>
           {decisionHubConnections.length === 0 ? (
-            <StatusLine tone="warning">Keine CTOX-Verbindung</StatusLine>
+            <EmptyItem>Keine Instanz</EmptyItem>
           ) : (
             <MenuRadioGroup
-              aria-label="Decision Hub Instanz"
+              aria-label="Instanz der Entscheidungszentrale"
               value={props.decisionHubConnectionId ?? ""}
               onValueChange={(value) => {
                 if (typeof value === "string" && value.length > 0) {
@@ -382,35 +376,25 @@ export function WorkjetCapabilityMenuItems(props: WorkjetCapabilityMenuProps) {
                 <MenuRadioItem
                   key={connection.connectionId}
                   value={connection.connectionId}
-                  title={connection.reason ?? undefined}
+                  title={workjetConnectionStatusLabel(connection.status)}
                   disabled={disabled || props.onDecisionHubConnectionChange === undefined}
                 >
-                  <span className="flex min-w-0 items-baseline">
-                    <span className="min-w-0 truncate">{connection.displayName}</span>
-                    <ItemMeta>{connectionStatusLabel(connection.status)}</ItemMeta>
-                  </span>
+                  {connection.displayName}
                 </MenuRadioItem>
               ))}
             </MenuRadioGroup>
           )}
-          {props.decisionHubConnectionId &&
-          decisionHubConnections.length > 0 &&
-          !decisionHubConnections.some(
-            ({ connectionId }) => connectionId === props.decisionHubConnectionId,
-          ) ? (
-            <StatusLine tone="warning">Gewählte Instanz fehlt</StatusLine>
-          ) : null}
         </MenuGroup>
       ) : null}
       {isEnabled("ctox-business-os") ? (
         <MenuGroup>
           <MenuSeparator />
-          <MenuGroupLabel>CTOX Business OS</MenuGroupLabel>
+          <MenuGroupLabel>{workjetCapabilityDisplayName("ctox-business-os", "")}</MenuGroupLabel>
           {ctoxConnections.length === 0 ? (
-            <StatusLine tone="warning">Keine CTOX-Verbindung</StatusLine>
+            <EmptyItem>Keine Instanz</EmptyItem>
           ) : (
             <MenuRadioGroup
-              aria-label="CTOX Business OS Instanz"
+              aria-label="Instanz des Instanz-Werkzeugs"
               value={props.ctoxBusinessOsConnectionId ?? ""}
               onValueChange={(value) => {
                 if (typeof value === "string" && value.length > 0) {
@@ -422,7 +406,11 @@ export function WorkjetCapabilityMenuItems(props: WorkjetCapabilityMenuProps) {
                 <MenuRadioItem
                   key={connection.connectionId}
                   value={connection.connectionId}
-                  title={connection.reason ?? undefined}
+                  title={
+                    props.ctoxBusinessOsConnectionLocked === true
+                      ? "Instanz fest"
+                      : workjetConnectionStatusLabel(connection.status)
+                  }
                   disabled={
                     disabled ||
                     props.ctoxBusinessOsConnectionLocked === true ||
@@ -430,18 +418,14 @@ export function WorkjetCapabilityMenuItems(props: WorkjetCapabilityMenuProps) {
                     connection.status !== "ready"
                   }
                 >
-                  <span className="flex min-w-0 items-baseline">
-                    <span className="min-w-0 truncate">{connection.displayName}</span>
-                    <ItemMeta>{connectionStatusLabel(connection.status)}</ItemMeta>
-                  </span>
+                  {connection.displayName}
                 </MenuRadioItem>
               ))}
             </MenuRadioGroup>
           )}
-          {props.ctoxBusinessOsConnectionLocked ? <StatusLine>Instanz fest</StatusLine> : null}
           {props.onCtoxBusinessOsConnect && !props.ctoxBusinessOsConnectionLocked ? (
             <MenuItem
-              aria-label="Business OS verbinden"
+              aria-label="Instanz verbinden"
               disabled={disabled || props.ctoxBusinessOsConnecting === true}
               closeOnClick={false}
               onClick={props.onCtoxBusinessOsConnect}
@@ -450,20 +434,10 @@ export function WorkjetCapabilityMenuItems(props: WorkjetCapabilityMenuProps) {
               {props.ctoxBusinessOsConnecting ? "Verbindet…" : "Verbinden"}
             </MenuItem>
           ) : null}
-          {props.ctoxBusinessOsConnectError ? (
-            <StatusLine tone="warning">{props.ctoxBusinessOsConnectError}</StatusLine>
-          ) : null}
         </MenuGroup>
       ) : null}
-      {props.busy ? <StatusLine>Aktualisiert…</StatusLine> : null}
     </div>
   );
-}
-
-/** Wie viele Werkzeuge aktiv sind, als kurzer Status am Auslöser. */
-function activeToolCount(props: WorkjetCapabilityMenuProps): number {
-  if (props.onCapabilityEnabledChange) return (props.enabledCapabilityIds ?? []).length;
-  return props.greppyEnabled ? 1 : 0;
 }
 
 /**
@@ -471,7 +445,6 @@ function activeToolCount(props: WorkjetCapabilityMenuProps): number {
  * (`compact`) ein Untermenü. Kein Popover, keine Detailansicht.
  */
 export function WorkjetCapabilityMenu(props: WorkjetCapabilityMenuProps) {
-  const count = activeToolCount(props);
   if (props.compact) {
     return (
       <MenuSub>
@@ -482,7 +455,6 @@ export function WorkjetCapabilityMenu(props: WorkjetCapabilityMenuProps) {
         >
           <WrenchIcon aria-hidden="true" />
           Werkzeuge
-          <ItemMeta>{count > 0 ? `${count} an` : "aus"}</ItemMeta>
         </MenuSubTrigger>
         <MenuSubPopup className="min-w-56 max-w-80">
           <WorkjetCapabilityMenuItems {...props} />

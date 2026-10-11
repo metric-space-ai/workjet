@@ -5,9 +5,9 @@
  *
  * Drei Orte, keine Popups: jedes Steuerelement ist ein schlichtes Dropdown mit
  * einfachen Einträgen (Name plus kurzer Status). Bearbeiten von Rechnern,
- * Lumas und Modellen passiert in den Einstellungen, nicht im Composer. Eine
- * eigene Modell-ID und der Systemprompt werden inline in der Leiste bzw.
- * als Zeile unter dem Composer eingegeben.
+ * Lumas und Modellen passiert in den Einstellungen, nicht im Composer; der
+ * Composer bietet nur Katalogmodelle an, nie eine getippte Modell-ID. Der
+ * Systemprompt wird als Zeile unter dem Composer eingegeben.
  */
 import type {
   EnvironmentId,
@@ -21,15 +21,12 @@ import type {
 } from "@workjet/contracts";
 import { Fragment, memo, useState, type ReactNode } from "react";
 import {
-  CheckIcon,
   CpuIcon,
   FileTextIcon,
   MonitorIcon,
-  PencilIcon,
   SettingsIcon,
   TerminalIcon,
   TriangleAlertIcon,
-  XIcon,
 } from "lucide-react";
 import type { WorkjetComputerDraft } from "../settings/WorkjetComputerEditor";
 
@@ -42,7 +39,6 @@ import {
 } from "./ComposerWorkerControl";
 import { ComposerInlineRow, useComposerInlineRow } from "./CompactComposerControlsMenu";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import {
   Menu,
   MenuGroup,
@@ -151,25 +147,21 @@ function MenuMeta({ children }: { readonly children: ReactNode }) {
   );
 }
 
-/** Eine Statuszeile im Menü (höchstens 12 Wörter). */
-function MenuStatusLine({
+/**
+ * Ein leerer Zustand im Menü als einfacher, gesperrter Eintrag (kein
+ * Statussatz); der Grund steht höchstens im Tooltip.
+ */
+function MenuEmptyItem({
   children,
-  tone = "neutral",
+  reason,
 }: {
   readonly children: ReactNode;
-  readonly tone?: "neutral" | "warning";
+  readonly reason?: string | null | undefined;
 }) {
   return (
-    <p
-      role="status"
-      className={
-        tone === "warning"
-          ? "max-w-72 px-2 py-1.5 text-warning text-xs"
-          : "max-w-72 px-2 py-1.5 text-muted-foreground text-xs"
-      }
-    >
+    <MenuItem disabled title={reason ?? undefined}>
       {children}
-    </p>
+    </MenuItem>
   );
 }
 
@@ -232,12 +224,13 @@ export function composerComputerStatusLabel(status: string | undefined): string 
   switch (status.trim().toLowerCase()) {
     case "online":
     case "connected":
-      return "online";
+    case "verbunden":
+      return "verbunden";
     case "offline":
-      return "offline";
     case "not connected":
     case "disconnected":
-      return "nicht verbunden";
+    case "getrennt":
+      return "getrennt";
     default:
       return status;
   }
@@ -276,7 +269,7 @@ export function composerComputerChoices(
     const meta =
       reason === null
         ? (status ?? workjetComputerKindLabel(computer.presentationKind))
-        : status !== null && status !== "online"
+        : status !== null && status !== "verbunden"
           ? status
           : !projectAvailable
             ? "Projekt fehlt"
@@ -296,12 +289,8 @@ export function ComposerComputerMenuItems(
     ) ?? [];
   return (
     <>
-      {props.disabledReason ? <MenuStatusLine>{props.disabledReason}</MenuStatusLine> : null}
-      {props.mismatchNote ? (
-        <MenuStatusLine tone="warning">{props.mismatchNote}</MenuStatusLine>
-      ) : null}
       {choices.length === 0 && unconfigured.length === 0 ? (
-        <MenuStatusLine>Keine Rechner</MenuStatusLine>
+        <MenuEmptyItem reason={props.disabledReason}>Keine Rechner</MenuEmptyItem>
       ) : null}
       {choices.length > 0 ? (
         <MenuRadioGroup
@@ -333,7 +322,7 @@ export function ComposerComputerMenuItems(
         <MenuItem key={`native-${computer.id}`} disabled>
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate">{computer.displayName}</span>
-            <MenuMeta>keine Verbindung</MenuMeta>
+            <MenuMeta>getrennt</MenuMeta>
           </span>
         </MenuItem>
       ))}
@@ -479,7 +468,7 @@ export interface ComposerManualTargetControlsProps {
   readonly unavailableHint?: string | undefined;
   readonly selectedHarness: WorkjetHarness | null;
   readonly onSelectHarness: (harness: WorkjetHarness) => void;
-  /** Native catalogs are authoritative; configured profiles and gateway catalogs allow custom IDs. */
+  /** Where the model list comes from; every source offers only its catalog entries. */
   readonly modelSource?: "gateway" | "configured" | "native";
   /** Kept for callers; the dropdown shows no explanatory text. */
   readonly configuredModelsHint?: string | null;
@@ -488,11 +477,6 @@ export interface ComposerManualTargetControlsProps {
   readonly modelsUnavailableReason: string | null;
   readonly selectedModelId: string;
   readonly onSelectModel: (modelId: string) => void;
-  /** Held above responsive layouts so an unfinished model edit survives resizing. */
-  readonly customModelEditor?: {
-    readonly draft: string | null;
-    readonly onDraftChange: (draft: string | null) => void;
-  };
 }
 
 /** The harness dropdown entries. Hook-free so tests can inspect the tree. */
@@ -542,17 +526,13 @@ export function ComposerModelMenuItems(
   props: Pick<
     ComposerManualTargetControlsProps,
     "modelSource" | "models" | "modelsUnavailableReason" | "selectedModelId" | "onSelectModel"
-  > & { readonly onEditCustomModel?: (() => void) | undefined },
+  >,
 ) {
   const configuredModels = props.modelSource === "configured";
-  const nativeModels = props.modelSource === "native";
   const groups: ReadonlyArray<readonly [string, ReadonlyArray<WorkjetGatewayModelSummary>]> =
     configuredModels
       ? [["", props.models]]
       : composerGatewayModelMenuGroups(props.models).filter(([, models]) => models.length > 0);
-  const modelInCatalog = props.models.some((model) => model.id === props.selectedModelId);
-  const showCurrentCustomModel =
-    !nativeModels && !modelInCatalog && props.selectedModelId.length > 0;
   return (
     <>
       <MenuRadioGroup
@@ -568,101 +548,23 @@ export function ComposerModelMenuItems(
               <MenuGroupLabel>{GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}</MenuGroupLabel>
             ) : null}
             {models.map((model) => (
-              <MenuRadioItem key={model.id} value={model.id} title={model.id} closeOnClick>
+              <MenuRadioItem key={model.id} value={model.id} closeOnClick>
                 <span className="block min-w-0 truncate">{model.displayName}</span>
               </MenuRadioItem>
             ))}
           </MenuGroup>
         ))}
-        {showCurrentCustomModel ? (
-          <MenuRadioItem value={props.selectedModelId} closeOnClick>
-            <span className="flex min-w-0 items-baseline">
-              <span className="min-w-0 truncate">{props.selectedModelId}</span>
-              <MenuMeta>eigene ID</MenuMeta>
-            </span>
-          </MenuRadioItem>
-        ) : null}
       </MenuRadioGroup>
-      {props.models.length === 0 && !showCurrentCustomModel ? (
-        <MenuStatusLine>{props.modelsUnavailableReason ?? "Keine Modelle"}</MenuStatusLine>
+      {props.models.length === 0 ? (
+        <MenuEmptyItem reason={props.modelsUnavailableReason}>Keine Modelle</MenuEmptyItem>
       ) : null}
-      {nativeModels || props.onEditCustomModel === undefined ? null : (
-        <>
-          <MenuSeparator />
-          <MenuItem onClick={props.onEditCustomModel}>
-            <PencilIcon aria-hidden="true" />
-            Eigene Modell-ID
-          </MenuItem>
-        </>
-      )}
     </>
-  );
-}
-
-/** Inline-Eingabe einer eigenen Modell-ID direkt in der Leiste (kein Popup). */
-export function ComposerCustomModelInline(props: {
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly onApply: (modelId: string) => void;
-  readonly onCancel: () => void;
-}) {
-  const trimmed = props.value.trim();
-  return (
-    <span
-      className="inline-flex min-w-0 items-center gap-1"
-      data-composer-custom-model-inline="true"
-    >
-      <Input
-        autoFocus
-        size="sm"
-        className="h-7 w-44 min-w-0 font-mono text-xs"
-        aria-label="Modell-ID"
-        placeholder="Modell-ID"
-        value={props.value}
-        onChange={(event) => props.onChange(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            if (trimmed.length > 0) props.onApply(trimmed);
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            props.onCancel();
-          }
-        }}
-      />
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="outline"
-        aria-label="Modell übernehmen"
-        title="Übernehmen"
-        disabled={trimmed.length === 0}
-        onClick={() => props.onApply(trimmed)}
-      >
-        <CheckIcon aria-hidden="true" />
-      </Button>
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        aria-label="Abbrechen"
-        title="Abbrechen"
-        onClick={props.onCancel}
-      >
-        <XIcon aria-hidden="true" />
-      </Button>
-    </span>
   );
 }
 
 /** Exported unwrapped so a test can call it; `memo` returns an object. */
 export function ComposerManualTargetControlsView(props: ComposerManualTargetControlsProps) {
   const nativeModels = props.modelSource === "native";
-  const [localCustomModelDraft, setLocalCustomModelDraft] = useState<string | null>(null);
-  const customModelDraft = props.customModelEditor
-    ? props.customModelEditor.draft
-    : localCustomModelDraft;
-  const setCustomModelDraft = props.customModelEditor?.onDraftChange ?? setLocalCustomModelDraft;
   const disabled = Boolean(props.disabledReason);
 
   const harnessOptions = composerHarnessOptions(
@@ -705,46 +607,31 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
       </Menu>
 
       {/* Modell */}
-      {customModelDraft !== null && !nativeModels ? (
-        <ComposerCustomModelInline
-          value={customModelDraft}
-          onChange={setCustomModelDraft}
-          onCancel={() => setCustomModelDraft(null)}
-          onApply={(modelId) => {
-            if (modelId !== props.selectedModelId) props.onSelectModel(modelId);
-            setCustomModelDraft(null);
-          }}
-        />
-      ) : (
-        <Menu>
-          <MenuTrigger
-            disabled={disabled}
-            render={
-              <ComposerControl
-                type="button"
-                className="min-w-0 max-w-56"
-                aria-label="Modell"
-                title={props.disabledReason ?? props.selectedModelId}
-              />
-            }
-          >
-            <ComposerControlIcon icon={CpuIcon} />
-            <span className="min-w-0 truncate">{modelLabel}</span>
-            <ComposerControlChevron />
-          </MenuTrigger>
-          <MenuPopup
-            align="start"
-            side="top"
-            className="max-h-80 min-w-56 max-w-80"
-            data-composer-model-menu="true"
-          >
-            <ComposerModelMenuItems
-              {...props}
-              onEditCustomModel={() => setCustomModelDraft(props.selectedModelId)}
+      <Menu>
+        <MenuTrigger
+          disabled={disabled}
+          render={
+            <ComposerControl
+              type="button"
+              className="min-w-0 max-w-56"
+              aria-label="Modell"
+              title={props.disabledReason ?? undefined}
             />
-          </MenuPopup>
-        </Menu>
-      )}
+          }
+        >
+          <ComposerControlIcon icon={CpuIcon} />
+          <span className="min-w-0 truncate">{modelLabel}</span>
+          <ComposerControlChevron />
+        </MenuTrigger>
+        <MenuPopup
+          align="start"
+          side="top"
+          className="max-h-80 min-w-56 max-w-80"
+          data-composer-model-menu="true"
+        >
+          <ComposerModelMenuItems {...props} />
+        </MenuPopup>
+      </Menu>
     </span>
   );
 }
@@ -760,7 +647,10 @@ export interface ComposerSystemPromptControlProps {
   readonly value: string;
   readonly busy: boolean;
   readonly disabled: boolean;
-  /** On a draft the edit is held locally and applied when the thread starts. */
+  /**
+   * On a draft the edit is held locally and applied when the thread starts.
+   * Kept for callers; the row shows no explanation for it.
+   */
   readonly draftPending: boolean;
   readonly onApply: (text: string) => void;
 }
@@ -792,9 +682,6 @@ export function ComposerSystemPromptRow(
         }}
       />
       <div className="flex items-center justify-end gap-2">
-        {props.draftPending ? (
-          <span className="me-auto text-muted-foreground text-xs">Gilt ab Start des Chats</span>
-        ) : null}
         <Button type="button" size="sm" variant="outline" onClick={props.onClose}>
           Abbrechen
         </Button>
@@ -930,10 +817,8 @@ export function ComposerWorkjetCompactMenuContent(
       {props.hideComputerSelection ? null : (
         <MenuGroup>
           <MenuGroupLabel>Rechner</MenuGroupLabel>
-          {props.computerDisabledReason !== null ? (
-            <MenuStatusLine>{props.computerDisabledReason}</MenuStatusLine>
-          ) : props.computers.length === 0 ? (
-            <MenuStatusLine>Keine Rechner</MenuStatusLine>
+          {props.computers.length === 0 ? (
+            <MenuEmptyItem reason={props.computerDisabledReason}>Keine Rechner</MenuEmptyItem>
           ) : (
             <MenuRadioGroup
               value={props.selectedComputerId ?? ""}
@@ -952,9 +837,10 @@ export function ComposerWorkjetCompactMenuContent(
                   <MenuRadioItem
                     key={computer.id}
                     value={computer.id}
-                    disabled={!projectAvailable}
+                    disabled={props.computerDisabledReason !== null || !projectAvailable}
                     title={
-                      projectAvailable ? undefined : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT
+                      props.computerDisabledReason ??
+                      (projectAvailable ? undefined : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT)
                     }
                   >
                     <span className="flex min-w-0 items-baseline">
@@ -978,9 +864,9 @@ export function ComposerWorkjetCompactMenuContent(
           <MenuGroup>
             <MenuGroupLabel>Modell</MenuGroupLabel>
             {props.manualTarget.models.length === 0 ? (
-              <MenuStatusLine>
-                {props.manualTarget.modelsUnavailableReason ?? "Keine Modelle"}
-              </MenuStatusLine>
+              <MenuEmptyItem reason={props.manualTarget.modelsUnavailableReason}>
+                Keine Modelle
+              </MenuEmptyItem>
             ) : (
               <MenuRadioGroup
                 value={props.manualTarget.selectedModelId}

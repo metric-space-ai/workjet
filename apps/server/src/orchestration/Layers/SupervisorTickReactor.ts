@@ -1,4 +1,4 @@
-import { CommandId, supervisorTickDueAt } from "@workjet/contracts";
+import { CommandId, supervisorTickDueAt, supervisorFirstTickAt } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -12,6 +12,7 @@ import { forkParked } from "../../serverActivation.ts";
 import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
 import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { supervisorTickPrompt } from "../../workjet/supervisorTickPrompt.ts";
+import { isSupervisorTickEligible } from "../../workjet/supervisorTickEligibility.ts";
 import {
   SupervisorPullRequests,
   supervisorTickSituation,
@@ -40,16 +41,22 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
     const model = yield* query.getCommandReadModel();
     for (const supervisor of model.threads) {
       const config = supervisor.workjetConfig;
-      if (
-        config.schemaVersion !== 2 ||
-        config.team?.role !== "supervisor" ||
-        supervisor.deletedAt !== null ||
-        supervisor.archivedAt !== null
-      )
-        continue;
       const project = model.projects.find((p) => p.id === supervisor.projectId);
-      if (!project || project.deletedAt !== null || project.overview?.archived) continue;
+      if (config.schemaVersion !== 2 || !project || !isSupervisorTickEligible(supervisor, project)) continue;
       const now = DateTime.toEpochMillis(yield* DateTime.now);
+      if (!config.supervisorTick) {
+        const firstTickAt = supervisorFirstTickAt(now, project.overview?.supervisorTick);
+        if (firstTickAt !== null) {
+          yield* engine.dispatch({
+            type: "thread.supervisor.tick.schedule",
+            commandId: CommandId.make(`server:supervisor-tick:${supervisor.id}:initial:${firstTickAt}`),
+            threadId: supervisor.id,
+            firstTickAt: DateTime.formatIso(DateTime.makeUnsafe(firstTickAt)),
+            createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+          });
+        }
+        continue;
+      }
       const dueAt = supervisorTickDueAt(
         supervisor.createdAt,
         project.overview?.supervisorTick,

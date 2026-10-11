@@ -13,6 +13,7 @@ import {
   withoutInheritedWorkjetSupervisorJournals,
   retainWorkjetWorkerPullRequest,
   supervisorTickDueAt,
+  DEFAULT_SUPERVISOR_TICK_CONFIGURATION,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -46,6 +47,7 @@ import {
 } from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
 import { withoutForeignSupervisorStateAtCreation } from "../workjet/workjetSupervisorState.ts";
+import { isSupervisorTickEligible } from "../workjet/supervisorTickEligibility.ts";
 import {
   requireProjectTeamLifecycle,
   requireProjectTeamOwnership,
@@ -1502,25 +1504,53 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.supervisor.tick.schedule": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const config = thread.workjetConfig;
+      const project = readModel.projects.find((item) => item.id === thread.projectId);
+      if (config.schemaVersion !== 2 || !isSupervisorTickEligible(thread, project) || config.supervisorTick)
+        return [];
+      const cadence = project?.overview?.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION;
+      const now = Date.parse(command.createdAt);
+      const first = Date.parse(command.firstTickAt);
+      if (!cadence.enabled || first < now || first >= now + cadence.intervalMinutes * 60_000)
+        return [];
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: thread.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.workjet-config-set",
+        payload: {
+          threadId: thread.id,
+          workjetConfig: {
+            ...config,
+            supervisorTick: {
+              firstTickAt: command.firstTickAt,
+              lastTickAt: command.createdAt,
+              lastControlAt: null,
+              outcome: "scheduled",
+            },
+          },
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "thread.supervisor.tick": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
       const config = thread.workjetConfig;
       const project = readModel.projects.find((item) => item.id === thread.projectId);
       if (
         config.schemaVersion !== 2 ||
-        config.team?.role !== "supervisor" ||
-        config.team.projectId !== thread.projectId ||
-        config.team.threadId !== thread.id ||
-        thread.deletedAt !== null ||
-        thread.archivedAt !== null ||
-        !project ||
-        project.deletedAt !== null ||
-        project.overview?.archived
+        !isSupervisorTickEligible(thread, project)
       )
         return [];
       const dueAt = supervisorTickDueAt(
         thread.createdAt,
-        project.overview?.supervisorTick,
+        project?.overview?.supervisorTick,
         config.supervisorTick,
       );
       if (

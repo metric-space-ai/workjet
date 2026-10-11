@@ -12,13 +12,23 @@ export const DEFAULT_SUPERVISOR_TICK_CONFIGURATION: SupervisorTickConfiguration 
   intervalMinutes: 30,
 };
 
-/** A tick is consumed even when busy; only an admitted round advances the control watermark. */
+/** Initial planning is persisted; only an admitted round advances the control watermark. */
 export const SupervisorTickState = Schema.Struct({
   lastTickAt: IsoDateTime,
   lastControlAt: Schema.NullOr(IsoDateTime),
-  outcome: Schema.Literals(["started", "skipped-busy"]),
+  firstTickAt: Schema.optionalKey(IsoDateTime),
+  outcome: Schema.Literals(["scheduled", "started", "skipped-busy"]),
 });
 export type SupervisorTickState = typeof SupervisorTickState.Type;
+
+export function supervisorFirstTickAt(
+  now: number,
+  configuration: SupervisorTickConfiguration | undefined,
+  random: () => number = Math.random,
+): number | null {
+  const config = configuration ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION;
+  return config.enabled ? now + Math.floor(random() * config.intervalMinutes * 60_000) : null;
+}
 
 export function supervisorTickDueAt(
   createdAt: string,
@@ -27,5 +37,11 @@ export function supervisorTickDueAt(
 ): number | null {
   const config = configuration ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION;
   if (!config.enabled) return null;
+  if (state?.outcome === "scheduled" && state.firstTickAt) {
+    return Math.min(
+      Date.parse(state.firstTickAt),
+      Date.parse(state.lastTickAt) + config.intervalMinutes * 60_000,
+    );
+  }
   return Date.parse(state?.lastTickAt ?? createdAt) + config.intervalMinutes * 60_000;
 }

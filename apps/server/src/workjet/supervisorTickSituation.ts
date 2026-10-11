@@ -79,8 +79,16 @@ export function supervisorTickSituation(input: {
 }) {
   const clip = (value: string | null | undefined, limit = 500) => value?.slice(0, limit) ?? null;
   const members = input.threads.filter(
-    (t) => t.projectId === input.project.id && t.deletedAt === null,
+    (t) =>
+      t.projectId === input.project.id &&
+      t.deletedAt === null &&
+      (t.archivedAt === null ||
+        (t.workjetConfig.role === "worker" &&
+          Date.parse(t.archivedAt) > input.now - 24 * 60 * 60_000)),
   );
+  const memberIds = new Set(members.map((thread) => String(thread.id)));
+  const errors = input.errors.filter((error) => memberIds.has(error.threadId));
+  const escalations = input.escalations.filter((entry) => memberIds.has(entry.threadId));
   const worker = (t: OrchestrationThread) => {
     const c = t.workjetConfig;
     const goal = c.schemaVersion === 2 ? c.goal : undefined;
@@ -152,9 +160,10 @@ export function supervisorTickSituation(input: {
         redWithoutMovement: state.red && Date.parse(pr.updatedAt) <= Date.parse(input.since),
       };
     }),
-    escalations: [...input.escalations],
-    errorsAndTimeouts: input.errors.map((e) => ({ ...e, summary: clip(e.summary) })),
+    escalations,
+    errorsAndTimeouts: errors.map((e) => ({ ...e, summary: clip(e.summary) })),
     tokenBudget: null,
+    tokenBudgetStatus: "Budget nicht konfiguriert",
     minutesUntilNextRegularMeeting: input.meetingMinutes,
     sourceErrors: input.sourceErrors,
     limits: { pullRequests: 100, errors: 50, changes: 100, kanbanCardsPerWorker: 20 },
@@ -162,8 +171,8 @@ export function supervisorTickSituation(input: {
     collectedCounts: {
       workers: members.length,
       pullRequests: input.pullRequests.length,
-      escalations: input.escalations.length,
-      errors: input.errors.length,
+      escalations: escalations.length,
+      errors: errors.length,
     },
   };
   const groups = [

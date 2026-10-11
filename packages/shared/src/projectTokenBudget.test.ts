@@ -41,6 +41,7 @@ describe("project token cycles", () => {
   });
   it("has no thresholds without a limit and exceeds only above 100%", () => {
     expect(reachedTokenBudgetThresholds(3e9, null)).toEqual([]);
+    expect(reachedTokenBudgetThresholds(1_150_000_000, 2.3)).toEqual([50]);
     expect(reachedTokenBudgetThresholds(1e9, 1)).toEqual([50, 80, 90, 95, 98]);
     expect(reachedTokenBudgetThresholds(1e9 + 1, 1)).toEqual([50, 80, 90, 95, 98, 100]);
     expect(

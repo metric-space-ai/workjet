@@ -34,8 +34,10 @@ export function ProjectOverviewCard({
   ctoxInstanceId = null,
   onReadKpis,
   reorderHandle,
+  tokenBudget,
 }: {
   readonly project: GalleryProject;
+  readonly tokenBudget?: ReactNode;
   readonly ctoxInstanceId?: string | null;
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
@@ -159,6 +161,7 @@ export function ProjectOverviewCard({
             </a>
           )}
         </div>
+        {tokenBudget}
         {reorderHandle}
         {(repository || onSave) && (
           <Menu>

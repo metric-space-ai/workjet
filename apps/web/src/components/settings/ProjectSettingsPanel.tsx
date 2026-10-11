@@ -394,7 +394,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         const result = mapAtomCommandResult(
           await updateProject({
             environmentId: member.environmentId,
-            input: { projectId: member.id, ...input },
+            input: { projectId: member.id, ...input, ...(input.overview ? { expectedTokenBudgetRevision: member.overview?.tokenBudget?.revision ?? 0 } : {}) },
           }),
           () => undefined,
         );

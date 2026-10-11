@@ -77,7 +77,7 @@ export function reachedTokenBudgetThresholds(
   limitBillions: number | null | undefined,
 ) {
   if (limitBillions == null) return [];
-  const percent = (tokens / (limitBillions * BILLION)) * 100;
+  const percent = (tokens / (Math.round(limitBillions * 10) * 100_000_000)) * 100;
   return TOKEN_BUDGET_THRESHOLDS.filter((t) => (t === 100 ? percent > 100 : percent >= t));
 }
 /** Older clients may replace an overview, but may never erase a configured budget. */

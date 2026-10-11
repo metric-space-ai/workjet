@@ -31,6 +31,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -106,8 +108,10 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig;
+  const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
   const settingsService = yield* ServerSettings.ServerSettingsService;
 
+  const scanMutex = yield* Semaphore.make(1);
   const fileCache: ScanCache = new Map();
   let cacheDirty = false;
 
@@ -229,7 +233,7 @@ export const make = Effect.gen(function* () {
     }
 
     let hourlyWindow: { readonly sinceTimeMs: number; readonly untilTimeMs: number } | null = null;
-    if (input.resolution === "hour") {
+    if (input.resolution === "hour" || input.sinceTime !== undefined || input.untilTime !== undefined) {
       const sinceTime =
         input.sinceTime === undefined ? Option.none() : DateTime.make(input.sinceTime);
       const untilTime =
@@ -243,7 +247,7 @@ export const make = Effect.gen(function* () {
       const sinceTimeMs = DateTime.toEpochMillis(sinceTime.value);
       const untilTimeMs = DateTime.toEpochMillis(untilTime.value);
       const durationMs = untilTimeMs - sinceTimeMs;
-      if (durationMs <= 0 || durationMs > MAX_HOURLY_WINDOW_MS) {
+      if (durationMs <= 0 || durationMs > (input.resolution === "hour" ? MAX_HOURLY_WINDOW_MS : 370 * 86_400_000)) {
         return yield* new UsageReadError({
           reason: "invalidWindow",
           detail: "Hourly usage window must be greater than zero and at most 24 hours",
@@ -279,6 +283,31 @@ export const make = Effect.gen(function* () {
       rates,
     });
 
+    type ProjectThread = { projectId: string; threadId: string; title: string; role: string; provider: string | null; sessionId: string | null; latestTurnAt: string | null };
+    let projectThreads: readonly ProjectThread[] = [];
+    if (input.projectId !== undefined) {
+      if (Option.isNone(sql)) return yield* new UsageReadError({ reason: "scanFailed", detail: "Project usage attribution is unavailable on this environment." });
+      projectThreads = yield* sql.value<ProjectThread>`
+        SELECT t.project_id AS "projectId", t.thread_id AS "threadId", t.title,
+          COALESCE(json_extract(t.workjet_config_json, '$.team.role'), json_extract(t.workjet_config_json, '$.role'), 'standard') AS role,
+          COALESCE(r.provider_name, s.provider_name) AS provider,
+          COALESCE(json_extract(r.resume_cursor_json, '$.resume'), json_extract(r.resume_cursor_json, '$.sessionId'), json_extract(r.resume_cursor_json, '$.threadId'), s.provider_session_id, s.provider_thread_id) AS "sessionId",
+          (SELECT MAX(requested_at) FROM projection_turns turns WHERE turns.thread_id = t.thread_id) AS "latestTurnAt"
+        FROM projection_threads t LEFT JOIN projection_thread_sessions s ON s.thread_id = t.thread_id
+        LEFT JOIN provider_session_runtime r ON r.thread_id = t.thread_id
+        WHERE t.project_id = ${input.projectId}
+      `.pipe(Effect.mapError(cause => new UsageReadError({ reason: "scanFailed", detail: "Project thread attribution could not be read.", cause })));
+    }
+    const sessionThreads = new Map<string, ProjectThread>();
+    const ambiguousSessions = new Set<string>();
+    for (const thread of projectThreads) {
+      if (!thread.sessionId) continue;
+      const provider = thread.provider === "claudeAgent" || thread.provider === "claude-code" ? "claude" : thread.provider;
+      const key = `${provider}:${thread.sessionId}`;
+      if (sessionThreads.has(key)) ambiguousSessions.add(key);
+      else sessionThreads.set(key, thread);
+    }
+    const measuredThreads = new Set<string>();
     const sources: UsageSource[] = [];
     const livePaths = new Set<string>();
     const walkedRoots: string[] = [];
@@ -321,8 +350,12 @@ export const make = Effect.gen(function* () {
         for (const record of records) {
           // Only sessions that contributed in-window count: the mtime slack
           // admits boundary files whose records fall outside the range.
-          if (aggregator.add(record) && record.sessionId.length > 0) {
+          const key = `${record.provider}:${record.sessionId}`;
+          const thread = ambiguousSessions.has(key) ? undefined : sessionThreads.get(key);
+          if (input.projectId !== undefined && thread === undefined) continue;
+          if (aggregator.add(record, thread) && record.sessionId.length > 0) {
             sessionIds.add(record.sessionId);
+            if (thread) measuredThreads.add(thread.threadId);
           }
         }
       }
@@ -358,6 +391,11 @@ export const make = Effect.gen(function* () {
       sinceDay: input.sinceDay,
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
+      ...(input.projectId === undefined ? {} : { projectThreads: projectThreads.map(thread => ({
+        projectId: thread.projectId, threadId: thread.threadId, title: thread.title, role: thread.role,
+        status: measuredThreads.has(thread.threadId) ? "measured" as const
+          : thread.latestTurnAt === null || (hourlyWindow && Date.parse(thread.latestTurnAt) < hourlyWindow.sinceTimeMs) ? "no-turns" as const : "unknown" as const,
+      })) }),
       sources,
       pricing: {
         status: rates.size > 0 ? "cached" : "unavailable",
@@ -367,7 +405,7 @@ export const make = Effect.gen(function* () {
       },
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
     } satisfies UsageSummary;
-  });
+  }, scanMutex.withPermit);
 
   return { readSummary } as const;
 });

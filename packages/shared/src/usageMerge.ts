@@ -80,6 +80,7 @@ export interface MergedUsage {
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly staleEnvironments: readonly EnvironmentId[];
+  readonly projectThreads?: readonly { projectId: string; threadId: string; role: string; totalTokens: number }[];
 }
 
 /**
@@ -260,6 +261,7 @@ export function mergeUsage(
     }
   >();
   const contributingEnvironments: EnvironmentId[] = [];
+  const projectThreads = new Map<string, { projectId: string; threadId: string; role: string; totalTokens: number }>();
 
   for (const environment of current) {
     const { buckets, sessions: environmentSessions } = ownedContribution(
@@ -271,6 +273,11 @@ export function mergeUsage(
 
     for (const bucket of buckets) {
       const tokens = bucketTokens(bucket);
+      if (bucket.projectId && bucket.threadId) {
+        const key = `${bucket.projectId}:${bucket.threadId}`;
+        const thread = projectThreads.get(key) ?? { projectId: bucket.projectId, threadId: bucket.threadId, role: bucket.role ?? "standard", totalTokens: 0 };
+        projectThreads.set(key, { ...thread, totalTokens: thread.totalTokens + tokens });
+      }
 
       costUsd += bucket.costUsd;
       cacheSavingsUsd += bucket.cacheSavingsUsd;
@@ -401,6 +408,7 @@ export function mergeUsage(
         records === 0 ? 0 : (records - providerReportedRecords - unpricedRecords) / records,
       cacheSavingsUsd,
     },
+    projectThreads: [...projectThreads.values()],
     duplicateSources: duplicates,
     contributingEnvironments,
     staleEnvironments,

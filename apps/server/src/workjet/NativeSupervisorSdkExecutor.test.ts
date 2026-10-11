@@ -266,7 +266,10 @@ it.each([
 it("reads and claims the same native offer and joins actual SDK child/query/journal drains", async () => {
   const { options, operations, offerId, controllerId, directory } = await fixture();
   sdkFixture();
-  const result = await runNextNativeSupervisorSdkTurn(options);
+  const readTokenBudgetContext = vi.fn().mockResolvedValue("Workjet project token budget: 2.3B. Known cycle consumption: 1.800B.");
+  const result = await runNextNativeSupervisorSdkTurn({ ...options, readTokenBudgetContext });
+  expect(readTokenBudgetContext).toHaveBeenCalledWith("fixture-project");
+  expect(vi.mocked(query).mock.calls[0]?.[0].options?.systemPrompt).toContain("Known cycle consumption: 1.800B");
   expect(result).toEqual({
     offerId,
     controllerId,

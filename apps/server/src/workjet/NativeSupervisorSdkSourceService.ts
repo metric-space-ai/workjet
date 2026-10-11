@@ -3,6 +3,11 @@
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
+import { type ProjectId } from "@workjet/contracts";
+import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { UsageService } from "../usage/UsageService.ts";
+import { currentProjectTokenBudgetContext } from "../usage/projectTokenBudgetContext.ts";
 import {
   type NativeSupervisorManagedRuntime,
   type NativeSupervisorSourceEnrollment,
@@ -58,11 +63,21 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
       if (active) await active.catch(() => {});
     }),
   );
+  const budgetQuery = yield* Effect.serviceOption(ProjectionSnapshotQuery);
+  const budgetUsage = yield* Effect.serviceOption(UsageService);
+  const readTokenBudgetContext = Option.isSome(budgetQuery) && Option.isSome(budgetUsage)
+    ? (projectId: ProjectId) => Effect.runPromise(currentProjectTokenBudgetContext(projectId).pipe(
+        Effect.provideService(ProjectionSnapshotQuery, budgetQuery.value),
+        Effect.provideService(UsageService, budgetUsage.value),
+        Effect.catchCause(() => Effect.succeed(null)),
+      ))
+    : undefined;
   const runNext = Effect.fn("NativeSupervisorSdkSourceService.runNext")(function* () {
     if (retired) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "retired" });
     if (active) return yield* new NativeSupervisorSdkSourceServiceError({ reason: "turn-active" });
     const running = runNextNativeSupervisorSdkTurn({
       source,
+      ...(readTokenBudgetContext ? { readTokenBudgetContext } : {}),
       sdkExecutable: options.sdkExecutable,
       privateStateDirectory: NodePath.join(options.privateServiceDirectory, "sdk"),
       serviceSignal: lifetime.signal,

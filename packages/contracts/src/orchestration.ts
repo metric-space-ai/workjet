@@ -1094,6 +1094,15 @@ const ThreadSessionSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadMessageSystemAddCommand = Schema.Struct({
+  type: Schema.Literal("thread.message.system.add"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  createdAt: IsoDateTime,
+});
+
 const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   type: Schema.Literal("thread.message.assistant.delta"),
   commandId: CommandId,
@@ -1205,6 +1214,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadGoalAdvanceCommand,
   ThreadWorkerKanbanSetCommand,
   ThreadSessionSetCommand,
+  ThreadMessageSystemAddCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
   ThreadHistoryImportCommand,

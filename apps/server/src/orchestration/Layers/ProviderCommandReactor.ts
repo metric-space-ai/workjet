@@ -68,6 +68,7 @@ import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 import { ctoxCrewResumeIdentity } from "../../workjet/ctox/CtoxCrewResumeIdentity.ts";
+import { currentProjectTokenBudgetContext } from "../../usage/projectTokenBudgetContext.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const decodeWorkjetThreadConfig = Schema.decodeUnknownOption(WorkjetThreadConfig);
@@ -868,7 +869,8 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const budgetContext = yield* currentProjectTokenBudgetContext(thread.projectId, thread.workjetConfig).pipe(Effect.catchCause(() => Effect.succeed(null)));
+    const normalizedInput = toNonEmptyProviderInput(budgetContext ? `[Workjet system context]\n${budgetContext}\n\n${input.messageText ?? ""}` : input.messageText);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()

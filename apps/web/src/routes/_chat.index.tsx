@@ -24,6 +24,7 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
+import { ProjectTokenBudget } from "../components/ProjectTokenBudget";
 import { ConnectedProjectCalendar } from "../components/ConnectedProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverviewSelection";
@@ -315,7 +316,7 @@ function IndexDraftLanding() {
         if (overview !== undefined) {
           const saved = await updateProject({
             environmentId: target.environmentId,
-            input: { projectId: target.projectId, overview },
+            input: { projectId: target.projectId, overview, expectedTokenBudgetRevision: overview.tokenBudget?.revision ?? 0 },
           });
           if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
         }
@@ -546,7 +547,7 @@ function IndexDraftLanding() {
                 }
                 const result = await updateProject({
                   environmentId: local.environmentId,
-                  input: { projectId: local.id, overview },
+                  input: { projectId: local.id, overview, expectedTokenBudgetRevision: overview.tokenBudget?.revision ?? 0 },
                 });
                 return result._tag === "Success";
               },
@@ -861,6 +862,7 @@ function ProjectGallery({
                       {(reorderHandle) => (
                         <ProjectOverviewCard
                           project={project}
+                          tokenBudget={<ProjectTokenBudget project={project} />}
                           ctoxInstanceId={instanceId}
                           onOpen={project.onOpen}
                           onSave={project.onSave}

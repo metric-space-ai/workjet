@@ -43,6 +43,7 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   ClockIcon,
+  EllipsisIcon,
   FolderIcon,
   FolderPlusIcon,
   GitBranchIcon,
@@ -136,7 +137,6 @@ import {
   includeAvailableProjectsInSidebar,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
-  isSidebarNewThreadDisabled,
   orderItemsByPreferredIds,
   planPinnedReorder,
   resolveAdjacentThreadId,
@@ -174,10 +174,9 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
   composerDraftHasUserContent,
@@ -375,59 +374,67 @@ function SidebarThreadTooltip({
   );
 }
 
+/** German labels for the fixed snooze presets (ids from client-runtime). */
+const SNOOZE_PRESET_LABELS: Readonly<Record<string, string>> = {
+  hour: "In 1 Stunde",
+  "three-hours": "In 3 Stunden",
+  evening: "Heute Abend",
+  tomorrow: "Morgen",
+  "next-week": "Nächste Woche",
+};
+
 /**
- * Hover entry point for snooze: a clock button opening the preset menu.
+ * Hover entry point for snooze: a plain ⋯ menu with the fixed presets (drei
+ * Orte, keine Popups — a selection menu, no popover with content).
  * Controlled by the row (which also uses the open state to pin its hover
  * actions while the menu is up).
  */
-function SnoozePopoverButton(props: {
+function SnoozeMenuButton(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSnooze: (preset: SnoozePreset) => void;
   timestampFormat: TimestampFormat;
 }) {
   const { open, onOpenChange, onSnooze, timestampFormat } = props;
-  // Presets resolve at open time so "In 1 hour" is relative to the click,
+  // Presets resolve at open time so "In 1 Stunde" is relative to the click,
   // not to when the row mounted.
   const presets = useMemo(
     () => (open ? resolveSnoozePresets(new Date(), timestampFormat) : []),
     [open, timestampFormat],
   );
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
+    <Menu open={open} onOpenChange={onOpenChange}>
+      <MenuTrigger
         render={
           <button
             type="button"
-            aria-label="Snooze thread"
+            aria-label="Zurückstellen"
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
             className="inline-flex h-full cursor-pointer items-center gap-0.5 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
           />
         }
       >
-        <ClockIcon className="size-3" />
-      </PopoverTrigger>
-      <PopoverPopup side="bottom" align="end" className="w-56" viewportClassName="p-1">
+        <EllipsisIcon className="size-3.5" />
+      </MenuTrigger>
+      <MenuPopup align="end" className="min-w-48">
         {presets.map((preset) => (
-          <button
+          <MenuItem
             key={preset.id}
-            type="button"
             onClick={(event) => {
               event.stopPropagation();
-              onOpenChange(false);
               onSnooze(preset);
             }}
-            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-foreground/90 hover:bg-accent hover:text-foreground"
           >
-            <span className="flex-1">{preset.label}</span>
+            <ClockIcon className="size-3.5" />
+            <span className="flex-1">{SNOOZE_PRESET_LABELS[preset.id] ?? preset.label}</span>
             <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums">
               {preset.whenLabel}
             </span>
-          </button>
+          </MenuItem>
         ))}
-      </PopoverPopup>
-    </Popover>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -1469,7 +1476,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     )}
                   >
                     {showSnoozeButton ? (
-                      <SnoozePopoverButton
+                      <SnoozeMenuButton
                         open={snoozeMenuOpen}
                         onOpenChange={setSnoozeMenuOpen}
                         onSnooze={handleSnoozePreset}
@@ -2302,7 +2309,7 @@ export default function Sidebar() {
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/projects/$projectKey",
+        to: "/settings/projects/$projectKey",
         params: { projectKey: projectGroup.projectKey },
       });
     },
@@ -3662,6 +3669,14 @@ export default function Sidebar() {
         return;
       }
 
+      // No project yet: the button opens the inline „Projekt anlegen“ in the
+      // project gallery instead of sitting disabled.
+      if (sidebarAvailableProjectCount === 0) {
+        if (isMobile) setOpenMobile(false);
+        openAddProjectCommandPalette();
+        return;
+      }
+
       // One project: nothing to pick, create immediately. Shift+click creates
       // directly in the current project even with several projects, skipping
       // the palette picker.
@@ -3686,6 +3701,7 @@ export default function Sidebar() {
     [
       isMobile,
       newThreadContext,
+      openAddProjectCommandPalette,
       setOpenMobile,
       sidebarAvailableProjectCount,
       sidebarFallbackProject,
@@ -3725,6 +3741,7 @@ export default function Sidebar() {
                 <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
                 <Input
                   ref={threadSearchInputRef}
+                  data-sidebar-search=""
                   nativeInput
                   unstyled
                   type="search"
@@ -3776,7 +3793,6 @@ export default function Sidebar() {
                         type="button"
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
-                        disabled={isSidebarNewThreadDisabled(sidebarAvailableProjectCount)}
                         aria-label={overviewText.newThread}
                       />
                     }
@@ -3854,7 +3870,7 @@ export default function Sidebar() {
                     <MenuTrigger
                       render={
                         <SidebarMenuButton
-                          aria-label="Choose project"
+                          aria-label="Projekt wählen"
                           aria-busy={isSwitchingProject}
                           disabled={isSwitchingProject}
                           className="min-w-0 flex-1 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
@@ -3866,7 +3882,7 @@ export default function Sidebar() {
                         {selectedWorkjetProject?.title ??
                           selectedLocalLogicalProject?.title ??
                           scopedProjectGroup?.displayName ??
-                          "Choose project"}
+                          "Projekt wählen"}
                       </span>
                       <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
                     </MenuTrigger>

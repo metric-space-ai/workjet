@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ProjectExitModelPanel, ProjectExitModelSummary } from "./ProjectExitModel";
 import type { ProjectOverview } from "@workjet/contracts";
-import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
+import { ArrowUpRightIcon, EllipsisIcon, XIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -20,7 +20,6 @@ import { ProjectOverviewEditor, type ProjectConfigurationValues } from "./Projec
 import { ProjectSupervisorLumaField } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
-import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
 
 export function ProjectOverviewCard({
   project,
@@ -87,10 +86,10 @@ export function ProjectOverviewCard({
     },
     {
       kind: "text",
-      label: "Active",
+      label: "Aktiv",
       value: statistics?.activeChatCount == null ? "—" : String(statistics.activeChatCount),
     },
-    { kind: "updated", label: "Activity" },
+    { kind: "updated", label: "Aktivität" },
   ];
   const activityAt = statistics?.lastActivityAt ?? project.local?.updatedAt ?? null;
   const slots: ProjectOverview["slots"] = [
@@ -108,17 +107,20 @@ export function ProjectOverviewCard({
         .replace(/\/$/, "")
         .toLowerCase();
   const archived = overview.archived === true;
+  // Manage and exit open inline in the card (drei Orte, keine Popups); the
+  // gallery grid lets an expanded card span the full row.
+  const expanded = (editing && onSave !== undefined) || assessing;
   const changeArchive = async () => {
     if (!onSave || archivePending) return false;
     setArchivePending(true);
     setArchiveError(null);
     try {
       if (!(await onSave({ ...overview, archived: !archived })))
-        throw new Error("The project could not be saved. Try again.");
+        throw new Error("Projekt nicht gespeichert.");
       setEditing(false);
       return true;
     } catch {
-      setArchiveError("The project could not be saved. Try again.");
+      setArchiveError("Projekt nicht gespeichert.");
       return false;
     } finally {
       setArchivePending(false);
@@ -128,6 +130,7 @@ export function ProjectOverviewCard({
     <article
       className="min-w-0 overflow-hidden rounded-lg border border-border bg-card"
       data-workjet-project-card={project.key}
+      data-workjet-project-card-expanded={expanded ? "" : undefined}
     >
       <div className="flex min-w-0 items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
@@ -166,7 +169,7 @@ export function ProjectOverviewCard({
         {(repository || onSave) && (
           <Menu>
             <MenuTrigger
-              aria-label={`Project actions for ${project.title}`}
+              aria-label={`Aktionen für ${project.title}`}
               render={<Button size="icon-xs" variant="ghost" />}
             >
               <EllipsisIcon className="size-4" aria-hidden="true" />
@@ -174,217 +177,250 @@ export function ProjectOverviewCard({
             <MenuPopup align="end">
               {onSave && (
                 <MenuItem
-                  onClick={() => setEditing(true)}
-                  aria-label={`Configure ${project.title}`}
+                  onClick={() => {
+                    setAssessing(false);
+                    setEditing(true);
+                  }}
+                  aria-label={`${project.title} konfigurieren`}
                 >
-                  Configure project
+                  Projekt konfigurieren
                 </MenuItem>
               )}
               {repository && (
                 <MenuItem
                   render={<a href={repository} target="_blank" rel="noreferrer noopener" />}
                 >
-                  Open repository
+                  Repository öffnen
                 </MenuItem>
               )}
               {onSave && canArchive && (
                 <MenuItem
                   disabled={archivePending}
                   onClick={() => void changeArchive()}
-                  aria-label={`${archived ? "Restore" : "Archive"} ${project.title}`}
+                  aria-label={`${project.title} ${archived ? "wiederherstellen" : "archivieren"}`}
                 >
-                  {archivePending ? "Saving…" : archived ? "Restore project" : "Archive project"}
+                  {archivePending
+                    ? "Speichern …"
+                    : archived
+                      ? "Projekt wiederherstellen"
+                      : "Projekt archivieren"}
                 </MenuItem>
               )}
             </MenuPopup>
           </Menu>
         )}
       </div>
-      <div
-        className="relative aspect-video overflow-hidden bg-muted/40"
-        data-workjet-project-preview=""
-      >
-        {!archived && cachedPreview && failedCachedWebsite !== website ? (
-          <img
-            src={cachedPreview.image}
-            alt={
-              cachedPreview.kind === "logo"
-                ? `Project logo for ${project.title}`
-                : `Saved website preview for ${project.title}`
-            }
-            title={`Saved preview · ${cachedPreview.capturedOn}`}
-            loading="lazy"
-            decoding="async"
-            onError={() => setFailedCachedWebsite(website ?? null)}
-            className={
-              cachedPreview.kind === "logo"
-                ? "size-full object-contain p-12"
-                : "size-full object-cover object-top"
-            }
-          />
-        ) : (
+      {!expanded && (
+        <>
           <div
-            role="img"
-            aria-label={`Project logo for ${project.title}`}
-            className="flex size-full items-center justify-center"
-            data-workjet-project-logo=""
+            className="relative aspect-video overflow-hidden bg-muted/40"
+            data-workjet-project-preview=""
           >
-            {project.local?.workspaceRoot ? (
-              <ProjectFavicon
-                environmentId={project.local.environmentId}
-                cwd={project.local.workspaceRoot}
-                faviconPath={project.local.faviconPath}
-                className="size-16"
+            {!archived && cachedPreview && failedCachedWebsite !== website ? (
+              <img
+                src={cachedPreview.image}
+                alt={
+                  cachedPreview.kind === "logo"
+                    ? `Logo von ${project.title}`
+                    : `Gespeicherte Vorschau von ${project.title}`
+                }
+                title={`Gespeicherte Vorschau · ${cachedPreview.capturedOn}`}
+                loading="lazy"
+                decoding="async"
+                onError={() => setFailedCachedWebsite(website ?? null)}
+                className={
+                  cachedPreview.kind === "logo"
+                    ? "size-full object-contain p-12"
+                    : "size-full object-cover object-top"
+                }
               />
             ) : (
-              <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-2xl font-semibold tracking-tight text-foreground/70">
-                {project.title.slice(0, 2).toUpperCase()}
-              </span>
-            )}
-          </div>
-        )}
-        <Button
-          size="icon-sm"
-          onClick={onOpen}
-          title="Open project"
-          aria-label={`Open ${project.title}`}
-          data-workjet-action={`project.open.gallery:${project.key}`}
-          className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
-        >
-          <ArrowUpRightIcon className="size-4" aria-hidden="true" />
-        </Button>
-        <ProjectExitModelSummary
-          projectId={project.id}
-          assessment={project.configuration?.exitModel ?? null}
-          onOpen={() => setAssessing(true)}
-        />
-      </div>
-      <div className="border-t border-border px-3 py-3">
-        <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
-          {(["first", "second", "third"] as const).map((position, index) => {
-            const slot = slots[index] ?? null;
-            const metric = scopedKpis
-              ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)
-              : null;
-            return (
               <div
-                key={position}
-                className="flex min-w-0 flex-col gap-0.5"
-                data-workjet-project-card-slot={index + 1}
+                role="img"
+                aria-label={`Logo von ${project.title}`}
+                className="flex size-full items-center justify-center"
+                data-workjet-project-logo=""
               >
-                <dt
-                  title={metric?.label ?? slot?.label}
-                  className={
-                    slot
-                      ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
-                      : "sr-only"
-                  }
-                >
-                  {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
-                </dt>
-                <dd className="order-first min-w-0 break-words text-lg leading-6 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
-                  {metric ? (
-                    <span
-                      title={metric.message ?? metric.detail}
-                      data-workjet-kpi-status={metric.status}
-                    >
-                      {metric.value}
-                    </span>
-                  ) : slot === null ? (
-                    <span
-                      className="text-muted-foreground"
-                      aria-label={`KPI ${index + 1} not configured`}
-                    >
-                      —
-                    </span>
-                  ) : slot.kind === "link" ? (
-                    <a
-                      href={slot.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="text-primary underline"
-                    >
-                      Open link
-                    </a>
-                  ) : slot.kind === "updated" ? (
-                    <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
-                      {activityAt === null ? "—" : projectUpdateAge(activityAt)}
-                    </time>
-                  ) : slot.kind === "metric" ? (
-                    `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
-                  ) : (
-                    slot.value
-                  )}
-                </dd>
+                {project.local?.workspaceRoot ? (
+                  <ProjectFavicon
+                    environmentId={project.local.environmentId}
+                    cwd={project.local.workspaceRoot}
+                    faviconPath={project.local.faviconPath}
+                    className="size-16"
+                  />
+                ) : (
+                  <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-2xl font-semibold tracking-tight text-foreground/70">
+                    {project.title.slice(0, 2).toUpperCase()}
+                  </span>
+                )}
               </div>
-            );
-          })}
-        </dl>
-      </div>
+            )}
+            <Button
+              size="icon-sm"
+              onClick={onOpen}
+              title="Projekt öffnen"
+              aria-label={`${project.title} öffnen`}
+              data-workjet-action={`project.open.gallery:${project.key}`}
+              className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
+            >
+              <ArrowUpRightIcon className="size-4" aria-hidden="true" />
+            </Button>
+            <ProjectExitModelSummary
+              projectId={project.id}
+              assessment={project.configuration?.exitModel ?? null}
+              onOpen={() => {
+                setEditing(false);
+                setAssessing(true);
+              }}
+            />
+          </div>
+          <div className="border-t border-border px-3 py-3">
+            <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
+              {(["first", "second", "third"] as const).map((position, index) => {
+                const slot = slots[index] ?? null;
+                const metric = scopedKpis
+                  ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)
+                  : null;
+                return (
+                  <div
+                    key={position}
+                    className="flex min-w-0 flex-col gap-0.5"
+                    data-workjet-project-card-slot={index + 1}
+                  >
+                    <dt
+                      title={metric?.label ?? slot?.label}
+                      className={
+                        slot
+                          ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
+                          : "sr-only"
+                      }
+                    >
+                      {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
+                    </dt>
+                    <dd className="order-first min-w-0 break-words text-lg leading-6 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+                      {metric ? (
+                        <span
+                          title={metric.message ?? metric.detail}
+                          data-workjet-kpi-status={metric.status}
+                        >
+                          {metric.value}
+                        </span>
+                      ) : slot === null ? (
+                        <span
+                          className="text-muted-foreground"
+                          aria-label={`KPI ${index + 1} nicht eingerichtet`}
+                        >
+                          —
+                        </span>
+                      ) : slot.kind === "link" ? (
+                        <a
+                          href={slot.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="text-primary underline"
+                        >
+                          Link öffnen
+                        </a>
+                      ) : slot.kind === "updated" ? (
+                        <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
+                          {activityAt === null ? "—" : projectUpdateAge(activityAt)}
+                        </time>
+                      ) : slot.kind === "metric" ? (
+                        `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+                      ) : (
+                        slot.value
+                      )}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        </>
+      )}
       {archiveError && (
         <p role="alert" className="px-3 py-2 text-xs text-destructive">
           {archiveError}
         </p>
       )}
-      <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogPopup className="w-[min(44rem,calc(100vw-2rem))] max-w-none">
-          <DialogHeader>
-            <DialogTitle>Manage {project.title}</DialogTitle>
-          </DialogHeader>
-          <DialogPanel>
-            {kpiReadStatus === "pending" && (
-              <p role="status" className="mb-3 text-xs text-muted-foreground">
-                Loading KPI prompts…
+      {editing && (
+        <section
+          aria-label={`${project.title} verwalten`}
+          className="border-t border-border px-3 py-3"
+          data-settings-inline-editor=""
+          data-workjet-project-card-section="configure"
+        >
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">Projekt verwalten</h3>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Schließen"
+              onClick={() => setEditing(false)}
+            >
+              <XIcon className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+          {kpiReadStatus === "pending" && (
+            <p role="status" className="mb-3 text-xs text-muted-foreground">
+              KPI-Abfragen werden geladen …
+            </p>
+          )}
+          {kpiReadStatus === "failed" && (
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p role="alert" className="text-xs text-destructive">
+                KPI-Abfragen nicht geladen.
               </p>
-            )}
-            {kpiReadStatus === "failed" && (
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <p role="alert" className="text-xs text-destructive">
-                  Couldn’t load KPI prompts.
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setKpiReadAttempt((attempt) => attempt + 1)}
-                >
-                  Retry
-                </Button>
-              </div>
-            )}
-            {editing && onSave && (
-              <ProjectOverviewEditor
-                overview={overview}
-                configuration={project.configuration}
-                onSaveConfiguration={onSaveConfiguration}
-                onSave={onSave}
-                renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
-                onCancel={() => setEditing(false)}
-                kpis={scopedKpis}
-                onSaveKpis={onSaveKpis}
-                onArchive={canArchive ? changeArchive : undefined}
-                archived={archived}
-              />
-            )}
-          </DialogPanel>
-        </DialogPopup>
-      </Dialog>
-      <Dialog open={assessing} onOpenChange={setAssessing}>
-        <DialogPopup className="w-[min(56rem,calc(100vw-2rem))] max-w-none">
-          <DialogHeader>
-            <DialogTitle>Five-year exit · {project.title}</DialogTitle>
-          </DialogHeader>
-          <DialogPanel>
-            {assessing && (
-              <ProjectExitModelPanel
-                key={project.key}
-                projectId={project.id}
-                instanceId={project.native ? ctoxInstanceId : null}
-                assessment={project.configuration?.exitModel ?? null}
-              />
-            )}
-          </DialogPanel>
-        </DialogPopup>
-      </Dialog>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setKpiReadAttempt((attempt) => attempt + 1)}
+              >
+                Erneut versuchen
+              </Button>
+            </div>
+          )}
+          {onSave && (
+            <ProjectOverviewEditor
+              overview={overview}
+              configuration={project.configuration}
+              onSaveConfiguration={onSaveConfiguration}
+              onSave={onSave}
+              renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
+              onCancel={() => setEditing(false)}
+              kpis={scopedKpis}
+              onSaveKpis={onSaveKpis}
+              onArchive={canArchive ? changeArchive : undefined}
+              archived={archived}
+            />
+          )}
+        </section>
+      )}
+      {assessing && (
+        <section
+          aria-label={`Exit in fünf Jahren · ${project.title}`}
+          className="border-t border-border px-3 py-3"
+          data-workjet-project-card-section="exit"
+        >
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">Exit in fünf Jahren</h3>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Schließen"
+              onClick={() => setAssessing(false)}
+            >
+              <XIcon className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <ProjectExitModelPanel
+            key={project.key}
+            projectId={project.id}
+            instanceId={project.native ? ctoxInstanceId : null}
+            assessment={project.configuration?.exitModel ?? null}
+          />
+        </section>
+      )}
     </article>
   );
 }

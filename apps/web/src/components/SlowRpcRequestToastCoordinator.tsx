@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { type SlowRpcAckRequest, useSlowRpcAckRequests } from "../rpc/requestLatencyState";
@@ -20,6 +21,7 @@ export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>)
 
 export function SlowRpcRequestToastCoordinator() {
   const slowRequests = useSlowRpcAckRequests();
+  const navigate = useNavigate();
   const toastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
 
   useEffect(() => {
@@ -31,10 +33,15 @@ export function SlowRpcRequestToastCoordinator() {
       return;
     }
 
+    // Die eine erlaubte Aktion: die Einzelheiten stehen in Einstellungen › Diagnose.
     const nextToast = {
       timeout: 0,
       title: describeSlowRequests(slowRequests),
       type: "warning" as const,
+      actionProps: {
+        children: "Diagnose",
+        onClick: () => void navigate({ to: "/settings/diagnostics" }),
+      },
     };
 
     if (toastIdRef.current === null) {
@@ -42,7 +49,7 @@ export function SlowRpcRequestToastCoordinator() {
     } else {
       toastManager.update(toastIdRef.current, nextToast);
     }
-  }, [slowRequests]);
+  }, [navigate, slowRequests]);
 
   useEffect(
     () => () => {

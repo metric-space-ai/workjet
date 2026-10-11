@@ -1,6 +1,6 @@
 /**
- * Deutsche Datums- und Stundenbeschriftungen für Einstellungen › Verbrauch.
- * Die Zahlenformate (Tokens, USD) bleiben in `@workjet/shared/usageFormat`.
+ * Deutsche Datums-, Stunden- und Zahlenformate für Einstellungen › Verbrauch
+ * (de-DE: „1.284,37 $“, „76,7 Mio.“, „12,3 %“).
  */
 
 /** `2026-08-07` → `7. Aug.` */
@@ -40,4 +40,50 @@ export function formatUsageDateTime(instant: string, timeZone?: string): string 
     month: "short",
   }).format(date);
   return `${day}, ${formatUsageHour(instant, timeZone)}`;
+}
+
+const USD_DE = new Intl.NumberFormat("de-DE", {
+  style: "currency",
+  currency: "USD",
+  currencyDisplay: "narrowSymbol",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const INTEGER_DE = new Intl.NumberFormat("de-DE");
+
+/** `1284.37` → `1.284,37 $` */
+export function formatUsageUsd(value: number): string {
+  return USD_DE.format(value);
+}
+
+/** Fehlende Preise bleiben von bekannten Nullkosten unterscheidbar. */
+export function formatUsageCostDe(value: number, unpriced: number): string {
+  if (unpriced > 0) return value > 0 ? `${formatUsageUsd(value)} + unbekannt` : "Unbekannt";
+  return formatUsageUsd(value);
+}
+
+function trimDe(value: number): string {
+  const abs = Math.abs(value);
+  const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  return value
+    .toFixed(digits)
+    .replace(/\.0+$/u, "")
+    .replace(/(\.\d*?)0+$/u, "$1")
+    .replace(".", ",");
+}
+
+/** Token kompakt mit drei Stellen: `76,7 Mio.`, `804 Tsd.`, `950`. */
+export function formatUsageTokens(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1e12) return `${trimDe(value / 1e12)} Bio.`;
+  if (abs >= 1e9) return `${trimDe(value / 1e9)} Mrd.`;
+  if (abs >= 1e6) return `${trimDe(value / 1e6)} Mio.`;
+  if (abs >= 1e3) return `${trimDe(value / 1e3)} Tsd.`;
+  return INTEGER_DE.format(Math.round(value));
+}
+
+/** `0.123` → `12,3 %` */
+export function formatUsagePercent(share: number, digits = 1): string {
+  return `${(share * 100).toFixed(digits).replace(".", ",")} %`;
 }

@@ -2,7 +2,7 @@ import type { UsageProviderKind } from "@workjet/contracts";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@workjet/shared/usageMerge";
-import { formatTokens, formatUsd } from "@workjet/shared/usageFormat";
+import { formatUsageTokens as formatTokens, formatUsageUsd as formatUsd } from "./usageFormatDe";
 import { formatUsageDateTime, formatUsageDay, formatUsageHour } from "./usageFormatDe";
 import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
 
@@ -310,7 +310,7 @@ export function UsageProviderChart({
             viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label={`${metric === "tokens" ? "Tokens" : "Kosten"} je ${resolution === "hour" ? "Stunde" : "Tag"} und Harness`}
+            aria-label={`${metric === "tokens" ? "Token" : "Kosten"} je ${resolution === "hour" ? "Stunde" : "Tag"} und Harness`}
           >
             {ticks.map((tick) => {
               const y = toY(tick);

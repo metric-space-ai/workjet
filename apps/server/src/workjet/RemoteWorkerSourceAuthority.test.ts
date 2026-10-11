@@ -105,41 +105,66 @@ const receiptFor = (intent: RemoteWorkerAuthorityIntent): RemoteWorkerNativeRece
   renewalSequence: 0,
 });
 
-it.effect("persists the complete Parent reference and fences missing, changed or foreign-Owner receipts", () =>
-  Effect.gen(function* () {
-    const store = yield* RemoteWorkerAuthorityStore;
-    const old = yield* intentFor;
-    const reference = {
-      contract: "ctox.workjet.persistent-worker-binding.v1" as const,
-      owner_user_id: "owner", project_id: old.request.project.id,
-      supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
-      thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
-      role: "persistent_worker" as const, revision: 1, state: "active" as const,
-    };
-    const request: RemoteWorkerRequest = {
-      ...old.request,
-      parent: { ...old.request.parent, threadId: ThreadId.make(reference.thread_id) },
-      parentTeamRole: "specialist", parentTeamBinding: reference,
-    };
-    const intent = {
-      ...old, request,
-      binding: {
-        ...old.binding, sourceSupervisorThreadId: request.parent.threadId,
-        requestDigest: yield* remoteWorkerRequestDigest(request), parentTeamBinding: reference,
-      },
-    };
-    yield* store.prepare(intent);
-    const saved = Option.getOrThrow(yield* store.get(request.requestId));
-    assert.deepEqual(saved.intent.request.parentTeamBinding, reference);
-    assert.deepEqual(saved.intent.binding.parentTeamBinding, reference);
-    const { parentTeamBinding: _reference, ...withoutReference } = intent.binding;
-    assert.equal((yield* Effect.flip(store.prepare({ ...intent, binding: withoutReference })))._tag, "RemoteWorkerDispatchError");
-    const receipt = receiptFor(intent);
-    assert.equal((yield* Effect.flip(store.saveReceipt(request.requestId, null, { ...receipt, ownerUserId: "foreign-owner" })))._tag, "RemoteWorkerDispatchError");
-    assert.equal((yield* Effect.flip(store.saveReceipt(request.requestId, null, { ...receipt, binding: { ...intent.binding, parentTeamBinding: { ...reference, revision: 2 } } })))._tag, "RemoteWorkerDispatchError");
-    yield* store.saveReceipt(request.requestId, null, receipt);
-    assert.deepEqual(Option.getOrThrow(yield* store.get(request.requestId)).receipt, receipt);
-  }).pipe(Effect.provide(testLayer)),
+it.effect(
+  "persists the complete Parent reference and fences missing, changed or foreign-Owner receipts",
+  () =>
+    Effect.gen(function* () {
+      const store = yield* RemoteWorkerAuthorityStore;
+      const old = yield* intentFor;
+      const reference = {
+        contract: "ctox.workjet.persistent-worker-binding.v1" as const,
+        owner_user_id: "owner",
+        project_id: old.request.project.id,
+        supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
+        thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
+        role: "persistent_worker" as const,
+        revision: 1,
+        state: "active" as const,
+      };
+      const request: RemoteWorkerRequest = {
+        ...old.request,
+        parent: { ...old.request.parent, threadId: ThreadId.make(reference.thread_id) },
+        parentTeamRole: "specialist",
+        parentTeamBinding: reference,
+      };
+      const intent = {
+        ...old,
+        request,
+        binding: {
+          ...old.binding,
+          sourceSupervisorThreadId: request.parent.threadId,
+          requestDigest: yield* remoteWorkerRequestDigest(request),
+          parentTeamBinding: reference,
+        },
+      };
+      yield* store.prepare(intent);
+      const saved = Option.getOrThrow(yield* store.get(request.requestId));
+      assert.deepEqual(saved.intent.request.parentTeamBinding, reference);
+      assert.deepEqual(saved.intent.binding.parentTeamBinding, reference);
+      const { parentTeamBinding: _reference, ...withoutReference } = intent.binding;
+      assert.equal(
+        (yield* Effect.flip(store.prepare({ ...intent, binding: withoutReference })))._tag,
+        "RemoteWorkerDispatchError",
+      );
+      const receipt = receiptFor(intent);
+      assert.equal(
+        (yield* Effect.flip(
+          store.saveReceipt(request.requestId, null, { ...receipt, ownerUserId: "foreign-owner" }),
+        ))._tag,
+        "RemoteWorkerDispatchError",
+      );
+      assert.equal(
+        (yield* Effect.flip(
+          store.saveReceipt(request.requestId, null, {
+            ...receipt,
+            binding: { ...intent.binding, parentTeamBinding: { ...reference, revision: 2 } },
+          }),
+        ))._tag,
+        "RemoteWorkerDispatchError",
+      );
+      yield* store.saveReceipt(request.requestId, null, receipt);
+      assert.deepEqual(Option.getOrThrow(yield* store.get(request.requestId)).receipt, receipt);
+    }).pipe(Effect.provide(testLayer)),
 );
 
 it.effect("persists immutable native intent before issuance and fences receipt replacement", () =>

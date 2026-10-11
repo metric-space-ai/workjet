@@ -144,7 +144,10 @@ export function makeSourceGatewayInference(dependencies: {
       binding.targetEnvironmentId === environmentId ||
       binding.workspaceKey !== binding.requestId ||
       !sameExecutionPolicy(binding.executionPolicy, input.workerRequest.executionPolicy) ||
-      !sameWorkjetParentTeamBinding(binding.parentTeamBinding, input.workerRequest.parentTeamBinding) ||
+      !sameWorkjetParentTeamBinding(
+        binding.parentTeamBinding,
+        input.workerRequest.parentTeamBinding,
+      ) ||
       (binding.parentTeamBinding !== undefined &&
         (input.workerRequest.parentTeamRole !== "specialist" ||
           binding.parentTeamBinding.owner_user_id !== input.permit.ownerUserId ||

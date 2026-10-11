@@ -245,7 +245,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     }
     const parentTeamBinding =
       parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.parentTeamBinding : undefined;
-    if (!workjetParentBindingMatchesTeam(parentTeamBinding, parentTeam, parent.projectId, parent.id)) {
+    if (
+      !workjetParentBindingMatchesTeam(parentTeamBinding, parentTeam, parent.projectId, parent.id)
+    ) {
       return yield* failure("role-not-authorized");
     }
     const executionPolicy =

@@ -4,7 +4,9 @@ import type { WorkjetProjectTeamMember } from "./workjetProjectTeam.ts";
 
 const NativeId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 const NativeThreadId = Schema.String.check(
-  Schema.isPattern(/^(?!00000000-0000-0000-0000-000000000000$)[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/),
+  Schema.isPattern(
+    /^(?!00000000-0000-0000-0000-000000000000$)[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+  ),
 );
 
 /** Complete Owner-issued private native enrollment reference, never an execution permit. */
@@ -31,13 +33,14 @@ export function workjetParentBindingMatchesTeam(
   projectId: ProjectId,
   threadId: ThreadId,
 ): boolean {
-  return binding === undefined || (
-    team?.role === "specialist" &&
-    team.projectId === projectId &&
-    team.threadId === threadId &&
-    binding.project_id === projectId &&
-    binding.thread_id === threadId &&
-    binding.supervisor_thread_id === team.parentThreadId &&
-    binding.supervisor_thread_id !== binding.thread_id
+  return (
+    binding === undefined ||
+    (team?.role === "specialist" &&
+      team.projectId === projectId &&
+      team.threadId === threadId &&
+      binding.project_id === projectId &&
+      binding.thread_id === threadId &&
+      binding.supervisor_thread_id === team.parentThreadId &&
+      binding.supervisor_thread_id !== binding.thread_id)
   );
 }

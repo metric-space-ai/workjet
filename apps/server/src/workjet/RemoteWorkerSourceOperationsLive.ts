@@ -101,7 +101,12 @@ export const make = Effect.gen(function* () {
       parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
     if (
       !sameWorkjetParentTeamBinding(currentParentBinding, request.parentTeamBinding) ||
-      !workjetParentBindingMatchesTeam(currentParentBinding, currentTeam, parent.projectId, parent.id) ||
+      !workjetParentBindingMatchesTeam(
+        currentParentBinding,
+        currentTeam,
+        parent.projectId,
+        parent.id,
+      ) ||
       (currentParentBinding !== undefined && request.parentTeamRole !== "specialist")
     )
       return yield* failure();

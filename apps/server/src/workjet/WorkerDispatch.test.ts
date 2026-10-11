@@ -514,50 +514,67 @@ it.effect(
     }),
 );
 
-it.effect("pins the complete native Parent reference across lost remote ACKs and forbids rebind or omission", () =>
-  Effect.gen(function* () {
-    const reference = {
-      contract: "ctox.workjet.persistent-worker-binding.v1" as const,
-      owner_user_id: "owner", project_id: teamParent.projectId,
-      supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
-      thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
-      role: "persistent_worker" as const, revision: 1, state: "active" as const,
-    };
-    const nativeThreadId = ThreadId.make(reference.thread_id);
-    const savedParent: OrchestrationThread = {
-      ...teamParent, id: nativeThreadId,
-      workjetConfig: {
-        ...teamConfig,
-        team: { ...teamConfig.team, threadId: nativeThreadId, parentThreadId: ThreadId.make(reference.supervisor_thread_id) },
-        parentTeamBinding: reference,
-      },
-    };
-    const options = { currentParent: savedParent, remoteSource: true, remoteReplyLost: true };
-    const h = makeHarness(options);
-    const service = yield* h.service.pipe(Effect.provide(computerCatalogLayer));
-    const scope = { ...invocation, threadId: nativeThreadId };
-    const task = { task: "Fix documentation", computerId: remoteComputer.id };
-    const pending = yield* Effect.flip(service.dispatch(scope, task));
-    expect(pending.reason).toBe("remote-dispatch-pending");
-    const request = h.remoteRequests[0]!;
-    expect(request.parentTeamBinding).toEqual(reference);
-    expect(request.parent.threadId).toBe(nativeThreadId);
-    const configured = savedParent.workjetConfig;
-    if (configured.schemaVersion !== 2) throw new Error("V2 fixture required");
-    const { parentTeamBinding: _reference, ...withoutReference } = configured;
-    for (const config of [
-      withoutReference,
-      { ...configured, parentTeamBinding: { ...reference, revision: 2 } },
-      { ...configured, parentTeamBinding: { ...reference, owner_user_id: "foreign-owner" } },
-    ]) {
-      options.currentParent = { ...savedParent, workjetConfig: config };
-      expect((yield* Effect.flip(service.dispatch(scope, { ...task, remoteRequestId: pending.remoteRequestId! }))).reason).toBe("remote-dispatch-failed");
-    }
-    options.currentParent = savedParent;
-    expect((yield* service.dispatch(scope, { ...task, remoteRequestId: pending.remoteRequestId! })).workerThreadId).toBe(request.requestId);
-    expect(h.remoteRequests).toHaveLength(1);
-    expect(h.commands).toEqual([]);
-  }),
+it.effect(
+  "pins the complete native Parent reference across lost remote ACKs and forbids rebind or omission",
+  () =>
+    Effect.gen(function* () {
+      const reference = {
+        contract: "ctox.workjet.persistent-worker-binding.v1" as const,
+        owner_user_id: "owner",
+        project_id: teamParent.projectId,
+        supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
+        thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
+        role: "persistent_worker" as const,
+        revision: 1,
+        state: "active" as const,
+      };
+      const nativeThreadId = ThreadId.make(reference.thread_id);
+      const savedParent: OrchestrationThread = {
+        ...teamParent,
+        id: nativeThreadId,
+        workjetConfig: {
+          ...teamConfig,
+          team: {
+            ...teamConfig.team,
+            threadId: nativeThreadId,
+            parentThreadId: ThreadId.make(reference.supervisor_thread_id),
+          },
+          parentTeamBinding: reference,
+        },
+      };
+      const options = { currentParent: savedParent, remoteSource: true, remoteReplyLost: true };
+      const h = makeHarness(options);
+      const service = yield* h.service.pipe(Effect.provide(computerCatalogLayer));
+      const scope = { ...invocation, threadId: nativeThreadId };
+      const task = { task: "Fix documentation", computerId: remoteComputer.id };
+      const pending = yield* Effect.flip(service.dispatch(scope, task));
+      expect(pending.reason).toBe("remote-dispatch-pending");
+      const request = h.remoteRequests[0]!;
+      expect(request.parentTeamBinding).toEqual(reference);
+      expect(request.parent.threadId).toBe(nativeThreadId);
+      const configured = savedParent.workjetConfig;
+      if (configured.schemaVersion !== 2) throw new Error("V2 fixture required");
+      const { parentTeamBinding: _reference, ...withoutReference } = configured;
+      for (const config of [
+        withoutReference,
+        { ...configured, parentTeamBinding: { ...reference, revision: 2 } },
+        { ...configured, parentTeamBinding: { ...reference, owner_user_id: "foreign-owner" } },
+      ]) {
+        options.currentParent = { ...savedParent, workjetConfig: config };
+        expect(
+          (yield* Effect.flip(
+            service.dispatch(scope, { ...task, remoteRequestId: pending.remoteRequestId! }),
+          )).reason,
+        ).toBe("remote-dispatch-failed");
+      }
+      options.currentParent = savedParent;
+      expect(
+        (yield* service.dispatch(scope, { ...task, remoteRequestId: pending.remoteRequestId! }))
+          .workerThreadId,
+      ).toBe(request.requestId);
+      expect(h.remoteRequests).toHaveLength(1);
+      expect(h.commands).toEqual([]);
+    }),
 );
 
 const environmentId = EnvironmentId.make("environment-local");

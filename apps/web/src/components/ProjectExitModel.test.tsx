@@ -113,6 +113,7 @@ describe("project exit assessment display", () => {
       />,
     );
     expect(markup).not.toContain("800k EUR");
-    expect(markup).toContain("Bewertung nicht verfügbar");
+    // Ohne gültige Bewertung kein Stempel über der Vorschau.
+    expect(markup).toBe("");
   });
 });

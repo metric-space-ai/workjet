@@ -133,7 +133,7 @@ export function ProjectOverviewCard({
         </div>
         {tokenBudget}
         {reorderHandle}
-        {(repository || onSave || onConfigure) && (
+        {
           <Menu>
             <MenuTrigger
               aria-label={`Aktionen für ${project.title}`}
@@ -142,6 +142,12 @@ export function ProjectOverviewCard({
               <EllipsisIcon className="size-4" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end">
+              <MenuItem
+                onClick={() => setAssessing(true)}
+                data-workjet-action={`project.exit_model.menu:${project.key}`}
+              >
+                Exit-Bewertung
+              </MenuItem>
               {onConfigure && (
                 <MenuItem
                   onClick={onConfigure}
@@ -173,7 +179,7 @@ export function ProjectOverviewCard({
               )}
             </MenuPopup>
           </Menu>
-        )}
+        }
       </div>
       {!expanded && (
         <>

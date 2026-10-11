@@ -24,6 +24,8 @@ export function ProjectExitModelSummary({
   readonly onOpen: () => void;
 }) {
   const view = exitModelPresentation(assessment, projectId);
+  // Ohne Wert kein Stempel über der Vorschau; die Bewertung öffnet dann das ⋯-Menü der Karte.
+  if (view.value === "—") return null;
   return (
     <button
       type="button"

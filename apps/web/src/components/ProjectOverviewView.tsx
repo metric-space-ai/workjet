@@ -238,7 +238,7 @@ export function ProjectOverviewView(props: {
                       <Button
                         variant="outline"
                         size="xs"
-                        className="h-auto max-w-full justify-start py-0.5 text-left break-words whitespace-normal"
+                        className="h-auto max-w-full justify-start py-0.5 text-left leading-snug break-words whitespace-normal sm:h-auto"
                         onClick={() => open(goal.thread!)}
                       >
                         {goal.owner}

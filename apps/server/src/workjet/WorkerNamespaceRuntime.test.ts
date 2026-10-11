@@ -94,7 +94,7 @@ describe.runIf(helper !== undefined)("Linux worker runtime capture", () => {
         command: managedNode,
         args: [script, "agent", "stdio"],
       });
-      expect(result.runtimeFiles.map(({ path }) => path)).toEqual([script, managedNode]);
+      expect(result.runtimeFiles.map(({ path }) => path)).toEqual([managedNode, script]);
     }).pipe(Effect.provideService(HostProcessPlatform, "linux")),
   );
   it.effect("captures an explicit readable Node entry without exposing its package directory", () =>

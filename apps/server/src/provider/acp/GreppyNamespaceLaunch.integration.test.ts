@@ -4,11 +4,19 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeHttp from "node:http";
 import * as NodeChildProcess from "node:child_process";
-import * as NodeUtil from "node:util";
-import type { WorkerSourceRuntimeCustody } from "../../workjet/WorkerSourceCustodyStore.ts";
+import {
+  WorkerSourceCustodyStore,
+  makeWorkerSourceCustodyPersistence,
+  layer as WorkerSourceCustodyLayer,
+  type WorkerSourceCustodyIntent,
+  type WorkerSourceProfileCustody,
+  type WorkerSourceRuntimeCustody,
+} from "../../workjet/WorkerSourceCustodyStore.ts";
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -36,8 +44,16 @@ const agent = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../../scripts/acp-namespace-mock.py",
 );
-const fixture = async (variant?: string) => {
-  let originalRuntime: WorkerSourceRuntimeCustody | undefined;
+const fixture = async (
+  variant: string,
+  preparePersistence: (intent: WorkerSourceCustodyIntent) => Promise<{
+    readonly profile: {
+      readonly original: WorkerSourceProfileCustody | null;
+      readonly capture: (capture: WorkerSourceProfileCustody) => Promise<void>;
+    };
+    readonly captureRuntime: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
+  }>,
+) => {
   const root = await NodeFSP.mkdtemp(
     NodePath.join(await NodeFSP.realpath(process.env.TMPDIR ?? "/tmp"), "wj-greppy-ns-"),
   );
@@ -106,6 +122,15 @@ const fixture = async (variant?: string) => {
     await new Promise<void>((resolve) => source.listen(0, "127.0.0.1", resolve));
     const address = source.address();
     if (!address || typeof address === "string") throw new Error("fixture source unavailable");
+    const persistence = await preparePersistence({
+      workerId: threadId,
+      sourceEnvironmentId: "source",
+      targetEnvironmentId: "target",
+      requestDigest: receipt.intent.authorityDigest,
+      harness: "greppy",
+      model: "gpt-6.1-sol",
+      profileRoot: NodePath.join(root, "profile"),
+    });
     route = await installWorkerSourceRoute(
       threadId,
       {
@@ -123,14 +148,15 @@ const fixture = async (variant?: string) => {
         harness: "greppy",
         modelSocketRoot: NodePath.join(root, "model-ipc"),
         captureRuntime: async (capture) => {
-          if (
-            variant === "runtime-denied" ||
-            (originalRuntime && !NodeUtil.isDeepStrictEqual(originalRuntime, capture))
-          )
+          if (variant === "runtime-denied")
             throw new Error("Original runtime custody rejected");
-          originalRuntime = capture;
+          await persistence.captureRuntime(capture);
         },
-        nativeProfile: { harness: "greppy", directory: NodePath.join(root, "profile") },
+        nativeProfile: {
+          harness: "greppy",
+          directory: NodePath.join(root, "profile"),
+          persistence: persistence.profile,
+        },
       },
     );
     const input: ProviderSessionStartInput = {
@@ -197,8 +223,21 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
     it.effect(
       variant,
       () =>
+        Effect.gen(function* () {
+          const store = yield* WorkerSourceCustodyStore;
+          const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+          return yield*
         Effect.acquireUseRelease(
-          Effect.tryPromise(() => fixture(variant)),
+          Effect.tryPromise(() =>
+            fixture(variant, (intent) =>
+              runPromise(
+                Effect.gen(function* () {
+                  const receipt = yield* store.reserve(intent);
+                  return yield* makeWorkerSourceCustodyPersistence(store, receipt);
+                }),
+              ),
+            ),
+          ),
           (owned) =>
             Effect.gen(function* () {
               const twoTurns = variant === "two-turns" || variant === "node-runtime-two-turns";
@@ -250,6 +289,12 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                   return;
                 }
                 expect(started._tag).toBe("Success");
+                const journal = Option.getOrThrow(yield* store.get(owned.input.threadId));
+                expect(journal.runtime).not.toBeNull();
+                expect(journal.runtime?.command).toBe(journal.runtime?.runtimeFiles[0]?.path);
+                expect(journal.runtime?.runtimeFiles.map(({ path }) => path)).toContain(
+                  owned.script,
+                );
                 if (variant === "runtime-replaced" || variant === "node-runtime-replaced") {
                   const stopped = yield* adapter.stopSession(owned.input.threadId);
                   expect(stopped?.terminated).toBe(true);
@@ -357,7 +402,13 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
               for (const child of children) expect(yield* child.isRunning).toBe(false);
             }),
           (owned) => Effect.promise(owned.close),
-        ).pipe(Effect.provide(NodeServices.layer)),
+        );
+        }).pipe(
+          Effect.provide(
+            WorkerSourceCustodyLayer.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+          ),
+          Effect.provide(NodeServices.layer),
+        ),
       { timeout: 45000 },
     );
   }

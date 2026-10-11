@@ -103,7 +103,7 @@ export const captureWorkerNamespaceRuntime = Effect.fn("captureWorkerNamespaceRu
             throw new Error("Worker Node interpreter is not an ELF executable");
           return {
             spawn: { ...spawn, command: interpreter, args: [command, ...spawn.args] },
-            runtimeFiles: files,
+            runtimeFiles: files.toReversed(),
           };
         }
         const interpreter = /^#!(\/usr\/bin\/[A-Za-z0-9._+-]+)$/.exec(firstLine)?.[1];

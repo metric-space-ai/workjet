@@ -13,7 +13,8 @@ const privateDirectory = (stat: NodeFS.BigIntStats) =>
   !stat.isSymbolicLink() &&
   stat.uid === BigInt(NodeProcess.getuid?.() ?? -1) &&
   (stat.mode & 0o077n) === 0n;
-const failure = () => new Error("Original private worker profile custody is unavailable.");
+const failure = (cause?: unknown) =>
+  new Error("Original private worker profile custody is unavailable.", { cause });
 
 export interface WorkerSourcePrivateProfile {
   readonly profile: WorkerSourceNativeProfile;
@@ -61,7 +62,9 @@ export async function makeWorkerSourcePrivateProfile(
         NodeFSP.lstat(directory, { bigint: true }),
         handle.stat({ bigint: true }),
         NodeFSP.realpath(directory),
-      ]);
+      ]).catch((cause) => {
+        throw failure(cause);
+      });
       if (
         resolved !== directory ||
         !privateDirectory(currentRoot) ||

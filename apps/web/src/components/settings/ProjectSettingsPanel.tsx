@@ -78,6 +78,7 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { ProjectOverviewEditor } from "../ProjectOverviewEditor";
+import { ProjectMeetingPreparationField } from "../ProjectMeetingPreparationField";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -882,6 +883,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           <ProjectOverviewEditor
             key={group.projectKey}
             overview={representative.overview}
+            renderPreparationField={(props) => <ProjectMeetingPreparationField {...props} />}
             onSave={async (overview) => {
               if (
                 !group.memberProjects.every((member) =>

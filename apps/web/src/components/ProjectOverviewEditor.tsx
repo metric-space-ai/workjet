@@ -16,6 +16,10 @@ import {
 } from "../projectKpis";
 import { ProjectKpiResult } from "./ProjectKpiResult";
 import { ProjectSupervisorLumaSelect, type LumaFieldProps } from "./ProjectSupervisorLumaField";
+import {
+  MeetingPreparationField,
+  type PreparationFieldProps,
+} from "./ProjectMeetingPreparationField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -39,6 +43,7 @@ export function ProjectOverviewEditor({
   kpis,
   onSaveKpis,
   renderLumaField,
+  renderPreparationField,
 }: {
   readonly overview: ProjectOverview | null | undefined;
   readonly onSave: (next: ProjectOverview) => Promise<boolean>;
@@ -49,6 +54,7 @@ export function ProjectOverviewEditor({
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
   readonly configuration?: CtoxWorkjetProjectMetadataProjection | undefined;
   readonly renderLumaField?: ((props: LumaFieldProps) => ReactNode) | undefined;
+  readonly renderPreparationField?: ((props: PreparationFieldProps) => ReactNode) | undefined;
   readonly onSaveConfiguration?:
     | ((next: ProjectConfigurationValues) => Promise<boolean>)
     | undefined;
@@ -322,6 +328,15 @@ export function ProjectOverviewEditor({
         <p className="text-xs leading-5 text-muted-foreground sm:col-start-2">
           Prüft Worker, offene PRs und Blocker. Laufende Supervisor-Turns werden übersprungen.
         </p>
+        <div className="min-w-0 sm:col-span-2">
+          {(renderPreparationField ?? ((props) => <MeetingPreparationField {...props} />))({
+            id: `${id}-meeting-preparation`,
+            value: draft.meetingPreparation,
+            disabled: state.pending,
+            onChange: (meetingPreparation) =>
+              setDraft((current) => ({ ...current, meetingPreparation })),
+          })}
+        </div>
         {configuration && onSaveConfiguration && (
           <>
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-luma`}>

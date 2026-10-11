@@ -186,6 +186,7 @@ interface BeforeRequestDetails {
 export interface CtoxGuestWebPreferences {
   readonly session: Session;
   readonly preload: string;
+  readonly backgroundThrottling: false;
   readonly sandbox: true;
   readonly contextIsolation: true;
   readonly nodeIntegration: false;
@@ -1384,6 +1385,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         const view = (options.createView ?? createGuestView)({
           session: resolvedSession.value,
           preload: preloadPath,
+          // Warm guests serve the data plane while detached in Coding mode.
+          // Their readiness, retry and receipt timers must keep running.
+          backgroundThrottling: false,
           sandbox: true,
           contextIsolation: true,
           nodeIntegration: false,

@@ -219,6 +219,46 @@ describe("Supervisor composer selection persistence", () => {
     ).rejects.toThrow("project selection changed");
     expect(port).not.toHaveBeenCalled();
   });
+  it("requires the project read-back to retain the selected Luma", async () => {
+    const manual = prepareSupervisorManualProfile({
+      projectId: scope.projectId,
+      selection: profile,
+      configuration,
+      computers,
+      models: [],
+    });
+    const saved = { ...configuration, workerProfiles: [profile, manual] };
+    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, request) => {
+      if (request.action === "project.configure")
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            commandId: request.commandId,
+            project: { ...project, supervisorLumaId: manual.id },
+          },
+        };
+      if (request.action === "project.list")
+        return {
+          _tag: "completed",
+          response: { action: request.action, projects: [project], count: 1, truncated: false },
+        };
+      throw new Error("Must never send a turn");
+    });
+    await expect(
+      persistSupervisorComposerSelection({
+        scope,
+        project,
+        profile: manual,
+        snapshot: { revision: 2, configuration: saved, updatedAtMs: null },
+        writeConfiguration: async () => "saved",
+        readConfiguration: async () => ({ revision: 2, configuration: saved, updatedAtMs: null }),
+        signal: new AbortController().signal,
+        isCurrent: () => true,
+        port,
+      }),
+    ).rejects.toThrow("did not retain the Supervisor selection");
+  });
   it("refuses a configuration conflict before selecting a route", async () => {
     const port = vi.fn<WorkjetProjectControlPort>();
     await expect(

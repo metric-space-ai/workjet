@@ -55,9 +55,9 @@ describe("compact project configuration", () => {
     expect(markup).not.toContain("No meeting");
     expect(markup).toContain('value="13:00"');
     expect(markup).toContain("Keep the goal");
-    expect(markup).toContain("Archive project");
-    expect(markup).toContain("Cancel");
-    expect(markup).toContain("Save project");
+    expect(markup).toContain("Projekt archivieren");
+    expect(markup).toContain("Abbrechen");
+    expect(markup).toContain("Projekt speichern");
   });
   it("renders a native missing source instead of offering an entered value", () => {
     const markup = renderToStaticMarkup(

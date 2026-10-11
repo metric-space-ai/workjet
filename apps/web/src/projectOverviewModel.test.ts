@@ -30,7 +30,13 @@ describe("dense owner overview model", () => {
       data.text.noHistory,
       data.text.noLastMeeting,
       data.text.noOwnerDecisions,
-    ]).toEqual(["—", "—", "—", "—", "—"]);
+    ]).toEqual([
+      "— Keine Aufgaben hinterlegt",
+      "— Noch keine gemergten PRs",
+      "— Noch keine Fortschrittsereignisse",
+      "—",
+      "—",
+    ]);
   });
   it.each(["de", "en"] as const)("groups setup once alongside progress in %s", (language) => {
     const data = buildProjectOwnerOverview({ ...overviewFixture("full"), language });

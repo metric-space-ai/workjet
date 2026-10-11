@@ -104,8 +104,10 @@ export const make = Effect.gen(function* () {
               profileRoot,
             })
             .pipe(Effect.mapError(failure));
-    const persistence = custody === undefined ? undefined :
-      yield* makeWorkerSourceCustodyPersistence(custodyStore, custody);
+    const persistence =
+      custody === undefined
+        ? undefined
+        : yield* makeWorkerSourceCustodyPersistence(custodyStore, custody);
     yield* Effect.tryPromise({
       try: () =>
         installWorkerSourceRoute(request.requestId, route, {

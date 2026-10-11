@@ -160,7 +160,7 @@ export function InstancesTable({
                         {text.select}
                       </Button>
                     )}
-                    <label
+                    <div
                       className="flex items-center gap-1.5 text-xs"
                       title={selected ? text.selectedReason : undefined}
                     >
@@ -173,7 +173,7 @@ export function InstancesTable({
                         }
                       />
                       {text.enabled}
-                    </label>
+                    </div>
                     {instance.source !== "local_daemon" ? (
                       <Button
                         size="icon-sm"

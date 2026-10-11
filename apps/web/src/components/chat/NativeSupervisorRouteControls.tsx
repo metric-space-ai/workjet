@@ -389,6 +389,7 @@ export function NativeSupervisorRouteControlsView(props: {
             }}
             disabledReason={props.disabled ? "Wait until the current operation finishes." : null}
             modelSource="configured"
+            configuredModelsHint={null}
             models={props.models}
             modelsUnavailableReason={
               props.unavailableReason ?? "No models are configured on the instance."

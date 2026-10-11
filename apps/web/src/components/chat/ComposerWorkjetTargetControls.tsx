@@ -602,6 +602,7 @@ export interface ComposerManualTargetControlsProps {
   readonly onSelectHarness: (harness: WorkjetHarness) => void;
   /** Native catalogs are authoritative; configured profiles and gateway catalogs allow custom IDs. */
   readonly modelSource?: "gateway" | "configured" | "native";
+  readonly configuredModelsHint?: string | null;
   readonly models: ReadonlyArray<WorkjetGatewayModelSummary>;
   /** Why the model list may be empty; shown instead of a silent blank. */
   readonly modelsUnavailableReason: string | null;
@@ -827,9 +828,10 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                     activeModelProvider ??
                     "Models")}
               </div>
-              {configuredModels ? (
+              {configuredModels && props.configuredModelsHint !== null ? (
                 <p className="px-2 pb-1.5 text-xs leading-4 text-muted-foreground">
-                  Configured for this Greppy profile. Availability is checked when a turn starts.
+                  {props.configuredModelsHint ??
+                    "Configured for this Greppy profile. Availability is checked when a turn starts."}
                 </p>
               ) : null}
               {activeProviderModels.map((model) => (

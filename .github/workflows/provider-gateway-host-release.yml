@@ -309,8 +309,6 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ contains(needs.preflight.outputs.version, '-') }}
           make_latest: false
-          # Published host bytes are pinned and must remain immutable.
-          overwrite_files: false
           files: |
             gateway-host-release/workjet-provider-gateway-host-*
             gateway-host-release/LICENSE.*

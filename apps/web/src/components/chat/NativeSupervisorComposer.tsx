@@ -444,6 +444,13 @@ export function NativeSupervisorComposer(props: {
     setNewMessageFor(null);
   }, [bindingInstanceId, bindingProjectId, bindingThreadId]);
   const bindingError = bindingMatches ? binding.error : null;
+  const connectionError =
+    failureCode === "authentication_required" ||
+    failureCode === "not_active" ||
+    failureCode === "timeout" ||
+    failureCode === "guest_failed"
+      ? error
+      : null;
   const authenticationRequired = Boolean(
     props.instanceId?.startsWith("managed:") &&
     ((bindingMatches && binding.authenticationRequired) ||
@@ -459,6 +466,7 @@ export function NativeSupervisorComposer(props: {
       : null) ??
     bindingError ??
     workerStatus?.message ??
+    connectionError ??
     routeStatus;
   useEffect(() => {
     if (
@@ -687,9 +695,9 @@ export function NativeSupervisorComposer(props: {
           {journal.turn?.resultTruncated && (
             <p className="text-xs text-muted-foreground">Result truncated</p>
           )}
-          {journal.submission === "not-submitted" && !pending && (
-            <p role="alert" className="text-destructive">
-              CTOX: {journal.submissionError}. You can send a new request.
+          {journal.submission === "not-submitted" && !pending && !authenticationRequired && (
+            <p role="status" className="text-muted-foreground">
+              The previous request was not sent. You can send a new request.
             </p>
           )}
           {journal.turn?.errorMessage && (
@@ -709,7 +717,7 @@ export function NativeSupervisorComposer(props: {
           {notice}
         </p>
       )}
-      {error && (
+      {error && !connectionError && !authenticationRequired && (
         <p role="alert" className="mb-2 text-xs text-destructive">
           {error}
         </p>
@@ -759,7 +767,7 @@ export function NativeSupervisorComposer(props: {
             >
               Reconnect
             </button>
-          ) : props.instanceId !== null && (disabled || bindingError) ? (
+          ) : props.instanceId !== null && (disabled || bindingError || connectionError) ? (
             <button
               type="button"
               className="underline underline-offset-2"

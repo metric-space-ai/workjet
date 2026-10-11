@@ -242,7 +242,9 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Not sent");
-    expect(html).toContain("authentication_required");
+    expect(html).toContain("Sign in to ctox.dev</button>");
+    expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
+    expect(html.match(/Sign in to ctox.dev<\/button>/g)).toHaveLength(1);
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
   });
   it("keeps send unavailable without confirmed native project scope", () => {

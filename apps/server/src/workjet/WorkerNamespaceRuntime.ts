@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Schema from "effect/Schema";
 import type { AcpSpawnInput } from "../provider/acp/AcpSessionRuntime.ts";
 import type { WorkerNamespaceFileCapture } from "./WorkerNamespaceSpawn.ts";
@@ -22,9 +23,10 @@ export class WorkerNamespaceRuntimeError extends Schema.TaggedErrorClass<WorkerN
 export const captureWorkerNamespaceRuntime = Effect.fn("captureWorkerNamespaceRuntime")(function* (
   spawn: AcpSpawnInput,
 ) {
+  const platform = yield* HostProcessPlatform;
   return yield* Effect.tryPromise({
     try: async () => {
-      if (process.platform !== "linux") throw new Error("Linux runtime capture is unavailable");
+      if (platform !== "linux") throw new Error("Linux runtime capture is unavailable");
       const candidates = NodePath.isAbsolute(spawn.command)
         ? [spawn.command]
         : spawn.command.includes("/") || spawn.command.length === 0

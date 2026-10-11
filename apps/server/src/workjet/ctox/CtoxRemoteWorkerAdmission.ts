@@ -11,6 +11,7 @@ import {
   WorkjetGatewayModelRef,
   WorkjetGatewayProviderRef,
   WorkjetExecutionPolicy,
+  WorkjetParentTeamBinding,
   type WorkjetGatewayGrantTarget,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
@@ -35,6 +36,7 @@ export const RemoteWorkerNativeBinding = Schema.Struct({
   repositoryHead: Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)),
   workspaceKey: Id,
   executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
+  parentTeamBinding: Schema.optionalKey(WorkjetParentTeamBinding),
   credentialRef: WorkjetGatewayCredentialRef,
   providerRef: WorkjetGatewayProviderRef,
   modelRef: WorkjetGatewayModelRef,
@@ -100,6 +102,12 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
       binding.sourceInstanceId !== scope.instanceId ||
       binding.projectId !== request.project.id ||
       !NodeUtil.isDeepStrictEqual(binding.executionPolicy, request.executionPolicy) ||
+      !NodeUtil.isDeepStrictEqual(binding.parentTeamBinding, request.parentTeamBinding) ||
+      (binding.parentTeamBinding !== undefined &&
+        (request.parentTeamRole !== "specialist" ||
+          binding.parentTeamBinding.project_id !== binding.projectId ||
+          binding.parentTeamBinding.thread_id !== binding.sourceSupervisorThreadId ||
+          binding.parentTeamBinding.supervisor_thread_id === binding.sourceSupervisorThreadId)) ||
       (binding.executionPolicy !== undefined &&
         binding.executionPolicy.projectId !== binding.projectId) ||
       binding.targetEnvironmentId !== request.targetEnvironmentId ||
@@ -174,6 +182,9 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     executionId?: string,
     renewalSequence?: number,
   ) {
+    binding = yield* Schema.decodeUnknownEffect(RemoteWorkerNativeBinding)(binding).pipe(
+      Effect.mapError(() => failure("invalid-request")),
+    );
     yield* validate(scope, request, binding, action !== "revoke");
     if (
       action === "renew" &&
@@ -205,6 +216,8 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     ).pipe(Effect.mapError(() => failure("invalid-request")));
     if (
       !NodeUtil.isDeepStrictEqual(receipt.binding, binding) ||
+      (binding.parentTeamBinding !== undefined &&
+        receipt.ownerUserId !== binding.parentTeamBinding.owner_user_id) ||
       (permitId !== undefined && receipt.permitId !== permitId) ||
       ((action === "claim" || action === "revalidate" || action === "renew") &&
         (receipt.state !== "claimed" || receipt.executionId !== executionId)) ||

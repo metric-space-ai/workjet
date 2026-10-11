@@ -184,6 +184,100 @@ function harness(binding: RemoteWorkerNativeBinding) {
     },
   };
 }
+const nativeParentReference = {
+  contract: "ctox.workjet.persistent-worker-binding.v1",
+  owner_user_id: "current-owner",
+  project_id: request.project.id,
+  supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
+  thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
+  role: "persistent_worker",
+  revision: 1,
+  state: "active",
+} as const;
+const parentRequest: RemoteWorkerRequest = {
+  ...request,
+  parent: { ...request.parent, threadId: ThreadId.make(nativeParentReference.thread_id) },
+  parentTeamRole: "specialist",
+  parentTeamBinding: nativeParentReference,
+};
+
+it.effect("keeps the actual Parent UUID and complete reference at every native phase and lost ACK retry", () =>
+  Effect.gen(function* () {
+    const binding = {
+      ...(yield* bindingFor),
+      sourceSupervisorThreadId: parentRequest.parent.threadId,
+      requestDigest: yield* remoteWorkerRequestDigest(parentRequest),
+      parentTeamBinding: nativeParentReference,
+    };
+    const h = harness(binding);
+    yield* h.client.execute(scope, parentRequest, binding, "issue");
+    h.loseNextResponse();
+    yield* Effect.flip(h.client.execute(scope, parentRequest, binding, "claim", "permit", "execution"));
+    for (const action of ["claim", "revalidate", "renew"] as const)
+      yield* h.client.execute(scope, parentRequest, binding, action, "permit", "execution", action === "renew" ? 1 : undefined);
+    h.revokeAccount();
+    yield* h.client.execute(scope, parentRequest, binding, "revoke", "permit", "execution");
+    for (const call of h.calls) {
+      assert.deepEqual(call.binding, binding);
+      assert.equal(binding.sourceSupervisorThreadId, nativeParentReference.thread_id);
+    }
+    assert.notEqual(
+      yield* remoteWorkerRequestDigest(parentRequest),
+      yield* remoteWorkerRequestDigest({ ...parentRequest, parentTeamBinding: { ...nativeParentReference, revision: 2 } }),
+    );
+  }),
+);
+
+it.effect("denies dropped Parent references, substituted Root UUIDs and role before native side effects", () =>
+  Effect.gen(function* () {
+    const binding = {
+      ...(yield* bindingFor),
+      sourceSupervisorThreadId: parentRequest.parent.threadId,
+      requestDigest: yield* remoteWorkerRequestDigest(parentRequest),
+      parentTeamBinding: nativeParentReference,
+    };
+    const { parentTeamBinding: _reference, ...withoutReference } = binding;
+    for (const changed of [
+      withoutReference,
+      { ...binding, sourceSupervisorThreadId: nativeParentReference.supervisor_thread_id },
+      { ...binding, parentTeamBinding: { ...nativeParentReference, revision: 2 } },
+      { ...binding, parentTeamBinding: { ...nativeParentReference, project_id: "foreign-project" } },
+    ]) {
+      const h = harness(binding);
+      for (const action of ["issue", "claim", "revalidate", "renew", "revoke"] as const) {
+        const error = yield* Effect.flip(h.client.execute(scope, parentRequest, changed, action, "permit", "execution", 1));
+        assert.equal(error.reason, "invalid-request");
+      }
+      assert.deepEqual(h.calls, []);
+    }
+    const h = harness(binding);
+    const wrongRole = { ...parentRequest, parentTeamRole: "supervisor" as const };
+    assert.equal(
+      (yield* Effect.flip(h.client.execute(scope, wrongRole, { ...binding, requestDigest: yield* remoteWorkerRequestDigest(wrongRole) }, "issue"))).reason,
+      "invalid-request",
+    );
+    assert.deepEqual(h.calls, []);
+  }),
+);
+
+it.effect("rejects a substituted native Owner or complete Parent receipt at all phases", () =>
+  Effect.gen(function* () {
+    const binding = {
+      ...(yield* bindingFor),
+      sourceSupervisorThreadId: parentRequest.parent.threadId,
+      requestDigest: yield* remoteWorkerRequestDigest(parentRequest),
+      parentTeamBinding: nativeParentReference,
+    };
+    for (const action of ["issue", "claim", "revalidate", "renew", "revoke"] as const) {
+      const h = harness(binding);
+      h.setReceipt({ ...receiptFor(binding), ownerUserId: "foreign-owner" });
+      assert.equal((yield* Effect.flip(h.client.execute(scope, parentRequest, binding, action, "permit", "execution", 1))).reason, "invalid-request");
+      h.setReceipt({ ...receiptFor(binding), binding: { ...binding, parentTeamBinding: { ...nativeParentReference, revision: 2 } } });
+      assert.equal((yield* Effect.flip(h.client.execute(scope, parentRequest, binding, action, "permit", "execution", 1))).reason, "invalid-request");
+    }
+  }),
+);
+
 it.effect(
   "intersects the current source credential grant at issue, claim and every later usage",
   () =>

@@ -1,6 +1,7 @@
 import * as NodeUtil from "node:util";
 import {
   canCoordinateWorkjet,
+  workjetParentBindingMatchesTeam,
   CommandId,
   MessageId,
   ThreadId,
@@ -242,6 +243,11 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     if (parentTeam && parentTeam.role !== "specialist" && parentTeam.role !== "supervisor") {
       return yield* failure("role-not-authorized");
     }
+    const parentTeamBinding =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.parentTeamBinding : undefined;
+    if (!workjetParentBindingMatchesTeam(parentTeamBinding, parentTeam, parent.projectId, parent.id)) {
+      return yield* failure("role-not-authorized");
+    }
     const executionPolicy =
       parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.executionPolicy : undefined;
     if (
@@ -383,6 +389,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           saved.value.request.llmRouteId !== profile.llmRouteId ||
           saved.value.request.modelSelection.model !== profile.modelId ||
           !NodeUtil.isDeepStrictEqual(saved.value.request.executionPolicy, executionPolicy) ||
+          !NodeUtil.isDeepStrictEqual(saved.value.request.parentTeamBinding, parentTeamBinding) ||
           saved.value.request.enabledCapabilityIds.some(
             (id) => !profile.capabilityIds.includes(id),
           ) ||
@@ -453,6 +460,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           parent: { environmentId: invocation.environmentId, threadId: parent.id },
           ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
           ...(executionPolicy === undefined ? {} : { executionPolicy }),
+          ...(parentTeamBinding === undefined ? {} : { parentTeamBinding }),
           parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
           managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
             .filter(Boolean)

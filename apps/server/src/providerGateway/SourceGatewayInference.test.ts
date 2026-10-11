@@ -196,6 +196,89 @@ const reason = (request: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =
     },
   });
 
+const parentInput = (): WorkjetGatewayInferenceInput => {
+  const reference = {
+    contract: "ctox.workjet.persistent-worker-binding.v1" as const,
+    owner_user_id: input.permit.ownerUserId,
+    project_id: input.workerRequest.project.id,
+    supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
+    thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
+    role: "persistent_worker" as const,
+    revision: 1,
+    state: "active" as const,
+  };
+  return {
+    ...input,
+    workerRequest: {
+      ...input.workerRequest,
+      parent: { ...input.workerRequest.parent, threadId: ThreadId.make(reference.thread_id) },
+      parentTeamRole: "specialist",
+      parentTeamBinding: reference,
+    },
+    permit: {
+      ...input.permit,
+      binding: {
+        ...input.permit.binding,
+        sourceSupervisorThreadId: ThreadId.make(reference.thread_id),
+        parentTeamBinding: reference,
+      },
+    },
+  };
+};
+
+it.effect("carries the complete Parent reference through native renewal and post-inference revalidation", () =>
+  Effect.gen(function* () {
+    const p = parentInput();
+    const f = fixture();
+    f.native({ ...p.permit, renewalSequence: 1, expiresAtMs: 400000 });
+    yield* f.consumer.infer(p);
+    expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+    expect(f.deadlines).toEqual([400000]);
+  }),
+);
+
+it.effect("denies changed, omitted or substituted Parent identity before any catalog or inference", () =>
+  Effect.gen(function* () {
+    const p = parentInput();
+    const original = p.permit.binding.parentTeamBinding!;
+    const { parentTeamBinding: _reference, ...withoutReference } = p.workerRequest;
+    for (const changed of [
+      { ...p, workerRequest: withoutReference },
+      { ...p, workerRequest: { ...p.workerRequest, parentTeamBinding: { ...original, revision: 2 } } },
+      { ...p, workerRequest: { ...p.workerRequest, parentTeamRole: "supervisor" as const } },
+      { ...p, permit: { ...p.permit, ownerUserId: "foreign-owner" } },
+      { ...p, permit: { ...p.permit, binding: { ...p.permit.binding, sourceSupervisorThreadId: ThreadId.make(original.supervisor_thread_id) } } },
+    ]) {
+      const f = fixture();
+      f.native(p.permit);
+      expect(yield* reason(f.consumer.infer(changed))).toBe("binding-mismatch");
+      expect(f.events).toEqual([]);
+    }
+  }),
+);
+
+it.effect("rejects lost or changed complete Parent references in renewal and after inference", () =>
+  Effect.gen(function* () {
+    const p = parentInput();
+    const { parentTeamBinding: _reference, ...withoutReference } = p.permit.binding;
+    const replaced = [
+      { ...p.permit, binding: withoutReference },
+      { ...p.permit, binding: { ...p.permit.binding, parentTeamBinding: { ...p.permit.binding.parentTeamBinding!, revision: 2 } } },
+    ];
+    for (const receipt of replaced) {
+      const before = fixture();
+      before.native(receipt);
+      expect(yield* reason(before.consumer.infer(p))).toBe("native-admission-rejected");
+      expect(before.events).toEqual(["catalog", "native"]);
+      const after = fixture();
+      after.native(p.permit);
+      after.afterForward(() => after.native(receipt));
+      expect(yield* reason(after.consumer.infer(p))).toBe("native-admission-rejected");
+      expect(after.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+    }
+  }),
+);
+
 describe("source gateway inference", () => {
   it.effect("pins Messages routing to the worker harness and rejects protocol substitution", () =>
     Effect.gen(function* () {

@@ -4,7 +4,11 @@ import type {
   WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { rotateWorkjetCtoxWorkerSource } from "@workjet/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  WorkerSourceConnectionPicker,
+  type WorkerSourceConnectionChoice,
+} from "./WorkerSourceConnectionPicker";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import {
@@ -20,6 +24,7 @@ export interface WorkerSourceConnectionStatus {
   readonly retry: (() => void) | null;
   readonly disabled: boolean;
   readonly authenticationRequired: boolean;
+  readonly choice?: WorkerSourceConnectionChoice;
 }
 
 export function NativeWorkerSourceControl(props: {
@@ -58,10 +63,13 @@ export function NativeWorkerSourceControl(props: {
   const autoAttempted = useRef<string | null>(null);
   const request = workerSourceProvisionRequest(props.environmentId, props.instanceId);
   // The refreshed catalog replaces the provisioning receipt, including revocation.
-  const connections =
-    provisioned?.scope === scope && provisioned.queryData === query.data
-      ? [provisioned.connection]
-      : (query.data?.connections ?? []);
+  const connections = useMemo(
+    () =>
+      provisioned?.scope === scope && provisioned.queryData === query.data
+        ? [provisioned.connection]
+        : (query.data?.connections ?? []),
+    [provisioned, scope, query.data],
+  );
   const boundSource = connections.find(
     (entry) =>
       workerSourceConnectionForInstance([entry], props.instanceId) &&
@@ -81,11 +89,15 @@ export function NativeWorkerSourceControl(props: {
         : null);
   const ready = source?.status === "ready";
   const bound = source !== undefined && workerSourceIsBound(props.config, source);
-  const selectableConnections = connections.filter(
-    (entry) =>
-      entry.status === "ready" &&
-      workerSourceConnectionForInstance([entry], props.instanceId) &&
-      workerSourceBindingError(props.config, props.instanceId, entry) === null,
+  const selectableConnections = useMemo(
+    () =>
+      connections.filter(
+        (entry) =>
+          entry.status === "ready" &&
+          workerSourceConnectionForInstance([entry], props.instanceId) &&
+          workerSourceBindingError(props.config, props.instanceId, entry) === null,
+      ),
+    [connections, props.instanceId, props.config],
   );
   const chooseConnection = !bound && selectableConnections.length > 1;
   const provision =
@@ -211,19 +223,35 @@ export function NativeWorkerSourceControl(props: {
   const canRetry = !selectionError && !(error?.scope === scope && error.retryable === false);
   useEffect(() => {
     props.onStatusChange?.(
-      currentError
+      currentError || chooseConnection
         ? {
-            message: currentError,
+            message: chooseConnection
+              ? error?.scope === scope
+                ? error.message
+                : "Choose worker access for this Supervisor."
+              : currentError!,
             authenticationRequired:
-              source?.status === "needs_auth" ||
-              (error?.scope === scope && error.authenticationRequired === true),
+              !chooseConnection &&
+              (source?.status === "needs_auth" ||
+                (error?.scope === scope && error.authenticationRequired === true)),
             retry: canRetry ? () => void connectRef.current(bound) : null,
             disabled: props.unavailable || busy || query.isPending || request === null,
+            ...(chooseConnection
+              ? {
+                  choice: {
+                    connections: selectableConnections,
+                    select: (connectionId: string) => void connectRef.current(false, connectionId),
+                  },
+                }
+              : {}),
           }
         : null,
     );
   }, [
     currentError,
+    chooseConnection,
+    selectableConnections,
+    error?.message,
     source?.status,
     error?.scope,
     error?.authenticationRequired,
@@ -243,22 +271,13 @@ export function NativeWorkerSourceControl(props: {
       data-workjet-worker-source-instance-id={bound ? source?.instanceId : undefined}
     >
       {chooseConnection ? (
-        <select
-          aria-label="Choose worker access"
-          className="max-w-56 rounded border px-2 py-1 disabled:opacity-50"
-          value=""
+        <WorkerSourceConnectionPicker
+          choice={{
+            connections: selectableConnections,
+            select: (connectionId) => void connectRef.current(false, connectionId),
+          }}
           disabled={props.unavailable || busy || query.isPending || request === null}
-          onChange={(event) => void connectRef.current(false, event.target.value)}
-        >
-          <option value="" disabled>
-            Choose worker access…
-          </option>
-          {selectableConnections.map((entry) => (
-            <option key={entry.connectionId} value={entry.connectionId}>
-              {entry.displayName} · {entry.connectionId.split(":").at(-1)?.slice(0, 8)}
-            </option>
-          ))}
-        </select>
+        />
       ) : currentError &&
         (selectionError || (error?.scope === scope && error.retryable === false)) ? (
         <span role="alert" className="text-amber-500">

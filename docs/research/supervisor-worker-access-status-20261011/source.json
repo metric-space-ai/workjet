@@ -1,0 +1,12 @@
+{
+  "head": "1594fdac19a31a7467c4d9bfe77c234bde27ec75",
+  "laneRun": "workjet-supervisor-access-status-20261011T062148Z",
+  "productionBlobs": {
+    "apps/web/src/components/chat/NativeWorkerSourceControl.tsx": "2e7cfc2954779232cf61dd17d91ace4e70cbe036",
+    "apps/web/src/components/chat/NativeSupervisorConnectionStatus.tsx": "0bb9082564267bbc59d0262e9dabcbcb781d20f4",
+    "apps/web/src/components/chat/WorkerSourceConnectionPicker.tsx": "b630648d01a0945b60e10fc8c1db51b0637b16ef",
+    "apps/web/src/components/chat/NativeSupervisorComposer.tsx": "e2d9c2fdbda8c8b72cdfd717f6baa16523d2ec5d"
+  },
+  "syntheticFixture": true,
+  "installedAppAccess": false
+}

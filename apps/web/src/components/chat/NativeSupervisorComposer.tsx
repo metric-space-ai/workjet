@@ -65,6 +65,7 @@ import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDet
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
 import { NativeSupervisorRouteControls } from "./NativeSupervisorRouteControls";
+import { NativeSupervisorConnectionStatus } from "./NativeSupervisorConnectionStatus";
 import type {
   NativeWorkerSourceControl,
   WorkerSourceConnectionStatus,
@@ -462,7 +463,8 @@ export function NativeSupervisorComposer(props: {
   );
   const connectionStatus = authenticationRequired
     ? "Sign in to ctox.dev to reconnect this project’s instance."
-    : ((disabled
+    : ((workerStatus?.choice ? workerStatus.message : null) ??
+      (disabled
         ? (props.blockReason ??
           (props.instanceId ? "The project connection is unavailable." : null))
         : null) ??
@@ -725,65 +727,64 @@ export function NativeSupervisorComposer(props: {
         </p>
       )}
       {(connectionStatus || authenticationRequired) && (
-        <div
-          role="status"
-          data-supervisor-connection-status="true"
-          className="mb-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground"
-        >
-          <span>{connectionStatus ?? "Sign in to connect this instance."}</span>
-          {authenticationRequired ? (
-            <button
-              type="button"
-              className="underline underline-offset-2"
-              disabled={busy}
-              onClick={async () => {
-                const bridge = window.desktopBridge?.ctox;
-                if (!bridge || inFlight.current) return;
-                inFlight.current = true;
-                setBusy(true);
-                try {
-                  const result = await bridge.login();
-                  if (result._tag === "completed") {
-                    refreshWorkjetProjectRegistry(latestProps.current.instanceId);
-                    requestLocalProjectRegistrationRetry();
-                    setError(null);
-                    setFailureCode(null);
-                    setBindingRetry((value) => value + 1);
+        <NativeSupervisorConnectionStatus
+          message={connectionStatus ?? "Sign in to connect this instance."}
+          workerStatus={authenticationRequired ? null : workerStatus}
+          recoveryAction={
+            authenticationRequired ? (
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={busy}
+                onClick={async () => {
+                  const bridge = window.desktopBridge?.ctox;
+                  if (!bridge || inFlight.current) return;
+                  inFlight.current = true;
+                  setBusy(true);
+                  try {
+                    const result = await bridge.login();
+                    if (result._tag === "completed") {
+                      refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+                      requestLocalProjectRegistrationRetry();
+                      setError(null);
+                      setFailureCode(null);
+                      setBindingRetry((value) => value + 1);
+                    }
+                  } catch {
+                    setError("Could not open CTOX sign-in. Retry connection.");
+                  } finally {
+                    inFlight.current = false;
+                    setBusy(false);
                   }
-                } catch {
-                  setError("Could not open CTOX sign-in. Retry connection.");
-                } finally {
-                  inFlight.current = false;
-                  setBusy(false);
-                }
-              }}
-            >
-              Sign in to ctox.dev
-            </button>
-          ) : workerStatus?.retry ? (
-            <button
-              type="button"
-              className="underline underline-offset-2"
-              disabled={workerStatus.disabled}
-              onClick={workerStatus.retry}
-            >
-              Reconnect
-            </button>
-          ) : props.instanceId !== null && (disabled || bindingError || connectionError) ? (
-            <button
-              type="button"
-              className="underline underline-offset-2"
-              disabled={busy || bindingPending}
-              onClick={() => {
-                refreshWorkjetProjectRegistry(props.instanceId);
-                requestLocalProjectRegistrationRetry();
-                setBindingRetry((value) => value + 1);
-              }}
-            >
-              Retry connection
-            </button>
-          ) : null}
-        </div>
+                }}
+              >
+                Sign in to ctox.dev
+              </button>
+            ) : workerStatus?.retry ? (
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={workerStatus.disabled}
+                onClick={workerStatus.retry}
+              >
+                Reconnect
+              </button>
+            ) : props.instanceId !== null && (disabled || bindingError || connectionError) ? (
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={busy || bindingPending}
+                onClick={() => {
+                  refreshWorkjetProjectRegistry(props.instanceId);
+                  requestLocalProjectRegistrationRetry();
+                  setBindingRetry((value) => value + 1);
+                }}
+              >
+                Retry connection
+              </button>
+            ) : null
+          }
+        />
       )}
       {previousTurns.length > 0 && journal && scopeMatches && (
         <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">

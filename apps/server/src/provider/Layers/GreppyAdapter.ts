@@ -20,7 +20,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+
 import * as Exit from "effect/Exit";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -248,7 +248,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
             "This Greppy session uses an older transport and cannot be resumed through ACP.",
           );
         }
-        const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        const mcpSession = readMcpProviderSession(input.threadId);
         const acp = yield* makeGreppyAcpRuntime({
           mcpServers: mcpSession ? [{ type: "http", name: "workjet", url: mcpSession.endpoint, headers: [{ name: "Authorization", value: mcpSession.authorizationHeader }] }] : [],
           config,

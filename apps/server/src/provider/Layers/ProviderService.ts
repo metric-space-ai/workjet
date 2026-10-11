@@ -44,6 +44,7 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { readHistoryContinuation, withImportedHistoryContext } from "../importedHistoryContext.ts";
 import {
   requireEnforcedExecutionPolicy,
+  requireOneShotWorktreeContainment,
   requirePersistedEnforcedExecutionPolicy,
 } from "../executionPolicy.ts";
 import * as ServerConfig from "../../config.ts";
@@ -796,6 +797,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
+        yield* requireOneShotWorktreeContainment("ProviderService.startSession", adapter.provider, input.workjetConfig, effectiveCwd);
         yield* requireEnforcedExecutionPolicy(
           "ProviderService.startSession",
           adapter.provider,

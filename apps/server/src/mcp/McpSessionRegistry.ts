@@ -141,7 +141,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         capabilities: new Set(["preview"]),
         activeWorkjetMcpCapabilityIds: new Set(activeWorkjetMcpCapabilityIds),
         workjetRole: request.threadCapabilityContext.workjetRole,
-        ...(request.threadCapabilityContext.projectTeamRole ? { projectTeamRole: request.threadCapabilityContext.projectTeamRole } : {}),
+        ...(request.threadCapabilityContext.projectTeamRole
+          ? { projectTeamRole: request.threadCapabilityContext.projectTeamRole }
+          : {}),
         ...(request.threadCapabilityContext.decisionHubConnectionId !== undefined
           ? { decisionHubConnectionId: request.threadCapabilityContext.decisionHubConnectionId }
           : {}),
@@ -170,13 +172,18 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           ...(cwd ? { cwd } : {}),
           activeWorkjetMcpCapabilityIds,
           compiledManagedPrompt: request.threadCapabilityContext.compiledManagedPrompt,
-          ...(request.threadCapabilityContext.projectTeamRole ? { projectTeamRole: request.threadCapabilityContext.projectTeamRole } : {}),
+          ...(request.threadCapabilityContext.projectTeamRole
+            ? { projectTeamRole: request.threadCapabilityContext.projectTeamRole }
+            : {}),
           requiredWorkjetToolNames: Object.freeze([
             "workjet_worker_kanban",
             "workjet_update_goal",
             "workjet_submit_worker",
-            ...(request.threadCapabilityContext.projectTeamRole === "supervisor" ? ["workjet_answer_worker", "workjet_escalate"] :
-              request.threadCapabilityContext.projectTeamRole === "specialist" ? ["workjet_escalate"] : []),
+            ...(request.threadCapabilityContext.projectTeamRole === "supervisor"
+              ? ["workjet_answer_worker", "workjet_escalate"]
+              : request.threadCapabilityContext.projectTeamRole === "specialist"
+                ? ["workjet_escalate"]
+                : []),
           ]),
         }),
       };

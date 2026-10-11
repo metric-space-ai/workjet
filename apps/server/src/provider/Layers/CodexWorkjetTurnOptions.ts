@@ -25,7 +25,11 @@ export function codexWorkjetTurnOptions(
   input: CodexWorkjetTurnOptionsInput,
 ): CodexWorkjetTurnOptionsInput {
   return {
-    ...(input.compiledManagedPrompt === undefined ? {} : { compiledManagedPrompt: input.compiledManagedPrompt }),
-    ...(input.oneShotWorkspaceRoot === undefined ? {} : { oneShotWorkspaceRoot: input.oneShotWorkspaceRoot }),
+    ...(input.compiledManagedPrompt === undefined
+      ? {}
+      : { compiledManagedPrompt: input.compiledManagedPrompt }),
+    ...(input.oneShotWorkspaceRoot === undefined
+      ? {}
+      : { oneShotWorkspaceRoot: input.oneShotWorkspaceRoot }),
   };
 }

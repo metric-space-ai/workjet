@@ -55,7 +55,10 @@ const register = Effect.gen(function* () {
             ],
           });
         }).pipe(
-          Effect.provideService(OrchestrationEngineService, Context.getUnsafe(fiber.context, OrchestrationEngineService)),
+          Effect.provideService(
+            OrchestrationEngineService,
+            Context.getUnsafe(fiber.context, OrchestrationEngineService),
+          ),
           Effect.provideService(SqlClient.SqlClient, sql),
           Effect.provideService(ProjectionSnapshotQuery, query),
           Effect.provideService(ProviderService, providers),

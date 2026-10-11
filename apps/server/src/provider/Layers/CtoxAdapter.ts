@@ -420,9 +420,15 @@ export const makeCtoxAdapter = (options: {
               "sendTurn",
               "CTOX uses the model configuration of its own instance.",
             );
-          const managedPrompt = readMcpProviderSession(input.threadId)?.compiledManagedPrompt.trim();
+          const managedPrompt = readMcpProviderSession(
+            input.threadId,
+          )?.compiledManagedPrompt.trim();
           const instruction = [managedPrompt, input.input].filter(Boolean).join("\n\n");
-          if (Buffer.byteLength(instruction, "utf8") > 16_000) return yield* failure("sendTurn", "Native task and role prompt exceed the 16000-byte instruction limit.");
+          if (Buffer.byteLength(instruction, "utf8") > 16_000)
+            return yield* failure(
+              "sendTurn",
+              "Native task and role prompt exceed the 16000-byte instruction limit.",
+            );
           entry.submitting = true;
           return yield* Effect.gen(function* () {
             const latest = yield* options.client

@@ -35,7 +35,10 @@ export const WorkerSupervisorDecisionReactorLive = Layer.effect(
       ),
     );
     const start = Effect.fn("WorkerSupervisorDecisionReactor.start")(function* () {
-      yield* recoverWorkerDecisionAnswers().pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.orDie);
+      yield* recoverWorkerDecisionAnswers().pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.orDie,
+      );
       yield* forkParked(
         Stream.runForEach(engine.streamDomainEvents, (event) =>
           event.aggregateKind === "thread" &&

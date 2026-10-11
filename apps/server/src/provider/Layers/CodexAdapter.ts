@@ -1766,7 +1766,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? yield* options.resolveSessionEnvironment({ model: selectedModel })
             : options?.environment;
         const runtimeInput: CodexSessionRuntimeOptions = {
-          ...(mcpSession?.projectTeamRole === "worker" && input.cwd ? { oneShotWorkspaceRoot: input.cwd } : {}),
+          ...(mcpSession?.projectTeamRole === "worker" && input.cwd
+            ? { oneShotWorkspaceRoot: input.cwd }
+            : {}),
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),

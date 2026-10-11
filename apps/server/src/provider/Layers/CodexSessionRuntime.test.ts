@@ -1,3 +1,4 @@
+import { expect } from "@effect/vitest";
 import * as NodeAssert from "node:assert/strict";
 
 import { it } from "@effect/vitest";
@@ -629,8 +630,22 @@ describe("openCodexThread", () => {
   );
 });
 
-it.effect("one-shot turns use approval never and restrict writes to their exact worktree", () => Effect.gen(function* () {
-  const params = yield* buildTurnStartParams({threadId:"one-shot",runtimeMode:"full-access",oneShotWorkspaceRoot:"/isolated/worker",prompt:"Implement the assigned package",interactionMode:"default"});
-  expect(params.approvalPolicy).toBe("never");
-  expect(params.sandboxPolicy).toMatchObject({type:"workspaceWrite",writableRoots:["/isolated/worker"],networkAccess:true,excludeTmpdirEnvVar:true,excludeSlashTmp:true});
-}));
+it.effect("one-shot turns use approval never and restrict writes to their exact worktree", () =>
+  Effect.gen(function* () {
+    const params = yield* buildTurnStartParams({
+      threadId: "one-shot",
+      runtimeMode: "full-access",
+      oneShotWorkspaceRoot: "/isolated/worker",
+      prompt: "Implement the assigned package",
+      interactionMode: "default",
+    });
+    expect(params.approvalPolicy).toBe("never");
+    expect(params.sandboxPolicy).toMatchObject({
+      type: "workspaceWrite",
+      writableRoots: ["/isolated/worker"],
+      networkAccess: true,
+      excludeTmpdirEnvVar: true,
+      excludeSlashTmp: true,
+    });
+  }),
+);

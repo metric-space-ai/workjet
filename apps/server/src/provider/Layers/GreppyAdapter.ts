@@ -250,7 +250,16 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
         }
         const mcpSession = readMcpProviderSession(input.threadId);
         const acp = yield* makeGreppyAcpRuntime({
-          mcpServers: mcpSession ? [{ type: "http", name: "workjet", url: mcpSession.endpoint, headers: [{ name: "Authorization", value: mcpSession.authorizationHeader }] }] : [],
+          mcpServers: mcpSession
+            ? [
+                {
+                  type: "http",
+                  name: "workjet",
+                  url: mcpSession.endpoint,
+                  headers: [{ name: "Authorization", value: mcpSession.authorizationHeader }],
+                },
+              ]
+            : [],
           config,
           environment,
           model,

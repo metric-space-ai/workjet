@@ -97,7 +97,9 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
     workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
     latestAssistantMessagePreview: Schema.optional(Schema.NullOr(Schema.String)),
     waitingOnSupervisor: Schema.optional(Schema.Number),
-    workerDecisionProblem: Schema.optional(Schema.NullOr(Schema.Literals(["missing-supervisor", "timed-out"]))),
+    workerDecisionProblem: Schema.optional(
+      Schema.NullOr(Schema.Literals(["missing-supervisor", "timed-out"])),
+    ),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -2271,7 +2273,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       hasPendingUserInput:
                         row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
                       ...(row.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
-                      ...(row.workerDecisionProblem ? { workerDecisionProblem: row.workerDecisionProblem } : {}),
+                      ...(row.workerDecisionProblem
+                        ? { workerDecisionProblem: row.workerDecisionProblem }
+                        : {}),
                       hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                       backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
                         row.threadId,
@@ -2423,7 +2427,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   hasPendingUserInput:
                     row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
                   ...(row.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
-                      ...(row.workerDecisionProblem ? { workerDecisionProblem: row.workerDecisionProblem } : {}),
+                  ...(row.workerDecisionProblem
+                    ? { workerDecisionProblem: row.workerDecisionProblem }
+                    : {}),
                   hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                   backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
                     row.threadId,
@@ -2751,7 +2757,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         hasPendingUserInput:
           threadRow.value.pendingUserInputCount > 0 && threadRow.value.waitingOnSupervisor !== 1,
         ...(threadRow.value.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
-        ...(threadRow.value.workerDecisionProblem ? { workerDecisionProblem: threadRow.value.workerDecisionProblem } : {}),
+        ...(threadRow.value.workerDecisionProblem
+          ? { workerDecisionProblem: threadRow.value.workerDecisionProblem }
+          : {}),
         hasActionableProposedPlan: threadRow.value.hasActionableProposedPlan > 0,
         backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
           threadRow.value.threadId,

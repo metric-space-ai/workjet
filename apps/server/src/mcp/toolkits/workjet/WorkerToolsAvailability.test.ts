@@ -46,7 +46,10 @@ for (const harness of [
           getThreadShellById: () =>
             Effect.succeed(
               Option.some({
-                id: threadId, projectId: ProjectId.make("project"), runtimeMode: "full-access", interactionMode: "default",
+                id: threadId,
+                projectId: ProjectId.make("project"),
+                runtimeMode: "full-access",
+                interactionMode: "default",
                 archivedAt: null,
                 deletedAt: null,
                 workjetConfig: {
@@ -85,9 +88,14 @@ for (const harness of [
             },
           });
           expect(goal.isError).toBe(false);
-          const escalation = yield* server.callTool({name:"workjet_escalate",arguments:{question:"Which authorised implementation?",options:["A","B"]}});
+          const escalation = yield* server.callTool({
+            name: "workjet_escalate",
+            arguments: { question: "Which authorised implementation?", options: ["A", "B"] },
+          });
           expect(escalation.isError).toBe(false);
-          expect((yield* sql`SELECT supervisor_thread_id,request_json FROM workjet_worker_supervisor_decisions`)[0]).toMatchObject({supervisor_thread_id:null});
+          expect(
+            (yield* sql`SELECT supervisor_thread_id,request_json FROM workjet_worker_supervisor_decisions`)[0],
+          ).toMatchObject({ supervisor_thread_id: null });
         }).pipe(
           Effect.provideService(Invocation.McpInvocationContext, {
             environmentId: EnvironmentId.make("isolated-tools"),
@@ -118,7 +126,11 @@ for (const harness of [
           Effect.provideService(ProjectionSnapshotQuery, query),
           Effect.provideService(OrchestrationEngineService, engine),
           Effect.provide(
-            Layer.mergeAll(GoalToolkitRegistrationLive, WorkerKanbanToolkitRegistrationLive, WorkerAutonomyToolkitRegistrationLive).pipe(
+            Layer.mergeAll(
+              GoalToolkitRegistrationLive,
+              WorkerKanbanToolkitRegistrationLive,
+              WorkerAutonomyToolkitRegistrationLive,
+            ).pipe(
               Layer.provideMerge(McpServer.McpServer.layer),
               Layer.provideMerge(NodeServices.layer),
             ),

@@ -1,4 +1,3 @@
-
 import {
   ApprovalRequestId,
   EventId,
@@ -48,8 +47,8 @@ interface DecisionRow {
   readonly answerJson?: string | null;
 }
 
-
-export const ONE_SHOT_SELF_DECISION = "Entscheide selbst innerhalb deines Worktrees und dokumentiere die Entscheidung im PR";
+export const ONE_SHOT_SELF_DECISION =
+  "Entscheide selbst innerhalb deines Worktrees und dokumentiere die Entscheidung im PR";
 
 /** Called exclusively by the authenticated websocket UI turn ingress after dispatch succeeds. */
 export const recordWorkerOwnerActivity = Effect.fn("workjet.recordWorkerOwnerActivity")(function* (
@@ -70,41 +69,72 @@ const automaticallyAnswerOneShot = Effect.fn("workjet.automaticallyAnswerOneShot
 ) {
   const providers = yield* ProviderService;
   const requestId = ApprovalRequestId.make(event.requestId ?? event.eventId);
-  yield* (event.type === "user-input.requested"
-    ? providers.respondToUserInput({ threadId: thread.id, requestId,
-        answers: Object.fromEntries(event.payload.questions.map((question) => [question.id, ONE_SHOT_SELF_DECISION])) })
-    : providers.respondToRequest({ threadId: thread.id, requestId, decision: "accept" })
-  ).pipe(Effect.catch((error) => Effect.logWarning("one-shot request could not be automatically answered", { threadId: thread.id, error })));
+  yield* (
+    event.type === "user-input.requested"
+      ? providers.respondToUserInput({
+          threadId: thread.id,
+          requestId,
+          answers: Object.fromEntries(
+            event.payload.questions.map((question) => [question.id, ONE_SHOT_SELF_DECISION]),
+          ),
+        })
+      : providers.respondToRequest({ threadId: thread.id, requestId, decision: "accept" })
+  ).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("one-shot request could not be automatically answered", {
+        threadId: thread.id,
+        error,
+      }),
+    ),
+  );
 });
 
 export const WORKER_SUPERVISOR_TIMEOUT_MS = 5 * 60 * 1000;
-const expireUnboundWorkerDecisions = Effect.fn("workjet.expireUnboundWorkerDecisions")(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const now = yield* Clock.currentTimeMillis;
-  const cutoff = DateTime.formatIso(DateTime.makeUnsafe(now - WORKER_SUPERVISOR_TIMEOUT_MS));
-  yield* sql`UPDATE workjet_worker_supervisor_decisions SET status='timed-out', failure='Projekt ohne Supervisor: Wartezeit abgelaufen'
+const expireUnboundWorkerDecisions = Effect.fn("workjet.expireUnboundWorkerDecisions")(
+  function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const now = yield* Clock.currentTimeMillis;
+    const cutoff = DateTime.formatIso(DateTime.makeUnsafe(now - WORKER_SUPERVISOR_TIMEOUT_MS));
+    yield* sql`UPDATE workjet_worker_supervisor_decisions SET status='timed-out', failure='Projekt ohne Supervisor: Wartezeit abgelaufen'
     WHERE status='pending' AND created_at < ${cutoff} AND NOT EXISTS (
       SELECT 1 FROM projection_threads WHERE project_id=workjet_worker_supervisor_decisions.project_id
         AND deleted_at IS NULL AND archived_at IS NULL AND json_extract(workjet_config_json,'$.team.role')='supervisor')`;
-});
+  },
+);
 
 /** Recover only once at reactor startup; never steal a live in-flight response. */
-export const recoverWorkerDecisionAnswers = Effect.fn("workjet.recoverWorkerDecisionAnswers")(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  yield* sql`UPDATE workjet_worker_supervisor_decisions SET status='pending' WHERE status='answering'`;
-});
+export const recoverWorkerDecisionAnswers = Effect.fn("workjet.recoverWorkerDecisionAnswers")(
+  function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`UPDATE workjet_worker_supervisor_decisions SET status='pending' WHERE status='answering'`;
+  },
+);
 
-export const retryRetainedWorkerAnswers = Effect.fn("workjet.retryRetainedWorkerAnswers")(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const rows = yield* sql<{decisionId:string; supervisorThreadId:string; answerJson:string}>`SELECT decision_id AS "decisionId",
+export const retryRetainedWorkerAnswers = Effect.fn("workjet.retryRetainedWorkerAnswers")(
+  function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql<{
+      decisionId: string;
+      supervisorThreadId: string;
+      answerJson: string;
+    }>`SELECT decision_id AS "decisionId",
     supervisor_thread_id AS "supervisorThreadId", answer_json AS "answerJson"
     FROM workjet_worker_supervisor_decisions WHERE status='pending' AND answer_json IS NOT NULL AND supervisor_thread_id IS NOT NULL LIMIT 16`;
-  for (const row of rows) {
-    const input = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(WorkerSupervisorAnswer))(row.answerJson);
-    yield* answerWorkerDecision(ThreadId.make(row.supervisorThreadId), input).pipe(
-      Effect.catch((error) => Effect.logWarning("retained worker answer deferred", { decisionId: row.decisionId, error })));
-  }
-});
+    for (const row of rows) {
+      const input = yield* Schema.decodeUnknownEffect(
+        Schema.fromJsonString(WorkerSupervisorAnswer),
+      )(row.answerJson);
+      yield* answerWorkerDecision(ThreadId.make(row.supervisorThreadId), input).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("retained worker answer deferred", {
+            decisionId: row.decisionId,
+            error,
+          }),
+        ),
+      );
+    }
+  },
+);
 
 export const routeWorkerDecision = Effect.fn("workjet.routeWorkerDecision")(function* (
   thread: OrchestrationThreadShell,
@@ -130,7 +160,8 @@ export const routeWorkerDecision = Effect.fn("workjet.routeWorkerDecision")(func
     return true;
   }
   // This receipt is written only at the authenticated UI message ingress, never inferred from actor_kind.
-  const engaged = yield* sql`SELECT 1 FROM workjet_worker_owner_engagement WHERE thread_id = ${thread.id} LIMIT 1`;
+  const engaged =
+    yield* sql`SELECT 1 FROM workjet_worker_owner_engagement WHERE thread_id = ${thread.id} LIMIT 1`;
   if (engaged.length > 0) return false;
   const supervisors = yield* sql<{
     threadId: string;
@@ -247,15 +278,27 @@ const continueWorkerWithAnswer = Effect.fn("workjet.continueWorkerWithAnswer")(f
   const query = yield* ProjectionSnapshotQuery;
   const engine = yield* OrchestrationEngineService;
   const found = yield* query.getThreadShellById(workerThreadId);
-  if (Option.isNone(found)) return yield* new WorkerSupervisorDecisionError({ message: "Worker thread is unavailable." });
+  if (Option.isNone(found))
+    return yield* new WorkerSupervisorDecisionError({ message: "Worker thread is unavailable." });
   const worker = found.value;
   const createdAt = DateTime.formatIso(yield* DateTime.now);
-  yield* engine.dispatch({
-    type: "thread.turn.start", commandId: CommandId.make(`server:worker-answer:${input.decisionId}`),
-    threadId: worker.id, message: { messageId: MessageId.make(`server:worker-answer:${input.decisionId}`),
-      role: "user", attachments: [], text: `Decision for ${input.decisionId}: ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(input.answers ?? input.decision)}. Continue within your assigned goal and worktree.` },
-    runtimeMode: worker.runtimeMode, interactionMode: worker.interactionMode, createdAt,
-  }, { deferWhileBusy: true });
+  yield* engine.dispatch(
+    {
+      type: "thread.turn.start",
+      commandId: CommandId.make(`server:worker-answer:${input.decisionId}`),
+      threadId: worker.id,
+      message: {
+        messageId: MessageId.make(`server:worker-answer:${input.decisionId}`),
+        role: "user",
+        attachments: [],
+        text: `Decision for ${input.decisionId}: ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(input.answers ?? input.decision)}. Continue within your assigned goal and worktree.`,
+      },
+      runtimeMode: worker.runtimeMode,
+      interactionMode: worker.interactionMode,
+      createdAt,
+    },
+    { deferWhileBusy: true },
+  );
 });
 
 export const WorkjetEscalation = Schema.Struct({
@@ -264,76 +307,153 @@ export const WorkjetEscalation = Schema.Struct({
 });
 
 export const escalateWorkjetDecision = Effect.fn("workjet.escalateWorkjetDecision")(function* (
-  threadId: ThreadId, input: typeof WorkjetEscalation.Type,
+  threadId: ThreadId,
+  input: typeof WorkjetEscalation.Type,
 ) {
   const sql = yield* SqlClient.SqlClient;
   const query = yield* ProjectionSnapshotQuery;
   const engine = yield* OrchestrationEngineService;
   const found = yield* query.getThreadShellById(threadId);
-  const team = Option.isSome(found) && found.value.workjetConfig.schemaVersion === 2 ? found.value.workjetConfig.team : undefined;
+  const team =
+    Option.isSome(found) && found.value.workjetConfig.schemaVersion === 2
+      ? found.value.workjetConfig.team
+      : undefined;
   if (Option.isNone(found) || !team || team.role === "worker")
-    return yield* new WorkerSupervisorDecisionError({ message: "One-Shots cannot ask or escalate. Decide within your worktree and document the decision in the PR." });
+    return yield* new WorkerSupervisorDecisionError({
+      message:
+        "One-Shots cannot ask or escalate. Decide within your worktree and document the decision in the PR.",
+    });
   const thread = found.value;
-  const requestId = `workjet-escalate:${yield* (yield* Crypto.Crypto).randomUUID}`;
+  const requestId = `workjet-escalate:${yield* (yield* Crypto.Crypto).randomUUIDv4}`;
   const createdAt = DateTime.formatIso(yield* DateTime.now);
-  const payload = { transport: "mcp", questions: [{ id: "decision", header: "Decision", question: input.question,
-    multiSelect: false, options: (input.options ?? []).map((label) => ({ label, description: label })) }] };
-  const supervisors = yield* sql<{threadId:string}>`SELECT thread_id AS "threadId" FROM projection_threads
+  const payload = {
+    transport: "mcp",
+    questions: [
+      {
+        id: "decision",
+        header: "Decision",
+        question: input.question,
+        multiSelect: false,
+        options: (input.options ?? []).map((label) => ({ label, description: label })),
+      },
+    ],
+  };
+  const supervisors = yield* sql<{
+    threadId: string;
+  }>`SELECT thread_id AS "threadId" FROM projection_threads
     WHERE project_id=${thread.projectId} AND deleted_at IS NULL AND archived_at IS NULL
     AND json_extract(workjet_config_json,'$.team.role')='supervisor' ORDER BY created_at, thread_id LIMIT 1`;
   yield* sql`INSERT INTO workjet_worker_supervisor_decisions
     (decision_id,worker_thread_id,supervisor_thread_id,project_id,request_id,kind,request_json,created_at,notified)
-    VALUES (${`${thread.id}:${requestId}`},${thread.id},${team.role === "supervisor" ? thread.id : supervisors[0]?.threadId ?? null},
+    VALUES (${`${thread.id}:${requestId}`},${thread.id},${team.role === "supervisor" ? thread.id : (supervisors[0]?.threadId ?? null)},
     ${thread.projectId},${requestId},'question',${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(payload)},${createdAt},${team.role === "supervisor" ? 1 : 0})`;
-  yield* engine.dispatch({ type: "thread.activity.append", commandId: CommandId.make(`server:${requestId}`), threadId,
-    activity: { id: EventId.make(`server:${requestId}`), turnId: null, kind: "user-input.requested", summary: team.role === "supervisor" ? "Supervisor benötigt eine Owner-Entscheidung" : "Worker wartet auf Supervisor",
-      tone: "info", payload: { ...payload, requestId, ...(team.role === "supervisor" ? {} : { recipient: "supervisor" }) }, createdAt }, createdAt });
-  return { accepted: true, decisionId: `${thread.id}:${requestId}`, recipient: team.role === "supervisor" ? "owner" : "supervisor" };
+  yield* engine.dispatch({
+    type: "thread.activity.append",
+    commandId: CommandId.make(`server:${requestId}`),
+    threadId,
+    activity: {
+      id: EventId.make(`server:${requestId}`),
+      turnId: null,
+      kind: "user-input.requested",
+      summary:
+        team.role === "supervisor"
+          ? "Supervisor benötigt eine Owner-Entscheidung"
+          : "Worker wartet auf Supervisor",
+      tone: "info",
+      payload: {
+        ...payload,
+        requestId,
+        ...(team.role === "supervisor" ? {} : { recipient: "supervisor" }),
+      },
+      createdAt,
+    },
+    createdAt,
+  });
+  return {
+    accepted: true,
+    decisionId: `${thread.id}:${requestId}`,
+    recipient: team.role === "supervisor" ? "owner" : "supervisor",
+  };
 });
 
 /** MCP questions have no native CLI callback; a UI answer resumes the Supervisor through the durable queue. */
 export const answerOwnerEscalation = Effect.fn("workjet.answerOwnerEscalation")(function* (
-  threadId: ThreadId, requestId: string, answers: Readonly<Record<string, unknown>>,
+  threadId: ThreadId,
+  requestId: string,
+  answers: Readonly<Record<string, unknown>>,
 ) {
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql`SELECT decision_id FROM workjet_worker_supervisor_decisions
     WHERE worker_thread_id=${threadId} AND supervisor_thread_id=${threadId} AND request_id=${requestId} AND status='pending'
     AND json_extract(request_json,'$.transport')='mcp'`;
   if (rows.length === 0) return false;
-  const answer = yield* Schema.decodeUnknownEffect(WorkerSupervisorAnswer)({ decisionId: `${threadId}:${requestId}`, answers });
+  const answer = yield* Schema.decodeUnknownEffect(WorkerSupervisorAnswer)({
+    decisionId: `${threadId}:${requestId}`,
+    answers,
+  });
   yield* answerWorkerDecision(threadId, answer);
   const engine = yield* OrchestrationEngineService;
   const createdAt = DateTime.formatIso(yield* DateTime.now);
-  yield* engine.dispatch({ type: "thread.activity.append", commandId: CommandId.make(`server:owner-answer:${requestId}`), threadId,
-    activity: { id: EventId.make(`server:owner-answer:${requestId}`), turnId: null, kind: "user-input.resolved", summary: "Owner decision received", tone: "info", payload: { requestId }, createdAt }, createdAt });
+  yield* engine.dispatch({
+    type: "thread.activity.append",
+    commandId: CommandId.make(`server:owner-answer:${requestId}`),
+    threadId,
+    activity: {
+      id: EventId.make(`server:owner-answer:${requestId}`),
+      turnId: null,
+      kind: "user-input.resolved",
+      summary: "Owner decision received",
+      tone: "info",
+      payload: { requestId },
+      createdAt,
+    },
+    createdAt,
+  });
   return true;
 });
 
 /** Harnesses without a native question hook still cannot put an unattended question in Needs you. */
-export const routeWorkerTerminalQuestion = Effect.fn("workjet.routeWorkerTerminalQuestion")(function* (
-  thread: OrchestrationThreadShell, text: string, turnId: string,
-) {
-  const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
-  if (!team || (team.role !== "specialist" && team.role !== "worker")) return false;
-  const tail = text.trim().split(/\n\s*\n/).at(-1)?.trim() ?? "";
-  if (!/[?？]\s*$/.test(tail) || !/(?:\byou\b|\byour\b|\bshould I\b|\bshall I\b|\bmay I\b|\bwhich\b|\bkann ich\b|\bsoll ich\b|\bdu\b|\bSie\b|\bwelche\b)/i.test(tail)) return false;
-  if (team.role === "worker") {
-    yield* continueWorkerWithAnswer(thread.id, { decisionId: `text:${turnId}`, answers: { decision: ONE_SHOT_SELF_DECISION } });
-    return true;
-  }
-  const sql = yield* SqlClient.SqlClient;
-  const engaged = yield* sql`SELECT 1 FROM workjet_worker_owner_engagement WHERE thread_id=${thread.id} LIMIT 1`;
-  if (engaged.length > 0) return false;
-  const createdAt = DateTime.formatIso(yield* DateTime.now);
-  const requestId = `text:${turnId}`;
-  const supervisors = yield* sql<{threadId:string}>`SELECT thread_id AS "threadId" FROM projection_threads WHERE project_id=${thread.projectId}
+export const routeWorkerTerminalQuestion = Effect.fn("workjet.routeWorkerTerminalQuestion")(
+  function* (thread: OrchestrationThreadShell, text: string, turnId: string) {
+    const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
+    if (!team || (team.role !== "specialist" && team.role !== "worker")) return false;
+    const tail =
+      text
+        .trim()
+        .split(/\n\s*\n/)
+        .at(-1)
+        ?.trim() ?? "";
+    if (
+      !/[?？]\s*$/.test(tail) ||
+      !/(?:\byou\b|\byour\b|\bshould I\b|\bshall I\b|\bmay I\b|\bwhich\b|\bkann ich\b|\bsoll ich\b|\bdu\b|\bSie\b|\bwelche\b)/i.test(
+        tail,
+      )
+    )
+      return false;
+    if (team.role === "worker") {
+      yield* continueWorkerWithAnswer(thread.id, {
+        decisionId: `text:${turnId}`,
+        answers: { decision: ONE_SHOT_SELF_DECISION },
+      });
+      return true;
+    }
+    const sql = yield* SqlClient.SqlClient;
+    const engaged =
+      yield* sql`SELECT 1 FROM workjet_worker_owner_engagement WHERE thread_id=${thread.id} LIMIT 1`;
+    if (engaged.length > 0) return false;
+    const createdAt = DateTime.formatIso(yield* DateTime.now);
+    const requestId = `text:${turnId}`;
+    const supervisors = yield* sql<{
+      threadId: string;
+    }>`SELECT thread_id AS "threadId" FROM projection_threads WHERE project_id=${thread.projectId}
     AND deleted_at IS NULL AND archived_at IS NULL AND json_extract(workjet_config_json,'$.team.role')='supervisor' ORDER BY created_at,thread_id LIMIT 1`;
-  yield* sql`INSERT INTO workjet_worker_supervisor_decisions
+    yield* sql`INSERT INTO workjet_worker_supervisor_decisions
     (decision_id,worker_thread_id,supervisor_thread_id,project_id,request_id,kind,request_json,created_at)
     VALUES (${`${thread.id}:${requestId}`},${thread.id},${supervisors[0]?.threadId ?? null},${thread.projectId},${requestId},'question',
-      ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({transport:"text",questions:[{id:"decision",question:tail,options:[]}]})},${createdAt}) ON CONFLICT(decision_id) DO NOTHING`;
-  return true;
-});
+      ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({ transport: "text", questions: [{ id: "decision", question: tail, options: [] }] })},${createdAt}) ON CONFLICT(decision_id) DO NOTHING`;
+    return true;
+  },
+);
 
 export const answerWorkerDecision = Effect.fn("workjet.answerWorkerDecision")(function* (
   supervisorThreadId: ThreadId,
@@ -367,25 +487,41 @@ export const answerWorkerDecision = Effect.fn("workjet.answerWorkerDecision")(fu
     return yield* new WorkerSupervisorDecisionError({
       message: "Supply answers for a question or a decision for an approval.",
     });
-  const retainedAnswer = yield* Schema.encodeEffect(Schema.fromJsonString(WorkerSupervisorAnswer))(input);
-  const claimed = yield* sql`UPDATE workjet_worker_supervisor_decisions SET status = 'answering', answer_json = ${retainedAnswer}
+  const retainedAnswer = yield* Schema.encodeEffect(Schema.fromJsonString(WorkerSupervisorAnswer))(
+    input,
+  );
+  const claimed =
+    yield* sql`UPDATE workjet_worker_supervisor_decisions SET status = 'answering', answer_json = ${retainedAnswer}
     WHERE decision_id = ${input.decisionId} AND status = 'pending' RETURNING decision_id`;
   if (claimed.length === 0)
     return yield* new WorkerSupervisorDecisionError({
       message: "The worker decision is already being answered.",
     });
-  const request = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(row.requestJson);
+  const request = yield* Schema.decodeUnknownEffect(
+    Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+  )(row.requestJson);
   yield* Effect.gen(function* () {
     if (request.transport === "mcp" || request.transport === "text") {
       yield* continueWorkerWithAnswer(ThreadId.make(row.workerThreadId), input);
     } else if (row.kind === "question") {
-      yield* providers.respondToUserInput({threadId:ThreadId.make(row.workerThreadId),requestId:ApprovalRequestId.make(row.requestId),answers:input.answers!});
+      yield* providers.respondToUserInput({
+        threadId: ThreadId.make(row.workerThreadId),
+        requestId: ApprovalRequestId.make(row.requestId),
+        answers: input.answers!,
+      });
     } else {
-      yield* providers.respondToRequest({threadId:ThreadId.make(row.workerThreadId),requestId:ApprovalRequestId.make(row.requestId),decision:input.decision!});
+      yield* providers.respondToRequest({
+        threadId: ThreadId.make(row.workerThreadId),
+        requestId: ApprovalRequestId.make(row.requestId),
+        decision: input.decision!,
+      });
     }
   }).pipe(
-    Effect.catch((error) => /stale|unknown pending|no active provider session/i.test(String(error))
-      ? continueWorkerWithAnswer(ThreadId.make(row.workerThreadId), input) : Effect.fail(error)),
+    Effect.catch((error) =>
+      /stale|unknown pending|no active provider session/i.test(String(error))
+        ? continueWorkerWithAnswer(ThreadId.make(row.workerThreadId), input)
+        : Effect.fail(error),
+    ),
     Effect.tapError(
       () =>
         sql`UPDATE workjet_worker_supervisor_decisions SET status = 'pending' WHERE decision_id = ${input.decisionId}`,

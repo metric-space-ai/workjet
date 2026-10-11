@@ -276,14 +276,18 @@ function readResumeCursorThreadId(
   return isCodexResumeCursorSchema(resumeCursor) ? resumeCursor.threadId : undefined;
 }
 
-function runtimeModeToThreadConfig(input: RuntimeMode, oneShotWorkspaceRoot?: string): {
+function runtimeModeToThreadConfig(
+  input: RuntimeMode,
+  oneShotWorkspaceRoot?: string,
+): {
   readonly approvalPolicy: EffectCodexSchema.V2ThreadStartParams__AskForApproval;
   readonly sandbox: EffectCodexSchema.V2ThreadStartParams__SandboxMode;
   // Always explicit: omitting the field on resume keeps the thread's previous
   // reviewer, which would leave auto_review sticky after switching modes.
   readonly approvalsReviewer: EffectCodexSchema.V2ThreadStartParams__ApprovalsReviewer;
 } {
-  if (oneShotWorkspaceRoot) return { approvalPolicy: "never", sandbox: "workspace-write", approvalsReviewer: "user" };
+  if (oneShotWorkspaceRoot)
+    return { approvalPolicy: "never", sandbox: "workspace-write", approvalsReviewer: "user" };
   switch (input) {
     case "approval-required":
       return {
@@ -335,7 +339,14 @@ function runtimeModeToTurnSandboxPolicy(
   input: RuntimeMode,
   oneShotWorkspaceRoot?: string,
 ): EffectCodexSchema.V2TurnStartParams__SandboxPolicy {
-  if (oneShotWorkspaceRoot) return { type: "workspaceWrite", writableRoots: [oneShotWorkspaceRoot], networkAccess: true, excludeTmpdirEnvVar: true, excludeSlashTmp: true };
+  if (oneShotWorkspaceRoot)
+    return {
+      type: "workspaceWrite",
+      writableRoots: [oneShotWorkspaceRoot],
+      networkAccess: true,
+      excludeTmpdirEnvVar: true,
+      excludeSlashTmp: true,
+    };
   switch (input) {
     case "approval-required":
       return {
@@ -1757,7 +1768,9 @@ export const makeCodexSessionRuntime = (
         threadId: options.threadId,
         runtimeMode: options.runtimeMode,
         cwd: options.cwd,
-        ...(options.oneShotWorkspaceRoot ? { oneShotWorkspaceRoot: options.oneShotWorkspaceRoot } : {}),
+        ...(options.oneShotWorkspaceRoot
+          ? { oneShotWorkspaceRoot: options.oneShotWorkspaceRoot }
+          : {}),
         requestedModel,
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),

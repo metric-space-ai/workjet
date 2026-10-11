@@ -1438,7 +1438,11 @@ const makeWsRpcLayer = (
             yield* runSetupProgram();
 
             const result = yield* orchestrationEngine.dispatch(finalTurnStartCommand);
-            if (!manualWorkerPrepared) yield* recordWorkerOwnerActivity(finalTurnStartCommand).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.orDie);
+            if (!manualWorkerPrepared)
+              yield* recordWorkerOwnerActivity(finalTurnStartCommand).pipe(
+                Effect.provideService(SqlClient.SqlClient, sql),
+                Effect.orDie,
+              );
             return result;
           });
 

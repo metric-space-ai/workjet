@@ -460,14 +460,16 @@ export function NativeSupervisorComposer(props: {
       props.blockReason?.startsWith("Sign in to ctox.dev") ||
       props.blockReason?.startsWith("Bei ctox.dev anmelden")),
   );
-  const connectionStatus =
-    (disabled
-      ? (props.blockReason ?? (props.instanceId ? "The project connection is unavailable." : null))
-      : null) ??
-    bindingError ??
-    workerStatus?.message ??
-    connectionError ??
-    routeStatus;
+  const connectionStatus = authenticationRequired
+    ? "Sign in to ctox.dev to reconnect this project’s instance."
+    : ((disabled
+        ? (props.blockReason ??
+          (props.instanceId ? "The project connection is unavailable." : null))
+        : null) ??
+      bindingError ??
+      workerStatus?.message ??
+      connectionError ??
+      routeStatus);
   useEffect(() => {
     if (
       disabled ||

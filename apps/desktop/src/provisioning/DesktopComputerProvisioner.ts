@@ -244,7 +244,9 @@ function sshManagedInputFromPreflight(
 function isPosixShellUnavailable(error: unknown): boolean {
   if (!(error instanceof SshCommandError)) return false;
   if (error.exitCode !== 1 && error.exitCode !== 127) return false;
-  return /(?:^|\n)(?:[^\n]*?:\s*)?['"]?sh['"]?\s*(?:: (?:command )?not found| is not recognized as an internal or external command|: The term ['"]sh['"] is not recognized)/iu.test(error.stderr);
+  return /(?:^|\n)(?:[^\n]*?:\s*)?['"]?sh['"]?\s*(?:: (?:command )?not found| is not recognized as an internal or external command|: The term ['"]sh['"] is not recognized)/iu.test(
+    error.stderr,
+  );
 }
 
 function safeMessage(error: unknown, fallback: string): string {

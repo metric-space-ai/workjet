@@ -115,16 +115,30 @@ export const make = Effect.gen(function* () {
     ).pipe(Effect.asVoid);
   const local = (command: string, args: readonly string[], stdin?: string, timeout = 8000) =>
     Effect.tryPromise(() => runLocalCommand(command, args, stdin, timeout));
-  const execute = (connection: ComputerConnection, script: string, timeout = 75_000) =>
+  const execute = (
+    connection: ComputerConnection,
+    script: string,
+    timeout = 75_000,
+  ): Effect.Effect<{ stdout: string; stderr: string }, ComputerBackendError> =>
     connection._tag === "local"
-      ? local("sh", ["-s"], script, timeout)
+      ? local("sh", ["-s"], script, timeout).pipe(
+          Effect.mapError(
+            () => new ComputerBackendError({ operation: "local computer command failed" }),
+          ),
+        )
       : runSshCommand(connection.target, {
           batchMode: "yes",
           preHostArgs: ["-o", "StrictHostKeyChecking=yes"],
           remoteCommandArgs: ["sh", "-s"],
           stdin: script,
           timeoutMs: timeout,
-        }).pipe(Effect.provide(runtime));
+        }).pipe(
+          Effect.provide(runtime),
+          Effect.map((result) => ({ stdout: result.stdout, stderr: result.stderr })),
+          Effect.mapError(
+            () => new ComputerBackendError({ operation: "SSH computer command failed" }),
+          ),
+        );
   const detect = (computer: WorkjetComputer) =>
     Effect.gen(function* () {
       const metadata = computer.metadata!;
@@ -270,11 +284,28 @@ export const make = Effect.gen(function* () {
                 operation:
                   "remote cleanup requires detected SSH facts; local cleanup is not supported",
               });
-            const output = yield* execute(
+            const cleanupPaths = computerCleanupPaths(computer.metadata.facts);
+            configuration = {
+              ...configuration,
+              computers: configuration.computers.map((row) =>
+                row.id === computer.id
+                  ? { ...row, metadata: { ...row.metadata!, active: false } }
+                  : row,
+              ),
+            };
+            yield* write(configuration, expectedWorkjet);
+            expectedWorkjet = configuration;
+            const cleanup = yield* execute(
               computer.metadata.connection,
               computerCleanupScript(computer.metadata.facts),
               20_000,
-            );
+            ).pipe(Effect.option);
+            if (Option.isNone(cleanup))
+              return {
+                computers: rows(configuration),
+                removedPaths: cleanupPaths.map((path) => ({ path, status: "failed" as const })),
+              };
+            const output = cleanup.value;
             for (const line of output.stdout.split(/\r?\n/u)) {
               const [status, path] = line.split("\t");
               if (

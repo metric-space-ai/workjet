@@ -135,9 +135,15 @@ describe("preflight command boundaries", () => {
     vi.unstubAllEnvs();
     if (fixtureDirectory !== undefined) {
       // This PID was written by the fixture we created, never found by a scan.
-      const pid = Number(await NodeFSP.readFile(NodePath.join(fixtureDirectory, "probe.pid"), "utf8").catch(() => ""));
+      const pid = Number(
+        await NodeFSP.readFile(NodePath.join(fixtureDirectory, "probe.pid"), "utf8").catch(
+          () => "",
+        ),
+      );
       if (Number.isSafeInteger(pid) && pid > 0) {
-        try { NodeProcess.kill(pid, "SIGKILL"); } catch (error) {
+        try {
+          NodeProcess.kill(pid, "SIGKILL");
+        } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
         }
       }
@@ -147,7 +153,9 @@ describe("preflight command boundaries", () => {
   });
 
   async function probe(stalledCommand?: "ctox" | "workjet") {
-    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-preflight-test-"));
+    const directory = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "workjet-preflight-test-"),
+    );
     fixtureDirectory = directory;
     const commands = {
       curl: "exit 0",
@@ -157,28 +165,38 @@ describe("preflight command boundaries", () => {
       workjet: "printf '0.0.1\\n'",
     };
     for (const [command, body] of Object.entries(commands)) {
-      const script = command === stalledCommand
-        ? `echo $$ > '${NodePath.join(directory, "probe.pid")}'; exec /bin/sleep 60`
-        : body;
-      await NodeFSP.writeFile(NodePath.join(directory, command), `#!/bin/sh\n${script}\n`, { mode: 0o700 });
+      const script =
+        command === stalledCommand
+          ? `echo $$ > '${NodePath.join(directory, "probe.pid")}'; exec /bin/sleep 60`
+          : body;
+      await NodeFSP.writeFile(NodePath.join(directory, command), `#!/bin/sh\n${script}\n`, {
+        mode: 0o700,
+      });
     }
     vi.stubEnv("PATH", `${directory}:${NodeProcess.env.PATH ?? "/usr/bin:/bin"}`);
     return runLocalCommand("sh", ["-s"], testing.posixPreflightScript, 8_000);
   }
 
-  it.skipIf(NodeProcess.platform !== "linux")("reads installed versions without changing the target", async () => {
-    const output = await probe();
-    const values = testing.parseKeyValueOutput(output.stdout);
-    expect(values.get("ctox_version")).toBe("1.2.3");
-    expect(values.get("workjet_version")).toBe("0.0.1");
-    expect(values.get("internet")).toBe("true");
-  });
+  it.skipIf(NodeProcess.platform !== "linux")(
+    "reads installed versions without changing the target",
+    async () => {
+      const output = await probe();
+      const values = testing.parseKeyValueOutput(output.stdout);
+      expect(values.get("ctox_version")).toBe("1.2.3");
+      expect(values.get("workjet_version")).toBe("0.0.1");
+      expect(values.get("internet")).toBe("true");
+    },
+  );
 
   it.skipIf(NodeProcess.platform !== "linux").each(["ctox", "workjet"] as const)(
     "fails a stalled %s version check at its step deadline",
     async (command) => {
-      await expect(probe(command)).rejects.toThrow(`Preflight command timed out after 3 seconds: ${command}`);
-      const pid = Number(await NodeFSP.readFile(NodePath.join(fixtureDirectory!, "probe.pid"), "utf8"));
+      await expect(probe(command)).rejects.toThrow(
+        `Preflight command timed out after 3 seconds: ${command}`,
+      );
+      const pid = Number(
+        await NodeFSP.readFile(NodePath.join(fixtureDirectory!, "probe.pid"), "utf8"),
+      );
       expect(() => NodeProcess.kill(pid, 0)).toThrow();
     },
     10_000,
@@ -192,10 +210,18 @@ describe("preflight command boundaries", () => {
     [null, "SSH command timed out", false],
     [255, "Host key verification failed.", false],
     [1, "Preflight command timed out after 3 seconds: ctox", false],
-  ] as const)("limits Windows fallback to a missing POSIX shell (%s, %s)", (exitCode, stderr, expected) => {
-    const error = new SshCommandError({ command: ["ssh", "host", "sh", "-s"], exitCode, stderr, message: stderr });
-    expect(testing.isPosixShellUnavailable(error)).toBe(expected);
-  });
+  ] as const)(
+    "limits Windows fallback to a missing POSIX shell (%s, %s)",
+    (exitCode, stderr, expected) => {
+      const error = new SshCommandError({
+        command: ["ssh", "host", "sh", "-s"],
+        exitCode,
+        stderr,
+        message: stderr,
+      });
+      expect(testing.isPosixShellUnavailable(error)).toBe(expected);
+    },
+  );
 
   it("does not treat generic failures as a Windows target", () => {
     expect(testing.isPosixShellUnavailable(new Error("sh: not found"))).toBe(false);

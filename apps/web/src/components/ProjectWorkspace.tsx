@@ -140,7 +140,8 @@ function ProjectWorkspaceContent({
         connectionError={sources.failed}
         actions={
           <InlinePanel
-            className="mt-2"
+            // The header row wraps; an open panel takes its own full line.
+            {...(editingParent ? { className: "mt-2 basis-full text-sm text-foreground" } : {})}
             triggerLabel={text.addParent}
             open={editingParent}
             onOpenChange={(open) => {

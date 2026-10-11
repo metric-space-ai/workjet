@@ -3,6 +3,7 @@ import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/model
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { useProjectOverviewSources } from "../hooks/useProjectOverviewSources";
+import { useProjectOverviewTokenBudgetSource } from "../hooks/useProjectOverviewTokenBudgetSource";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { useSupervisorProjectMetadata } from "../hooks/useSupervisorProjectMetadata";
 import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOverviewModel";
@@ -54,6 +55,7 @@ function ProjectWorkspaceContent({
   const text = PROJECT_OVERVIEW_TEXT[language];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;
   const sources = useProjectOverviewSources(nativeInstance, project.id);
+  const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
   const exit = useProjectExitModel(nativeInstance, project.id, project.configuration?.exitModel);
   const [pullRequests, setPullRequests] = useState<Record<string, ProjectOverviewPr | null>>({});
   const onReadPr = useCallback(
@@ -71,6 +73,7 @@ function ProjectWorkspaceContent({
     meeting: sources.meeting,
     kpis: sources.kpis,
     pullRequests: Object.values(pullRequests).filter((pr): pr is ProjectOverviewPr => pr !== null),
+    projectTokenBudgetSource: tokenBudgetSource,
   });
   const [editingParent, setEditingParent] = useState(false);
   const [meetingKey, setMeetingKey] = useState<string | null>(null);

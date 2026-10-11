@@ -55,7 +55,7 @@ it.effect("routes persistent and one-shot questions to Supervisor, defers busy d
     expect(commands).toHaveLength(0);
     yield* deliverWorkerDecisions().pipe(Effect.provideService(ProjectionSnapshotQuery, query), Effect.provideService(OrchestrationEngineService, engine));
     expect(commands).toHaveLength(1);
-    expect(commands[0]?.threadId).toBe(supervisorId);
+    expect(commands[0]?.type === "thread.turn.start" && commands[0].threadId).toBe(supervisorId);
     expect(commands[0]?.type === 'thread.turn.start' && commands[0].message.text).toContain('Which authorised path?');
     yield* deliverWorkerDecisions().pipe(Effect.provideService(ProjectionSnapshotQuery, query), Effect.provideService(OrchestrationEngineService, engine));
     expect(commands).toHaveLength(1);

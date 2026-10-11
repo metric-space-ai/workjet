@@ -12,11 +12,24 @@ export class ManualProjectWorkerSetupError extends Schema.TaggedErrorClass<Manua
   { message: Schema.String },
 ) {}
 
+/** A first worker turn keeps the preparation permit until its turn is persisted. */
+export function canBypassManualWorkerPreparation(thread: OrchestrationThreadShell | undefined) {
+  const config = thread?.workjetConfig;
+  return (
+    config?.schemaVersion === 2 &&
+    config.team !== undefined &&
+    (config.team.role !== "worker" || thread?.latestTurn != null)
+  );
+}
+
 /** Only explicitly commissioned, unprepared workers enter the isolated-worker bootstrap. */
 export function manualProjectWorkerParent(
   thread: OrchestrationThreadShell,
   threads: readonly OrchestrationThreadShell[],
 ): OrchestrationThreadShell | undefined {
+  // Continuations and chats with any existing turn/history are never re-prepared.
+  if (thread.latestTurn !== null || thread.latestUserMessageAt != null || thread.session != null)
+    return;
   const config = normalizeWorkjetThreadConfig(thread.workjetConfig);
   // Project affiliation and a user-selected checkout do not commission a worker.
   // Dispatched team workers already own their WorkerDispatch checkout.
@@ -37,10 +50,6 @@ export function manualProjectWorkerParent(
   if (parents.length > 1)
     throw new Error(
       "Worker parent ownership is ambiguous; resolve ownership before starting this worker.",
-    );
-  if (parents[0] && thread.latestTurn !== null)
-    throw new Error(
-      "This existing project chat already ran in its previous checkout. Preserve its history and work; explicit isolated-worker migration is required before continuing.",
     );
   return parents[0];
 }

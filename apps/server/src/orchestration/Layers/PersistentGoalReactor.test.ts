@@ -391,7 +391,7 @@ describe("persistent goal reactor", () => {
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
+  it.effect.each(["hasPendingApprovals", "hasPendingUserInput", "waitingOnSupervisor"] as const)(
     "retains %s instead of silently continuing",
     (field) =>
       Effect.scoped(

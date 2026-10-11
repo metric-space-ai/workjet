@@ -564,6 +564,10 @@ describe("ClaudeAdapterLive", () => {
         runtimeMode: "full-access",
       });
 
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.allowedTools, [
+        "mcp__workjet__workjet_worker_kanban", "mcp__workjet__workjet_update_goal", "mcp__workjet__workjet_answer_worker",
+      ]);
+      assert.ok(harness.getLastCreateQueryInput()?.options.mcpServers?.workjet);
       assert.deepEqual(harness.getLastCreateQueryInput()?.options.systemPrompt, {
         type: "preset",
         preset: "claude_code",

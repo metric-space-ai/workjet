@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -69,6 +70,7 @@ export const deliverWorkerDecisions = Effect.fn("workjet.deliverWorkerDecisions"
   const sql = yield* SqlClient.SqlClient;
   const query = yield* ProjectionSnapshotQuery;
   const engine = yield* OrchestrationEngineService;
+  const environmentId = yield* (yield* ServerEnvironment).getEnvironmentId;
   const rows = yield* sql<DecisionRow>`SELECT decision_id AS "decisionId", worker_thread_id AS "workerThreadId",
     supervisor_thread_id AS "supervisorThreadId", project_id AS "projectId", request_id AS "requestId",
     kind, request_json AS "requestJson", status, created_at AS "createdAt"
@@ -92,7 +94,7 @@ export const deliverWorkerDecisions = Effect.fn("workjet.deliverWorkerDecisions"
       threadId: supervisor.id,
       message: { messageId: MessageId.make(`server:worker-decision:${row.decisionId}`), role: 'user', attachments: [],
         text: [
-          `A project worker is waiting for your decision: [${row.workerThreadId}](/thread/${row.workerThreadId}).`,
+          `A project worker is waiting for your decision: [${row.workerThreadId}](/#/${encodeURIComponent(environmentId)}/${encodeURIComponent(row.workerThreadId)}).`,
           `Decision ID: ${row.decisionId}. Request kind: ${row.kind}.`,
           `Question, options or requested action: ${row.requestJson}`,
           'Decide within the Owner’s instructions. Call workjet_answer_worker with this decisionId and answers keyed by question id, or an approval decision. This resumes the original worker request. Only you may escalate to the Owner when an Owner decision is necessary.',

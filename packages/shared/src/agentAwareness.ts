@@ -10,6 +10,7 @@ export type AgentAwarenessPhase =
   | "running"
   | "waiting_for_approval"
   | "waiting_for_input"
+  | "waiting_for_supervisor"
   | "completed"
   | "failed"
   | "stale";
@@ -40,6 +41,7 @@ export interface ProjectThreadAwarenessInput {
     | "updatedAt"
     | "hasPendingApprovals"
     | "hasPendingUserInput"
+    | "waitingOnSupervisor"
   >;
 }
 
@@ -125,6 +127,7 @@ export function projectThreadAwareness(
 function resolveThreadAwarenessPhase(
   thread: ProjectThreadAwarenessInput["thread"],
 ): AgentAwarenessPhase | null {
+  if (thread.waitingOnSupervisor) return "waiting_for_supervisor";
   if (thread.hasPendingApprovals) {
     return "waiting_for_approval";
   }
@@ -172,6 +175,8 @@ function headlineForPhase(phase: AgentAwarenessPhase): string {
       return "Agent is working";
     case "waiting_for_approval":
       return "Approval needed";
+    case "waiting_for_supervisor":
+      return "Waiting for Supervisor";
     case "waiting_for_input":
       return "Waiting for input";
     case "completed":

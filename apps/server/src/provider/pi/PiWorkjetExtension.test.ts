@@ -71,6 +71,7 @@ describe("Pi Workjet MCP extension", () => {
                 description: "Echo the original object or array",
                 inputSchema: unionSchema,
               },
+              ...["workjet_worker_kanban", "workjet_update_goal"].map(name => ({ name, description: name, inputSchema: schema })),
             ],
           },
         });
@@ -126,6 +127,12 @@ describe("Pi Workjet MCP extension", () => {
       expect(calls.at(-1)).toEqual({ name: "workjet_fixture_union", arguments: original });
     }
     expect(cancelled).toBe(40);
+    for (const name of ["workjet_worker_kanban", "workjet_update_goal"]) {
+      const coreTool = registered.find(item => item.name === name);
+      expect(coreTool).toBeDefined();
+      await coreTool!.execute(name, { command: "current-turn" });
+      expect(calls.at(-1)).toEqual({ name, arguments: { command: "current-turn" } });
+    }
   });
   it("fails initialization when the per-thread MCP authorization is rejected", async () => {
     vi.stubEnv("WORKJET_PI_MCP_ENDPOINT", "http://127.0.0.1:9000/mcp");

@@ -8,6 +8,8 @@ import { runMigrations } from "../persistence/Migrations.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
+import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
+import { EnvironmentId } from "@workjet/contracts";
 import { answerWorkerDecision, deliverWorkerDecisions, routeWorkerDecision } from "./WorkerSupervisorDecisions.ts";
 
 const NOW = "2026-10-11T00:00:00.000Z";
@@ -67,7 +69,7 @@ it.effect("routes persistent and one-shot questions to Supervisor, defers busy d
     const sql = yield* SqlClient.SqlClient;
     expect((yield* sql`SELECT status FROM workjet_worker_supervisor_decisions`)[0]?.status).toBe('resolved');
     expect(yield* routeWorkerDecision(thread(workerId, 'worker'), request('one-shot'))).toBe(true);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provideService(ServerEnvironment, { getEnvironmentId: Effect.succeed(EnvironmentId.make("isolated")), getDescriptor: Effect.die("unused") }), Effect.provide(NodeSqliteClient.layerMemory())),
 );
 
 it.effect("only actual client turns enable direct questions; imports and automatic continuations do not", () =>
@@ -81,7 +83,7 @@ it.effect("only actual client turns enable direct questions; imports and automat
       VALUES ('personal','thread','worker',2,'thread.turn-start-requested',${NOW},'client','{}','{}')`;
     expect(yield* routeWorkerDecision(worker, request('personal'))).toBe(false);
     expect(yield* routeWorkerDecision(supervisor, request('supervisor'))).toBe(false);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provideService(ServerEnvironment, { getEnvironmentId: Effect.succeed(EnvironmentId.make("isolated")), getDescriptor: Effect.die("unused") }), Effect.provide(NodeSqliteClient.layerMemory())),
 );
 
 it.effect("keeps unattended approval requests away from the user and supports Supervisor approval", () =>
@@ -94,5 +96,5 @@ it.effect("keeps unattended approval requests away from the user and supports Su
     yield* answerWorkerDecision(supervisorId, { decisionId: 'worker:approval', decision: 'accept' }).pipe(
       Effect.provideService(ProjectionSnapshotQuery, query), Effect.provideService(ProviderService, providers));
     expect(resumed).toBe(true);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provideService(ServerEnvironment, { getEnvironmentId: Effect.succeed(EnvironmentId.make("isolated")), getDescriptor: Effect.die("unused") }), Effect.provide(NodeSqliteClient.layerMemory())),
 );

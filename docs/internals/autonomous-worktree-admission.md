@@ -296,7 +296,8 @@ the process cannot interrupt its own cleanup. It stops when the original CLI
 exits and never restarts or adopts another process.
 
 Checks are serialized and the first failure is retained for the session.
-Subsequent starts and prompts fail with that Source-admission error; concurrent
+Source loss also fails a pending prompt instead of reporting a successful
+cancellation. Subsequent starts and prompts fail with that Source-admission error; concurrent
 tool/terminal checks cannot extend a rejected admission. Ordinary sessions have
 no lifetime guard. This does not enable autonomous-worktree, enroll a native
 Parent or supply confined MCP or other harness runtime bundles.

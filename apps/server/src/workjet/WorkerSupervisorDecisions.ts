@@ -81,9 +81,12 @@ const automaticallyAnswerOneShot = Effect.fn("workjet.automaticallyAnswerOneShot
       : providers.respondToRequest({ threadId: thread.id, requestId, decision: "accept" })
   ).pipe(
     Effect.catch((error) =>
-      Effect.logWarning("one-shot request could not be automatically answered", {
-        threadId: thread.id,
-        error,
+      Effect.gen(function* () {
+        const engine = yield* OrchestrationEngineService;
+        const createdAt = DateTime.formatIso(yield* DateTime.now);
+        yield* engine.dispatch({type: "thread.activity.append", commandId: CommandId.make(`server:one-shot-unanswered:${event.eventId}`), threadId: thread.id, createdAt,
+          activity: {id: EventId.make(`server:one-shot-unanswered:${event.eventId}`),turnId:null,kind:"worker.result",tone:"warning",summary:"One-Shot beendet: Frage-Werkzeug konnte nicht automatisch beantwortet werden",payload:{openPoint:String(error),decision:ONE_SHOT_SELF_DECISION},createdAt}});
+        yield* providers.stopSession({threadId:thread.id}).pipe(Effect.catch(Effect.logWarning));
       }),
     ),
   );
@@ -95,10 +98,13 @@ const expireUnboundWorkerDecisions = Effect.fn("workjet.expireUnboundWorkerDecis
     const sql = yield* SqlClient.SqlClient;
     const now = yield* Clock.currentTimeMillis;
     const cutoff = DateTime.formatIso(DateTime.makeUnsafe(now - WORKER_SUPERVISOR_TIMEOUT_MS));
-    yield* sql`UPDATE workjet_worker_supervisor_decisions SET status='timed-out', failure='Projekt ohne Supervisor: Wartezeit abgelaufen'
+    const expired = yield* sql<{decisionId:string;workerThreadId:string}>`UPDATE workjet_worker_supervisor_decisions SET status='timed-out', failure='Projekt ohne Supervisor: Wartezeit abgelaufen'
     WHERE status='pending' AND created_at < ${cutoff} AND NOT EXISTS (
       SELECT 1 FROM projection_threads WHERE project_id=workjet_worker_supervisor_decisions.project_id
-        AND deleted_at IS NULL AND archived_at IS NULL AND json_extract(workjet_config_json,'$.team.role')='supervisor')`;
+        AND deleted_at IS NULL AND archived_at IS NULL AND json_extract(workjet_config_json,'$.team.role')='supervisor') RETURNING decision_id AS "decisionId",worker_thread_id AS "workerThreadId"`;
+    const engine = yield* OrchestrationEngineService;
+    const createdAt = DateTime.formatIso(DateTime.makeUnsafe(now));
+    for (const row of expired) yield* engine.dispatch({type:"thread.activity.append",commandId:CommandId.make(`server:worker-decision-timeout:${row.decisionId}`),threadId:ThreadId.make(row.workerThreadId),createdAt,activity:{id:EventId.make(`server:worker-decision-timeout:${row.decisionId}`),turnId:null,kind:"workjet.worker.decision-timeout",tone:"warning",summary:"Projekt ohne Supervisor: Wartezeit abgelaufen",payload:{decisionId:row.decisionId},createdAt}});
   },
 );
 
@@ -281,6 +287,8 @@ const continueWorkerWithAnswer = Effect.fn("workjet.continueWorkerWithAnswer")(f
   if (Option.isNone(found))
     return yield* new WorkerSupervisorDecisionError({ message: "Worker thread is unavailable." });
   const worker = found.value;
+  if (worker.workjetConfig.schemaVersion === 2 && worker.workjetConfig.goal?.status === "paused")
+    return yield* new WorkerSupervisorDecisionError({message: "Worker is paused by the Owner; retain the answer until resumed."});
   const createdAt = DateTime.formatIso(yield* DateTime.now);
   yield* engine.dispatch(
     {
@@ -392,23 +400,7 @@ export const answerOwnerEscalation = Effect.fn("workjet.answerOwnerEscalation")(
     answers,
   });
   yield* answerWorkerDecision(threadId, answer);
-  const engine = yield* OrchestrationEngineService;
-  const createdAt = DateTime.formatIso(yield* DateTime.now);
-  yield* engine.dispatch({
-    type: "thread.activity.append",
-    commandId: CommandId.make(`server:owner-answer:${requestId}`),
-    threadId,
-    activity: {
-      id: EventId.make(`server:owner-answer:${requestId}`),
-      turnId: null,
-      kind: "user-input.resolved",
-      summary: "Owner decision received",
-      tone: "info",
-      payload: { requestId },
-      createdAt,
-    },
-    createdAt,
-  });
+
   return true;
 });
 
@@ -431,6 +423,18 @@ export const routeWorkerTerminalQuestion = Effect.fn("workjet.routeWorkerTermina
     )
       return false;
     if (team.role === "worker") {
+      const sql = yield* SqlClient.SqlClient;
+      const createdAt = DateTime.formatIso(yield* DateTime.now);
+      const first = yield* sql`INSERT INTO workjet_worker_supervisor_decisions
+        (decision_id,worker_thread_id,supervisor_thread_id,project_id,request_id,kind,request_json,created_at,status)
+        VALUES (${thread.id + ":one-shot-self-decision"},${thread.id},NULL,${thread.projectId},'one-shot-self-decision','question','{}',${createdAt},'resolved')
+        ON CONFLICT(decision_id) DO NOTHING RETURNING decision_id`;
+      if (first.length === 0) {
+        const engine = yield* OrchestrationEngineService;
+        yield* engine.dispatch({type:"thread.activity.append",commandId:CommandId.make(`server:one-shot-report:${turnId}`),threadId:thread.id,createdAt,activity:{id:EventId.make(`server:one-shot-report:${turnId}`),turnId:null,kind:"workjet.worker.result",tone:"warning",summary:"One-Shot beendet: offener Punkt im Bericht",payload:{openPoint:tail,decision:ONE_SHOT_SELF_DECISION},createdAt}});
+        yield* (yield* ProviderService).stopSession({threadId:thread.id}).pipe(Effect.catch(Effect.logWarning));
+        return true;
+      }
       yield* continueWorkerWithAnswer(thread.id, {
         decisionId: `text:${turnId}`,
         answers: { decision: ONE_SHOT_SELF_DECISION },
@@ -527,6 +531,25 @@ export const answerWorkerDecision = Effect.fn("workjet.answerWorkerDecision")(fu
         sql`UPDATE workjet_worker_supervisor_decisions SET status = 'pending' WHERE decision_id = ${input.decisionId}`,
     ),
   );
+  if (row.workerThreadId === supervisorThreadId && request.transport === "mcp") {
+  const engine = yield* OrchestrationEngineService;
+  const createdAt = DateTime.formatIso(yield* DateTime.now);
+  yield* engine.dispatch({
+    type: "thread.activity.append",
+    commandId: CommandId.make(`server:owner-answer:${row.requestId}`),
+    threadId: supervisorThreadId,
+    activity: {
+      id: EventId.make(`server:owner-answer:${row.requestId}`),
+      turnId: null,
+      kind: "user-input.resolved",
+      summary: "Owner decision received",
+      tone: "info",
+      payload: { requestId: row.requestId },
+      createdAt,
+    },
+    createdAt,
+  });
+  }
   yield* sql`UPDATE workjet_worker_supervisor_decisions SET status = 'resolved' WHERE decision_id = ${input.decisionId}`;
   return { accepted: true as const, workerThreadId: row.workerThreadId };
 });

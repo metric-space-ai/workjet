@@ -36,6 +36,13 @@ added, foreign-project or changed reference before resolving account grants
 or contacting native, and rejects a native receipt that omits or substitutes
 it. The persisted intent and receipt retain the reference across recovery;
 revocation still uses the original binding after an account grant is removed.
+The shared Source model-gateway schema retains this same optional reference.
+Admission and inference reject a missing, added, changed or foreign-project
+reference before looking up grants or contacting native. The exact reference
+survives native receipt decoding and must remain unchanged during renewal and
+the revalidation after model forwarding; a substituted receipt withholds the
+response. Policy-free requests keep their legacy wire shape.
+
 An older native that rejects the new optional binding cannot admit this mode.
 The native producer must additionally verify current Owner policy/revision and
 actual enrolled team provenance at every usage. Echoing the reference alone

@@ -1,5 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeAssert from "node:assert/strict";
@@ -18,13 +18,13 @@ const origin = `http://127.0.0.1:${port}`;
 const { chromium } = await import(
   NodeURL.pathToFileURL(process.env.WORKJET_LIMITS_PLAYWRIGHT_MODULE).href
 );
-await NodeFS.mkdir(output, { recursive: true });
-await NodeFS.mkdir(fixture, { recursive: true });
+await NodeFSP.mkdir(output, { recursive: true });
+await NodeFSP.mkdir(fixture, { recursive: true });
 const beforePaths = ["WorkjetModelsProviders", "WorkjetModelsHealth"].map((name) =>
   NodePath.join(settings, `${name}.before.tsx`),
 );
 for (const [index, name] of ["WorkjetModelsProviders", "WorkjetModelsHealth"].entries()) {
-  await NodeFS.writeFile(
+  await NodeFSP.writeFile(
     beforePaths[index],
     NodeChildProcess.execFileSync("git", [
       "show",
@@ -32,11 +32,11 @@ for (const [index, name] of ["WorkjetModelsProviders", "WorkjetModelsHealth"].en
     ]),
   );
 }
-await NodeFS.writeFile(
+await NodeFSP.writeFile(
   NodePath.join(fixture, "index.html"),
   '<!doctype html><html lang="de" class="dark"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic model limits review</title></head><body><div id="root"></div><script type="module" src="./fixture.tsx"></script></body></html>',
 );
-await NodeFS.writeFile(
+await NodeFSP.writeFile(
   NodePath.join(fixture, "fixture.tsx"),
   `
 import React from "react";
@@ -262,13 +262,13 @@ try {
       resolve();
     }, 5000).unref();
   });
-  await NodeFS.writeFile(
+  await NodeFSP.writeFile(
     NodePath.join(output, "receipt.json"),
     JSON.stringify(receipt, null, 2) + "\n",
   );
-  await NodeFS.writeFile(NodePath.join(output, "vite.log"), log);
-  await NodeFS.rm(fixture, { recursive: true, force: true });
-  for (const file of beforePaths) await NodeFS.rm(file, { force: true });
+  await NodeFSP.writeFile(NodePath.join(output, "vite.log"), log);
+  await NodeFSP.rm(fixture, { recursive: true, force: true });
+  for (const file of beforePaths) await NodeFSP.rm(file, { force: true });
 }
 console.log(
   `Synthetic browser review passed: ${receipt.stories.length} viewport/host cases, including reload; output ${output}`,

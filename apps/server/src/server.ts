@@ -329,6 +329,7 @@ const ReactorLayerLive = Layer.empty.pipe(
     ThreadDeletionReactorLive.pipe(
       Layer.provide(
         WorkerWorktreeCleanup.layer.pipe(
+          Layer.provide(IsolatedWorkerWorktreeStore.layer),
           Layer.provide(
             NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer)),
           ),

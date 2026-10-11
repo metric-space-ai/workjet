@@ -115,10 +115,11 @@ const make = Effect.gen(function* () {
       effect: workerWorktreeCleanup.cleanupDeletedThread(threadId).pipe(
         Effect.tap((outcome) =>
           outcome.status === "cleaned"
-            ? Effect.logDebug("thread deletion cleanup removed worker worktree", {
+            ? Effect.logDebug("thread deletion cleanup released worker checkout", {
                 threadId,
                 worktreePath: outcome.worktreePath,
                 deletedRefName: outcome.deletedRefName,
+                retainedRepositoryPath: outcome.retainedRepositoryPath,
               })
             : outcome.reason === "merge-unverified"
               ? Effect.logWarning("thread deletion retained unverified worker source", { threadId })

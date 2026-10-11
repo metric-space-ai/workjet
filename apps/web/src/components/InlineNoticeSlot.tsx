@@ -160,17 +160,23 @@ export interface InlineConfirmBarProps {
   readonly busy?: boolean;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
-  /** Testmarker für die drei Teile (Zeile, Bestätigen, Abbrechen). */
+  /** Optionale zweite Aktion zwischen Bestätigen und Abbrechen. */
+  readonly secondary?: { readonly label: string; readonly onClick: () => void } | null;
+  /** Zusätzliche Klassen der Zeile, z. B. Rahmen, wenn sie im Inhalt steht. */
+  readonly className?: string;
+  /** Testmarker für die Teile (Zeile, Bestätigen, Zweitaktion, Abbrechen). */
   readonly markers?: {
     readonly row?: string;
     readonly target?: string;
     readonly confirm?: string;
+    readonly secondary?: string;
     readonly cancel?: string;
   };
 }
 
 /**
  * Nicht-modale Bestätigung: Frage · [Bestätigen] [Abbrechen]. Esc bricht ab.
+ * Diese Knopfreihenfolge gilt überall (global, Git, Pull Requests).
  * Der Fokus springt auf „Abbrechen“, wie zuvor im AlertDialog: ein
  * versehentliches Enter löst nichts Zerstörerisches aus.
  */
@@ -183,6 +189,8 @@ export function InlineConfirmBar({
   busy = false,
   onConfirm,
   onCancel,
+  secondary = null,
+  className,
   markers,
 }: InlineConfirmBarProps) {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
@@ -198,9 +206,10 @@ export function InlineConfirmBar({
   return (
     <InlineNoticeRow
       {...rowMarker}
-      // Mit Ziel (z. B. Link) darf die Zeile umbrechen: auf 420 px steht das
-      // Ziel lesbar in der ersten Zeile, die Knöpfe darunter.
-      {...(target ? { className: "flex-wrap", bodyClassName: "min-w-[min(100%,18rem)]" } : {})}
+      // Die Zeile bricht um statt zu kürzen: auf 420 px stehen Frage und Ziel
+      // lesbar oben, die Knöpfe darunter.
+      bodyClassName="min-w-[min(100%,18rem)] flex-wrap"
+      className={cn("flex-wrap", className)}
       actions={
         <>
           <Button
@@ -213,6 +222,18 @@ export function InlineConfirmBar({
           >
             {confirmLabel}
           </Button>
+          {secondary ? (
+            <Button
+              {...(markers?.secondary ? { [`data-${markers.secondary}`]: "" } : {})}
+              disabled={busy}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={secondary.onClick}
+            >
+              {secondary.label}
+            </Button>
+          ) : null}
           <Button
             {...(markers?.cancel ? { [`data-${markers.cancel}`]: "" } : {})}
             ref={cancelRef}
@@ -230,14 +251,11 @@ export function InlineConfirmBar({
       label={question}
       tone={variant === "destructive" ? "destructive" : "neutral"}
     >
-      <span className="min-w-0 shrink truncate font-medium" title={question}>
-        {question}
-      </span>
+      <span className="min-w-0 font-medium break-words">{question}</span>
       {target ? (
         <span
           {...(markers?.target ? { [`data-${markers.target}`]: "" } : {})}
-          className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
-          title={target}
+          className="min-w-0 flex-1 break-words text-muted-foreground"
         >
           {target}
         </span>

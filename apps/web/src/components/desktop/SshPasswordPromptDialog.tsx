@@ -187,14 +187,14 @@ export function ActiveSshPasswordPrompt({
         tone={hasError ? "destructive" : "neutral"}
       >
         <form
-          className="flex min-w-0 flex-1 items-center gap-2"
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
           id={formId}
           onSubmit={(event) => {
             event.preventDefault();
             void respond(password);
           }}
         >
-          <span className="min-w-0 shrink truncate" title={target}>
+          <span className="min-w-0 break-words">
             <span className="font-medium">SSH-Passwort</span>
             <span className="text-muted-foreground"> · {target}</span>
           </span>
@@ -211,11 +211,7 @@ export function ActiveSshPasswordPrompt({
             onChange={(event) => setPassword(event.target.value)}
           />
           {hasError ? (
-            <span
-              className="min-w-0 shrink truncate text-xs text-destructive"
-              role="alert"
-              title={visibleResponseError ?? undefined}
-            >
+            <span className="min-w-0 break-words text-xs text-destructive" role="alert">
               {visibleResponseError}
             </span>
           ) : remainingLabel ? (

@@ -707,8 +707,8 @@ export function ThemeEditorPanel({
         cause instanceof Error
           ? cause.message
           : isEditing
-            ? "Theme nicht gespeichert."
-            : "Theme nicht erstellt.",
+            ? "Thema nicht gespeichert."
+            : "Thema nicht erstellt.",
       );
     }
   };
@@ -873,7 +873,7 @@ export function ThemeEditorPanel({
     );
   };
 
-  const title = isEditing ? "Theme bearbeiten" : "Theme erstellen";
+  const title = isEditing ? "Thema bearbeiten" : "Thema erstellen";
   const inspectorStatus = isInspecting
     ? "Element wählen · Esc beendet"
     : selectedRole
@@ -907,7 +907,7 @@ export function ThemeEditorPanel({
           }}
         >
           <MousePointer2Icon />
-          {isInspecting ? "Auswahl beenden" : "Aus App wählen"}
+          {isInspecting ? "Auswahl beenden" : "Farbe aufnehmen"}
         </Button>
       </div>
       {renderNameField()}

@@ -43,6 +43,47 @@ export const SEGMENT_TOGGLE_CLASS =
   "text-muted-foreground data-pressed:bg-primary/15 data-pressed:text-foreground dark:data-pressed:bg-primary/20";
 
 export const INSTANCE_ADD_TRIGGER_LABEL = "Instanz hinzufügen";
+
+const MANUAL_TOKEN = /workjet-join-v1\.[A-Za-z0-9+/=_-]+/u;
+
+/**
+ * Ein Einfügefeld: die kopierten Verbindungsdaten tragen Server und Raum im
+ * Passwort selbst. Geprüft wird ausschließlich über
+ * decodeBusinessOsManualCredential.
+ */
+export function parseManualConnectionPaste(
+  text: string,
+  displayName = "",
+): ReturnType<typeof decodeBusinessOsManualCredential> {
+  const token = MANUAL_TOKEN.exec(text)?.[0];
+  if (token === undefined) throw new Error("Keine Verbindungsdaten erkannt.");
+  let room = "";
+  let signalingUrls = "";
+  try {
+    const bytes = Uint8Array.from(atob(token.slice("workjet-join-v1.".length)), (character) =>
+      character.charCodeAt(0),
+    );
+    const parsed: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (typeof parsed === "object" && parsed !== null) {
+      const record = parsed as { room?: unknown; signalingUrls?: unknown };
+      if (typeof record.room === "string") room = record.room;
+      if (Array.isArray(record.signalingUrls))
+        signalingUrls = record.signalingUrls.filter((url) => typeof url === "string").join("\n");
+    }
+  } catch {
+    throw new Error("Verbindungsdaten ungültig.");
+  }
+  try {
+    return decodeBusinessOsManualCredential({ displayName, room, signalingUrls, password: token });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "";
+    throw new Error(
+      message.includes("abgelaufen")
+        ? "Verbindungsdaten abgelaufen."
+        : "Verbindungsdaten ungültig.",
+    );
+  }
+}
 export const INSTANCE_REPAIR_LABEL = "Neu koppeln";
 
 function useInstanceSetupRequest(): InstanceSetupRequest | null {
@@ -121,9 +162,7 @@ export function InstanceAddPanel({
   const [option, setOption] = useState<InstanceAddOption>(request.option);
   const [invite, setInvite] = useState(request.invite ?? "");
   const [displayName, setDisplayName] = useState("");
-  const [room, setRoom] = useState("");
-  const [signalingUrls, setSignalingUrls] = useState("");
-  const [password, setPassword] = useState("");
+  const [connectionData, setConnectionData] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
   const [scanRevision, setScanRevision] = useState(0);
@@ -173,15 +212,10 @@ export function InstanceAddPanel({
     if (option === "manual") {
       let input: ReturnType<typeof decodeBusinessOsManualCredential>;
       try {
-        input = decodeBusinessOsManualCredential({
-          displayName,
-          room,
-          signalingUrls,
-          password,
-        });
+        input = parseManualConnectionPaste(connectionData, displayName);
       } catch (cause) {
         setStatus({
-          text: cause instanceof Error ? cause.message : "Verbindungsdaten sind ungültig.",
+          text: cause instanceof Error ? cause.message : "Verbindungsdaten ungültig.",
           error: true,
         });
         return;
@@ -207,8 +241,7 @@ export function InstanceAddPanel({
   const submitDisabled =
     option === "qr" ||
     (option === "link" && invite.trim() === "") ||
-    (option === "manual" &&
-      (room.trim() === "" || signalingUrls.trim() === "" || password.trim() === "")) ||
+    (option === "manual" && connectionData.trim() === "") ||
     (option === "ctox-dev" && (mode.bridge === undefined || mode.refreshing));
   const statusLine =
     status ??
@@ -303,52 +336,35 @@ export function InstanceAddPanel({
             setOption("link");
             setStatus({ text: "QR-Code erkannt.", error: false });
           }}
+          onUnavailable={(message) => {
+            setOption("link");
+            setStatus({ text: message, error: true });
+          }}
         />
       ) : null}
       {option === "manual" ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3">
           <Field>
             <FieldLabel>Name</FieldLabel>
             <Input
               autoComplete="off"
               maxLength={256}
-              placeholder="optional"
               size="sm"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
             />
           </Field>
           <Field>
-            <FieldLabel>Raum</FieldLabel>
-            <Input
+            <FieldLabel>Verbindungsdaten</FieldLabel>
+            <Textarea
               autoComplete="off"
-              maxLength={273}
-              size="sm"
-              value={room}
-              onChange={(event) => setRoom(event.target.value)}
-            />
-          </Field>
-          <Field>
-            <FieldLabel>Server</FieldLabel>
-            <Input
-              autoComplete="off"
-              maxLength={32_768}
-              placeholder="wss://…"
-              size="sm"
+              className="font-mono text-xs"
+              maxLength={200_000}
+              placeholder="workjet-join-v1.…"
+              rows={3}
               spellCheck={false}
-              value={signalingUrls}
-              onChange={(event) => setSignalingUrls(event.target.value)}
-            />
-          </Field>
-          <Field>
-            <FieldLabel>Verbindungspasswort</FieldLabel>
-            <Input
-              autoComplete="off"
-              maxLength={131_072}
-              size="sm"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              value={connectionData}
+              onChange={(event) => setConnectionData(event.target.value)}
             />
           </Field>
         </div>

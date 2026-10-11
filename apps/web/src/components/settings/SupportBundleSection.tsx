@@ -33,9 +33,6 @@ export const INITIAL_SUPPORT_BUNDLE_STATE: SupportBundleState = {
   errorMessage: null,
 };
 
-/** Shown when the renderer is not hosted by a desktop build that has the bridge. */
-export const SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE = "Nur in der Desktop-App";
-
 export function formatSupportBundleSize(byteLength: number): string {
   if (byteLength < 1024) return `${byteLength} B`;
   const kilobytes = byteLength / 1024;
@@ -65,6 +62,8 @@ export function SupportBundleSectionView({
   onCreate: () => void;
   onCopyPath: () => void;
 }) {
+  // Außerhalb der Desktop-App gibt es keine Bridge: der Abschnitt entfällt ganz.
+  if (!isAvailable) return null;
   return (
     <SettingsSection
       id="support-bundle"
@@ -77,7 +76,7 @@ export function SupportBundleSectionView({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!isAvailable || state.status === "creating"}
+                disabled={state.status === "creating"}
                 onClick={onCreate}
               >
                 {state.status === "creating" ? "Erstellt …" : "Erstellen"}
@@ -88,12 +87,6 @@ export function SupportBundleSectionView({
         </Tooltip>
       }
     >
-      {!isAvailable ? (
-        <p className="px-3 text-xs text-muted-foreground sm:px-4">
-          {SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE}
-        </p>
-      ) : null}
-
       {state.status === "created" && state.result ? (
         <div className="space-y-1 px-3 text-xs text-muted-foreground sm:px-4">
           <div className="flex items-start gap-2">

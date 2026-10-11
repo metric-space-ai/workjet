@@ -411,7 +411,7 @@ export function computerFactChips(
   return chips;
 }
 
-/** „Nur aus Workjet entfernen“ bzw. „Auch auf dem Rechner entfernen“. */
+/** „Nur Workjet“ bzw. „Auch auf dem Rechner“. */
 export type ComputerRemoveMode = "workjet-only" | "workjet-and-files";
 
 export interface ComputerRemoveOutcome {
@@ -633,7 +633,7 @@ export function WorkjetComputersSettingsView({
           const active = metadata ? metadata.active : (native?.active ?? true);
           const label = computer?.label ?? native?.displayName ?? row.key;
           let status: RowStatus = "off";
-          let statusLabel = "Offline";
+          let statusLabel = "Getrennt";
           let meta: ReactNode = null;
           const chips: ReactNode[] = computerFactChips(
             metadata,
@@ -667,8 +667,8 @@ export function WorkjetComputersSettingsView({
               : connecting
                 ? "Verbindet"
                 : disconnected
-                  ? "Offline"
-                  : "Online";
+                  ? "Getrennt"
+                  : "Verbunden";
             meta =
               computer.environmentId === environmentId
                 ? "Dieser Rechner"
@@ -707,7 +707,14 @@ export function WorkjetComputersSettingsView({
               }
               if (tools.length > 3)
                 chips.push(
-                  <Chip key="tool-more" tone="outline">
+                  <Chip
+                    key="tool-more"
+                    tone="outline"
+                    title={tools
+                      .slice(3)
+                      .map((declared) => workjetHarnessDisplayLabel(declared.harness))
+                      .join(", ")}
+                  >
                     +{tools.length - 3}
                   </Chip>,
                 );
@@ -771,14 +778,14 @@ export function WorkjetComputersSettingsView({
           const deleteOptions: RowDeleteOption[] = onRemove
             ? [
                 {
-                  label: "Nur aus Workjet entfernen",
+                  label: "Nur Workjet",
                   disabled: removing.has(row.key),
                   onSelect: () => runRemove(row, label, "workjet-only"),
                 },
                 ...(remoteComputer
                   ? [
                       {
-                        label: "Auch auf dem Rechner entfernen",
+                        label: "Auch auf dem Rechner",
                         disabled:
                           removing.has(row.key) ||
                           !remoteRemoveAvailable ||
@@ -812,10 +819,13 @@ export function WorkjetComputersSettingsView({
                       {chips}
                     </span>
                   }
-                  {...(onActiveChange && computer && metadata
+                  {...(onActiveChange
                     ? {
                         active,
                         activeLabel: `${label} aktiv`,
+                        // Ohne Metadaten bleibt der Schalter sichtbar, aber gesperrt:
+                        // jede Zeile hat dieselbe Spalte.
+                        activeDisabled: !computer || !metadata,
                         onActiveChange: (checked: boolean) => onActiveChange(row, checked),
                       }
                     : {})}

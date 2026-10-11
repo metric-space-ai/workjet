@@ -5,14 +5,7 @@ import type {
   WorkjetDeviceBindingSummary,
   WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@workjet/contracts";
-import {
-  ChevronRightIcon,
-  CircleAlertIcon,
-  CopyIcon,
-  EyeIcon,
-  EyeOffIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { ChevronRightIcon, CircleAlertIcon, CopyIcon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
@@ -103,75 +96,59 @@ async function copyValue(value: string, sensitive = false) {
   }, 30_000);
 }
 
+/**
+ * Verbindungsdaten nur als beschriftete Kopieren-Knöpfe, nie als Rohtext.
+ * Das Verbindungspasswort trägt Server und Raum selbst; das Einfügefeld unter
+ * „Instanz hinzufügen › Verbindungsdaten“ liest genau diesen einen Wert.
+ */
 function ManualConnectionFields({
   connection,
 }: {
   readonly connection: WorkjetManagedDeviceInviteManualConnectionResult;
 }) {
-  const [credentialVisible, setCredentialVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
   const credential = encodeBusinessOsManualCredential(connection);
-
-  useEffect(() => {
-    const hidePassword = () => {
-      if (document.visibilityState !== "visible") setCredentialVisible(false);
-    };
-    document.addEventListener("visibilitychange", hidePassword);
-    return () => document.removeEventListener("visibilitychange", hidePassword);
-  }, []);
-
-  const field = (label: string, value: string, actions: ReactNode) => (
-    <div key={`${label}:${value}`} className="flex min-w-0 items-center gap-2">
-      <dt className="w-32 shrink-0 text-xs text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 flex-1 items-center gap-1">
-        <code className="min-w-0 flex-1 truncate rounded-md bg-muted/40 px-2 py-1 text-xs">
-          {value}
-        </code>
-        {actions}
-      </dd>
+  return (
+    <div className="flex flex-wrap gap-2" data-workjet-device-manual-connection="">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          void copyValue(credential, true).then(() => setCopied(true));
+        }}
+      >
+        <CopyIcon aria-hidden />
+        {copied ? "Verbindungsdaten kopiert" : "Verbindungsdaten kopieren"}
+      </Button>
     </div>
   );
+}
 
-  return (
-    <dl className="flex flex-col gap-1.5" data-workjet-device-manual-connection="">
-      {connection.signalingUrls.map((url) =>
-        field(
-          "Server",
-          url,
-          <IconAction label="Server kopieren" onClick={() => void copyValue(url)}>
-            <CopyIcon aria-hidden />
-          </IconAction>,
-        ),
-      )}
-      {field(
-        "Raum",
-        connection.room,
-        <IconAction label="Raum kopieren" onClick={() => void copyValue(connection.room)}>
-          <CopyIcon aria-hidden />
-        </IconAction>,
-      )}
-      {field(
-        "Verbindungspasswort",
-        manualConnectionCredentialText(credential, credentialVisible),
-        <>
-          <IconAction
-            label={credentialVisible ? "Passwort verbergen" : "Passwort zeigen"}
-            onClick={() => setCredentialVisible((visible) => !visible)}
-          >
-            {credentialVisible ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
-          </IconAction>
-          <IconAction label="Passwort kopieren" onClick={() => void copyValue(credential, true)}>
-            <CopyIcon aria-hidden />
-          </IconAction>
-        </>,
-      )}
-    </dl>
-  );
+/** „Gültig bis 14:30:00 · noch 23 Min.“ – die Restdauer zählt mit. */
+export function formatInviteValidity(expiresAt: string, now: number): string {
+  const until = formatMobileInviteExpiry(expiresAt, "de-DE");
+  const milliseconds = Date.parse(expiresAt);
+  if (!Number.isFinite(milliseconds)) return `Gültig bis ${until}`;
+  const remaining = milliseconds - now;
+  if (remaining <= 0) return "Abgelaufen";
+  const minutes = Math.ceil(remaining / 60_000);
+  const rest = minutes >= 120 ? `noch ${Math.floor(minutes / 60)} Std.` : `noch ${minutes} Min.`;
+  return `Gültig bis ${until} · ${rest}`;
+}
+
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
 }
 
 /**
  * Gerät koppeln (QR für Telefone) inline auf der Seite, nie als Dialog.
  * Segment QR-Code | Verbindungsdaten, Fuß „Abbrechen“ (widerruft die
- * Einladung) und „Neuer QR-Code“.
+ * Einladung) und je Segment „Neuer QR-Code“ bzw. „Neue Verbindungsdaten“.
  */
 function DeviceInvitePanel({
   invite,
@@ -194,6 +171,7 @@ function DeviceInvitePanel({
     null,
   );
   const [manualState, setManualState] = useState<"idle" | "loading" | "failed">("idle");
+  const now = useNow(15_000);
 
   useEffect(() => {
     setCopied(false);
@@ -214,10 +192,15 @@ function DeviceInvitePanel({
     );
   };
 
+  // Nach „Neue Verbindungsdaten“ lädt das Segment die frischen Daten selbst.
+  useEffect(() => {
+    if (view === "manual" && manual === null && manualState === "idle") loadManual();
+  });
+
   const status =
     manualState === "failed"
       ? "Verbindungsdaten nicht verfügbar."
-      : `Gültig bis ${formatMobileInviteExpiry(invite.expiresAt, "de-DE")}`;
+      : formatInviteValidity(invite.expiresAt, now);
 
   let body: ReactNode = null;
   if (view === "qr") {
@@ -296,7 +279,7 @@ function DeviceInvitePanel({
           </Toggle>
         </ToggleGroup>
       }
-      submitLabel="Neuer QR-Code"
+      submitLabel={view === "manual" ? "Neue Verbindungsdaten" : "Neuer QR-Code"}
       onSubmit={onRenew}
       busy={busy}
       status={status}
@@ -368,7 +351,7 @@ function DevicesSection({
         ) : devices.length === 0 ? (
           <p className="text-xs text-muted-foreground">Keine weiteren Geräte</p>
         ) : (
-          <ul aria-label="Geräte" className="divide-y divide-border/60 rounded-md border">
+          <ul aria-label="Geräte" className="-mx-3 divide-y divide-border/60 sm:-mx-4">
             {devices.map((device, index) => (
               <li key={device.devicePairingId}>
                 <Row
@@ -415,18 +398,20 @@ function NetworkSection({ children }: { readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <section className="space-y-3" data-workjet-instance-network="">
-      <button
-        type="button"
-        aria-expanded={open}
-        className="flex min-h-8 w-full items-center gap-2 rounded-md px-3 text-left text-lg font-semibold tracking-[-0.025em] text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        Netzwerk
-      </button>
+      <div className="px-3 sm:px-4">
+        <Button
+          size="sm"
+          variant="outline"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={`transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          Netzwerk
+        </Button>
+      </div>
       {open ? <div className="px-3 sm:px-4">{children}</div> : null}
     </section>
   );

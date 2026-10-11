@@ -80,7 +80,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "theme",
-    title: "Themes",
+    title: "Themen",
     to: "/settings/appearance",
     // Theme cards live directly under the scheme tiles; the section is the
     // stable scroll destination for both.
@@ -141,7 +141,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "auto-settle-merged-threads",
-    title: "Gemergte ablegen",
+    title: "Zusammengeführte ablegen",
     to: "/settings/general",
   },
   {
@@ -161,7 +161,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "new-threads",
-    title: "Neue Threads",
+    title: "Neue Unterhaltungen",
     to: "/settings/general",
   },
   {
@@ -277,7 +277,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "automatic-worktree-storage",
-    title: "Worktree-Speicher",
+    title: "Arbeitskopien-Speicher",
     to: "/settings/workjet",
     targetId: "workjet-execution",
   },
@@ -288,7 +288,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "archive",
-    title: "Archivierte Threads",
+    title: "Archivierte Unterhaltungen",
     to: "/settings/archived",
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;

@@ -8,7 +8,8 @@
  * Chips, Aktiv-Schalter, Papierkorb mit eingebauter Bestätigung, ⋯-Menü
  * für Seltenes (Bearbeiten, Reparieren, Neu prüfen). Ein Objekt hat genau
  * eine Zeile. Die Bestätigung steht inline in der Zeile, nie als Dialog
- * (drei Orte: Dev, Ops, Einstellungen; keine Popups).
+ * (drei Orte: Dev, Ops, Einstellungen; keine Popups). Unter 640 px rutscht
+ * sie unter die Zeile, damit alle Knöpfe ganz sichtbar bleiben.
  */
 import { EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -100,7 +101,10 @@ function Row({
 
   return (
     <div
-      className={cn("flex min-w-0 items-center gap-3 px-3 py-2 text-[13.5px]", className)}
+      className={cn(
+        "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-[13.5px] sm:flex-nowrap",
+        className,
+      )}
       data-slot="row"
     >
       {status !== undefined ? <RowStatusDot status={status} label={statusLabel} /> : null}
@@ -119,6 +123,47 @@ function Row({
           {chips}
         </div>
       ) : null}
+      {canDelete && confirmingDelete ? (
+        <div
+          className="order-last flex w-full flex-wrap items-center justify-end gap-1.5 sm:order-none sm:w-auto sm:flex-nowrap"
+          data-slot="row-confirm"
+          role="group"
+        >
+          <span className="min-w-0 text-xs text-muted-foreground">
+            {deleteConfirmTitle ?? `${deleteLabel}?`}
+          </span>
+          {deleteOptions?.length ? (
+            deleteOptions.map((option) => (
+              <Button
+                key={option.label}
+                size="xs"
+                variant="destructive"
+                disabled={option.disabled}
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  option.onSelect();
+                }}
+              >
+                {option.label}
+              </Button>
+            ))
+          ) : (
+            <Button
+              size="xs"
+              variant="destructive"
+              onClick={() => {
+                setConfirmingDelete(false);
+                onDelete?.();
+              }}
+            >
+              {deleteLabel}
+            </Button>
+          )}
+          <Button size="xs" variant="outline" onClick={() => setConfirmingDelete(false)}>
+            Abbrechen
+          </Button>
+        </div>
+      ) : null}
       {showActions ? (
         <div className="flex shrink-0 items-center gap-1" data-slot="row-actions">
           {onActiveChange !== undefined ? (
@@ -128,43 +173,6 @@ function Row({
               disabled={activeDisabled}
               onCheckedChange={(checked) => onActiveChange(checked === true)}
             />
-          ) : null}
-          {canDelete && confirmingDelete ? (
-            <div className="flex items-center gap-1.5" data-slot="row-confirm" role="group">
-              <span className="text-xs text-muted-foreground">
-                {deleteConfirmTitle ?? `${deleteLabel}?`}
-              </span>
-              {deleteOptions?.length ? (
-                deleteOptions.map((option) => (
-                  <Button
-                    key={option.label}
-                    size="xs"
-                    variant="destructive"
-                    disabled={option.disabled}
-                    onClick={() => {
-                      setConfirmingDelete(false);
-                      option.onSelect();
-                    }}
-                  >
-                    {option.label}
-                  </Button>
-                ))
-              ) : (
-                <Button
-                  size="xs"
-                  variant="destructive"
-                  onClick={() => {
-                    setConfirmingDelete(false);
-                    onDelete?.();
-                  }}
-                >
-                  {deleteLabel}
-                </Button>
-              )}
-              <Button size="xs" variant="outline" onClick={() => setConfirmingDelete(false)}>
-                Abbrechen
-              </Button>
-            </div>
           ) : null}
           {canDelete && !confirmingDelete ? (
             <Tooltip>

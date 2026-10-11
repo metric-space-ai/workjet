@@ -33,7 +33,8 @@ import {
   RefreshCwIcon,
   TerminalIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
@@ -168,14 +169,26 @@ function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }
 /** Ein Laden endet (UI-Vertrag §1.3): nach 10 s Statuszeile mit Wiederholen. */
 export const PROVIDER_LOADING_TIMEOUT_MS = 10_000;
 
+/** „Rechner hinzufügen“ führt auf Einstellungen › Rechner. */
+function AddComputerLinkButton() {
+  return (
+    <Button size="sm" render={<Link to="/settings/computers" />}>
+      Rechner hinzufügen
+    </Button>
+  );
+}
+
 function LoadingStatusRow({
   title,
   slowStatus,
   onRetry,
+  slowAction,
 }: {
   readonly title: string;
   readonly slowStatus: string;
   readonly onRetry: () => void;
+  /** Zweiter Knopf neben „Erneut versuchen“, sobald das Laden endet. */
+  readonly slowAction?: ReactNode;
 }) {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -187,10 +200,13 @@ function LoadingStatusRow({
       title={slow ? slowStatus : title}
       control={
         slow ? (
-          <Button size="sm" variant="outline" onClick={onRetry}>
-            <RefreshCwIcon className="size-3.5" />
-            Erneut versuchen
-          </Button>
+          <span className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={onRetry}>
+              <RefreshCwIcon className="size-3.5" />
+              Erneut versuchen
+            </Button>
+            {slowAction}
+          </span>
         ) : (
           <LoaderIcon className="size-4 animate-spin text-muted-foreground" aria-hidden />
         )
@@ -309,13 +325,14 @@ export function ProviderSettingsPanel({
             key={loadAttempt}
             title="Rechner werden geladen"
             slowStatus="Keine Rechner gemeldet"
+            slowAction={<AddComputerLinkButton />}
             onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
           />
         </SettingsSection>
       ) : null}
       {!devicesLoading && options.length === 0 && sections === "harnesses" ? (
         <SettingsSection title="Harnesses">
-          <SettingsRow title="Kein Rechner" />
+          <SettingsRow title="Kein Rechner" control={<AddComputerLinkButton />} />
         </SettingsSection>
       ) : null}
       {showDevicePicker ? (
@@ -403,10 +420,11 @@ export function WorkjetGatewayAccountsSection({
             key={loadAttempt}
             title="Rechner werden geladen"
             slowStatus="Keine Rechner gemeldet"
+            slowAction={<AddComputerLinkButton />}
             onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
           />
         ) : (
-          <SettingsRow title="Kein Code-Rechner" />
+          <SettingsRow title="Kein Code-Rechner" control={<AddComputerLinkButton />} />
         )}
       </SettingsSection>
     );

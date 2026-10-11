@@ -154,7 +154,7 @@ export function ThemeSearchSection({
       try {
         installedCollection = getStoredCustomThemeCollection(extension.collectionId);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Installierte Themes nicht lesbar.");
+        setError(cause instanceof Error ? cause.message : "Installierte Themen nicht lesbar.");
         return;
       }
       const updated = installedCollection.length > 0;
@@ -177,7 +177,7 @@ export function ThemeSearchSection({
         }
       } catch (cause) {
         if (!controller.signal.aborted) {
-          setError(cause instanceof Error ? cause.message : "Theme nicht hinzugefügt.");
+          setError(cause instanceof Error ? cause.message : "Thema nicht hinzugefügt.");
         }
       }
       if (requestRef.current === controller) {
@@ -189,16 +189,16 @@ export function ThemeSearchSection({
   );
 
   return (
-    <section aria-label="Theme-Suche" className="space-y-3">
+    <section aria-label="Themensuche" className="space-y-3">
       <div className="relative flex gap-2" role="search">
         <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          aria-label="Themes durchsuchen"
+          aria-label="Themen durchsuchen"
           className="[&_input]:pl-9"
           autoFocus
           onChange={(event) => setQuery(event.currentTarget.value)}
           onKeyDown={handleSearchKeyDown}
-          placeholder="Theme suchen"
+          placeholder="Thema suchen"
           type="search"
           value={query}
         />

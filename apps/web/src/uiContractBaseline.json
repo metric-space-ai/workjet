@@ -10,8 +10,6 @@
     "b|components/chat/ProjectTeamPanel.tsx|className=\"block max-w-full break-words text-left underline-offset-2 hover:underline focus-visible:outline focus-visible",
     "b|components/chat/WorkjetCrossModeLinkCard.tsx|className=\"min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline\"",
     "b|components/chat/WorkjetMailboxActivityCard.tsx|className=\"min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline\"",
-    "b|components/ctox/CtoxModeShell.tsx|className=\"shrink-0 text-xs font-medium text-sidebar-primary underline-offset-2 hover:underline disabled:opacity-50\"",
-    "b|components/ctox/CtoxModeShell.tsx|className=\"text-xs text-sidebar-muted-foreground underline-offset-2 hover:underline disabled:opacity-50\"",
     "d|components/desktop/SshPasswordPromptDialog.tsx|Date.now()); const [responseError, setResponseError] = useState",
     "d|components/settings/NativeProviderRows.tsx|) : probe?.status === \"failed\" ? (",
     "d|components/settings/ProjectSettingsPanel.tsx|script.command === fileScript.command // script.name.toLowerCase() === fileScript.name.toLowerCase(), ), ), [scripts, wo",

@@ -170,7 +170,7 @@ export function ActiveCtoxInstanceSelector({
         </MenuTrigger>
         <MenuPopup
           align="start"
-          className="w-72 max-w-[calc(100vw-24px)]"
+          className="w-60 max-w-[calc(100vw-24px)]"
           aria-label="Instanzen"
           data-workjet-instance-picker=""
         >

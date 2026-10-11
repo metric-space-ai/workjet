@@ -36,7 +36,7 @@ export function WorkjetHeaderFrame({
           className="flex min-w-0 items-center gap-2 pl-[var(--workspace-controls-left)]"
           data-workjet-header-navigation=""
         >
-          {sidebarAvailable ? <SidebarTrigger aria-label="Seitenleiste umschalten" /> : null}
+          {sidebarAvailable ? <SidebarTrigger aria-label="Seitenleiste ein-/ausblenden" /> : null}
           {isElectron ? <ActiveCtoxInstanceSelector placement="header" /> : null}
           {isElectron ? (
             <WorkjetProductModeSwitch

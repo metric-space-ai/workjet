@@ -521,12 +521,11 @@ export function ProviderInstanceCard({
       driverKind={driverKind}
       displayName={displayName}
       accentColor={accentColor}
-      showBadge={Boolean(accentColor)}
+      showBadge={false}
       statusDotClassName={statusStyle.dot}
       indicatorBackground="var(--card)"
       className="size-5"
       iconClassName="size-4 text-foreground/80"
-      badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-[7px]"
     />
   ) : FallbackIconComponent ? (
     <span className="relative inline-flex size-5 shrink-0 items-center justify-center">

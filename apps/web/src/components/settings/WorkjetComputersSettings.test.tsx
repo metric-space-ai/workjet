@@ -299,8 +299,12 @@ describe("native computer capabilities", () => {
     expect(markup).toContain("Weitere Aktionen für computer-local");
     expect(markup).toContain('aria-label="flashstore24-nas entfernen"');
     expect(markup).toContain('aria-label="computer-local entfernen"');
-    // Der Instanz-Eintrag allein hat keinen Workjet-Datensatz, also keinen Schalter.
-    expect(markup.match(/role="switch"/g)).toHaveLength(1);
+    // Jede Zeile hat denselben Schalter; der Instanz-Eintrag ohne Workjet-Datensatz
+    // zeigt ihn gesperrt.
+    expect(markup.match(/role="switch"/g)).toHaveLength(2);
+    expect(markup).toMatch(
+      /aria-label="flashstore24-nas aktiv"[^>]*disabled|disabled[^>]*aria-label="flashstore24-nas aktiv"/,
+    );
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain('role="alertdialog"');
   });
@@ -456,7 +460,7 @@ describe("current computer settings", () => {
         onChange={() => undefined}
       />,
     );
-    expect(markup).toContain('aria-label="Offline"');
+    expect(markup).toContain('aria-label="Getrennt"');
     expect(markup).not.toContain("stale-remote");
   });
 
@@ -651,7 +655,7 @@ describe("unified computer catalog", () => {
         onChange={() => undefined}
       />,
     );
-    expect(markup).toContain('aria-label="Offline"');
+    expect(markup).toContain('aria-label="Getrennt"');
   });
   it("shows a pending connection as checking until its environment is ready", () => {
     const markup = renderToStaticMarkup(
@@ -667,7 +671,7 @@ describe("unified computer catalog", () => {
       />,
     );
     expect(markup).toContain('data-slot="computer-tools-checking"');
-    expect(markup).not.toContain('aria-label="Offline"');
+    expect(markup).not.toContain('aria-label="Getrennt"');
   });
   it("shows a connecting computer as connecting and ignores its stale probe error", () => {
     const markup = renderToStaticMarkup(
@@ -685,7 +689,7 @@ describe("unified computer catalog", () => {
       />,
     );
     expect(markup).toContain("verbindet…");
-    expect(markup).not.toContain('aria-label="Offline"');
+    expect(markup).not.toContain('aria-label="Getrennt"');
     expect(markup).not.toContain("Werkzeuge ?");
   });
 });

@@ -18,8 +18,7 @@ import {
   GREPPY_CAPABILITY_ID,
   setWorkjetCapabilityEnabled,
   WorkjetCapabilityMenu,
-  WorkjetCapabilityMenuContent,
-  WorkjetCapabilityDetail,
+  WorkjetCapabilityMenuItems,
   workjetComposerCapabilities,
   WORKJET_CODE_HOST_ADAPTER,
   WORKJET_GREPPY_DESCRIPTION,
@@ -146,71 +145,59 @@ describe("WorkjetCapabilityMenu", () => {
     }
   });
 
-  it("keeps activation separate from opening settings", () => {
+  it("toggles a tool directly in the dropdown entry", () => {
     const onGreppyEnabledChange = vi.fn();
-    const onOpenSetting = vi.fn();
-    const content = WorkjetCapabilityMenuContent({
+    const content = WorkjetCapabilityMenuItems({
       ...baseMenuProps,
       greppyEnabled: true,
       onGreppyEnabledChange,
-      onOpenSetting,
     });
-    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`);
-    const details = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} settings`);
+    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`);
     expect(toggle.props.checked).toBe(true);
     expect(toggle.props.disabled).toBeFalsy();
-    const trigger = {} as HTMLButtonElement;
-    (details.props.onClick as (event: { currentTarget: HTMLButtonElement }) => void)({
-      currentTarget: trigger,
-    });
-    expect(onOpenSetting).toHaveBeenCalledWith("greppy", trigger);
-    expect(onGreppyEnabledChange).not.toHaveBeenCalled();
     (toggle.props.onCheckedChange as (checked: boolean) => void)(false);
     expect(onGreppyEnabledChange).toHaveBeenCalledWith(false);
   });
 
-  it("shows catalog descriptions in details while keeping the list compact", () => {
-    const detail = renderToStaticMarkup(
-      <WorkjetCapabilityDetail {...baseMenuProps} settingId="greppy" />,
-    );
-    expect(detail).toContain(WORKJET_GREPPY_DESCRIPTION);
-    expect(detail).toContain("activated only for this thread");
-    expect(detail).toContain("runtime and store are shared by all threads on this server");
-    const list = textContent(WorkjetCapabilityMenuContent(baseMenuProps));
+  it("keeps catalog descriptions in the tooltip, never as sentences in the list", () => {
+    const content = WorkjetCapabilityMenuItems(baseMenuProps);
+    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`);
+    expect(toggle.props.title).toBe(WORKJET_GREPPY_DESCRIPTION);
+    const list = textContent(content);
     expect(list).toContain(WORKJET_GREPPY_DISPLAY_NAME);
     expect(list).not.toContain(WORKJET_GREPPY_DESCRIPTION);
+    expect(list).not.toContain("Open a row for details");
   });
 
   it("disables activation during an in-flight change and exposes its status", () => {
     const props = { ...baseMenuProps, busy: true };
-    const content = WorkjetCapabilityMenuContent(props);
-    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`);
+    const content = WorkjetCapabilityMenuItems(props);
+    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`);
     expect(toggle.props.disabled).toBe(true);
     expect(toggle.props["aria-busy"]).toBe(true);
-    expect(textContent(content)).toContain("Updating…");
+    expect(textContent(content)).toContain("Aktualisiert…");
     const trigger = renderToStaticMarkup(<WorkjetCapabilityMenu {...props} />);
-    expect(trigger).toContain('aria-label="Thread tools"');
+    expect(trigger).toContain('aria-label="Werkzeuge"');
     expect(trigger).toContain('aria-busy="true"');
     expect(trigger).toContain("disabled");
     expect(
       findByLabel(
-        WorkjetCapabilityMenuContent({ ...baseMenuProps, disabled: true }),
-        `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`,
+        WorkjetCapabilityMenuItems({ ...baseMenuProps, disabled: true }),
+        `${WORKJET_GREPPY_DISPLAY_NAME} für diesen Chat`,
       ).props.disabled,
     ).toBe(true);
   });
 
-  it("keeps a direct popup trigger in compact and full layouts", () => {
-    for (const compact of [true, false]) {
-      const markup = renderToStaticMarkup(
-        <WorkjetCapabilityMenu {...baseMenuProps} compact={compact} />,
-      );
-      expect(markup).toContain('aria-label="Thread tools"');
-      expect(markup).toContain("Tools");
-    }
+  it("is a dropdown in the bar and a submenu inside the options menu", () => {
+    const markup = renderToStaticMarkup(<WorkjetCapabilityMenu {...baseMenuProps} />);
+    expect(markup).toContain('aria-label="Werkzeuge"');
+    expect(markup).toContain('aria-haspopup="menu"');
+    expect(markup).not.toContain("Tools for this chat");
+    const compact = WorkjetCapabilityMenu({ ...baseMenuProps, compact: true });
+    expect(textContent(compact)).toContain("Werkzeuge");
   });
 
-  it("allows the root Orchestrator switch but keeps a child worker's role managed", () => {
+  it("allows the root Orchestrator switch but keeps a child Luma's role managed", () => {
     const onWorkjetRoleChange = vi.fn();
     const props = {
       ...baseMenuProps,
@@ -218,68 +205,65 @@ describe("WorkjetCapabilityMenu", () => {
       workjetRole: "standard" as const,
       onWorkjetRoleChange,
     };
-    const toggle = findByLabel(WorkjetCapabilityMenuContent(props), "Orchestrator for this thread");
+    const toggle = findByLabel(WorkjetCapabilityMenuItems(props), "Orchestrator für diesen Chat");
     expect(toggle.props.checked).toBe(false);
     (toggle.props.onCheckedChange as (checked: boolean) => void)(true);
     expect(onWorkjetRoleChange).toHaveBeenCalledWith("orchestrator");
     const managed = findByLabel(
-      WorkjetCapabilityMenuContent({ ...props, workjetRole: "worker" }),
-      "Orchestrator for this thread",
+      WorkjetCapabilityMenuItems({ ...props, workjetRole: "worker" }),
+      "Orchestrator für diesen Chat",
     );
     expect(managed.props.disabled).toBe(true);
   });
 
-  it("offers Decision Hub connection settings only when enabled", () => {
+  it("offers the Decision Hub instance only when enabled", () => {
     const props = {
       ...baseMenuProps,
       onCapabilityEnabledChange: vi.fn(),
       onDecisionHubConnectionChange: vi.fn(),
-      settingId: "decision-hub",
     };
-    const disabled = renderToStaticMarkup(
-      <WorkjetCapabilityDetail {...props} enabledCapabilityIds={[]} />,
-    );
-    expect(disabled).toContain("Enable Decision Hub");
-    expect(disabled).not.toContain('aria-label="Decision Hub CTOX connection"');
-    const missing = renderToStaticMarkup(
-      <WorkjetCapabilityDetail {...props} enabledCapabilityIds={["decision-hub"]} />,
-    );
-    expect(missing).toContain("No MCP-capable CTOX connection");
-    expect(missing).toContain("disabled");
+    const disabled = WorkjetCapabilityMenuItems({ ...props, enabledCapabilityIds: [] });
+    expect(() => findByLabel(disabled, "Decision Hub Instanz")).toThrow();
+    const missing = WorkjetCapabilityMenuItems({
+      ...props,
+      enabledCapabilityIds: ["decision-hub"],
+    });
+    expect(textContent(missing)).toContain("Keine CTOX-Verbindung");
     expect(props.onDecisionHubConnectionChange).not.toHaveBeenCalled();
   });
-  it("offers the CTOX selector in its own detail instead of Decision Hub", () => {
+
+  it("offers the CTOX selector separately from Decision Hub", () => {
     const props = {
       ...baseMenuProps,
       onCapabilityEnabledChange: vi.fn(),
       onCtoxBusinessOsConnectionChange: vi.fn(),
-      settingId: "ctox-business-os",
     };
-    const disabled = renderToStaticMarkup(
-      <WorkjetCapabilityDetail {...props} enabledCapabilityIds={[]} />,
-    );
-    expect(disabled).toContain("Enable CTOX Business OS");
-    expect(disabled).not.toContain('aria-label="CTOX Business OS connection"');
-    const enabled = renderToStaticMarkup(
-      <WorkjetCapabilityDetail
-        {...props}
-        enabledCapabilityIds={["ctox-business-os"]}
-        ctoxBusinessOsConnections={[
-          {
-            connectionId: WorkjetConnectionId.make("ctox-dev:tenant-source"),
-            instanceId: "source.ctox.dev",
-            displayName: "Source instance",
-            source: "ctox_dev",
-            status: "ready",
-            reason: null,
-          },
-        ]}
-      />,
-    );
-    expect(enabled).toContain('aria-label="CTOX Business OS connection"');
-    expect(enabled).not.toContain('aria-label="Decision Hub CTOX connection"');
-    expect(enabled).not.toContain("No MCP connection");
-    expect(props.onCtoxBusinessOsConnectionChange).not.toHaveBeenCalled();
+    expect(() =>
+      findByLabel(
+        WorkjetCapabilityMenuItems({ ...props, enabledCapabilityIds: [] }),
+        "CTOX Business OS Instanz",
+      ),
+    ).toThrow();
+    const enabled = WorkjetCapabilityMenuItems({
+      ...props,
+      enabledCapabilityIds: ["ctox-business-os"],
+      ctoxBusinessOsConnections: [
+        {
+          connectionId: WorkjetConnectionId.make("ctox-dev:tenant-source"),
+          instanceId: "source.ctox.dev",
+          displayName: "Source instance",
+          source: "ctox_dev",
+          status: "ready",
+          reason: null,
+        },
+      ],
+    });
+    const selector = findByLabel(enabled, "CTOX Business OS Instanz");
+    expect(textContent(selector)).toContain("Source instance");
+    expect(textContent(selector)).toContain("bereit");
+    expect(() => findByLabel(enabled, "Decision Hub Instanz")).toThrow();
+    (selector.props.onValueChange as (value: string) => void)("ctox-dev:tenant-source");
+    expect(props.onCtoxBusinessOsConnectionChange).toHaveBeenCalledWith("ctox-dev:tenant-source");
   });
 
   it("shows a missing source and preserves a locked thread connection", () => {
@@ -287,17 +271,11 @@ describe("WorkjetCapabilityMenu", () => {
       ...baseMenuProps,
       onCapabilityEnabledChange: vi.fn(),
       onCtoxBusinessOsConnectionChange: vi.fn(),
-      settingId: "ctox-business-os",
       enabledCapabilityIds: ["ctox-business-os"] as const,
     };
-    const missing = renderToStaticMarkup(<WorkjetCapabilityDetail {...props} />);
-    expect(missing).toContain("No MCP connection for the selected instance");
-    expect(missing).toContain("disabled");
-    const locked = renderToStaticMarkup(
-      <WorkjetCapabilityDetail {...props} ctoxBusinessOsConnectionLocked />,
-    );
-    expect(locked).toContain("This thread keeps its original instance.");
-    expect(locked).toContain("disabled");
+    expect(textContent(WorkjetCapabilityMenuItems(props))).toContain("Keine CTOX-Verbindung");
+    const locked = WorkjetCapabilityMenuItems({ ...props, ctoxBusinessOsConnectionLocked: true });
+    expect(textContent(locked)).toContain("Instanz fest");
   });
 });
 
@@ -346,8 +324,7 @@ describe("executeWorkjetCapabilityToggle", () => {
     expect(notifyFailure).toHaveBeenCalledTimes(1);
     expect(WORKJET_GREPPY_FAILURE_TOAST).toEqual({
       type: "error",
-      title: `Could not update ${WORKJET_GREPPY_DISPLAY_NAME}`,
-      description: `${WORKJET_GREPPY_DISPLAY_NAME} was left unchanged for this thread.`,
+      title: `${WORKJET_GREPPY_DISPLAY_NAME} nicht geändert`,
       data: { hideCopyButton: true },
     });
     expect(JSON.stringify(WORKJET_GREPPY_FAILURE_TOAST)).not.toContain("private server details");
@@ -387,7 +364,7 @@ function menuText(props: WorkjetCapabilityMenuProps): string {
       walk((node.props as { children?: ReactNode }).children);
     }
   };
-  walk(WorkjetCapabilityMenuContent(props));
+  walk(WorkjetCapabilityMenuItems(props));
   return parts.join(" | ");
 }
 
@@ -426,43 +403,38 @@ describe("Extras: every capability the host can activate", () => {
 describe("worker source connection action", () => {
   const props = {
     ...baseMenuProps,
-    settingId: "ctox-business-os",
     enabledCapabilityIds: ["ctox-business-os"],
     onCapabilityEnabledChange: vi.fn(),
   };
 
   it("offers the normal product connect action when no connection exists", () => {
     const onConnect = vi.fn();
-    const detail = WorkjetCapabilityDetail({ ...props, onCtoxBusinessOsConnect: onConnect });
-    const action = findByLabel(detail, "Connect selected Business OS for workers");
+    const items = WorkjetCapabilityMenuItems({ ...props, onCtoxBusinessOsConnect: onConnect });
+    const action = findByLabel(items, "Business OS verbinden");
     expect(action.props.disabled).toBeFalsy();
     (action.props.onClick as () => void)();
     expect(onConnect).toHaveBeenCalledOnce();
   });
 
   it("disables duplicate connection attempts and exposes a safe failure", () => {
-    const detail = WorkjetCapabilityDetail({
+    const items = WorkjetCapabilityMenuItems({
       ...props,
       onCtoxBusinessOsConnect: vi.fn(),
       ctoxBusinessOsConnecting: true,
       ctoxBusinessOsConnectError: "Check account permissions.",
     });
-    expect(findByLabel(detail, "Connect selected Business OS for workers").props.disabled).toBe(
-      true,
-    );
-    expect(textContent(detail)).toContain("Connecting");
-    expect(textContent(detail)).toContain("Check account permissions.");
+    expect(findByLabel(items, "Business OS verbinden").props.disabled).toBe(true);
+    expect(textContent(items)).toContain("Verbindet");
+    expect(textContent(items)).toContain("Check account permissions.");
   });
 
   it("does not offer a replacement grant for a pinned thread or an unavailable desktop bridge", () => {
-    const pinned = WorkjetCapabilityDetail({
+    const pinned = WorkjetCapabilityMenuItems({
       ...props,
       onCtoxBusinessOsConnect: vi.fn(),
       ctoxBusinessOsConnectionLocked: true,
     });
-    expect(() => findByLabel(pinned, "Connect selected Business OS for workers")).toThrow();
-    expect(() =>
-      findByLabel(WorkjetCapabilityDetail(props), "Connect selected Business OS for workers"),
-    ).toThrow();
+    expect(() => findByLabel(pinned, "Business OS verbinden")).toThrow();
+    expect(() => findByLabel(WorkjetCapabilityMenuItems(props), "Business OS verbinden")).toThrow();
   });
 });

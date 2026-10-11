@@ -284,6 +284,7 @@ import {
   buildWorkjetSendMessageInput,
   EMPTY_WORKJET_SEND_DRAFT,
   workjetMailboxFailureMessage,
+  WorkjetSendToWorkerMenuItem,
   WorkjetSendToWorkerPanel,
   type WorkjetSendDraft,
   type WorkjetSendOutcome,
@@ -294,8 +295,8 @@ import {
   type WorkjetCrossModeCardModel,
 } from "./chat/WorkjetCrossModeLinkCard";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
-import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
-import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
+import { ExpandedImageInline } from "./chat/ExpandedImageDialog";
+import { PullRequestThreadPanel } from "./PullRequestThreadDialog";
 import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import type {
@@ -395,15 +396,7 @@ import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { Button } from "./ui/button";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogPopup,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
+import { Banner } from "./ui/banner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ServerUpdateAction, ServerUpdateProgress } from "./ServerUpdateAction";
 import {
@@ -1674,6 +1667,9 @@ function ChatViewContent(props: ChatViewProps) {
     useState<WorkjetSendDraft>(EMPTY_WORKJET_SEND_DRAFT);
   const [workjetSendOutcome, setWorkjetSendOutcome] = useState<WorkjetSendOutcome | null>(null);
   const [workjetSendBusy, setWorkjetSendBusy] = useState(false);
+  // „An Luma senden“ ist eine Inline-Zeile über dem Composer, geöffnet aus
+  // dem Optionen-Menü. Kein Popover.
+  const [workjetSendPanelOpen, setWorkjetSendPanelOpen] = useState(false);
   // The handoff whose continuation is in flight, plus the last refusal. Nothing
   // optimistic: the inbox row changes only when the server's listing does.
   const [workjetContinuingHandoffId, setWorkjetContinuingHandoffId] = useState<string | null>(null);
@@ -3890,31 +3886,14 @@ function ChatViewContent(props: ChatViewProps) {
   // control rather than receiving a node: the full footer gets the labelled
   // variant, the compact footer the icon-only one.
   const renderWorkjetSendToWorkerControl = useCallback(
-    ({ compact }: { readonly compact: boolean }) =>
+    (_options: { readonly compact: boolean }) =>
       workjetIsOrchestratorThread ? (
-        <WorkjetSendToWorkerPanel
-          compact={compact}
-          draft={workjetSendDraft}
-          threads={workjetRecipientThreads}
-          roster={workjetMeshRoster}
-          busy={workjetSendBusy}
+        <WorkjetSendToWorkerMenuItem
           disabled={threadDetailLoading || activeEnvironmentUnavailable}
-          outcome={workjetSendOutcome}
-          onDraftChange={setWorkjetSendDraft}
-          onSubmit={onSubmitWorkjetSend}
+          onOpen={() => setWorkjetSendPanelOpen(true)}
         />
       ) : null,
-    [
-      activeEnvironmentUnavailable,
-      onSubmitWorkjetSend,
-      threadDetailLoading,
-      workjetIsOrchestratorThread,
-      workjetMeshRoster,
-      workjetRecipientThreads,
-      workjetSendBusy,
-      workjetSendDraft,
-      workjetSendOutcome,
-    ],
+    [activeEnvironmentUnavailable, threadDetailLoading, workjetIsOrchestratorThread],
   );
   /**
    * The one optimistic-with-revert runner every thread Workjet config edit goes
@@ -7020,6 +6999,27 @@ function ChatViewContent(props: ChatViewProps) {
       {panelToggleControls}
     </div>
   );
+  // PR auschecken ist Inhalt der rechten Leiste (inline), kein Dialog.
+  const pullRequestCheckoutPanel =
+    pullRequestDialogState && activeThread ? (
+      <PullRequestThreadPanel
+        key={pullRequestDialogState.key}
+        open
+        environmentId={activeThread.environmentId}
+        threadId={activeThread.id}
+        cwd={activeProject?.workspaceRoot ?? null}
+        initialReference={pullRequestDialogState.initialReference}
+        onOpenChange={(open) => {
+          if (!open) {
+            closePullRequestDialog();
+          }
+        }}
+        onPrepared={handlePreparedPullRequestThread}
+      />
+    ) : null;
+  const rightPanelVisible =
+    (rightPanelOpen && activeThreadRef !== null && activeThreadRef !== undefined) ||
+    pullRequestCheckoutPanel !== null;
   const rightPanelContent = activeThreadRef ? (
     activeRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -7487,6 +7487,50 @@ function ChatViewContent(props: ChatViewProps) {
                             </>
                           ) : (
                             <>
+                              {branchRestoreConfirmOpen && localCheckoutBranchMismatch ? (
+                                <Banner
+                                  icon={GitBranchIcon}
+                                  className="mx-auto mb-2 w-full max-w-5xl"
+                                  action={{
+                                    label: "Wechseln",
+                                    onClick: () => {
+                                      setBranchRestoreConfirmOpen(false);
+                                      void handleSwitchCheckoutToThread();
+                                    },
+                                  }}
+                                  secondaryAction={{
+                                    label: "Abbrechen",
+                                    onClick: () => setBranchRestoreConfirmOpen(false),
+                                  }}
+                                >
+                                  Änderungen gehen mit nach{" "}
+                                  <code className="font-medium">
+                                    {localCheckoutBranchMismatch.threadBranch}
+                                  </code>
+                                </Banner>
+                              ) : null}
+                              {expandedImage ? (
+                                <ExpandedImageInline
+                                  key={`${expandedImage.images[expandedImage.index]?.src ?? "image"}:${expandedImage.index}`}
+                                  preview={expandedImage}
+                                  onClose={closeExpandedImage}
+                                />
+                              ) : null}
+                              {workjetIsOrchestratorThread && workjetSendPanelOpen ? (
+                                <div className="mx-auto mb-2 w-full max-w-5xl">
+                                  <WorkjetSendToWorkerPanel
+                                    draft={workjetSendDraft}
+                                    threads={workjetRecipientThreads}
+                                    roster={workjetMeshRoster}
+                                    busy={workjetSendBusy}
+                                    disabled={threadDetailLoading || activeEnvironmentUnavailable}
+                                    outcome={workjetSendOutcome}
+                                    onDraftChange={setWorkjetSendDraft}
+                                    onSubmit={onSubmitWorkjetSend}
+                                    onClose={() => setWorkjetSendPanelOpen(false)}
+                                  />
+                                </div>
+                              ) : null}
                               <ThreadErrorBanner
                                 error={nativeSupervisorThread ? null : visibleThreadError}
                                 onDismiss={() => {
@@ -7682,53 +7726,6 @@ function ChatViewContent(props: ChatViewProps) {
                 bottomInset={isDraftHeroState ? 0 : composerOverlayHeight}
               />
             ) : null}
-
-            <AlertDialog open={branchRestoreConfirmOpen} onOpenChange={setBranchRestoreConfirmOpen}>
-              <AlertDialogPopup>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Switch to{" "}
-                    <code className="font-medium">
-                      {localCheckoutBranchMismatch?.threadBranch ?? ""}
-                    </code>
-                    ?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    You have uncommitted changes. They'll carry over to the other branch, or block
-                    the switch if they conflict.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-                  <Button
-                    variant="default"
-                    onClick={() => {
-                      setBranchRestoreConfirmOpen(false);
-                      void handleSwitchCheckoutToThread();
-                    }}
-                  >
-                    Switch branch
-                  </Button>
-                </AlertDialogFooter>
-              </AlertDialogPopup>
-            </AlertDialog>
-
-            {pullRequestDialogState ? (
-              <PullRequestThreadDialog
-                key={pullRequestDialogState.key}
-                open
-                environmentId={activeThread.environmentId}
-                threadId={activeThread.id}
-                cwd={activeProject?.workspaceRoot ?? null}
-                initialReference={pullRequestDialogState.initialReference}
-                onOpenChange={(open) => {
-                  if (!open) {
-                    closePullRequestDialog();
-                  }
-                }}
-                onPrepared={handlePreparedPullRequestThread}
-              />
-            ) : null}
           </div>
           {/* end chat column */}
         </div>
@@ -7754,7 +7751,7 @@ function ChatViewContent(props: ChatViewProps) {
         ))}
       </div>
 
-      {!shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
+      {!shouldUseRightPanelSheet && rightPanelVisible ? (
         <RightPanelTabs
           mode="inline"
           maximized={rightPanelMaximized}
@@ -7786,11 +7783,14 @@ function ChatViewContent(props: ChatViewProps) {
           pullRequestStatuses={pullRequestTabStatuses}
           liveAgentCount={agentPanelModel.liveCount}
         >
-          {rightPanelContent}
+          {pullRequestCheckoutPanel ?? rightPanelContent}
         </RightPanelTabs>
       ) : null}
-      {shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
-        <RightPanelSheet open onClose={closePreviewPanel}>
+      {shouldUseRightPanelSheet && rightPanelVisible ? (
+        <RightPanelSheet
+          open
+          onClose={pullRequestCheckoutPanel ? closePullRequestDialog : closePreviewPanel}
+        >
           <RightPanelTabs
             mode="sheet"
             layoutControls={panelToggleControls}
@@ -7822,18 +7822,10 @@ function ChatViewContent(props: ChatViewProps) {
             pullRequestStatuses={pullRequestTabStatuses}
             liveAgentCount={agentPanelModel.liveCount}
           >
-            {rightPanelContent}
+            {pullRequestCheckoutPanel ?? rightPanelContent}
           </RightPanelTabs>
         </RightPanelSheet>
       ) : null}
-
-      {expandedImage && (
-        <ExpandedImageDialog
-          key={`${expandedImage.images[expandedImage.index]?.src ?? "image"}:${expandedImage.index}`}
-          preview={expandedImage}
-          onClose={closeExpandedImage}
-        />
-      )}
     </div>
   );
 }

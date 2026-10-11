@@ -89,7 +89,7 @@ describe("native supervisor receipt display", () => {
     );
     expect(html).toContain('aria-label="Luma"');
     expect(html).toContain('aria-label="Harness"');
-    expect(html).toContain('aria-label="Model"');
+    expect(html).toContain('aria-label="Modell"');
     expect(html.match(/<textarea/g)).toHaveLength(1);
     expect(html.match(/aria-label="Send to Supervisor"/g)).toHaveLength(1);
     expect(html).not.toContain('aria-label="Last execution"');
@@ -111,12 +111,12 @@ describe("native supervisor receipt display", () => {
     );
     expect(html.indexOf("<textarea")).toBeLessThan(html.indexOf("data-composer-bar="));
     expect(html).toContain('data-composer-bar="true"');
-    expect(html).toContain('aria-label="Advanced settings"');
+    expect(html).toContain('aria-label="Optionen"');
     expect(html).toContain('aria-label="Dictate message"');
     expect(html).not.toContain('aria-label="Supervisor message type"');
     expect(html).toContain('aria-label="Luma"');
     expect(html).toContain('aria-label="Harness"');
-    expect(html).toContain('aria-label="Model"');
+    expect(html).toContain('aria-label="Modell"');
     expect(html).not.toContain("Project instance");
     expect(html).not.toContain("Configure Workers");
     expect(html).not.toContain("Refresh task");

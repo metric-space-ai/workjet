@@ -14,19 +14,10 @@ import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useEnvironmentQuery } from "~/state/query";
 import { vcsEnvironment } from "~/state/vcs";
 import { Button } from "./ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
 
-interface PullRequestThreadDialogProps {
+interface PullRequestThreadPanelProps {
   open: boolean;
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -36,7 +27,11 @@ interface PullRequestThreadDialogProps {
   onPrepared: (input: { branch: string; worktreePath: string | null }) => Promise<void> | void;
 }
 
-export function PullRequestThreadDialog({
+/**
+ * PR auschecken als Inhalt der rechten Leiste (inline, kein Dialog):
+ * Referenz eingeben, aufgelösten PR sehen, „Lokal“ oder „Worktree“.
+ */
+export function PullRequestThreadPanel({
   open,
   environmentId,
   threadId,
@@ -44,7 +39,7 @@ export function PullRequestThreadDialog({
   initialReference,
   onOpenChange,
   onPrepared,
-}: PullRequestThreadDialogProps) {
+}: PullRequestThreadPanelProps) {
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const [reference, setReference] = useState(initialReference ?? "");
   const [referenceDirty, setReferenceDirty] = useState(false);
@@ -171,9 +166,9 @@ export function PullRequestThreadDialog({
   const validationMessage = !referenceDirty
     ? null
     : reference.trim().length === 0
-      ? `Paste a ${terminology.singular} URL, checkout command, or enter 123 / #123.`
+      ? "Link, Befehl oder #123 eingeben"
       : parsedReference === null
-        ? `Use a ${terminology.singular} URL, checkout command, 123, or #123.`
+        ? "Link, Befehl, 123 oder #123"
         : null;
   const errorMessage =
     validationMessage ??
@@ -182,123 +177,114 @@ export function PullRequestThreadDialog({
       : preparePullRequestThreadAction.error instanceof Error
         ? preparePullRequestThreadAction.error.message
         : preparePullRequestThreadAction.error
-          ? `Failed to prepare ${terminology.singular} thread.`
+          ? "Vorbereiten fehlgeschlagen"
           : null);
+  const busy = preparePullRequestThreadAction.isPending;
+  const confirmDisabled = !cwd || !resolvedPullRequest || isResolving || busy;
+  const stateLabel =
+    resolvedPullRequest?.state === "merged"
+      ? "gemergt"
+      : resolvedPullRequest?.state === "closed"
+        ? "geschlossen"
+        : resolvedPullRequest?.state === "open"
+          ? "offen"
+          : (resolvedPullRequest?.state ?? "");
 
+  if (!open) return null;
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!preparePullRequestThreadAction.isPending) {
-          onOpenChange(nextOpen);
+    <section
+      aria-label={`${terminology.shortLabel} auschecken`}
+      className="flex min-w-0 flex-col gap-3 p-3"
+      data-pull-request-checkout-panel="true"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !busy) {
+          event.preventDefault();
+          onOpenChange(false);
         }
       }}
     >
-      <DialogPopup className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <SourceControlIcon className="size-4" />
-            Checkout {terminology.singular}
-          </DialogTitle>
-          <DialogDescription>
-            Resolve a {sourceControlPresentation.providerName} {terminology.singular}, then create
-            the draft thread in the main repo or in a dedicated worktree.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogPanel className="space-y-4">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-medium text-foreground capitalize">
-              {terminology.singular}
-            </span>
-            <Input
-              ref={referenceInputRef}
-              placeholder={`${terminology.shortLabel} URL, checkout command, or #42`}
-              value={reference}
-              onChange={(event) => {
-                setReferenceDirty(true);
-                setReference(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") {
-                  return;
-                }
-                event.preventDefault();
-                if (!isResolving && !preparePullRequestThreadAction.isPending) {
-                  void handleConfirm("local");
-                }
-              }}
-            />
-          </label>
+      <div className="flex items-center gap-2 font-medium text-[13.5px]">
+        <SourceControlIcon className="size-4" />
+        {terminology.shortLabel} auschecken
+      </div>
+      <Input
+        ref={referenceInputRef}
+        aria-label={terminology.shortLabel}
+        placeholder="Link, Befehl oder #42"
+        value={reference}
+        onChange={(event) => {
+          setReferenceDirty(true);
+          setReference(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") {
+            return;
+          }
+          event.preventDefault();
+          if (!isResolving && !busy) {
+            void handleConfirm("local");
+          }
+        }}
+      />
 
-          {resolvedPullRequest ? (
-            <div className="rounded-xl border border-border/70 bg-muted/24 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-sm">{resolvedPullRequest.title}</p>
-                  <p className="truncate text-muted-foreground text-xs">
-                    #{resolvedPullRequest.number} · {resolvedPullRequest.headBranch} to{" "}
-                    {resolvedPullRequest.baseBranch}
-                  </p>
-                </div>
-                <span className={cn("shrink-0 text-xs capitalize", statusTone)}>
-                  {resolvedPullRequest.state}
-                </span>
-              </div>
-            </div>
-          ) : null}
+      {resolvedPullRequest ? (
+        <div className="flex min-w-0 items-start justify-between gap-3 rounded-lg border px-3 py-2">
+          <div className="min-w-0">
+            <p className="truncate font-medium text-[13.5px]">{resolvedPullRequest.title}</p>
+            <p className="truncate text-muted-foreground text-xs">
+              #{resolvedPullRequest.number} · {resolvedPullRequest.headBranch} →{" "}
+              {resolvedPullRequest.baseBranch}
+            </p>
+          </div>
+          <span className={cn("shrink-0 text-xs", statusTone)}>{stateLabel}</span>
+        </div>
+      ) : null}
 
-          {isResolving ? (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs">
-              <Spinner className="size-3.5" />
-              Resolving {terminology.singular}...
-            </div>
-          ) : null}
+      {isResolving ? (
+        <div role="status" className="flex items-center gap-2 text-muted-foreground text-xs">
+          <Spinner className="size-3.5" />
+          Wird aufgelöst…
+        </div>
+      ) : null}
 
-          {errorMessage ? <p className="text-destructive text-xs">{errorMessage}</p> : null}
-        </DialogPanel>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-            disabled={preparePullRequestThreadAction.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              void handleConfirm("local");
-            }}
-            disabled={
-              !cwd ||
-              !resolvedPullRequest ||
-              isResolving ||
-              preparePullRequestThreadAction.isPending
-            }
-          >
-            {preparingMode === "local" ? "Preparing local..." : "Local"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              void handleConfirm("worktree");
-            }}
-            disabled={
-              !cwd ||
-              !resolvedPullRequest ||
-              isResolving ||
-              preparePullRequestThreadAction.isPending
-            }
-          >
-            {preparingMode === "worktree" ? "Preparing worktree..." : "Worktree"}
-          </Button>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
+      {errorMessage ? (
+        <p role="alert" className="text-destructive text-xs">
+          {errorMessage}
+        </p>
+      ) : null}
+
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onOpenChange(false)}
+          disabled={busy}
+        >
+          Abbrechen
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            void handleConfirm("local");
+          }}
+          disabled={confirmDisabled}
+        >
+          {preparingMode === "local" ? "Bereitet vor…" : "Lokal"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            void handleConfirm("worktree");
+          }}
+          disabled={confirmDisabled}
+        >
+          {preparingMode === "worktree" ? "Bereitet vor…" : "Worktree"}
+        </Button>
+      </div>
+    </section>
   );
 }

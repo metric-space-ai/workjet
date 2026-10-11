@@ -168,7 +168,7 @@ const ReportedQuotaWindow = Schema.Struct({
   resetAtMs: Revision,
   utilization: Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
 });
-const ReportedQuota = Schema.Union(
+const ReportedQuota = Schema.Union([
   Schema.Struct({ state: Schema.Literal("unknown") }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
@@ -191,7 +191,7 @@ const ReportedQuota = Schema.Union(
         : "Reported quota windows are inconsistent.",
     ),
   ),
-);
+]);
 export const WorkjetNativeProviderAccount = Schema.Struct({
   id: Id,
   holder: Schema.Struct({ kind: Schema.Literal("ctox_instance"), id: Id }),

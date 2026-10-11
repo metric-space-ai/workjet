@@ -46,6 +46,12 @@ describe("UI-Vertrag §8 Wächter", () => {
     ).toEqual([]);
   });
 
+  it("Baseline enthält nur noch bestehende Verstöße", () => {
+    const current = new Set(collectUiContractViolations(SRC_ROOT));
+    const veraltet = [...readBaseline()].filter((entry) => !current.has(entry));
+    expect(veraltet, "Abgebaute Verstöße aus der Baseline löschen").toEqual([]);
+  });
+
   it("Baseline enthält keine Phantom-Einträge mit Zeilenangaben", () => {
     const baseline = readBaseline();
     for (const entry of baseline) {

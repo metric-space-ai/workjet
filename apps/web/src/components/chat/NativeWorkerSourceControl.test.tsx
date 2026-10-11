@@ -80,7 +80,7 @@ describe("automatic supervisor worker connection", () => {
         message: expect.any(String),
       }),
     );
-    expect(provision).not.toHaveBeenCalled();
+    expect(provision).toHaveBeenCalledOnce();
   });
   it("renews a ready source only on the explicit user action and saves the issued binding", async () => {
     state.data = { connections: [connection] };

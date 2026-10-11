@@ -81,7 +81,7 @@ export function PullRequestReviewerPicker({
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button size="icon-xs" variant="ghost" disabled aria-label="Review anfragen">
+            <Button size="icon-xs" variant="ghost" disabled aria-label="Prüfung anfragen">
               <UserPlusIcon className="size-3.5" />
             </Button>
           }
@@ -97,13 +97,13 @@ export function PullRequestReviewerPicker({
         <TooltipTrigger
           render={
             <MenuTrigger
-              render={<Button size="icon-xs" variant="ghost" aria-label="Review anfragen" />}
+              render={<Button size="icon-xs" variant="ghost" aria-label="Prüfung anfragen" />}
             />
           }
         >
           <UserPlusIcon className="size-3.5" />
         </TooltipTrigger>
-        <TooltipPopup side="bottom">Review anfragen</TooltipPopup>
+        <TooltipPopup side="bottom">Prüfung anfragen</TooltipPopup>
       </Tooltip>
       <MenuPopup align="start" side="bottom" className="max-h-80 min-w-56">
         {candidatesQuery.isPending ? (

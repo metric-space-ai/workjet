@@ -9,6 +9,7 @@ import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ExternalLinkIcon,
   HammerIcon,
   MessageSquareIcon,
   PencilIcon,
@@ -457,7 +458,7 @@ export function PullRequestSummaryTab({
     <div className="h-full overflow-y-auto" data-pull-request-summary-scroll>
       <section className="px-4 py-3">
         <div>
-          <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewer">
+          <MetaRow icon={<UsersIcon className="size-3.5" />} label="Prüfer">
             <span className="flex min-w-0 flex-wrap items-center gap-1.5">
               {detail.reviewers.length === 0 ? (
                 <span className="text-muted-foreground">—</span>
@@ -504,7 +505,7 @@ export function PullRequestSummaryTab({
             </span>
           </MetaRow>
           {detail.labels.length > 0 ? (
-            <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
+            <MetaRow icon={<TagIcon className="size-3.5" />} label="Etiketten">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
                 {detail.labels.map((label) => {
                   const dot = labelDotColor(label.color);
@@ -582,9 +583,9 @@ export function PullRequestSummaryTab({
         </div>
       </Section>
 
-      <Section title="Checks" count={detail.checks.length}>
+      <Section title="Prüfungen" count={detail.checks.length}>
         {detail.checks.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Keine Checks</p>
+          <p className="text-xs text-muted-foreground">Keine Prüfungen</p>
         ) : (
           <div className="space-y-0.5">
             {detail.checks.map((check, index) => {
@@ -597,27 +598,38 @@ export function PullRequestSummaryTab({
                   key={`${index}:${check.name}:${check.url ?? ""}`}
                   className="group flex items-center gap-1 rounded-md pr-1 hover:bg-accent/60"
                 >
-                  <button
-                    type="button"
-                    disabled={!check.url}
-                    onClick={() => check.url && openCheck(check.url)}
-                    className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
-                      check.url ? undefined : "cursor-default",
-                    )}
-                  >
+                  {/* Der Name ist Text, kein Knopf; geöffnet wird über das Icon mit Tooltip. */}
+                  <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[13.5px]">
                     <PullRequestCheckStatusIcon status={check.status} />
-                    <span className="min-w-0 flex-1 truncate">{check.name}</span>
-                    <span className="shrink-0 text-muted-foreground">
+                    <span className="min-w-0 flex-1 break-words">{check.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
                       {pullRequestCheckStatusLabel(check.status)}
                     </span>
-                  </button>
+                  </div>
+                  {check.url ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            className="shrink-0 text-muted-foreground"
+                            aria-label={`${check.name} öffnen`}
+                            onClick={() => check.url && openCheck(check.url)}
+                          />
+                        }
+                      >
+                        <ExternalLinkIcon aria-hidden className="size-3.5" />
+                      </TooltipTrigger>
+                      <TooltipPopup side="bottom">Öffnen</TooltipPopup>
+                    </Tooltip>
+                  ) : null}
                   {/* Only where there is something to fix. A passing check has no failure to
                       reproduce, and the button would be an invitation to waste a thread. */}
                   {onFixFinding && failing ? (
                     <Button
                       size="xs"
-                      variant="ghost"
+                      variant="outline"
                       className="shrink-0"
                       disabled={pendingFinding !== null && pendingFinding !== undefined}
                       onClick={() => onFixFinding(finding)}
@@ -643,7 +655,7 @@ export function PullRequestSummaryTab({
             <Button
               size="xs"
               variant="ghost"
-              className="h-7 shrink-0 px-2 text-[10px] text-muted-foreground"
+              className="h-7 shrink-0 px-2 text-[11px] text-muted-foreground"
               aria-label={commentOrder === "newest" ? "Älteste zuerst" : "Neueste zuerst"}
               onClick={() => setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))}
             >

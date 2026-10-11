@@ -96,8 +96,7 @@ function PullRequestRowImpl({
                 position: { x: event.clientX, y: event.clientY },
               });
             }}
-            title={entry.title}
-            className="min-w-0 max-w-full truncate text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-1 focus-visible:after:ring-ring"
+            className="min-w-0 max-w-full text-left break-words whitespace-normal outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-1 focus-visible:after:ring-ring sm:truncate sm:whitespace-nowrap"
           >
             <span className="mr-1.5 font-normal text-muted-foreground tabular-nums">
               #{entry.number}
@@ -106,8 +105,21 @@ function PullRequestRowImpl({
           </button>
         }
         meta={
-          <span className="font-mono text-[12px]" title={metaParts.join(" · ")}>
-            {metaParts.join(" · ")}
+          // Bei 420 px steht, was rechts keinen Platz hat (Zeit, Diff, Freigabe), unter dem
+          // Titel und bricht um, statt zu verschwinden.
+          <span className="flex flex-wrap items-center gap-x-1.5 whitespace-normal sm:block sm:whitespace-nowrap">
+            <span className="font-mono text-[12px] break-all sm:break-normal">
+              {metaParts.join(" · ")}
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-[12px] tabular-nums sm:hidden">
+              <span>{formatRelativeTimeLabel(entry.updatedAt)}</span>
+              <PullRequestDiffStat additions={entry.additions} deletions={entry.deletions} />
+              {entry.reviewDecision === "approved" ? (
+                <span className="text-emerald-600 dark:text-emerald-400/90">Freigegeben</span>
+              ) : entry.reviewDecision === "changes-requested" ? (
+                <span className="text-amber-600 dark:text-amber-400/90">Änderungen</span>
+              ) : null}
+            </span>
           </span>
         }
         chips={

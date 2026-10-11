@@ -29,7 +29,7 @@ const VERDICTS: ReadonlyArray<{
   {
     value: "comment",
     label: "Kommentieren",
-    sent: "Review gesendet",
+    sent: "Prüfung gesendet",
     icon: <MessageSquareIcon className="size-3" />,
   },
   {
@@ -92,7 +92,7 @@ export function PullRequestReviewBar({
     setPending(false);
     if (result._tag === "Failure") {
       // The draft is kept: whatever went wrong, retyping the review is not the answer.
-      toastManager.add({ type: "error", title: "Review nicht gesendet" });
+      toastManager.add({ type: "error", title: "Prüfung nicht gesendet" });
       return;
     }
     // More remarks may have been added while the host was accepting this snapshot. Leave those,

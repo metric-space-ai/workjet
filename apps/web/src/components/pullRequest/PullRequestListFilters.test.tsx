@@ -100,7 +100,7 @@ describe("pull request filters menu", () => {
     const group = findValueChange(
       findLabeledGroup(
         menu({ filters: { review: "none", checks: "failing" }, onFilters }),
-        "Review",
+        "Prüfung",
       ),
     );
     expect(group).toBeDefined();

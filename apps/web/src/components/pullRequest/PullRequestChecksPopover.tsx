@@ -40,14 +40,14 @@ function LazyChecksBody({
   if (detailQuery.error !== null) {
     return (
       <p className="text-muted-foreground text-xs" role="status">
-        Checks nicht verfügbar
+        Prüfungen nicht verfügbar
       </p>
     );
   }
   if (detailQuery.data === null) {
     return (
       <p className="text-muted-foreground text-xs" role="status">
-        {detailQuery.isPending ? "Checks laden …" : "Keine Checks"}
+        {detailQuery.isPending ? "Prüfungen laden …" : "Keine Prüfungen"}
       </p>
     );
   }
@@ -56,7 +56,7 @@ function LazyChecksBody({
 
 function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
   if (checks.length === 0) {
-    return <p className="text-muted-foreground text-xs">Keine Checks</p>;
+    return <p className="text-muted-foreground text-xs">Keine Prüfungen</p>;
   }
   return (
     <ul className="flex flex-col gap-0.5">

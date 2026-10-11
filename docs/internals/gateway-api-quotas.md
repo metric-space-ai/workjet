@@ -38,8 +38,8 @@ Primary contracts:
 
 The reset unit is qualified from a published dashboard response, not a
 versioned provider specification. The captured `TOKENS_LIMIT.nextResetTime`
-is `1784643970777` in [api-to-use.md:41](https://github.com/shafi-/ext-zai-reset-timer/blob/1e7c03d07305ba29baa745036012cfc26c809f0e/docs/api-to-use.md#L41).
-The same capture has `TIME_LIMIT.nextResetTime = 1785166359997` on line 20.
+is `1784643970777` in [api-to-use.md:42](https://github.com/shafi-/ext-zai-reset-timer/blob/1e7c03d07305ba29baa745036012cfc26c809f0e/docs/api-to-use.md#L42).
+The same capture has `TIME_LIMIT.nextResetTime = 1785166359997` on line 21.
 The original dashboard extension compares that raw value with `Date.now()`
 at [content.js:17](https://github.com/shafi-/ext-zai-reset-timer/blob/1e7c03d07305ba29baa745036012cfc26c809f0e/content.js#L17)
 and passes it directly to `new Date(ts)` at [content.js:70](https://github.com/shafi-/ext-zai-reset-timer/blob/1e7c03d07305ba29baa745036012cfc26c809f0e/content.js#L70).

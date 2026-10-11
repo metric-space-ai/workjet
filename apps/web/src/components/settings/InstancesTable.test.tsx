@@ -63,6 +63,6 @@ describe("Instances table", () => {
     expect(html).toContain("Instance disabled");
     expect(html).not.toContain("connection could not");
     expect(html).not.toContain("removed");
-    expect(html).not.toContain('checked=""');
+    expect(html).toContain('aria-checked="false"');
   });
 });

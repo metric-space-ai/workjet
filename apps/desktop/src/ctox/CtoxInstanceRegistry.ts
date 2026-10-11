@@ -34,7 +34,12 @@ import * as Semaphore from "effect/Semaphore";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { preferences, accessState, applyPreferences } from "./CtoxInstancePreferences.ts";
+import {
+  preferences,
+  accessState,
+  applyPreferences,
+  rememberDiscovery,
+} from "./CtoxInstancePreferences.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
 import {
@@ -1701,7 +1706,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             if (stored.length > 0)
               return {
                 _tag: "ready" as const,
-                instances: stored,
+                instances: applyPreferences([], stored),
                 managedState: managed._tag,
                 ...recoveryStatus,
                 ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
@@ -1712,10 +1717,12 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
               ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
             };
           }
+          const instances = yield* attachShellStatuses(merged.instances);
+          yield* rememberDiscovery(instances);
           return {
             ...merged,
             ...recoveryStatus,
-            instances: applyPreferences(yield* attachShellStatuses(merged.instances), stored),
+            instances: applyPreferences(instances, stored),
             ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
           };
         }).pipe(Effect.withSpan("CtoxInstanceRegistry.merge")),

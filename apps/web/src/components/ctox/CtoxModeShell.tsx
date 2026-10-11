@@ -270,7 +270,10 @@ export function groupCtoxInstances(
     key,
     label,
     instances: instances
-      .filter((instance) => sourceGroupKey(instance.source) === key)
+      .filter(
+        (instance) =>
+          instance.workjetState !== "removed" && sourceGroupKey(instance.source) === key,
+      )
       .toSorted((left, right) =>
         left.displayName === right.displayName
           ? left.id.localeCompare(right.id)

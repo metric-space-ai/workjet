@@ -550,6 +550,7 @@ describe("disabled instance guest admission", () => {
       const harness = makeGuestHarness();
       const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
         read: Effect.succeed([{ ...descriptor, workjetState: state }]),
+        remember: () => Effect.void,
         set: () => Effect.void,
       });
       return Effect.gen(function* () {

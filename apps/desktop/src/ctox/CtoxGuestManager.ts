@@ -1647,7 +1647,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
     const ensurePooled = (instanceId: string): Effect.Effect<CtoxManagedGuestResult> =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.gen(function* () {
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxManagedGuestResult, GuestState],
+          never
+        > {
           const access = yield* accessState(instanceId);
           if (access !== "enabled")
             return [

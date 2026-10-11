@@ -68,7 +68,8 @@ describe("instance activity and removal", () => {
       };
       const stored: string[] = [];
       const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
-        read: Effect.succeed([]),
+        read: Effect.succeed([row]),
+        remember: () => Effect.void,
         set: (_row, state) => Effect.sync(() => void stored.push(state)),
       });
       return Effect.gen(function* () {
@@ -107,16 +108,69 @@ describe("instance activity and removal", () => {
         );
       }).pipe(
         Effect.provide(
-          authorityLayers({
-            instances: [],
-            registry: { merge: () => Effect.succeed({ _tag: "ready", instances: [row] }) },
-          }),
+          Layer.mergeAll(
+            authorityLayers({
+              instances: [],
+              registry: {
+                merge: () => Effect.die("A local activity change must not discover or connect"),
+              },
+            }),
+            removalCleanupLayer(),
+          ),
         ),
-        Effect.provide(removalCleanupLayer()),
         Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, store),
       );
     });
   }
+});
+
+describe("reenabling a saved instance", () => {
+  it.effect("persists before connecting and reuses the existing pairing", () => {
+    const events: string[] = [];
+    const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
+      read: Effect.succeed([pairedInstance]),
+      remember: () => Effect.void,
+      set: (_row, state) => Effect.sync(() => void events.push("persist:" + state)),
+    });
+    return Effect.gen(function* () {
+      assert.deepEqual(
+        yield* setInstanceState.handler({
+          instanceId: pairedInstance.id,
+          state: "disabled",
+          selectedInstanceId: null,
+        }),
+        { _tag: "completed" },
+      );
+      assert.deepEqual(
+        yield* setInstanceState.handler({
+          instanceId: pairedInstance.id,
+          state: "enabled",
+          selectedInstanceId: null,
+        }),
+        { _tag: "completed" },
+      );
+      assert.deepEqual(events, ["persist:disabled", "stop", "persist:enabled", "connect"]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryLayer(),
+          removalCleanupLayer({
+            deactivateInstance: () =>
+              Effect.sync(() => {
+                events.push("stop");
+                return { _tag: "completed" } as const;
+              }),
+            ensurePooled: () =>
+              Effect.sync(() => {
+                events.push("connect");
+                return { _tag: "ready", instanceId: pairedInstance.id } as const;
+              }),
+          }),
+        ),
+      ),
+      Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, store),
+    );
+  });
 });
 
 function registryLayer(
@@ -171,6 +225,7 @@ function authorityLayers(input: {
 
 function removalCleanupLayer(
   input: {
+    readonly ensurePooled?: CtoxGuestManager.CtoxGuestManager["Service"]["ensurePooled"];
     readonly deactivate?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivate"];
     readonly deactivateAll?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivateAll"];
     readonly deactivateInstance?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivateInstance"];
@@ -181,7 +236,7 @@ function removalCleanupLayer(
     enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
     exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
     activate: () => Effect.die("unused"),
-    ensurePooled: () => Effect.die("unused"),
+    ensurePooled: input.ensurePooled ?? (() => Effect.die("unused")),
     suspend: Effect.succeed({ _tag: "completed" }),
     deactivate: input.deactivate ?? Effect.succeed({ _tag: "completed" }),
     deactivateAll: input.deactivateAll ?? Effect.succeed({ _tag: "completed" }),

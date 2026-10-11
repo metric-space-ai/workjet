@@ -1873,6 +1873,8 @@ export const CtoxManagedActionFailureCode = Schema.Literals([
   "launch_failed",
   "guest_failed",
   "not_active",
+  "instance_disabled",
+  "instance_removed",
 ]);
 export type CtoxManagedActionFailureCode = typeof CtoxManagedActionFailureCode.Type;
 

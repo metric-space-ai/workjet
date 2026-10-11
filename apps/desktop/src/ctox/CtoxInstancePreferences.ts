@@ -15,6 +15,7 @@ export class CtoxInstancePreferences extends Context.Service<
   CtoxInstancePreferences,
   {
     readonly read: Effect.Effect<readonly Instance[], PreferenceError>;
+    readonly remember: (instances: readonly Instance[]) => Effect.Effect<void, PreferenceError>;
     readonly set: (
       instance: Instance,
       state: "enabled" | "disabled" | "removed",
@@ -41,8 +42,39 @@ export const make = Effect.gen(function* () {
     Effect.map((document) => document.instances),
     Effect.mapError(() => new PreferenceError({ code: "persistence_failed" })),
   );
+  const write = Effect.fn("CtoxInstancePreferences.write")(
+    function* (instances: readonly Instance[]) {
+      const contents = yield* Schema.encodeEffect(Json)({ version: 1, instances });
+      const temporary = file + "." + process.pid + ".tmp";
+      yield* fs.makeDirectory(directory, { recursive: true });
+      yield* fs.writeFileString(temporary, contents + "\n", { mode: 0o600 });
+      yield* fs.rename(temporary, file);
+    },
+    Effect.mapError(() => new PreferenceError({ code: "persistence_failed" })),
+  );
   return CtoxInstancePreferences.of({
     read,
+    remember: (discovered) =>
+      lock.withPermit(
+        Effect.gen(function* () {
+          const previous = yield* read;
+          const rows = new Map(previous.map((row) => [row.id, row]));
+          for (const instance of discovered)
+            rows.set(instance.id, {
+              ...instance,
+              workjetState: rows.get(instance.id)?.workjetState ?? "enabled",
+            });
+          const next = [...rows.values()];
+          const previousJson = yield* Schema.encodeEffect(Json)({
+            version: 1,
+            instances: previous,
+          }).pipe(Effect.mapError(() => new PreferenceError({ code: "persistence_failed" })));
+          const nextJson = yield* Schema.encodeEffect(Json)({ version: 1, instances: next }).pipe(
+            Effect.mapError(() => new PreferenceError({ code: "persistence_failed" })),
+          );
+          if (previousJson !== nextJson) yield* write(next);
+        }),
+      ),
     set: (instance, state) =>
       lock.withPermit(
         Effect.gen(function* () {
@@ -51,11 +83,7 @@ export const make = Effect.gen(function* () {
             ...instances.filter((row) => row.id !== instance.id),
             { ...instance, workjetState: state },
           ];
-          const contents = yield* Schema.encodeEffect(Json)({ version: 1, instances: next });
-          const temporary = file + "." + process.pid + ".tmp";
-          yield* fs.makeDirectory(directory, { recursive: true });
-          yield* fs.writeFileString(temporary, contents + "\n", { mode: 0o600 });
-          yield* fs.rename(temporary, file);
+          yield* write(next);
         }).pipe(Effect.mapError(() => new PreferenceError({ code: "persistence_failed" }))),
       ),
   });
@@ -67,15 +95,39 @@ export const preferences = Effect.gen(function* () {
   const service = yield* Effect.serviceOption(CtoxInstancePreferences);
   return Option.isSome(service) ? yield* service.value.read.pipe(Effect.orDie) : [];
 });
+export const rememberDiscovery = Effect.fn("CtoxInstancePreferences.rememberDiscovery")(function* (
+  instances: readonly Instance[],
+) {
+  const service = yield* Effect.serviceOption(CtoxInstancePreferences);
+  if (Option.isSome(service))
+    yield* service.value
+      .remember(instances)
+      .pipe(Effect.catch(() => Effect.logWarning("Instance preferences could not be persisted.")));
+});
 export const accessState = (id: string) =>
   preferences.pipe(
     Effect.map((rows) => rows.find((row) => row.id === id)?.workjetState ?? "enabled"),
   );
+export const restorePreference = Effect.fn("CtoxInstancePreferences.restorePreference")(function* (
+  instance: Instance,
+) {
+  const service = yield* Effect.serviceOption(CtoxInstancePreferences);
+  if (Option.isSome(service)) yield* service.value.set(instance, "enabled");
+});
+
 export function applyPreferences(instances: readonly Instance[], stored: readonly Instance[]) {
   const rows = new Map(instances.map((row) => [row.id, row]));
   for (const preference of stored) {
-    const current = rows.get(preference.id) ?? preference;
-    rows.set(preference.id, { ...current, workjetState: preference.workjetState });
+    const current =
+      rows.get(preference.id) ??
+      (preference.source === "ctox_dev"
+        ? {
+            ...preference,
+            status: "offline" as const,
+            healthSummary: { ...preference.healthSummary, dataPlaneReady: false },
+          }
+        : preference);
+    rows.set(preference.id, { ...current, workjetState: preference.workjetState ?? "enabled" });
   }
   return [...rows.values()];
 }

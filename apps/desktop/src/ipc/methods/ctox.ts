@@ -115,8 +115,8 @@ const railKeyFor = Effect.fn("ctox.railKeyFor")(function* (instanceId: string) {
 export const setInstanceState: DesktopIpc.DesktopIpcMethod<
   never,
   | CtoxInstancePreferences.CtoxInstancePreferences
+  | CtoxElectronSessions.CtoxElectronSessions
   | CtoxInstanceRegistry.CtoxInstanceRegistry
-  | CtoxDevAuth.CtoxDevAuth
   | CtoxGuestManager.CtoxGuestManager
 > = {
   channel: IpcChannels.CTOX_INSTANCE_STATE_CHANNEL,
@@ -133,31 +133,26 @@ export const setInstanceState: DesktopIpc.DesktopIpcMethod<
         return yield* failure("selected_instance");
       const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
       const store = yield* CtoxInstancePreferences.CtoxInstancePreferences;
-      const auth = yield* CtoxDevAuth.CtoxDevAuth;
-      const managed = instanceId.startsWith("managed:")
-        ? yield* auth.refresh.pipe(
-            Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
-          )
-        : ({ _tag: "signed_out" } as const);
-      const discovery = yield* registry.merge(managed);
-      const descriptor =
-        discovery._tag === "ready"
-          ? discovery.instances.find((row) => row.id === instanceId)
-          : undefined;
+      const snapshot = yield* store.read.pipe(Effect.result);
+      if (Result.isFailure(snapshot)) return yield* failure("persistence_failed");
+      const descriptor = snapshot.success.find((row) => row.id === instanceId);
       if (descriptor === undefined) return yield* failure("not_found");
       if (state === "removed" && descriptor.source === "local_daemon")
         return yield* failure("local_not_removable");
       const result = yield* Effect.gen(function* () {
         // Persist the stop marker first. New admissions cannot race guest teardown.
         yield* store.set(descriptor, state);
+        const guests = yield* CtoxGuestManager.CtoxGuestManager;
+        if (state === "enabled") yield* guests.ensurePooled(instanceId);
         if (state !== "enabled") {
-          const guests = yield* CtoxGuestManager.CtoxGuestManager;
           const stopped = yield* guests.deactivateInstance(instanceId);
           if (stopped._tag !== "completed") return yield* Effect.fail(undefined);
         }
         if (state === "removed") {
           if (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") {
             const removed = yield* registry.removePairedInstance(instanceId);
+            const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+            yield* sessions.clearInstance(descriptor);
             if (!removed.secretRecordRemoved) return yield* Effect.fail(undefined);
           } else if (descriptor.source === "ssh_managed")
             yield* registry.removeSshManagedInstance(instanceId);
@@ -339,9 +334,12 @@ export const importInvite: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry
-        .importInvite(input.value.invite, input.value.replacesInstanceId)
-        .pipe(Effect.result);
+      const result = yield* registry.importInvite(input.value.invite, input.value.replacesInstanceId).pipe(
+        Effect.flatMap((instance) =>
+          CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
+        ),
+        Effect.result,
+      );
       return yield* encodeSafe(
         CtoxPairedInstanceImportResult,
         Result.isSuccess(result)
@@ -368,7 +366,12 @@ export const importManualPairing: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry.importManualPairing(input.value).pipe(Effect.result);
+      const result = yield* registry.importManualPairing(input.value).pipe(
+        Effect.flatMap((instance) =>
+          CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
+        ),
+        Effect.result,
+      );
       return yield* encodeSafe(
         CtoxPairedInstanceImportResult,
         Result.isSuccess(result)
@@ -507,7 +510,12 @@ export const addSshManagedInstance: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry.addSshManagedInstance(input.value).pipe(Effect.result);
+      const result = yield* registry.addSshManagedInstance(input.value).pipe(
+        Effect.flatMap((instance) =>
+          CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
+        ),
+        Effect.result,
+      );
       return yield* encodeSafe(
         CtoxSshManagedInstanceAddResult,
         Result.isSuccess(result)

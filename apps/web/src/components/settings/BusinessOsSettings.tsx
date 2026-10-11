@@ -391,7 +391,7 @@ export function BusinessOsSettingsView({
   return (
     <SettingsPageContainer className="gap-6">
       <SettingsSection
-        title="Instances"
+        title={language === "de" ? "Instanzen" : "Instances"}
         headerAction={
           <div className="flex items-center gap-2">
             <Button
@@ -401,30 +401,38 @@ export function BusinessOsSettingsView({
               disabled={refreshDisabled || onRefresh === undefined}
             >
               <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
-              Refresh
+              {language === "de" ? "Aktualisieren" : "Refresh"}
             </Button>
             <Button size="sm" onClick={() => openInstanceSetup()}>
               <PlusIcon aria-hidden />
-              Add instance
+              {language === "de" ? "Instanz hinzufügen" : "Add instance"}
             </Button>
           </div>
         }
       >
         <p className="px-3 text-[13px] text-muted-foreground sm:px-4">
-          Manage your CTOX instances and open their settings.
+          {language === "de"
+            ? "Deaktivierte Instanzen behalten ihre Verbindung und lokalen Daten."
+            : "Disabled instances retain their pairing and local data."}
         </p>
         <div>
           {loading ? (
             <p className="text-sm text-muted-foreground" role="status">
-              Loading CTOX instances …
+              {language === "de" ? "Instanzen werden geladen …" : "Loading CTOX instances …"}
             </p>
           ) : discoveryFailed ? (
             <div className="flex items-start gap-3" role="alert">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               <div>
-                <p className="text-sm font-medium">Could not load CTOX instances</p>
+                <p className="text-sm font-medium">
+                  {language === "de"
+                    ? "Instanzen konnten nicht geladen werden"
+                    : "Could not load CTOX instances"}
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Check the connection and choose Refresh to try again.
+                  {language === "de"
+                    ? "Die Instanzliste ist derzeit nicht erreichbar."
+                    : "The instance list is currently unreachable."}
                 </p>
               </div>
             </div>
@@ -432,9 +440,15 @@ export function BusinessOsSettingsView({
             <div className="flex items-start gap-3" role="status">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               <div>
-                <p className="text-sm font-medium">No CTOX instance connected</p>
+                <p className="text-sm font-medium">
+                  {language === "de"
+                    ? "Noch keine Instanz verbunden"
+                    : "No CTOX instance connected"}
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Connect an existing CTOX master or set up a new instance.
+                  {language === "de"
+                    ? "Verbinde eine bestehende Instanz oder richte eine neue ein."
+                    : "Connect an existing CTOX master or set up a new instance."}
                 </p>
               </div>
             </div>
@@ -657,7 +671,11 @@ export function BusinessOsSettings() {
     state: "enabled" | "disabled" | "removed",
   ): Promise<string | null> => {
     const result = await setInstanceState(instance, state);
-    return result.ok ? null : result.message;
+    return result.ok
+      ? null
+      : language === "de"
+        ? "Die Änderung konnte nicht gespeichert werden. Bitte erneut versuchen."
+        : result.message;
   };
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { Trash2Icon } from "lucide-react";
 import { Button } from "../ui/button";
+import { Switch } from "../ui/switch";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { canActivateCtoxInstance } from "../ctox/CtoxModeShell";
 import { openInstanceSetup } from "../../instanceSetup";
@@ -21,6 +22,7 @@ export const INSTANCE_LIST_TEXT = {
       "Entfernt nur die Verbindung in diesem Workjet. Die CTOX-Instanz und ihre Daten bleiben unverändert.",
     pair: "Neu koppeln",
     connected: "Verbunden",
+    available: "Verfügbar",
     offline: "Die Instanz ist nicht erreichbar.",
     expired: "Die Geräteberechtigung ist abgelaufen.",
     auth: "Eine Anmeldung an der Instanz ist erforderlich.",
@@ -42,6 +44,7 @@ export const INSTANCE_LIST_TEXT = {
       "Only removes the connection in this Workjet. The CTOX instance and its data stay unchanged.",
     pair: "Pair again",
     connected: "Connected",
+    available: "Available",
     offline: "The instance is unreachable.",
     expired: "Device authorization has expired.",
     auth: "Sign in to the instance to connect.",
@@ -61,11 +64,13 @@ export function InstancesTable({
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
   readonly language?: "de" | "en";
-  readonly onSelect?: (id: string) => void | Promise<boolean>;
-  readonly onStateChange?: (
-    instance: CtoxManagedInstance,
-    state: "enabled" | "disabled" | "removed",
-  ) => Promise<string | null>;
+  readonly onSelect?: ((id: string) => void | Promise<boolean>) | undefined;
+  readonly onStateChange?:
+    | ((
+        instance: CtoxManagedInstance,
+        state: "enabled" | "disabled" | "removed",
+      ) => Promise<string | null>)
+    | undefined;
 }) {
   const text = INSTANCE_LIST_TEXT[language];
   const [pending, setPending] = useState<string | null>(null);
@@ -83,6 +88,18 @@ export function InstancesTable({
       const failure = await onStateChange(instance, state);
       if (failure === null) setConfirmation(null);
       else setError(failure);
+    } catch {
+      setError(text.error);
+    } finally {
+      setPending(null);
+    }
+  };
+  const choose = async (id: string) => {
+    if (onSelect === undefined) return;
+    setPending(id);
+    setError(null);
+    try {
+      if ((await onSelect(id)) === false) setError(text.error);
     } catch {
       setError(text.error);
     } finally {
@@ -110,7 +127,9 @@ export function InstancesTable({
                       ? text.failed
                       : instance.status === "installing"
                         ? text.pending
-                        : text.connected;
+                        : instance.healthSummary.dataPlaneReady
+                          ? text.connected
+                          : text.available;
             return (
               <li
                 key={instance.id}
@@ -136,7 +155,7 @@ export function InstancesTable({
                           !canActivateCtoxInstance(instance) ||
                           onSelect === undefined
                         }
-                        onClick={() => void onSelect?.(instance.id)}
+                        onClick={() => void choose(instance.id)}
                       >
                         {text.select}
                       </Button>
@@ -145,16 +164,13 @@ export function InstancesTable({
                       className="flex items-center gap-1.5 text-xs"
                       title={selected ? text.selectedReason : undefined}
                     >
-                      <input
-                        type="checkbox"
-                        role="switch"
+                      <Switch
                         aria-label={text.enabled + " · " + name}
                         checked={enabled}
                         disabled={selected || pending !== null || onStateChange === undefined}
-                        onChange={(event) =>
-                          void change(instance, event.target.checked ? "enabled" : "disabled")
+                        onCheckedChange={(checked) =>
+                          void change(instance, checked ? "enabled" : "disabled")
                         }
-                        className="h-3.5 w-7 accent-primary"
                       />
                       {text.enabled}
                     </label>

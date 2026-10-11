@@ -1932,25 +1932,33 @@ describe("ProviderCommandReactor", () => {
   it("executes a supervisor control system message through the normal provider turn path", async () => {
     const harness = await createHarness();
     const model = await harness.readModel();
-    const supervisor = model.threads.find((thread) =>
-      thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.team?.role === "supervisor",
+    const supervisor = model.threads.find(
+      (thread) =>
+        thread.workjetConfig.schemaVersion === 2 &&
+        thread.workjetConfig.team?.role === "supervisor",
     )!;
-    const due = DateTime.formatIso(DateTime.makeUnsafe(Date.parse(supervisor.createdAt) + 30 * 60000));
-    await Effect.runPromise(harness.engine.dispatch({
-      type: "thread.supervisor.tick",
-      commandId: CommandId.make("server:supervisor-tick:provider-test"),
-      threadId: supervisor.id,
-      scheduledAt: due,
-      createdAt: due,
-      text: "Kontrollrunde: prüfe Worker und offene PRs.",
-    }));
+    const due = DateTime.formatIso(
+      DateTime.makeUnsafe(Date.parse(supervisor.createdAt) + 30 * 60000),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.supervisor.tick",
+        commandId: CommandId.make("server:supervisor-tick:provider-test"),
+        threadId: supervisor.id,
+        scheduledAt: due,
+        createdAt: due,
+        text: "Kontrollrunde: prüfe Worker und offene PRs.",
+      }),
+    );
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
       input: "Kontrollrunde: prüfe Worker und offene PRs.",
     });
     expect(harness.generateThreadTitle).not.toHaveBeenCalled();
     const after = await harness.readModel();
-    expect(after.threads.find((thread) => thread.id === supervisor.id)?.messages[0]?.role).toBe("system");
+    expect(after.threads.find((thread) => thread.id === supervisor.id)?.messages[0]?.role).toBe(
+      "system",
+    );
   });
 
   it("generates a thread title on the first turn", async () => {

@@ -160,15 +160,24 @@ export function supervisorTickSituation(input: {
     limits: { pullRequests: 100, errors: 50, changes: 100, kanbanCardsPerWorker: 20 },
     truncated: false,
     collectedCounts: {
-      workers: members.length, pullRequests: input.pullRequests.length,
-      escalations: input.escalations.length, errors: input.errors.length,
+      workers: members.length,
+      pullRequests: input.pullRequests.length,
+      escalations: input.escalations.length,
+      errors: input.errors.length,
     },
   };
-  const groups = [snapshot.persistentWorkers, snapshot.oneShotWorkers, snapshot.pullRequests, snapshot.escalations, snapshot.errorsAndTimeouts];
+  const groups = [
+    snapshot.persistentWorkers,
+    snapshot.oneShotWorkers,
+    snapshot.pullRequests,
+    snapshot.escalations,
+    snapshot.errorsAndTimeouts,
+  ];
   let text = JSON.stringify(snapshot);
   // Keep every source category and valid JSON when a project has a long history.
   while (text.length > 62000) {
-    const largest = groups.filter((rows) => rows.length > 1)
+    const largest = groups
+      .filter((rows) => rows.length > 1)
       .sort((a, b) => JSON.stringify(b).length - JSON.stringify(a).length)[0];
     if (!largest) break;
     largest.splice(Math.ceil(largest.length / 2));

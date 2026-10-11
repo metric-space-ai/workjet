@@ -148,12 +148,35 @@ describe("supervisor situation", () => {
   });
   it("keeps large rounds compact with valid JSON and every source category", () => {
     const text = supervisorTickSituation({
-      project: { id: projectId, title: "Control", workspaceRoot: null, defaultModelSelection: null, scripts: [],
-        createdAt: base.createdAt, updatedAt: base.updatedAt, deletedAt: null },
-      threads: Array.from({ length: 500 }, (_, index) => ({ ...base, id: ThreadId.make("worker-" + index) })),
-      since: base.createdAt, now, pullRequests: Array.from({ length: 100 }, () => pr),
-      sourceErrors: [], meetingMinutes: 60, changes: [], escalations: [],
-      errors: [{ threadId: base.id, kind: "provider.timeout", summary: "Timed out", createdAt: base.updatedAt }],
+      project: {
+        id: projectId,
+        title: "Control",
+        workspaceRoot: null,
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: base.createdAt,
+        updatedAt: base.updatedAt,
+        deletedAt: null,
+      },
+      threads: Array.from({ length: 500 }, (_, index) => ({
+        ...base,
+        id: ThreadId.make("worker-" + index),
+      })),
+      since: base.createdAt,
+      now,
+      pullRequests: Array.from({ length: 100 }, () => pr),
+      sourceErrors: [],
+      meetingMinutes: 60,
+      changes: [],
+      escalations: [],
+      errors: [
+        {
+          threadId: base.id,
+          kind: "provider.timeout",
+          summary: "Timed out",
+          createdAt: base.updatedAt,
+        },
+      ],
     });
     expect(text.length).toBeLessThanOrEqual(62000);
     const snapshot = JSON.parse(text);

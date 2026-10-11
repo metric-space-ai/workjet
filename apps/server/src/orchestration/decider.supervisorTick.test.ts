@@ -113,10 +113,13 @@ it.layer(NodeServices.layer)("supervisor control round admission", (it) => {
         );
         let replayed = model;
         for (const event of first.events)
-          replayed = yield* projectEvent(replayed, yield* decodeEvent({
-            ...event,
-            sequence: replayed.snapshotSequence + 1,
-          }));
+          replayed = yield* projectEvent(
+            replayed,
+            yield* decodeEvent({
+              ...event,
+              sequence: replayed.snapshotSequence + 1,
+            }),
+          );
         const c = replayed.threads[0]!.workjetConfig;
         expect(
           supervisorTickDueAt(

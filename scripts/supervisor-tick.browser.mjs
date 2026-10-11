@@ -9,7 +9,9 @@ const { chromium } = require("playwright-core");
 const output = process.env.SUPERVISOR_TICK_ARTIFACT_DIR;
 NodeAssert.ok(output, "SUPERVISOR_TICK_ARTIFACT_DIR must be an owned directory");
 await NodeFSP.mkdir(output, { recursive: true });
-const profile = await NodeFSP.mkdtemp(NodePath.join(process.env.TMPDIR, "supervisor-tick-browser-"));
+const profile = await NodeFSP.mkdtemp(
+  NodePath.join(process.env.TMPDIR, "supervisor-tick-browser-"),
+);
 const title = "Kontrollrunde Prüfprojekt";
 let server, browser;
 const errors = [];
@@ -44,11 +46,15 @@ try {
     "--title",
     title,
   ]);
-  server = NodeChildProcess.spawn(process.execPath, ["scripts/dev-runner.ts", "dev", "--home-dir", profile], {
-    cwd: repo,
-    env: process.env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  server = NodeChildProcess.spawn(
+    process.execPath,
+    ["scripts/dev-runner.ts", "dev", "--home-dir", profile],
+    {
+      cwd: repo,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   launched.push({ pid: server.pid, purpose: "isolated Workjet web stack" });
   await NodeFSP.writeFile(
     NodePath.join(output, "processes.json"),
@@ -220,4 +226,3 @@ try {
     }),
   );
 }
-

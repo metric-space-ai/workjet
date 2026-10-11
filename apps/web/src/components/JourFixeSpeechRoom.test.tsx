@@ -39,7 +39,7 @@ describe("Jour fixe speech room hook", () => {
       />,
     );
     expect(html).not.toContain("Start microphone");
-    expect(html).toContain("Next slide");
+    expect(html).toContain("Nächste Folie");
   });
   it("keeps the same room controls for the local helper and gateway", () => {
     const render = (kind: JourFixeSpeechProvider["kind"]) =>

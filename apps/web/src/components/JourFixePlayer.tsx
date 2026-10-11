@@ -92,11 +92,11 @@ function PlayerContent({
   }
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Slide player">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Folienplayer">
         <Button
           size="icon-sm"
           variant="outline"
-          aria-label="Previous slide"
+          aria-label="Vorherige Folie"
           disabled={!hasPrevious}
           onClick={() => changeSlide(onPrevious)}
         >
@@ -105,7 +105,7 @@ function PlayerContent({
         <Button
           size="icon-sm"
           variant="secondary"
-          aria-label={playing ? "Pause narration" : "Play narration"}
+          aria-label={playing ? "Sprecher pausieren" : "Sprecher abspielen"}
           disabled={!playable}
           onClick={() => void togglePlayback()}
         >
@@ -114,7 +114,7 @@ function PlayerContent({
         <Button
           size="icon-sm"
           variant="outline"
-          aria-label="Next slide"
+          aria-label="Nächste Folie"
           disabled={!hasNext}
           onClick={() => changeSlide(onNext)}
         >
@@ -122,7 +122,7 @@ function PlayerContent({
         </Button>
         <input
           type="range"
-          aria-label="Narration progress"
+          aria-label="Sprecherfortschritt"
           min={0}
           max={duration || 1}
           step={0.1}
@@ -140,7 +140,7 @@ function PlayerContent({
           {timestamp(position)} / {timestamp(duration)}
         </span>
         <select
-          aria-label="Playback speed"
+          aria-label="Wiedergabetempo"
           value={speed}
           disabled={!playable}
           className="h-7 rounded-full border border-border bg-background px-2 text-xs"
@@ -166,7 +166,7 @@ function PlayerContent({
             size="sm"
             variant={autoAdvance ? "default" : "outline"}
             aria-pressed={autoAdvance}
-            title="Play each slide's narration and go to the next slide when it ends"
+            title="Automatisch weiter"
             onClick={() => onAutoAdvanceChange(!autoAdvance)}
           >
             Auto
@@ -176,8 +176,8 @@ function PlayerContent({
           <Button
             size="icon-sm"
             variant="outline"
-            aria-label="Present full screen"
-            title="Full screen (F) · slides ← → · narration Space"
+            aria-label="Vollbild"
+            title="Vollbild (F) · Folien ← → · Sprecher Leertaste"
             onClick={onFullscreen}
           >
             <Maximize2Icon />
@@ -210,7 +210,7 @@ function PlayerContent({
       </div>
       {!playable && (
         <p role="status" className="mt-2 text-xs text-muted-foreground">
-          {failed ? "Narration could not be played." : "Narration is not available yet."}
+          {failed ? "Wiedergabe fehlgeschlagen" : "Noch kein Sprecher"}
         </p>
       )}
     </div>

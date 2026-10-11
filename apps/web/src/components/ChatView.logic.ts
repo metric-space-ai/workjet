@@ -335,19 +335,13 @@ export function deriveComposerSendState(options: {
 export function buildExpiredTerminalContextToastCopy(
   expiredTerminalContextCount: number,
   variant: "omitted" | "empty",
-): { title: string; description: string } {
+): { title: string } {
   const count = Math.max(1, Math.floor(expiredTerminalContextCount));
-  const noun = count === 1 ? "Expired terminal context" : "Expired terminal contexts";
+  const noun = count === 1 ? "Terminal-Kontext abgelaufen" : "Terminal-Kontexte abgelaufen";
   if (variant === "empty") {
-    return {
-      title: `${noun} won't be sent`,
-      description: "Remove it or re-add it to include terminal output.",
-    };
+    return { title: `${noun}, nicht gesendet` };
   }
-  return {
-    title: `${noun} omitted from message`,
-    description: "Re-add it if you want that terminal output included.",
-  };
+  return { title: `${noun}, ausgelassen` };
 }
 
 export function branchMismatchKey(

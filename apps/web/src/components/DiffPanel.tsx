@@ -815,23 +815,22 @@ export default function DiffPanel({
     <DiffPanelShell mode={mode} header={headerRow}>
       {!activeThread ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
-          Select a thread to inspect turn diffs.
+          Keine Unterhaltung gewählt
         </div>
       ) : !isGitRepo ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
-          Turn diffs are unavailable because this project is not a git repository.
+          Kein Git-Repository
         </div>
       ) : selectedTurnId !== null && orderedTurnDiffSummaries.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
-          No completed turns yet.
+          Noch keine Runden
         </div>
       ) : (
         <>
           <div className="diff-panel-viewport flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {isSelectedPatchTruncated && (
               <p className="shrink-0 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
-                This diff was truncated because it exceeded the preview limit. The changes shown are
-                incomplete.
+                Diff gekürzt
               </p>
             )}
             {selectedPatchError && !renderablePatch && (
@@ -929,7 +928,7 @@ export default function DiffPanel({
                           )}
                         </TooltipTrigger>
                         <TooltipPopup side="top">
-                          {collapsed ? "Expand diff" : "Collapse diff"}
+                          {collapsed ? "Diff ausklappen" : "Diff einklappen"}
                         </TooltipPopup>
                       </Tooltip>
                     );

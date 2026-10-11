@@ -111,6 +111,6 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
       Effect.repeat(Schedule.spaced("30 seconds")),
     ));
   });
-  return { start };
+  return { start, reconcile };
 });
 export const SupervisorTickReactorLive = Layer.effect(SupervisorTickReactor, makeSupervisorTickReactor);

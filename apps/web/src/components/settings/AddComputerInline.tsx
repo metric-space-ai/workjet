@@ -271,6 +271,8 @@ export function AddComputerInline({
   const [username, setUsername] = useState("");
   const [port, setPort] = useState("");
   const [alias, setAlias] = useState<DesktopDiscoveredSshHost | null>(null);
+  // Ein gewähltes tailnet-Gerät: Adresse, Benutzer und Port werden nur angezeigt.
+  const [peerPicked, setPeerPicked] = useState(false);
   const [roles, setRoles] = useState<ComputerRoles>(DEFAULT_COMPUTER_ROLES);
   // null = unberührt: eine erkannte GPU ist dann vorab angehakt.
   const [gpuChoice, setGpuChoice] = useState<boolean | null>(null);
@@ -307,6 +309,7 @@ export function AddComputerInline({
     setUsername("");
     setPort("");
     setAlias(null);
+    setPeerPicked(false);
     setRoles(DEFAULT_COMPUTER_ROLES);
     setGpuChoice(null);
     setKeyChoice(null);
@@ -468,6 +471,7 @@ export function AddComputerInline({
           )}
           onClick={() => {
             setAlias(null);
+            setPeerPicked(false);
             setAddress("");
             setFehler(null);
             onSegmentChange(entry.value);
@@ -655,36 +659,50 @@ export function AddComputerInline({
                 setFehler(null);
                 setAlias(null);
                 setAddress(hostname);
+                setPeerPicked(true);
                 if (!name.trim()) setName(peerName);
               }}
             />
           )}
-          <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_5rem_minmax(0,0.8fr)]">
-            {field(
-              "Adresse",
-              address,
-              (value) => {
-                setAlias(null);
-                setAddress(value);
-              },
-              {
-                placeholder: segment === "tailscale" ? "100.x.x.x" : "192.168.1.10",
-                list: `${listId}-hosts`,
-                className: "col-span-2 sm:col-span-1",
-              },
-            )}
-            {field("Benutzer", username, setUsername, {
-              placeholder: alias?.username ?? "root",
-            })}
-            {field("Port", port, setPort, {
-              placeholder: String(alias?.port ?? 22),
-              inputMode: "numeric",
-            })}
-            {field("Name", name, setName, {
-              placeholder: alias?.alias ?? "optional",
-              className: "col-span-2 sm:col-span-1",
-            })}
-          </div>
+          {alias !== null || peerPicked ? (
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
+              <div
+                className="grid gap-1 text-xs text-muted-foreground"
+                data-slot="add-computer-picked"
+              >
+                Adresse
+                <span className="break-all py-1 font-mono text-[13.5px] text-foreground">
+                  {username.trim() || alias?.username
+                    ? `${username.trim() || alias?.username}@`
+                    : ""}
+                  {alias?.hostname ?? address}
+                  {port.trim() || alias?.port ? `:${port.trim() || alias?.port}` : ""}
+                </span>
+              </div>
+              {field("Name", name, setName, {
+                ...(alias?.alias ? { placeholder: alias.alias } : {}),
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_5rem_minmax(0,0.8fr)]">
+              {field(
+                "Adresse",
+                address,
+                (value) => {
+                  setAlias(null);
+                  setAddress(value);
+                },
+                {
+                  placeholder: segment === "tailscale" ? "100.x.x.x" : "192.168.1.10",
+                  list: `${listId}-hosts`,
+                  className: "col-span-2 sm:col-span-1",
+                },
+              )}
+              {field("Benutzer", username, setUsername, { placeholder: "root" })}
+              {field("Port", port, setPort, { placeholder: "22", inputMode: "numeric" })}
+              {field("Name", name, setName, { className: "col-span-2 sm:col-span-1" })}
+            </div>
+          )}
           <datalist id={`${listId}-hosts`}>
             {knownHosts.map((host) => (
               <option key={host} value={host} />

@@ -46,6 +46,7 @@ it("rejects linked metadata and a foreign cwd before starting a process", () => 
 });
 
 it("rejects ambient environment inheritance and unresolved or redirected executables", () => {
+  expect(() => workerNamespaceSpawnInput(spawn, capture, [{ type: "http", url: "http://127.0.0.1:32100" }])).toThrow("confined server");
   expect(() => workerNamespaceSpawnInput({ ...spawn, env: {} }, capture)).toThrow("custody");
   expect(() => workerNamespaceSpawnInput({ ...spawn, command: "python3" }, capture)).toThrow("custody");
   expect(() => workerNamespaceSpawnInput(spawn, { ...capture, runtimeFiles: [{ path: "/runtime/../secret", identity: { device: "1", inode: "9" } }] })).toThrow("custody");

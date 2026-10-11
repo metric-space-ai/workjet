@@ -343,7 +343,7 @@ export const make = (
     const spawn = yield* Effect.try({
       try: () =>
         options.namespaceCapture
-          ? workerNamespaceSpawnInput(options.spawn, options.namespaceCapture)
+          ? workerNamespaceSpawnInput(options.spawn, options.namespaceCapture, options.mcpServers)
           : options.spawn,
       catch: (cause) =>
         new EffectAcpErrors.AcpSpawnError({ command: options.spawn.command, cause }),

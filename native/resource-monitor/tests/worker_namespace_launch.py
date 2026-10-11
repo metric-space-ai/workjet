@@ -70,6 +70,10 @@ assert "GIT_CONFIG_COUNT" not in os.environ
 assert os.environ["TMPDIR"] == "/tmp"
 assert not pathlib.Path(outside).exists()
 assert not pathlib.Path(outside).parent.joinpath("model.sock").exists()
+try:
+    pathlib.Path(__file__).with_name("immutable-asset").write_text("must-not-write")
+except OSError: pass
+else: raise AssertionError("runtime bundle is writable")
 leaked = []
 for name in os.listdir("/proc/self/fd"):
     fd = int(name)
@@ -110,6 +114,7 @@ plan = {
     "gitIdentity": {}, "profile": cap(profile), "modelSocket": cap(socket_path),
     "hostNetwork": identity(pathlib.Path("/proc/self/ns/net")),
     "runtimeFiles": [cap(worker_file)],
+    "runtimeDirectories": [cap(runtime)],
 }
 compiler = pathlib.Path(shutil.which("cc")).resolve()
 environment = {"PATH": "/usr/bin:/bin", "HOME": str(profile / "home"), "WORKJET_SOURCE_ISOLATED": "true",
@@ -163,6 +168,8 @@ try:
     (workspace / ".git/objects/info/alternates").unlink()
     changed = copy.deepcopy(plan); changed["runtimeFiles"][0]["identity"]["inode"] = "0"
     assert "runtime file identity changed" in rejected(changed)
+    changed = copy.deepcopy(plan); changed["runtimeDirectories"][0]["identity"]["inode"] = "0"
+    assert "directory identity changed" in rejected(changed)
     print("WORKER_NAMESPACE_LAUNCH " + json.dumps({
         "schema": "workjet.worker_namespace_launch.integration.v1", "installedAcceptance": False,
         "passComponent": True, "originalCwdKept": True, "privateGitCommitted": True,
@@ -170,6 +177,7 @@ try:
         "firstFrameBeforeCompletion": True, "childExitPreserved": True, "stdinKept": True,
         "hostFileAndTCPDenied": True, "inheritedDirectoryFDClosed": True, "mountFDsClosed": True,
         "targetEnvironmentSecretRemoved": True, "profileStatePreserved": True,
+        "runtimeBundleReadonly": True,
         "badWorkspaceGitSocketRuntimeIdentitiesRejected": True, "symlinkAncestorRejected": True,
         "gitAlternatesRejected": True, "realProviderAccountModel": False
     }))

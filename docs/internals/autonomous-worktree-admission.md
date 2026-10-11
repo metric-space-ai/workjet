@@ -168,7 +168,7 @@ G2 acceptance is claimed from this component alone.
 The native `--worker-namespace-launch` entry creates the Linux filesystem,
 PID, user, IPC, UTS and network namespaces before the CLI starts. The server
 supplies the original private-checkout and Git identities, private profile,
-model socket/network capture and individually captured runtime files. It
+model socket/network capture and captured runtime files or verified bundles. It
 mounts the original checkout at its original path, keeps Git metadata inside
 it, mounts only the assigned profile for writable harness state, and exposes
 the captured runtime files and system /usr read only. The root is read only;

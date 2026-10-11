@@ -30,6 +30,8 @@ mod linux {
         model_socket: Capture,
         host_network: Identity,
         runtime_files: Vec<Capture>,
+        #[serde(default)]
+        runtime_directories: Vec<Capture>,
     }
 
     fn denied(message: &'static str) -> io::Error {
@@ -114,7 +116,7 @@ mod linux {
         let encoded = args.next().ok_or_else(|| denied("missing worker namespace capture"))?;
         let encoded = encoded.to_str().filter(|value| value.len() <= 32 * 1024).ok_or_else(|| denied("invalid worker namespace capture"))?;
         let plan: Plan = serde_json::from_str(encoded).map_err(|_| denied("invalid worker namespace capture"))?;
-        if plan.version != 1 || plan.runtime_files.len() > 16 || args.next().as_deref() != Some(std::ffi::OsStr::new("--")) {
+        if plan.version != 1 || plan.runtime_files.len() > 16 || plan.runtime_directories.len() > 8 || args.next().as_deref() != Some(std::ffi::OsStr::new("--")) {
             return Err(denied("unsupported worker namespace capture"));
         }
         let program = PathBuf::from(args.next().ok_or_else(|| denied("missing worker command"))?);
@@ -143,7 +145,8 @@ mod linux {
             return Err(denied("original host network identity changed"));
         }
         let runtimes = plan.runtime_files.iter().map(runtime_file).collect::<io::Result<Vec<_>>>()?;
-        if !program.starts_with("/usr") && !plan.runtime_files.iter().any(|file| file.path == program) {
+        let runtime_directories = plan.runtime_directories.iter().map(captured_directory).collect::<io::Result<Vec<_>>>()?;
+        if !program.starts_with("/usr") && !plan.runtime_files.iter().any(|file| file.path == program) && !plan.runtime_directories.iter().any(|directory| program.starts_with(&directory.path)) {
             return Err(denied("worker executable is not captured"));
         }
         let usr = open_directory(Path::new("/usr"))?;
@@ -154,11 +157,12 @@ mod linux {
         for (target, source) in [("/bin", "usr/bin"), ("/sbin", "usr/sbin"), ("/lib", "usr/lib"), ("/lib64", "usr/lib64")] {
             command.args(["--symlink", source, target]);
         }
-        parent_directories(&mut command, std::iter::once(plan.worktree.path.clone()).chain(std::iter::once(plan.profile.path.clone())).chain(plan.runtime_files.iter().map(|file| file.path.clone())));
+        parent_directories(&mut command, std::iter::once(plan.worktree.path.clone()).chain(std::iter::once(plan.profile.path.clone())).chain(plan.runtime_files.iter().map(|file| file.path.clone())).chain(plan.runtime_directories.iter().map(|directory| directory.path.clone())));
         bind(&mut command, &worktree, &plan.worktree.path, false)?;
         bind(&mut command, &profile, &plan.profile.path, false)?;
         bind(&mut command, &socket, Path::new("/run/workjet/model.sock"), true)?;
         bind(&mut command, &helper, Path::new("/run/workjet/helper"), true)?;
+        for (capture, directory) in plan.runtime_directories.iter().zip(&runtime_directories) { bind(&mut command, directory, &capture.path, true)?; }
         for (capture, file) in plan.runtime_files.iter().zip(&runtimes) { bind(&mut command, file, &capture.path, true)?; }
         command.arg("--chdir").arg(&plan.worktree.path).args(["--remount-ro", "/", "--", "/run/workjet/helper", "--worker-model-bridge", "/run/workjet/model.sock"])
             .arg(&plan.model_socket.identity.device).arg(&plan.model_socket.identity.inode).arg("23197")

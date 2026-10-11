@@ -15,6 +15,7 @@ export interface WorkerNamespaceSpawnCapture {
   readonly modelSocket: WorkerSourceModelSocketDescription;
   /** Only files from the server's verified runtime producer, with original identities. */
   readonly runtimeFiles: ReadonlyArray<WorkerNamespaceFileCapture>;
+  readonly runtimeDirectories?: ReadonlyArray<WorkerNamespaceFileCapture>;
 }
 
 export function workerNamespaceSpawnInput(
@@ -25,7 +26,10 @@ export function workerNamespaceSpawnInput(
     readonly env?: NodeJS.ProcessEnv;
   },
   capture: WorkerNamespaceSpawnCapture,
+  mcpServers: ReadonlyArray<unknown> = [],
 ) {
+  if (mcpServers.length > 0)
+    throw new Error("Namespace MCP execution is unavailable; a confined server is required");
   const canonical = (path: string) => NodePath.isAbsolute(path) && NodePath.resolve(path) === path;
   if (
     capture.worktree.kind !== "isolated" ||
@@ -36,7 +40,8 @@ export function workerNamespaceSpawnInput(
     !canonical(capture.helperPath) ||
     !canonical(capture.worktree.worktreePath) ||
     !canonical(capture.profile.path) ||
-    capture.runtimeFiles.some((file) => !canonical(file.path))
+    capture.runtimeFiles.some((file) => !canonical(file.path)) ||
+    capture.runtimeDirectories?.some((directory) => !canonical(directory.path))
   )
     throw new Error("Worker process requires original private namespace custody");
 
@@ -51,6 +56,7 @@ export function workerNamespaceSpawnInput(
     modelSocket: { path: capture.modelSocket.path, identity: capture.modelSocket.socketIdentity },
     hostNetwork: capture.modelSocket.hostNetworkIdentity,
     runtimeFiles: capture.runtimeFiles,
+    runtimeDirectories: capture.runtimeDirectories ?? [],
   };
   return {
     command: capture.helperPath,

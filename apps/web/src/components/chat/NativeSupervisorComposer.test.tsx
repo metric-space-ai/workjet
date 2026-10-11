@@ -84,7 +84,9 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain(`Last execution · Claude Code · ${route.actual?.model}`);
-    expect(html.indexOf("Last execution")).toBeGreaterThan(html.indexOf('data-composer-bar="true"'));
+    expect(html.indexOf("Last execution")).toBeGreaterThan(
+      html.indexOf('data-composer-bar="true"'),
+    );
     expect(html).toContain('aria-label="Luma"');
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Model"');

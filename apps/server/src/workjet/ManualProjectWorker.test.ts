@@ -106,10 +106,7 @@ describe("manual project worker qualification", () => {
       "Do task",
     );
     expect(
-      manualProjectWorkerParent(
-        { ...thread, worktreePath: "/owned/worker", workjetConfig: config },
-        [supervisor],
-      ),
+      manualProjectWorkerParent({ ...thread, workjetConfig: config }, [supervisor]),
     ).toBeUndefined();
   });
   it("does not migrate historical explicit workers or reuse an unavailable parent", () => {

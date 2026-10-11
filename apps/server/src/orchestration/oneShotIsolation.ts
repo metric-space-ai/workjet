@@ -1,58 +1,6 @@
-import {
-  canCoordinateWorkjet,
-  normalizeWorkjetThreadConfig,
-  type EnvironmentId,
-  type OrchestrationCommand,
-  type OrchestrationReadModel,
-  type OrchestrationThread,
-  type WorkjetThreadConfig,
-} from "@workjet/contracts";
+import type { OrchestrationReadModel, OrchestrationThread } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
-
-/** Only explicit agent provenance commissions a roleless chat as a One-Shot. */
-export const resolveOneShotCreationConfig = Effect.fn("resolveOneShotCreationConfig")(function* (
-  command: Extract<OrchestrationCommand, { type: "thread.create" }>,
-  model: OrchestrationReadModel,
-  environmentId: EnvironmentId | undefined,
-): Effect.fn.Return<WorkjetThreadConfig, OrchestrationCommandInvariantError> {
-  const config = normalizeWorkjetThreadConfig(command.workjetConfig);
-  if (config.role !== "standard" || (config.team && config.team.role !== "worker"))
-    return command.workjetConfig;
-  const parentId = command.createdByThreadId ?? config.team?.parentThreadId;
-  if (!parentId) return command.workjetConfig;
-  const parent = model.threads.find((thread) => thread.id === parentId);
-  if (
-    !environmentId ||
-    !parent ||
-    parent.id === command.threadId ||
-    parent.projectId !== command.projectId ||
-    parent.deletedAt !== null ||
-    parent.archivedAt !== null ||
-    !canCoordinateWorkjet(parent.workjetConfig) ||
-    (config.team && config.team.parentThreadId !== parentId)
-  ) {
-    return yield* new OrchestrationCommandInvariantError({
-      commandType: command.type,
-      detail:
-        "Agent-created project chats require an active Supervisor or Persistent Worker in the same project and a local environment identity.",
-    });
-  }
-  return {
-    ...config,
-    role: "worker",
-    parent: { environmentId, threadId: parentId },
-    team: config.team ?? {
-      role: "worker",
-      projectId: command.projectId,
-      threadId: command.threadId,
-      parentThreadId: parentId,
-      packageId: `manual:${command.threadId}`,
-      goal: command.title,
-      createdAt: command.createdAt,
-    },
-  };
-});
 
 /** The engine also fences internal/CLI starts which do not pass through the UI bootstrap. */
 export function requireOneShotIsolation(

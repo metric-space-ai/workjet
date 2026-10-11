@@ -1203,7 +1203,6 @@ it.effect("atomically creates the worker and queues its first turn with inherite
         type: "thread.create",
         commandId: ids[1],
         threadId: ids[0],
-        createdByThreadId: parentThreadId,
         projectId: parent.projectId,
         title: deriveWorkerTitle(1, parent.title, inheritedModel.model),
         modelSelection: inheritedModel,

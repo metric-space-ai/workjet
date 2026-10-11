@@ -22,7 +22,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import { requireOneShotIsolation, resolveOneShotCreationConfig } from "./oneShotIsolation.ts";
+import { requireOneShotIsolation } from "./oneShotIsolation.ts";
 import type * as PlatformError from "effect/PlatformError";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
@@ -505,12 +505,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.create": {
-      const workjetConfig = yield* resolveOneShotCreationConfig(command, readModel, environmentId);
       yield* requireProjectTeamOwnership({
         commandType: command.type,
         threadId: command.threadId,
         projectId: command.projectId,
-        config: workjetConfig,
+        config: command.workjetConfig,
         readModel,
         environmentId,
         remoteWorkerRequest,
@@ -541,7 +540,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
           workjetConfig: withoutGoalObservations(
-            withoutForeignSupervisorStateAtCreation(workjetConfig, command.threadId),
+            withoutForeignSupervisorStateAtCreation(command.workjetConfig, command.threadId),
           ),
           branch: command.branch,
           worktreePath: command.worktreePath,
@@ -1775,22 +1774,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.history.import": {
-      const bootstrap = command.bootstrap?.createThread;
-      const createThread = bootstrap
-        ? {
-            ...bootstrap,
-            workjetConfig: yield* resolveOneShotCreationConfig(
-              {
-                ...bootstrap,
-                type: "thread.create",
-                commandId: command.commandId,
-                threadId: command.threadId,
-              },
-              readModel,
-              environmentId,
-            ),
-          }
-        : undefined;
+      const createThread = command.bootstrap?.createThread;
       const targetThread = createThread
         ? undefined
         : yield* requireThread({ readModel, command, threadId: command.threadId });

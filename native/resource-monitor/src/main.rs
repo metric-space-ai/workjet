@@ -13,6 +13,7 @@ mod model_namespace_bridge;
 mod safe_worktree_cleanup;
 mod worker_fds;
 mod worker_namespace_launcher;
+mod worker_namespace_tools;
 
 const PROTOCOL_VERSION: u32 = 2;
 const MIN_SAMPLE_INTERVAL_MS: u64 = 250;
@@ -677,6 +678,9 @@ fn main() -> io::Result<()> {
         }
         if command == "--worker-model-bridge" {
             std::process::exit(model_namespace_bridge::run(args)?);
+        }
+        if command == "--worker-namespace-tools" {
+            std::process::exit(worker_namespace_tools::run(args)?);
         }
         let isolated_quarantine = command == "--quarantine-isolated-worktree";
         let isolated_publish = command == "--publish-isolated-worktree";

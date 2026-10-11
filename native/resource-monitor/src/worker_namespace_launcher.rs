@@ -1,7 +1,7 @@
 //! Linux process boundary for an originally captured private worker checkout.
 //! The capture is supplied by the server, not a native Owner/team admission.
 #[cfg(target_os = "linux")]
-mod linux {
+pub(crate) mod linux {
     use serde::Deserialize;
     use std::collections::BTreeSet;
     use std::ffi::{CString, OsString};
@@ -16,15 +16,15 @@ mod linux {
 
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct Identity {
-        device: String,
-        inode: String,
+    pub(crate) struct Identity {
+        pub(crate) device: String,
+        pub(crate) inode: String,
     }
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct Capture {
-        path: PathBuf,
-        identity: Identity,
+    pub(crate) struct Capture {
+        pub(crate) path: PathBuf,
+        pub(crate) identity: Identity,
     }
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -47,7 +47,7 @@ mod linux {
         let stat = file.metadata()?;
         Ok(stat.dev().to_string() == expected.device && stat.ino().to_string() == expected.inode)
     }
-    fn open_at(parent: &File, name: &std::ffi::OsStr, flags: i32) -> io::Result<File> {
+    pub(crate) fn open_at(parent: &File, name: &std::ffi::OsStr, flags: i32) -> io::Result<File> {
         let name = CString::new(name.as_bytes()).map_err(|_| denied("invalid capture path"))?;
         let fd = unsafe {
             libc::openat(
@@ -89,7 +89,7 @@ mod linux {
         }
         Ok(directory)
     }
-    fn captured_directory(capture: &Capture) -> io::Result<File> {
+    pub(crate) fn captured_directory(capture: &Capture) -> io::Result<File> {
         let directory = open_directory(&capture.path)?;
         if !identity_matches(&directory, &capture.identity)? {
             return Err(denied("captured directory identity changed"));
@@ -254,7 +254,8 @@ mod linux {
             .iter()
             .map(captured_directory)
             .collect::<io::Result<Vec<_>>>()?;
-        if !program.starts_with("/usr")
+        if program != Path::new("/run/workjet/helper")
+            && !program.starts_with("/usr")
             && !plan.runtime_files.iter().any(|file| file.path == program)
             && !plan
                 .runtime_directories

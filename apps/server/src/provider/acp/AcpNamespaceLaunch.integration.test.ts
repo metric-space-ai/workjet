@@ -96,7 +96,7 @@ const fixture = async () => {
 describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
   // CI without the Linux helper does not assert the kernel boundary. The gpu3 qualification builds it.
   it.effect(
-    "starts the captured process and rejects daemon file/terminal callbacks across two turns",
+    "reads, edits, builds and commits through confined tools across two turns without daemon callbacks",
     () =>
       Effect.gen(function* () {
         expect(yield* HostProcessPlatform).toBe("linux");
@@ -171,6 +171,6 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
         Effect.provideService(HostProcessPlatform, "linux"),
         Effect.provide(NodeServices.layer),
       ),
-    { timeout: 15000 },
+    { timeout: 45000 },
   );
 });

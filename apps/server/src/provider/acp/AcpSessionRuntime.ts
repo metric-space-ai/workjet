@@ -2,6 +2,7 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+import { makeWorkerNamespaceTools } from "../../workjet/WorkerNamespaceTools.ts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -397,6 +398,29 @@ export const make = (
     ).pipe(Effect.provideService(Scope.Scope, runtimeScope));
 
     const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
+    const namespaceTools = options.namespaceCapture
+      ? yield* makeWorkerNamespaceTools(options.namespaceCapture, options.spawn.env ?? {}, (sessionId) =>
+          Ref.get(startStateRef).pipe(
+            Effect.flatMap((state) =>
+              state._tag === "Started" && state.result.sessionId === sessionId
+                ? Effect.void
+                : Effect.fail(new EffectAcpErrors.AcpTransportError({
+                    detail: "Confined tool session does not match the active ACP session",
+                    cause: "Session custody mismatch",
+                  })),
+            ),
+          ),
+        )
+      : undefined;
+    if (namespaceTools) {
+      yield* acp.handleReadTextFile(namespaceTools.readTextFile);
+      yield* acp.handleWriteTextFile(namespaceTools.writeTextFile);
+      yield* acp.handleCreateTerminal(namespaceTools.createTerminal);
+      yield* acp.handleTerminalOutput(namespaceTools.terminalOutput);
+      yield* acp.handleTerminalWaitForExit(namespaceTools.terminalWaitForExit);
+      yield* acp.handleTerminalKill(namespaceTools.terminalKill);
+      yield* acp.handleTerminalRelease(namespaceTools.terminalRelease);
+    }
 
     yield* acp.handleSessionUpdate((notification) =>
       Effect.gen(function* () {
@@ -436,11 +460,11 @@ export const make = (
     );
     const initializeClientCapabilities = {
       fs: {
-        readTextFile: false,
-        writeTextFile: false,
-        ...(options.namespaceCapture ? {} : options.clientCapabilities?.fs),
+        readTextFile: namespaceTools !== undefined,
+        writeTextFile: namespaceTools !== undefined,
+        ...(namespaceTools ? {} : options.clientCapabilities?.fs),
       },
-      terminal: options.namespaceCapture ? false : (options.clientCapabilities?.terminal ?? false),
+      terminal: namespaceTools !== undefined || (options.clientCapabilities?.terminal ?? false),
       ...(options.clientCapabilities?.auth ? { auth: options.clientCapabilities.auth } : {}),
       ...(options.clientCapabilities?.elicitation
         ? { elicitation: options.clientCapabilities.elicitation }
@@ -725,30 +749,23 @@ export const make = (
       return yield* effect;
     });
 
-    const unconfinedCallback = () =>
-      Effect.fail(
-        new EffectAcpErrors.AcpTransportError({
-          detail: "Namespace server-side filesystem and terminal execution is unavailable",
-          cause: "A confined server callback is required",
-        }),
-      );
     return {
       handleRequestPermission: acp.handleRequestPermission,
       handleElicitation: acp.handleElicitation,
       handleReadTextFile: (handler) =>
-        acp.handleReadTextFile(options.namespaceCapture ? unconfinedCallback : handler),
+        namespaceTools ? Effect.void : acp.handleReadTextFile(handler),
       handleWriteTextFile: (handler) =>
-        acp.handleWriteTextFile(options.namespaceCapture ? unconfinedCallback : handler),
+        namespaceTools ? Effect.void : acp.handleWriteTextFile(handler),
       handleCreateTerminal: (handler) =>
-        acp.handleCreateTerminal(options.namespaceCapture ? unconfinedCallback : handler),
+        namespaceTools ? Effect.void : acp.handleCreateTerminal(handler),
       handleTerminalOutput: (handler) =>
-        acp.handleTerminalOutput(options.namespaceCapture ? unconfinedCallback : handler),
+        namespaceTools ? Effect.void : acp.handleTerminalOutput(handler),
       handleTerminalWaitForExit: (handler) =>
-        acp.handleTerminalWaitForExit(options.namespaceCapture ? unconfinedCallback : handler),
+        namespaceTools ? Effect.void : acp.handleTerminalWaitForExit(handler),
       handleTerminalKill: (handler) =>
-        acp.handleTerminalKill(options.namespaceCapture ? unconfinedCallback : handler),
+        namespaceTools ? Effect.void : acp.handleTerminalKill(handler),
       handleTerminalRelease: (handler) =>
-        acp.handleTerminalRelease(options.namespaceCapture ? unconfinedCallback : handler),
+        namespaceTools ? Effect.void : acp.handleTerminalRelease(handler),
       handleSessionUpdate: acp.handleSessionUpdate,
       handleElicitationComplete: acp.handleElicitationComplete,
       handleUnknownExtRequest: acp.handleUnknownExtRequest,

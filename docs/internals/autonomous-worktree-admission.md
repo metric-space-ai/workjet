@@ -188,18 +188,30 @@ cwd, a resolved executable and the source-only environment. It does not come
 from a client config, a runtimeMode flag or a project policy reference.
 
 Namespace launches reject MCP servers until their actions can be confined.
-ACP filesystem and terminal capabilities are disabled. Even if the agent
-requests those callbacks, registered host-side handlers are not invoked and
-the request receives an explicit unsupported error. The real ACP integration
-fixture verifies this across two turns through the captured Linux process.
+For a captured namespace, the common ACP runtime advertises filesystem and
+terminal support and installs its own confined handlers. Each operation starts
+the original helper in a fresh namespace with the same original checkout,
+Git, profile, socket and runtime checks. Registered daemon handlers cannot
+replace these handlers. Requests must belong to the active ACP session.
+
+Text operations accept absolute paths inside the checkout, bound UTF-8 input
+and output to 4 MiB, and reject special files and outside symlinks. Reads reject
+multiply linked files; writes atomically replace the directory entry so a
+hard link cannot mutate a foreign inode. Terminal cwd stays inside the checkout.
+Terminal IDs belong to this runtime, retain at most 1 MiB each, and preserve
+live output and actual exit codes. At most four terminals remain unreleased;
+their maximum lifetime is ten minutes. Release and runtime teardown close
+only their owned process scopes, including namespace children.
 
 This is a process-boundary component, not native execution admission. Verified
 runtime/profile capture production and recovery, actual Owner/team authority,
-provider-specific producers, and confined server-mediated Git/file/MCP actions
+provider-specific producers, and confined MCP actions
 are still required. No supported autonomous-worktree mode or installed G2
 acceptance is claimed. The retained Linux fixture runs actual file edits,
 compilation, Git commit and streamed HTTP over private model IPC; it uses no
 real provider account or model.
+The ACP fixture additionally exercises two turns of client-mediated read/edit/
+build/Git operations, output truncation, kill/release, and denial of host paths.
 
 ### Original private native profile custody
 

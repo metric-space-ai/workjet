@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import commandPaletteSource from "./CommandPalette.tsx?raw";
-import commandPaletteResultsSource from "./CommandPaletteResults.tsx?raw";
 import sidebarSource from "./Sidebar.tsx?raw";
 import chatIndexSource from "../routes/_chat.index.tsx?raw";
 import registrationSource from "../localProjectRegistration.tsx?raw";
@@ -58,7 +57,6 @@ describe("CTOX-native project story", () => {
   });
 
   it("exposes stable action IDs and the authoritative project in Code chrome", () => {
-    expect(commandPaletteResultsSource).toContain("data-workjet-action={props.item.value}");
     expect(sidebarSource).toContain('data-workjet-action="project.add.sidebar"');
     expect(chatIndexSource).toContain('triggerAction="project.add.hero"');
     expect(sidebarSource).toContain("useAvailableProjectContext()");

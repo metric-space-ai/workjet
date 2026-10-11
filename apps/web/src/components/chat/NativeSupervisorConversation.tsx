@@ -108,9 +108,7 @@ export function NativeSupervisorConversation(props: {
       </div>
       {journal.submission === "not-submitted" && (
         <p role="status" className="text-xs text-muted-foreground">
-          {canResumeSupervisorJournal(journal, null)
-            ? "Waiting for the task receipt"
-            : `Not sent: ${journal.submissionError}`}
+          {canResumeSupervisorJournal(journal, null) ? "Waiting for the task receipt" : "Not sent"}
         </p>
       )}
       {journal.turn?.errorMessage && (

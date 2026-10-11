@@ -1,18 +1,55 @@
-import type { WorkjetWorkerProfile } from "@workjet/contracts";
+import {
+  WS_METHODS,
+  extractLumaInstanceDocument,
+  type WorkjetLumaSnapshot,
+  type WorkjetWorkerProfile,
+  type WorkjetComputer,
+  type WorkjetGatewayModelSummary,
+  type CtoxWorkjetComputerProjection,
+  type EnvironmentId,
+} from "@workjet/contracts";
+import { createEnvironmentRpcCommand } from "@workjet/client-runtime/state/runtime";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readActiveWorkjetScope } from "../../activeWorkjetScope";
-import { newCommandId } from "../../lib/utils";
+import {
+  businessOsCodeScopeContainsEnvironment,
+  useBusinessOsCodeScope,
+} from "../../businessOsCodeScope";
 import type { NativeSupervisorScope } from "../../nativeSupervisorComposer";
+import { usePrimarySettings } from "../../hooks/useSettings";
+import { usePrimaryEnvironment, useEnvironments } from "../../state/environments";
+import { useEnvironmentQuery } from "../../state/query";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { serverEnvironment } from "../../state/server";
+import { connectionAtomRuntime } from "../../connection/runtime";
+import { includeSavedComputers } from "../../workjetComputerCatalog";
+import { workjetEnvironmentTargetOptions } from "../settings/workjetEnvironmentTargetOptions";
+import { workjetComputerMembership } from "../../workjetComputerMembership";
 import {
   recordWorkjetProjectProjection,
   refreshWorkjetProjectRegistry,
   useWorkjetProjectRegistry,
 } from "../../workjetProjectRegistry";
-import { saveSupervisorLuma } from "../../workjetSupervisorLuma";
+import {
+  isSupervisorManualProfile,
+  prepareSupervisorManualChoice,
+  persistSupervisorComposerSelection,
+  supervisorSelectionForHarness,
+  type SupervisorManualSelection,
+} from "../../supervisorComposerSelection";
 import { useProjectSupervisorLumas } from "../ProjectSupervisorLumaField";
-import { workjetHarnessDisplayLabel } from "../settings/WorkjetWorkerEditor";
-import { ComposerControl } from "./ComposerControl";
+import { ComposerWorkerControl, providerInstanceIdForHarness } from "./ComposerWorkerControl";
+import {
+  ComposerManualTargetControls,
+  ComposerComputerControl,
+} from "./ComposerWorkjetTargetControls";
+import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
+
+const readInstanceConfiguration = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "supervisor-composer:read-luma-configuration",
+  tag: WS_METHODS.workjetLumaRead,
+});
 
 export function NativeSupervisorRouteControls(props: {
   readonly scope: NativeSupervisorScope | null;
@@ -20,13 +57,73 @@ export function NativeSupervisorRouteControls(props: {
     | { readonly connectionId: string; readonly instanceId?: string }
     | undefined;
   readonly disabled: boolean;
-  readonly routeTitle: string;
+
   readonly onSavingChange: (saving: boolean) => void;
+  readonly onStatusChange?: (status: string | null) => void;
 }) {
   const registry = useWorkjetProjectRegistry(props.scope?.instanceId ?? null);
   const lumas = useProjectSupervisorLumas(props.workerSourceBinding);
+  const codeScope = useBusinessOsCodeScope();
+  const environment = usePrimaryEnvironment();
+  const local = usePrimarySettings((settings) => settings.workjet);
+  const { environments } = useEnvironments();
+  const membership = useSyncExternalStore(
+    workjetComputerMembership.subscribe,
+    workjetComputerMembership.getSnapshot,
+    workjetComputerMembership.getSnapshot,
+  );
+  const computers = includeSavedComputers(
+    local,
+    workjetEnvironmentTargetOptions(environments),
+    environment?.environmentId ?? null,
+  ).computers.filter(
+    (computer) =>
+      businessOsCodeScopeContainsEnvironment(codeScope, computer.environmentId) ||
+      (lumas.instanceId === props.scope?.instanceId &&
+        lumas.profiles.some((profile) => profile.computerId === computer.id)) ||
+      (membership.instanceId === props.scope?.instanceId &&
+        membership.computers.some((entry) => entry.id === computer.id)),
+  );
+  const target = lumas.instanceId === props.scope?.instanceId ? (lumas.target ?? null) : null;
+  const instance = useEnvironmentQuery(
+    target && environment
+      ? serverEnvironment.lumaConfiguration({
+          environmentId: environment.environmentId,
+          input: target,
+        })
+      : null,
+  );
+  const catalog = useEnvironmentQuery(
+    environment
+      ? serverEnvironment.workjetGatewayCatalog({
+          environmentId: environment.environmentId,
+          input: {},
+        })
+      : null,
+  );
+  const write = useAtomCommand(serverEnvironment.updateLumaConfiguration, { reportFailure: false });
+  const read = useAtomCommand(readInstanceConfiguration, { reportFailure: false });
+  const route = useSupervisorRouteDisplay(props.scope);
   const navigate = useNavigate();
   const project = registry.projects.find((entry) => entry.id === props.scope?.projectId);
+  const selectedId =
+    project?.supervisorLumaId ??
+    (route?.phase === "ready" ? route.route.configured?.luma_id : null) ??
+    null;
+  const [verified, setVerified] = useState<{
+    scopeKey: string;
+    snapshot: WorkjetLumaSnapshot;
+  } | null>(null);
+  const snapshot =
+    verified?.scopeKey === JSON.stringify(props.scope) &&
+    verified.snapshot.revision >= (instance.data?.revision ?? 0)
+      ? verified.snapshot
+      : instance.data;
+  const configuration =
+    snapshot?.configuration ??
+    (snapshot?.revision === 0 ? extractLumaInstanceDocument(local) : null);
+  const profiles = configuration?.workerProfiles ?? lumas.profiles;
+  const selected = profiles.find((profile) => profile.id === selectedId) ?? null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
@@ -37,9 +134,24 @@ export function NativeSupervisorRouteControls(props: {
     props.scope !== null &&
     registry.presentationInstanceId === props.scope.instanceId &&
     lumas.instanceId === props.scope.instanceId &&
+    target !== null &&
     lumas.phase === "ready" &&
+    configuration !== null &&
     project !== undefined;
-
+  const status =
+    error ??
+    (saving
+      ? "Saving the Supervisor selection…"
+      : !ready
+        ? lumas.phase === "loading"
+          ? "Loading the instance configuration…"
+          : "The instance configuration is unavailable. Reconnect the instance to change this route."
+        : selectedId !== null && selected === null
+          ? "The saved Supervisor Luma is unavailable in this instance."
+          : null);
+  useEffect(() => {
+    props.onStatusChange?.(status);
+  }, [status, props.onStatusChange]);
   useEffect(() => {
     setError(null);
     return () => {
@@ -49,10 +161,22 @@ export function NativeSupervisorRouteControls(props: {
     };
   }, [scopeKey, props.onSavingChange]);
 
-  async function choose(lumaId: string | null) {
-    if (!ready || !props.scope || !project || props.disabled || operation.current) return;
-    if (lumaId !== null && !lumas.profiles.some((profile) => profile.id === lumaId)) return;
-    if ((project.supervisorLumaId ?? null) === lumaId) return;
+  async function choose(value: string | SupervisorManualSelection | null) {
+    if (props.disabled || operation.current) return;
+    if (
+      !ready ||
+      !props.scope ||
+      !project ||
+      !environment ||
+      !target ||
+      !snapshot ||
+      !configuration
+    ) {
+      setError(
+        "The instance configuration is unavailable. Reconnect the instance to change this route.",
+      );
+      return;
+    }
     const controller = new AbortController();
     operation.current = controller;
     const selection = readActiveWorkjetScope();
@@ -60,129 +184,256 @@ export function NativeSupervisorRouteControls(props: {
     setSaving(true);
     props.onSavingChange(true);
     setError(null);
-    const result = await saveSupervisorLuma({
-      scope,
-      project,
-      lumaId,
-      commandId: newCommandId(),
-      signal: controller.signal,
-      isCurrent: () =>
-        currentKey.current === scopeKey &&
-        readActiveWorkjetScope().selectedInstanceId === scope.instanceId &&
-        readActiveWorkjetScope().selectionRevision === selection.selectionRevision,
-    });
-    if (operation.current !== controller) return;
-    operation.current = null;
-    setSaving(false);
-    props.onSavingChange(false);
-    if (result.phase === "saved") {
-      recordWorkjetProjectProjection(scope.instanceId, {
-        ...project,
-        ...result.project,
+    const isCurrent = () =>
+      currentKey.current === scopeKey &&
+      readActiveWorkjetScope().selectedInstanceId === scope.instanceId &&
+      readActiveWorkjetScope().selectionRevision === selection.selectionRevision;
+    try {
+      const prepared =
+        typeof value === "string"
+          ? profiles.find((entry) => entry.id === value)
+          : prepareSupervisorManualChoice({
+              projectId: scope.projectId,
+              selection:
+                value ??
+                selected ??
+                (() => {
+                  throw new Error("Choose a configured harness before selecting Manual.");
+                })(),
+              configuration,
+              computers,
+              models: catalog.data?.models ?? [],
+            });
+      if (!prepared) throw new Error("The selected Luma is unavailable in this instance.");
+      const profile = "profile" in prepared ? prepared.profile : prepared;
+      const selectedConfiguration =
+        "configuration" in prepared ? prepared.configuration : configuration;
+      const persisted = await persistSupervisorComposerSelection({
+        scope,
+        project,
+        profile,
+        snapshot: { ...snapshot, configuration: selectedConfiguration },
+        signal: controller.signal,
+        isCurrent,
+        writeConfiguration: async (configuration, expectedRevision) => {
+          const result = await write({
+            environmentId: environment.environmentId,
+            input: { target, expectedRevision, configuration },
+          });
+          if (result._tag !== "Success")
+            throw new Error(
+              "The instance refused the Supervisor configuration. Check its connection and permissions.",
+            );
+          return result.value.status;
+        },
+        readConfiguration: async () => {
+          const result = await read({ environmentId: environment.environmentId, input: target });
+          if (result._tag !== "Success")
+            throw new Error("The instance configuration could not be read back.");
+          if (isCurrent() && !controller.signal.aborted)
+            setVerified({ scopeKey, snapshot: result.value });
+          return result.value;
+        },
       });
+      if (!isCurrent() || controller.signal.aborted) return;
+      recordWorkjetProjectProjection(scope.instanceId, persisted);
       refreshWorkjetProjectRegistry(scope.instanceId);
-    } else if (result.phase === "failed") setError(result.error);
+      instance.refresh();
+    } catch (failure) {
+      if (isCurrent() && !controller.signal.aborted) {
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "The Supervisor selection could not be saved.",
+        );
+        instance.refresh();
+        refreshWorkjetProjectRegistry(scope.instanceId);
+      }
+    } finally {
+      if (operation.current === controller) {
+        operation.current = null;
+        setSaving(false);
+        props.onSavingChange(false);
+      }
+    }
   }
-
+  const activeComputer =
+    selected?.computerId ??
+    (route?.phase === "ready"
+      ? computers.find((entry) => entry.id === route.route.configured?.computer_id)?.id
+      : null) ??
+    null;
+  const models = [...(catalog.data?.models ?? [])];
+  for (const profile of profiles)
+    if (!models.some((model) => model.id === profile.modelId))
+      models.push({
+        id: profile.modelId,
+        displayName: profile.modelId,
+        providers: [],
+        accountIds: [],
+      });
   return (
     <NativeSupervisorRouteControlsView
-      value={project?.supervisorLumaId ?? null}
-      profiles={ready ? lumas.profiles : []}
-      disabled={props.disabled || saving || !ready}
-      phase={ready ? "ready" : lumas.phase === "loading" ? "loading" : "unavailable"}
-      saving={saving}
-      error={error}
-      routeTitle={props.routeTitle}
-      instanceName={
-        lumas.instanceId === props.scope?.instanceId
-          ? (lumas.instanceName ?? "Project instance")
-          : "Project instance"
+      projectId={props.scope?.projectId ?? ""}
+      selected={selected}
+      profiles={profiles}
+      computers={computers}
+      models={models}
+      registeredComputers={
+        membership.instanceId === props.scope?.instanceId ? membership.computers : []
       }
-      onChange={(value) => void choose(value)}
+      environmentId={environment?.environmentId ?? null}
+      selectedComputerId={activeComputer}
+      disabled={props.disabled || saving}
+      unavailableReason={!ready ? status : null}
+      computerAvailability={Object.fromEntries(
+        computers.map((computer) => {
+          const connection = environments.find(
+            (entry) => entry.environmentId === computer.environmentId,
+          )?.connection;
+          return [
+            computer.id,
+            {
+              status:
+                connection?.phase === "connected"
+                  ? "Online"
+                  : connection?.phase === "offline"
+                    ? "Offline"
+                    : "Not connected",
+              reason:
+                !profiles.some((entry) => entry.computerId === computer.id) &&
+                connection?.phase !== "connected"
+                  ? (connection?.error ?? "This computer is offline.")
+                  : null,
+            },
+          ];
+        }),
+      )}
+      onSelectWorker={(id) => void choose(id)}
+      onSelectManual={(next) => void choose(next)}
+      onError={setError}
       onConfigureWorkers={() => void navigate({ to: "/settings/workjet" })}
-      onConfigureInstance={() => void navigate({ to: "/settings/business-os" })}
+      onAddComputer={() => void navigate({ to: "/settings/computers" })}
     />
   );
 }
 
-/** Model choices are validated instance Luma routes, never a client-supplied model override. */
+/** Identical controls to an ordinary thread; only persistence belongs to the project route. */
 export function NativeSupervisorRouteControlsView(props: {
-  readonly value: string | null;
+  readonly projectId: string;
+  readonly selected: WorkjetWorkerProfile | null;
   readonly profiles: readonly WorkjetWorkerProfile[];
+  readonly computers: readonly WorkjetComputer[];
+  readonly registeredComputers?: readonly CtoxWorkjetComputerProjection[];
+  readonly models: readonly WorkjetGatewayModelSummary[];
+  readonly environmentId: EnvironmentId | null;
+  readonly selectedComputerId: WorkjetComputer["id"] | null;
   readonly disabled: boolean;
-  readonly phase: "loading" | "ready" | "unavailable";
-  readonly saving: boolean;
-  readonly error: string | null;
-  readonly routeTitle: string;
-  readonly instanceName: string;
-  readonly onChange: (value: string | null) => void;
+  readonly unavailableReason: string | null;
+  readonly computerAvailability?: Readonly<
+    Record<string, { readonly status: string; readonly reason: string | null }>
+  >;
+  readonly onSelectWorker: (id: string | null) => void;
+  readonly onSelectManual: (selection: SupervisorManualSelection) => void;
+  readonly onError: (error: string) => void;
   readonly onConfigureWorkers: () => void;
-  readonly onConfigureInstance: () => void;
+  readonly onAddComputer: () => void;
 }) {
-  const selected = props.profiles.find((profile) => profile.id === props.value);
-  const title = props.saving
-    ? "Saving Supervisor selection…"
-    : props.phase === "ready"
-      ? "Choose the Worker and its model for this project's next Supervisor turn."
-      : props.phase === "loading"
-        ? "Loading instance Workers…"
-        : "Instance Workers are unavailable. The saved route is retained.";
-  const selectClass =
-    "h-[var(--composer-control-height,1.75rem)] max-w-72 cursor-pointer rounded-md bg-transparent px-1 text-[length:var(--composer-control-font-size,13px)] text-secondary-label outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60";
+  const manual =
+    props.selected === null || isSupervisorManualProfile(props.selected, props.projectId);
+  const selected = props.selected;
+  const harnesses = new Set<string>();
+  for (const profile of props.profiles) {
+    const driver = providerInstanceIdForHarness(profile.harness);
+    if (driver) harnesses.add(driver);
+  }
+  for (const computer of props.computers)
+    for (const entry of computer.harnesses)
+      if (entry.available) {
+        const driver = providerInstanceIdForHarness(entry.harness);
+        if (driver) harnesses.add(driver);
+      }
+  const change = (next: SupervisorManualSelection) => {
+    if (props.unavailableReason) props.onError(props.unavailableReason);
+    else props.onSelectManual(next);
+  };
   return (
     <>
-      <select
-        aria-label="Supervisor Worker"
-        title={title}
-        className={selectClass}
-        value={props.value ?? ""}
+      <ComposerWorkerControl
+        workers={props.profiles.filter((entry) => !entry.id.startsWith("supervisor-manual:"))}
+        selectedWorkerId={manual ? null : (selected?.id ?? null)}
         disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.value || null)}
-      >
-        <option value="">Supervisor · Instance default</option>
-        {props.value !== null && selected === undefined && (
-          <option value={props.value}>Saved Worker unavailable</option>
-        )}
-        {props.profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {profile.name}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label="Supervisor model"
-        title={`${title} ${props.routeTitle}`}
-        className={selectClass}
-        value={props.value ?? ""}
-        disabled={props.disabled}
-        onChange={(event) => props.onChange(event.target.value || null)}
-      >
-        <option value="">Instance model</option>
-        {props.value !== null && selected === undefined && (
-          <option value={props.value}>Saved model unavailable</option>
-        )}
-        {props.profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {workjetHarnessDisplayLabel(profile.harness)} · {profile.modelId}
-          </option>
-        ))}
-      </select>
-      <ComposerControl
-        type="button"
-        onClick={props.onConfigureInstance}
-        title="Open the project's CTOX instance settings. This chat stays bound to its project."
-      >
-        {props.instanceName}
-      </ComposerControl>
-      {(props.phase !== "ready" || props.profiles.length === 0) && (
-        <ComposerControl type="button" onClick={props.onConfigureWorkers} title={title}>
-          Configure Workers
-        </ComposerControl>
-      )}
-      {(props.saving || props.error) && (
-        <span role={props.error ? "alert" : "status"} className="text-xs text-muted-foreground">
-          {props.error ?? "Saving…"}
-        </span>
+        onSelectWorker={props.onSelectWorker}
+        onOpenWorkjetSettings={props.onConfigureWorkers}
+      />
+      {manual && (
+        <>
+          <ComposerManualTargetControls
+            configuredInstanceIds={harnesses}
+            selectedHarness={selected?.harness ?? null}
+            unavailableHint="No configured model is available for this harness on the instance."
+            onSelectHarness={(harness) => {
+              try {
+                change(
+                  supervisorSelectionForHarness(
+                    harness,
+                    selected,
+                    props.profiles,
+                    props.selectedComputerId ??
+                      props.computers.find(
+                        (computer) => computer.environmentId === props.environmentId,
+                      )?.id ??
+                      null,
+                  ),
+                );
+              } catch (failure) {
+                props.onError(
+                  failure instanceof Error ? failure.message : "The harness is unavailable.",
+                );
+              }
+            }}
+            disabledReason={props.disabled ? "Wait until the current operation finishes." : null}
+            modelSource="configured"
+            configuredModelsHint={null}
+            models={props.models}
+            modelsUnavailableReason={
+              props.unavailableReason ?? "No models are configured on the instance."
+            }
+            selectedModelId={selected?.modelId ?? ""}
+            onSelectModel={(modelId) => {
+              if (!selected) {
+                props.onError("Choose a harness before selecting a model.");
+                return;
+              }
+              change({ ...selected, modelId });
+            }}
+          />
+          {props.environmentId && (
+            <ComposerComputerControl
+              computers={props.computers}
+              registeredComputers={props.registeredComputers ?? []}
+              computerAvailability={props.computerAvailability ?? {}}
+              selectedComputerId={props.selectedComputerId}
+              activeEnvironmentId={props.environmentId}
+              selectableEnvironmentIds={props.computers.map((entry) => entry.environmentId)}
+              disabledReason={
+                props.disabled
+                  ? "Wait until the current operation finishes."
+                  : props.unavailableReason
+              }
+              mismatchNote={null}
+              onAddComputer={props.onAddComputer}
+              onSelectComputer={(id) => {
+                if (!selected) {
+                  props.onError("Choose a harness before selecting a computer.");
+                  return;
+                }
+                const computer = props.computers.find((entry) => entry.id === id);
+                if (computer) change({ ...selected, computerId: computer.id });
+              }}
+            />
+          )}
+        </>
       )}
     </>
   );

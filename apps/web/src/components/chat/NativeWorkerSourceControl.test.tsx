@@ -67,6 +67,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("automatic supervisor worker connection", () => {
+  it("reports one authentication recovery status while rendering headlessly", () => {
+    state.data = {
+      connections: [{ ...connection, status: "needs_auth", reason: "Sign in again." }],
+    };
+    const onStatusChange = vi.fn();
+    expect(render({ config: boundConfig, headless: true, onStatusChange })).toBe("");
+    state.effects.forEach((effect) => effect());
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authenticationRequired: true,
+        message: expect.any(String),
+      }),
+    );
+    expect(provision).toHaveBeenCalledOnce();
+  });
   it("renews a ready source only on the explicit user action and saves the issued binding", async () => {
     state.data = { connections: [connection] };
     const replacement = {
@@ -77,7 +92,7 @@ describe("automatic supervisor worker connection", () => {
     };
     provision.mockResolvedValueOnce({ _tag: "completed", connection: replacement });
     const html = render({ config: boundConfig });
-    expect(html).toContain('aria-label="Renew worker access"');
+    expect(html).not.toContain('aria-label="Renew worker access"');
     state.effects.forEach((effect) => effect());
     expect(provision).not.toHaveBeenCalled();
     await state.connect!.current(true);

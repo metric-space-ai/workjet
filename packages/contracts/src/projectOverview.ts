@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { SupervisorTickConfiguration } from "./supervisorTick.ts";
 
 export const ProjectWebsiteUrl = TrimmedNonEmptyString.check(
   Schema.isMaxLength(2048),
@@ -41,6 +42,7 @@ export const ProjectOverviewSlot = Schema.Union([
 export type ProjectOverviewSlot = typeof ProjectOverviewSlot.Type;
 const OptionalSlot = Schema.NullOr(ProjectOverviewSlot);
 export const ProjectOverview = Schema.Struct({
+  supervisorTick: Schema.optionalKey(SupervisorTickConfiguration),
   // Archiving changes gallery visibility while retaining the project and all histories.
   archived: Schema.optionalKey(Schema.Boolean),
   // Repository metadata is independent of a deployment website or local checkout.

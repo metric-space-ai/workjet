@@ -629,6 +629,7 @@ export function ProviderInstanceCard({
         <span className="text-muted-foreground/60">{`· ${checkedAgeLabel}`}</span>
       ) : null}
       {summary.detail ? <span>- {summary.detail}</span> : null}
+      {runtimeOnly ? <span>· Standard: Berechtigung umgehen</span> : null}
     </p>
   );
 

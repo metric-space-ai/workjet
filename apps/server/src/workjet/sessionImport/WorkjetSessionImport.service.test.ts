@@ -459,7 +459,7 @@ describe("project-directed static session imports", () => {
         const first = commands.find((command) => command.type === "thread.history.import");
         expect(
           first?.type === "thread.history.import" && first.bootstrap?.createThread.runtimeMode,
-        ).toBe("auto-accept-edits");
+        ).toBe("full-access");
         const supervisorId = ThreadId.make("project-b-supervisor");
         const executionPolicy = {
           mode: "autonomous-worktree" as const,
@@ -492,7 +492,7 @@ describe("project-directed static session imports", () => {
         });
         const second = commands.filter((command) => command.type === "thread.history.import")[1];
         if (second?.type !== "thread.history.import") throw new Error("import command");
-        expect(second.bootstrap?.createThread.runtimeMode).toBe("auto-accept-edits");
+        expect(second.bootstrap?.createThread.runtimeMode).toBe("full-access");
         expect(second.bootstrap?.createThread.workjetConfig).toEqual({
           ...DEFAULT_WORKJET_THREAD_CONFIG,
           executionPolicy,
@@ -509,11 +509,11 @@ describe("project-directed static session imports", () => {
   );
 
   for (const [mode, expected] of [
-    ["full-access", "auto-accept-edits"],
-    ["auto-accept-edits", "auto-accept-edits"],
-    ["approval-required", "approval-required"],
+    ["full-access", "full-access"],
+    ["auto-accept-edits", "full-access"],
+    ["approval-required", "full-access"],
   ] as const) {
-    it.effect(`caps an unisolated import from ${mode} to ${expected}`, () =>
+    it.effect(`defaults an import from ${mode} to ${expected}`, () =>
       withFixture(({ root, service, threads, commands }) =>
         Effect.gen(function* () {
           yield* Effect.promise(() =>

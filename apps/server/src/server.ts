@@ -540,7 +540,10 @@ const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.
 const RuntimeCoreFoundationLive = Layer.mergeAll(
   ReactorLayerLive,
   WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
-  ProjectTokenBudgetMonitor.layer.pipe(Layer.provide(UsageLayerLive)),
+  ProjectTokenBudgetMonitor.layer.pipe(
+    Layer.provide(UsageLayerLive),
+    Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+  ),
 ).pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(WorktreeStorageLayerLive),

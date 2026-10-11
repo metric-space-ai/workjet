@@ -48,6 +48,6 @@ export const currentProjectTokenBudgetContext = Effect.fn("currentProjectTokenBu
       !summary ||
       summary.projectThreads === undefined ||
       summary.projectThreads.some((thread) => thread.status === "unknown");
-    return `Workjet project token budget: ${budget?.limitBillions == null ? "unlimited" : budget.limitBillions + "B"}. Known cycle consumption: ${tokens === undefined ? "unknown" : (tokens / 1e9).toFixed(3) + "B"}${missing ? " (usage incomplete/unknown)" : ""}. Cycle: ${cycle.start} to ${cycle.end}. Reserve enough budget for the next meeting deck, report and open decisions; prioritize preparation when the remaining amount is tight. An overrun never stops, blocks or throttles work.`;
+    return `Token budget: ${tokens === undefined ? "unknown" : (tokens / 1e9).toFixed(3) + "B"}/${budget?.limitBillions == null ? "unlimited" : budget.limitBillions + "B"}${missing ? " (usage unknown/incomplete)" : ""}; meeting/cycle ends ${cycle.end}. Reserve tokens for deck, report and decisions; no automatic stop.`;
   },
 );

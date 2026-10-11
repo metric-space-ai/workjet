@@ -13,40 +13,40 @@ export default Effect.gen(function* () {
     )
   `;
   yield* sql`
-    INSERT OR IGNORE INTO usage_session_bindings
+    INSERT INTO usage_session_bindings
     SELECT thread_id, provider_name,
       COALESCE(json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$.resume'), json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$.sessionId'), json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$.threadId'),
         CASE WHEN json_type(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$') END)
     FROM provider_session_runtime
     WHERE COALESCE(json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$.resume'), json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$.sessionId'), json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$.threadId'),
-        CASE WHEN json_type(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$') END) IS NOT NULL
+        CASE WHEN json_type(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(resume_cursor_json) THEN resume_cursor_json ELSE NULL END, '$') END) IS NOT NULL ON CONFLICT (thread_id, provider_name, session_id) DO NOTHING
   `;
   yield* sql`
-    INSERT OR IGNORE INTO usage_session_bindings
+    INSERT INTO usage_session_bindings
     SELECT thread_id, provider_name, COALESCE(provider_session_id, provider_thread_id)
     FROM projection_thread_sessions
-    WHERE provider_name IS NOT NULL AND COALESCE(provider_session_id, provider_thread_id) IS NOT NULL
+    WHERE provider_name IS NOT NULL AND COALESCE(provider_session_id, provider_thread_id) IS NOT NULL ON CONFLICT (thread_id, provider_name, session_id) DO NOTHING
   `;
   yield* sql`
     CREATE TRIGGER usage_session_binding_insert AFTER INSERT ON provider_session_runtime
     BEGIN
-      INSERT OR IGNORE INTO usage_session_bindings
+      INSERT INTO usage_session_bindings
       SELECT NEW.thread_id, NEW.provider_name,
         COALESCE(json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.resume'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.sessionId'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.threadId'),
           CASE WHEN json_type(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$') END)
       WHERE COALESCE(json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.resume'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.sessionId'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.threadId'),
-          CASE WHEN json_type(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$') END) IS NOT NULL;
+          CASE WHEN json_type(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$') END) IS NOT NULL ON CONFLICT (thread_id, provider_name, session_id) DO NOTHING;
     END
   `;
   yield* sql`
     CREATE TRIGGER usage_session_binding_update AFTER UPDATE ON provider_session_runtime
     BEGIN
-      INSERT OR IGNORE INTO usage_session_bindings
+      INSERT INTO usage_session_bindings
       SELECT NEW.thread_id, NEW.provider_name,
         COALESCE(json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.resume'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.sessionId'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.threadId'),
           CASE WHEN json_type(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$') END)
       WHERE COALESCE(json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.resume'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.sessionId'), json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$.threadId'),
-          CASE WHEN json_type(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$') END) IS NOT NULL;
+          CASE WHEN json_type(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END) = 'text' THEN json_extract(CASE WHEN json_valid(NEW.resume_cursor_json) THEN NEW.resume_cursor_json ELSE NULL END, '$') END) IS NOT NULL ON CONFLICT (thread_id, provider_name, session_id) DO NOTHING;
     END
   `;
 });

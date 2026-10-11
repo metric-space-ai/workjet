@@ -8,6 +8,7 @@ import {
 import * as Schema from "effect/Schema";
 import { decodeOverviewDraft, overviewDraft } from "../projectOverview";
 import { parseTokenBudgetBillions } from "@workjet/shared/projectTokenBudget";
+import { deferTokenBudgetCalendarSource } from "../projectTokenBudgetSource";
 import {
   projectKpiPromptInputs,
   type PromptedProjectKpis,
@@ -180,6 +181,7 @@ export function ProjectOverviewEditor({
           return;
         }
         setState({ pending: true, message: "" });
+        const resumeCalendarSource = deferTokenBudgetCalendarSource(configuration?.id);
         try {
           if (metadata && onSaveConfiguration && !(await onSaveConfiguration(metadata))) {
             setState({
@@ -214,6 +216,8 @@ export function ProjectOverviewEditor({
             pending: false,
             message: "Couldn’t save the overview. Reconnect and try again.",
           });
+        } finally {
+          resumeCalendarSource();
         }
       }}
     >

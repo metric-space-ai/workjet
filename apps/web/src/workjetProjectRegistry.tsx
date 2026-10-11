@@ -11,7 +11,10 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useActiveWorkjetScope, subscribeActiveWorkjetHostContext } from "./activeWorkjetScope";
 import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
 import { listWorkjetProjects } from "./workjetProjectControl";
-import { LocalProjectRegistrationSynchronizer } from "./localProjectRegistration";
+import {
+  LocalProjectRegistrationSynchronizer,
+  ProjectTokenBudgetSourceSynchronizer,
+} from "./localProjectRegistration";
 import {
   createProjectRegistryRefresh,
   subscribeProjectRegistryWarmGuest,
@@ -376,7 +379,12 @@ export function WorkjetProjectRegistrySynchronizer() {
       window.removeEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);
     };
   }, [presentationInstanceId]);
-  return <LocalProjectRegistrationSynchronizer />;
+  return (
+    <>
+      <LocalProjectRegistrationSynchronizer />
+      <ProjectTokenBudgetSourceSynchronizer />
+    </>
+  );
 }
 
 export function __resetWorkjetProjectRegistryForTests(

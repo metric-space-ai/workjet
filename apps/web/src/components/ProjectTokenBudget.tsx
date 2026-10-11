@@ -20,7 +20,13 @@ export function ProjectTokenBudget({ project }: { readonly project: GalleryProje
   }, []);
   const budget = project.local?.overview?.tokenBudget;
   const cycle = useMemo(
-    () => projectTokenCycle(now, project.configuration?.jourFixe ?? budget?.jourFixe),
+    () =>
+      projectTokenCycle(
+        now,
+        project.configuration?.jourFixe === undefined
+          ? budget?.jourFixe
+          : project.configuration.jourFixe,
+      ),
     [now, project.configuration?.jourFixe, budget?.jourFixe],
   );
   const usage = useUsage({

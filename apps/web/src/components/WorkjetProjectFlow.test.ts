@@ -62,10 +62,11 @@ describe("CTOX-native project story", () => {
     expect(sidebarSource).toContain("useAvailableProjectContext()");
     expect(sidebarSource).toContain("project.title");
     expect(chatIndexSource).toContain(
-      'data-workjet-project-state={error ? "opening-error" : "opening"}',
+      'data-workjet-project-state={error ? "opening-error" : slow ? "opening-slow" : "opening"}',
     );
     expect(chatIndexSource).toContain("void openNativeSupervisor(selectedNative)");
-    expect(chatIndexSource).toContain("Supervisor erneut öffnen");
+    expect(chatIndexSource).toContain('data-workjet-action="project.open.supervisor.retry"');
+    expect(chatIndexSource).toContain("PROJECT_OPENING_TIMEOUT_MS = 10_000");
     expect(chatIndexSource).not.toContain("Project synced with this CTOX instance");
   });
 });

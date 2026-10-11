@@ -1,19 +1,19 @@
 import type { ProjectOverview } from "@workjet/contracts";
 
-/** Editable starting suggestions, never fabricated measurements or analytics integrations. */
+/** Editierbare Startvorschläge, nie erfundene Messwerte. */
 export const projectKpiSuggestions = {
-  "ctox.dev": ["Runs", "Success", "Queue"],
-  "greppy.xyz": ["Users", "Queries", "Latency"],
-  "miltonticket.app": ["Players", "Games", "Score"],
-  "mypokedex.app": ["Trainers", "Collections", "Activity"],
-  "kunstmen.com": ["Visits", "Inquiries", "Conversion"],
-  "metric-space.ai": ["Visits", "Leads", "Conversion"],
-  "fzul.app": ["Applications", "Approved", "Volume"],
-  "flylabs.dev": ["Runs", "FPS", "Neurons"],
-  "learordie.app": ["Learners", "Lessons", "Completion"],
-  "i-hate-ai.community": ["Members", "Posts", "Activity"],
-  "dommify.dev": ["Visits", "Signups", "Conversion"],
-  molecularity: ["Sessions", "Latency", "Errors"],
+  "ctox.dev": ["Läufe", "Erfolg", "Warteschlange"],
+  "greppy.xyz": ["Nutzer", "Abfragen", "Latenz"],
+  "miltonticket.app": ["Spieler", "Spiele", "Punkte"],
+  "mypokedex.app": ["Trainer", "Sammlungen", "Aktivität"],
+  "kunstmen.com": ["Besuche", "Anfragen", "Konversion"],
+  "metric-space.ai": ["Besuche", "Leads", "Konversion"],
+  "fzul.app": ["Anträge", "Genehmigt", "Volumen"],
+  "flylabs.dev": ["Läufe", "FPS", "Neuronen"],
+  "learordie.app": ["Lernende", "Lektionen", "Abschluss"],
+  "i-hate-ai.community": ["Mitglieder", "Beiträge", "Aktivität"],
+  "dommify.dev": ["Besuche", "Anmeldungen", "Konversion"],
+  molecularity: ["Sitzungen", "Latenz", "Fehler"],
 } as const;
 
 export function suggestedProjectKpis(title: string): ProjectOverview["slots"] | null {

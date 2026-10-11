@@ -22,7 +22,20 @@ The comparison uses production controls and styles with a read-only public Molec
 
 The isolated browser's native configuration/project RPC is a mock. Its save/reload result proves the composer persistence flow against that mock, not successful native execution in the installed app. Installed native route adoption and first-response acceptance remain for the supervisor after merge/install. No live supervisor turn or login was performed.
 
-Screenshots and final lane results are added below when their bounded runs finish.
+Browser lane `workjet-supervisor-normal-composer-20261011T045629Z` passed on `ec15a7f0dcfc17eba200b81962c7ef8db2841584`: 89 tests and the comparison with harness/model selection, configuration write, project write, read-back, reload, and retained chips. Component blob IDs are recorded in [source.json](supervisor-normal-composer-20261011/source.json); the pictured components are unchanged on the PR head. [proof.json](supervisor-normal-composer-20261011/proof.json) records zero browser errors and, at 420 px, document width 420 px and each bar 362 px with scroll width 362 px. [cleanup.json](supervisor-normal-composer-20261011/cleanup.json) confirms both owned processes stopped and temporary entries removed.
+
+| State                                                | 1440 px                                                                      | 420 px                                                                      |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Manual; Codex CLI and the stored public thread model | [Comparison](supervisor-normal-composer-20261011/supervisor-normal-1440.png) | [Comparison](supervisor-normal-composer-20261011/supervisor-normal-420.png) |
+| Saved harness/model switch and reload, isolated mock | [Comparison](supervisor-normal-composer-20261011/supervisor-saved-1440.png)  | [Comparison](supervisor-normal-composer-20261011/supervisor-saved-420.png)  |
+
+![Supervisor beside the ordinary controls, 1440 px](supervisor-normal-composer-20261011/supervisor-normal-1440.png)
+
+![Supervisor and ordinary controls, 420 px](supervisor-normal-composer-20261011/supervisor-normal-420.png)
+
+The first two UI attempts failed in the temporary browser setup before rendering. They were not recorded as product failures or acceptance passes. Every attempt completed its owned cleanup. The successful run uses an isolated router and the existing web package dependencies; no debug entry or mock server ships in the application.
+
+Final required checks run on the final committed PR head; their canonical receipt is recorded below after completion.
 
 ## Scope and resources
 

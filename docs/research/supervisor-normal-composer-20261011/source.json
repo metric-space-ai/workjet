@@ -1,0 +1,14 @@
+{
+  "uiHead": "ec15a7f0dcfc17eba200b81962c7ef8db2841584",
+  "laneRun": "workjet-supervisor-normal-composer-20261011T045629Z",
+  "publicSnapshotReadAt": "2026-10-11T04:49:00Z\u201304:51:28Z",
+  "productionComponentBlobs": {
+    "apps/web/src/components/chat/ComposerBar.tsx": "c3104b7079f2432793268a4365d9a791ade757d2",
+    "apps/web/src/components/chat/ComposerWorkerControl.tsx": "758b44668834e6ae5e0d1e82ac217f06180b2610",
+    "apps/web/src/components/chat/ComposerWorkjetTargetControls.tsx": "cb53e83f4aae4d97b95837f2bffc57d97ad77a33",
+    "apps/web/src/components/chat/NativeSupervisorRouteControls.tsx": "38f7f6e07a99e77d6baf961a925461e14f9cb4b4",
+    "apps/web/src/supervisorComposerSelection.ts": "6da31f994e4fe4b7a76cf5c79c9e355de792a76c"
+  },
+  "mockedNativeRpc": true,
+  "realInstalledRouteNotMeasured": true
+}

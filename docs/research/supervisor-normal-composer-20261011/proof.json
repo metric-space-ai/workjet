@@ -1,0 +1,37 @@
+{
+  "geometry": {
+    "viewport": 420,
+    "scroll": 420,
+    "bars": [
+      {
+        "width": 362,
+        "scroll": 362
+      },
+      {
+        "width": 362,
+        "scroll": 362
+      }
+    ]
+  },
+  "errors": [],
+  "persistence": {
+    "actions": [
+      "luma.write",
+      "project.configure",
+      "project.list",
+      "luma.write",
+      "project.configure",
+      "project.list"
+    ],
+    "projectId": "d8dfa343-c928-4d3c-a05e-58be3514ceb1",
+    "supervisorLumaId": "supervisor-manual:d8dfa343-c928-4d3c-a05e-58be3514ceb1:9e5c610a-2408-487e-bc48-827bf2ae2129",
+    "revision": 3,
+    "selected": {
+      "harness": "claude-code",
+      "modelId": "grok-4.7",
+      "computerId": "50988886-2a39-4a55-9d91-640930524b13"
+    }
+  },
+  "scope": "isolated production components; public snapshot; mocked native configuration/project RPC",
+  "installedNativeAcceptance": false
+}

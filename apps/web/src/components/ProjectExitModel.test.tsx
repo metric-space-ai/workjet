@@ -46,7 +46,7 @@ describe("project exit assessment display", () => {
     );
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
     expect(markup).toContain("800k EUR");
-    expect(markup).toContain('aria-label="View five-year exit assessment"');
+    expect(markup).toContain('aria-label="Fünf-Jahres-Exit-Bewertung ansehen"');
     const stamp = markup.match(
       /<button[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/button>/,
     );
@@ -61,15 +61,15 @@ describe("project exit assessment display", () => {
         onRefresh={async () => true}
       />,
     );
-    expect(markup).toContain("Sale probability");
+    expect(markup).toContain("Verkaufschance");
     expect(markup).toContain("80%");
-    expect(markup).toContain("Price if sold");
-    expect(markup).toContain("Zero proceeds");
-    expect(markup).toContain("Enterprise value");
+    expect(markup).toContain("Preis bei Verkauf");
+    expect(markup).toContain("Kein Erlös");
+    expect(markup).toContain("Unternehmenswert");
     expect(markup).toContain("950k EUR");
-    expect(markup).toContain("Funding");
-    expect(markup).toContain("Plan budget · 60 months");
-    expect(markup).toContain("Proposed monthly budget");
+    expect(markup).toContain("Finanzierung");
+    expect(markup).toContain("Plan-Budget · 60 Monate");
+    expect(markup).toContain("Monatsbudget (Vorschlag)");
     expect(markup).toContain("https://example.org/synthetic-evidence");
     expect(markup).toContain("Synthetic test assumptions");
   });

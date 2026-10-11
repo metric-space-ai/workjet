@@ -4,43 +4,78 @@ import {
   type SupervisorTickConfiguration,
   type SupervisorTickState,
 } from "@workjet/contracts";
+import {
+  projectOverviewFormat,
+  type ProjectOverviewLanguage,
+  type ProjectOverviewText,
+} from "../projectOverviewText";
 
 export function SupervisorTickStatus(props: {
   readonly createdAt: string | null;
   readonly configuration?: SupervisorTickConfiguration | undefined;
   readonly state?: SupervisorTickState | undefined;
+  readonly language?: ProjectOverviewLanguage | undefined;
+  readonly text?: ProjectOverviewText | undefined;
 }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+  const de = props.language !== "en";
+  const text = props.text;
+  const minutesAgo = (at: string) =>
+    text
+      ? projectOverviewFormat(text.minutesAgo, {
+          minutes: Math.max(0, Math.floor((now - Date.parse(at)) / 60000)),
+        })
+      : de
+        ? `vor ${Math.max(0, Math.floor((now - Date.parse(at)) / 60000))} min`
+        : `${Math.max(0, Math.floor((now - Date.parse(at)) / 60000))} min ago`;
   const next = props.createdAt
     ? supervisorTickDueAt(props.createdAt, props.configuration, props.state)
     : null;
+  const nextLabel =
+    props.configuration?.enabled === false
+      ? (text?.controlOff ?? (de ? "aus" : "off"))
+      : next === null
+        ? (text?.controlMissing ?? (de ? "Supervisor fehlt" : "no supervisor"))
+        : next <= now
+          ? (text?.controlDue ?? (de ? "fällig" : "due"))
+          : text
+            ? projectOverviewFormat(text.minutesUntil, {
+                minutes: Math.ceil((next - now) / 60000),
+              })
+            : de
+              ? `in ${Math.ceil((next - now) / 60000)} min`
+              : `in ${Math.ceil((next - now) / 60000)} min`;
+  const lastLabel = props.state?.lastControlAt
+    ? minutesAgo(props.state.lastControlAt)
+    : (text?.controlNone ?? "—");
   return (
     <div
-      className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"
+      className="mt-2 flex flex-wrap items-center gap-1.5"
       data-workjet-supervisor-tick=""
+      role="status"
     >
-      <span>
-        Letzte Kontrolle:{" "}
-        {props.state?.lastControlAt
-          ? `vor ${Math.max(0, Math.floor((now - Date.parse(props.state.lastControlAt)) / 60000))} min`
-          : "noch keine"}
-      </span>
-      <span>
-        Nächste:{" "}
-        {props.configuration?.enabled === false
-          ? "aus"
-          : next === null
-            ? "Supervisor fehlt"
-            : next <= now
-              ? "fällig"
-              : `in ${Math.ceil((next - now) / 60000)} min`}
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground">
+        {text
+          ? projectOverviewFormat(text.controlLast, { time: lastLabel })
+          : de
+            ? `Letzte Kontrolle ${lastLabel}`
+            : `Last check ${lastLabel}`}
+        {" · "}
+        {text
+          ? projectOverviewFormat(text.controlNext, { time: nextLabel })
+          : de
+            ? `Nächste ${nextLabel}`
+            : `Next ${nextLabel}`}
       </span>
       {props.state?.outcome === "skipped-busy" && (
-        <span>Letzter Takt übersprungen · Supervisor beschäftigt</span>
+        <span className="inline-flex items-center rounded-full border border-amber-500/40 px-2.5 py-0.5 text-[11px] text-amber-400">
+          {text?.controlSkipped ??
+            (de ? "Takt übersprungen · Supervisor beschäftigt" : "Tick skipped · supervisor busy")}
+        </span>
       )}
     </div>
   );

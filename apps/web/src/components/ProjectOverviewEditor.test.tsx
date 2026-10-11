@@ -46,16 +46,18 @@ describe("compact project configuration", () => {
         onArchive={async () => true}
       />,
     );
-    expect(markup.match(/placeholder="Describe the metric in one sentence"/g)).toHaveLength(3);
-    expect(markup).toContain("KPI prompts need the CTOX KPI service");
+    expect(markup.match(/placeholder="Kennzahl in einem Satz"/g)).toHaveLength(3);
+    expect(markup).toContain("KPI-Angaben brauchen den KPI-Dienst der Instanz.");
     expect(markup).not.toContain("Entered metric");
     expect(markup).not.toContain("type</label>");
-    expect(markup).toContain("Jour fixe weekday");
+    expect(markup).toContain("Regeltermin Wochentag");
+    expect(markup).toContain("Regeltermin-Vorbereitung");
+    expect(markup).not.toContain("No meeting");
     expect(markup).toContain('value="13:00"');
     expect(markup).toContain("Keep the goal");
-    expect(markup).toContain("Archive project");
-    expect(markup).toContain("Cancel");
-    expect(markup).toContain("Save project");
+    expect(markup).toContain("Projekt archivieren");
+    expect(markup).toContain("Abbrechen");
+    expect(markup).toContain("Projekt speichern");
   });
   it("renders a native missing source instead of offering an entered value", () => {
     const markup = renderToStaticMarkup(
@@ -92,6 +94,6 @@ describe("compact project configuration", () => {
         onSaveKpis={async () => true}
       />,
     );
-    expect(markup).toContain("KPI prompts need the CTOX KPI service");
+    expect(markup).toContain("KPI-Angaben brauchen den KPI-Dienst der Instanz.");
   });
 });

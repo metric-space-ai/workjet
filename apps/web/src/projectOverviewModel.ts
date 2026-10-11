@@ -37,7 +37,7 @@ export function projectOverviewStatusTone(state: ProjectOverviewStatus) {
       return "gray";
   }
 }
-/** PR #417 integration point: adapt ProjectTokenBudgetView totals into this read-only input. */
+/** Read-only #417 usage supplied by useProjectOverviewTokenBudgetSource. */
 export type ProjectOverviewTokenBudgetSource = {
   readonly consumedTokens: number | null;
   readonly limitBillions: number | null;
@@ -300,7 +300,11 @@ export function buildProjectOwnerOverview(input: {
       id: "tokens",
       label: text.tokenBudget,
       value: projectOverviewBudgetValue(input.projectTokenBudgetSource),
-      note: input.projectTokenBudgetSource?.partial ? text.partialUsage : null,
+      note:
+        input.projectTokenBudgetSource?.consumedTokens != null &&
+        input.projectTokenBudgetSource.partial
+          ? text.partialUsage
+          : null,
     },
   ];
   const history = all.flatMap((thread) =>

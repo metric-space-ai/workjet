@@ -144,7 +144,45 @@ describe("supervisor situation", () => {
     expect(snapshot.errorsAndTimeouts[0].kind).toBe("provider.timeout");
     expect(snapshot.escalations[0].decisionKey).toBe("repo-access");
     expect(snapshot.tokenBudget).toBeNull();
+    expect(snapshot.tokenBudgetStatus).toBe("Budget nicht konfiguriert");
+    expect(snapshot.sourceErrors).toEqual([]);
     expect(snapshot.minutesUntilNextRegularMeeting).toBe(60);
+  });
+  it("expires archived one-shots and their history after 24 hours", () => {
+    const oneShot = (id: string, archivedAt: string | null): OrchestrationThread => ({
+      ...base,
+      id: ThreadId.make(id),
+      archivedAt,
+      workjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        role: "worker",
+        parent: { environmentId: EnvironmentId.make("local"), threadId: ThreadId.make("supervisor") },
+      },
+    });
+    const threads = [
+      base,
+      oneShot("active", null),
+      oneShot("recent", new Date(now - 24 * 60 * 60_000 + 1).toISOString()),
+      oneShot("expired", new Date(now - 24 * 60 * 60_000).toISOString()),
+      { ...oneShot("deleted", null), deletedAt: base.updatedAt },
+      { ...base, id: ThreadId.make("archived-persistent"), archivedAt: base.updatedAt },
+      { ...oneShot("foreign", null), projectId: ProjectId.make("other") },
+    ];
+    const snapshot = JSON.parse(supervisorTickSituation({
+      project: {
+        id: projectId, title: "Control", workspaceRoot: null, defaultModelSelection: null,
+        scripts: [], createdAt: base.createdAt, updatedAt: base.updatedAt, deletedAt: null,
+      },
+      threads, since: base.createdAt, now, pullRequests: [], sourceErrors: [],
+      meetingMinutes: null, changes: [],
+      errors: threads.map((thread) => ({ threadId: thread.id, kind: "provider.timeout", summary: "Timeout", createdAt: base.updatedAt })),
+      escalations: threads.map((thread) => ({ threadId: thread.id, decisionKey: "access", createdAtMs: now })),
+    }));
+    expect(snapshot.oneShotWorkers.map((worker: { thread: string }) => worker.thread)).toEqual(["active", "recent"]);
+    expect(snapshot.oneShotWorkers[1].status).toBe("finished");
+    expect(snapshot.persistentWorkers).toHaveLength(1);
+    expect(snapshot.collectedCounts).toMatchObject({ workers: 3, errors: 3, escalations: 3 });
+    expect(snapshot.errorsAndTimeouts.some((error: { threadId: string }) => error.threadId === "expired")).toBe(false);
   });
   it("keeps large rounds compact with valid JSON and every source category", () => {
     const text = supervisorTickSituation({
@@ -224,5 +262,7 @@ describe("supervisor situation", () => {
       "measured state",
     ])
       expect(text).toContain(word);
+    expect(text).toContain("Supervisor-Verlauf");
+    expect(text).not.toContain("Supervisor-Kanban");
   });
 });

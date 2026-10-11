@@ -14,6 +14,8 @@ import {
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
+import * as TestClock from "effect/testing/TestClock";
+import * as Duration from "effect/Duration";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
@@ -153,6 +155,18 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
                   ),
                 ),
               );
+              yield* Effect.all([reactor.reconcile(), reactor.reconcile()], { concurrency: 2 });
+              const planned = yield* query.getCommandReadModel();
+              const plannedConfig = planned.threads.find((t) => t.id === supervisor.id)!.workjetConfig;
+              const initialState = plannedConfig.schemaVersion === 2 ? plannedConfig.supervisorTick : undefined;
+              expect(initialState?.outcome).toBe("scheduled");
+              expect(Date.parse(initialState!.firstTickAt!)).toBeGreaterThanOrEqual(DateTime.toEpochMillis(now));
+              expect(Date.parse(initialState!.firstTickAt!)).toBeLessThan(DateTime.toEpochMillis(now) + 30 * 60_000);
+              expect(reads).toBe(0);
+              const initialEvents = yield* Stream.runCollect(engine.readEvents(0, 100));
+              expect(initialEvents.filter((event) => event.type === "thread.turn-start-requested")).toHaveLength(0);
+              expect(initialEvents.filter((event) => event.type === "thread.workjet-config-set" && event.payload.workjetConfig.schemaVersion === 2 && event.payload.workjetConfig.supervisorTick?.outcome === "scheduled")).toHaveLength(1);
+              yield* TestClock.adjust(Duration.minutes(31));
               yield* Effect.all([reactor.reconcile(), reactor.reconcile()], { concurrency: 2 });
               const events = yield* Stream.runCollect(engine.readEvents(0, 100));
               expect(events.filter((e) => e.type === "thread.turn-start-requested")).toHaveLength(

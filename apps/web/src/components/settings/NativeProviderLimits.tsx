@@ -11,9 +11,14 @@ export function NativeProviderLimits({
   // Repaint only when a reported window expires, never continuously.
   useEffect(() => {
     if (quota?.state !== "reported") return;
-    const future = quota.windows.map((window) => window.resetAtMs).filter((reset) => reset > Date.now());
+    const future = quota.windows
+      .map((window) => window.resetAtMs)
+      .filter((reset) => reset > Date.now());
     if (future.length === 0) return;
-    const timer = setTimeout(() => setExpiryTick((tick) => tick + 1), Math.max(1, Math.min(...future) - Date.now() + 1));
+    const timer = setTimeout(
+      () => setExpiryTick((tick) => tick + 1),
+      Math.max(1, Math.min(...future) - Date.now() + 1),
+    );
     return () => clearTimeout(timer);
   }, [quota, expiryTick]);
 
@@ -44,13 +49,26 @@ export function NativeProviderLimits({
         return (
           <span
             key={window.kind}
-            className={expired ? "text-muted-foreground" : window.status === "rejected" ? "text-amber-500" : ""}
+            className={
+              expired
+                ? "text-muted-foreground"
+                : window.status === "rejected"
+                  ? "text-amber-500"
+                  : ""
+            }
             title={
               `Last reported ${reported}: ${used === null ? "utilization not supplied" : used + " used"}; ${window.status}. Reset ${reset}.` +
               (expired ? " This observation has expired." : "")
             }
           >
-            {label} · {expired ? "expired" : used === null ? window.status === "rejected" ? "limit reached" : "—" : used + " used"}
+            {label} ·{" "}
+            {expired
+              ? "expired"
+              : used === null
+                ? window.status === "rejected"
+                  ? "limit reached"
+                  : "—"
+                : used + " used"}
           </span>
         );
       })}

@@ -166,9 +166,7 @@ const ReportedQuotaWindow = Schema.Struct({
   kind: Schema.Literals(["five_hour", "seven_day"]),
   status: Schema.Literals(["allowed", "rejected"]),
   resetAtMs: Revision,
-  utilization: Schema.NullOr(
-    Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-  ),
+  utilization: Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
 });
 const ReportedQuota = Schema.Union(
   Schema.Struct({ state: Schema.Literal("unknown") }),
@@ -179,17 +177,15 @@ const ReportedQuota = Schema.Union(
   Schema.Struct({
     state: Schema.Literal("reported"),
     observedAtMs: Revision,
-    windows: Schema.Array(ReportedQuotaWindow).check(
-      Schema.isMinLength(1),
-      Schema.isMaxLength(2),
-    ),
+    windows: Schema.Array(ReportedQuotaWindow).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
   }).check(
     Schema.makeFilter((quota) =>
       new Set(quota.windows.map((window) => window.kind)).size === quota.windows.length &&
-      quota.windows.every((window) =>
-        window.resetAtMs > quota.observedAtMs &&
-        window.resetAtMs - quota.observedAtMs <= 608_400_000 &&
-        (window.utilization === null || Number.isFinite(window.utilization)),
+      quota.windows.every(
+        (window) =>
+          window.resetAtMs > quota.observedAtMs &&
+          window.resetAtMs - quota.observedAtMs <= 608_400_000 &&
+          (window.utilization === null || Number.isFinite(window.utilization)),
       )
         ? true
         : "Reported quota windows are inconsistent.",
@@ -197,7 +193,6 @@ const ReportedQuota = Schema.Union(
   ),
 );
 export const WorkjetNativeProviderAccount = Schema.Struct({
-
   id: Id,
   holder: Schema.Struct({ kind: Schema.Literal("ctox_instance"), id: Id }),
   provider: Id,

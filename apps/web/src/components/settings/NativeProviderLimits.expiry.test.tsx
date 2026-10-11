@@ -16,16 +16,28 @@ import { NativeProviderLimits } from "./NativeProviderLimits";
 
 type Quota = WorkjetNativeProviderAccount["reportedQuota"];
 const now = 1_800_000_000_000;
-const quota: Quota = { state: "reported", observedAtMs: now - 1000, windows: [
-  { kind: "five_hour", status: "allowed", resetAtMs: now + 1000, utilization: 0.25 },
-  { kind: "seven_day", status: "allowed", resetAtMs: now + 2000, utilization: 0.75 },
-] };
+const quota: Quota = {
+  state: "reported",
+  observedAtMs: now - 1000,
+  windows: [
+    { kind: "five_hour", status: "allowed", resetAtMs: now + 1000, utilization: 0.25 },
+    { kind: "seven_day", status: "allowed", resetAtMs: now + 2000, utilization: 0.75 },
+  ],
+};
 function render(value: Quota) {
   hooks.beginRender();
   return renderToStaticMarkup(NativeProviderLimits({ quota: value }));
 }
-beforeEach(() => { hooks.reset(); vi.useFakeTimers(); vi.setSystemTime(now); });
-afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); hooks.reset(); });
+beforeEach(() => {
+  hooks.reset();
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+});
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  hooks.reset();
+});
 
 describe("reported limit expiration while Models remains open", () => {
   it("expires each window at its own reset without requiring navigation", async () => {

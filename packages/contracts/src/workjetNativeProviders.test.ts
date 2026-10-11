@@ -50,15 +50,25 @@ describe("reported native account quota contract", () => {
   const window = { kind: "five_hour", status: "allowed", resetAtMs: 5000, utilization: 0.25 };
   const quota = { state: "reported", observedAtMs: 1000, windows: [window] };
   it("accepts public observations and strips private fields even inside windows", () => {
-    const decoded = decodeAccount({ ...account, reportedQuota: {
-      ...quota, generation: "private-fixture", windows: [{ ...window, secret: "private-fixture" }],
-    } });
+    const decoded = decodeAccount({
+      ...account,
+      reportedQuota: {
+        ...quota,
+        generation: "private-fixture",
+        windows: [{ ...window, secret: "private-fixture" }],
+      },
+    });
     expect(decoded.reportedQuota).toEqual(quota);
     expect(JSON.stringify(decoded)).not.toContain("private-fixture");
-    expect(decodeAccount({ ...account, reportedQuota: { state: "unknown" } }).reportedQuota)
-      .toEqual({ state: "unknown" });
-    expect(decodeAccount({ ...account, reportedQuota: { state: "unavailable", errorClass: "quota_read_failed" } }).reportedQuota)
-      .toEqual({ state: "unavailable", errorClass: "quota_read_failed" });
+    expect(
+      decodeAccount({ ...account, reportedQuota: { state: "unknown" } }).reportedQuota,
+    ).toEqual({ state: "unknown" });
+    expect(
+      decodeAccount({
+        ...account,
+        reportedQuota: { state: "unavailable", errorClass: "quota_read_failed" },
+      }).reportedQuota,
+    ).toEqual({ state: "unavailable", errorClass: "quota_read_failed" });
   });
   it("rejects invented windows, unsafe timestamps, percentages and upstream error classes", () => {
     for (const invalid of [
@@ -71,11 +81,11 @@ describe("reported native account quota contract", () => {
       { ...quota, observedAtMs: Number.MAX_SAFE_INTEGER + 1 },
       { ...quota, windows: [{ ...window, kind: "invented" }] },
       { state: "unavailable", errorClass: "credentials_rejected" },
-    ]) expect(() => decodeAccount({ ...account, reportedQuota: invalid })).toThrow();
+    ])
+      expect(() => decodeAccount({ ...account, reportedQuota: invalid })).toThrow();
   });
 });
 describe("native provider public contract", () => {
-
   it("decodes holder capabilities explicitly and keeps older registries read-only", () => {
     expect(decodeAccount(account).controls).toBeUndefined();
     expect(

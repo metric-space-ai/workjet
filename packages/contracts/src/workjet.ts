@@ -1471,6 +1471,31 @@ export type WorkjetGatewayProviderHealth = typeof WorkjetGatewayProviderHealth.T
  */
 export const WorkjetGatewayQuotaWindow = Schema.Struct({
   name: TrimmedNonEmptyString,
+  /** Whitelisted provider reading; optional for hosts predating quota provenance. */
+  source: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        field: Schema.Literals([
+          "utilization",
+          "used_percent",
+          "percentage",
+          "current_interval_remaining_percent",
+          "current_weekly_remaining_percent",
+        ]),
+        value: Schema.NullOr(
+          Schema.Number.pipe(
+            Schema.check(Schema.isFinite()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+            Schema.check(Schema.isLessThanOrEqualTo(100)),
+          ),
+        ),
+        windowSeconds: Schema.NullOr(NonNegativeInt),
+        status: Schema.NullOr(NonNegativeInt),
+        unit: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+        number: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+      }),
+    ),
+  ),
   remainingPercent: Schema.NullOr(
     Schema.Number.pipe(
       Schema.check(Schema.isFinite()),

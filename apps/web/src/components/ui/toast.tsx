@@ -595,6 +595,9 @@ function Toasts({ position }: { position: ToastPosition }) {
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",
                 "data-[position*=center]:right-0 data-[position*=center]:left-0",
                 "data-[position*=top]:top-0 data-[position*=top]:bottom-auto data-[position*=top]:origin-top",
+                // Schmale Viewports docken Top-Toasts unten an; der Toast hängt
+                // dann an der Unterkante statt unter den sichtbaren Bereich.
+                "max-sm:data-[position*=top]:top-auto max-sm:data-[position*=top]:bottom-0",
                 "data-[position*=bottom]:top-auto data-[position*=bottom]:bottom-0 data-[position*=bottom]:origin-bottom",
                 // Gap fill for hover
                 "after:absolute after:left-0 after:h-[calc(var(--toast-gap)+1px)] after:w-full",

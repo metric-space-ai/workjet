@@ -1331,6 +1331,13 @@ function ChatViewContent(props: ChatViewProps) {
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
     [environments],
   );
+  const computerLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        environments.map((environment) => [environment.environmentId, environment.label]),
+      ),
+    [environments],
+  );
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
   const draftThread = useComposerDraftStore((store) =>
@@ -7490,6 +7497,7 @@ function ChatViewContent(props: ChatViewProps) {
                                     draft={workjetSendDraft}
                                     threads={workjetRecipientThreads}
                                     roster={workjetMeshRoster}
+                                    computerLabels={computerLabels}
                                     busy={workjetSendBusy}
                                     disabled={threadDetailLoading || activeEnvironmentUnavailable}
                                     outcome={workjetSendOutcome}

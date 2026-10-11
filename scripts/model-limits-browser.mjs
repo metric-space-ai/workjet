@@ -1,39 +1,43 @@
-import { spawn, execFileSync } from "node:child_process";
-import { mkdir, writeFile, rm } from "node:fs/promises";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import assert from "node:assert/strict";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+import * as NodeAssert from "node:assert/strict";
 
 // Component-only review profile: no installed state, account secrets or upstream requests.
 const root = process.cwd();
 const base = process.env.WORKJET_LIMITS_BASE ?? "origin/main";
 
-const output = path.resolve(process.env.WORKJET_LIMITS_OUTPUT ?? "output/playwright/model-limits");
-const fixture = path.join(root, "apps/web/.workjet/limits-review");
-const settings = path.join(root, "apps/web/src/components/settings");
+const output = NodePath.resolve(
+  process.env.WORKJET_LIMITS_OUTPUT ?? "output/playwright/model-limits",
+);
+const fixture = NodePath.join(root, "apps/web/.workjet/limits-review");
+const settings = NodePath.join(root, "apps/web/src/components/settings");
 const port = 5839;
 const origin = `http://127.0.0.1:${port}`;
-const { chromium } = await import(pathToFileURL(process.env.WORKJET_LIMITS_PLAYWRIGHT_MODULE).href);
-await mkdir(output, { recursive: true });
-await mkdir(fixture, { recursive: true });
+const { chromium } = await import(
+  NodeURL.pathToFileURL(process.env.WORKJET_LIMITS_PLAYWRIGHT_MODULE).href
+);
+await NodeFS.mkdir(output, { recursive: true });
+await NodeFS.mkdir(fixture, { recursive: true });
 const beforePaths = ["WorkjetModelsProviders", "WorkjetModelsHealth"].map((name) =>
-  path.join(settings, `${name}.before.tsx`),
+  NodePath.join(settings, `${name}.before.tsx`),
 );
 for (const [index, name] of ["WorkjetModelsProviders", "WorkjetModelsHealth"].entries()) {
-  await writeFile(
+  await NodeFS.writeFile(
     beforePaths[index],
-    execFileSync("git", [
+    NodeChildProcess.execFileSync("git", [
       "show",
       `${base}:apps/web/src/components/settings/${name}.${index === 0 ? "tsx" : "ts"}`,
     ]),
   );
 }
-await writeFile(
-  path.join(fixture, "index.html"),
+await NodeFS.writeFile(
+  NodePath.join(fixture, "index.html"),
   '<!doctype html><html lang="de" class="dark"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic model limits review</title></head><body><div id="root"></div><script type="module" src="./fixture.tsx"></script></body></html>',
 );
-await writeFile(
-  path.join(fixture, "fixture.tsx"),
+await NodeFS.writeFile(
+  NodePath.join(fixture, "fixture.tsx"),
   `
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -81,7 +85,7 @@ createRoot(document.getElementById("root")).render(<main className="mx-auto max-
 );
 let browser;
 let log = "";
-const server = spawn(
+const server = NodeChildProcess.spawn(
   "pnpm",
   [
     "--dir",
@@ -111,7 +115,7 @@ const stopServer = (signal) => {
 };
 const receipt = {
   schema: "workjet.model-limits.synthetic-browser.v1",
-  head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+  head: NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   fixture: "synthetic component review profile; no installed data",
   owner: process.env.WORKJET_LIMITS_OWNER,
   serverPid: server.pid,
@@ -172,27 +176,27 @@ try {
       const assertLimits = async () => {
         const table = page.getByRole("table", { name: "LLM provider accounts" });
         if (mode !== "before") {
-          assert.equal(
+          NodeAssert.equal(
             await table.getByText(/Usage limit|Short-term limit|Long-term limit/).count(),
             0,
           );
           const mini = table.locator('[data-provider="minimax"]');
-          assert.equal(
+          NodeAssert.equal(
             await mini.getByText("Limit reached", { exact: true }).count(),
             mode === "after" ? 2 : 1,
           );
-          assert.equal(
+          NodeAssert.equal(
             await mini.locator('[role="meter"][aria-valuenow="0"]').count(),
             mode === "after" ? 2 : 1,
           );
-          assert.equal(
+          NodeAssert.equal(
             await table
               .locator('[data-provider="codex"] [role="meter"][aria-valuenow="43"]')
               .count(),
             1,
           );
           for (const provider of ["xai", "kimi"])
-            assert.equal(
+            NodeAssert.equal(
               await table
                 .locator('[data-provider="' + provider + '"] [title="Anbieter meldet kein Limit"]')
                 .count(),
@@ -200,11 +204,14 @@ try {
             );
           if (mode === "after") {
             const zai = table.locator('[data-provider="zai"]');
-            assert.equal(await zai.getByText("Short-term", { exact: true }).count(), 1);
-            assert.equal(await zai.getByText("7 Tage", { exact: true }).count(), 1);
-            assert.equal(await table.locator('[data-provider="claude"] [title*="5 h"]').count(), 1);
+            NodeAssert.equal(await zai.getByText("Short-term", { exact: true }).count(), 1);
+            NodeAssert.equal(await zai.getByText("7 Tage", { exact: true }).count(), 1);
+            NodeAssert.equal(
+              await table.locator('[data-provider="claude"] [title*="5 h"]').count(),
+              1,
+            );
           } else
-            assert.equal(
+            NodeAssert.equal(
               await table
                 .locator('[data-provider="zai"]')
                 .getByText("unbekannt", { exact: true })
@@ -212,8 +219,8 @@ try {
               2,
             );
           const overflow = await table.evaluate((node) => node.scrollWidth - node.clientWidth);
-          assert(overflow <= 1, `Table overflows ${overflow}px at ${width}`);
-          assert.equal(
+          NodeAssert.ok(overflow <= 1, `Table overflows ${overflow}px at ${width}`);
+          NodeAssert.equal(
             await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1),
             false,
           );
@@ -223,7 +230,7 @@ try {
       await page.reload();
       await page.getByRole("table", { name: "LLM provider accounts" }).waitFor();
       await assertLimits();
-      const screenshot = path.join(output, `limits-${mode}-${width}.png`);
+      const screenshot = NodePath.join(output, `limits-${mode}-${width}.png`);
       await page.screenshot({ path: screenshot, fullPage: true });
       receipt.stories.push({
         width,
@@ -231,13 +238,13 @@ try {
         cleanContext: true,
         reload: true,
         pass: true,
-        screenshot: path.basename(screenshot),
+        screenshot: NodePath.basename(screenshot),
       });
       await context.close();
     }
   }
-  assert.deepEqual(receipt.consoleErrors, []);
-  assert.deepEqual(receipt.failedRequests, []);
+  NodeAssert.deepEqual(receipt.consoleErrors, []);
+  NodeAssert.deepEqual(receipt.failedRequests, []);
   receipt.pass = true;
 } catch (error) {
   receipt.pass = false;
@@ -255,10 +262,13 @@ try {
       resolve();
     }, 5000).unref();
   });
-  await writeFile(path.join(output, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n");
-  await writeFile(path.join(output, "vite.log"), log);
-  await rm(fixture, { recursive: true, force: true });
-  for (const file of beforePaths) await rm(file, { force: true });
+  await NodeFS.writeFile(
+    NodePath.join(output, "receipt.json"),
+    JSON.stringify(receipt, null, 2) + "\n",
+  );
+  await NodeFS.writeFile(NodePath.join(output, "vite.log"), log);
+  await NodeFS.rm(fixture, { recursive: true, force: true });
+  for (const file of beforePaths) await NodeFS.rm(file, { force: true });
 }
 console.log(
   `Synthetic browser review passed: ${receipt.stories.length} viewport/host cases, including reload; output ${output}`,

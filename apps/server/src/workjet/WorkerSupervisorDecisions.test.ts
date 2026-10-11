@@ -29,6 +29,7 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { EnvironmentId } from "@workjet/contracts";
 import {
   WorkerSupervisorAnswer,
+  WorkerSupervisorDecisionError,
   recordWorkerOwnerActivity,
   recoverWorkerDecisionAnswers,
   retryRetainedWorkerAnswers,
@@ -515,7 +516,7 @@ it.effect("an unsupported One-Shot question callback ends the run with an open-p
     yield* setup;
     let stopped = 0;
     const commands: OrchestrationCommand[] = [];
-    const providers = {respondToUserInput:() => Effect.fail(new Error("Native callback unavailable")),stopSession:() => Effect.sync(() => {stopped++})} as unknown as ProviderService["Service"];
+    const providers = {respondToUserInput:() => Effect.fail(new WorkerSupervisorDecisionError({message:"Native callback unavailable"})),stopSession:() => Effect.sync(() => {stopped++})} as unknown as ProviderService["Service"];
     yield* routeWorkerDecision(thread(workerId,"worker"),request("unsupported")).pipe(
       Effect.provideService(ProviderService,providers),
       Effect.provideService(OrchestrationEngineService,{dispatch:(command:OrchestrationCommand)=>Effect.sync(()=>{commands.push(command);return {sequence:1}})} as unknown as OrchestrationEngineService["Service"]));

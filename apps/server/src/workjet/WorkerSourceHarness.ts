@@ -4,6 +4,10 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import {
+  makeWorkerSourceModelSocket,
+  type WorkerSourceModelSocketDescription,
+} from "./WorkerSourceModelSocket.ts";
+import {
   workerSourceNativeProfile,
   type WorkerSourceNativeProfile,
 } from "./WorkerSourceNativeProfile.ts";
@@ -94,6 +98,7 @@ function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void 
 
 export interface WorkerSourceHarness {
   readonly nativeProfile?: WorkerSourceNativeProfile;
+  readonly modelSocket?: WorkerSourceModelSocketDescription;
   readonly isRevoked: () => boolean;
   readonly identity: Readonly<
     Pick<
@@ -124,6 +129,7 @@ export async function installWorkerSourceRoute(
     readonly targetEnvironmentId: string;
     readonly requestDigest: string;
     readonly modelId: string;
+    readonly modelSocketRoot?: string;
     readonly harness?: RemoteWorkerHarness;
     readonly nativeProfile?: {
       readonly harness: WorkerSourceNativeProfile["harness"];
@@ -164,6 +170,7 @@ export async function installWorkerSourceRoute(
       original.port !== route.port ||
       existing.model !== pin.modelId ||
       existing.harness !== pin.harness ||
+      existing.modelSocket?.root !== pin.modelSocketRoot ||
       existing.nativeProfile?.harness !== pin.nativeProfile?.harness ||
       existing.nativeProfile?.directory !== pin.nativeProfile?.directory
     )
@@ -196,7 +203,7 @@ export async function installWorkerSourceRoute(
     if (!response.ok) throw new Error("Source worker authority rejected request");
     return response.json() as Promise<unknown>;
   };
-  const server: NodeHttp.Server = NodeHttp.createServer(async (req, res) => {
+  const onRequest: NodeHttp.RequestListener = async (req, res) => {
     const messages = pin.harness === "claude-code";
     const authenticated =
       req.headers.authorization !== undefined
@@ -328,7 +335,8 @@ export async function installWorkerSourceRoute(
       busy = false;
       res.off("close", disconnect);
     }
-  });
+  };
+  const server = NodeHttp.createServer(onRequest);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -340,7 +348,10 @@ export async function installWorkerSourceRoute(
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
   const baseUrl = `http://127.0.0.1:${address.port}/v1`;
   let nativeProfile: WorkerSourceNativeProfile | undefined;
+  let modelSocket: Awaited<ReturnType<typeof makeWorkerSourceModelSocket>> | undefined;
   try {
+    if (pin.modelSocketRoot !== undefined)
+      modelSocket = await makeWorkerSourceModelSocket(pin.modelSocketRoot, onRequest);
     if (pin.nativeProfile) {
       nativeProfile = workerSourceNativeProfile({
         ...pin.nativeProfile,
@@ -365,12 +376,14 @@ export async function installWorkerSourceRoute(
       }
     }
   } catch {
+    await modelSocket?.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     throw new Error("Worker source native profile could not be prepared");
   }
   const harness: WorkerSourceHarness = {
     ...(nativeProfile ? { nativeProfile } : {}),
+    ...(modelSocket ? { modelSocket: modelSocket.description } : {}),
     isRevoked: () => revoked,
     identity: Object.freeze({
       sourceEnvironmentId: route.sourceEnvironmentId,
@@ -418,7 +431,7 @@ export async function installWorkerSourceRoute(
       for (const controller of active) controller.abort();
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
-      await closed;
+      await Promise.all([closed, modelSocket?.close()]);
       // Keep the revoked tombstone: restart must fail closed, never use target auth.
     },
   };

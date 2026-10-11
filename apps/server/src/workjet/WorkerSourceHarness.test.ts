@@ -8,6 +8,7 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
+import { makeWorkerSourceModelSocket } from "./WorkerSourceModelSocket.ts";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -342,7 +343,11 @@ it("runs Claude Messages tool round trips through the same pinned source route",
     installWorkerSourceRoute(route.requestId, route, { ...pin, harness: "codex-cli" }),
   ).rejects.toThrow("substitution");
 });
-async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: string | undefined) {
+async function verifySourceOnlyLoopback(
+  platform: NodeJS.Platform,
+  tmpdir: string | undefined,
+  transport: "tcp" | "unix" = "tcp",
+) {
   const directory = await NodeFSP.mkdtemp(
     NodePath.join(
       tmpdir ?? (platform === "darwin" ? "/Volumes/tmp" : NodeOS.tmpdir()),
@@ -383,7 +388,7 @@ async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: strin
   const route = {
     sourceEnvironmentId: "source",
     targetEnvironmentId: "target",
-    requestId: "native-profile-worker",
+    requestId: transport === "tcp" ? "native-profile-worker" : "native-profile-worker-unix",
     requestDigest: "native-profile-digest",
     capability: "native-source-capability",
     port: address.port,
@@ -393,9 +398,39 @@ async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: strin
     requestDigest: route.requestDigest,
     modelId: "gpt-6.1-sol",
     nativeProfile: { harness: "minimax-code" as const, directory },
+    ...(transport === "unix" ? { modelSocketRoot: NodePath.join(directory, "ipc") } : {}),
   };
   const harness = await installWorkerSourceRoute(route.requestId, route, pin);
   cleanups.push(harness.revoke);
+  const invoke = (
+    path: string,
+    options: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ): Promise<Response> => {
+    if (transport === "tcp") return fetch(harness.baseUrl + path, options);
+    const socket = harness.modelSocket;
+    if (!socket) throw new Error("Missing private model socket");
+    return new Promise((resolve, reject) => {
+      const request = NodeHttp.request(
+        { socketPath: socket.path, path: "/v1" + path, ...options },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.once("error", reject);
+          response.once("end", () =>
+            resolve(
+              new Response(Buffer.concat(chunks).toString("utf8"), {
+                status: response.statusCode ?? 500,
+                headers: { "content-type": response.headers["content-type"] ?? "" },
+              }),
+            ),
+          );
+        },
+      );
+      request.once("error", reject);
+      request.end(options.body);
+    });
+  };
+  expect(harness.modelSocket === undefined).toBe(transport === "tcp");
   const profile = JSON.parse(
     await NodeFSP.readFile(NodePath.join(directory, "config.yaml"), "utf8"),
   );
@@ -403,18 +438,14 @@ async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: strin
   expect(Object.keys(profile.custom_provider["workjet-source"].models)).toEqual(["gpt-6.1-sol"]);
   if (platform !== "win32")
     expect((await NodeFSP.stat(NodePath.join(directory, "config.yaml"))).mode & 0o077).toBe(0);
-  expect(
-    (await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": "wrong-key" } })).status,
-  ).toBe(403);
-  const catalog = await fetch(harness.baseUrl + "/models", {
-    headers: { "x-api-key": harness.apiKey },
-  });
+  expect((await invoke("/models", { headers: { "x-api-key": "wrong-key" } })).status).toBe(403);
+  const catalog = await invoke("/models", { headers: { "x-api-key": harness.apiKey } });
   expect(await catalog.json()).toEqual({
     object: "list",
     data: [{ id: "gpt-6.1-sol", object: "model", owned_by: "workjet-source" }],
   });
   for (let n = 1; n <= 20; n++) {
-    const response = await fetch(harness.baseUrl + "/messages?beta=true", {
+    const response = await invoke("/messages?beta=true", {
       method: "POST",
       headers: { "x-api-key": harness.apiKey, "content-type": "application/json" },
       body: JSON.stringify({ model: harness.model, stream: true }),
@@ -433,10 +464,29 @@ async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: strin
     }),
   ).rejects.toThrow("substitution");
   admitted = false;
-  expect(
-    (await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": harness.apiKey } })).status,
-  ).toBe(502);
+  expect((await invoke("/models", { headers: { "x-api-key": harness.apiKey } })).status).toBe(502);
+  if (harness.modelSocket) {
+    const socket = harness.modelSocket;
+    await expect(
+      installWorkerSourceRoute(route.requestId, route, {
+        ...pin,
+        modelSocketRoot: NodePath.join(directory, "replacement"),
+      }),
+    ).rejects.toThrow("substitution");
+    await harness.revoke();
+    expect(await NodeFSP.lstat(socket.path).catch(() => undefined)).toBeUndefined();
+  }
 }
+it("uses private IPC with the same pinned model and fresh source admission", async () => {
+  if (NodeOS.platform() !== "linux") {
+    await expect(
+      makeWorkerSourceModelSocket("unsupported", (_request, response) => response.end()),
+    ).rejects.toThrow("unavailable");
+    return;
+  }
+  await verifySourceOnlyLoopback(NodeOS.platform(), undefined, "unix");
+});
+
 it.effect(
   "admits a source-only catalog and native API-key requests before forwarding unchanged SSE",
   () =>

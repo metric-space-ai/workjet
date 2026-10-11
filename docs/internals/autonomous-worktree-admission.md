@@ -123,3 +123,23 @@ This allocation and custody receipt is a prerequisite, not a sandbox witness,
 an enrolled native Parent or an enabled provider policy. Every autonomous-worktree
 provider mode remains unsupported; whole execution containment, native authority
 and installed GPU acceptance are still required.
+
+## Private worker model IPC
+
+The target source setup requests a private model socket when a remote request
+carries an execution-policy reference. Policy-free requests keep their existing
+TCP loopback transport. On Linux, the extra endpoint uses the same request handler,
+pinned model, API key and fresh source admission as loopback. It is not a second
+account route or a native execution permit.
+
+The socket is private to the service UID and is reached through the original
+directory descriptor under /proc. A namespace launcher can mount only this
+endpoint without exposing the host network. Original directory/socket identities
+are captured from the filesystem. Rename or replacement of the directory does
+not redirect the listener or make shutdown recursively remove replacement data.
+Revocation aborts requests and closes both endpoints.
+
+No provider is switched to this endpoint yet: the namespace-side bridge, complete
+CLI/file/MCP enforcement and native team admission remain required before an
+autonomous-worktree mode can be supported. Non-Linux hosts reject private IPC
+explicitly. This transport component is not installed G2 acceptance.

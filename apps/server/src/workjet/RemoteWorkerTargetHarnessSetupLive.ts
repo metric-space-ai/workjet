@@ -84,6 +84,9 @@ export const make = Effect.gen(function* () {
           requestDigest,
           modelId: binding.modelRef.modelId,
           harness: request.harness ?? "codex-cli",
+          ...(request.executionPolicy === undefined
+            ? {}
+            : { modelSocketRoot: path.join(server.stateDir, "worker-model-ipc") }),
           ...(request.harness === undefined ||
           request.harness === "codex-cli" ||
           request.harness === "claude-code"

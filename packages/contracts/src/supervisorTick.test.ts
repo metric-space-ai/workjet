@@ -23,8 +23,8 @@ describe("initial supervisor tick planning", () => {
   });
   it("restores a saved first due time without sampling again and caps interval reductions", () => {
     const state: SupervisorTickState = {
-      firstTickAt: new Date(now + 20 * 60_000).toISOString(),
-      lastTickAt: new Date(now).toISOString(),
+      firstTickAt: "2026-10-11T13:20:00.000Z",
+      lastTickAt: "2026-10-11T13:00:00.000Z",
       lastControlAt: null,
       outcome: "scheduled",
     };

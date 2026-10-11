@@ -162,8 +162,8 @@ describe("supervisor situation", () => {
     const threads = [
       base,
       oneShot("active", null),
-      oneShot("recent", new Date(now - 24 * 60 * 60_000 + 1).toISOString()),
-      oneShot("expired", new Date(now - 24 * 60 * 60_000).toISOString()),
+      oneShot("recent", "2026-10-10T10:00:00.001Z"),
+      oneShot("expired", "2026-10-10T10:00:00.000Z"),
       { ...oneShot("deleted", null), deletedAt: base.updatedAt },
       { ...base, id: ThreadId.make("archived-persistent"), archivedAt: base.updatedAt },
       { ...oneShot("foreign", null), projectId: ProjectId.make("other") },

@@ -53,7 +53,13 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
             threadId: supervisor.id,
             firstTickAt: DateTime.formatIso(DateTime.makeUnsafe(firstTickAt)),
             createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
-          });
+          }).pipe(
+            Effect.catch((error) =>
+              error._tag === "OrchestrationCommandInvariantError" && error.detail === "Command produced no events."
+                ? Effect.void
+                : Effect.logWarning("Supervisor initial control scheduling failed", { threadId: supervisor.id, error }),
+            ),
+          );
         }
         continue;
       }

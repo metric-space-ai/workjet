@@ -55,6 +55,117 @@ function settingsWithProviderInstances(): UnifiedSettings {
 }
 
 describe("instance-scoped model selection", () => {
+  it("does not treat an untested custom model setting as a checked target default", () => {
+    const settings = settingsWithProviderInstances();
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("claude_openrouter"),
+        settings,
+        [
+          provider({
+            provider: ProviderDriverKind.make("claudeAgent"),
+            instanceId: "claude_openrouter",
+          }),
+        ],
+        "openai/gpt-5.5",
+        [],
+      ),
+    ).toBeNull();
+  });
+
+  it("switches from a Claude model to the checked Codex default", () => {
+    const providers = [
+      provider({ instanceId: "codex", models: ["gpt-5.5"] }),
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-4-6"],
+      }),
+    ];
+    const settings: UnifiedSettings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          routeViaGateway: true,
+          config: {},
+        },
+      },
+    };
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("codex"),
+        settings,
+        providers,
+        "claude-sonnet-4-6",
+        [],
+      ),
+    ).toBe("gpt-5.5");
+  });
+
+  it("retains a gateway model only when the supplied catalog contains its exact id", () => {
+    const providers = [provider({ instanceId: "codex", models: ["gpt-5.5"] })];
+    const settings: UnifiedSettings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          routeViaGateway: true,
+          config: {},
+        },
+      },
+    };
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("codex"),
+        settings,
+        providers,
+        "claude-sonnet-4-6",
+        [{ id: "claude-sonnet-4-6" }],
+      ),
+    ).toBe("claude-sonnet-4-6");
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("codex"),
+        settings,
+        providers,
+        "claude-sonnet-4-6",
+        [{ id: "claude-*" }],
+      ),
+    ).toBe("gpt-5.5");
+  });
+
+  it("uses the marked target default and refuses a switch with no checked model", () => {
+    const target = provider({
+      instanceId: "claudeAgent",
+      models: ["claude-sonnet-4-6", "claude-opus-4-6"],
+    });
+    const providers = [
+      {
+        ...target,
+        models: target.models.map((model, index) => ({ ...model, isDefault: index === 1 })),
+      },
+    ];
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("claudeAgent"),
+        DEFAULT_UNIFIED_SETTINGS,
+        providers,
+        "gpt-5.5",
+        [],
+      ),
+    ).toBe("claude-opus-4-6");
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("codex"),
+        DEFAULT_UNIFIED_SETTINGS,
+        [provider({ instanceId: "codex" })],
+        "claude-sonnet-4-6",
+        [],
+      ),
+    ).toBeNull();
+  });
+
   it("uses MiniMax's native catalog without requiring a legacy custom-model bucket", () => {
     const preview = "MiniMax-M3.1-Flash-Preview";
     const settings: UnifiedSettings = {

@@ -246,27 +246,36 @@ export function resolveAppModelSelectionForInstance(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
   selectedModel: string | null | undefined,
+  gatewayModels?: ReadonlyArray<{ readonly id: string }>,
 ): string | null {
   const entry = deriveProviderInstanceEntries(providers).find(
     (candidate) => candidate.instanceId === instanceId,
   );
   if (!entry) return null;
-  // A GATEWAY-ROUTED instance serves whatever model the Workjet gateway
-  // routes — the harness is only the engine. Clamping to the instance's
-  // native model list here was the last place harness choice silently
-  // overrode the model choice (picking the Claude Code harness snapped the
-  // model back to claude-fable-5): keep the requested model verbatim.
+  // Saved gateway selections are retained on reload. A harness switch supplies
+  // the known catalog and must validate against it or the target's model checks.
   const requested = selectedModel?.trim();
   if (
     requested !== undefined &&
     requested.length > 0 &&
-    settings.providerInstances?.[instanceId]?.routeViaGateway === true
+    settings.providerInstances?.[instanceId]?.routeViaGateway === true &&
+    (gatewayModels === undefined || gatewayModels.some((model) => model.id === requested))
   ) {
     return requested;
   }
-  const options = getAppModelOptionsForInstance(settings, entry);
+  const options =
+    gatewayModels === undefined
+      ? getAppModelOptionsForInstance(settings, entry)
+      : applyInstanceModelPreferences(
+          entry.models.map(toAppModelOption),
+          readInstanceModelPreferences(settings, instanceId),
+        );
+  const checkedSelection =
+    gatewayModels === undefined || entry.models.some((model) => model.slug === requested)
+      ? selectedModel
+      : null;
   return (
-    resolveSelectableModel(entry.driverKind, selectedModel, options) ??
+    resolveSelectableModel(entry.driverKind, checkedSelection, options) ??
     options.find((option) => option.isDefault)?.slug ??
     options[0]?.slug ??
     entry.models.find((model) => model.isDefault)?.slug ??

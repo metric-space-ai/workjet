@@ -102,7 +102,7 @@ export function ProjectOverviewCard({
       <div className="flex min-w-0 items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <h2
-            className="break-words text-sm leading-5 font-medium"
+            className="break-words text-[13.5px] leading-5 font-medium"
             title={project.title}
             data-workjet-project-title=""
           >
@@ -111,7 +111,7 @@ export function ProjectOverviewCard({
                 href={website ?? undefined}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="hover:underline focus-visible:outline focus-visible:outline-ring"
+                className="hover:text-primary focus-visible:outline focus-visible:outline-ring"
               >
                 {project.title}
               </a>
@@ -125,7 +125,7 @@ export function ProjectOverviewCard({
               target="_blank"
               rel="noreferrer noopener"
               title={website}
-              className="block truncate text-[11px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline focus-visible:outline focus-visible:outline-ring"
+              className="block truncate text-xs text-muted-foreground hover:text-primary focus-visible:outline focus-visible:outline-ring"
             >
               {website}
             </a>
@@ -214,7 +214,7 @@ export function ProjectOverviewCard({
                     className="size-16"
                   />
                 ) : (
-                  <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-2xl font-semibold tracking-tight text-foreground/70">
+                  <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-[22px] font-semibold tracking-tight text-foreground/70">
                     {project.title.slice(0, 2).toUpperCase()}
                   </span>
                 )}
@@ -259,7 +259,7 @@ export function ProjectOverviewCard({
                     >
                       {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
                     </dt>
-                    <dd className="order-first min-w-0 break-words text-lg leading-6 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+                    <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
                       {metric ? (
                         <span
                           title={metric.message ?? metric.detail}
@@ -275,14 +275,13 @@ export function ProjectOverviewCard({
                           —
                         </span>
                       ) : slot.kind === "link" ? (
-                        <a
-                          href={slot.url}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="text-primary underline"
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
                         >
                           Link öffnen
-                        </a>
+                        </Button>
                       ) : slot.kind === "updated" ? (
                         <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
                           {activityAt === null ? "—" : projectUpdateAge(activityAt)}
@@ -312,7 +311,7 @@ export function ProjectOverviewCard({
           data-workjet-project-card-section="exit"
         >
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">Exit in fünf Jahren</h3>
+            <h3 className="text-[13.5px] font-medium">Exit in fünf Jahren</h3>
             <Button
               size="icon-xs"
               variant="ghost"

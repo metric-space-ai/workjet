@@ -188,7 +188,8 @@ export function ProjectOverviewEditor({
                   }
                 : null,
             });
-            if (validated.action !== "project.configure") throw new Error("Invalid configuration");
+            if (validated.action !== "project.configure")
+              throw new Error("Ungültige Einstellungen");
             metadata = {
               ...(validated.supervisorLumaId !== undefined
                 ? { supervisorLumaId: validated.supervisorLumaId }
@@ -203,7 +204,7 @@ export function ProjectOverviewEditor({
         } catch {
           setState({
             pending: false,
-            message: "Eingaben prüfen.",
+            message: "Eingaben prüfen",
           });
           return;
         }
@@ -213,7 +214,7 @@ export function ProjectOverviewEditor({
           if (metadata && onSaveConfiguration && !(await onSaveConfiguration(metadata))) {
             setState({
               pending: false,
-              message: "Projekteinstellungen konnten nicht gespeichert werden.",
+              message: "Projekteinstellungen nicht gespeichert",
             });
             return;
           }
@@ -225,7 +226,7 @@ export function ProjectOverviewEditor({
             if (!savedKpis) {
               setState({
                 pending: false,
-                message: "KPI-Angaben konnten nicht gespeichert werden.",
+                message: "KPIs nicht gespeichert",
               });
               return;
             }
@@ -234,14 +235,12 @@ export function ProjectOverviewEditor({
           if (saved) onCancel?.();
           setState({
             pending: false,
-            message: saved
-              ? "Projekt gespeichert."
-              : "Die Übersicht konnte nicht gespeichert werden.",
+            message: saved ? "Projekt gespeichert" : "Übersicht nicht gespeichert",
           });
         } catch {
           setState({
             pending: false,
-            message: "Die Übersicht konnte nicht gespeichert werden.",
+            message: "Übersicht nicht gespeichert",
           });
         } finally {
           resumeCalendarSource();
@@ -250,7 +249,7 @@ export function ProjectOverviewEditor({
     >
       <div className="grid items-center gap-x-3 gap-y-2 sm:grid-cols-[6rem_minmax(0,1fr)]">
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-token-budget`}>
-          Token-Budget
+          Budget (Mrd.)
         </label>
         <div className="grid gap-1">
           <div className="flex items-center gap-2">
@@ -264,7 +263,6 @@ export function ProjectOverviewEditor({
               disabled={state.pending}
               aria-invalid={errors.budget !== undefined}
             />
-            <span className="text-xs">B</span>
           </div>
           {errors.budget !== undefined && (
             <p className="text-xs text-red-400" role="alert">
@@ -273,7 +271,7 @@ export function ProjectOverviewEditor({
           )}
         </div>
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-repository`}>
-          Repository
+          Git-Quelle
         </label>
         <Input
           id={`${id}-repository`}
@@ -287,7 +285,7 @@ export function ProjectOverviewEditor({
           disabled={state.pending}
         />
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-website`}>
-          Website
+          Webseite
         </label>
         <Input
           id={`${id}-website`}
@@ -525,11 +523,6 @@ export function ProjectOverviewEditor({
             />
           </div>
         ))}
-        {!canConfigureKpis && (
-          <p className="text-xs text-muted-foreground" role="status">
-            KPI-Angaben brauchen den KPI-Dienst der Instanz.
-          </p>
-        )}
       </div>
       <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-border bg-popover pt-3">
         {onArchive && (
@@ -544,10 +537,10 @@ export function ProjectOverviewEditor({
                 const saved = await onArchive();
                 setState({
                   pending: false,
-                  message: saved ? "" : "Das Projekt konnte nicht gespeichert werden.",
+                  message: saved ? "" : "Projekt nicht gespeichert",
                 });
               } catch {
-                setState({ pending: false, message: "Speichern fehlgeschlagen." });
+                setState({ pending: false, message: "Speichern fehlgeschlagen" });
               }
             }}
           >
@@ -557,7 +550,7 @@ export function ProjectOverviewEditor({
         <Button
           type="button"
           size="sm"
-          variant="ghost"
+          variant="outline"
           disabled={state.pending}
           className="ml-auto"
           onClick={cancel}

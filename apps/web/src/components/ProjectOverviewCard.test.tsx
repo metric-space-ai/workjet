@@ -123,7 +123,7 @@ describe("compact project gallery", () => {
     expect(markup).toContain("Ready");
     expect(markup).toContain('href="https://greppy.xyz/plan"');
     expect(markup).toContain("7 tasks");
-    expect(markup).toMatch(/<dd class="[^"]*text-lg[^"]*">7 tasks<\/dd>/);
+    expect(markup).toMatch(/<dd class="[^"]*text-\[22px\][^"]*">7 tasks<\/dd>/);
     expect(markup).not.toMatch(/<dt[^>]*class="[^"]*truncate/);
   });
 });

@@ -47,7 +47,10 @@ describe("compact project configuration", () => {
       />,
     );
     expect(markup.match(/placeholder="Kennzahl in einem Satz"/g)).toHaveLength(3);
-    expect(markup).toContain("KPI-Angaben brauchen den KPI-Dienst der Instanz.");
+    expect(markup).not.toContain("KPI-Angaben brauchen");
+    expect(markup).toContain("Git-Quelle");
+    expect(markup).toContain("Webseite");
+    expect(markup).toContain("Budget (Mrd.)");
     expect(markup).not.toContain("Entered metric");
     expect(markup).not.toContain("type</label>");
     expect(markup).toContain("Regeltermin Wochentag");
@@ -79,7 +82,8 @@ describe("compact project configuration", () => {
       />,
     );
     expect(markup).toContain("Count visits this week");
-    expect(markup).toContain("analytics_not_connected");
+    expect(markup).toContain("Quelle fehlt");
+    expect(markup).not.toContain(">analytics_not_connected<");
     expect(markup).not.toContain("KPI prompts need");
     expect(markup.match(/type="number"/g)).toHaveLength(1);
     expect(markup).toContain("Supervisor-Takt in Minuten");
@@ -94,6 +98,9 @@ describe("compact project configuration", () => {
         onSaveKpis={async () => true}
       />,
     );
-    expect(markup).toContain("KPI-Angaben brauchen den KPI-Dienst der Instanz.");
+    expect(markup).not.toContain("KPI-Angaben brauchen");
+    expect(
+      markup.match(/<input[^>]*disabled=""[^>]*placeholder="Kennzahl in einem Satz"/g),
+    ).toHaveLength(3);
   });
 });

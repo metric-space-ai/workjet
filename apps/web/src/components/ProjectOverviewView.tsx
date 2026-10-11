@@ -10,6 +10,7 @@ import {
   type ProjectOverviewStatus,
   type ProjectOwnerOverview,
 } from "../projectOverviewModel";
+import { ArrowUpRightIcon } from "lucide-react";
 import { Button } from "./ui/button";
 
 const toneClasses: Record<string, string> = {
@@ -68,7 +69,7 @@ export function ProjectOverviewView(props: {
     onOpenChat(scopeThreadRef(thread.environmentId, thread.id));
   return (
     <main
-      className="mx-auto grid w-full max-w-[1320px] min-w-0 items-start gap-5 p-4 text-sm sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
+      className="mx-auto grid w-full max-w-[1320px] min-w-0 items-start gap-5 p-4 text-[13.5px] sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
       data-workjet-project-overview={data.projectId}
       lang={language}
     >
@@ -96,7 +97,7 @@ export function ProjectOverviewView(props: {
             {props.actions}
           </div>
           {data.summary !== null && (
-            <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{data.summary}</p>
+            <p className="mt-1.5 text-[13.5px] leading-6 text-muted-foreground">{data.summary}</p>
           )}
           <SupervisorTickStatus {...data.supervisorTick} language={language} text={text} />
         </header>
@@ -123,7 +124,7 @@ export function ProjectOverviewView(props: {
             {data.disruptions.map((thread) => (
               <p
                 key={thread.id}
-                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-[13px]"
+                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-[13.5px]"
               >
                 <span className="size-1.5 shrink-0 rounded-full bg-red-400" />
                 <span className="min-w-0 break-words">
@@ -146,7 +147,7 @@ export function ProjectOverviewView(props: {
               return (
                 <p
                   key={thread.id}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-[13px]"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-[13.5px]"
                 >
                   <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
                   <span className="min-w-0 break-words">
@@ -208,7 +209,7 @@ export function ProjectOverviewView(props: {
             </span>
           </Heading>
           {data.goals.length === 0 ? (
-            <p className="rounded-lg border border-border bg-card px-3 py-2 text-[13px] text-muted-foreground">
+            <p className="rounded-lg border border-border bg-card px-3 py-2 text-[13.5px] text-muted-foreground">
               {text.noGoals}
             </p>
           ) : (
@@ -241,13 +242,14 @@ export function ProjectOverviewView(props: {
                   </div>
                   <div role="cell" className="min-w-0 text-xs text-muted-foreground max-sm:inline">
                     {goal.thread ? (
-                      <button
-                        className="text-left break-words"
-                        type="button"
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        className="h-auto max-w-full justify-start py-0.5 text-left break-words whitespace-normal"
                         onClick={() => open(goal.thread!)}
                       >
                         {goal.owner}
-                      </button>
+                      </Button>
                     ) : (
                       goal.owner
                     )}
@@ -268,7 +270,7 @@ export function ProjectOverviewView(props: {
         <section data-workjet-overview-section="results" aria-labelledby="overview-results">
           <Heading id="overview-results">{text.results}</Heading>
           {data.merged.length === 0 ? (
-            <p className="rounded-lg border border-border bg-card px-3 py-2 text-[13px] text-muted-foreground">
+            <p className="rounded-lg border border-border bg-card px-3 py-2 text-[13.5px] text-muted-foreground">
               {text.noResults}
             </p>
           ) : (
@@ -299,7 +301,7 @@ export function ProjectOverviewView(props: {
         <section data-workjet-overview-section="history" aria-labelledby="overview-history">
           <Heading id="overview-history">{text.history}</Heading>
           {data.history.length === 0 ? (
-            <p className="text-[13px] text-muted-foreground">{text.noHistory}</p>
+            <p className="text-[13.5px] text-muted-foreground">{text.noHistory}</p>
           ) : (
             <ul>
               {data.history.map((event) => (
@@ -309,11 +311,11 @@ export function ProjectOverviewView(props: {
                 >
                   <time
                     dateTime={new Date(event.at).toISOString()}
-                    className="pt-px text-[11.5px] text-muted-foreground tabular-nums"
+                    className="pt-px text-xs text-muted-foreground tabular-nums"
                   >
                     {date(event.at)}
                   </time>
-                  <span className="min-w-0 break-words text-[13px] leading-5 text-muted-foreground">
+                  <span className="min-w-0 break-words text-[13.5px] leading-5 text-muted-foreground">
                     {event.sentence}
                   </span>
                 </li>
@@ -321,73 +323,19 @@ export function ProjectOverviewView(props: {
             </ul>
           )}
         </section>
-        <details
-          className="min-w-0 rounded-lg border border-dashed border-border px-3 py-2.5"
-          data-workjet-overview-section="diagnosis"
-        >
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            {text.diagnosis}
-          </summary>
-          <div
-            className="mt-3 overflow-hidden rounded-lg border border-border"
-            role="table"
-            aria-label={text.diagnosis}
-          >
-            <div
-              className="hidden grid-cols-[minmax(0,1fr)_9rem_7rem_6.5rem] gap-3 border-b border-border px-3 py-1.5 text-xs text-muted-foreground sm:grid"
-              role="row"
-            >
-              <span role="columnheader">Unterhaltung</span>
-              <span role="columnheader">Harness · Modell</span>
-              <span role="columnheader">{text.connection}</span>
-              <span role="columnheader">{text.status}</span>
-            </div>
-            {data.members.map((thread) => {
-              const config = thread.workjetConfig;
-              const native =
-                config.schemaVersion === 2 &&
-                (config.team?.role === "supervisor" || config.ctoxCrewChat !== undefined);
-              const status = projectOverviewWorkerState(thread);
-              return (
-                <div
-                  key={thread.environmentId + ":" + thread.id}
-                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 border-b border-border px-3 py-2 text-xs last:border-0 sm:grid-cols-[minmax(0,1fr)_9rem_7rem_6.5rem]"
-                  role="row"
-                >
-                  <div role="cell" className="min-w-0 break-words font-medium">
-                    {thread.title}
-                  </div>
-                  <div role="cell" className="min-w-0 break-words text-muted-foreground">
-                    {native
-                      ? "—"
-                      : [thread.session?.providerName, thread.modelSelection.model]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
-                  </div>
-                  <div role="cell" className="text-muted-foreground">
-                    {thread.session?.status ?? "—"}
-                  </div>
-                  <div role="cell">
-                    <StatusChip status={status} label={text[status]} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </details>
       </div>
-      <aside className="min-w-0 space-y-3 max-lg:order-first">
+      <aside className="min-w-0 space-y-3">
         <section className="rounded-lg border border-border bg-card px-3.5 py-3">
           <h2 className="text-xs text-muted-foreground">{text.nextMeeting}</h2>
           {data.recurring && weekday !== null ? (
-            <p className="mt-1 text-[17px] font-semibold">
+            <p className="mt-1 text-[13.5px] font-semibold">
               {weekday} · {data.recurring.time}
               <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                 {data.recurring.timezone}
               </span>
             </p>
           ) : (
-            <p className="mt-1 text-[17px] font-semibold text-muted-foreground/60">
+            <p className="mt-1 text-[13.5px] font-semibold text-muted-foreground/60">
               {text.noNextMeeting}
             </p>
           )}
@@ -416,17 +364,18 @@ export function ProjectOverviewView(props: {
             <dt className="text-muted-foreground">{text.links}</dt>
             <dd className="min-w-0">
               {data.links.length ? (
-                <span className="flex flex-wrap gap-x-3">
+                <span className="flex flex-wrap gap-1.5">
                   {data.links.map((link) => (
-                    <a
+                    <Button
                       key={link.url}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="break-words text-primary [overflow-wrap:anywhere]"
+                      variant="outline"
+                      size="xs"
+                      title={link.url}
+                      render={<a href={link.url} target="_blank" rel="noopener noreferrer" />}
                     >
-                      {link.label} ↗
-                    </a>
+                      {link.label}
+                      <ArrowUpRightIcon className="size-3.5" aria-hidden="true" />
+                    </Button>
                   ))}
                 </span>
               ) : (

@@ -16,9 +16,9 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { PROJECT_OVERVIEW_TEXT, type ProjectOverviewLanguage } from "../projectOverviewText";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
-const chip =
-  "rounded-full border border-border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50";
 export function ProjectOverviewQuestion(props: {
   readonly pending: PendingUserInput;
   readonly language: ProjectOverviewLanguage;
@@ -51,13 +51,19 @@ export function ProjectOverviewQuestion(props: {
           <legend className="break-words leading-5">{question.question}</legend>
           <div className="flex flex-wrap gap-1.5">
             {question.options.map((option) => (
-              <button
+              <Button
                 key={option.label}
                 type="button"
+                size="xs"
+                variant={
+                  drafts[question.id]?.selectedOptionLabels?.includes(option.label)
+                    ? "default"
+                    : "outline"
+                }
                 aria-pressed={
                   drafts[question.id]?.selectedOptionLabels?.includes(option.label) ?? false
                 }
-                className={chip}
+                className="h-auto max-w-full py-1 text-left whitespace-normal"
                 title={option.description}
                 onClick={() =>
                   setDrafts((previous) => ({
@@ -71,14 +77,14 @@ export function ProjectOverviewQuestion(props: {
                 }
               >
                 {option.label}
-              </button>
+              </Button>
             ))}
           </div>
-          <input
+          <Input
             aria-label={question.question}
             placeholder={text.answer}
             value={drafts[question.id]?.customAnswer ?? ""}
-            className="w-full min-w-0 rounded border border-input bg-transparent px-2 py-1 text-sm"
+            className="w-full min-w-0"
             onChange={(event) =>
               setDrafts((previous) => ({
                 ...previous,
@@ -88,9 +94,9 @@ export function ProjectOverviewQuestion(props: {
           />
         </fieldset>
       ))}
-      <button type="submit" disabled={!answers || busy} className={chip}>
+      <Button type="submit" size="xs" disabled={!answers || busy}>
         {busy ? text.saving : text.answer}
-      </button>
+      </Button>
       {failed && (
         <p role="alert" className="text-xs text-muted-foreground">
           {text.saveFailed}
@@ -131,22 +137,16 @@ export function ProjectOverviewDecisions(props: {
       ))}
       {approvals.map((approval) => (
         <div key={approval.requestId} className="space-y-2">
-          <p>
-            {language === "de"
-              ? approval.requestKind === "file-read"
-                ? "Darf diese Luma eine Datei lesen?"
-                : approval.requestKind === "file-change"
-                  ? "Darf diese Luma Dateien ändern?"
-                  : "Darf diese Luma die Aktion ausführen?"
-              : approval.requestKind === "file-read"
-                ? "May this worker read a file?"
-                : approval.requestKind === "file-change"
-                  ? "May this worker change files?"
-                  : "May this worker perform the requested action?"}
+          <p className="break-words">
+            {approval.requestKind === "file-read"
+              ? text.permissionRead
+              : approval.requestKind === "file-change"
+                ? text.permissionChange
+                : text.permissionAction}
           </p>
-          <button type="button" className={chip} onClick={open}>
-            {language === "de" ? "Aktion prüfen und entscheiden" : "Review action and decide"}
-          </button>
+          <Button type="button" size="xs" variant="outline" onClick={open}>
+            {text.reviewAction}
+          </Button>
         </div>
       ))}
       {inputs.length === 0 && approvals.length === 0 && (
@@ -156,9 +156,9 @@ export function ProjectOverviewDecisions(props: {
             : text.decisionUnavailable}
         </p>
       )}
-      <button type="button" className="text-xs text-primary hover:underline" onClick={open}>
+      <Button type="button" size="xs" variant="outline" onClick={open}>
         {text.details}
-      </button>
+      </Button>
     </div>
   );
 }

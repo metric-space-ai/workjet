@@ -27,6 +27,8 @@ export interface WorkjetProjectRegistrySnapshot {
   readonly selectedProjectId: string | null;
   readonly refreshFailed?: boolean;
   readonly lastUpdatedAt?: number | undefined;
+  /** Only a successful source query in this session confirms calendar synchronization. */
+  readonly sourceConfirmed?: boolean;
   readonly refreshError?: Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>;
 }
 
@@ -318,6 +320,7 @@ export function applyWorkjetProjectRegistryResult(
     presentationInstanceId,
     phase: "ready",
     projects: result.response.projects,
+    sourceConfirmed: true,
     lastUpdatedAt: Date.now(),
     selectedProjectId: resolveSelectedWorkjetProjectId(
       result.response.projects,

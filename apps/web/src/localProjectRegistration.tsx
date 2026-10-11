@@ -33,7 +33,13 @@ export function ProjectTokenBudgetSourceSynchronizer() {
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const pending = useRef(new Set<string>());
   useEffect(() => {
-    if (selectedInstanceId === null || registry.phase !== "ready" || registry.refreshFailed) return;
+    if (
+      selectedInstanceId === null ||
+      registry.phase !== "ready" ||
+      registry.refreshFailed ||
+      registry.sourceConfirmed !== true
+    )
+      return;
     for (const update of tokenBudgetCalendarUpdates({
       instanceId: selectedInstanceId,
       nativeProjects: registry.projects,

@@ -6,9 +6,11 @@ import { MODELS_QUOTA_FRESH_FOR_MS, normalizeNativeModelsQuota } from "./Workjet
 export function NativeProviderLimits({
   provider,
   quota,
+  className = "",
 }: {
   readonly provider: string;
   readonly quota: WorkjetNativeProviderAccount["reportedQuota"];
+  readonly className?: string;
 }) {
   const [expiryTick, setExpiryTick] = useState(0);
   const now = Date.now();
@@ -30,7 +32,7 @@ export function NativeProviderLimits({
     return (
       <div
         role="cell"
-        className="text-xs text-muted-foreground"
+        className={`text-xs text-muted-foreground ${className}`}
         title={
           quota?.state === "unavailable"
             ? "Reported limits could not be read (quota_read_failed). Reopen Models to try again."
@@ -42,7 +44,7 @@ export function NativeProviderLimits({
     );
   }
   return (
-    <div role="cell" className="min-w-0">
+    <div role="cell" className={`min-w-0 ${className}`}>
       <AccountLimits
         provider={provider}
         health={{

@@ -181,6 +181,16 @@ try {
         ]) {
           const meter = row(id).getByRole("meter", { name: "Short-term verbleibend" });
           NodeAssert.equal(await meter.getAttribute("aria-valuenow"), String(rest));
+          if (width === 420) {
+            const cells = row(id).getByRole("cell");
+            const models = await cells.nth(1).boundingBox();
+            const limits = await cells.nth(2).boundingBox();
+            NodeAssert.ok(models && limits);
+            NodeAssert.ok(
+              models.y >= limits.y + limits.height - 1,
+              "Model text overlaps limits on a narrow viewport",
+            );
+          }
           NodeAssert.equal(await meter.locator("span").getAttribute("style"), `width: ${rest}%;`);
           NodeAssert.ok((await meter.locator("span").getAttribute("class")).includes(color));
           NodeAssert.equal(
@@ -198,6 +208,10 @@ try {
             0,
           );
         }
+        NodeAssert.equal(
+          await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+          0,
+        );
         receipt.stories.push({
           width,
           mode,

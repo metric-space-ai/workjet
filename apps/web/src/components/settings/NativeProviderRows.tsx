@@ -16,7 +16,7 @@ import {
   WORKJET_GATEWAY_PROVIDER_LABELS,
 } from "./WorkjetGatewayAccounts";
 const columns =
-  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
+  "grid grid-cols-[minmax(0,1fr)_2rem_4rem] items-center gap-x-3 sm:grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem]";
 
 function ProviderModels({
   provider,
@@ -48,7 +48,7 @@ function ProviderModels({
   ];
   const listId = "ctox-provider-models-" + provider;
   return (
-    <div className="min-w-0" role="cell">
+    <div className="col-span-full min-w-0 sm:col-span-1" role="cell">
       <Input
         nativeInput
         aria-label={`Models for ${provider} on CTOX`}
@@ -158,11 +158,14 @@ function NativeAccountRow({
   return (
     <>
       <div role="row" className={columns + " min-h-12 py-1.5"}>
-        <div role="cell" className="min-w-0 text-xs" title={account.id}>
+        <div role="cell" className="order-1 min-w-0 text-xs" title={account.id}>
           <span>Account {account.id.slice(0, 8)}</span>
           <p className="text-[11px] text-muted-foreground">CTOX · {label}</p>
         </div>
-        <div role="cell" className="flex min-w-0 flex-wrap gap-1">
+        <div
+          role="cell"
+          className="order-5 col-span-full flex min-w-0 flex-wrap gap-1 sm:order-2 sm:col-span-1"
+        >
           {selected.map((model) => (
             <div
               key={model}
@@ -243,8 +246,12 @@ function NativeAccountRow({
             </span>
           )}
         </div>
-        <NativeProviderLimits provider={account.provider} quota={account.reportedQuota} />
-        <div role="cell" className="flex justify-center">
+        <NativeProviderLimits
+          provider={account.provider}
+          quota={account.reportedQuota}
+          className="order-4 col-span-full py-1 sm:order-3 sm:col-span-1 sm:py-0"
+        />
+        <div role="cell" className="order-2 flex justify-center sm:order-4">
           {canEnable ? (
             <label
               className="relative inline-flex cursor-pointer items-center"
@@ -293,7 +300,7 @@ function NativeAccountRow({
             </span>
           )}
         </div>
-        <div role="cell" className="flex items-center gap-1">
+        <div role="cell" className="order-3 flex items-center gap-1 sm:order-5">
           <Button
             variant="ghost"
             size="icon-xs"
@@ -455,13 +462,16 @@ function NativeProviderGroup({
       className="border-b border-border/50"
     >
       <div role="row" className={columns + " min-h-9 py-1.5"}>
-        <div role="cell" className="flex items-center gap-1.5 text-xs font-medium">
+        <div
+          role="cell"
+          className="col-span-2 flex items-center gap-1.5 text-xs font-medium sm:col-span-1"
+        >
           {ProviderIcon && <ProviderIcon className="size-4 shrink-0" />}
           {providerLabel} · {label}
         </div>
         <div
           role="cell"
-          className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+          className="order-last col-span-full flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground sm:order-none sm:col-span-1"
         >
           <span>{registry ? `${accounts.length} instance accounts` : "Accounts not loaded"}</span>
           <Button
@@ -486,9 +496,9 @@ function NativeProviderGroup({
             {checkingAll ? "Checking…" : "Check all"}
           </Button>
         </div>
-        <div role="cell" />
-        <div role="cell" />
-        <div role="cell">
+        <div role="cell" className="hidden sm:block" />
+        <div role="cell" className="hidden sm:block" />
+        <div role="cell" className="col-start-3 row-start-1 sm:col-start-auto sm:row-start-auto">
           <Button
             variant="ghost"
             size="icon-xs"
@@ -505,7 +515,7 @@ function NativeProviderGroup({
 
       {registry && accounts.length > 0 && (
         <div role="row" className={columns + " py-1"}>
-          <div role="cell" className="text-xs text-muted-foreground">
+          <div role="cell" className="col-span-full text-xs text-muted-foreground sm:col-span-1">
             Shared models
           </div>
           <ProviderModels
@@ -540,9 +550,9 @@ function NativeProviderGroup({
               })();
             }}
           />
-          <div role="cell" />
-          <div role="cell" />
-          <div role="cell" />
+          <div role="cell" className="hidden sm:block" />
+          <div role="cell" className="hidden sm:block" />
+          <div role="cell" className="hidden sm:block" />
         </div>
       )}
       {registry &&

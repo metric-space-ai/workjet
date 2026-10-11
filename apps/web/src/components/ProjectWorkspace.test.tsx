@@ -148,7 +148,7 @@ describe("owner project overview", () => {
     const data = { ...overview([crew]), supervisorLumaId: "supervisor-identity" };
     const html = renderToStaticMarkup(<ProjectOverviewView data={data} onOpenChat={() => {}} />);
     expect(html).not.toContain("supervisor-identity");
-    expect(html).toContain("controlEnvironmentId");
+    expect(html).not.toContain("controlEnvironmentId");
     expect(html).toContain(">Rechner</dt><dd class=");
     expect(html).not.toMatch(/>Rechner<\/dt><dd[^>]*>desktop<\/dd>/u);
   });
@@ -188,9 +188,9 @@ describe("owner project overview", () => {
     };
     expect(overview([], { kpis }).kpis[0]).toMatchObject({
       value: "0 von 5",
-      explanation: expect.stringContaining("veraltet"),
+      note: "veraltet",
     });
-    expect(overview([], { kpis, language: "en" }).kpis[0]?.explanation).toContain("out of date");
+    expect(overview([], { kpis, language: "en" }).kpis[0]?.note).toBe("out of date");
   });
   it("keeps the goal sentence separate from handoff paths and technical directions", () => {
     expect(
@@ -239,21 +239,20 @@ describe("owner project overview", () => {
     } as EnvironmentThreadShell;
     expect(overview([supervisor, complete]).kpis[2]?.value).toBe("0");
     expect(overview([supervisor, complete]).goals[0]?.state).toBe("erledigt");
-    expect(overview([supervisor, withGoal, specialist]).kpis[2]?.value).toBeNull();
+    expect(overview([supervisor, withGoal, specialist]).kpis[2]?.value).toBe("—");
   });
   it("keeps an active one-shot that is waiting for its owner's answer", () => {
     expect(isRunningProjectOneShot({ ...worker, hasPendingUserInput: true })).toBe(true);
   });
 
-  it("renders exactly four honest KPIs and explains unavailable values without zero placeholders", () => {
+  it("renders five honest KPI values without explanation captions or zero placeholders", () => {
     const data = overview([supervisor, specialist]);
-    expect(data.kpis).toHaveLength(4);
-    expect(data.kpis.every((kpi) => kpi.value === null)).toBe(true);
-    expect(data.kpis.find((kpi) => kpi.id === "tasks")?.explanation).toContain("Erledigungsstand");
+    expect(data.kpis).toHaveLength(5);
+    expect(data.kpis.every((kpi) => kpi.value === "—")).toBe(true);
     const html = markup([supervisor, specialist]);
     expect(html).not.toContain("Sessions");
     expect(html).not.toContain("Latency");
-    expect(html).not.toContain(">—<");
+    expect(html).toContain(">—<");
   });
   it("uses confirmed to-dos before persistent goals without inventing completion", () => {
     const data = overview([supervisor, specialist], { meeting });
@@ -262,7 +261,7 @@ describe("owner project overview", () => {
       meeting.todos.items.map((item) => item.title),
     );
     expect(data.goals.every((goal) => goal.state === data.text.unknown)).toBe(true);
-    expect(data.kpis.find((kpi) => kpi.id === "tasks")?.value).toBeNull();
+    expect(data.kpis.find((kpi) => kpi.id === "tasks")?.value).toBe("—");
   });
   it("rejects another project's meeting and keeps saved persistent goals", () => {
     const data = overview([supervisor, specialist], {
@@ -285,14 +284,14 @@ describe("owner project overview", () => {
       title: "Measured result",
       state: "merged" as const,
     };
-    expect(overview([supervisor], { meeting, pullRequests: [pr] }).kpis[1]?.value).toBeNull();
+    expect(overview([supervisor], { meeting, pullRequests: [pr] }).kpis[1]?.value).toBe("—");
     expect(
       overview([supervisor], {
         meeting,
         pullRequests: [{ ...pr, mergedAt: "2026-10-08T00:00:00Z" }],
       }).kpis[1]?.value,
     ).toBe("1");
-    expect(overview([supervisor], { meeting }).kpis[1]?.value).toBeNull();
+    expect(overview([supervisor], { meeting }).kpis[1]?.value).toBe("—");
   });
   it("keeps confirmed merges separate from closed proposals", () => {
     const data = overview([supervisor], {
@@ -341,14 +340,14 @@ describe("owner project overview", () => {
     expect(html.slice(0, diagnosis)).not.toContain("gpt-6.1-sol");
     expect(html.slice(diagnosis)).toContain("gpt-6.1-sol");
     expect(html).not.toContain("<details open");
-    expect(html).toContain("noch nicht verfügbar");
+    expect(html).not.toMatch(/not yet available|noch nicht verfügbar/iu);
   });
   it("keeps the native supervisor route unknown rather than substituting its local thread model", () => {
     expect(markup([supervisor])).not.toContain("gpt-6.1-sol");
   });
   it("follows the mock's section order and translates all overview navigation in both languages", () => {
     for (const language of ["de", "en"] as const) {
-      const html = markup([supervisor], language);
+      const html = markup([{ ...supervisor, hasPendingUserInput: true }], language);
       const positions = ["decisions", "goals", "results", "history", "diagnosis"].map((section) =>
         html.indexOf('data-workjet-overview-section="' + section + '"'),
       );
@@ -360,7 +359,7 @@ describe("owner project overview", () => {
   });
   it("offers the real Jour fixe action even if its schedule is not available", () => {
     expect(markup([supervisor])).toContain("Jour fixe beitreten");
-    expect(markup([supervisor])).toContain("noch nicht verfügbar");
+    expect(markup([supervisor])).not.toMatch(/not yet available|noch nicht verfügbar/iu);
   });
   it("shows the actual pending question and its answer choices", () => {
     const html = renderToStaticMarkup(

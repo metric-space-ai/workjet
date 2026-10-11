@@ -1,0 +1,56 @@
+.overview-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-areas: "header" "meeting" "attention" "metrics" "goals" "results" "history" "facts" "diagnosis";
+}
+.overview-header {
+  grid-area: header;
+}
+.overview-meeting {
+  grid-area: meeting;
+}
+.overview-attention {
+  grid-area: attention;
+}
+.overview-metrics {
+  grid-area: metrics;
+}
+.overview-goals {
+  grid-area: goals;
+}
+.overview-results {
+  grid-area: results;
+}
+.overview-history {
+  grid-area: history;
+}
+.overview-facts {
+  grid-area: facts;
+}
+.overview-diagnosis {
+  grid-area: diagnosis;
+}
+.overview-meta-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+@media (min-width: 721px) {
+  .overview-goal-columns {
+    grid-template-columns: minmax(0, 1fr) 11rem 6.5rem;
+  }
+}
+@media (min-width: 980px) {
+  .overview-layout {
+    grid-template-columns: minmax(0, 1fr) 288px;
+    column-gap: 24px;
+    grid-template-areas:
+      "header meeting"
+      "attention meeting"
+      "metrics meeting"
+      "goals facts"
+      "results facts"
+      "history facts"
+      "diagnosis facts";
+  }
+}

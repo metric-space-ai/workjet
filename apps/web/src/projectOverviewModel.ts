@@ -5,7 +5,11 @@ import { projectKpiPresentation, type PromptedProjectKpis } from "./projectKpis"
 import { exitModelPresentation } from "./projectExitModel";
 import { resolveGalleryProjectOverview, type GalleryProject } from "./projectOverview";
 import { projectTeamSectionOf } from "./lib/projectTeamSections";
-import { PROJECT_OVERVIEW_TEXT, type ProjectOverviewLanguage } from "./projectOverviewText";
+import {
+  PROJECT_OVERVIEW_TEXT,
+  projectOverviewFormat,
+  type ProjectOverviewLanguage,
+} from "./projectOverviewText";
 
 export type ProjectOverviewWorkerState =
   | "running"
@@ -15,6 +19,59 @@ export type ProjectOverviewWorkerState =
   | "supervisorTimedOut"
   | "asks"
   | "disrupted";
+export type ProjectOverviewStatus = ProjectOverviewWorkerState | "completed";
+export function projectOverviewStatusTone(state: ProjectOverviewStatus) {
+  switch (state) {
+    case "disrupted":
+    case "missingSupervisor":
+    case "supervisorTimedOut":
+      return "red";
+    case "asks":
+    case "waitingSupervisor":
+      return "blue";
+    case "running":
+      return "amber";
+    case "completed":
+      return "green";
+    case "waiting":
+      return "gray";
+  }
+}
+/** PR #417 integration point: adapt ProjectTokenBudgetView totals into this read-only input. */
+export type ProjectOverviewTokenBudgetSource = {
+  readonly consumedTokens: number | null;
+  readonly limitBillions: number | null;
+  readonly partial?: boolean;
+};
+export function projectOverviewBudgetValue(
+  source?: ProjectOverviewTokenBudgetSource | null,
+): string {
+  if (
+    source?.consumedTokens == null ||
+    !Number.isFinite(source.consumedTokens) ||
+    source.consumedTokens < 0
+  )
+    return "—";
+  const used = (source.consumedTokens / 1_000_000_000).toFixed(1);
+  const limit = source.limitBillions;
+  if (limit == null || !Number.isFinite(limit) || limit <= 0) return used + "B";
+  const percent = Math.floor(
+    (source.consumedTokens / (Math.round(limit * 10) * 100_000_000)) * 100,
+  );
+  return `${used}/${limit.toFixed(1)}B (${source.partial ? "≥" : ""}${percent} %)`;
+}
+export function projectOverviewWorkerName(title: string, projectTitle: string) {
+  const suffix = title.match(/\s*\((Codex|Claude(?: Code)?|Cursor|Grok|OpenCode)\)\s*$/iu);
+  const withoutHarness = suffix ? title.slice(0, suffix.index).trim() : title.trim();
+  const prefix = projectTitle.trim();
+  const short = withoutHarness.toLowerCase().startsWith(prefix.toLowerCase())
+    ? withoutHarness
+        .slice(prefix.length)
+        .replace(/^[\s·:–—-]+/u, "")
+        .trim()
+    : withoutHarness;
+  return { name: short || withoutHarness, harness: suffix?.[1] ?? null };
+}
 export function projectOverviewWorkerState(
   thread: Pick<
     EnvironmentThreadShell,
@@ -29,8 +86,8 @@ export function projectOverviewWorkerState(
   if (thread.workerDecisionProblem === "missing-supervisor") return "missingSupervisor";
   if (thread.workerDecisionProblem === "timed-out") return "supervisorTimedOut";
   if (thread.waitingOnSupervisor) return "waitingSupervisor";
-  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return "asks";
   if (thread.session?.status === "error") return "disrupted";
+  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return "asks";
   if (
     thread.session?.status === "running" ||
     thread.session?.status === "starting" ||
@@ -46,7 +103,9 @@ export function isRunningProjectOneShot(thread: EnvironmentThreadShell) {
     thread.session?.status === "starting" ||
     thread.backgroundLiveness === "working" ||
     thread.hasPendingApprovals ||
-    thread.hasPendingUserInput
+    thread.hasPendingUserInput ||
+    thread.waitingOnSupervisor ||
+    thread.workerDecisionProblem != null
   );
 }
 export type ProjectOverviewPr = {
@@ -60,6 +119,8 @@ export type ProjectOverviewGoal = {
   readonly id: string;
   readonly title: string;
   readonly owner: string;
+  readonly harness: string | null;
+  readonly status: ProjectOverviewStatus;
   readonly state: string;
   readonly thread?: EnvironmentThreadShell;
 };
@@ -92,6 +153,7 @@ export function buildProjectOwnerOverview(input: {
   readonly pullRequests?: readonly ProjectOverviewPr[];
   readonly openTaskCount?: number | null;
   readonly now?: number;
+  readonly projectTokenBudgetSource?: ProjectOverviewTokenBudgetSource | null;
 }) {
   const { project, language } = input;
   const text = PROJECT_OVERVIEW_TEXT[language];
@@ -115,26 +177,32 @@ export function buildProjectOwnerOverview(input: {
         title: item.title,
         owner: item.owner ?? text.unknown,
         state: text.unknown,
+        harness: null,
+        status: "waiting",
       }))
     : parents.flatMap((thread) => {
         const team =
           thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
         const goal =
           thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined;
+        const name = projectOverviewWorkerName(thread.title, project.title);
+        const status: ProjectOverviewStatus =
+          goal?.status === "complete"
+            ? "completed"
+            : goal?.status === "blocked"
+              ? "disrupted"
+              : goal?.status === "paused"
+                ? "waiting"
+                : projectOverviewWorkerState(thread);
         return (goal?.objective ?? team?.goal)?.trim()
           ? [
               {
                 id: thread.environmentId + ":" + thread.id,
                 title: projectGoalSentence(goal?.objective ?? team!.goal),
-                owner: thread.title,
-                state:
-                  goal?.status === "complete"
-                    ? text.completed
-                    : goal?.status === "blocked"
-                      ? text.disrupted
-                      : goal?.status === "paused"
-                        ? text.waiting
-                        : text[projectOverviewWorkerState(thread)],
+                owner: name.name,
+                harness: name.harness ?? thread.session?.providerName ?? null,
+                status,
+                state: text[status],
                 thread,
               },
             ]
@@ -149,7 +217,6 @@ export function buildProjectOwnerOverview(input: {
   const prsSince =
     lastMeeting &&
     input.pullRequests !== undefined &&
-    merged.length > 0 &&
     merged.every((pr) => pr.mergedAt != null && Number.isFinite(Date.parse(pr.mergedAt)))
       ? merged.filter((pr) => Date.parse(pr.mergedAt!) >= lastMeeting.scheduled_at_ms).length
       : null;
@@ -188,69 +255,96 @@ export function buildProjectOwnerOverview(input: {
     {
       id: "project",
       label: primary?.label ?? text.projectKpi,
-      value: primary?.value ?? null,
-      explanation: primary
-        ? (metric?.status === "stale" ? text.staleMetric + " " : "") + text.unavailableDelta
-        : text.unavailableKpi,
+      value: primary?.value ?? "—",
+      note: metric?.status === "stale" ? text.staleMetric : null,
     },
     {
       id: "prs",
       label: text.prs,
-      value: prsSince === null ? null : String(prsSince),
-      explanation: prsSince === null ? text.unavailablePrs : text.unavailableDelta,
+      value: prsSince === null ? "—" : String(prsSince),
+      note: null,
     },
     {
       id: "tasks",
       label: text.openTasks,
-      value: openTaskCount === null ? null : String(openTaskCount),
-      explanation:
-        openTaskCount === null
-          ? text.unavailableTasks
-          : (language === "de"
-              ? "Gespeicherte Worker-Ziele, die noch nicht erledigt sind. "
-              : "Saved worker goals that are not complete. ") + text.unavailableDelta,
+      value: openTaskCount === null ? "—" : String(openTaskCount),
+      note: null,
     },
     {
       id: "exit",
       label: text.exit,
-      value: exit.assessment?.result ? exit.value : null,
-      explanation: exit.assessment?.result ? text.unavailableDelta : text.unavailableExit,
+      value: exit.assessment?.result ? exit.value : "—",
+      note: null,
+    },
+    {
+      id: "tokens",
+      label: text.tokenBudget,
+      value: projectOverviewBudgetValue(input.projectTokenBudgetSource),
+      note: input.projectTokenBudgetSource?.partial ? text.partialUsage : null,
     },
   ];
-  const history = all
-    .filter((thread) => projectTeamSectionOf(thread) !== "workers")
-    .flatMap((thread) => {
-      const role = text[projectTeamSectionOf(thread)];
-      const events = [
-        {
-          id: thread.id + ":created",
-          at: thread.createdAt,
-          sentence:
-            language === "de"
-              ? thread.title + " wurde als " + role + " angelegt."
-              : thread.title + " was created as a " + role + ".",
-        },
-      ];
-      if (thread.latestTurn?.state === "completed" && thread.latestTurn.completedAt)
-        events.push({
-          id: thread.id + ":turn",
-          at: thread.latestTurn.completedAt,
-          sentence:
-            language === "de"
-              ? thread.title + " hat den letzten Arbeitsschritt abgeschlossen."
-              : thread.title + " completed its latest work step.",
-        });
-      return events;
-    })
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
-    .slice(0, 10);
+  const history = all.flatMap((thread) =>
+    thread.latestTurn?.state === "completed" && thread.latestTurn.completedAt
+      ? [
+          {
+            id: thread.environmentId + ":" + thread.id + ":turn",
+            at: thread.latestTurn.completedAt,
+            sentence: projectOverviewFormat(text.completedStep, {
+              name: projectOverviewWorkerName(thread.title, project.title).name,
+            }),
+          },
+        ]
+      : [],
+  );
+  for (const pr of merged)
+    if (pr.mergedAt && Number.isFinite(Date.parse(pr.mergedAt)))
+      history.push({
+        id: pr.url,
+        at: pr.mergedAt,
+        sentence: projectOverviewFormat(text.mergedEvent, { number: pr.number, title: pr.title }),
+      });
+  if (lastMeeting)
+    history.push({
+      id: "meeting",
+      at: new Date(lastMeeting.scheduled_at_ms).toISOString(),
+      sentence: text.meetingCompleted,
+    });
+  if (confirmed?.confirmed_at_ms)
+    history.push({
+      id: "todos:confirmed",
+      at: new Date(confirmed.confirmed_at_ms).toISOString(),
+      sentence: text.todosConfirmed,
+    });
+  const setup = all.filter((thread) => Number.isFinite(Date.parse(thread.createdAt)));
+  if (setup.length) {
+    const dates = setup
+      .map((thread) => thread.createdAt)
+      .sort((a, b) => Date.parse(a) - Date.parse(b));
+    const day = (at: string) =>
+      new Intl.DateTimeFormat(language === "de" ? "de-DE" : "en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+      }).format(new Date(at));
+    const roles = (["supervisor", "parents", "workers"] as const).flatMap((role) => {
+      const count = setup.filter((thread) => projectTeamSectionOf(thread) === role).length;
+      return count ? [count + " " + text[role]] : [];
+    });
+    history.push({
+      id: "setup",
+      at: dates.at(-1)!,
+      sentence: projectOverviewFormat(text.setupGroup, {
+        roles: roles.join(" + "),
+        range: day(dates[0]!) + "–" + day(dates.at(-1)!),
+      }),
+    });
+  }
   return {
     projectId: project.id,
     title: project.title,
     summary:
       project.configuration?.info?.summary?.trim() ||
       project.configuration?.info?.description?.trim() ||
-      text.noSummary,
+      null,
     text,
     language,
     members,
@@ -260,15 +354,22 @@ export function buildProjectOwnerOverview(input: {
     workers,
     goals,
     confirmed: confirmed !== null,
+    confirmedAt: confirmed?.confirmed_at_ms ?? null,
     decisions: supervisors.filter(
       (thread) => thread.hasPendingApprovals || thread.hasPendingUserInput,
     ),
     disruptions: [...supervisors, ...parents, ...workers].filter(
-      (thread) => projectOverviewWorkerState(thread) === "disrupted",
+      (thread) =>
+        projectOverviewWorkerState(thread) === "disrupted" ||
+        (thread.workjetConfig.schemaVersion === 2 &&
+          thread.workjetConfig.goal?.status === "blocked"),
+    ),
+    escalations: [...parents, ...workers].filter(
+      (thread) => thread.waitingOnSupervisor || thread.workerDecisionProblem != null,
     ),
     kpis,
     merged,
-    history,
+    history: history.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 5),
     lastMeeting,
     recurring: project.configuration?.jourFixe ?? null,
     supervisorLumaId: project.configuration?.supervisorLumaId ?? null,
@@ -280,13 +381,7 @@ export function buildProjectOwnerOverview(input: {
           ? supervisors[0].workjetConfig.supervisorTick
           : undefined,
     },
-    ownerDecisions: confirmed?.confirmed_at_ms
-      ? [
-          language === "de"
-            ? "Du hast die To-do-Liste des Jour fixe bestätigt."
-            : "You confirmed the Jour fixe's to-do list.",
-        ]
-      : [],
+    ownerDecisions: confirmed?.confirmed_at_ms ? [text.todosConfirmed] : [],
     links: [
       { label: text.repository, url: overview.repositoryUrl },
       { label: text.website, url: overview.websiteUrl },

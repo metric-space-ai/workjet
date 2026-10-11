@@ -1,9 +1,75 @@
-import type { ReactNode } from "react";
-import { SupervisorTickStatus } from "./SupervisorTickStatus";
+import { useEffect, useState, type ReactNode } from "react";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
-import type { ScopedThreadRef } from "@workjet/contracts";
-import { projectOverviewWorkerState, type ProjectOwnerOverview } from "../projectOverviewModel";
+import { supervisorTickDueAt, type ScopedThreadRef } from "@workjet/contracts";
+import {
+  projectOverviewWorkerState,
+  projectOverviewWorkerName,
+  projectOverviewStatusTone,
+  type ProjectOverviewStatus,
+  type ProjectOwnerOverview,
+} from "../projectOverviewModel";
+import { projectOverviewFormat } from "../projectOverviewText";
+import "./ProjectOverviewView.css";
 
+const tones = {
+  red: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+  blue: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  amber: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  gray: "border-border bg-muted text-muted-foreground",
+  green: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+};
+function Status({
+  status,
+  children,
+}: {
+  readonly status: ProjectOverviewStatus;
+  readonly children: ReactNode;
+}) {
+  const tone = projectOverviewStatusTone(status);
+  return (
+    <span
+      data-workjet-overview-status={tone}
+      className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] leading-4 ${tones[tone]}`}
+    >
+      {status === "completed" && <span aria-hidden="true">✓</span>}
+      {children}
+    </span>
+  );
+}
+function OverviewTick({ data }: { readonly data: ProjectOwnerOverview }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const { text, supervisorTick: tick } = data;
+  const next = tick.createdAt
+    ? supervisorTickDueAt(tick.createdAt, tick.configuration, tick.state)
+    : null;
+  const lastLabel = tick.state?.lastControlAt
+    ? projectOverviewFormat(text.minutesAgo, {
+        minutes: Math.max(0, Math.floor((now - Date.parse(tick.state.lastControlAt)) / 60000)),
+      })
+    : text.controlNone;
+  const nextLabel =
+    tick.configuration?.enabled === false
+      ? text.controlOff
+      : next === null
+        ? text.controlMissing
+        : next <= now
+          ? text.controlDue
+          : projectOverviewFormat(text.minutesUntil, { minutes: Math.ceil((next - now) / 60000) });
+  return (
+    <span
+      className="overview-meta-chip"
+      data-workjet-supervisor-tick=""
+      title={tick.state?.outcome === "skipped-busy" ? text.controlSkipped : undefined}
+    >
+      {projectOverviewFormat(text.controlLast, { time: lastLabel })} ·{" "}
+      {projectOverviewFormat(text.controlNext, { time: nextLabel })}
+    </span>
+  );
+}
 export function ProjectOverviewView(props: {
   readonly data: ProjectOwnerOverview;
   readonly onOpenChat: (ref: ScopedThreadRef) => void;
@@ -23,352 +89,393 @@ export function ProjectOverviewView(props: {
       hour: "2-digit",
       minute: "2-digit",
     }).format(new Date(at));
+  const shortDate = (at: number) =>
+    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit" }).format(new Date(at));
+  const meetingLabel = data.recurring
+    ? new Intl.DateTimeFormat(locale, { weekday: "long", timeZone: "UTC" }).format(
+        new Date(Date.UTC(2026, 0, 4 + data.recurring.weekday)),
+      ) +
+      " · " +
+      data.recurring.time
+    : text.noNextMeeting;
   const open = (thread: (typeof data.members)[number]) =>
     onOpenChat(scopeThreadRef(thread.environmentId, thread.id));
   return (
     <main
-      className="mx-auto grid w-full max-w-[1320px] min-w-0 items-start gap-5 p-4 text-sm sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem]"
+      className="overview-layout mx-auto w-full max-w-[1320px] min-w-0 p-4 text-[13.5px] leading-[1.4] sm:p-6"
       data-workjet-project-overview={data.projectId}
       lang={language}
     >
-      <div className="min-w-0 space-y-5">
-        <header>
-          <h1 className="break-words text-[22px] font-semibold tracking-tight">{data.title}</h1>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">{data.summary}</p>
-          <SupervisorTickStatus {...data.supervisorTick} />
-          {props.actions}
-        </header>
-        <dl
-          className="grid min-w-0 grid-cols-2 gap-2 xl:grid-cols-4"
-          aria-label={language === "de" ? "Kennzahlen" : "Project metrics"}
-          data-workjet-overview-kpis=""
+      <header className="overview-header min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+          <h1 className="min-w-0 break-words text-[22px] font-semibold tracking-tight">
+            {data.title}
+          </h1>
+          {props.actions && <div className="shrink-0 text-xs">{props.actions}</div>}
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="overview-meta-chip">
+            {text.nextMeeting}: {meetingLabel}
+          </span>
+          <span className="overview-meta-chip">
+            {data.parents.length} {text.parents}
+          </span>
+          {data.workers.length > 0 && (
+            <span className="overview-meta-chip">
+              {data.workers.length} {text.workers}
+            </span>
+          )}
+          {data.disruptions.length > 0 && (
+            <Status status="disrupted">
+              {data.disruptions.length} {text.disrupted}
+            </Status>
+          )}
+          <OverviewTick data={data} />
+        </div>
+        {data.summary && <p className="mt-2 text-xs text-muted-foreground">{data.summary}</p>}
+      </header>
+      <section
+        className="overview-meeting min-w-0 self-start rounded-lg border border-border bg-card px-3 py-3"
+        aria-labelledby="overview-next-meeting"
+        data-workjet-overview-section="meeting"
+      >
+        <Heading id="overview-next-meeting">{text.nextMeeting}</Heading>
+        <p className="text-[17px] font-semibold tabular-nums">{meetingLabel}</p>
+        {data.recurring && (
+          <p className="mt-1 text-xs text-muted-foreground">{data.recurring.timezone}</p>
+        )}
+        <button
+          type="button"
+          onClick={props.onOpenJourFixe}
+          disabled={!props.onOpenJourFixe}
+          title={props.onOpenJourFixe ? undefined : text.meetingConnectionRequired}
+          data-workjet-action="project.jour-fixe.open"
+          className="mt-3 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50"
         >
-          {data.kpis.map((kpi) => (
-            <div
-              key={kpi.id}
-              className="min-w-0 rounded-lg border border-border bg-card px-3 py-2.5"
-              data-workjet-overview-kpi={kpi.id}
+          {text.join}
+        </button>
+      </section>
+      {(data.decisions.length > 0 ||
+        data.disruptions.length > 0 ||
+        data.escalations.length > 0 ||
+        props.connectionError) && (
+        <div className="overview-attention min-w-0 space-y-2">
+          {data.decisions.length > 0 && (
+            <section
+              className="rounded-md border border-blue-500/25 border-l-2 border-l-blue-500 bg-blue-500/5 px-3 py-2"
+              data-workjet-overview-section="decisions"
+              aria-labelledby="overview-decisions"
             >
-              {kpi.value !== null && (
-                <dd className="break-words text-2xl font-semibold tabular-nums [overflow-wrap:anywhere]">
-                  {kpi.value}
-                </dd>
-              )}
-              <dt className="text-xs font-medium text-muted-foreground">{kpi.label}</dt>
-              <dd className="mt-1.5 text-xs leading-5 text-muted-foreground">{kpi.explanation}</dd>
-            </div>
-          ))}
-        </dl>
-        <section data-workjet-overview-section="decisions" aria-labelledby="overview-decisions">
-          <Heading id="overview-decisions">
-            {text.needsYou}
-            {data.decisions.length > 0 ? " · " + data.decisions.length : ""}
-          </Heading>
-          {props.decisions ?? (
-            <p className="text-muted-foreground">
-              {data.decisions.length ? text.decisionUnavailable : text.noDecisions}
+              <Heading id="overview-decisions">
+                {text.needsYou} · {data.decisions.length}
+              </Heading>
+              {props.decisions ??
+                data.decisions.map((thread) => (
+                  <div
+                    key={thread.environmentId + ":" + thread.id}
+                    className="flex items-center justify-between gap-3 py-1"
+                  >
+                    <span className="min-w-0 break-words">{thread.title}</span>
+                    <button
+                      type="button"
+                      onClick={() => open(thread)}
+                      className="shrink-0 text-xs text-primary hover:underline"
+                    >
+                      {text.reviewAction}
+                    </button>
+                  </div>
+                ))}
+            </section>
+          )}
+          {props.connectionError && (
+            <p className="text-xs text-muted-foreground" data-workjet-overview-connection="">
+              {text.unavailableConnection}
             </p>
           )}
-          {(props.connectionError || data.disruptions.length > 0) && (
-            <div className="mt-3 space-y-2" aria-label={text.disruptions}>
-              {props.connectionError && (
-                <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-400" />
-                  {text.unavailableConnection}
-                </p>
-              )}
-              {data.disruptions.map((thread) => (
-                <p
-                  key={thread.id}
-                  className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground"
-                >
-                  <span>
-                    {language === "de"
-                      ? thread.title +
-                        " kann gerade nicht weiterarbeiten. Bitte prüfe die gemeldete Störung im Chat."
-                      : thread.title +
-                        " cannot continue right now. Please check the reported issue in its chat."}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => open(thread)}
-                    className="text-primary hover:underline"
-                  >
-                    {text.details}
-                  </button>
-                </p>
-              ))}
-            </div>
-          )}
-        </section>
-        <section data-workjet-overview-section="goals" aria-labelledby="overview-goals">
-          <Heading id="overview-goals">{text.goals}</Heading>
-          <p className="mb-2 text-xs leading-5 text-muted-foreground">
-            {data.confirmed ? text.confirmedGoals : text.workerGoals}
-          </p>
-          {data.goals.length === 0 ? (
-            <p className="text-muted-foreground">{text.noGoals}</p>
-          ) : (
-            <div
-              className="overflow-hidden rounded-lg border border-border bg-card"
-              role="table"
-              aria-label={text.goals}
-            >
+          {[
+            ...data.disruptions.map((thread) => ({ thread, disrupted: true })),
+            ...data.escalations
+              .filter((thread) => !data.disruptions.includes(thread))
+              .map((thread) => ({ thread, disrupted: false })),
+          ].map(({ thread, disrupted }) => {
+            const state = projectOverviewWorkerState(thread);
+            const tone = disrupted ? "red" : projectOverviewStatusTone(state);
+            return (
               <div
-                className="hidden grid-cols-[minmax(0,1fr)_9rem_6rem] gap-3 border-b border-border px-3 py-1.5 text-xs text-muted-foreground sm:grid"
+                key={thread.environmentId + ":" + thread.id}
+                className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs ${tones[tone]}`}
+                data-workjet-overview-alert={disrupted ? "disruption" : "escalation"}
+              >
+                <span aria-hidden="true">●</span>
+                <span className="min-w-0 break-words">
+                  {projectOverviewFormat(disrupted ? text.disruptionLine : text.escalationLine, {
+                    name: projectOverviewWorkerName(thread.title, data.title).name,
+                    status: text[state],
+                  })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => open(thread)}
+                  className="ml-auto shrink-0 text-primary hover:underline"
+                >
+                  {text.details}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <dl
+        className="overview-metrics grid min-w-0 grid-cols-2 gap-2.5 min-[980px]:grid-cols-5"
+        aria-label={text.metrics}
+        data-workjet-overview-kpis=""
+      >
+        {data.kpis.map((kpi) => (
+          <div
+            key={kpi.id}
+            className="min-w-0 rounded-lg border border-border bg-card px-3 py-2.5"
+            data-workjet-overview-kpi={kpi.id}
+          >
+            <dd
+              className={`break-words text-[22px] font-semibold tabular-nums [overflow-wrap:anywhere] ${kpi.value === "—" ? "text-muted-foreground" : ""}`}
+            >
+              {kpi.value}
+            </dd>
+            <dt className="mt-0.5 text-xs text-muted-foreground">{kpi.label}</dt>
+            {kpi.note && <dd className="mt-1 text-[11px] text-muted-foreground">{kpi.note}</dd>}
+          </div>
+        ))}
+      </dl>
+      <section
+        className="overview-goals min-w-0"
+        data-workjet-overview-section="goals"
+        aria-labelledby="overview-goals"
+      >
+        <div className="mb-2 flex flex-wrap items-baseline gap-2">
+          <Heading id="overview-goals">
+            {text.goals}
+            {data.recurring ? " · " + meetingLabel : ""}
+          </Heading>
+          <span className="overview-meta-chip text-[11px] text-muted-foreground">
+            {data.confirmed && data.confirmedAt
+              ? projectOverviewFormat(text.confirmedGoals, { date: shortDate(data.confirmedAt) })
+              : text.workerGoals}
+          </span>
+        </div>
+        {data.goals.length === 0 ? (
+          <p className="text-muted-foreground">{text.noGoals}</p>
+        ) : (
+          <div
+            className="overflow-hidden rounded-lg border border-border bg-card"
+            role="table"
+            aria-label={text.goals}
+          >
+            <div
+              className="overview-goal-columns hidden gap-3 border-b border-border px-2.5 py-1.5 text-xs text-muted-foreground min-[721px]:grid"
+              role="row"
+            >
+              <span role="columnheader">{text.task}</span>
+              <span role="columnheader">{text.who}</span>
+              <span role="columnheader">{text.status}</span>
+            </div>
+            {data.goals.map((goal) => (
+              <div
+                key={goal.id}
+                className="overview-goal-columns grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-b border-border px-2.5 py-2 last:border-0"
                 role="row"
               >
-                <span role="columnheader">{text.task}</span>
-                <span role="columnheader">{text.who}</span>
-                <span role="columnheader">{text.status}</span>
+                <div
+                  role="cell"
+                  className="col-span-2 min-w-0 break-words [overflow-wrap:anywhere] min-[721px]:col-span-1"
+                >
+                  <span className="line-clamp-2" title={goal.title}>
+                    {goal.title}
+                  </span>
+                </div>
+                <div role="cell" className="min-w-0 text-xs" data-workjet-overview-owner="">
+                  {goal.thread ? (
+                    <button
+                      className="line-clamp-1 max-w-full break-words text-left hover:underline"
+                      type="button"
+                      onClick={() => open(goal.thread!)}
+                      title={goal.owner}
+                    >
+                      {goal.owner}
+                    </button>
+                  ) : (
+                    <span className="line-clamp-1 break-words">{goal.owner}</span>
+                  )}
+                  {goal.harness && (
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {goal.harness}
+                    </span>
+                  )}
+                </div>
+                <div role="cell" className="min-w-0">
+                  <Status status={goal.status}>{goal.state}</Status>
+                </div>
               </div>
-              {data.goals.map((goal) => (
-                <div
-                  key={goal.id}
-                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-b border-border px-3 py-2 last:border-0 sm:grid-cols-[minmax(0,1fr)_9rem_6rem]"
-                  role="row"
+            ))}
+          </div>
+        )}
+      </section>
+      <section
+        className="overview-results min-w-0"
+        data-workjet-overview-section="results"
+        aria-labelledby="overview-results"
+      >
+        <Heading id="overview-results">{text.results}</Heading>
+        {data.merged.length === 0 ? (
+          <p className="text-muted-foreground">{text.noResults}</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {data.merged.map((pr) => (
+              <li key={pr.url} className="flex flex-wrap items-baseline gap-x-2 py-1.5">
+                <a
+                  href={pr.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 break-words hover:underline"
                 >
-                  <div
-                    role="cell"
-                    className="col-span-2 break-words leading-5 [overflow-wrap:anywhere] sm:col-span-1"
-                  >
-                    <span className="line-clamp-2" title={goal.title}>
-                      {goal.title}
-                    </span>
-                  </div>
-                  <div role="cell" className="min-w-0 break-words text-xs text-muted-foreground">
-                    {goal.thread ? (
-                      <button
-                        className="text-left hover:underline"
-                        type="button"
-                        onClick={() => open(goal.thread!)}
-                      >
-                        {goal.owner}
-                      </button>
-                    ) : (
-                      goal.owner
-                    )}
-                  </div>
-                  <div role="cell">
-                    <span className="inline-block whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                      {goal.state}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-        <section data-workjet-overview-section="results" aria-labelledby="overview-results">
-          <Heading id="overview-results">{text.results}</Heading>
-          {data.merged.length === 0 ? (
-            <p className="text-muted-foreground">{text.noResults}</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {data.merged.map((pr) => (
-                <li key={pr.url} className="py-2 leading-5">
-                  <a
-                    href={pr.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:underline"
-                  >
-                    {language === "de"
-                      ? "PR #" + pr.number + " „" + pr.title + "“ wurde gemergt."
-                      : "PR #" + pr.number + " “" + pr.title + "” was merged."}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-        <section data-workjet-overview-section="history" aria-labelledby="overview-history">
-          <Heading id="overview-history">{text.history}</Heading>
-          {data.history.length === 0 ? (
-            <p className="text-muted-foreground">{text.noHistory}</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {data.history.map((event) => (
-                <li key={event.id} className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 py-1.5">
-                  <time
-                    dateTime={new Date(event.at).toISOString()}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {date(event.at)}
+                  #{pr.number} {pr.title}
+                </a>
+                {pr.mergedAt && Number.isFinite(Date.parse(pr.mergedAt)) && (
+                  <time dateTime={pr.mergedAt} className="text-xs text-muted-foreground">
+                    {date(pr.mergedAt)}
                   </time>
-                  <span className="min-w-0 break-words leading-5">{event.sentence}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-        <details
-          className="min-w-0 rounded-lg border border-dashed border-border px-3 py-2.5"
-          data-workjet-overview-section="diagnosis"
-        >
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            {text.diagnosis}
-          </summary>
-          <div className="mt-3 space-y-3">
-            {data.members.map((thread) => {
-              const config = thread.workjetConfig;
-              const native =
-                config.schemaVersion === 2 &&
-                (config.team?.role === "supervisor" || config.ctoxCrewChat !== undefined);
-              const state = projectOverviewWorkerState(thread);
-              return (
-                <div
-                  key={thread.environmentId + ":" + thread.id}
-                  className="min-w-0 border-b border-border pb-3 text-xs last:border-0"
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section
+        className="overview-history min-w-0"
+        data-workjet-overview-section="history"
+        aria-labelledby="overview-history"
+      >
+        <Heading id="overview-history">{text.history}</Heading>
+        {data.history.length === 0 ? (
+          <p className="text-muted-foreground">{text.noHistory}</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {data.history.map((event) => (
+              <li
+                key={event.id}
+                className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 py-1.5"
+                data-workjet-overview-event={event.id}
+              >
+                <time
+                  dateTime={new Date(event.at).toISOString()}
+                  className="text-xs text-muted-foreground"
                 >
-                  <p className="font-medium">{thread.title}</p>
-                  <dl className="mt-1 grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-muted-foreground">
-                    <dt>{text.actual}</dt>
-                    <dd className="break-words [overflow-wrap:anywhere]">
-                      {native
-                        ? text.nativeRoute
-                        : thread.session
-                          ? [thread.session.providerName, thread.session.providerInstanceId]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : text.noSession}
-                    </dd>
-                    <dt>{text.saved}</dt>
-                    <dd className="break-words [overflow-wrap:anywhere]">
-                      {native
-                        ? config.schemaVersion === 2 && config.team?.role === "supervisor"
-                          ? (data.supervisorLumaId ?? text.unknown)
-                          : text.unknown
-                        : thread.modelSelection.instanceId + " · " + thread.modelSelection.model}
-                    </dd>
-                    <dt>{text.computer}</dt>
-                    <dd className="break-words [overflow-wrap:anywhere]">
-                      {native ? text.unknown : thread.environmentId}
-                    </dd>
-                    <dt>{text.status}</dt>
-                    <dd>{text[state]}</dd>
-                  </dl>
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-muted-foreground">
-                      {text.prompt}
-                    </summary>
-                    <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                      {config.schemaVersion === 2
-                        ? (config.goal?.objective ?? config.team?.goal)
-                        : null}
-                    </p>
-                    <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                      {config.managedInstructions}
-                    </p>
-                  </details>
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-muted-foreground">{text.raw}</summary>
-                    <pre className="mt-1 overflow-x-auto text-[11px]">
-                      {JSON.stringify(
-                        {
-                          controlEnvironmentId: thread.environmentId,
-                          branch: thread.branch,
-                          latestTurn: thread.latestTurn,
-                          sessionStatus: thread.session?.status,
-                          lastError: thread.session?.lastError,
-                        },
-                        null,
-                        2,
-                      )}
-                    </pre>
-                  </details>
-                </div>
-              );
-            })}
-            {props.diagnosis}
-          </div>
-        </details>
-      </div>
-      <aside className="min-w-0 space-y-3">
-        <Card title={text.nextMeeting}>
-          {data.recurring ? (
-            <p className="text-base font-medium">
-              {new Intl.DateTimeFormat(locale, { weekday: "long", timeZone: "UTC" }).format(
-                new Date(Date.UTC(2026, 0, 4 + data.recurring.weekday)),
-              )}{" "}
-              · {data.recurring.time}
-              <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                {data.recurring.timezone}
-              </span>
-            </p>
-          ) : (
-            <p className="text-muted-foreground">{text.noNextMeeting}</p>
-          )}
-          <div>
-            <button
-              type="button"
-              onClick={props.onOpenJourFixe}
-              disabled={!props.onOpenJourFixe}
-              title={props.onOpenJourFixe ? undefined : text.meetingConnectionRequired}
-              data-workjet-action="project.jour-fixe.open"
-              className="mt-3 rounded-md border border-border bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50"
-            >
-              {text.join}
-            </button>
-            {!props.onOpenJourFixe && (
-              <p className="mt-2 text-xs text-muted-foreground">{text.meetingConnectionRequired}</p>
-            )}
-          </div>
-        </Card>
-        <Card title={text.lastMeeting}>
-          {data.lastMeeting ? (
-            <p>{date(data.lastMeeting.scheduled_at_ms)}</p>
-          ) : (
-            <p className="text-muted-foreground">{text.noLastMeeting}</p>
-          )}
-        </Card>
-        <Card title={text.ownerDecisions}>
-          {data.ownerDecisions.length ? (
-            <ul className="space-y-1">
-              {data.ownerDecisions.map((sentence) => (
-                <li key={sentence}>{sentence}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground">{text.noOwnerDecisions}</p>
-          )}
-        </Card>
-        <Card title={text.links}>
-          {data.links.length ? (
-            <ul className="space-y-1">
-              {data.links.map((link) => (
-                <li key={link.url}>
+                  {date(event.at)}
+                </time>
+                <span className="min-w-0 break-words">{event.sentence}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <aside className="overview-facts min-w-0 self-start" aria-label={text.facts}>
+        <dl
+          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs"
+          data-workjet-overview-facts=""
+        >
+          <dt className="text-muted-foreground">{text.lastMeeting}</dt>
+          <dd>{data.lastMeeting ? date(data.lastMeeting.scheduled_at_ms) : text.noLastMeeting}</dd>
+          <dt className="text-muted-foreground">{text.ownerDecisions}</dt>
+          <dd>
+            {data.ownerDecisions.length ? data.ownerDecisions.join(" · ") : text.noOwnerDecisions}
+          </dd>
+          <dt className="text-muted-foreground">{text.links}</dt>
+          <dd className="min-w-0 space-y-1">
+            {data.links.length
+              ? data.links.map((link) => (
                   <a
+                    key={link.url}
                     href={link.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="break-words text-primary hover:underline [overflow-wrap:anywhere]"
+                    className="block break-words text-primary hover:underline"
                   >
                     {link.label} ↗
                   </a>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground">{text.noLinks}</p>
-          )}
-        </Card>
+                ))
+              : text.noLinks}
+          </dd>
+        </dl>
       </aside>
+      <details
+        className="overview-diagnosis min-w-0 rounded-lg border border-dashed border-border px-3 py-2"
+        data-workjet-overview-section="diagnosis"
+      >
+        <summary className="cursor-pointer text-xs text-muted-foreground">{text.diagnosis}</summary>
+        <div className="mt-3 space-y-3">
+          {data.members.map((thread) => {
+            const config = thread.workjetConfig;
+            const native =
+              config.schemaVersion === 2 &&
+              (config.team?.role === "supervisor" || config.ctoxCrewChat !== undefined);
+            return (
+              <div
+                key={thread.environmentId + ":" + thread.id}
+                className="min-w-0 border-b border-border pb-3 text-xs last:border-0"
+              >
+                <p className="font-medium">{thread.title}</p>
+                <dl className="mt-1 grid min-w-0 grid-cols-[5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-muted-foreground">
+                  <dt>{text.actual}</dt>
+                  <dd className="break-words [overflow-wrap:anywhere]">
+                    {native
+                      ? text.nativeRoute
+                      : thread.session
+                        ? [thread.session.providerName, thread.session.providerInstanceId]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : text.noSession}
+                  </dd>
+                  <dt>{text.saved}</dt>
+                  <dd className="break-words [overflow-wrap:anywhere]">
+                    {native
+                      ? config.schemaVersion === 2 && config.team?.role === "supervisor"
+                        ? (data.supervisorLumaId ?? text.unknown)
+                        : text.unknown
+                      : thread.modelSelection.instanceId + " · " + thread.modelSelection.model}
+                  </dd>
+                  <dt>{text.computer}</dt>
+                  <dd className="break-words [overflow-wrap:anywhere]">
+                    {native ? text.unknown : thread.environmentId}
+                  </dd>
+                  <dt>{text.status}</dt>
+                  <dd>{text[projectOverviewWorkerState(thread)]}</dd>
+                </dl>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-muted-foreground">{text.prompt}</summary>
+                  <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                    {config.schemaVersion === 2
+                      ? (config.goal?.objective ?? config.team?.goal)
+                      : null}
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                    {config.managedInstructions}
+                  </p>
+                </details>
+              </div>
+            );
+          })}
+          {props.diagnosis}
+        </div>
+      </details>
     </main>
   );
 }
 function Heading({ id, children }: { readonly id: string; readonly children: ReactNode }) {
   return (
-    <h2 id={id} className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+    <h2
+      id={id}
+      className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+    >
       {children}
     </h2>
-  );
-}
-function Card({ title, children }: { readonly title: string; readonly children: ReactNode }) {
-  return (
-    <section className="rounded-lg border border-border bg-card px-3 py-3">
-      <h2 className="mb-2 text-xs font-medium text-muted-foreground">{title}</h2>
-      {children}
-    </section>
   );
 }

@@ -132,20 +132,14 @@ export function ProjectOverviewDecisions(props: {
       {approvals.map((approval) => (
         <div key={approval.requestId} className="space-y-2">
           <p>
-            {language === "de"
-              ? approval.requestKind === "file-read"
-                ? "Darf dieser Worker eine Datei lesen?"
-                : approval.requestKind === "file-change"
-                  ? "Darf dieser Worker Dateien ändern?"
-                  : "Darf dieser Worker die angeforderte Aktion ausführen?"
-              : approval.requestKind === "file-read"
-                ? "May this worker read a file?"
-                : approval.requestKind === "file-change"
-                  ? "May this worker change files?"
-                  : "May this worker perform the requested action?"}
+            {approval.requestKind === "file-read"
+              ? text.permissionRead
+              : approval.requestKind === "file-change"
+                ? text.permissionChange
+                : text.permissionAction}
           </p>
           <button type="button" className={chip} onClick={open}>
-            {language === "de" ? "Aktion prüfen und entscheiden" : "Review action and decide"}
+            {text.reviewAction}
           </button>
         </div>
       ))}

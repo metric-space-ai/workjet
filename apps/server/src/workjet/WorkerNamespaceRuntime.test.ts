@@ -27,35 +27,49 @@ const expectRefusal = Effect.fn("expectRefusal")(function* (spawn: AcpSpawnInput
   });
 });
 describe.runIf(process.platform === "linux")("Linux worker runtime capture", () => {
-  it.effect("captures the original executable behind a PATH symlink without adding its host directory", () =>
-    Effect.gen(function* () {
-      const root = yield* Effect.tryPromise(fixture);
-      const binary = yield* Effect.tryPromise(() => NodeFSP.realpath("/usr/bin/true"));
-      yield* Effect.tryPromise(() => NodeFSP.symlink(binary, NodePath.join(root, "provider")));
-      const result = yield* captureWorkerNamespaceRuntime({ command: "provider", args: [], env: { PATH: root } });
-      const stat = yield* Effect.tryPromise(() => NodeFSP.stat(binary, { bigint: true }));
-      expect(result.spawn.command).toBe(binary);
-      expect(result.runtimeFiles).toEqual([{ path: binary, identity: { device: String(stat.dev), inode: String(stat.ino) } }]);
-    }),
+  it.effect(
+    "captures the original executable behind a PATH symlink without adding its host directory",
+    () =>
+      Effect.gen(function* () {
+        const root = yield* Effect.tryPromise(fixture);
+        const binary = yield* Effect.tryPromise(() => NodeFSP.realpath("/usr/bin/true"));
+        yield* Effect.tryPromise(() => NodeFSP.symlink(binary, NodePath.join(root, "provider")));
+        const result = yield* captureWorkerNamespaceRuntime({
+          command: "provider",
+          args: [],
+          env: { PATH: root },
+        });
+        const stat = yield* Effect.tryPromise(() => NodeFSP.stat(binary, { bigint: true }));
+        expect(result.spawn.command).toBe(binary);
+        expect(result.runtimeFiles).toEqual([
+          { path: binary, identity: { device: String(stat.dev), inode: String(stat.ino) } },
+        ]);
+      }),
   );
   it.effect("captures a single executable script and its direct system ELF interpreter", () =>
     Effect.gen(function* () {
       const root = yield* Effect.tryPromise(fixture);
       const script = NodePath.join(root, "provider");
-      yield* Effect.tryPromise(() => NodeFSP.writeFile(script, "#!/usr/bin/python3\nprint('fixture')\n", { mode: 0o700 }));
+      yield* Effect.tryPromise(() =>
+        NodeFSP.writeFile(script, "#!/usr/bin/python3\nprint('fixture')\n", { mode: 0o700 }),
+      );
       const result = yield* captureWorkerNamespaceRuntime({ command: script, args: [] });
       const interpreter = yield* Effect.tryPromise(() => NodeFSP.realpath("/usr/bin/python3"));
       expect(result.runtimeFiles.map(({ path }) => path)).toEqual([script, interpreter]);
     }),
   );
-  it.effect("rejects env resolution and unsupported package launchers instead of spawning on the host", () =>
-    Effect.gen(function* () {
-      const root = yield* Effect.tryPromise(fixture);
-      const script = NodePath.join(root, "provider");
-      yield* Effect.tryPromise(() => NodeFSP.writeFile(script, "#!/usr/bin/env python3\n", { mode: 0o700 }));
-      yield* expectRefusal({ command: script, args: [] });
-      yield* expectRefusal({ command: "./provider", args: [], env: { PATH: "." } });
-    }),
+  it.effect(
+    "rejects env resolution and unsupported package launchers instead of spawning on the host",
+    () =>
+      Effect.gen(function* () {
+        const root = yield* Effect.tryPromise(fixture);
+        const script = NodePath.join(root, "provider");
+        yield* Effect.tryPromise(() =>
+          NodeFSP.writeFile(script, "#!/usr/bin/env python3\n", { mode: 0o700 }),
+        );
+        yield* expectRefusal({ command: script, args: [] });
+        yield* expectRefusal({ command: "./provider", args: [], env: { PATH: "." } });
+      }),
   );
   it.effect("does not capture a non-executable file or a privileged executable", () =>
     Effect.gen(function* () {
@@ -68,13 +82,17 @@ describe.runIf(process.platform === "linux")("Linux worker runtime capture", () 
       }
     }),
   );
-  it.effect("rejects an executable FIFO without blocking on its contents", () =>
-    Effect.gen(function* () {
-      const root = yield* Effect.tryPromise(fixture);
-      const fifo = NodePath.join(root, "provider");
-      yield* Effect.try(() => NodeChildProcess.execFileSync("/usr/bin/mkfifo", ["-m", "700", fifo], { timeout: 5000 }));
-      yield* expectRefusal({ command: fifo, args: [] });
-    }),
+  it.effect(
+    "rejects an executable FIFO without blocking on its contents",
+    () =>
+      Effect.gen(function* () {
+        const root = yield* Effect.tryPromise(fixture);
+        const fifo = NodePath.join(root, "provider");
+        yield* Effect.try(() =>
+          NodeChildProcess.execFileSync("/usr/bin/mkfifo", ["-m", "700", fifo], { timeout: 5000 }),
+        );
+        yield* expectRefusal({ command: fifo, args: [] });
+      }),
     { timeout: 2000 },
   );
 });

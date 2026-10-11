@@ -274,7 +274,7 @@ it.layer(NodeServices.layer)("changed safeStorage key at startup", (it) => {
           userActions++;
           signedIn = true;
           yield* recoverManagedAfterLogin({
-            discovery: { _tag: "ready", instances: [managed] },
+            discovery: { _tag: "ready", instances: [managed], sessionVerified: true },
             recovery,
             reconnect,
           });

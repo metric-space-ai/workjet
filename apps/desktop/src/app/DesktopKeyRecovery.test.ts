@@ -16,43 +16,73 @@ vi.mock("electron", () => ({ safeStorage: {} }));
 const encodeFixture = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 it.layer(NodeServices.layer)("local key loss detection", (it) => {
-  it.effect("migrates the all-failed #443 marker and admits one new generation per successful login", () => Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "key-recovery-login-migration-" });
-    const stateDir = `${baseDir}/userdata`;
-    const generation = "1-11111111-1111-4111-8111-111111111111";
-    const ids = ["managed:welsch", "managed:thesen", "managed:skf", "managed:milton"];
-    yield* fs.makeDirectory(`${stateDir}/ctox`, { recursive: true });
-    const backup = `${stateDir}/ctox/secrets.json.recovery-${generation}.bak`;
-    yield* fs.writeFileString(backup, "opaque old ciphertext fixture");
-    yield* fs.writeFileString(`${stateDir}/key-recovery.json`, yield* encodeFixture({
-      version: 1, generation, pendingLogin: false, unreadableStores: ["ctox"], ctoxRetired: true,
-      managedRepairStarted: true, instanceRepairs: ids.map((instanceId) => ({ instanceId, state: "repair_failed" })),
-    }));
-    const storage = ElectronSafeStorage.of({ isEncryptionAvailable: Effect.succeed(true), selectedStorageBackend: Effect.succeed(Option.none()),
-      encryptString: (text) => Effect.succeed(Buffer.from(text)), decryptString: () => Effect.die("No protected store should be opened in this marker-only fixture") });
-    const open = () => makeRecovery({ baseDir, stateDir, platform: "darwin" }).pipe(Effect.provideService(ElectronSafeStorage, storage));
-    const owner = yield* open();
-    const migrated = yield* owner.inspect;
-    assert.isTrue(migrated?.pendingLogin);
-    assert.equal(migrated?.generation, generation);
-    assert.deepEqual(migrated?.instanceRepairs?.map((entry) => entry.state), ids.map(() => "login_required"));
-    assert.isFalse(yield* owner.beginManagedRepair!(ids));
-    assert.isTrue(yield* owner.restartManagedRepairAfterLogin!("successful-login-one"));
-    const renewed = yield* owner.inspect;
-    assert.notEqual(renewed?.generation, generation);
-    assert.isTrue(yield* owner.beginManagedRepair!(ids));
-    yield* owner.recordInstanceRepair!(ids[0]!, "login_required");
-    yield* owner.completeLogin;
-    assert.isTrue((yield* owner.inspect)?.pendingLogin);
-    assert.isFalse(yield* owner.restartManagedRepairAfterLogin!("successful-login-one"));
-    const restarted = yield* open();
-    assert.equal((yield* restarted.inspect)?.generation, renewed?.generation);
-    assert.isFalse(yield* restarted.restartManagedRepairAfterLogin!("successful-login-one"));
-    assert.isTrue(yield* restarted.restartManagedRepairAfterLogin!("successful-login-two"));
-    assert.equal(yield* fs.readFileString(backup), "opaque old ciphertext fixture");
-    assert.deepEqual(yield* fs.readDirectory(`${stateDir}/ctox`), [`secrets.json.recovery-${generation}.bak`]);
-  }));
+  it.effect(
+    "migrates the all-failed #443 marker and admits one new generation per successful login",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const baseDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "key-recovery-login-migration-",
+        });
+        const stateDir = `${baseDir}/userdata`;
+        const generation = "1-11111111-1111-4111-8111-111111111111";
+        const ids = ["managed:welsch", "managed:thesen", "managed:skf", "managed:milton"];
+        yield* fs.makeDirectory(`${stateDir}/ctox`, { recursive: true });
+        const backup = `${stateDir}/ctox/secrets.json.recovery-${generation}.bak`;
+        yield* fs.writeFileString(backup, "opaque old ciphertext fixture");
+        yield* fs.writeFileString(
+          `${stateDir}/key-recovery.json`,
+          yield* encodeFixture({
+            version: 1,
+            generation,
+            pendingLogin: false,
+            unreadableStores: ["ctox"],
+            ctoxRetired: true,
+            managedRepairStarted: true,
+            instanceRepairs: ids.map((instanceId) => ({ instanceId, state: "repair_failed" })),
+          }),
+        );
+        const storage = ElectronSafeStorage.of({
+          isEncryptionAvailable: Effect.succeed(true),
+          selectedStorageBackend: Effect.succeed(Option.none()),
+          encryptString: (text) => Effect.succeed(Buffer.from(text)),
+          decryptString: () =>
+            Effect.die("No protected store should be opened in this marker-only fixture"),
+        });
+        const open = () =>
+          makeRecovery({ baseDir, stateDir, platform: "darwin" }).pipe(
+            Effect.provideService(ElectronSafeStorage, storage),
+          );
+        const owner = yield* open();
+        const migrated = yield* owner.inspect;
+        assert.isTrue(migrated?.pendingLogin);
+        assert.equal(migrated?.generation, generation);
+        assert.deepEqual(
+          migrated?.instanceRepairs?.map((entry) => entry.state),
+          ids.map(() => "login_required"),
+        );
+        assert.isFalse(yield* owner.beginManagedRepair!(ids));
+        assert.isTrue(yield* owner.restartManagedRepairAfterLogin!("successful-login-one"));
+        const renewed = yield* owner.inspect;
+        assert.notEqual(renewed?.generation, generation);
+        assert.isFalse(yield* owner.beginManagedRepair!(ids, generation));
+        assert.isTrue(yield* owner.beginManagedRepair!(ids));
+        yield* owner.recordInstanceRepair!(ids[0]!, "repair_failed", generation);
+        assert.equal((yield* owner.inspect)?.instanceRepairs?.[0]?.state, "repairing");
+        yield* owner.recordInstanceRepair!(ids[0]!, "login_required");
+        yield* owner.completeLogin;
+        assert.isTrue((yield* owner.inspect)?.pendingLogin);
+        assert.isFalse(yield* owner.restartManagedRepairAfterLogin!("successful-login-one"));
+        const restarted = yield* open();
+        assert.equal((yield* restarted.inspect)?.generation, renewed?.generation);
+        assert.isFalse(yield* restarted.restartManagedRepairAfterLogin!("successful-login-one"));
+        assert.isTrue(yield* restarted.restartManagedRepairAfterLogin!("successful-login-two"));
+        assert.equal(yield* fs.readFileString(backup), "opaque old ciphertext fixture");
+        assert.deepEqual(yield* fs.readDirectory(`${stateDir}/ctox`), [
+          `secrets.json.recovery-${generation}.bak`,
+        ]);
+      }),
+  );
   it.effect("recovers CTOX alone without retiring valid login or public bindings", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

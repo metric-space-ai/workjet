@@ -1725,10 +1725,17 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
                             .map((entry) => entry.instanceId),
                           instanceIssues: [
                             ...(recovery.instanceRepairs ?? [])
-                              .filter((entry) => entry.state === "repair_failed")
+                              .filter(
+                                (entry) =>
+                                  entry.state === "repair_failed" ||
+                                  entry.state === "login_required",
+                              )
                               .map((entry) => ({
                                 instanceId: entry.instanceId,
-                                reason: "repair_failed" as const,
+                                reason:
+                                  entry.state === "login_required"
+                                    ? ("login_required" as const)
+                                    : ("repair_failed" as const),
                               })),
                             ...(recovery.pendingLogin
                               ? [
@@ -1737,7 +1744,16 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
                                       ...stored,
                                       ...(managed._tag === "ready" ? managed.instances : []),
                                     ]
-                                      .filter((entry) => entry.id.startsWith("managed:"))
+                                      .filter(
+                                        (entry) =>
+                                          entry.id.startsWith("managed:") &&
+                                          !recovery.instanceRepairs?.some(
+                                            (issue) =>
+                                              issue.instanceId === entry.id &&
+                                              (issue.state === "repair_failed" ||
+                                                issue.state === "login_required"),
+                                          ),
+                                      )
                                       .map((entry) => [entry.id, entry]),
                                   ).values(),
                                 ].map((entry) => ({

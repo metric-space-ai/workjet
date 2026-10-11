@@ -7,13 +7,14 @@ import type {
   CtoxElectronSessionDescriptorError,
   CtoxElectronSessionOperationError,
 } from "./CtoxElectronSessions.ts";
-import type { CtoxManagedLaunchError } from "./CtoxManagedLaunch.ts";
+import { CtoxManagedLaunchError } from "./CtoxManagedLaunch.ts";
 import { accessState } from "./CtoxInstancePreferences.ts";
 
 /** Managed credentials are issued by the control plane, never decoded from the accountless registry. */
 export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")(function* (input: {
   readonly discovery: CtoxManagedDiscoveryResult;
   readonly recovery: DesktopKeyRecovery["Service"];
+  readonly successfulLoginId?: string;
   readonly reconnect: (
     instance: CtoxManagedInstance,
   ) => Effect.Effect<
@@ -21,9 +22,14 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
     CtoxManagedLaunchError | CtoxElectronSessionDescriptorError | CtoxElectronSessionOperationError
   >;
 }) {
+  if (input.discovery._tag !== "ready" || input.discovery.sessionVerified !== true) return;
+  if (
+    input.successfulLoginId !== undefined &&
+    input.recovery.restartManagedRepairAfterLogin !== undefined
+  )
+    yield* input.recovery.restartManagedRepairAfterLogin(input.successfulLoginId);
   const state = yield* input.recovery.inspect;
   if (state?.pendingLogin !== true) return;
-  if (input.discovery._tag !== "ready") return;
   const instances: CtoxManagedInstance[] = [];
   for (const instance of input.discovery.instances) {
     if (
@@ -37,7 +43,10 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
   // The durable claim precedes all exchanges. Repeated refreshes and restarts cannot re-pair.
   if (
     input.recovery.beginManagedRepair !== undefined &&
-    !(yield* input.recovery.beginManagedRepair(instances.map((instance) => instance.id)))
+    !(yield* input.recovery.beginManagedRepair(
+      instances.map((instance) => instance.id),
+      state.generation,
+    ))
   )
     return;
   yield* Effect.forEach(
@@ -53,9 +62,14 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
         const result = yield* input
           .reconnect(instance)
           .pipe(Effect.timeout(Duration.seconds(30)), Effect.result);
-        const outcome = Result.isSuccess(result) ? "repaired" : "repair_failed";
+        const outcome = Result.isSuccess(result)
+          ? "repaired"
+          : result.failure instanceof CtoxManagedLaunchError &&
+              result.failure.reason === "login_required"
+            ? "login_required"
+            : "repair_failed";
         if (input.recovery.recordInstanceRepair !== undefined)
-          yield* input.recovery.recordInstanceRepair(instance.id, outcome);
+          yield* input.recovery.recordInstanceRepair(instance.id, outcome, state.generation);
         yield* Effect.logInfo("CTOX instance repair finished", {
           generation: state.generation,
           instanceId: instance.id,
@@ -72,5 +86,6 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
       () => new DesktopKeyRecoveryError({ operation: "reconnect managed instances" }),
     ),
   );
-  yield* input.recovery.completeLogin;
+  if ((yield* input.recovery.inspect)?.generation === state.generation)
+    yield* input.recovery.completeLogin;
 });

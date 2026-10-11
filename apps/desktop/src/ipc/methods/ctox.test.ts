@@ -358,7 +358,7 @@ describe("CTOX IPC methods", () => {
         refresh: Effect.succeed(
           revoked
             ? { _tag: "signed_out" as const }
-            : { _tag: "ready" as const, instances: [managed] },
+            : { _tag: "ready" as const, instances: [managed], sessionVerified: true as const },
         ),
         login: Effect.die("Device recovery must never open a login window."),
         logout: Effect.void,
@@ -402,6 +402,7 @@ describe("CTOX IPC methods", () => {
       () => {
         let pendingLogin = true;
         let signIns = 0;
+        let generationAdmissions = 0;
         const events: string[] = [];
         const managed = {
           ...pairedInstance,
@@ -420,14 +421,20 @@ describe("CTOX IPC methods", () => {
             events.push("complete");
             pendingLogin = false;
           }),
+          restartManagedRepairAfterLogin: (loginId) =>
+            Effect.sync(() => {
+              assert.equal(loginId, "fixture-login-id");
+              generationAdmissions++;
+              return false;
+            }),
         });
         const auth = CtoxDevAuth.CtoxDevAuth.of({
           login: Effect.sync(() => {
             signIns++;
             events.push("login");
-            return { _tag: "completed", via: "url" } as const;
+            return { _tag: "completed", via: "url", loginId: "fixture-login-id" } as const;
           }),
-          refresh: Effect.succeed({ _tag: "ready", instances: [managed] }),
+          refresh: Effect.succeed({ _tag: "ready", instances: [managed], sessionVerified: true }),
           logout: Effect.void,
         });
         const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
@@ -466,6 +473,7 @@ describe("CTOX IPC methods", () => {
             discovery: { _tag: "ready", instances: [managed] },
           });
           assert.equal(signIns, 1);
+          assert.equal(generationAdmissions, 1);
           assert.isFalse(pendingLogin);
           assert.deepEqual(
             events,

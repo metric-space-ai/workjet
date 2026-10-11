@@ -250,12 +250,12 @@ function resetLabel(at: number | null) {
       });
 }
 
-function AccountLimits({
+export function AccountLimits({
   health,
   provider,
 }: {
   readonly health: ModelsAccountHealth | undefined;
-  readonly provider: WorkjetGatewayProvider;
+  readonly provider: string;
 }) {
   if (health?.balance) {
     const balance = health.balance;

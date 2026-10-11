@@ -1,11 +1,11 @@
-import type { WorkjetGatewayProvider, WorkjetGatewayQuotaWindow } from "@workjet/contracts";
+import type { WorkjetGatewayQuotaWindow, WorkjetNativeProviderAccount } from "@workjet/contracts";
 
-const FRESH_FOR_MS = 300_000;
+export const MODELS_QUOTA_FRESH_FOR_MS = 300_000;
 const DAY_SECONDS = 86_400;
 
 /** Normalize provider evidence once, before both health and limit presentation use it. */
 export function normalizeModelsQuota(
-  provider: WorkjetGatewayProvider,
+  provider: string,
   quota: ReadonlyArray<WorkjetGatewayQuotaWindow>,
   now: number,
 ) {
@@ -77,7 +77,8 @@ export function normalizeModelsQuota(
               : provider === "codex" && window.name === "primary_window"
                 ? "Short-term"
                 : "unbekannt";
-      const fresh = now >= window.observedAtMs && now - window.observedAtMs < FRESH_FOR_MS;
+      const fresh =
+        now >= window.observedAtMs && now - window.observedAtMs < MODELS_QUOTA_FRESH_FOR_MS;
       const resetPending = window.resetsAtMs !== null && window.resetsAtMs > now;
       const expired = window.resetsAtMs !== null && window.resetsAtMs <= now;
       const notInPlan = window.notInPlan && fresh;
@@ -140,4 +141,34 @@ export function normalizeModelsQuota(
               : "green",
       } as const;
     });
+}
+
+/** Adapt the native Claude utilization receipt to the same qualified gateway evidence. */
+export function normalizeNativeModelsQuota(
+  provider: string,
+  quota: WorkjetNativeProviderAccount["reportedQuota"],
+  now: number,
+) {
+  if (quota?.state !== "reported") return [];
+  return normalizeModelsQuota(
+    provider,
+    quota.windows.map((window) => ({
+      name: window.kind,
+      remainingPercent: null,
+      observedAtMs: quota.observedAtMs,
+      resetsAtMs: window.resetAtMs,
+      modelPattern: null,
+      notInPlan: false,
+      unlimited: false,
+      toolOnly: false,
+      boostPermille: null,
+      source: {
+        field: "utilization",
+        value: window.utilization === null ? null : window.utilization * 100,
+        windowSeconds: window.kind === "five_hour" ? 18_000 : 604_800,
+        status: null,
+      },
+    })),
+    now,
+  );
 }

@@ -162,6 +162,36 @@ const Attempt = Schema.Struct({
   failure: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9_]{0,63}$/))),
   success: Schema.Boolean,
 });
+const ReportedQuotaWindow = Schema.Struct({
+  kind: Schema.Literals(["five_hour", "seven_day"]),
+  status: Schema.Literals(["allowed", "rejected"]),
+  resetAtMs: Revision,
+  utilization: Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+});
+const ReportedQuota = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("unknown") }),
+  Schema.Struct({
+    state: Schema.Literal("unavailable"),
+    errorClass: Schema.Literal("quota_read_failed"),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("reported"),
+    observedAtMs: Revision,
+    windows: Schema.Array(ReportedQuotaWindow).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
+  }).check(
+    Schema.makeFilter((quota) =>
+      new Set(quota.windows.map((window) => window.kind)).size === quota.windows.length &&
+      quota.windows.every(
+        (window) =>
+          window.resetAtMs > quota.observedAtMs &&
+          window.resetAtMs - quota.observedAtMs <= 608_400_000 &&
+          (window.utilization === null || Number.isFinite(window.utilization)),
+      )
+        ? true
+        : "Reported quota windows are inconsistent.",
+    ),
+  ),
+]);
 export const WorkjetNativeProviderAccount = Schema.Struct({
   id: Id,
   holder: Schema.Struct({ kind: Schema.Literal("ctox_instance"), id: Id }),
@@ -170,7 +200,9 @@ export const WorkjetNativeProviderAccount = Schema.Struct({
   controls: Schema.optionalKey(
     Schema.Struct({ canEnable: Schema.Boolean, canRemove: Schema.Boolean }),
   ),
+  reportedQuota: Schema.optionalKey(ReportedQuota),
   credentialReady: Schema.Boolean,
+
   revision: Revision,
   observedAtMs: Revision,
   nativeAccountReference: WorkjetNativeAccountReference,

@@ -58,12 +58,20 @@ const fixture = async (variant?: string) => {
   try {
     await NodeFSP.mkdir(stage, { mode: 0o700 });
     await NodeFSP.mkdir(runtime, { mode: 0o700 });
+    const fixtureCode = await NodeFSP.readFile(agent, "utf8");
+    const nodeBundle =
+      "#!/usr/bin/env node\n" +
+      "const { spawn } = require('node:child_process');\n" +
+      "const child = spawn('/usr/bin/python3', ['-c', " +
+      JSON.stringify(fixtureCode) +
+      ", ...process.argv.slice(2)], { stdio: 'inherit' });\n" +
+      "child.on('error', () => { process.exitCode = 1; });\n" +
+      "child.on('exit', (code) => { process.exitCode = code ?? 1; });\n";
     await NodeFSP.writeFile(
       script,
-      (await NodeFSP.readFile(agent, "utf8")).replace(
-        "#!/usr/bin/env python3",
-        "#!/usr/bin/python3",
-      ),
+      variant?.startsWith("node-runtime-")
+        ? nodeBundle
+        : fixtureCode.replace("#!/usr/bin/env python3", "#!/usr/bin/python3"),
       { mode: 0o700 },
     );
     NodeChildProcess.execFileSync("/usr/bin/git", ["init", stage], {
@@ -174,6 +182,8 @@ const fixture = async (variant?: string) => {
 describe.runIf(helper !== undefined)("Greppy original runtime/custody production path", () => {
   for (const variant of [
     "two-turns",
+    "node-runtime-two-turns",
+    "node-runtime-replaced",
     "runtime-denied",
     "runtime-replaced",
     "missing-receipt",
@@ -191,6 +201,7 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
           Effect.tryPromise(() => fixture(variant)),
           (owned) =>
             Effect.gen(function* () {
+              const twoTurns = variant === "two-turns" || variant === "node-runtime-two-turns";
               const originalSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
               const children: ChildProcessSpawner.ChildProcessHandle[] = [];
               const spawner = ChildProcessSpawner.make((command) =>
@@ -239,7 +250,7 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                   return;
                 }
                 expect(started._tag).toBe("Success");
-                if (variant === "runtime-replaced") {
+                if (variant === "runtime-replaced" || variant === "node-runtime-replaced") {
                   const stopped = yield* adapter.stopSession(owned.input.threadId);
                   expect(stopped?.terminated).toBe(true);
                   const before = children.length;
@@ -256,9 +267,9 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                 }
                 yield* adapter.sendTurn({
                   threadId: owned.input.threadId,
-                  input: variant === "two-turns" ? "first" : "hold-terminal",
+                  input: twoTurns ? "first" : "hold-terminal",
                 });
-                if (variant === "two-turns") {
+                if (twoTurns) {
                   yield* adapter.sendTurn({ threadId: owned.input.threadId, input: "follow-up" });
                   expect(
                     yield* Effect.tryPromise(() =>
@@ -311,7 +322,7 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                     ["-C", owned.workspace, "rev-list", "--count", "HEAD"],
                     { timeout: 5000, encoding: "utf8" },
                   ).trim(),
-                ).toBe(variant === "two-turns" ? "2" : "1");
+                ).toBe(twoTurns ? "2" : "1");
                 const stopped = yield* adapter.stopSession(owned.input.threadId);
                 expect(stopped?.terminated).toBe(true);
               }).pipe(

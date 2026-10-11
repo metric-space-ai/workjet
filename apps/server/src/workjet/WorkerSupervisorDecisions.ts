@@ -12,6 +12,10 @@ import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 
+export class WorkerSupervisorDecisionError extends Schema.TaggedErrorClass<WorkerSupervisorDecisionError>()(
+  "WorkerSupervisorDecisionError", { message: Schema.String },
+) {}
+
 export const WorkerSupervisorAnswer = Schema.Struct({
   decisionId: Schema.String,
   answers: Schema.optional(Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Array(Schema.String)]))),
@@ -62,7 +66,7 @@ export const routeWorkerDecision = Effect.fn("workjet.routeWorkerDecision")(func
     (decision_id, worker_thread_id, supervisor_thread_id, project_id, request_id, kind, request_json, created_at)
     VALUES (${`${thread.id}:${requestId}`}, ${thread.id}, ${supervisors[0]?.threadId ?? null},
       ${thread.projectId}, ${requestId}, ${event.type === 'user-input.requested' ? 'question' : 'approval'},
-      ${JSON.stringify(event.payload)}, ${event.createdAt}) ON CONFLICT (decision_id) DO NOTHING`;
+      ${Schema.encodeSync(Schema.UnknownFromJsonString)(event.payload)}, ${event.createdAt}) ON CONFLICT (decision_id) DO NOTHING`;
   return true;
 });
 
@@ -120,12 +124,12 @@ export const answerWorkerDecision = Effect.fn("workjet.answerWorkerDecision")(fu
   if (!row || row.status !== 'pending' || row.supervisorThreadId !== supervisorThreadId ||
       Option.isNone(found) || found.value.deletedAt != null || found.value.archivedAt !== null ||
       found.value.projectId !== row.projectId || config?.schemaVersion !== 2 || config.team?.role !== 'supervisor')
-    return yield* Effect.fail(new Error('Only the bound project Supervisor may answer a pending worker decision.'));
+    return yield* new WorkerSupervisorDecisionError({ message: 'Only the bound project Supervisor may answer a pending worker decision.' });
   if ((row.kind === 'question' && !input.answers) || (row.kind === 'approval' && !input.decision))
-    return yield* Effect.fail(new Error('Supply answers for a question or a decision for an approval.'));
+    return yield* new WorkerSupervisorDecisionError({ message: 'Supply answers for a question or a decision for an approval.' });
   const claimed = yield* sql`UPDATE workjet_worker_supervisor_decisions SET status = 'answering'
     WHERE decision_id = ${input.decisionId} AND status = 'pending' RETURNING decision_id`;
-  if (claimed.length === 0) return yield* Effect.fail(new Error('The worker decision is already being answered.'));
+  if (claimed.length === 0) return yield* new WorkerSupervisorDecisionError({ message: 'The worker decision is already being answered.' });
   yield* (row.kind === 'question'
     ? providers.respondToUserInput({ threadId: ThreadId.make(row.workerThreadId), requestId: ApprovalRequestId.make(row.requestId), answers: input.answers! })
     : providers.respondToRequest({ threadId: ThreadId.make(row.workerThreadId), requestId: ApprovalRequestId.make(row.requestId), decision: input.decision! })

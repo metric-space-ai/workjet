@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { ThreadId, ProjectId, DEFAULT_WORKJET_THREAD_CONFIG, type OrchestrationCommand, type OrchestrationThreadShell, type ProviderRuntimeEvent } from "@workjet/contracts";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -22,7 +23,7 @@ const thread = (id: ThreadId, role: "supervisor" | "specialist" | "worker"): Orc
     role, threadId: id, projectId: ProjectId.make("project"), parentThreadId: role === "supervisor" ? null : supervisorId,
     goal: "Verify autonomous routing", createdAt: NOW,
   } },
-} as OrchestrationThreadShell);
+} as unknown as OrchestrationThreadShell);
 const supervisor = thread(supervisorId, "supervisor");
 const worker = thread(workerId, "specialist");
 const request = (id: string): ProviderRuntimeEvent => ({
@@ -37,7 +38,7 @@ const setup = Effect.gen(function* () {
     VALUES ('project','Autonomy',NULL,'[]',${NOW},${NOW})`;
   for (const t of [supervisor, worker]) yield* sql`INSERT INTO projection_threads
     (thread_id,project_id,title,model_selection_json,runtime_mode,workjet_config_json,created_at,updated_at)
-    VALUES (${t.id},${t.projectId},${t.id},'{}',${t.runtimeMode},${JSON.stringify(t.workjetConfig)},${NOW},${NOW})`;
+    VALUES (${t.id},${t.projectId},${t.id},'{}',${t.runtimeMode},${Schema.encodeSync(Schema.UnknownFromJsonString)(t.workjetConfig)},${NOW},${NOW})`;
 });
 const query = { getThreadShellById: (id: ThreadId) => Effect.succeed(
   id === supervisorId ? Option.some(supervisor) : id === workerId ? Option.some(worker) : Option.none(),

@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../NodeSqliteClient.ts";
@@ -17,7 +18,7 @@ it.effect("migrates all project roles once, records old modes and retains later 
       yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode, created_at, updated_at)
         VALUES (${id}, 'project', ${id}, '{}', ${mode}, '2026-10-11T00:00:00Z', '2026-10-11T00:00:00Z')`;
       yield* sql`INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json)
-        VALUES (${id}, 'thread', ${id}, 1, 'thread.created', '2026-10-11T00:00:00Z', 'user', ${JSON.stringify({ runtimeMode: mode })}, '{}')`;
+        VALUES (${id}, 'thread', ${id}, 1, 'thread.created', '2026-10-11T00:00:00Z', 'user', ${Schema.encodeSync(Schema.UnknownFromJsonString)({ runtimeMode: mode })}, '{}')`;
     }
     assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 81 }), [[81, 'WorkerAutonomyDefaults']]);
     const threads = yield* sql`SELECT runtime_mode FROM projection_threads`;

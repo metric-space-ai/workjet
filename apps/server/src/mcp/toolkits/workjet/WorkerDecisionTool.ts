@@ -16,17 +16,18 @@ const tool = Tool.make("workjet_answer_worker", {
 });
 const register = Effect.gen(function* () {
   const server = yield* McpServer.McpServer;
-  const sql = yield* SqlClient.SqlClient;
-  const query = yield* ProjectionSnapshotQuery;
-  const providers = yield* ProviderService;
   yield* server.addTool({
     tool: new McpSchema.Tool({ name: tool.name, description: Tool.getDescription(tool), inputSchema: Tool.getJsonSchema(tool) }),
+    annotations: tool.annotations,
     handle: (payload) => Effect.withFiber(fiber => {
+      const sql = Context.getUnsafe(fiber.context, SqlClient.SqlClient);
+      const query = Context.getUnsafe(fiber.context, ProjectionSnapshotQuery);
+      const providers = Context.getUnsafe(fiber.context, ProviderService);
       const invocation = Context.getUnsafe(fiber.context, McpInvocationContext);
       return Effect.gen(function* () {
         const input = yield* Schema.decodeUnknownEffect(WorkerSupervisorAnswer)(payload);
         const result = yield* answerWorkerDecision(invocation.threadId, input);
-        return new McpSchema.CallToolResult({ isError: false, structuredContent: result, content: [{ type: "text", text: JSON.stringify(result) }] });
+        return new McpSchema.CallToolResult({ isError: false, structuredContent: result, content: [{ type: "text", text: Schema.encodeSync(Schema.UnknownFromJsonString)(result) }] });
       }).pipe(
         Effect.provideService(SqlClient.SqlClient, sql),
         Effect.provideService(ProjectionSnapshotQuery, query),

@@ -11,7 +11,7 @@ import { deliverWorkerDecisions } from "../../workjet/WorkerSupervisorDecisions.
 export class WorkerSupervisorDecisionReactor extends Context.Service<WorkerSupervisorDecisionReactor, {
   readonly start: () => Effect.Effect<void, never, import("effect/Scope").Scope>;
   readonly drain: Effect.Effect<void>;
-}>()("workjet/WorkerSupervisorDecisionReactor") {}
+}>()("workjet/orchestration/Layers/WorkerSupervisorDecisionReactor") {}
 
 export const WorkerSupervisorDecisionReactorLive = Layer.effect(WorkerSupervisorDecisionReactor,
   Effect.gen(function* () {

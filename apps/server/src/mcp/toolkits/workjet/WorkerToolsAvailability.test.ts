@@ -30,7 +30,7 @@ for (const harness of ["claudeAgent", "codex", "opencode", "grok", "pi", "cursor
       }).pipe(
         Effect.provideService(Invocation.McpInvocationContext, {
           environmentId: EnvironmentId.make("isolated-tools"), threadId, providerInstanceId: ProviderInstanceId.make(harness),
-          providerSessionId: "current-turn", workjetRole: "standard", capabilities: new Set(), activeWorkjetMcpCapabilityIds: new Set(), issuedAt: 1,
+          providerSessionId: "current-turn", workjetRole: "standard", capabilities: new Set<Invocation.McpCapability>(), activeWorkjetMcpCapabilityIds: new Set<import("@workjet/contracts").WorkjetCapabilityId>(), issuedAt: 1,
         }),
         Effect.provideService(McpSchema.McpServerClient, McpSchema.McpServerClient.of({ clientId: 1, protocolVersion: "2025-06-18",
           initializePayload: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: harness, version: "1" } }, getClient: Effect.die("unused"),

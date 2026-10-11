@@ -694,7 +694,6 @@ export const makeRoutesLayer = Layer.mergeAll(
     ),
   ),
   McpHttpServer.layer.pipe(
-    Layer.provide(ProviderLayerLive),
     Layer.provide(CtoxNativeRequests.layer),
     Layer.provide(DecisionHubConnectionRegistryLive),
     Layer.provide(DecisionHubEscalationServiceLive),

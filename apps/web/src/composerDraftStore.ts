@@ -128,7 +128,7 @@ const PersistedElementContextDraft = Schema.Struct({
 });
 type PersistedElementContextDraft = typeof PersistedElementContextDraft.Type;
 
-import { WorkjetPrivateChatIntent, samePrivateChatIntentScope } from "./workjetPrivateChat";
+import { WorkjetPrivateChatIntent, samePrivateChatIntentScope } from "./workjetPrivateChatIntent";
 
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,

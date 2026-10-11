@@ -493,6 +493,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
+  waitingOnSupervisor: Schema.optional(Schema.Boolean),
   hasActionableProposedPlan: Schema.Boolean,
   /**
    * Native background work alive after the turn settles: "working" while

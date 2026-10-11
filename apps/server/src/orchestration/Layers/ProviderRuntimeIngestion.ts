@@ -45,6 +45,7 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 import { goalExecutionObservation } from "../../workjet/goalExecutionObservation.ts";
+import { routeWorkerDecision } from "../../workjet/WorkerSupervisorDecisions.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -2093,7 +2094,10 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(event, taskTitle);
+      const supervisorDecision = yield* routeWorkerDecision(thread, event);
+      const activities = runtimeEventToActivities(event, taskTitle).map(activity =>
+        supervisorDecision ? { ...activity, summary: "Worker wartet auf Supervisor", payload: { ...activity.payload as Record<string, unknown>, recipient: "supervisor" } } : activity,
+      );
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

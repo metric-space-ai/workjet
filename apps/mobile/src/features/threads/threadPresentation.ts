@@ -49,6 +49,14 @@ function isLatestTurnSettled(
 export function resolveThreadStatus(
   thread: EnvironmentThreadShell,
 ): ThreadStatusPresentation | null {
+  if (thread.waitingOnSupervisor) {
+    return {
+      kind: "awaiting-input", label: "Wartet auf Supervisor",
+      pillClassName: "bg-indigo-500/12 dark:bg-indigo-500/16",
+      textClassName: "text-indigo-700 dark:text-indigo-300",
+      iconColor: "#5e5ce6", iconBackground: "rgba(94,92,230,0.22)", pulse: false,
+    };
+  }
   if (thread.hasPendingApprovals) {
     return {
       kind: "pending-approval",

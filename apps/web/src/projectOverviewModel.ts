@@ -7,13 +7,14 @@ import { resolveGalleryProjectOverview, type GalleryProject } from "./projectOve
 import { projectTeamSectionOf } from "./lib/projectTeamSections";
 import { PROJECT_OVERVIEW_TEXT, type ProjectOverviewLanguage } from "./projectOverviewText";
 
-export type ProjectOverviewWorkerState = "running" | "waiting" | "asks" | "disrupted";
+export type ProjectOverviewWorkerState = "running" | "waiting" | "waitingSupervisor" | "asks" | "disrupted";
 export function projectOverviewWorkerState(
   thread: Pick<
     EnvironmentThreadShell,
-    "session" | "hasPendingApprovals" | "hasPendingUserInput" | "backgroundLiveness"
+    "session" | "hasPendingApprovals" | "hasPendingUserInput" | "backgroundLiveness" | "waitingOnSupervisor"
   >,
 ): ProjectOverviewWorkerState {
+  if (thread.waitingOnSupervisor) return "waitingSupervisor";
   if (thread.hasPendingApprovals || thread.hasPendingUserInput) return "asks";
   if (thread.session?.status === "error") return "disrupted";
   if (
@@ -245,7 +246,7 @@ export function buildProjectOwnerOverview(input: {
     workers,
     goals,
     confirmed: confirmed !== null,
-    decisions: members.filter((thread) => thread.hasPendingApprovals || thread.hasPendingUserInput),
+    decisions: supervisors.filter((thread) => thread.hasPendingApprovals || thread.hasPendingUserInput),
     disruptions: [...supervisors, ...parents, ...workers].filter(
       (thread) => projectOverviewWorkerState(thread) === "disrupted",
     ),

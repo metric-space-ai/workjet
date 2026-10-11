@@ -1376,7 +1376,7 @@ export function derivePendingApprovals(
         : requestKindFromRequestType(payload?.requestType);
     const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
 
-    if (activity.kind === "approval.requested" && requestId && requestKind) {
+    if (activity.kind === "approval.requested" && requestId && requestKind && payload?.recipient !== "supervisor") {
       openByRequestId.set(requestId, {
         requestId,
         requestKind,
@@ -1416,7 +1416,7 @@ export function derivePendingUserInputs(
     const requestId = parseApprovalRequestId(payload?.requestId);
     const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
 
-    if (activity.kind === "user-input.requested" && requestId) {
+    if (activity.kind === "user-input.requested" && requestId && payload?.recipient !== "supervisor") {
       const questions = parseUserInputQuestions(payload);
       if (!questions) {
         continue;

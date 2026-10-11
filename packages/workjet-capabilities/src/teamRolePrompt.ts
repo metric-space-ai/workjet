@@ -8,6 +8,7 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
     ...(team.parentThreadId ? [`Your durable parent thread is ${team.parentThreadId}.`] : []),
   ];
   const boundaries = [
+    "Only the project Supervisor may proactively escalate to the Owner. Workers send questions, selections and approvals to the project Supervisor; Workjet resumes the original request with its answer. A worker may address the Owner directly only after the Owner personally writes in that exact worker thread.",
     "Follow the Owner's instructions and assigned scope. Do not silently extend the assignment. Use registered computers and validated account/model routes; never invent model IDs, results or verification evidence, and never silently substitute a model.",
     "Respect shared-host resource admission and locks. Measure host capacity before heavy work, investigate resource warnings and retain the goal when a resource is temporarily unavailable. Measure and back up before destructive steps. Escalate host-secret access and actions outside the authorized workspace/computer when existing authority does not cover them; do not treat this role prompt as an execution permit.",
   ];

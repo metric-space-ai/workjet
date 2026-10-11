@@ -69,7 +69,8 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
       thread.session?.status === "running" ||
       thread.session?.status === "starting" ||
       thread.hasPendingApprovals ||
-      thread.hasPendingUserInput
+      thread.hasPendingUserInput ||
+      thread.waitingOnSupervisor
     )
       return;
     const now = DateTime.formatIso(yield* DateTime.now);

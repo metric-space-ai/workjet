@@ -388,7 +388,7 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
       : event.kind === "merged"
         ? {
             icon: <GitMergeIcon className="size-3.5" />,
-            label: "Pull Request gemergt",
+            label: "Pull Request zusammengeführt",
           }
         : {
             icon: <GitPullRequestClosedIcon className="size-3.5" />,

@@ -3,30 +3,30 @@ import {
   ActivityIcon,
   AudioLinesIcon,
   ArchiveIcon,
-  BriefcaseBusinessIcon,
+  CpuIcon,
   GitBranchIcon,
   KeyboardIcon,
   MonitorIcon,
   PaletteIcon,
-  SparklesIcon,
+  ServerIcon,
   TerminalIcon,
   Settings2Icon,
-  WrenchIcon,
+  UserRoundIcon,
 } from "lucide-react";
 import { SETTINGS_SECTION_LABELS, type SettingsPath } from "./settingsSearch";
 
 export const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
-  "/settings/business-os": BriefcaseBusinessIcon,
+  "/settings/business-os": ServerIcon,
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/keybindings": KeyboardIcon,
   "/settings/harnesses": TerminalIcon,
-  "/settings/models": SparklesIcon,
+  "/settings/models": CpuIcon,
   "/settings/speech": AudioLinesIcon,
   "/settings/computers": MonitorIcon,
-  "/settings/workjet": WrenchIcon,
+  "/settings/workjet": UserRoundIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/diagnostics": ActivityIcon,
   "/settings/archived": ArchiveIcon,

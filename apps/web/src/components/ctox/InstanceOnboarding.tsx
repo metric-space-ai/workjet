@@ -1,9 +1,10 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { RefreshCwIcon } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { RefreshCwIcon, ServerIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { canActivateCtoxInstance, useCtoxMode } from "./CtoxModeShell";
 import { Button } from "../ui/button";
+import { Row, type RowStatus } from "../ui/row";
 import { SidebarContent, SidebarFooter } from "../ui/sidebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { isElectron } from "../../env";
@@ -50,6 +51,45 @@ export function canMountSelectedInstance(
   return state === "ready" || state === "connecting";
 }
 
+/** Ein Laden endet immer (UI-Vertrag §1.3): nach 10 s Statuszeile mit Aktionen. */
+export const INSTANCE_ONBOARDING_SLOW_MS = 10_000;
+
+/**
+ * Startet für „loading“ und „connecting“ den 10-s-Timer und meldet danach
+ * `onSlow`. Gibt die Aufräumfunktion zurück; andere Zustände warten nicht.
+ */
+export function startInstanceOnboardingSlowTimer(
+  state: InstanceOnboardingState,
+  onSlow: () => void,
+  timeoutMs: number = INSTANCE_ONBOARDING_SLOW_MS,
+): (() => void) | undefined {
+  if (state !== "loading" && state !== "connecting") return undefined;
+  const timer = setTimeout(onSlow, timeoutMs);
+  return () => clearTimeout(timer);
+}
+
+function useInstanceOnboardingSlow(state: InstanceOnboardingState): boolean {
+  const [slowState, setSlowState] = useState<InstanceOnboardingState | null>(null);
+  useEffect(() => {
+    const stop = startInstanceOnboardingSlowTimer(state, () => setSlowState(state));
+    return () => {
+      stop?.();
+      setSlowState(null);
+    };
+  }, [state]);
+  return slowState === state;
+}
+
+function instanceRowStatus(instance: CtoxManagedInstance): {
+  readonly status: RowStatus;
+  readonly label: string;
+} {
+  if (!canActivateCtoxInstance(instance)) return { status: "off", label: "getrennt" };
+  return instance.healthSummary.dataPlaneReady
+    ? { status: "ok", label: "verbunden" }
+    : { status: "busy", label: "prüft …" };
+}
+
 /**
  * Drei Orte (Dev, Ops, Einstellungen): Kann die gewählte Instanz nicht
  * geöffnet werden, zeigt der Arbeitsbereich einen ruhigen Zustand mit einer
@@ -63,8 +103,11 @@ export function InstanceOnboardingView({
   onSelect,
   onRetry,
   onManage = () => {},
+  slow: slowOverride,
 }: {
   readonly state: Exclude<InstanceOnboardingState, "ready">;
+  /** Nur für Tests: erzwingt den Zustand nach Ablauf der 10 s. */
+  readonly slow?: boolean;
   readonly instances: readonly CtoxManagedInstance[];
   readonly selectedId?: string | null;
   readonly onSelect: (instance: CtoxManagedInstance) => void;
@@ -73,6 +116,14 @@ export function InstanceOnboardingView({
   readonly onManage?: () => void;
 }) {
   const selected = instances.find((instance) => instance.id === selectedId);
+  const slowTimer = useInstanceOnboardingSlow(state);
+  const slow = slowOverride ?? slowTimer;
+  const reconnect = (
+    <Button size="sm" onClick={onRetry}>
+      <RefreshCwIcon />
+      Erneut verbinden
+    </Button>
+  );
   const manage = (
     <Button variant="outline" size="sm" onClick={onManage}>
       Instanzen verwalten
@@ -80,20 +131,30 @@ export function InstanceOnboardingView({
   );
   let title: string;
   let actions: ReactNode;
+  let statusLine: string | null = null;
   if (state === "loading") {
     title = "Instanzen werden geladen …";
-    actions = null;
+    statusLine = slow ? "Instanzen noch nicht geladen" : null;
+    actions = slow ? (
+      <>
+        {reconnect}
+        {manage}
+      </>
+    ) : null;
   } else if (state === "connecting") {
     title = `${selected?.displayName ?? "Instanz"} wird verbunden …`;
-    actions = null;
+    statusLine = slow ? "Noch nicht verbunden" : null;
+    actions = slow ? (
+      <>
+        {reconnect}
+        {manage}
+      </>
+    ) : null;
   } else if (state === "failed") {
     title = `${selected?.displayName ?? "Instanz"} ist nicht erreichbar`;
     actions = (
       <>
-        <Button size="sm" onClick={onRetry}>
-          <RefreshCwIcon />
-          Erneut verbinden
-        </Button>
+        {reconnect}
         {manage}
       </>
     );
@@ -113,23 +174,48 @@ export function InstanceOnboardingView({
       className="flex min-h-0 flex-1 items-start justify-center overflow-auto px-6 py-16"
       data-workjet-onboarding="instance"
       data-state={state}
+      data-slow={slow ? "" : undefined}
     >
       <div className="flex w-full max-w-md flex-col gap-4">
-        <h1 className="font-semibold text-[22px]" role={state === "failed" ? "alert" : "status"}>
+        <h1
+          className="break-words font-semibold text-[22px]"
+          role={state === "failed" ? "alert" : "status"}
+        >
           {title}
         </h1>
+        {statusLine !== null ? (
+          <p className="text-xs text-muted-foreground" data-workjet-onboarding-status="">
+            {statusLine}
+          </p>
+        ) : null}
         {state === "select" ? (
           <div className="flex flex-col divide-y rounded-lg border">
-            {instances.map((instance) => (
-              <button
-                key={instance.id}
-                type="button"
-                className="flex items-center gap-3 px-3 py-2 text-left text-[13.5px] hover:bg-accent"
-                onClick={() => onSelect(instance)}
-              >
-                <span className="font-medium">{instance.displayName}</span>
-              </button>
-            ))}
+            {instances.map((instance) => {
+              const health = instanceRowStatus(instance);
+              return (
+                <button
+                  key={instance.id}
+                  type="button"
+                  className="w-full text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                  data-workjet-action={`instance.select:${instance.id}`}
+                  onClick={() => onSelect(instance)}
+                >
+                  <Row
+                    status={health.status}
+                    statusLabel={health.label}
+                    name={
+                      <span className="flex min-w-0 items-center gap-2">
+                        <ServerIcon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{instance.displayName}</span>
+                      </span>
+                    }
+                    chips={
+                      <span className="text-[11px] text-muted-foreground">{health.label}</span>
+                    }
+                  />
+                </button>
+              );
+            })}
           </div>
         ) : null}
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
@@ -217,11 +303,11 @@ export function InstanceNavigationBoundary({ children }: { readonly children: Re
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
-      <SidebarContent className="px-4 pt-6 text-sm text-muted-foreground">
+      <SidebarContent className="px-4 pt-6 text-[13.5px] text-muted-foreground">
         <p>Keine Instanz geöffnet</p>
       </SidebarContent>
       <SidebarFooter>
-        <Button variant="ghost" render={<Link to="/settings/business-os" />}>
+        <Button variant="outline" render={<Link to="/settings/business-os" />}>
           Instanzen verwalten
         </Button>
       </SidebarFooter>

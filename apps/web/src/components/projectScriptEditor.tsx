@@ -254,7 +254,7 @@ export function ProjectScriptEditor({
         />
       </div>
       <div className="grid gap-1.5">
-        <span className="text-sm font-medium">Symbol</span>
+        <span className="text-[13.5px] font-medium">Symbol</span>
         <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Symbol">
           {SCRIPT_ICONS.map((entry) => {
             const isSelected = entry.id === icon;
@@ -309,8 +309,8 @@ export function ProjectScriptEditor({
           />
         </div>
       </div>
-      <label className="flex items-center justify-between gap-3 text-sm">
-        <span>Beim Anlegen eines Worktrees ausführen</span>
+      <label className="flex items-center justify-between gap-3 text-[13.5px]">
+        <span>Beim Anlegen ausführen</span>
         <Switch
           checked={runOnWorktreeCreate}
           onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
@@ -318,7 +318,7 @@ export function ProjectScriptEditor({
       </label>
       <label
         className={cn(
-          "flex items-center justify-between gap-3 text-sm",
+          "flex items-center justify-between gap-3 text-[13.5px]",
           previewUrl.trim().length === 0 && "opacity-60",
         )}
       >

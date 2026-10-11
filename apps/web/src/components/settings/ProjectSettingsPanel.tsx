@@ -148,7 +148,7 @@ export function ProjectsSettingsList() {
         {groups.length === 0 ? (
           <Empty className="py-8">
             <EmptyHeader>
-              <EmptyTitle className="text-base">Noch keine Projekte</EmptyTitle>
+              <EmptyTitle className="text-[13.5px]">Noch keine Projekte</EmptyTitle>
             </EmptyHeader>
             <Button size="sm" variant="outline" render={<Link to="/" />}>
               <PlusIcon className="size-4" />
@@ -184,7 +184,7 @@ export function ProjectsSettingsList() {
                       <span className="truncate">{group.displayName}</span>
                     </Link>
                   }
-                  meta={representative?.workspaceRoot ?? undefined}
+                  meta={representative?.environmentLabel ?? undefined}
                   chips={
                     group.memberProjects.length > 1 ? (
                       <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">
@@ -208,8 +208,8 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
 
-  // Remember the members of the last rendered group so a grouping-rule change
-  // (which changes the group key) can follow the project to its new group.
+  // Mitglieder der zuletzt gezeigten Gruppe merken: Ändert sich die
+  // Gruppierungsregel (und damit der Schlüssel), folgt die Seite dem Projekt.
   const lastSelectionRef = useRef<{ key: string; memberKeys: string[] } | null>(null);
   useEffect(() => {
     if (!selected) return;
@@ -242,7 +242,7 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     return (
       <Empty className="flex-1">
         <EmptyHeader>
-          <EmptyTitle className="text-base">Projekt nicht gefunden</EmptyTitle>
+          <EmptyTitle className="text-[13.5px]">Projekt nicht gefunden</EmptyTitle>
         </EmptyHeader>
         <Button size="sm" variant="outline" render={<Link to="/settings/projects" />}>
           Alle Projekte
@@ -786,7 +786,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           faviconPath={faviconPath}
           className="size-5"
         />
-        <h2 className="min-w-0 truncate text-lg font-semibold">{group.displayName}</h2>
+        <h2 className="min-w-0 break-words text-[22px] font-semibold">{group.displayName}</h2>
       </div>
 
       <SettingsSection title="Projekt">
@@ -921,7 +921,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 />
               </div>
             ) : (
-              <span className="text-sm text-muted-foreground">Kein Anbieter verfügbar</span>
+              <span className="text-[13.5px] text-muted-foreground">Kein Anbieter verfügbar</span>
             )
           }
         />
@@ -996,7 +996,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         }
       >
         <div className="px-3 py-2 sm:px-4">
-          <div className="flex min-w-0 items-center rounded-lg bg-muted/30 p-1 text-base text-muted-foreground sm:text-sm">
+          <div className="flex min-w-0 items-center rounded-lg bg-muted/30 p-1 text-[13.5px] text-muted-foreground">
             <button
               disabled={selectedCheckout.workspaceRoot === null}
               aria-label="Pfad kopieren"
@@ -1136,9 +1136,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         }
       >
         {scripts.length === 0 && editorRequest === null ? (
-          <p className="px-3 py-2 text-base text-muted-foreground sm:px-4 sm:text-sm">
-            Keine Skripte
-          </p>
+          <p className="px-3 py-2 text-[13.5px] text-muted-foreground sm:px-4">Keine Skripte</p>
         ) : null}
         {scripts.map((script) => {
           const shortcutLabel = shortcutLabelForCommand(

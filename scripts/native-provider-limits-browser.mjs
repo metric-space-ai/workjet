@@ -166,7 +166,7 @@ try {
       const table = page.getByRole("table", { name: "Instance provider accounts" });
       await table.waitFor();
       const verify = async () => {
-        await table.getByText("Account exhaust", { exact: true }).waitFor();
+        await table.getByText("Account unused", { exact: true }).waitFor();
         if (mode === "before") return;
         const row = (id) =>
           table

@@ -677,7 +677,7 @@ export function WorkjetComputersSettingsView({
                       .filter((part): part is string => !!part)
                       .join(" · ")
                   : computer.presentationKind === "local"
-                    ? "Local"
+                    ? "Lokal"
                     : "—";
             if (snapshot) {
               const tools = computer.harnesses.filter(

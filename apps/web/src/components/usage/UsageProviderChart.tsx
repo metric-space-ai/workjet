@@ -2,13 +2,8 @@ import type { UsageProviderKind } from "@workjet/contracts";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@workjet/shared/usageMerge";
-import {
-  formatDayShort,
-  formatHourShort,
-  formatRelativeHourShort,
-  formatTokens,
-  formatUsd,
-} from "@workjet/shared/usageFormat";
+import { formatTokens, formatUsd } from "@workjet/shared/usageFormat";
+import { formatUsageDateTime, formatUsageDay, formatUsageHour } from "./usageFormatDe";
 import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
 
 const VIEW_WIDTH = 960;
@@ -202,7 +197,6 @@ export function UsageProviderChart({
   hours,
   hourly,
   metric,
-  referenceTime,
   resolution,
   timeZone,
 }: UsageProviderChartProps) {
@@ -285,11 +279,9 @@ export function UsageProviderChart({
   const hoveredColumn = hoverIndex === null ? undefined : series[hoverIndex];
   const hoverLeft = periods.length <= 1 ? 0 : ((hoverIndex ?? 0) / (periods.length - 1)) * 100;
   const formatPeriod = (period: string) =>
-    resolution === "hour" ? formatHourShort(period, timeZone) : formatDayShort(period);
+    resolution === "hour" ? formatUsageHour(period, timeZone) : formatUsageDay(period);
   const formatTooltipPeriod = (period: string) =>
-    resolution === "hour" && referenceTime !== undefined
-      ? formatRelativeHourShort(period, referenceTime, timeZone)
-      : formatPeriod(period);
+    resolution === "hour" ? formatUsageDateTime(period, timeZone) : formatPeriod(period);
 
   return (
     <div className="flex flex-col gap-1">
@@ -392,7 +384,7 @@ export function UsageProviderChart({
                 );
               })}
               <div className="mt-1 flex items-center justify-between gap-3 border-t border-border pt-1">
-                <span className="text-muted-foreground">Total</span>
+                <span className="text-muted-foreground">Gesamt</span>
                 <span className="text-foreground tabular-nums">
                   {format(hoveredColumn?.total ?? 0)}
                 </span>
@@ -402,7 +394,7 @@ export function UsageProviderChart({
         </div>
       </div>
 
-      <div className="flex justify-between pl-16 text-[10px] text-muted-foreground uppercase">
+      <div className="flex justify-between pl-16 text-[11px] text-muted-foreground">
         <span>{periods[0] === undefined ? "" : formatPeriod(periods[0])}</span>
         <span>
           {periods[Math.floor(periods.length / 2)] === undefined

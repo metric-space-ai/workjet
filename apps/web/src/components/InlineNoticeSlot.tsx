@@ -198,6 +198,9 @@ export function InlineConfirmBar({
   return (
     <InlineNoticeRow
       {...rowMarker}
+      // Mit Ziel (z. B. Link) darf die Zeile umbrechen: auf 420 px steht das
+      // Ziel lesbar in der ersten Zeile, die Knöpfe darunter.
+      {...(target ? { className: "flex-wrap", bodyClassName: "min-w-[min(100%,18rem)]" } : {})}
       actions={
         <>
           <Button

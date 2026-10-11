@@ -19,6 +19,7 @@ import { SettingsPageContainer } from "../settings/settingsLayout";
 import { Button } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
+import { formatUsageDateTime, formatUsageDay, formatUsageHour } from "./usageFormatDe";
 import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
 
 const WINDOW_OPTIONS = [
@@ -35,41 +36,6 @@ const METRIC_OPTIONS: ReadonlyArray<{ readonly value: UsageChartMetric; readonly
   ];
 
 type Breakdown = "model" | "time";
-
-/** `2026-08-07` → `7. Aug.` */
-export function formatUsageDay(day: string): string {
-  const [year, month, dayOfMonth] = day.split("-").map((part) => Number(part));
-  if (!year || !month || !dayOfMonth) return day;
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(year, month - 1, dayOfMonth)));
-}
-
-/** Stundenbeginn → `14 Uhr` in der Zeitzone des Fensters. */
-export function formatUsageHour(hourStart: string, timeZone?: string): string {
-  const instant = new Date(hourStart);
-  if (Number.isNaN(instant.getTime())) return hourStart;
-  const hour = new Intl.DateTimeFormat("de-DE", {
-    ...(timeZone === undefined ? {} : { timeZone }),
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).format(instant);
-  return `${hour} Uhr`;
-}
-
-/** Zeitpunkt → `11. Okt., 14 Uhr`. */
-function formatUsageDateTime(instant: string, timeZone?: string): string {
-  const date = new Date(instant);
-  if (Number.isNaN(date.getTime())) return instant;
-  const day = new Intl.DateTimeFormat("de-DE", {
-    ...(timeZone === undefined ? {} : { timeZone }),
-    day: "numeric",
-    month: "short",
-  }).format(date);
-  return `${day}, ${formatUsageHour(instant, timeZone)}`;
-}
 
 /** Einstellungen › Verbrauch: Kosten und Tokens je Harness und Modell. */
 export function UsagePage() {

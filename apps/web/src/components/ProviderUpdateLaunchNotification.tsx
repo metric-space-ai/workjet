@@ -13,7 +13,7 @@ import {
   localEnvironmentUpdateNotificationKey,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotification";
-import { stackedThreadToast, toastManager } from "./ui/toast";
+import { toastManager } from "./ui/toast";
 
 /**
  * True when a desktop-local secondary backend (the parallel WSL backend) is
@@ -156,26 +156,25 @@ function ProviderUpdateEnvironmentsNotification() {
       activeToastRef.current = null;
     };
 
-    const toastId = toastManager.add(
-      stackedThreadToast({
-        type: "warning",
-        title: getProviderUpdateInitialToastView({
-          updateProviders: candidateUnion,
-          oneClickProviders: candidateUnion,
-        }).title,
-        timeout: 8_000,
-        actionProps: {
-          children: "Harnesses",
-          onClick: openProviderSettings,
-        },
+    // Eine Zeile, eine Aktion: „2 Updates verfügbar · [Harnesses]“.
+    const toastId = toastManager.add({
+      type: "warning",
+      title: getProviderUpdateInitialToastView({
+        updateProviders: candidateUnion,
+        oneClickProviders: candidateUnion,
+      }).title,
+      timeout: 8_000,
+      actionProps: {
+        children: "Harnesses",
+        onClick: openProviderSettings,
+      },
+      data: {
         actionVariant: "default",
-        data: {
-          hideCopyButton: true,
-          leadingIcon: <DownloadIcon aria-hidden="true" className="size-4 text-success" />,
-          onClose: dismissPrompt,
-        },
-      }),
-    );
+        hideCopyButton: true,
+        leadingIcon: <DownloadIcon aria-hidden="true" className="size-4 text-success" />,
+        onClose: dismissPrompt,
+      },
+    });
     activeToastRef.current = { toastId, key: notificationKey };
   }, [
     notificationKey,

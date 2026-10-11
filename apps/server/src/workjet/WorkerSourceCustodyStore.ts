@@ -155,3 +155,20 @@ export const make = Effect.gen(function* () {
   return WorkerSourceCustodyStore.of({ get, reserve, captureProfile, captureRuntime });
 });
 export const layer = Layer.effect(WorkerSourceCustodyStore, make);
+
+/** Bridge the descriptor-owned Promise API to the caller's actual service context. */
+export const makeWorkerSourceCustodyPersistence = Effect.fn("makeWorkerSourceCustodyPersistence")(
+  function* (store: WorkerSourceCustodyStore["Service"], receipt: WorkerSourceCustodyReceipt) {
+    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const workerId = receipt.intent.workerId;
+    return {
+      profile: {
+        original: receipt.profile,
+        capture: (capture: WorkerSourceProfileCustody) =>
+          runPromise(store.captureProfile(workerId, capture)),
+      },
+      captureRuntime: (capture: WorkerSourceRuntimeCustody) =>
+        runPromise(store.captureRuntime(workerId, capture)),
+    };
+  },
+);

@@ -19,6 +19,7 @@ import { remoteWorkerRequestDigest } from "./ctox/CtoxRemoteWorkerAdmission.ts";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 import {
   WorkerSourceCustodyStore,
+  makeWorkerSourceCustodyPersistence,
   layer as SourceCustodyStoreLayer,
 } from "./WorkerSourceCustodyStore.ts";
 
@@ -103,6 +104,8 @@ export const make = Effect.gen(function* () {
               profileRoot,
             })
             .pipe(Effect.mapError(failure));
+    const persistence = custody === undefined ? undefined :
+      yield* makeWorkerSourceCustodyPersistence(custodyStore, custody);
     yield* Effect.tryPromise({
       try: () =>
         installWorkerSourceRoute(request.requestId, route, {
@@ -119,24 +122,17 @@ export const make = Effect.gen(function* () {
                 nativeProfile: {
                   harness: nativeHarness,
                   directory: profileRoot,
-                  ...(custody === undefined
+                  ...(persistence === undefined
                     ? {}
                     : {
-                        persistence: {
-                          original: custody.profile,
-                          capture: (capture) =>
-                            Effect.runPromise(
-                              custodyStore.captureProfile(request.requestId, capture),
-                            ),
-                        },
+                        persistence: persistence.profile,
                       }),
                 },
               }),
-          ...(custody === undefined
+          ...(persistence === undefined
             ? {}
             : {
-                captureRuntime: (capture) =>
-                  Effect.runPromise(custodyStore.captureRuntime(request.requestId, capture)),
+                captureRuntime: persistence.captureRuntime,
               }),
         }),
       catch: failure,

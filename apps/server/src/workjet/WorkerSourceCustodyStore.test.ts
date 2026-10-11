@@ -15,6 +15,7 @@ import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import {
   WorkerSourceCustodyStore,
+  makeWorkerSourceCustodyPersistence,
   layer,
   type WorkerSourceCustodyIntent,
 } from "./WorkerSourceCustodyStore.ts";
@@ -143,15 +144,12 @@ it.effect(
         yield* runMigrations();
         const store = yield* WorkerSourceCustodyStore;
         const receipt = yield* store.reserve(savedIntent);
+        const persistence = yield* makeWorkerSourceCustodyPersistence(store, receipt);
         yield* Effect.promise(async () => {
           const prepared = await makeWorkerSourcePrivateProfile(
             savedIntent.profileRoot,
             create("first-scoped-key"),
-            {
-              original: receipt.profile,
-              capture: (capture) =>
-                Effect.runPromise(store.captureProfile(savedIntent.workerId, capture)),
-            },
+            persistence.profile,
           );
           try {
             originalDirectory = prepared.profile.directory;
@@ -174,15 +172,12 @@ it.effect(
         const store = yield* WorkerSourceCustodyStore;
         const receipt = yield* store.reserve(savedIntent);
         assert.deepEqual(receipt.runtime, runtime);
+        const persistence = yield* makeWorkerSourceCustodyPersistence(store, receipt);
         yield* Effect.promise(async () => {
           const recovered = await makeWorkerSourcePrivateProfile(
             savedIntent.profileRoot,
             create("new-scoped-key"),
-            {
-              original: receipt.profile,
-              capture: (capture) =>
-                Effect.runPromise(store.captureProfile(savedIntent.workerId, capture)),
-            },
+            persistence.profile,
           );
           try {
             assert.equal(recovered.profile.directory, originalDirectory);

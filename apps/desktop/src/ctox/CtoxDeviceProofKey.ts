@@ -24,8 +24,16 @@ export class CtoxDeviceProofKeyError extends Error {
 export interface CtoxDeviceProofKey {
   readonly publicJwk: Readonly<typeof PublicJwk.Type>;
   readonly thumbprint: string;
-  /** Only unwrap at the existing encrypted Secret-Store boundary. */
+  /** Only unwrap at the host Secret-Store boundary. */
   readonly exportForStorage: () => Redacted.Redacted<string>;
+  /** Signs the complete HTTP request for control-plane device recovery. */
+  readonly signRequest: (input: {
+    readonly nonce: string;
+    readonly method: "GET" | "POST";
+    readonly baseUrl: string;
+    readonly pathname: string;
+    readonly body: string;
+  }) => string;
   /** Invoke only after native target proof and current account-epoch checks. */
   readonly signNonce: (nonce: string) => {
     readonly publicX: string;
@@ -63,6 +71,16 @@ function wrapKey(key: NodeCrypto.KeyObject): CtoxDeviceProofKey {
     thumbprint,
     exportForStorage: () =>
       Redacted.make(key.export({ format: "der", type: "pkcs8" }).toString("base64")),
+    signRequest: ({ nonce, method, baseUrl, pathname, body }) => {
+      if (!base64url32.test(nonce)) throw new CtoxDeviceProofKeyError();
+      const host = new URL(baseUrl).host.toLowerCase();
+      const bodyHash = NodeCrypto.createHash("sha256").update(body, "utf8").digest("hex");
+      const payload = `${nonce}|${method}|${host}|${pathname}|${bodyHash}`;
+      return NodeCrypto.sign("sha256", NodeBuffer.Buffer.from(payload, "utf8"), {
+        key,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url");
+    },
     signNonce: (nonce: string) => {
       if (nonce.length !== 43 || !base64url32.test(nonce)) throw new CtoxDeviceProofKeyError();
       try {

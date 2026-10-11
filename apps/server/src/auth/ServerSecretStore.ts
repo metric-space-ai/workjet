@@ -149,24 +149,25 @@ export class ServerSecretStore extends Context.Service<
   }
 >()("workjet/auth/ServerSecretStore") {}
 
-export const make = Effect.gen(function* () {
+/** Reuse the same storage boundary for host-owned credentials outside safeStorage. */
+export const makeWithDirectory = (secretsDir: string) => Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const serverConfig = yield* ServerConfig.ServerConfig;
 
-  yield* fileSystem.makeDirectory(serverConfig.secretsDir, { recursive: true });
-  yield* fileSystem.chmod(serverConfig.secretsDir, 0o700).pipe(
+
+  yield* fileSystem.makeDirectory(secretsDir, { recursive: true });
+  yield* fileSystem.chmod(secretsDir, 0o700).pipe(
     Effect.mapError(
       (cause) =>
         new SecretStoreSecureError({
-          resource: `secrets directory ${serverConfig.secretsDir}`,
+          resource: `secrets directory ${secretsDir}`,
           cause,
         }),
     ),
   );
 
-  const resolveSecretPath = (name: string) => path.join(serverConfig.secretsDir, `${name}.bin`);
+  const resolveSecretPath = (name: string) => path.join(secretsDir, `${name}.bin`);
 
   const get: ServerSecretStore["Service"]["get"] = (name) =>
     fileSystem.readFile(resolveSecretPath(name)).pipe(
@@ -310,4 +311,8 @@ export const make = Effect.gen(function* () {
   });
 });
 
+export const make = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
+  return yield* makeWithDirectory(config.secretsDir);
+});
 export const layer = Layer.effect(ServerSecretStore, make);

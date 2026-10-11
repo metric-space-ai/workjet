@@ -501,9 +501,15 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
                   ? "network_unavailable"
                   : undefined;
     if (reason === "unsupported_action") return { status: "unsupported" };
+    const projectPhase = code === "WORKJET_PROJECT_TIMEOUT"
+      ? /^Workjet project list did not finish (collections|command|bridge|query readiness|native projection) before its deadline\\.$/u.exec(message)?.[1]?.replaceAll(" ", "_")
+      : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT"
+        ? "native_request" : undefined;
     return {
       status: "failed",
-      ...(reason === undefined ? {} : { diagnostic: { stage: "execute", reason } }),
+      ...(reason === undefined ? {} : { diagnostic: {
+        stage: "execute", reason, ...(projectPhase === undefined ? {} : { phase: projectPhase }),
+      } }),
     };
   }
 })()`;
@@ -2249,7 +2255,14 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           Effect.annotateCurrentSpan({
             outcome: result._tag,
             ...(result._tag === "failed"
-              ? { reason: result.diagnostic?.reason ?? result.code }
+              ? {
+                  reason: result.diagnostic?.reason ?? result.code,
+                  ...(result.diagnostic?.phase
+                    ? { phase: result.diagnostic.phase }
+                    : result.code === "timeout"
+                      ? { phase: "desktop_delivery" }
+                      : {}),
+                }
               : {}),
           }),
         ),

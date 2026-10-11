@@ -1256,11 +1256,67 @@ describe("CtoxGuestManager", () => {
         });
         assert.deepEqual(
           yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
-          { _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason } },
+          {
+            _tag: "failed",
+            code: "guest_failed",
+            diagnostic: {
+              stage: "execute",
+              reason,
+              ...(message === "Workjet project list did not finish collections before its deadline."
+                ? { phase: "collections" }
+                : message.startsWith("Native request ")
+                  ? { phase: "native_request" }
+                  : {}),
+            },
+          },
         );
       }
     }).pipe(Effect.provide(harness.layer));
   });
+
+  it.effect(
+    "retains only fixed project-list timeout phases without exposing renderer error text",
+    () => {
+      const harness = makeGuestHarness();
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.ensurePooled(descriptor.id);
+        for (const [label, phase] of [
+          ["collections", "collections"],
+          ["command", "command"],
+          ["bridge", "bridge"],
+          ["query readiness", "query_readiness"],
+          ["native projection", "native_projection"],
+          ["private-instance?token=private-value", undefined],
+        ] as const) {
+          const context = NodeVM.createContext({
+            fixtureMessage: `Workjet project list did not finish ${label} before its deadline.`,
+          });
+          NodeVM.runInContext(
+            "globalThis.workjetProjectControl = async () => { throw Object.assign(new Error(fixtureMessage), { code: 'WORKJET_PROJECT_TIMEOUT' }); };",
+            context,
+          );
+          harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) =>
+            NodeVM.runInContext(expression, context),
+          );
+          const result = yield* manager.requestProjectControl(descriptor.id, {
+            action: "project.list",
+          });
+          assert.deepEqual(result, {
+            _tag: "failed",
+            code: "guest_failed",
+            diagnostic: {
+              stage: "execute",
+              reason: "request_timeout",
+              ...(phase === undefined ? {} : { phase }),
+            },
+          });
+          expect(result).not.toHaveProperty("message");
+          expect(result).not.toHaveProperty("diagnostic.message");
+        }
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
 
   it.effect("keeps unsupported and private renderer exceptions distinct", () => {
     const harness = makeGuestHarness();

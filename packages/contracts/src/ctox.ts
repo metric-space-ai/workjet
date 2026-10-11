@@ -1162,6 +1162,16 @@ export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
     "project_control_not_ready",
     "supervisor_control_not_ready",
   ]),
+  phase: Schema.optionalKey(
+    Schema.Literals([
+      "collections",
+      "command",
+      "bridge",
+      "query_readiness",
+      "native_projection",
+      "native_request",
+    ]),
+  ),
 });
 export type CtoxWorkjetProjectControlDiagnostic = typeof CtoxWorkjetProjectControlDiagnostic.Type;
 

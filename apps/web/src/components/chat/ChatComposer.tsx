@@ -130,6 +130,7 @@ import {
   WorkjetCapabilityMenu,
   type WorkjetSelectableRole,
 } from "./workjetSurfaces";
+import { workjetConnectionStatusLabel } from "./WorkjetCapabilityMenu";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -559,7 +560,6 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
-  const [customModelDrafts, setCustomModelDrafts] = useState<Readonly<Record<string, string>>>({});
   const [computerEditorState, setComputerEditorState] = useState<ComputerEditorState>({
     drafts: {},
     saving: false,
@@ -1554,7 +1554,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (connection) applyCtoxBusinessOsConnection(connection);
   };
   const [ctoxBusinessOsConnecting, setCtoxBusinessOsConnecting] = useState(false);
-  const [ctoxBusinessOsConnectError, setCtoxBusinessOsConnectError] = useState<string | null>(null);
   const ctoxProvisioningRef = useRef(false);
   const ctoxBindingContextKey = `${environmentId}:${JSON.stringify(composerDraftTarget)}:${activeWorkjetScope.selectionRevision}`;
   const ctoxBindingContextRef = useRef({
@@ -1581,7 +1580,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     ctoxProvisioningRef.current = true;
     setCtoxBusinessOsConnecting(true);
-    setCtoxBusinessOsConnectError(null);
     const contextKey = ctoxBindingContextKey;
     try {
       const result = await provision({
@@ -1590,16 +1588,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         target: { _tag: "ctox_dev", tenantId: managedSourceTenant },
       });
       if (result._tag === "failed") {
-        setCtoxBusinessOsConnectError(
-          result.code === "signed_out" ? "Bei CTOX anmelden" : "Business OS nicht verbunden",
-        );
+        toastManager.add({
+          type: "error",
+          title: result.code === "signed_out" ? "Bei CTOX anmelden" : "Instanz nicht verbunden",
+        });
         return;
       }
       decisionHubConnectionsQuery.refresh();
       if (ctoxBindingContextRef.current.key === contextKey)
         ctoxBindingContextRef.current.apply(result.connection);
     } catch {
-      setCtoxBusinessOsConnectError("Business OS nicht verbunden");
+      toastManager.add({ type: "error", title: "Instanz nicht verbunden" });
     } finally {
       ctoxProvisioningRef.current = false;
       setCtoxBusinessOsConnecting(false);
@@ -1623,11 +1622,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const ctoxSendDisabledReason = !effectiveEnabledCapabilityIds?.includes("ctox-business-os")
     ? null
     : !ctoxBinding?.target.instanceId
-      ? "Business-OS-Verbindung wählen"
+      ? "Instanz für das Instanz-Werkzeug wählen"
       : !selectedCtoxConnection
-        ? "CTOX-Instanz auf diesem Rechner nicht verfügbar"
+        ? "Instanz auf diesem Rechner nicht verfügbar"
         : selectedCtoxConnection.status !== "ready"
-          ? `CTOX Business OS: ${selectedCtoxConnection.status}`
+          ? `Instanz-Werkzeug: ${workjetConnectionStatusLabel(selectedCtoxConnection.status)}`
           : null;
   const selectedDecisionHubConnection = decisionHubConnections.find(
     (connection) => connection.connectionId === decisionHubConnectionId,
@@ -1635,11 +1634,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const decisionHubSendDisabledReason = !effectiveEnabledCapabilityIds?.includes("decision-hub")
     ? null
     : decisionHubConnectionId === null
-      ? "Decision-Hub-Verbindung wählen"
+      ? "Instanz für die Entscheidungszentrale wählen"
       : selectedDecisionHubConnection === undefined
-        ? "Decision-Hub-Verbindung passt nicht zur Umgebung"
+        ? "Instanz passt nicht zu diesem Rechner"
         : selectedDecisionHubConnection.status !== "ready"
-          ? `Decision Hub: ${selectedDecisionHubConnection.status}${selectedDecisionHubConnection.reason ? `: ${selectedDecisionHubConnection.reason}` : ""}`
+          ? `Entscheidungszentrale: ${workjetConnectionStatusLabel(selectedDecisionHubConnection.status)}`
           : null;
   const privateChatBinding = draftWorkjetConfig.ctoxCrewChat;
   const nativeDraftIntent = composerDraft.privateChatIntent;
@@ -3587,17 +3586,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerManualTargetControls = workerModeActive ? null : (
     <ComposerManualTargetControls
       key={manualModelDraftKey}
-      customModelEditor={{
-        draft: customModelDrafts[manualModelDraftKey] ?? null,
-        onDraftChange: (draft) => {
-          setCustomModelDrafts((previous) => {
-            const next = { ...previous };
-            if (draft === null) delete next[manualModelDraftKey];
-            else next[manualModelDraftKey] = draft;
-            return next;
-          });
-        },
-      }}
       disabledReason={getModelDisabledReason(selectedInstanceId, selectedModel)}
       configuredInstanceIds={configuredProviderInstanceIds}
       configuredDriverKinds={configuredProviderDriverKinds}
@@ -3646,15 +3634,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       usage={activeContextWindow}
       providerDisplayName={activeThreadProviderDisplayName}
     />
-  ) : null;
-  const composerContextWindowMenuContent = composerContextWindowControl ? (
-    <div
-      className="flex items-center justify-between gap-2 px-2 py-1"
-      data-composer-context-window-menu="true"
-    >
-      <span className="text-sm text-muted-foreground">Kontextfenster</span>
-      {composerContextWindowControl}
-    </div>
   ) : null;
 
   const composerAttachmentControl =
@@ -4167,16 +4146,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                   environment.environmentId === computer.environmentId,
                               )?.connection;
                               const status =
-                                connection?.phase === "connected"
-                                  ? "Online"
-                                  : connection?.phase === "offline"
-                                    ? "Offline"
-                                    : "Getrennt";
+                                connection?.phase === "connected" ? "verbunden" : "getrennt";
                               const reason = !businessOsCodeScopeContainsEnvironment(
                                 businessOsCodeScope,
                                 computer.environmentId,
                               )
-                                ? "Keine Coding-Route im Business OS"
+                                ? "In dieser Instanz nicht freigegeben"
                                 : connection?.phase !== "connected"
                                   ? (connection?.error ?? status)
                                   : !selectableEnvironmentIds.includes(computer.environmentId) &&
@@ -4247,6 +4222,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           }
                         />
                       ) : null}
+                      {/* Kontext als kleiner Chip in der Leiste, nie als Meter im Menü. */}
+                      {composerContextWindowControl}
                     </>
                   }
                   settings={
@@ -4257,7 +4234,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       onToggleInteractionMode={toggleInteractionMode}
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
-                      contextWindowMenuContent={composerContextWindowMenuContent}
                       systemPromptMenuContent={composerSystemPromptControl}
                       extraMenuContent={
                         <div className="flex max-w-sm flex-col items-start gap-2 px-2 py-1">
@@ -4291,7 +4267,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 : undefined
                             }
                             ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
-                            ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                             onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                             workjetRole={workerModeActive ? null : effectiveWorkjetRole}
                             onWorkjetRoleChange={effectiveWorkjetRoleChange}

@@ -90,25 +90,35 @@ describe("CompactComposerControlsMenu", () => {
   });
 
   it("keeps System Prompt before Tools in the compact overflow menu", () => {
-    const contextWindowContent = <span data-test-context-window-menu="true">Context</span>;
     const systemPromptContent = <span data-test-system-prompt-menu="true">System prompt</span>;
     const toolsContent = <span data-test-tools-menu="true">Tools</span>;
     const menu = renderMenu({
       ...baseProps,
-      contextWindowMenuContent: contextWindowContent,
       systemPromptMenuContent: systemPromptContent,
       workjetMenuContent: toolsContent,
     });
 
-    expect(containsNode(menu, contextWindowContent)).toBe(true);
     expect(containsNode(menu, systemPromptContent)).toBe(true);
     expect(containsNode(menu, toolsContent)).toBe(true);
-    expect(textContent(menu).indexOf("Context")).toBeLessThan(
-      textContent(menu).indexOf("System prompt"),
-    );
     expect(textContent(menu).indexOf("System prompt")).toBeLessThan(
       textContent(menu).indexOf("Tools"),
     );
+  });
+
+  it("has no slot for a context meter: the menu holds only simple entries", () => {
+    const menu = renderMenu(baseProps);
+    const meters: unknown[] = [];
+    const walk = (node: ReactNode): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (!isValidElement(node)) return;
+      const element = node as InspectableElement;
+      if (element.props.role === "meter" || element.props["data-context-window-meter"]) {
+        meters.push(element);
+      }
+      walk(element.props.children);
+    };
+    walk(menu);
+    expect(meters).toEqual([]);
   });
 
   it("omits thread settings when the thread has no server configuration", () => {

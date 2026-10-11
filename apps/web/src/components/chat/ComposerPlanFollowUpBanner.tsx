@@ -20,9 +20,6 @@ export const ComposerPlanFollowUpBanner = memo(function ComposerPlanFollowUpBann
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{planTitle}</span>
         ) : null}
       </div>
-      {/* <div className="mt-2 text-xs text-muted-foreground">
-        Review the plan
-      </div> */}
     </div>
   );
 });

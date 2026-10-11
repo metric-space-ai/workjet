@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import {
-  WorkjetMailboxError,
   WorkjetMailboxFailureReason,
   WORKJET_MAILBOX_RPC_MAX_TTL_SECONDS,
   WORKJET_MAILBOX_RPC_MIN_TTL_SECONDS,
@@ -436,12 +435,39 @@ export function buildWorkjetSendHandoffInput(input: {
 const MAILBOX_FAILURE_REASONS: ReadonlySet<string> = new Set(WorkjetMailboxFailureReason.literals);
 
 /**
- * The typed operation error, rendered as the contract's own bounded sentence.
+ * Deutsche Statuszeile je Mailbox-Grund. Der Vertrag liefert englische Sätze;
+ * die Oberfläche zeigt eine kurze deutsche Zeile (höchstens 12 Wörter).
+ */
+const WORKJET_MAILBOX_FAILURE_TEXT: Readonly<Record<WorkjetMailboxFailureReason, string>> = {
+  unauthorized: "Nicht berechtigt",
+  "unknown-target": "Empfänger unbekannt",
+  "target-thread-deleted": "Unterhaltung gibt es nicht mehr",
+  "target-offline": "Empfänger getrennt",
+  "malformed-envelope": "Nachricht ungültig",
+  "invalid-signature": "Signatur ungültig",
+  "duplicate-envelope": "Bereits zugestellt",
+  "payload-too-large": "Nachricht zu groß",
+  "envelope-expired": "Vor Zustellung abgelaufen",
+  "delegation-expired": "Auftrag abgelaufen",
+  "depth-exceeded": "Tiefe ausgeschöpft",
+  "review-rounds-exceeded": "Prüfrunden ausgeschöpft",
+  "token-budget-exceeded": "Token-Budget ausgeschöpft",
+  "cost-budget-exceeded": "Kostenbudget ausgeschöpft",
+  "handoff-snapshot-unavailable": "Übergabe auf diesem Rechner nicht verfügbar",
+  "invalid-state-transition": "Statuswechsel nicht erlaubt",
+  "version-skew": "Gegenstelle hat eine andere Version",
+  "transport-unavailable": "Verbindung nicht verfügbar",
+  "mailbox-unavailable": "Postfach nicht verfügbar",
+  cancelled: "Abgebrochen",
+};
+
+/**
+ * The typed operation error, rendered as a short German status line.
  *
  * A mailbox failure is a bounded reason and nothing else — no prompt, no path,
- * no transport detail — so the panel reconstructs the error to read its
- * message rather than showing whatever a squashed cause happens to stringify
- * to. Anything that is not a mailbox error stays generic.
+ * no transport detail — so the panel reads the reason rather than showing
+ * whatever a squashed cause happens to stringify to. Anything that is not a
+ * mailbox error stays generic.
  */
 export function workjetMailboxFailureMessage(error: unknown): string {
   const reason =
@@ -455,7 +481,7 @@ export function workjetMailboxFailureMessage(error: unknown): string {
       ? (error.reason as WorkjetMailboxFailureReason)
       : null;
   if (reason === null) return "Senden fehlgeschlagen";
-  return new WorkjetMailboxError({ reason }).message;
+  return WORKJET_MAILBOX_FAILURE_TEXT[reason];
 }
 
 /** What the last submit produced, rendered inline under the form. */
@@ -474,6 +500,11 @@ export interface WorkjetSendToWorkerPanelProps {
   readonly roster?: WorkjetMeshRoster | null;
   /** Last thread id used per remote environment. Panel-local memory only. */
   readonly rememberedThreadIds?: Readonly<Record<string, string>>;
+  /**
+   * Anzeigenamen der Rechner je environmentId (z. B. aus den Einstellungen →
+   * Rechner). Ohne Namen zeigt der Empfänger „—“, nie eine gekürzte ID.
+   */
+  readonly computerLabels?: Readonly<Record<string, string>> | undefined;
   /** Kept for callers; the inline row has one layout at every width. */
   readonly compact?: boolean;
   readonly busy: boolean;
@@ -485,9 +516,16 @@ export interface WorkjetSendToWorkerPanelProps {
   readonly onClose?: (() => void) | undefined;
 }
 
-/** Sichtbarer Name eines anderen Rechners aus dem Mesh (es gibt dort keinen Anzeigenamen). */
-export function workjetPeerLabel(peer: WorkjetMeshRosterPeer): string {
-  return `Rechner ${peer.environmentId.slice(0, 8)}`;
+/**
+ * Sichtbarer Name eines anderen Rechners aus dem Mesh: der Anzeigename des
+ * Rechners, sonst „—“. Nie die (gekürzte) environmentId.
+ */
+export function workjetPeerLabel(
+  peer: WorkjetMeshRosterPeer,
+  computerLabels?: Readonly<Record<string, string>> | undefined,
+): string {
+  const label = computerLabels?.[peer.environmentId]?.trim();
+  return label !== undefined && label.length > 0 ? label : "—";
 }
 
 const HERE_RECIPIENT = "here";
@@ -521,7 +559,7 @@ export interface WorkjetSendRecipientChoice {
 export function workjetSendRecipientChoices(
   props: Pick<
     WorkjetSendToWorkerPanelProps,
-    "draft" | "threads" | "roster" | "rememberedThreadIds"
+    "draft" | "threads" | "roster" | "rememberedThreadIds" | "computerLabels"
   >,
 ): ReadonlyArray<WorkjetSendRecipientChoice> {
   const handoff = props.draft.tab === "handoff";
@@ -546,7 +584,7 @@ export function workjetSendRecipientChoices(
     const reachable = handoff || props.rememberedThreadIds?.[peer.environmentId] !== undefined;
     return {
       value: `peer:${peer.environmentId}`,
-      label: workjetPeerLabel(peer),
+      label: workjetPeerLabel(peer, props.computerLabels),
       meta: reachable ? workjetPeerTrustLabel(peer.binding) : "nur Übergabe",
       group: "peer" as const,
       disabledReason: reachable ? null : "nur Übergabe",

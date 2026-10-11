@@ -96,9 +96,10 @@ describe("the bar's leftmost decision", () => {
     expect(markup).toContain('aria-haspopup="menu"');
   });
 
-  it("shows harness and model as a short status next to each Luma", () => {
+  it("shows only the harness next to each Luma, never a raw model ID", () => {
     const text = textContent(items());
-    expect(text).toContain("Claude Code · gpt-5.6-sol");
+    expect(text).toContain("Claude Code");
+    expect(text).not.toContain("gpt-5.6-sol");
     expect(text).toContain("Lumas verwalten");
   });
 

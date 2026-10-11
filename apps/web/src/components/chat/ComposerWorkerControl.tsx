@@ -53,16 +53,14 @@ export interface ComposerWorkerControlProps {
   readonly onOpenWorkjetSettings: () => void;
 }
 
-/** Kurze Meta-Zeile eines Lumas: Harness · Modell. */
+/** Kurze Meta eines Lumas: nur der Harness-Name, nie eine Roh-Modell-ID. */
 export function workerChoiceMeta(worker: WorkjetWorkerProfile): string {
-  return [workjetHarnessDisplayLabel(worker.harness), worker.modelId]
-    .filter((part) => part.length > 0)
-    .join(" · ");
+  return workjetHarnessDisplayLabel(worker.harness);
 }
 
 /**
  * Die Einträge des Luma-Dropdowns: „Manuell“, jeder gespeicherte Luma mit
- * Harness · Modell, darunter „Lumas verwalten“ (Einstellungen → Lumas).
+ * seinem Harness, darunter „Lumas verwalten“ (Einstellungen → Lumas).
  * Hook-frei, damit Tests den Baum direkt prüfen können.
  */
 export function ComposerWorkerMenuItems(

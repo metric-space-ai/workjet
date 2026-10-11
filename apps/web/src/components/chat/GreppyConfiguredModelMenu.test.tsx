@@ -46,16 +46,15 @@ describe("Greppy configured model menu", () => {
         modelsUnavailableReason: null,
         selectedModelId: "claude-local",
         onSelectModel: () => undefined,
-        onEditCustomModel: () => undefined,
       }),
     );
     expect(entries).toContain("Private Claude");
-    expect(entries).toContain("Eigene Modell-ID");
+    expect(entries).not.toContain("Eigene Modell-ID");
     // A configured profile has no provider grouping: "Claude" must not become a group label.
     expect(entries.match(/Claude/g)?.length).toBe(1);
   });
 
-  it("keeps an unlisted current model and the custom-ID entry available", () => {
+  it("offers no typed model ID for an unlisted current model", () => {
     const entries = textOf(
       ComposerModelMenuItems({
         modelSource: "configured",
@@ -63,12 +62,11 @@ describe("Greppy configured model menu", () => {
         modelsUnavailableReason: null,
         selectedModelId: "company/private:v2",
         onSelectModel: () => undefined,
-        onEditCustomModel: () => undefined,
       }),
     );
-    expect(entries).toContain("company/private:v2");
-    expect(entries).toContain("eigene ID");
-    expect(entries).toContain("Eigene Modell-ID");
+    expect(entries).toContain("Keine Modelle");
+    expect(entries).not.toContain("company/private:v2");
+    expect(entries).not.toContain("Eigene Modell-ID");
   });
 
   it("groups the gateway catalog by provider", () => {

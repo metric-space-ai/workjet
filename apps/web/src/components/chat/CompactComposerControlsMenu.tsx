@@ -58,9 +58,10 @@ export interface CompactComposerControlsMenuProps {
   workerMenuContent?: ReactNode;
   extraMenuContent?: ReactNode;
   traitsMenuContent?: ReactNode;
-  /** Context usage stays reachable between Effort and System Prompt. */
-  contextWindowMenuContent?: ReactNode;
-  /** System Prompt stays reachable from the compact menu before Tools. */
+  /**
+   * System Prompt stays reachable from the compact menu before Tools. The menu
+   * holds only simple entries; the context meter is a chip in the bar.
+   */
   systemPromptMenuContent?: ReactNode;
   workjetMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
@@ -133,12 +134,6 @@ export function CompactComposerControlsMenuView(
             {props.traitsMenuContent ? (
               <>
                 {props.traitsMenuContent}
-                <MenuDivider />
-              </>
-            ) : null}
-            {props.contextWindowMenuContent ? (
-              <>
-                {props.contextWindowMenuContent}
                 <MenuDivider />
               </>
             ) : null}

@@ -279,13 +279,16 @@ describe("workjet send payloads", () => {
 });
 
 describe("workjetMailboxFailureMessage", () => {
-  it("renders the contract's own sentence for a typed mailbox failure", () => {
+  it("renders a short German line for a typed mailbox failure", () => {
     expect(
       workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "unknown-target" }),
-    ).toBe("The mailbox target address is unknown.");
+    ).toBe("Empfänger unbekannt");
     expect(
       workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "unauthorized" }),
-    ).toBe("The mailbox operation is not authorized for this environment.");
+    ).toBe("Nicht berechtigt");
+    expect(
+      workjetMailboxFailureMessage({ _tag: "WorkjetMailboxError", reason: "target-offline" }),
+    ).toBe("Empfänger getrennt");
   });
 
   it("stays generic for anything that is not a bounded mailbox failure", () => {
@@ -574,6 +577,27 @@ describe("recipient choices", () => {
     ]);
     // Without a known thread id a peer only takes a handoff.
     expect(choices[1]?.disabledReason).toBe("nur Übergabe");
+  });
+
+  it("names a peer by its computer name, otherwise a dash, never a shortened ID", () => {
+    const unnamed = workjetSendRecipientChoices({
+      draft: validHandoffDraft,
+      threads: [],
+      roster: ROSTER,
+    });
+    const peers = unnamed.filter((choice) => choice.group === "peer");
+    expect(peers.map((choice) => choice.label)).toEqual(["—", "—"]);
+    for (const choice of peers) expect(choice.label).not.toContain("environment");
+    const named = workjetSendRecipientChoices({
+      draft: validHandoffDraft,
+      threads: [],
+      roster: ROSTER,
+      computerLabels: { "environment-newer": "gpu3-a4500" },
+    });
+    expect(named.find((choice) => choice.value === "peer:environment-newer")?.label).toBe(
+      "gpu3-a4500",
+    );
+    expect(named.find((choice) => choice.value === "peer:environment-older")?.label).toBe("—");
   });
 
   it("makes peers reachable for a handoff and offers a new chat here", () => {

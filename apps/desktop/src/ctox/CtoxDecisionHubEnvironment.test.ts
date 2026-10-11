@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { vi } from "vite-plus/test";
+import { beforeEach, vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -12,7 +12,11 @@ import {
   DesktopConnectionCatalogStoreProtectionError,
   DesktopConnectionCatalogStoreReadError,
 } from "../app/DesktopConnectionCatalogStore.ts";
-import { makeDecisionHubEnvironmentResolver } from "./CtoxDecisionHubEnvironment.ts";
+let makeDecisionHubEnvironmentResolver: (typeof import("./CtoxDecisionHubEnvironment.ts"))["makeDecisionHubEnvironmentResolver"];
+beforeEach(async () => {
+  vi.resetModules();
+  ({ makeDecisionHubEnvironmentResolver } = await import("./CtoxDecisionHubEnvironment.ts"));
+});
 
 const fakeSafeStorage = vi.hoisted(() => ({
   decryptString: vi.fn((_bytes: Uint8Array): string => {
@@ -79,37 +83,42 @@ describe("decision hub local environment fallback", () => {
     ],
     ["catalog decoding", Effect.succeed(Option.some("unreadable fixture JSON"))],
   ] as const) {
-    it.effect(`recovers from ${name} and reports it once without rewriting the catalog`, () =>
-      Effect.gen(function* () {
-        let notifications = 0;
-        let localReads = 0;
-        const resolve = yield* makeDecisionHubEnvironmentResolver({
-          readCatalog: readCatalog as Effect.Effect<
-            Option.Option<string>,
-            DesktopConnectionCatalogStoreProtectionError | DesktopConnectionCatalogStoreReadError
-          >,
-          localConfigurations: Effect.sync(() => {
-            localReads++;
-            return [config];
-          }),
-          notifyCatalogError: Effect.sync(() => {
-            notifications++;
-          }),
-        });
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const environment = yield* resolve("fixture-local").pipe(
-            Effect.provideService(HttpClient.HttpClient, noNetwork),
-            Effect.provideService(DesktopLocalServiceSession, session),
-          );
-          expect(environment).toEqual({
-            httpBaseUrl: "http://127.0.0.1:3773/",
-            wsBaseUrl: "ws://127.0.0.1:3773/",
-            bearerToken: "fixture-local-bearer",
-          });
-        }
-        expect(notifications).toBe(1);
-        expect(localReads).toBe(2);
-      }),
+    it.effect(
+      `recovers from ${name} and reports it once across resolver instances without rewriting the catalog`,
+      () =>
+        Effect.gen(function* () {
+          let notifications = 0;
+          let localReads = 0;
+          const createResolver = () =>
+            makeDecisionHubEnvironmentResolver({
+              readCatalog: readCatalog as Effect.Effect<
+                Option.Option<string>,
+                | DesktopConnectionCatalogStoreProtectionError
+                | DesktopConnectionCatalogStoreReadError
+              >,
+              localConfigurations: Effect.sync(() => {
+                localReads++;
+                return [config];
+              }),
+              notifyCatalogError: Effect.sync(() => {
+                notifications++;
+              }),
+            });
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const resolve = yield* createResolver();
+            const environment = yield* resolve("fixture-local").pipe(
+              Effect.provideService(HttpClient.HttpClient, noNetwork),
+              Effect.provideService(DesktopLocalServiceSession, session),
+            );
+            expect(environment).toEqual({
+              httpBaseUrl: "http://127.0.0.1:3773/",
+              wsBaseUrl: "ws://127.0.0.1:3773/",
+              bearerToken: "fixture-local-bearer",
+            });
+          }
+          expect(notifications).toBe(1);
+          expect(localReads).toBe(2);
+        }),
     );
   }
   it.effect(

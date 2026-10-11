@@ -438,9 +438,9 @@ export const make = (
       fs: {
         readTextFile: false,
         writeTextFile: false,
-        ...options.clientCapabilities?.fs,
+        ...(options.namespaceCapture ? {} : options.clientCapabilities?.fs),
       },
-      terminal: options.clientCapabilities?.terminal ?? false,
+      terminal: options.namespaceCapture ? false : (options.clientCapabilities?.terminal ?? false),
       ...(options.clientCapabilities?.auth ? { auth: options.clientCapabilities.auth } : {}),
       ...(options.clientCapabilities?.elicitation
         ? { elicitation: options.clientCapabilities.elicitation }
@@ -725,16 +725,30 @@ export const make = (
       return yield* effect;
     });
 
+    const unconfinedCallback = () =>
+      Effect.fail(
+        new EffectAcpErrors.AcpTransportError({
+          detail: "Namespace server-side filesystem and terminal execution is unavailable",
+          cause: "A confined server callback is required",
+        }),
+      );
     return {
       handleRequestPermission: acp.handleRequestPermission,
       handleElicitation: acp.handleElicitation,
-      handleReadTextFile: acp.handleReadTextFile,
-      handleWriteTextFile: acp.handleWriteTextFile,
-      handleCreateTerminal: acp.handleCreateTerminal,
-      handleTerminalOutput: acp.handleTerminalOutput,
-      handleTerminalWaitForExit: acp.handleTerminalWaitForExit,
-      handleTerminalKill: acp.handleTerminalKill,
-      handleTerminalRelease: acp.handleTerminalRelease,
+      handleReadTextFile: (handler) =>
+        acp.handleReadTextFile(options.namespaceCapture ? unconfinedCallback : handler),
+      handleWriteTextFile: (handler) =>
+        acp.handleWriteTextFile(options.namespaceCapture ? unconfinedCallback : handler),
+      handleCreateTerminal: (handler) =>
+        acp.handleCreateTerminal(options.namespaceCapture ? unconfinedCallback : handler),
+      handleTerminalOutput: (handler) =>
+        acp.handleTerminalOutput(options.namespaceCapture ? unconfinedCallback : handler),
+      handleTerminalWaitForExit: (handler) =>
+        acp.handleTerminalWaitForExit(options.namespaceCapture ? unconfinedCallback : handler),
+      handleTerminalKill: (handler) =>
+        acp.handleTerminalKill(options.namespaceCapture ? unconfinedCallback : handler),
+      handleTerminalRelease: (handler) =>
+        acp.handleTerminalRelease(options.namespaceCapture ? unconfinedCallback : handler),
       handleSessionUpdate: acp.handleSessionUpdate,
       handleElicitationComplete: acp.handleElicitationComplete,
       handleUnknownExtRequest: acp.handleUnknownExtRequest,

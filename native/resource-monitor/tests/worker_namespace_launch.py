@@ -7,6 +7,7 @@ import os
 import pathlib
 import shutil
 import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
@@ -37,11 +38,12 @@ class Source(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-class UnixHTTP(http.server.HTTPServer):
-    address_family = socket.AF_UNIX
+class UnixHTTP(socketserver.UnixStreamServer):
+    pass
 
 socket_path = root / "model.sock"
-server = UnixHTTP(str(socket_path), Source)
+socket_bind_path = "/proc/" + str(os.getpid()) + "/fd/" + str(outside_fd) + "/model.sock"
+server = UnixHTTP(socket_bind_path, Source)
 os.chmod(socket_path, 0o600)
 serving = threading.Thread(target=server.serve_forever, daemon=True)
 serving.start()
@@ -111,7 +113,8 @@ sys.exit(23)
 """)
 plan = {
     "version": 1, "worktree": cap(workspace),
-    "gitIdentity": {}, "profile": cap(profile), "modelSocket": cap(socket_path),
+    "gitIdentity": {}, "profile": cap(profile),
+    "modelSocket": {"path": socket_bind_path, "identity": identity(socket_path)},
     "hostNetwork": identity(pathlib.Path("/proc/self/ns/net")),
     "runtimeFiles": [cap(worker_file)],
     "runtimeDirectories": [cap(runtime)],

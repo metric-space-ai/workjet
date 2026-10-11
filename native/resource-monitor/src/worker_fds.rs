@@ -11,7 +11,10 @@ pub fn close_inherited() -> std::io::Result<()> {
     }
     let descriptors = std::fs::read_dir("/proc/self/fd")?
         .map(|entry| {
-            entry?.file_name().to_str().and_then(|name| name.parse::<i32>().ok())
+            entry?
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<i32>().ok())
                 .ok_or_else(|| std::io::Error::other("invalid process descriptor"))
         })
         .collect::<std::io::Result<Vec<_>>>()?;

@@ -1,5 +1,8 @@
 import { expect, it } from "vite-plus/test";
-import { workerNamespaceSpawnInput, type WorkerNamespaceSpawnCapture } from "./WorkerNamespaceSpawn.ts";
+import {
+  workerNamespaceSpawnInput,
+  type WorkerNamespaceSpawnCapture,
+} from "./WorkerNamespaceSpawn.ts";
 
 const capture: WorkerNamespaceSpawnCapture = {
   helperPath: "/runtime/workjet-resource-monitor",
@@ -40,14 +43,35 @@ it("keeps command arguments and private credentials in their original channels",
 });
 
 it("rejects linked metadata and a foreign cwd before starting a process", () => {
-  expect(() => workerNamespaceSpawnInput(spawn, { ...capture, worktree: { ...capture.worktree, kind: undefined } })).toThrow("custody");
-  expect(() => workerNamespaceSpawnInput({ ...spawn, cwd: "/foreign" }, capture)).toThrow("custody");
-  expect(() => workerNamespaceSpawnInput(spawn, { ...capture, worktree: { ...capture.worktree, adminPath: "/shared/git" } })).toThrow("custody");
+  expect(() =>
+    workerNamespaceSpawnInput(spawn, {
+      ...capture,
+      worktree: { ...capture.worktree, kind: undefined },
+    }),
+  ).toThrow("custody");
+  expect(() => workerNamespaceSpawnInput({ ...spawn, cwd: "/foreign" }, capture)).toThrow(
+    "custody",
+  );
+  expect(() =>
+    workerNamespaceSpawnInput(spawn, {
+      ...capture,
+      worktree: { ...capture.worktree, adminPath: "/shared/git" },
+    }),
+  ).toThrow("custody");
 });
 
 it("rejects ambient environment inheritance and unresolved or redirected executables", () => {
-  expect(() => workerNamespaceSpawnInput(spawn, capture, [{ type: "http", url: "http://127.0.0.1:32100" }])).toThrow("confined server");
+  expect(() =>
+    workerNamespaceSpawnInput(spawn, capture, [{ type: "http", url: "http://127.0.0.1:32100" }]),
+  ).toThrow("confined server");
   expect(() => workerNamespaceSpawnInput({ ...spawn, env: {} }, capture)).toThrow("custody");
-  expect(() => workerNamespaceSpawnInput({ ...spawn, command: "python3" }, capture)).toThrow("custody");
-  expect(() => workerNamespaceSpawnInput(spawn, { ...capture, runtimeFiles: [{ path: "/runtime/../secret", identity: { device: "1", inode: "9" } }] })).toThrow("custody");
+  expect(() => workerNamespaceSpawnInput({ ...spawn, command: "python3" }, capture)).toThrow(
+    "custody",
+  );
+  expect(() =>
+    workerNamespaceSpawnInput(spawn, {
+      ...capture,
+      runtimeFiles: [{ path: "/runtime/../secret", identity: { device: "1", inode: "9" } }],
+    }),
+  ).toThrow("custody");
 });

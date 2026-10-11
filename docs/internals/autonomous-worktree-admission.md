@@ -187,6 +187,12 @@ its real spawn. The option requires original isolated Git custody, an exact
 cwd, a resolved executable and the source-only environment. It does not come
 from a client config, a runtimeMode flag or a project policy reference.
 
+Namespace launches reject MCP servers until their actions can be confined.
+ACP filesystem and terminal capabilities are disabled. Even if the agent
+requests those callbacks, registered host-side handlers are not invoked and
+the request receives an explicit unsupported error. The real ACP integration
+fixture verifies this across two turns through the captured Linux process.
+
 This is a process-boundary component, not native execution admission. Verified
 runtime/profile capture production and recovery, actual Owner/team authority,
 provider-specific producers, and confined server-mediated Git/file/MCP actions

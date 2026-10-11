@@ -200,3 +200,28 @@ are still required. No supported autonomous-worktree mode or installed G2
 acceptance is claimed. The retained Linux fixture runs actual file edits,
 compilation, Git commit and streamed HTTP over private model IPC; it uses no
 real provider account or model.
+
+### Original private native profile custody
+
+The Source route now creates each private-IPC native profile in a fresh private
+child of its configured profile root. It opens the original root and child
+directories, populates the profile through the held child descriptor, and
+records the child's original device/inode. Existing profiles and config files
+in the root are not adopted or overwritten. A renamed root or profile cannot
+redirect writes containing the scoped Source key.
+
+Source admission checks the original root and profile identities, canonical
+paths, owner, and private permissions both before and after the Source request.
+Provider start and recovery consume that admission and receive its original
+profile capture. Cached Source-route setup uses the configured root for its
+immutable comparison; it must still pass original-profile verification. Route
+revocation closes the descriptor without recursively deleting profiles or
+following a replacement pathname.
+
+This capture belongs to the current server-owned Source route. It is not a
+persisted Owner/team execution grant, a durable profile-recovery record, or an
+executable-runtime provenance record. A new route creates a fresh profile;
+a later G2 recovery producer must retain and validate its original custody
+rather than adopt an old directory. Legacy TCP profiles keep their existing
+behavior. Public autonomous-worktree modes remain unavailable until the
+authority, runtime, confined MCP/tools, and recovery contracts are implemented.

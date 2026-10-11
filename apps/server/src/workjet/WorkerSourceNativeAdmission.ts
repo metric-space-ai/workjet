@@ -98,6 +98,10 @@ export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNative
       WORKJET_WORKER_SOURCE_URL: baseUrl,
       WORKJET_WORKER_SOURCE_KEY: source.apiKey,
     };
-    return { ...profile, environment };
+    return {
+      ...profile,
+      environment,
+      ...(source.nativeProfileCapture ? { namespaceProfile: source.nativeProfileCapture } : {}),
+    };
   },
 );

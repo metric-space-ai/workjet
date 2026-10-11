@@ -10,6 +10,9 @@ import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import { makeWorkerSourceModelSocket } from "../../workjet/WorkerSourceModelSocket.ts";
 import type { WorkerNamespaceSpawnCapture } from "../../workjet/WorkerNamespaceSpawn.ts";
+import { makeWorkerSourcePrivateProfile } from "../../workjet/WorkerSourcePrivateProfile.ts";
+import { workerSourceNativeProfile } from "../../workjet/WorkerSourceNativeProfile.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "../../workjet/WorkerModelNamespaceBridge.ts";
 
 const helper = process.env.WORKJET_TEST_NAMESPACE_HELPER;
 
@@ -26,10 +29,9 @@ const fixture = async () => {
   const profile = NodePath.join(root, "profile");
   const runtime = NodePath.join(root, "runtime");
   let socket: Awaited<ReturnType<typeof makeWorkerSourceModelSocket>> | undefined;
+  let prepared: Awaited<ReturnType<typeof makeWorkerSourcePrivateProfile>> | undefined;
   try {
-    for (const path of [workspace, profile, runtime]) await NodeFSP.mkdir(path, { mode: 0o700 });
-    const home = NodePath.join(profile, "home");
-    await NodeFSP.mkdir(home, { mode: 0o700 });
+    for (const path of [workspace, runtime]) await NodeFSP.mkdir(path, { mode: 0o700 });
     const script = NodePath.join(runtime, "agent.py");
     await NodeFSP.copyFile(agent, script);
     NodeChildProcess.execFileSync("/usr/bin/git", ["init", workspace], {
@@ -44,6 +46,15 @@ const fixture = async () => {
       NodePath.join(root, "model-ipc"),
       (_request, response) => response.end(),
     );
+    prepared = await makeWorkerSourcePrivateProfile(profile, (directory) =>
+      workerSourceNativeProfile({
+        harness: "minimax-code",
+        model: "gpt-6.1-sol",
+        directory,
+        baseUrl: WORKER_MODEL_NAMESPACE_BASE_URL,
+        apiKey: "acp-profile-fixture",
+      }),
+    );
     const tree = await identity(workspace);
     const git = await identity(NodePath.join(workspace, ".git"));
     const capture: WorkerNamespaceSpawnCapture = {
@@ -57,22 +68,26 @@ const fixture = async () => {
         adminDev: git.device,
         adminIno: git.inode,
       },
-      profile: { path: profile, identity: await identity(profile) },
+      profile: prepared.capture,
       modelSocket: socket.description,
       runtimeFiles: [{ path: script, identity: await identity(script) }],
     };
     return {
       capture,
       workspace,
-      home,
+      home: prepared.profile.environment.HOME!,
+      environment: prepared.profile.environment,
+      verify: prepared.verify,
       script,
       close: async () => {
         await socket?.close();
+        await prepared?.close();
         await NodeFSP.rm(root, { recursive: true, force: true });
       },
     };
   } catch (error) {
     await socket?.close();
+    await prepared?.close();
     await NodeFSP.rm(root, { recursive: true, force: true });
     throw error;
   }
@@ -90,6 +105,7 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
           (owned) =>
             Effect.gen(function* () {
               let callbacks = 0;
+              yield* Effect.tryPromise(owned.verify);
               return yield* Effect.gen(function* () {
                 const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
                 yield* runtime.handleReadTextFile(() =>
@@ -132,9 +148,8 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                       args: [owned.script],
                       cwd: owned.workspace,
                       env: {
-                        WORKJET_SOURCE_ISOLATED: "true",
+                        ...owned.environment,
                         PATH: "/usr/bin:/bin",
-                        HOME: owned.home,
                       },
                     },
                     namespaceCapture: owned.capture,

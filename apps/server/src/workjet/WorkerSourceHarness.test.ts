@@ -437,12 +437,15 @@ async function verifySourceOnlyLoopback(
   };
   expect(harness.modelSocket === undefined).toBe(transport === "tcp");
   const profile = JSON.parse(
-    await NodeFSP.readFile(NodePath.join(directory, "config.yaml"), "utf8"),
+    await NodeFSP.readFile(NodePath.join(harness.nativeProfile!.directory, "config.yaml"), "utf8"),
   );
   expect(profile.custom_provider["workjet-source"].options.apiKey).toBe(harness.apiKey);
   expect(Object.keys(profile.custom_provider["workjet-source"].models)).toEqual(["gpt-6.1-sol"]);
   if (platform !== "win32")
-    expect((await NodeFSP.stat(NodePath.join(directory, "config.yaml"))).mode & 0o077).toBe(0);
+    expect(
+      (await NodeFSP.stat(NodePath.join(harness.nativeProfile!.directory, "config.yaml"))).mode &
+        0o077,
+    ).toBe(0);
   expect((await invoke("/models", { headers: { "x-api-key": "wrong-key" } })).status).toBe(403);
   const catalog = await invoke("/models", { headers: { "x-api-key": harness.apiKey } });
   expect(await catalog.json()).toEqual({

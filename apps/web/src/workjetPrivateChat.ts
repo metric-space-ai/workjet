@@ -12,7 +12,6 @@ import {
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 
-
 export function privateChatIntentRequest(
   intent: WorkjetPrivateChatIntent,
   action: PrivateChatCreationRequest["action"],

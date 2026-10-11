@@ -330,7 +330,9 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(PersistentGoalReactorLive),
   Layer.provideMerge(WorkerSupervisorDecisionReactorLive),
-  Layer.provideMerge(SupervisorTickReactorLive.pipe(Layer.provide(GitHubCli.layer))),
+  Layer.provideMerge(
+    SupervisorTickReactorLive.pipe(Layer.provide(GitHubCli.layer), Layer.provide(UsageLayerLive)),
+  ),
   Layer.provideMerge(
     // Worker worktree release is a thread-deletion reaction, so its service is
     // provided directly to the reactor that consumes `thread.deleted`.

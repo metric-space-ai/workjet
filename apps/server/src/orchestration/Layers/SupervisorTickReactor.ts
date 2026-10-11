@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -13,6 +14,8 @@ import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
 import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { supervisorTickPrompt } from "../../workjet/supervisorTickPrompt.ts";
 import { isSupervisorTickEligible } from "../../workjet/supervisorTickEligibility.ts";
+import { UsageService } from "../../usage/UsageService.ts";
+import { readProjectTokenBudgetStatus } from "../../usage/projectTokenBudgetStatus.ts";
 import {
   SupervisorPullRequests,
   supervisorTickSituation,
@@ -36,6 +39,7 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const github = yield* GitHubCli;
   const registry = yield* SourceControlProviderRegistry;
+  const usage = yield* Effect.serviceOption(UsageService);
 
   const reconcile = Effect.fn("SupervisorTickReactor.reconcile")(function* () {
     const model = yield* query.getCommandReadModel();
@@ -165,6 +169,13 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
           }),
         );
       } else sourceErrors.push("No project repository configured");
+      const tokenBudget = yield* readProjectTokenBudgetStatus(project, now).pipe(
+        Option.isNone(usage)
+          ? (effect) => effect
+          : Effect.provideService(UsageService, usage.value),
+      );
+      if (tokenBudget.usageStatus === "unavailable")
+        sourceErrors.push("Token usage unavailable or timed out");
       const text = supervisorTickPrompt(
         supervisorTickSituation({
           project,
@@ -176,6 +187,7 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
           errors,
           escalations,
           changes,
+          tokenBudget,
           meetingMinutes: minutesUntilRegularMeeting(project.overview?.regularMeeting, now),
         }),
       );

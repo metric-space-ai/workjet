@@ -1029,7 +1029,7 @@ export default function GitActionsControl({
             progress.lastOutputLine = event.text;
             break;
           case "hook_finished":
-            progress.title = progress.currentPhaseLabel ?? "Committet …";
+            progress.title = progress.currentPhaseLabel ?? "Wird übernommen …";
             progress.hookName = null;
             progress.hookStartedAtMs = null;
             progress.lastOutputLine = null;
@@ -1439,7 +1439,7 @@ export default function GitActionsControl({
                   }}
                 >
                   <CloudUploadIcon />
-                  Repository veröffentlichen
+                  Veröffentlichen
                 </MenuItem>
               ) : null}
               {gitStatusForActions?.refName === null ? (

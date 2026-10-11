@@ -78,6 +78,26 @@ type Operation =
       readonly env: Readonly<Record<string, string>>;
     };
 
+const identitySchema = Schema.Struct({ device: Schema.String, inode: Schema.String });
+const toolRequestSchema = Schema.fromJsonString(Schema.Struct({
+  version: Schema.Literal(1),
+  worktree: Schema.Struct({ path: Schema.String, identity: identitySchema }),
+  hostNetwork: identitySchema,
+  operation: Schema.Union([
+    Schema.Struct({
+      kind: Schema.Literal("read"), path: Schema.String,
+      line: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
+      limit: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Null])),
+    }),
+    Schema.Struct({ kind: Schema.Literal("write"), path: Schema.String }),
+    Schema.Struct({
+      kind: Schema.Literal("terminal"), command: Schema.String,
+      args: Schema.Array(Schema.String), cwd: Schema.String,
+      env: Schema.Record(Schema.String, Schema.String),
+    }),
+  ]),
+}));
+
 /** Always launch the captured helper in a fresh kernel namespace, never daemon FS or a host shell.
  * A capture is internal physical evidence, not an Owner/project execution-policy grant.
  */
@@ -106,26 +126,21 @@ export const makeWorkerNamespaceTools = (
       operation: Operation,
       stdin: ChildProcess.CommandInput = "ignore",
     ) {
+      const encoded = yield* Schema.encodeEffect(toolRequestSchema)({
+        version: 1,
+        worktree: {
+          path: capture.worktree.worktreePath,
+          identity: { device: capture.worktree.worktreeDev, inode: capture.worktree.worktreeIno },
+        },
+        hostNetwork: capture.modelSocket.hostNetworkIdentity,
+        operation,
+      }).pipe(Effect.mapError(error));
       const wrapped = yield* Effect.try({
         try: () =>
           workerNamespaceSpawnInput(
             {
               command: "/run/workjet/helper",
-              args: [
-                "--worker-namespace-tools",
-                Schema.encodeSync(Schema.UnknownFromJsonString)({
-                  version: 1,
-                  worktree: {
-                    path: capture.worktree.worktreePath,
-                    identity: {
-                      device: capture.worktree.worktreeDev,
-                      inode: capture.worktree.worktreeIno,
-                    },
-                  },
-                  hostNetwork: capture.modelSocket.hostNetworkIdentity,
-                  operation,
-                }),
-              ],
+              args: ["--worker-namespace-tools", encoded],
               cwd: capture.worktree.worktreePath,
               env: environment,
             },

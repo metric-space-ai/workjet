@@ -42,18 +42,23 @@ export async function makeWorkerSourcePrivateProfile(
     NodeProcess.platform !== "linux" ||
     !NodePath.isAbsolute(root) ||
     NodePath.resolve(root) !== root
-  ) throw failure();
+  )
+    throw failure();
   const restored = persistence?.original ?? undefined;
-  if (restored && (restored.root.path !== root ||
-    NodePath.dirname(restored.profile.path) !== root ||
-    !NodePath.basename(restored.profile.path).startsWith("profile-")))
+  if (
+    restored &&
+    (restored.root.path !== root ||
+      NodePath.dirname(restored.profile.path) !== root ||
+      !NodePath.basename(restored.profile.path).startsWith("profile-"))
+  )
     throw failure();
   if (!restored) await NodeFSP.mkdir(root, { recursive: true, mode: 0o700 });
   if ((await NodeFSP.realpath(root)) !== root) throw failure();
   const originalRoot = await NodeFSP.lstat(root, { bigint: true });
   if (!privateDirectory(originalRoot) || (restored && !matchesCapture(originalRoot, restored.root)))
     throw failure();
-  const flags = NodeFS.constants.O_RDONLY | NodeFS.constants.O_DIRECTORY | NodeFS.constants.O_NOFOLLOW;
+  const flags =
+    NodeFS.constants.O_RDONLY | NodeFS.constants.O_DIRECTORY | NodeFS.constants.O_NOFOLLOW;
   const rootHandle = await NodeFSP.open(root, flags);
   let handle: NodeFSP.FileHandle | undefined;
   try {
@@ -66,8 +71,12 @@ export async function makeWorkerSourcePrivateProfile(
       : await NodeFSP.mkdtemp(NodePath.join(rootFdPath, "profile-"));
     const original = await NodeFSP.lstat(created, { bigint: true });
     handle = await NodeFSP.open(created, flags);
-    if (!privateDirectory(original) || !sameIdentity(await handle.stat({ bigint: true }), original) ||
-      (restored && !matchesCapture(original, restored.profile))) throw failure();
+    if (
+      !privateDirectory(original) ||
+      !sameIdentity(await handle.stat({ bigint: true }), original) ||
+      (restored && !matchesCapture(original, restored.profile))
+    )
+      throw failure();
     const directory = NodePath.join(root, NodePath.basename(created));
     const profile = create(directory);
     if (profile.directory !== directory) throw failure();
@@ -79,7 +88,10 @@ export async function makeWorkerSourcePrivateProfile(
     const custody = Object.freeze({
       root: Object.freeze({
         path: root,
-        identity: Object.freeze({ device: String(originalRoot.dev), inode: String(originalRoot.ino) }),
+        identity: Object.freeze({
+          device: String(originalRoot.dev),
+          inode: String(originalRoot.ino),
+        }),
       }),
       profile: capture,
     });
@@ -91,11 +103,19 @@ export async function makeWorkerSourcePrivateProfile(
         NodeFSP.lstat(directory, { bigint: true }),
         handle.stat({ bigint: true }),
         NodeFSP.realpath(directory),
-      ]).catch((cause) => { throw failure(cause); });
-      if (resolved !== directory || !privateDirectory(currentRoot) ||
-        !sameIdentity(currentRoot, originalRoot) || !privateDirectory(current) ||
-        !sameIdentity(current, original) || !privateDirectory(opened) ||
-        !sameIdentity(opened, original)) throw failure();
+      ]).catch((cause) => {
+        throw failure(cause);
+      });
+      if (
+        resolved !== directory ||
+        !privateDirectory(currentRoot) ||
+        !sameIdentity(currentRoot, originalRoot) ||
+        !privateDirectory(current) ||
+        !sameIdentity(current, original) ||
+        !privateDirectory(opened) ||
+        !sameIdentity(opened, original)
+      )
+        throw failure();
     };
     if (persistence) {
       await verify();
@@ -113,16 +133,19 @@ export async function makeWorkerSourcePrivateProfile(
     for (const child of directories) {
       if (!child) throw failure();
       const relative = NodePath.relative(directory, child);
-      if (relative !== "" &&
-        (NodePath.isAbsolute(relative) || relative.split(NodePath.sep).includes("..")))
+      if (
+        relative !== "" &&
+        (NodePath.isAbsolute(relative) || relative.split(NodePath.sep).includes(".."))
+      )
         throw failure();
       let parent = handle;
       const children: NodeFSP.FileHandle[] = [];
       try {
         for (const part of relative.split(NodePath.sep).filter(Boolean)) {
           const next = `/proc/${NodeProcess.pid}/fd/${parent.fd}/${part}`;
-          try { await NodeFSP.mkdir(next, { mode: 0o700 }); }
-          catch (cause) {
+          try {
+            await NodeFSP.mkdir(next, { mode: 0o700 });
+          } catch (cause) {
             if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
           }
           const opened = await NodeFSP.open(next, flags);
@@ -136,22 +159,33 @@ export async function makeWorkerSourcePrivateProfile(
     }
     const names = new Set<string>();
     for (const file of profile.files) {
-      if (file.name !== NodePath.basename(file.name) || file.name === "." || file.name === ".." ||
-        names.has(file.name)) throw failure();
+      if (
+        file.name !== NodePath.basename(file.name) ||
+        file.name === "." ||
+        file.name === ".." ||
+        names.has(file.name)
+      )
+        throw failure();
       names.add(file.name);
       const destination = NodePath.join(fdPath, file.name);
-      const staged = restored ? NodePath.join(fdPath, `.${file.name}.${NodeCrypto.randomUUID()}.stage`) : destination;
+      const staged = restored
+        ? NodePath.join(fdPath, `.${file.name}.${NodeCrypto.randomUUID()}.stage`)
+        : destination;
       try {
         await NodeFSP.writeFile(staged, file.content, {
           mode: 0o600,
-          flag: NodeFS.constants.O_WRONLY | NodeFS.constants.O_CREAT |
-            NodeFS.constants.O_EXCL | NodeFS.constants.O_NOFOLLOW,
+          flag:
+            NodeFS.constants.O_WRONLY |
+            NodeFS.constants.O_CREAT |
+            NodeFS.constants.O_EXCL |
+            NodeFS.constants.O_NOFOLLOW,
         });
         if (restored) await NodeFSP.rename(staged, destination);
       } finally {
-        if (restored) await NodeFSP.unlink(staged).catch((cause: NodeJS.ErrnoException) => {
-          if (cause.code !== "ENOENT") throw cause;
-        });
+        if (restored)
+          await NodeFSP.unlink(staged).catch((cause: NodeJS.ErrnoException) => {
+            if (cause.code !== "ENOENT") throw cause;
+          });
       }
     }
     await verify();

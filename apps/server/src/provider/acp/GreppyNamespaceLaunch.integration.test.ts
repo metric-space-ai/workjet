@@ -115,8 +115,10 @@ const fixture = async (variant?: string) => {
         harness: "greppy",
         modelSocketRoot: NodePath.join(root, "model-ipc"),
         captureRuntime: async (capture) => {
-          if (variant === "runtime-denied" || (originalRuntime &&
-            !NodeUtil.isDeepStrictEqual(originalRuntime, capture)))
+          if (
+            variant === "runtime-denied" ||
+            (originalRuntime && !NodeUtil.isDeepStrictEqual(originalRuntime, capture))
+          )
             throw new Error("Original runtime custody rejected");
           originalRuntime = capture;
         },
@@ -246,8 +248,9 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                     await NodeFSP.copyFile(owned.script + "-original", owned.script);
                     await NodeFSP.chmod(owned.script, 0o700);
                   });
-                  expect((yield* adapter.startSession(owned.input).pipe(Effect.result))._tag)
-                    .toBe("Failure");
+                  expect((yield* adapter.startSession(owned.input).pipe(Effect.result))._tag).toBe(
+                    "Failure",
+                  );
                   expect(children.length).toBe(before);
                   return;
                 }

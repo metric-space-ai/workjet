@@ -31,7 +31,10 @@ const FileCapture = Schema.Struct({
     inode: TrimmedNonEmptyString,
   }),
 });
-export const WorkerSourceProfileCustody = Schema.Struct({ root: FileCapture, profile: FileCapture });
+export const WorkerSourceProfileCustody = Schema.Struct({
+  root: FileCapture,
+  profile: FileCapture,
+});
 export type WorkerSourceProfileCustody = typeof WorkerSourceProfileCustody.Type;
 export const WorkerSourceRuntimeCustody = Schema.Struct({
   command: TrimmedNonEmptyString,
@@ -46,20 +49,36 @@ const Receipt = Schema.Struct({
 export type WorkerSourceCustodyReceipt = typeof Receipt.Type;
 type StoreError = WorkerSourceCustodyError | PersistenceSqlError;
 
-export class WorkerSourceCustodyStore extends Context.Service<WorkerSourceCustodyStore, {
-  readonly reserve: (intent: WorkerSourceCustodyIntent) => Effect.Effect<WorkerSourceCustodyReceipt, StoreError>;
-  readonly get: (workerId: string) => Effect.Effect<Option.Option<WorkerSourceCustodyReceipt>, StoreError>;
-  readonly captureProfile: (workerId: string, capture: WorkerSourceProfileCustody) => Effect.Effect<void, StoreError>;
-  readonly captureRuntime: (workerId: string, capture: WorkerSourceRuntimeCustody) => Effect.Effect<void, StoreError>;
-}>()("workjet/workjet/WorkerSourceCustodyStore") {}
+export class WorkerSourceCustodyStore extends Context.Service<
+  WorkerSourceCustodyStore,
+  {
+    readonly reserve: (
+      intent: WorkerSourceCustodyIntent,
+    ) => Effect.Effect<WorkerSourceCustodyReceipt, StoreError>;
+    readonly get: (
+      workerId: string,
+    ) => Effect.Effect<Option.Option<WorkerSourceCustodyReceipt>, StoreError>;
+    readonly captureProfile: (
+      workerId: string,
+      capture: WorkerSourceProfileCustody,
+    ) => Effect.Effect<void, StoreError>;
+    readonly captureRuntime: (
+      workerId: string,
+      capture: WorkerSourceRuntimeCustody,
+    ) => Effect.Effect<void, StoreError>;
+  }
+>()("workjet/workjet/WorkerSourceCustodyStore") {}
 
 const failure = (reason: "invalid" | "conflict") => new WorkerSourceCustodyError({ reason });
-const sqlFailure = (operation: string) => (cause: unknown) => new PersistenceSqlError({ operation, cause });
-const decode = Schema.decodeUnknownEffect(Schema.Struct({
-  intent: Schema.fromJsonString(WorkerSourceCustodyIntent),
-  profile: Schema.NullOr(Schema.fromJsonString(WorkerSourceProfileCustody)),
-  runtime: Schema.NullOr(Schema.fromJsonString(WorkerSourceRuntimeCustody)),
-}));
+const sqlFailure = (operation: string) => (cause: unknown) =>
+  new PersistenceSqlError({ operation, cause });
+const decode = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    intent: Schema.fromJsonString(WorkerSourceCustodyIntent),
+    profile: Schema.NullOr(Schema.fromJsonString(WorkerSourceProfileCustody)),
+    runtime: Schema.NullOr(Schema.fromJsonString(WorkerSourceRuntimeCustody)),
+  }),
+);
 const encodeIntent = Schema.encodeEffect(Schema.fromJsonString(WorkerSourceCustodyIntent));
 const encodeProfile = Schema.encodeEffect(Schema.fromJsonString(WorkerSourceProfileCustody));
 const encodeRuntime = Schema.encodeEffect(Schema.fromJsonString(WorkerSourceRuntimeCustody));
@@ -74,17 +93,23 @@ export const make = Effect.gen(function* () {
       FROM workjet_worker_source_custody WHERE worker_id = ${workerId}
     `.pipe(Effect.mapError(sqlFailure("WorkerSourceCustodyStore.get")));
     if (rows[0] === undefined) return Option.none<WorkerSourceCustodyReceipt>();
-    const receipt = yield* decode(rows[0]).pipe(Effect.mapError(sqlFailure("WorkerSourceCustodyStore.decode")));
+    const receipt = yield* decode(rows[0]).pipe(
+      Effect.mapError(sqlFailure("WorkerSourceCustodyStore.decode")),
+    );
     if (receipt.intent.workerId !== workerId || receipt.intent.profileRoot !== rows[0].profile_root)
       return yield* failure("invalid");
     return Option.some(receipt);
   });
-  const requireReceipt = Effect.fn("WorkerSourceCustodyStore.require")(function* (workerId: string) {
+  const requireReceipt = Effect.fn("WorkerSourceCustodyStore.require")(function* (
+    workerId: string,
+  ) {
     const receipt = yield* get(workerId);
     if (Option.isNone(receipt)) return yield* failure("invalid");
     return receipt.value;
   });
-  const reserve = Effect.fn("WorkerSourceCustodyStore.reserve")(function* (intent: WorkerSourceCustodyIntent) {
+  const reserve = Effect.fn("WorkerSourceCustodyStore.reserve")(function* (
+    intent: WorkerSourceCustodyIntent,
+  ) {
     const json = yield* encodeIntent(intent).pipe(Effect.mapError(() => failure("invalid")));
     yield* sql`
       INSERT INTO workjet_worker_source_custody(worker_id, intent_json, profile_root)
@@ -95,7 +120,8 @@ export const make = Effect.gen(function* () {
     return receipt;
   });
   const captureProfile = Effect.fn("WorkerSourceCustodyStore.captureProfile")(function* (
-    workerId: string, capture: WorkerSourceProfileCustody,
+    workerId: string,
+    capture: WorkerSourceProfileCustody,
   ) {
     const receipt = yield* requireReceipt(workerId);
     if (capture.root.path !== receipt.intent.profileRoot) return yield* failure("invalid");
@@ -108,11 +134,16 @@ export const make = Effect.gen(function* () {
       return yield* failure("conflict");
   });
   const captureRuntime = Effect.fn("WorkerSourceCustodyStore.captureRuntime")(function* (
-    workerId: string, capture: WorkerSourceRuntimeCustody,
+    workerId: string,
+    capture: WorkerSourceRuntimeCustody,
   ) {
     const receipt = yield* requireReceipt(workerId);
-    if (receipt.profile === null || capture.runtimeFiles.length === 0 ||
-      capture.runtimeFiles[0]?.path !== capture.command) return yield* failure("invalid");
+    if (
+      receipt.profile === null ||
+      capture.runtimeFiles.length === 0 ||
+      capture.runtimeFiles[0]?.path !== capture.command
+    )
+      return yield* failure("invalid");
     const json = yield* encodeRuntime(capture).pipe(Effect.mapError(() => failure("invalid")));
     yield* sql`
       UPDATE workjet_worker_source_custody SET runtime_json = ${json}

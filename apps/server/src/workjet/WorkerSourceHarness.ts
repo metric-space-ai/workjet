@@ -17,7 +17,10 @@ import {
   type WorkerSourcePrivateProfile,
 } from "./WorkerSourcePrivateProfile.ts";
 import type { WorkerNamespaceFileCapture } from "./WorkerNamespaceSpawn.ts";
-import type { WorkerSourceProfileCustody, WorkerSourceRuntimeCustody } from "./WorkerSourceCustodyStore.ts";
+import type {
+  WorkerSourceProfileCustody,
+  WorkerSourceRuntimeCustody,
+} from "./WorkerSourceCustodyStore.ts";
 import { Schema } from "effect";
 import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
 import type { WorkerSubmission } from "./WorkerSubmission.ts";
@@ -372,8 +375,11 @@ export async function installWorkerSourceRoute(
     if (pin.nativeProfile?.persistence) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);
-      try { await source("admit", {}, controller.signal); }
-      finally { clearTimeout(timeout); }
+      try {
+        await source("admit", {}, controller.signal);
+      } finally {
+        clearTimeout(timeout);
+      }
     }
     if (pin.modelSocketRoot !== undefined)
       modelSocket = await makeWorkerSourceModelSocket(pin.modelSocketRoot, onRequest);
@@ -388,7 +394,9 @@ export async function installWorkerSourceRoute(
         });
       if (modelSocket !== undefined) {
         privateProfile = await makeWorkerSourcePrivateProfile(
-          pin.nativeProfile.directory, create, pin.nativeProfile.persistence,
+          pin.nativeProfile.directory,
+          create,
+          pin.nativeProfile.persistence,
         );
         nativeProfile = privateProfile.profile;
       } else {

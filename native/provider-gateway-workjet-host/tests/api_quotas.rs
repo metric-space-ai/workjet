@@ -83,6 +83,23 @@ fn zai_llm_and_tool_scopes_do_not_share_exhaustion_or_invent_resets() {
 }
 
 #[test]
+fn zai_preserves_observed_epoch_millisecond_reset_without_rescaling() {
+    // Published dashboard capture: gateway-api-quotas.md#zai-reset-unit-evidence.
+    let windows = parse_usage(
+        "zai",
+        br#"{"code":200,"success":true,"data":{"limits":[
+          {"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":100,
+           "nextResetTime":1784643970777}
+        ]}}"#,
+        1784643970000,
+    )
+    .unwrap();
+    assert_eq!(windows[0].resets_at_ms, Some(1_784_643_970_777));
+    assert!(quota_is_exhausted(&windows[0], 1_784_643_970_776));
+    assert!(!quota_is_exhausted(&windows[0], 1_784_643_970_777));
+}
+
+#[test]
 fn quota_source_preserves_raw_percent_and_duration_without_changing_legacy_rest() {
     for (provider, body, field, value, remaining, seconds) in [
         (

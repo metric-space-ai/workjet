@@ -354,7 +354,7 @@ fn parse_api_quota(
                 }),
                 tool_only: kind != "TOKENS_LIMIT",
                 remaining_percent: used.map(|v| 100.0 - v),
-                // Qualified provider readings report nextResetTime as epoch milliseconds.
+                // Observed epoch-ms response and direct Date.now()/new Date use: docs/internals/gateway-api-quotas.md#zai-reset-unit-evidence.
                 resets_at_ms: item
                     .get("nextResetTime")
                     .and_then(|v| v.as_i64())

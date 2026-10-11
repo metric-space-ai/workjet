@@ -23,6 +23,7 @@ export function resolveInstanceOnboardingState(
   connection: string,
 ): InstanceOnboardingState {
   if (discovery === "loading") return "loading";
+  if (discovery.keyRecovery?.pendingLogin) return "create-or-connect";
   if (discovery._tag === "failed") return "failed";
   if (discovery._tag !== "ready" || discovery.instances.length === 0) return "create-or-connect";
   const selected = discovery.instances.find((instance) => instance.id === selectedId);
@@ -133,12 +134,52 @@ export function InstanceOnboardingView({
   );
 }
 
+export function WorkjetKeyRecoveryView({
+  onLogin,
+  busy = false,
+  catalogReset = false,
+}: {
+  readonly onLogin: () => void;
+  readonly busy?: boolean;
+  readonly catalogReset?: boolean;
+}) {
+  return (
+    <div className="network-home" data-workjet-onboarding="key-recovery">
+      <main className="network-home-main">
+        <div className="network-overview space-y-4">
+          <p role="status">
+            Workjet hat seinen lokalen Schlüssel verloren. Bitte einmal anmelden, den Rest stellt
+            Workjet selbst wieder her.
+          </p>
+          <Button onClick={onLogin} disabled={busy}>
+            Bei ctox.dev anmelden
+          </Button>
+          {catalogReset ? (
+            <p className="text-sm text-muted-foreground">
+              Gespeicherte Direkt-, SSH- und Relay-Verbindungen sind gesichert. Falls du sie nutzt,
+              füge sie später neu hinzu.
+            </p>
+          ) : null}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export function InstanceOnboarding({
   state,
 }: {
   readonly state: Exclude<InstanceOnboardingState, "ready">;
 }) {
   const mode = useCtoxMode();
+  if (mode.discovery !== "loading" && mode.discovery.keyRecovery?.pendingLogin)
+    return (
+      <WorkjetKeyRecoveryView
+        onLogin={mode.login}
+        busy={mode.refreshing}
+        catalogReset={mode.discovery.keyRecovery.connectionCatalogReset}
+      />
+    );
   const instances =
     mode.discovery !== "loading" && mode.discovery._tag === "ready" ? mode.discovery.instances : [];
   return (

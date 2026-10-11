@@ -89,6 +89,7 @@ import { ComposerWorkerControl, providerInstanceIdForHarness } from "./ComposerW
 import { workerReasoningSelections } from "./workerReasoning";
 import { getMiniMaxManualModelCatalog } from "./minimaxManualModels";
 import { getProviderModelCapabilities } from "../../providerModels";
+import { resolveHarnessSwitchModelSelection } from "../../modelSelection";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
@@ -1756,17 +1757,55 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => new Set(manualHarnessInstances.keys()),
     [manualHarnessInstances],
   );
+  const [harnessModelNotice, setHarnessModelNotice] = useState<{
+    target: string;
+    text: string;
+  } | null>(null);
   const handleSelectManualHarness = useCallback(
-    (harness: Parameters<typeof providerInstanceIdForHarness>[0]) => {
+    async (harness: Parameters<typeof providerInstanceIdForHarness>[0]) => {
       const driver = providerInstanceIdForHarness(harness);
       const instanceId = driver === null ? undefined : manualHarnessInstances.get(driver);
       if (instanceId === undefined) return;
-      onProviderModelSelect(instanceId, selectedModel);
+      setHarnessModelNotice(null);
+      const model = resolveHarnessSwitchModelSelection(
+        instanceId,
+        settings,
+        providerStatuses,
+        selectedModel,
+        workjetGatewayCatalogQuery,
+        manualGatewayModels,
+      );
+      if (model === null) {
+        setHarnessModelNotice({
+          target: JSON.stringify(composerDraftTarget),
+          text: "This harness has no checked default model. Refresh its models in Settings.",
+        });
+        return;
+      }
+      if ((await onProviderModelSelect(instanceId, model)) === false) return;
+      setHarnessModelNotice(
+        model === selectedModel
+          ? null
+          : {
+              target: JSON.stringify(composerDraftTarget),
+              text: `The selected model is unavailable for this harness. Using its default: ${model}.`,
+            },
+      );
     },
-    [manualHarnessInstances, onProviderModelSelect, selectedModel],
+    [
+      manualHarnessInstances,
+      onProviderModelSelect,
+      selectedModel,
+      settings,
+      providerStatuses,
+      manualGatewayModels,
+      workjetGatewayCatalogQuery,
+      composerDraftTarget,
+    ],
   );
   const handleSelectManualModel = useCallback(
     (modelId: string) => {
+      setHarnessModelNotice(null);
       onProviderModelSelect(selectedInstanceId, modelId);
     },
     [onProviderModelSelect, selectedInstanceId],
@@ -3932,6 +3971,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   className="mb-3"
                 />
               )}
+
+            {harnessModelNotice?.target === JSON.stringify(composerDraftTarget) && (
+              <p role="status" className="mb-2 text-xs text-secondary-label">
+                {harnessModelNotice.text}
+              </p>
+            )}
 
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&

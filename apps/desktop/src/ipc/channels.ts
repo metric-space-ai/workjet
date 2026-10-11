@@ -33,6 +33,7 @@ export const GET_CONNECTION_CATALOG_CHANNEL = "desktop:get-connection-catalog";
 export const SET_CONNECTION_CATALOG_CHANNEL = "desktop:set-connection-catalog";
 export const CLEAR_CONNECTION_CATALOG_CHANNEL = "desktop:clear-connection-catalog";
 export const RECOVER_CONNECTION_CATALOG_CHANNEL = "desktop:recover-connection-catalog";
+export const CONNECTION_CATALOG_WARNING_CHANNEL = "desktop:connection-catalog-warning";
 export const DISCOVER_SSH_HOSTS_CHANNEL = "desktop:discover-ssh-hosts";
 export const DISCOVER_TAILSCALE_PEERS_CHANNEL = "desktop:discover-tailscale-peers";
 export const ENSURE_SSH_ENVIRONMENT_CHANNEL = "desktop:ensure-ssh-environment";
@@ -95,6 +96,7 @@ export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
 // Everything below this line is fork-owned. Upstream additions belong ABOVE
 // it, so the two streams append to different regions and stop colliding on
 // the last line of the file (docs/workjet-plan.md §14). Keep this block last.
+export const CTOX_INSTANCE_STATE_CHANNEL = "desktop:ctox-instance-state";
 export const CTOX_REFRESH_CHANNEL = "desktop:ctox-refresh";
 export const CTOX_LOGIN_CHANNEL = "desktop:ctox-login";
 export const CTOX_LOGOUT_CHANNEL = "desktop:ctox-logout";

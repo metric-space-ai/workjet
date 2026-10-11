@@ -16,6 +16,8 @@ export interface WorkerCleanupReceipt {
   readonly branchRef: string;
   readonly mergedHeadOid: string;
   readonly mergedChangeRequestUrl: string;
+  /** `removed` means released from its active path. Private repositories are
+   * retained in the native recovery directory with their own Git history. */
   readonly status: "verified" | "removed" | "complete";
 }
 

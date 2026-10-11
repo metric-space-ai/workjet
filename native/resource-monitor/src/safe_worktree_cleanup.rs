@@ -78,7 +78,11 @@ mod unix {
         }
         // SAFETY: fstat initialized the value on success.
         let stat = unsafe { stat.assume_init() };
-        Ok((stat.st_dev as u64, stat.st_ino as u64))
+        let device = stat.st_dev;
+        // macOS dev_t is signed 32-bit; Linux dev_t is already u64.
+        #[cfg(target_os = "macos")]
+        let device = device as u64;
+        Ok((device, stat.st_ino))
     }
 
     fn read_regular_file_at(parent: &OwnedFd, name: &CStr) -> io::Result<String> {
@@ -618,9 +622,10 @@ mod unix {
         branch_ref: &str,
         before_move: impl FnOnce(),
     ) -> io::Result<()> {
-        let source =
-            open_isolated_repository(worktree_path, worktree_identity, admin_path, admin_identity)?;
-        let mut recovery_name = worktree_path.file_name().unwrap().to_os_string();
+        let mut recovery_name = worktree_path
+            .file_name()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "refusing filesystem root"))?
+            .to_os_string();
         recovery_name.push(format!(".workjet-rejected-{}", worktree_identity.1));
         let recovery_worktree = worktree_path.with_file_name(&recovery_name);
         let recovery_admin = recovery_worktree.join(".git");
@@ -634,6 +639,80 @@ mod unix {
             "adminIdentity": { "dev": admin_identity.0, "ino": admin_identity.1 },
             "automaticContentDeletion": false,
         });
+        let source = match open_isolated_repository(
+            worktree_path,
+            worktree_identity,
+            admin_path,
+            admin_identity,
+        ) {
+            Ok(source) => source,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                // A successful rename can lose its acknowledgement. Reuse the
+                // original capture; receipt files must never follow symlinks.
+                let (parent, name) = parent_and_name(worktree_path)?;
+                let require_original_absent = || -> io::Result<()> {
+                    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+                    if unsafe {
+                        libc::fstatat(
+                            parent.as_raw_fd(),
+                            name.as_ptr(),
+                            stat.as_mut_ptr(),
+                            libc::AT_SYMLINK_NOFOLLOW,
+                        )
+                    } == 0
+                    {
+                        return Err(io::Error::new(
+                            io::ErrorKind::AlreadyExists,
+                            "original checkout is occupied",
+                        ));
+                    }
+                    let error = io::Error::last_os_error();
+                    if error.kind() != io::ErrorKind::NotFound {
+                        return Err(error);
+                    }
+                    Ok(())
+                };
+                require_original_absent()?;
+                let recovery = open_isolated_repository(
+                    &recovery_worktree,
+                    worktree_identity,
+                    &recovery_admin,
+                    admin_identity,
+                )?;
+                if identity(&parent)? != identity(&recovery.parent)? {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "recovery parent changed",
+                    ));
+                }
+                let recorded: serde_json::Value = serde_json::from_str(&read_regular_file_at(
+                    &recovery.admin,
+                    c"workjet-rollback-receipt.json",
+                )?)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                let progress =
+                    read_regular_file_at(&recovery.admin, c"workjet-rollback-progress.jsonl")?;
+                let terminal = progress
+                    .lines()
+                    .last()
+                    .and_then(|line| serde_json::from_str::<serde_json::Value>(line).ok());
+                if recorded != receipt
+                    || terminal
+                        != Some(serde_json::json!({ "phase": "checkout-and-admin-quarantined" }))
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "recovery proof is not terminal or does not match",
+                    ));
+                }
+                before_move();
+                require_original_absent()?;
+                require_named_identity(&recovery.parent, &recovery.name, worktree_identity)?;
+                require_named_identity(&recovery.worktree, c".git", admin_identity)?;
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
         let create_receipt = |name: &CStr| -> io::Result<std::fs::File> {
             opened_fd(unsafe {
                 libc::openat(
@@ -887,6 +966,131 @@ mod unix {
             );
             assert_eq!(receipt["automaticContentDeletion"], false);
             assert!(!worker.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[test]
+        fn isolated_quarantine_recovers_lost_ack_with_original_capture() {
+            let (root, worker, wt, ad) = isolated_fixture("private-replay");
+            let run = || {
+                quarantine_isolated_with_hook(
+                    &worker,
+                    wt,
+                    &worker.join(".git"),
+                    ad,
+                    "head",
+                    "workjet/worker/one",
+                    || (),
+                )
+            };
+            run().unwrap();
+            run().unwrap();
+            let recovery = root.join(format!("prepared.workjet-rejected-{}", wt.1));
+            assert_eq!(
+                std::fs::read_to_string(recovery.join("tracked")).unwrap(),
+                "original"
+            );
+            assert!(!worker.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[test]
+        fn isolated_replay_rejects_incomplete_swapped_and_linked_evidence() {
+            for case in [
+                "receipt-link",
+                "progress-link",
+                "prepared-only",
+                "wrong-head",
+                "replaced-recovery",
+                "original-restored",
+                "oversized",
+            ] {
+                let (root, worker, wt, ad) = isolated_fixture(case);
+                let run = || {
+                    quarantine_isolated_with_hook(
+                        &worker,
+                        wt,
+                        &worker.join(".git"),
+                        ad,
+                        "head",
+                        "workjet/worker/one",
+                        || (),
+                    )
+                };
+                run().unwrap();
+                let recovery = root.join(format!("prepared.workjet-rejected-{}", wt.1));
+                let receipt = recovery.join(".git/workjet-rollback-receipt.json");
+                let progress = recovery.join(".git/workjet-rollback-progress.jsonl");
+                match case {
+                    "receipt-link" | "progress-link" => {
+                        let file = if case == "receipt-link" {
+                            &receipt
+                        } else {
+                            &progress
+                        };
+                        let outside = root.join("outside-proof");
+                        std::fs::rename(file, &outside).unwrap();
+                        symlink(&outside, file).unwrap();
+                    }
+                    "prepared-only" => {
+                        std::fs::write(&progress, "{\"phase\":\"prepared\"}\n").unwrap()
+                    }
+                    "wrong-head" => {
+                        let mut value: serde_json::Value =
+                            serde_json::from_slice(&std::fs::read(&receipt).unwrap()).unwrap();
+                        value["originalHeadOid"] = serde_json::json!("other");
+                        std::fs::write(&receipt, serde_json::to_vec(&value).unwrap()).unwrap();
+                    }
+                    "replaced-recovery" => {
+                        std::fs::rename(&recovery, root.join("retained-original")).unwrap();
+                        std::fs::create_dir_all(recovery.join(".git/objects/info")).unwrap();
+                        std::fs::write(recovery.join("foreign"), "retained replacement").unwrap();
+                    }
+                    "original-restored" => std::fs::create_dir(&worker).unwrap(),
+                    "oversized" => std::fs::write(&receipt, vec![b'x'; 65537]).unwrap(),
+                    _ => unreachable!(),
+                }
+                assert!(run().is_err(), "{case} must be retained");
+                assert!(recovery.exists());
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+
+        #[test]
+        fn isolated_replay_rejects_replacement_after_proof_read() {
+            let (root, worker, wt, ad) = isolated_fixture("private-replay-race");
+            quarantine_isolated_with_hook(
+                &worker,
+                wt,
+                &worker.join(".git"),
+                ad,
+                "head",
+                "ref",
+                || (),
+            )
+            .unwrap();
+            let recovery = root.join(format!("prepared.workjet-rejected-{}", wt.1));
+            assert!(
+                quarantine_isolated_with_hook(
+                    &worker,
+                    wt,
+                    &worker.join(".git"),
+                    ad,
+                    "head",
+                    "ref",
+                    || {
+                        std::fs::rename(&recovery, root.join("retained-original")).unwrap();
+                        std::fs::create_dir(&recovery).unwrap();
+                        std::fs::write(recovery.join("foreign"), "replacement").unwrap();
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(
+                std::fs::read_to_string(recovery.join("foreign")).unwrap(),
+                "replacement"
+            );
+            assert!(root.join("retained-original/tracked").exists());
             std::fs::remove_dir_all(root).unwrap();
         }
 

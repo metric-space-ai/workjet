@@ -159,7 +159,7 @@ describe("Business OS settings scope", () => {
       />,
     );
     expect(markup).toContain('aria-label="CTOX instances"');
-    expect(markup).toContain('aria-label="Active instance"');
+    expect(markup).toContain('aria-label="Selected"');
     expect(markup).toContain("WELSCH");
     expect(markup).toContain("Devices for WELSCH");
     expect(markup).toContain("Modelle");

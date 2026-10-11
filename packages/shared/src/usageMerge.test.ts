@@ -74,6 +74,23 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 }
 
 describe("mergeUsage", () => {
+  it("retains missing price counts per model for the unknown cost label", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket({ costSource: "unpriced", costUsd: 0, unpricedRecords: 5 })],
+            [{ provider: "claude", hostId: "mac", homePath: "/a/.claude" }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(merged.models[0]?.unpricedRecords).toBe(5);
+    expect(merged.models[0]?.totalTokens).toBeGreaterThan(0);
+  });
+
   it("sums environments that read different transcript directories", () => {
     const merged = mergeUsage(
       [

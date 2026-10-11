@@ -16,6 +16,7 @@ import {
   WorkjetLlmRouteId,
 } from "./workjet.ts";
 import { WorkjetExecutionPolicy } from "./workjetExecutionPolicy.ts";
+import { WorkjetParentTeamBinding } from "./workjetParentTeamBinding.ts";
 
 /** Prepared by the source server from its live orchestrator, relayed by an
  * authenticated client connection. Never contains source paths or credentials. */
@@ -42,6 +43,8 @@ export const RemoteWorkerRequest = Schema.Struct({
   parentTeamRole: Schema.optional(Schema.Literals(["supervisor", "specialist"])),
   /** Parent policy reference; immutable request identity, never a permit. */
   executionPolicy: Schema.optional(WorkjetExecutionPolicy),
+  /** Complete native Parent enrollment; part of the immutable request identity. */
+  parentTeamBinding: Schema.optionalKey(WorkjetParentTeamBinding),
   parentCapabilityIds: Schema.Array(WorkjetCapabilityId),
   managedInstructions: Schema.String,
   project: Schema.Struct({

@@ -1,4 +1,5 @@
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
+import { prepareWorkerSourceNamespace } from "../../workjet/WorkerSourceNamespace.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 
@@ -119,6 +120,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
   },
 ) {
   const crypto = yield* Crypto.Crypto;
+  const namespaceContext = yield* Effect.context<never>();
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const lock = yield* Semaphore.make(1);
@@ -221,6 +223,9 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
         const previous = sessions.get(input.threadId);
         if (previous) yield* stop(previous);
         const sourceProfile = yield* admitWorkerSourceNativeProfile(input, PROVIDER);
+        const namespaceCapture = yield* prepareWorkerSourceNamespace(input, PROVIDER).pipe(
+          Effect.provideContext(namespaceContext),
+        );
         const environment =
           sourceProfile?.environment ?? (yield* options.resolveSessionEnvironment(model));
         if (plainHttpEndpoint(environment.GREPPY_ENDPOINT || config.endpoint) === null) {
@@ -249,14 +254,19 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           spawner,
           cwd: input.cwd,
           clientInfo: { name: "workjet", version: "1" },
-          clientCapabilities: {},
+          clientCapabilities: namespaceCapture
+            ? { fs: { readTextFile: true, writeTextFile: true }, terminal: true }
+            : {},
+          ...(namespaceCapture ? { namespaceCapture } : {}),
           ...(resumeSessionId ? { resumeSessionId } : {}),
           onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
         }).pipe(
           Effect.provideService(Scope.Scope, scope),
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>
-            mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", cause),
+            cause._tag === "WorkerNamespaceRuntimeError"
+              ? requestError("startSession", cause.issue)
+              : mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", cause),
           ),
           Effect.onError(() => Scope.close(scope, Exit.void)),
         );

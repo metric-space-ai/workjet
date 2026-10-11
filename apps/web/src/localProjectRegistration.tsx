@@ -19,6 +19,8 @@ import {
   useWorkjetProjectRegistry,
 } from "./workjetProjectRegistry";
 import { Button } from "./components/ui/button";
+import { useCtoxInstanceState } from "./components/ctox/CtoxModeShell";
+import { useProjectOverviewLanguage } from "./hooks/useProjectOverviewLanguage";
 import { usePrimarySettings } from "./hooks/useSettings";
 
 const RETRY_EVENT = "workjet:retry-local-project-registration";
@@ -155,9 +157,27 @@ export function LocalProjectRegistrationSynchronizer() {
 export function ProjectNativeSyncStatus({
   project,
 }: {
-  readonly project: OrchestrationProjectShell | null;
+  readonly project: Pick<OrchestrationProjectShell, "ctoxRegistration"> | null;
 }) {
   const intent = project?.ctoxRegistration;
+  const state = useCtoxInstanceState(intent?.instanceId ?? null);
+  const language = useProjectOverviewLanguage();
+  if (intent && (state === "disabled" || state === "removed"))
+    return (
+      <div
+        role="status"
+        data-workjet-project-instance-state={state}
+        className="border-b border-border px-4 py-2 text-sm text-muted-foreground"
+      >
+        {language === "de"
+          ? state === "disabled"
+            ? "Instanz deaktiviert. Das Projekt und sein Verlauf bleiben gespeichert."
+            : "Instanz entfernt. Das Projekt und sein Verlauf bleiben gespeichert."
+          : state === "disabled"
+            ? "Instance disabled. The project and its history stay saved."
+            : "Instance removed. The project and its history stay saved."}
+      </div>
+    );
   if (!intent || intent.status === "confirmed") return null;
   return (
     <div

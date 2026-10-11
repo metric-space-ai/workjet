@@ -304,6 +304,7 @@ import type {
 } from "./chat/WorkjetMailboxActivityCard";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
+import { ThreadApprovalControl } from "./chat/ThreadApprovalControl";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -1419,6 +1420,7 @@ function ChatViewContent(props: ChatViewProps) {
   const setComposerDraftInteractionMode = useComposerDraftStore(
     (store) => store.setInteractionMode,
   );
+  const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const getDraftSessionByLogicalProjectKey = useComposerDraftStore(
@@ -3835,8 +3837,33 @@ function ChatViewContent(props: ChatViewProps) {
     [activeProject, persistProjectScripts],
   );
 
-  // No runtime-mode handler: permission is ALWAYS full (operator rule), the
-  // picker is gone, and the composer no longer threads a change callback.
+  const projectRuntimeMode =
+    allThreadShells.find(
+      (candidate) =>
+        candidate.environmentId === activeThreadEnvironmentId &&
+        candidate.projectId === activeThread?.projectId &&
+        candidate.archivedAt === null &&
+        candidate.workjetConfig.schemaVersion === 2 &&
+        candidate.workjetConfig.team?.role === "supervisor",
+    )?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
+  const handleThreadApprovalPolicyChange = useCallback(
+    async (mode: RuntimeMode) => {
+      if (!activeServerThread) return false;
+      const result = await setThreadRuntimeMode({
+        environmentId: activeServerThread.environmentId,
+        input: {
+          threadId: activeServerThread.id,
+          runtimeMode: mode,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      if (result._tag !== "Success") return false;
+      // Keep the next-turn draft in sync with the persisted permission choice.
+      setComposerDraftRuntimeMode(composerDraftTarget, mode);
+      return true;
+    },
+    [activeServerThread, setThreadRuntimeMode, setComposerDraftRuntimeMode, composerDraftTarget],
+  );
 
   const handleInteractionModeChange = useCallback(
     (mode: ProviderInteractionMode) => {
@@ -7143,6 +7170,21 @@ function ChatViewContent(props: ChatViewProps) {
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             rightPanelOpen={rightPanelOpen}
+            approvalControl={
+              activeServerThread && !nativeSupervisorThread ? (
+                <ThreadApprovalControl
+                  key={activeThreadKey}
+                  runtimeMode={runtimeMode}
+                  projectRuntimeMode={projectRuntimeMode}
+                  hasOwnWorktree={
+                    activeServerThread.worktreePath !== null &&
+                    activeServerThread.worktreePath !== activeProject?.workspaceRoot
+                  }
+                  disabled={activeEnvironmentUnavailable || threadDetailLoading || isWorking}
+                  onChange={handleThreadApprovalPolicyChange}
+                />
+              ) : undefined
+            }
             onNewThreadInProject={handleNewThreadInActiveProject}
           />
         </WorkjetHeaderContent>

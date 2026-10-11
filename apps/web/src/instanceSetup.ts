@@ -1,3 +1,5 @@
+import type { CtoxManagedInstance } from "@workjet/contracts";
+
 export type InstanceSetupIntent =
   | "choose"
   | "create"
@@ -12,17 +14,30 @@ export type InstanceSetupIntent =
 export interface InstanceSetupRequest {
   readonly intent: InstanceSetupIntent;
   readonly revision: number;
+  readonly replacesInstanceId?: string;
 }
 let current: InstanceSetupRequest | null = null;
 let revision = 0;
 const listeners = new Set<() => void>();
-export function openInstanceSetup(intent: InstanceSetupIntent = "choose") {
-  current = { intent, revision: ++revision };
+export function openInstanceSetup(
+  intent: InstanceSetupIntent = "choose",
+  replacesInstanceId?: string,
+) {
+  current = {
+    intent,
+    revision: ++revision,
+    ...(replacesInstanceId === undefined ? {} : { replacesInstanceId }),
+  };
   for (const notify of listeners) notify();
 }
 export function closeInstanceSetup() {
   current = null;
   for (const notify of listeners) notify();
+}
+export function openInstanceRePair(instance: Pick<CtoxManagedInstance, "id" | "source">) {
+  if (instance.source === "pairing_invite" || instance.source === "manual_pairing")
+    openInstanceSetup("link", instance.id);
+  else openInstanceSetup(instance.source === "ctox_dev" ? "managed" : "choose");
 }
 export const instanceSetupStore = {
   getSnapshot: () => current,

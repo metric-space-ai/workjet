@@ -36,6 +36,17 @@ import { makeNativeWorkerOutcomePublisher } from "./NativeWorkerOutcomePublisher
 import { refreshRemoteWorkerOutcome } from "./RemoteWorkerOutcome.ts";
 import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 
+export function isNativeSupervisorWorkerSource(
+  parent: Pick<OrchestrationThread, "deletedAt" | "archivedAt" | "workjetConfig">,
+): boolean {
+  return (
+    parent.deletedAt === null &&
+    parent.archivedAt === null &&
+    canCoordinateWorkjet(parent.workjetConfig) &&
+    (parent.workjetConfig.schemaVersion !== 2 || parent.workjetConfig.team?.role === "supervisor")
+  );
+}
+
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const encodeResult = Schema.encodeEffect(RemoteWorkerResult);
 const decodeResult = Schema.decodeUnknownEffect(RemoteWorkerResult);
@@ -88,15 +99,32 @@ export const make = Effect.gen(function* () {
   const sourceFor = Effect.fn("NativeSupervisorWorkerDispatch.sourceFor")(function* (
     parent: OrchestrationThread,
   ) {
-    if (
-      parent.deletedAt !== null ||
-      parent.archivedAt !== null ||
-      !canCoordinateWorkjet(parent.workjetConfig) ||
-      (parent.workjetConfig.schemaVersion === 2 && parent.workjetConfig.team?.role !== "supervisor")
-    )
+    const persistedBinding =
+      parent.workjetConfig.schemaVersion === 2
+        ? parent.workjetConfig.capabilityBindings.find(
+            (binding) => binding.capabilityId === "ctox-business-os",
+          )?.target
+        : undefined;
+    yield* Effect.annotateCurrentSpan({
+      threadId: parent.id,
+      projectId: parent.projectId,
+      ...(persistedBinding
+        ? { connectionId: persistedBinding.connectionId, instanceId: persistedBinding.instanceId }
+        : {}),
+    });
+    if (!isNativeSupervisorWorkerSource(parent)) {
+      yield* Effect.annotateCurrentSpan({ reason: "ineligible-thread" });
       return yield* failure();
+    }
     const facts = yield* bindings.fromStartConfig(parent.workjetConfig);
-    if (!facts.binding) return yield* failure();
+    if (!facts.binding) {
+      yield* Effect.annotateCurrentSpan({ reason: "binding-unavailable" });
+      return yield* failure();
+    }
+    yield* Effect.annotateCurrentSpan({
+      connectionId: facts.binding.connectionId,
+      instanceId: facts.binding.instanceId,
+    });
     return {
       source: {
         sourceEnvironmentId: facts.environmentId,
@@ -152,7 +180,7 @@ export const make = Effect.gen(function* () {
     sources: Effect.gen(function* () {
       const model = yield* query.getCommandReadModel().pipe(Effect.mapError(failure));
       const sources: NativeSupervisorWorkerSource[] = [];
-      for (const parent of model.threads) {
+      for (const parent of model.threads.filter(isNativeSupervisorWorkerSource)) {
         const source = yield* sourceFor(parent).pipe(Effect.option);
         if (Option.isSome(source)) sources.push(source.value);
       }

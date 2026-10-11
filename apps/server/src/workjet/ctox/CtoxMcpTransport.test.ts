@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Tracer from "effect/Tracer";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import {
@@ -20,6 +21,7 @@ const RequestBody = Schema.Struct({
   params: Schema.optional(Schema.Unknown),
 });
 const decodeRequest = Schema.decodeUnknownSync(Schema.fromJsonString(RequestBody));
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const target = { endpoint: "https://mcp.ctox.dev/mcp/instance-a", token: "test-only-token" };
 
 function fakeDaemon(answer: (body: typeof RequestBody.Type) => Response) {
@@ -134,9 +136,7 @@ describe("shared CTOX MCP transport", () => {
         }),
       );
       expect(error).toMatchObject({ reason: "remote-response-invalid" });
-      expect(
-        yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(error),
-      ).not.toContain("private");
+      expect(yield* encodeJson(error)).not.toContain("private");
       expect(remote.calls).toHaveLength(1);
     }),
   );
@@ -216,9 +216,7 @@ it.effect(
         const error = yield* Effect.flip(remote.transport.probe(target, []));
         expect(error).toMatchObject({ reason });
         expect(remote.calls).toHaveLength(1);
-        expect(
-          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(error),
-        ).not.toContain("private");
+        expect(yield* encodeJson(error)).not.toContain("private");
         const service = yield* DecisionHubMcpClient.pipe(
           Effect.provide(decisionHubLayer),
           Effect.provideService(HttpClient.HttpClient, remote.client),
@@ -226,4 +224,88 @@ it.effect(
         expect(yield* Effect.flip(service.probe(target, []))).toMatchObject({ reason });
       }
     }),
+);
+
+it.effect("classifies native JSON-RPC failures on HTTP 200 without exposing native messages", () =>
+  Effect.gen(function* () {
+    for (const [message, code, expected] of [
+      [
+        "source supervisor is not registered natively",
+        "internal_error",
+        "native-supervisor-unregistered",
+      ],
+      ["native supervisor history missing", "internal_error", "native-supervisor-history-missing"],
+      [
+        "native supervisor history missing: private token=secret",
+        "internal_error",
+        "internal_error",
+      ],
+      ["private policy details", "permission_denied", "permission_denied"],
+      ["private token=secret", "private-code", "remote-error"],
+    ] as const) {
+      const spans: Tracer.Span[] = [];
+      const tracer = Tracer.make({
+        span: (options) => {
+          const span = new Tracer.NativeSpan(options);
+          spans.push(span);
+          return span;
+        },
+      });
+      const remote = fakeDaemon(() =>
+        Response.json({ jsonrpc: "2.0", error: { code: -32603, message, data: { code } } }),
+      );
+      const result = yield* remote.transport
+        .callTool(target, "business_os.workjet_worker_dispatch", { task: "private task" })
+        .pipe(Effect.result, Effect.withTracer(tracer));
+      expect(result._tag).toBe("Failure");
+      const call = spans.find((span) => span.name === "CtoxMcpTransport.call");
+      expect(call?.attributes.get("httpStatus")).toBe(200);
+      expect(call?.attributes.get("failureReason")).toBe(expected);
+      const attributes = yield* encodeJson(
+        spans.map((span) => Object.fromEntries(span.attributes)),
+      );
+      expect(attributes).not.toContain(message);
+      expect(attributes).not.toContain("private");
+      expect(attributes).not.toContain(target.token);
+    }
+  }),
+);
+
+it.effect("records safe MCP failure classifications without arguments or credentials", () =>
+  Effect.gen(function* () {
+    for (const [status, failureReason] of [
+      [403, "permission-denied"],
+      [429, "rate-limited"],
+    ] as const) {
+      const spans: Tracer.Span[] = [];
+      const tracer = Tracer.make({
+        span: (options) => {
+          const span = new Tracer.NativeSpan(options);
+          spans.push(span);
+          return span;
+        },
+      });
+      const remote = fakeDaemon(() => new Response("private body", { status }));
+      yield* remote.transport
+        .probe(target, ["business_os.workjet_worker_dispatch"])
+        .pipe(Effect.result, Effect.withTracer(tracer));
+      const call = spans.find((span) => span.name === "CtoxMcpTransport.call");
+      expect(call?.attributes.get("method")).toBe("initialize");
+      expect(call?.attributes.get("httpStatus")).toBe(status);
+      expect(call?.attributes.get("failureReason")).toBe(failureReason);
+      const probe = spans.find((span) => span.name === "CtoxMcpTransport.probe");
+      expect(probe?.attributes.get("reason")).toBe("connection-unavailable");
+      const attributes = yield* encodeJson(
+        spans.map((span) => Object.fromEntries(span.attributes)),
+      );
+      expect(attributes).not.toContain(target.token);
+      const ownAttributes = yield* encodeJson(
+        spans
+          .filter((span) => span.name.startsWith("CtoxMcpTransport."))
+          .map((span) => Object.fromEntries(span.attributes)),
+      );
+      expect(ownAttributes).not.toContain(target.endpoint);
+      expect(attributes).not.toContain("private");
+    }
+  }),
 );

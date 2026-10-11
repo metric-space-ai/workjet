@@ -23,6 +23,7 @@ import {
   CtoxWorkjetProjectControlDiagnostic,
   CtoxWorkjetComputerControlResponse,
   isWorkjetSupervisorReceiptForRequest,
+  isWorkjetExitModelReceiptForRequest,
   isWorkjetJourFixeReceiptForRequest,
   isWorkjetPresentationReceiptForRequest,
   isWorkjetCalendarReceiptForRequest,
@@ -35,6 +36,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { sanitizeProjectCommandTiming } from "./projectCommandTiming.ts";
 import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
@@ -51,6 +53,7 @@ import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import { CtoxGuestBudget, type CtoxGuestLease } from "./CtoxGuestBudget.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
+import { accessState } from "./CtoxInstancePreferences.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
@@ -476,9 +479,12 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
     }
     return { status: "unsupported" };
   }
+  const sanitizeTiming = (${sanitizeProjectCommandTiming.toString()});
+  let commandTiming;
+  const observeTiming = (sample) => { commandTiming = sanitizeTiming(sample); };
   try {
-    const result = await control(${JSON.stringify(request)});
-    return { status: "completed", result };
+    const result = await control(${JSON.stringify(request)}, { onCommandTiming: observeTiming });
+    return { status: "completed", result, ...(commandTiming ? { commandTiming } : {}) };
   } catch (error) {
     // Electron erases a rejected renderer promise's error details.
     // Only fixed reasons cross this boundary, never messages or request data.
@@ -494,15 +500,22 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
             ? "supervisor_control_not_ready"
             : message === "Native WebRTC peer is not connected" || code === "PEER_UNAVAILABLE"
               ? "peer_unavailable"
-              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT"
+              : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT" || code === "WORKJET_PROJECT_TIMEOUT" || code === "projection_delayed"
                 ? "request_timeout"
                 : message === "Failed to fetch" || message === "fetch failed"
                   ? "network_unavailable"
                   : undefined;
     if (reason === "unsupported_action") return { status: "unsupported" };
+    const projectPhase = code === "WORKJET_PROJECT_TIMEOUT"
+      ? /^Workjet project list did not finish (collections|command|bridge|query readiness|native projection) before its deadline\\.$/u.exec(message)?.[1]?.replaceAll(" ", "_")
+      : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT"
+        ? "native_request" : undefined;
     return {
       status: "failed",
-      ...(reason === undefined ? {} : { diagnostic: { stage: "execute", reason } }),
+      ...(commandTiming ? { commandTiming } : {}),
+      ...(reason === undefined ? {} : { diagnostic: {
+        stage: "execute", reason, ...(projectPhase === undefined ? {} : { phase: projectPhase }),
+      } }),
     };
   }
 })()`;
@@ -1546,6 +1559,15 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (!state.businessOsModeActive) {
             return [{ _tag: "failed", code: "not_active" } as const, state] as const;
           }
+          const access = yield* accessState(instanceId);
+          if (access !== "enabled")
+            return [
+              {
+                _tag: "failed",
+                code: access === "disabled" ? "instance_disabled" : "instance_removed",
+              } as const,
+              state,
+            ] as const;
           const stamp = ++guestUseSequence;
           const outgoing =
             state.activeId !== undefined && state.activeId !== instanceId
@@ -1625,7 +1647,20 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
     const ensurePooled = (instanceId: string): Effect.Effect<CtoxManagedGuestResult> =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.gen(function* () {
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxManagedGuestResult, GuestState],
+          never
+        > {
+          const access = yield* accessState(instanceId);
+          if (access !== "enabled")
+            return [
+              {
+                _tag: "failed",
+                code: access === "disabled" ? "instance_disabled" : "instance_removed",
+              } as const,
+              state,
+            ] as const;
           const stamp = ++guestUseSequence;
           const pool = new Map(state.pool);
           const warm = pool.get(instanceId);
@@ -2144,6 +2179,28 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "not_active" };
         }
         const raw = pending.value;
+        const commandTiming = sanitizeProjectCommandTiming(
+          typeof raw === "object" && raw !== null
+            ? (raw as { readonly commandTiming?: unknown }).commandTiming
+            : undefined,
+        );
+        if (commandTiming) {
+          yield* Effect.annotateCurrentSpan({
+            guestCommandId: commandTiming.commandId,
+            ...(commandTiming.pendingStage
+              ? {
+                  "command.pending.stage": commandTiming.pendingStage,
+                  "command.pending.ms": commandTiming.pendingMs,
+                }
+              : {}),
+            ...Object.fromEntries(
+              Object.entries(commandTiming.stagesMs).map(([stage, duration]) => [
+                `command.stage.${stage}.ms`,
+                duration,
+              ]),
+            ),
+          });
+        }
         const status =
           typeof raw === "object" && raw !== null
             ? (raw as { readonly status?: unknown }).status
@@ -2170,7 +2227,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             action: request.action,
             stage: "response",
             status: status === "failed" ? "failed" : "invalid",
-            ...describeCtoxGuestFailure(raw),
+            ...(Option.isSome(reason)
+              ? { reason: reason.value.reason }
+              : describeCtoxGuestFailure(raw)),
           });
           return {
             _tag: "failed",
@@ -2219,6 +2278,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (!isWorkjetPresentationReceiptForRequest(request, decoded.value)) {
           return { _tag: "failed", code: "guest_failed" };
         }
+        if (!isWorkjetExitModelReceiptForRequest(request, decoded.value)) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
         if (
           (request.action === "project.worker.add" || request.action === "project.chat.create") &&
           (decoded.value.action === "project.worker.add" ||
@@ -2238,7 +2300,32 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         )
           return { _tag: "failed", code: "guest_failed" };
         return { _tag: "completed", response: decoded.value };
-      });
+      }).pipe(
+        Effect.tap((result) =>
+          Effect.annotateCurrentSpan({
+            outcome: result._tag,
+            ...(result._tag === "failed"
+              ? {
+                  reason: result.diagnostic?.reason ?? result.code,
+                  ...(result.diagnostic?.phase
+                    ? { phase: result.diagnostic.phase }
+                    : result.code === "timeout"
+                      ? { phase: "desktop_delivery" }
+                      : {}),
+                }
+              : {}),
+          }),
+        ),
+        Effect.withSpan("CtoxGuestManager.requestProjectControl", {
+          attributes: {
+            instanceId,
+            action: request.action,
+            ...("projectId" in request ? { projectId: request.projectId } : {}),
+            ...("threadId" in request ? { threadId: request.threadId } : {}),
+            ...("commandId" in request ? { commandId: request.commandId } : {}),
+          },
+        }),
+      );
 
     const requestSessionControl = (
       instanceId: string,

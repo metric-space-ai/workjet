@@ -89,6 +89,7 @@ import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveNativeProjectOpening } from "../nativeProjectOpening";
 import { resolveProjectTeamModelSelection } from "../providerInstances";
+import { createPersistentWorkerConfig } from "./-projectWorkerConfig";
 import { threadEnvironment } from "../state/threads";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -411,20 +412,15 @@ function IndexDraftLanding() {
                 modelSelection,
                 runtimeMode: supervisor.runtimeMode,
                 interactionMode: "default",
-                workjetConfig: {
-                  ...supervisor.workjetConfig,
-                  role: "orchestrator",
-                  parent: null,
-                  team: {
-                    role: "specialist",
-                    projectId: supervisor.projectId,
-                    threadId,
-                    parentThreadId: supervisor.id,
-                    domain,
-                    goal,
-                    createdAt,
-                  },
-                },
+                workjetConfig: createPersistentWorkerConfig({
+                  supervisorConfig: supervisor.workjetConfig,
+                  projectId: supervisor.projectId,
+                  supervisorThreadId: supervisor.id,
+                  threadId,
+                  domain,
+                  goal,
+                  createdAt,
+                }),
                 branch: null,
                 worktreePath: null,
                 createdAt,
@@ -855,7 +851,10 @@ function ProjectGallery({
                 items={visibleProjects.map((project) => project.key)}
                 strategy={rectSortingStrategy}
               >
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
+                <div
+                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1"
+                  data-workjet-project-gallery-grid=""
+                >
                   {visibleProjects.map((project) => (
                     <SortableProjectTile
                       key={project.key}
@@ -866,6 +865,7 @@ function ProjectGallery({
                       {(reorderHandle) => (
                         <ProjectOverviewCard
                           project={project}
+                          ctoxInstanceId={instanceId}
                           onOpen={project.onOpen}
                           onSave={project.onSave}
                           onSaveConfiguration={project.onSaveConfiguration}

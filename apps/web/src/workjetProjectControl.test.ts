@@ -9,6 +9,22 @@ import {
 } from "./workjetProjectControl";
 
 describe("project instance failure display", () => {
+  it.each(["instance_disabled", "instance_removed"] as const)(
+    "keeps %s as a quiet state and never falls back to another query",
+    async (code) => {
+      const failure = { _tag: "failed", code } as const;
+      const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+      await expect(listWorkjetProjects("managed:fixture", request)).resolves.toEqual(failure);
+      expect(request).toHaveBeenCalledOnce();
+      expect(describeWorkjetProjectControlFailure(failure, null, "de")).toBe(
+        code === "instance_disabled" ? "Instanz deaktiviert." : "Instanz entfernt.",
+      );
+      expect(describeWorkjetProjectControlFailure(failure, null, "en")).toBe(
+        code === "instance_disabled" ? "Instance disabled." : "Instance removed.",
+      );
+    },
+  );
+
   it("distinguishes hosted sign-in from accountless paired authentication", () => {
     const failure = { _tag: "failed", code: "authentication_required" } as const;
     expect(describeWorkjetProjectControlFailure(failure, "managed:tenant")).toContain(

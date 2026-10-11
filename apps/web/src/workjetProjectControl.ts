@@ -129,6 +129,9 @@ export function describeWorkjetProjectControlFailure(
   language = workjetUiLanguage(),
 ): string {
   const de = language === "de";
+  if (failure.code === "instance_disabled")
+    return de ? "Instanz deaktiviert." : "Instance disabled.";
+  if (failure.code === "instance_removed") return de ? "Instanz entfernt." : "Instance removed.";
   if (failure.code === "authentication_required")
     return instanceId?.startsWith("managed:")
       ? de

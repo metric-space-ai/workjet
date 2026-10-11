@@ -20,8 +20,11 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 import { admitWorkerSourceNativeProfile } from "./WorkerSourceNativeAdmission.ts";
 import { workerSourceDriver } from "./WorkerSourceNativeProfile.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
 
 const cleanups: Array<() => Promise<void>> = [];
+const catalog = (baseUrl: string, apiKey: string) =>
+  fetch(baseUrl + "/models", { headers: { authorization: `Bearer ${apiKey}` } });
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.unstubAllEnvs();
@@ -62,9 +65,12 @@ async function fixture(
   harness: "grok-cli" | "opencode" | "minimax-code" | "greppy" | "pi-code",
   platform: NodeJS.Platform,
   tmpdir: string | undefined,
+  privateModelSocket = false,
+  variant = "",
 ) {
   let allowed = true;
   let admitted = 0;
+  let onAdmission: (() => Promise<void>) | undefined;
   const server = NodeHttp.createServer(async (req, res) => {
     expect(req.headers.authorization).toBe("Bearer admission-capability");
     const chunks: Buffer[] = [];
@@ -72,6 +78,7 @@ async function fixture(
     const body = JSON.parse(Buffer.concat(chunks).toString());
     expect(body.operation).toBe("admit");
     admitted++;
+    await onAdmission?.();
     res.writeHead(allowed ? 200 : 403, { "content-type": "application/json" }).end("{}");
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -88,7 +95,7 @@ async function fixture(
     ),
   );
   cleanups.push(() => NodeFSP.rm(directory, { recursive: true, force: true }));
-  const thread = "admission-" + harness;
+  const thread = "admission-" + harness + (privateModelSocket ? "-private" : "-loopback") + variant;
   const route = await installWorkerSourceRoute(
     thread,
     {
@@ -104,6 +111,7 @@ async function fixture(
       requestDigest: "digest-" + harness,
       modelId: "gpt-6.1-sol",
       harness,
+      ...(privateModelSocket ? { modelSocketRoot: NodePath.join(directory, "model-ipc") } : {}),
       nativeProfile: { harness, directory },
     },
   );
@@ -112,12 +120,50 @@ async function fixture(
     route,
     value: input(thread),
     admitted: () => admitted,
+    onAdmission: (action: () => Promise<void>) => {
+      onAdmission = action;
+    },
     deny: () => {
       allowed = false;
     },
   };
 }
 for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-code"] as const) {
+  it.effect(`keeps ${harness} on its private model endpoint during start and recovery`, () =>
+    Effect.gen(function* () {
+      const platform = yield* HostProcessPlatform;
+      const environment = yield* HostProcessEnvironment;
+      if (platform !== "linux") {
+        yield* Effect.promise(() =>
+          expect(fixture(harness, platform, environment.TMPDIR, true)).rejects.toThrow(
+            "unavailable",
+          ),
+        );
+        return;
+      }
+      const f = yield* Effect.promise(() => fixture(harness, platform, environment.TMPDIR, true));
+      const before = f.admitted();
+      for (let index = 0; index < 2; index++) {
+        const profile = yield* run(f.value, workerSourceDriver(harness)!);
+        expect(profile?.environment.WORKJET_WORKER_SOURCE_URL).toBe(
+          WORKER_MODEL_NAMESPACE_BASE_URL,
+        );
+        expect(profile?.environment).toMatchObject(f.route.nativeProfile!.environment);
+        expect(profile?.files).toEqual(f.route.nativeProfile!.files);
+        expect(profile?.model).toBe(f.route.nativeProfile!.model);
+        expect(profile?.namespaceProfile).toEqual(f.route.nativeProfileCapture);
+        expect(profile?.namespaceProfile?.path).toBe(profile?.directory);
+        const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(profile);
+        expect(encoded).not.toContain(f.route.baseUrl);
+        expect(encoded).not.toContain(f.route.baseUrl.slice(0, -3));
+      }
+      expect(f.admitted() - before).toBe(2);
+      f.deny();
+      yield* rejects(run(f.value, workerSourceDriver(harness)!), "admission failed");
+      yield* Effect.promise(() => f.route.revoke());
+      yield* rejects(run(f.value, workerSourceDriver(harness)!), "route is revoked");
+    }),
+  );
   it.effect(`admits ${harness} repeatedly without inheriting target accounts`, () =>
     Effect.gen(function* () {
       vi.stubEnv("ANTHROPIC_API_KEY", "target-anthropic-secret");
@@ -163,4 +209,61 @@ it.effect(
       ).toBeUndefined();
       yield* rejects(run(input("missing-native-source"), "grok"), "unavailable or mismatched");
     }),
+);
+
+it.effect("denies provider start and recovery after the original private profile is replaced", () =>
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const environment = yield* HostProcessEnvironment;
+    if (platform !== "linux") return;
+    const f = yield* Effect.promise(() =>
+      fixture("minimax-code", platform, environment.TMPDIR, true, "-substitution"),
+    );
+    const profile = yield* run(f.value, "minimax");
+    expect(profile?.namespaceProfile?.path).toBe(f.route.nativeProfile!.directory);
+    const before = f.admitted();
+    yield* Effect.promise(async () => {
+      const directory = f.route.nativeProfile!.directory;
+      await NodeFSP.rename(directory, directory + "-held");
+      await NodeFSP.mkdir(directory, { mode: 0o700 });
+      await NodeFSP.writeFile(NodePath.join(directory, "config.yaml"), "replacement sentinel");
+    });
+    yield* rejects(run(f.value, "minimax"), "admission failed");
+    yield* rejects(run(f.value, "minimax"), "admission failed");
+    expect(f.admitted()).toBe(before);
+    yield* Effect.promise(async () => {
+      await expect(f.route.admit()).rejects.toThrow("custody");
+      const response = await catalog(f.route.baseUrl, f.route.apiKey);
+      expect(response.status).toBe(502);
+      expect(
+        await NodeFSP.readFile(
+          NodePath.join(f.route.nativeProfile!.directory, "config.yaml"),
+          "utf8",
+        ),
+      ).toBe("replacement sentinel");
+      await f.route.revoke();
+    });
+    expect(f.admitted()).toBe(before);
+  }),
+);
+
+it.effect("rejects a profile substitution while awaiting fresh source admission", () =>
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const environment = yield* HostProcessEnvironment;
+    if (platform !== "linux") return;
+    const f = yield* Effect.promise(() =>
+      fixture("minimax-code", platform, environment.TMPDIR, true, "-in-flight-substitution"),
+    );
+    const before = f.admitted();
+    f.onAdmission(async () => {
+      const directory = f.route.nativeProfile!.directory;
+      await NodeFSP.rename(directory, directory + "-held");
+      await NodeFSP.mkdir(directory, { mode: 0o700 });
+    });
+    yield* rejects(run(f.value, "minimax"), "admission failed");
+    expect(f.admitted()).toBe(before + 1);
+    yield* rejects(run(f.value, "minimax"), "admission failed");
+    expect(f.admitted()).toBe(before + 1);
+  }),
 );

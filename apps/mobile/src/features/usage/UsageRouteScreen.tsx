@@ -9,6 +9,7 @@ import {
   formatPercent,
   formatTokens,
   formatUsd,
+  formatUsageCost,
   makeWindow,
 } from "@workjet/shared/usageFormat";
 import { useMemo, useState } from "react";
@@ -209,7 +210,9 @@ function ChartCard(props: {
             {metric === "cost" ? "Raw token cost" : "Processed tokens"}
           </Text>
           <Text className="text-4xl font-workjet-bold tabular-nums text-foreground">
-            {metric === "cost" ? `${formatUsd(merged.costUsd)}*` : formatTokens(merged.totalTokens)}
+            {metric === "cost"
+              ? `${formatUsageCost(merged.costUsd, merged.costQuality.unpricedShare)}*`
+              : formatTokens(merged.totalTokens)}
           </Text>
           <Text className="text-sm text-foreground-muted">
             {metric === "cost"
@@ -312,6 +315,11 @@ function ProviderSection(props: {
     <SettingsSection title="Providers" card>
       {ordered.map((provider, index) => {
         const share = metric === "cost" ? provider.costShare : provider.tokenShare;
+        const unpriced = merged.models.some(
+          (model) => model.provider === provider.provider && model.unpricedRecords > 0,
+        )
+          ? 1
+          : 0;
         return (
           <View
             key={provider.provider}
@@ -327,7 +335,7 @@ function ProviderSection(props: {
               </View>
               <Text className="text-lg tabular-nums text-foreground">
                 {metric === "cost"
-                  ? formatUsd(provider.costUsd)
+                  ? formatUsageCost(provider.costUsd, unpriced)
                   : formatTokens(provider.totalTokens)}
               </Text>
             </View>
@@ -341,7 +349,7 @@ function ProviderSection(props: {
             <Text className="text-sm text-foreground-muted">
               {metric === "cost"
                 ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
-                : `${formatPercent(share)} of tokens · ${formatUsd(provider.costUsd)}`}
+                : `${formatPercent(share)} of tokens · ${formatUsageCost(provider.costUsd, unpriced)}`}
             </Text>
           </View>
         );
@@ -445,7 +453,9 @@ function ModelsSection(props: { readonly merged: MergedUsage }) {
               {formatPercent(model.costShare)} of cost · {formatTokens(model.totalTokens)} tokens
             </Text>
           </View>
-          <Text className="text-base tabular-nums text-foreground">{formatUsd(model.costUsd)}</Text>
+          <Text className="text-base tabular-nums text-foreground">
+            {formatUsageCost(model.costUsd, model.unpricedRecords)}
+          </Text>
         </View>
       ))}
     </SettingsSection>

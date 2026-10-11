@@ -104,6 +104,9 @@ import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
+import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
+import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
+import { isRunningProjectOneShot, projectOverviewWorkerState } from "../projectOverviewModel";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -771,6 +774,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
+  const overviewLanguage = useProjectOverviewLanguage();
+  const overviewText = PROJECT_OVERVIEW_TEXT[overviewLanguage];
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
@@ -1185,8 +1190,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {teamStatus ? (
                 <span
                   className={cn("block size-2 rounded-full", teamStatus.dot)}
-                  title={teamStatus.label}
-                  aria-label={teamStatus.label}
+                  title={overviewText[projectOverviewWorkerState(thread)]}
+                  aria-label={overviewText[projectOverviewWorkerState(thread)]}
                 />
               ) : (
                 <ProjectFavicon
@@ -1226,14 +1231,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               <span
                 className={cn(
                   "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
-                  !isWoke && "group-hover/sidebar-row:opacity-0",
+                  !isWoke && !props.projectTeam && "group-hover/sidebar-row:opacity-0",
                 )}
               >
                 {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                   // Snoozed rows show when they come BACK, not when they were
                   // last touched — the return ticket is the row's whole story.
                   <span className="text-xs text-blue-600 tabular-nums dark:text-blue-400">
-                    {props.snoozeWakeLabelText}
+                    {props.projectTeam
+                      ? overviewText[projectOverviewWorkerState(thread)]
+                      : props.snoozeWakeLabelText}
                   </span>
                 ) : isWoke ? (
                   // A wake can land straight in the settled tail (e.g. PR
@@ -1246,13 +1253,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
                   >
                     <AlarmClockIcon aria-hidden className="size-3" />
-                    <span role="status">Woke</span>
+                    <span role="status">
+                      {props.projectTeam
+                        ? overviewText[projectOverviewWorkerState(thread)]
+                        : "Woke"}
+                    </span>
                   </button>
                 ) : (
                   <span className="text-xs">
-                    {variantAction === "unsettle"
-                      ? settledTimeLabel(thread)
-                      : threadTimeLabel(thread)}
+                    {props.projectTeam
+                      ? overviewText[projectOverviewWorkerState(thread)]
+                      : variantAction === "unsettle"
+                        ? settledTimeLabel(thread)
+                        : threadTimeLabel(thread)}
                   </span>
                 )}
               </span>
@@ -1265,6 +1278,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     className={cn(
                       "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
                       isWoke && "group-hover/sidebar-row:static",
+                      props.projectTeam && "relative ml-1",
                     )}
                   >
                     <AlarmClockOffIcon className="mb-px size-3" />
@@ -1278,6 +1292,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
                     isWoke && "group-hover/sidebar-row:static",
+                    props.projectTeam && "relative ml-1",
                   )}
                 >
                   <Undo2Icon className="mb-px size-3.5" />
@@ -1290,6 +1305,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
                     isWoke && "group-hover/sidebar-row:static",
+                    props.projectTeam && "relative ml-1",
                   )}
                 >
                   <CheckIcon className="size-3" />
@@ -1673,6 +1689,8 @@ export default function Sidebar() {
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
+  const overviewLanguage = useProjectOverviewLanguage();
+  const overviewText = PROJECT_OVERVIEW_TEXT[overviewLanguage];
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const workjetConfiguration = usePrimarySettings((settings) => settings.workjet);
   const selectedWorkjetComputer = useMemo(
@@ -2332,7 +2350,9 @@ export default function Sidebar() {
       // its exact slot in the pinned block. (For unpinned threads
       // this is also the snooze-beats-auto-settle rule: the wake time is a
       // stronger statement about when the thread matters again.)
-      if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
+      if (scopedProjectKeys !== null && !isRunningProjectOneShot(thread)) {
+        settled.push(thread);
+      } else if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
         snoozed.push(thread);
         // A pin otherwise overrides the lifecycle: pinned threads never
         // auto-settle out of sight. (The decider clears settled state on
@@ -3713,8 +3733,8 @@ export default function Sidebar() {
                     setActiveSearchResultIndex(0);
                   }}
                   onKeyDown={handleThreadSearchKeyDown}
-                  placeholder="Search"
-                  aria-label="Search threads"
+                  placeholder={overviewText.search}
+                  aria-label={overviewText.searchThreads}
                   role="combobox"
                   aria-autocomplete="list"
                   aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
@@ -3736,7 +3756,7 @@ export default function Sidebar() {
                     size="icon-xs"
                     variant="ghost"
                     className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                    aria-label="Clear thread search"
+                    aria-label={overviewText.clearSearch}
                     onClick={() => {
                       clearThreadSearch();
                       threadSearchInputRef.current?.focus();
@@ -3756,7 +3776,7 @@ export default function Sidebar() {
                         className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         onClick={handleNewThreadClick}
                         disabled={isSidebarNewThreadDisabled(sidebarAvailableProjectCount)}
-                        aria-label="New thread"
+                        aria-label={overviewText.newThread}
                       />
                     }
                   >
@@ -3771,20 +3791,20 @@ export default function Sidebar() {
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel
-                            ? `New thread (${newThreadShortcutLabel})`
-                            : "New thread"}
+                            ? `${overviewText.newThread} (${newThreadShortcutLabel})`
+                            : overviewText.newThread}
                         </span>
                         <span className="text-muted-foreground">
-                          New thread in current project: Shift+click
+                          {overviewText.newThreadInProject}
                           {newThreadInProjectShortcutLabel
                             ? ` (${newThreadInProjectShortcutLabel})`
                             : ""}
                         </span>
                       </span>
                     ) : newThreadShortcutLabel ? (
-                      `New thread (${newThreadShortcutLabel})`
+                      `${overviewText.newThread} (${newThreadShortcutLabel})`
                     ) : (
-                      "New thread"
+                      overviewText.newThread
                     )}
                   </TooltipPopup>
                 </Tooltip>
@@ -3812,11 +3832,13 @@ export default function Sidebar() {
               }}
             >
               <FolderIcon aria-hidden className="size-4 shrink-0" />
-              <span>All projects</span>
+              <span>{overviewText.allProjects}</span>
             </SidebarMenuButton>
             {projectGroups.length > 0 || workjetProjects.length > 0 ? (
               <div className="space-y-1">
-                <p className="px-2 text-[11px] text-sidebar-muted-foreground">Project</p>
+                <p className="px-2 text-[11px] text-sidebar-muted-foreground">
+                  {overviewText.project}
+                </p>
                 <div className="flex items-center gap-1">
                   <Menu
                     open={projectScopeMenuOpen}
@@ -3890,7 +3912,7 @@ export default function Sidebar() {
                     <SidebarMenuButton
                       type="button"
                       size="icon"
-                      aria-label={`Project settings for ${scopedProjectGroup.displayName}`}
+                      aria-label={`${overviewText.projectSettingsFor} ${scopedProjectGroup.displayName}`}
                       onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
                     >
                       <SettingsIcon aria-hidden className="size-4" />
@@ -3899,7 +3921,7 @@ export default function Sidebar() {
                   <SidebarMenuButton
                     type="button"
                     size="icon"
-                    aria-label="New project"
+                    aria-label={overviewText.newProject}
                     data-workjet-action="project.add.sidebar.persistent"
                     onClick={openAddProjectCommandPalette}
                   >
@@ -3919,7 +3941,7 @@ export default function Sidebar() {
                     }
                   >
                     <FolderIcon aria-hidden className="size-4 shrink-0" />
-                    <span>Overview</span>
+                    <span>{overviewText.overview}</span>
                   </SidebarMenuButton>
                 ) : null}
               </div>
@@ -3939,7 +3961,7 @@ export default function Sidebar() {
                 <ul
                   id="sidebar-thread-search-results"
                   role="listbox"
-                  aria-label="Thread search results"
+                  aria-label={overviewText.searchResults}
                   className="flex flex-col gap-px"
                 >
                   {threadSearchResults.map((thread, index) => {
@@ -3980,7 +4002,7 @@ export default function Sidebar() {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No threads found
+                {overviewText.noThreads}
               </p>
             )
           ) : null}
@@ -4029,7 +4051,7 @@ export default function Sidebar() {
                           groupByTeam ? projectTeamParentTitle(thread, threads) : undefined
                         }
                         teamHarnessLabel={
-                          groupByTeam && duplicateTitles.has(thread.title)
+                          !groupByTeam && duplicateTitles.has(thread.title)
                             ? projectTeamHarnessLabel(thread)
                             : undefined
                         }
@@ -4176,7 +4198,7 @@ export default function Sidebar() {
                       ...orderedPinnedThreads,
                       ...activeThreads,
                     ]);
-                    for (const { section, label } of PROJECT_TEAM_SECTIONS) {
+                    for (const { section } of PROJECT_TEAM_SECTIONS) {
                       if (team[section].length === 0) continue;
                       items.push(
                         <li
@@ -4185,7 +4207,7 @@ export default function Sidebar() {
                           className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5 first:mt-1"
                         >
                           <span className="text-xs font-medium text-muted-foreground/70">
-                            {label}
+                            {overviewText[section]}
                             {section === "supervisor" ? "" : ` ${team[section].length}`}
                           </span>
                           <span className="h-px flex-1 bg-sidebar-border/60" />
@@ -4244,6 +4266,21 @@ export default function Sidebar() {
                       items.push(renderThreadRow(thread, "snoozed"));
                     }
                   }
+                  if (groupByTeam && selectedWorkjetProject) {
+                    items.push(
+                      <li key="project-jour-fixe" className="mt-3 list-none">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() =>
+                            void handleWorkjetProjectSelection(selectedWorkjetProject.id)
+                          }
+                        >
+                          {overviewText.nextMeeting}
+                        </button>
+                      </li>,
+                    );
+                  }
                   if (settledThreads.length > 0) {
                     items.push(
                       <li
@@ -4260,8 +4297,8 @@ export default function Sidebar() {
                         >
                           <span className="text-xs font-medium text-muted-foreground/50">
                             {settledShelfExpanded
-                              ? "Archiviert"
-                              : `Archiviert (${settledThreads.length})`}
+                              ? overviewText.archive
+                              : `${overviewText.archive} (${settledThreads.length})`}
                           </span>
                           <span className="h-px flex-1 bg-sidebar-border/60" />
                           <ChevronDownIcon
@@ -4278,6 +4315,19 @@ export default function Sidebar() {
                   for (const thread of renderedSettledThreads) {
                     items.push(renderThreadRow(thread, "settled"));
                   }
+                  if (groupByTeam && scopedProjectGroup)
+                    items.push(
+                      <li key="project-settings" className="mt-2 list-none">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+                          onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
+                        >
+                          <SettingsIcon className="size-3" />
+                          {overviewText.settings}
+                        </button>
+                      </li>,
+                    );
                   return items;
                 })()}
                 {settledShelfExpanded && hiddenSettledCount > 0 ? (
@@ -4288,7 +4338,10 @@ export default function Sidebar() {
                       className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                     >
                       <PlusIcon aria-hidden className="size-4 shrink-0" />
-                      Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more
+                      {overviewText.showMore.replace(
+                        "{count}",
+                        String(Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)),
+                      )}
                     </button>
                   </li>
                 ) : null}

@@ -29,6 +29,12 @@ import {
 } from "./workjetJourFixeNarration.ts";
 export * from "./workjetJourFixeNarration.ts";
 import {
+  WorkjetExitModelAssessment,
+  WorkjetExitModelReadRequest,
+  WorkjetExitModelRefreshRequest,
+  WorkjetExitModelResponse,
+} from "./workjetExitModel.ts";
+import {
   WorkjetJourFixeSpeechRequests,
   WorkjetJourFixeSpeechResponse,
 } from "./workjetJourFixeSpeech.ts";
@@ -220,11 +226,32 @@ export const CtoxManagedInstance = Schema.Struct({
   architecture: Schema.optionalKey(CtoxHostArchitecture),
   decisionHub: Schema.optionalKey(CtoxDecisionHubAvailability),
   shellUpdate: Schema.optionalKey(BusinessOsShellUpdateStatus),
+  workjetState: Schema.optionalKey(Schema.Literals(["enabled", "disabled", "removed"])),
   healthSummary: CtoxManagedInstanceHealth,
 });
 export type CtoxManagedInstance = typeof CtoxManagedInstance.Type;
 
 /** Resolve a Desktop presentation row to the canonical Business OS authority. */
+export const CtoxInstancePreferenceInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  state: Schema.Literals(["enabled", "disabled", "removed"]),
+  selectedInstanceId: Schema.NullOr(CtoxManagedInstanceId),
+});
+export type CtoxInstancePreferenceInput = typeof CtoxInstancePreferenceInput.Type;
+export const CtoxInstancePreferenceResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals([
+      "invalid_input",
+      "selected_instance",
+      "local_not_removable",
+      "not_found",
+      "persistence_failed",
+    ]),
+  }),
+]);
+export type CtoxInstancePreferenceResult = typeof CtoxInstancePreferenceResult.Type;
+
 export const CtoxInstanceAuthorityResolveInput = Schema.Struct({
   instanceId: CtoxManagedInstanceId,
 });
@@ -374,20 +401,27 @@ export const CtoxManagedDiscoveryResult = Schema.Union([
 export type CtoxManagedDiscoveryResult = typeof CtoxManagedDiscoveryResult.Type;
 
 /** Unified managed and accountless-pairing discovery state exposed to the renderer. */
+const CtoxKeyRecoveryStatus = Schema.Struct({
+  pendingLogin: Schema.Boolean,
+  connectionCatalogReset: Schema.Boolean,
+});
 export const CtoxDiscoveryResult = Schema.Union([
   Schema.TaggedStruct("ready", {
     instances: CtoxDiscoveryInstances,
     managedState: Schema.optionalKey(Schema.Literals(["ready", "signed_out", "failed"])),
     managedFailureCode: Schema.optionalKey(CtoxManagedDiscoveryFailureCode),
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
   Schema.TaggedStruct("signed_out", {
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
   Schema.TaggedStruct("failed", {
     code: CtoxManagedDiscoveryFailureCode,
     httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
 ]);
 export type CtoxDiscoveryResult = typeof CtoxDiscoveryResult.Type;
@@ -726,6 +760,8 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetNativeProviderRequests,
   WorkjetNativeModelCheckRequest,
   WorkjetJourFixeNarrationReadRequest,
+  WorkjetExitModelReadRequest,
+  WorkjetExitModelRefreshRequest,
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
   ...WorkjetJourFixeSpeechRequests,
@@ -866,14 +902,29 @@ export const CtoxWorkjetProjectMetadataProjection = Schema.Struct({
   id: ProjectId,
   title: CtoxProjectText(256),
   createdAt: Schema.optionalKey(IsoDateTime),
+  exitModel: Schema.optionalKey(Schema.NullOr(WorkjetExitModelAssessment)),
   ...CtoxWorkjetProjectConfiguration.fields,
-});
+}).check(
+  Schema.makeFilter(
+    (project) =>
+      project.exitModel == null ||
+      project.exitModel.project_id === project.id ||
+      "Exit assessment belongs to another project.",
+  ),
+);
 export type CtoxWorkjetProjectMetadataProjection = typeof CtoxWorkjetProjectMetadataProjection.Type;
 
 export const CtoxWorkjetProjectProjection = Schema.Struct({
   ...CtoxWorkjetProjectMetadataProjection.fields,
   workingCopies: Schema.Array(CtoxWorkjetWorkingCopyProjection).check(Schema.isMaxLength(500)),
-});
+}).check(
+  Schema.makeFilter(
+    (project) =>
+      project.exitModel == null ||
+      project.exitModel.project_id === project.id ||
+      "Exit assessment belongs to another project.",
+  ),
+);
 export type CtoxWorkjetProjectProjection = typeof CtoxWorkjetProjectProjection.Type;
 
 const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
@@ -895,6 +946,7 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetSupervisorTurnCapabilitiesResponse,
   WorkjetSupervisorInputReceipt,
   WorkjetJourFixeNarrationReadResponse,
+  WorkjetExitModelResponse,
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
   WorkjetJourFixeSpeechResponse,
@@ -1138,6 +1190,16 @@ export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
     "project_control_not_ready",
     "supervisor_control_not_ready",
   ]),
+  phase: Schema.optionalKey(
+    Schema.Literals([
+      "collections",
+      "command",
+      "bridge",
+      "query_readiness",
+      "native_projection",
+      "native_request",
+    ]),
+  ),
 });
 export type CtoxWorkjetProjectControlDiagnostic = typeof CtoxWorkjetProjectControlDiagnostic.Type;
 
@@ -1156,6 +1218,8 @@ export const CtoxWorkjetProjectControlResult = Schema.Union([
       "invalid_input",
       "not_active",
       "launch_failed",
+      "instance_disabled",
+      "instance_removed",
       "authentication_required",
       "unsupported",
       "timeout",
@@ -1657,12 +1721,14 @@ export type WorkjetDeviceInviteRedeemInput = typeof WorkjetDeviceInviteRedeemInp
 /** A bounded raw invite JSON document or CTOX desktop invite link. */
 export const CtoxPairingInviteImportInput = Schema.Struct({
   invite: Schema.String.check(Schema.isMaxLength(65_536)),
+  replacesInstanceId: Schema.optionalKey(CtoxManagedInstanceId),
 });
 export type CtoxPairingInviteImportInput = typeof CtoxPairingInviteImportInput.Type;
 
 /** Manual WebRTC pairing input. Secret-bearing fields are main-process only. */
 export const CtoxManualPairingImportInput = Schema.Struct({
   displayName: CtoxPairingDisplayName,
+  replacesInstanceId: Schema.optionalKey(CtoxManagedInstanceId),
   instanceId: Schema.optionalKey(CtoxPairingInstanceIdentity),
   syncRoom: CtoxPairingSyncRoom,
   signalingUrls: Schema.Array(CtoxPairingSignalingUrl).check(
@@ -1807,6 +1873,8 @@ export const CtoxManagedActionFailureCode = Schema.Literals([
   "launch_failed",
   "guest_failed",
   "not_active",
+  "instance_disabled",
+  "instance_removed",
 ]);
 export type CtoxManagedActionFailureCode = typeof CtoxManagedActionFailureCode.Type;
 
@@ -1984,6 +2052,8 @@ export const CtoxManagedGuestResult = Schema.Union([
       "launch_failed",
       "guest_failed",
       "not_active",
+      "instance_disabled",
+      "instance_removed",
       "authentication_required",
     ]),
     discovery: Schema.optionalKey(

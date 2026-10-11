@@ -4,6 +4,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { WorkjetProjectTeamMember } from "./workjetProjectTeam.ts";
 import { WorkjetThreadGoal } from "./workjetGoal.ts";
 import { WorkjetExecutionPolicy } from "./workjetExecutionPolicy.ts";
+import { WorkjetParentTeamBinding } from "./workjetParentTeamBinding.ts";
 import { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
 import {
   EnvironmentId,
@@ -1020,6 +1021,7 @@ const WorkjetThreadConfigV2BaseFields = {
   team: Schema.optionalKey(WorkjetProjectTeamMember),
   goal: Schema.optionalKey(WorkjetThreadGoal),
   executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
+  parentTeamBinding: Schema.optionalKey(WorkjetParentTeamBinding),
   managedInstructions: Schema.String,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
@@ -1103,6 +1105,22 @@ export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): Workj
     capabilityBindings: [],
     ctoxSession: null,
   };
+}
+
+/** New threads inherit settings, never another thread's execution or native references. */
+export function inheritWorkjetThreadSettings(config: WorkjetThreadConfig): WorkjetThreadConfigV2 {
+  const normalized = normalizeWorkjetThreadConfig(config);
+  const settings = {
+    schemaVersion: 2,
+    managedInstructions: normalized.managedInstructions,
+    enabledCapabilityIds: normalized.enabledCapabilityIds,
+    capabilityBindings: normalized.capabilityBindings,
+    ctoxSession: null,
+    ...(normalized.executionPolicy === undefined
+      ? {}
+      : { executionPolicy: normalized.executionPolicy }),
+  } as const;
+  return { ...settings, role: "standard", parent: null };
 }
 
 /** Replace-all settings updates retain the one PR of this worker run. */
@@ -1455,6 +1473,31 @@ export type WorkjetGatewayProviderHealth = typeof WorkjetGatewayProviderHealth.T
  */
 export const WorkjetGatewayQuotaWindow = Schema.Struct({
   name: TrimmedNonEmptyString,
+  /** Whitelisted provider reading; optional for hosts predating quota provenance. */
+  source: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        field: Schema.Literals([
+          "utilization",
+          "used_percent",
+          "percentage",
+          "current_interval_remaining_percent",
+          "current_weekly_remaining_percent",
+        ]),
+        value: Schema.NullOr(
+          Schema.Number.pipe(
+            Schema.check(Schema.isFinite()),
+            Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+            Schema.check(Schema.isLessThanOrEqualTo(100)),
+          ),
+        ),
+        windowSeconds: Schema.NullOr(NonNegativeInt),
+        status: Schema.NullOr(NonNegativeInt),
+        unit: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+        number: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+      }),
+    ),
+  ),
   remainingPercent: Schema.NullOr(
     Schema.Number.pipe(
       Schema.check(Schema.isFinite()),

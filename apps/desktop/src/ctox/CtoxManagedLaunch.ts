@@ -1,3 +1,4 @@
+import { accessState } from "./CtoxInstancePreferences.ts";
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { BusinessOsInstanceId, type CtoxManagedInstance } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -245,6 +246,8 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
     const launch = Effect.fn("CtoxManagedLaunch.launch")(function* (
       descriptor: CtoxManagedInstance,
     ) {
+      if ((yield* accessState(descriptor.id)) !== "enabled")
+        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
       const tenantId = tenantIdOf(descriptor);
       if (tenantId === undefined || descriptor.status !== "available") {
         return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });

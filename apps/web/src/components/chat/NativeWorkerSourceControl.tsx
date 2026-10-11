@@ -4,7 +4,11 @@ import type {
   WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { rotateWorkjetCtoxWorkerSource } from "@workjet/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  WorkerSourceConnectionPicker,
+  type WorkerSourceConnectionChoice,
+} from "./WorkerSourceConnectionPicker";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import {
@@ -15,6 +19,14 @@ import {
   workerSourceBindingFailure,
 } from "../../workjetWorkerSourceConnection";
 
+export interface WorkerSourceConnectionStatus {
+  readonly message: string;
+  readonly retry: (() => void) | null;
+  readonly disabled: boolean;
+  readonly authenticationRequired: boolean;
+  readonly choice?: WorkerSourceConnectionChoice;
+}
+
 export function NativeWorkerSourceControl(props: {
   readonly environmentId: EnvironmentId;
   readonly instanceId: string | null;
@@ -23,6 +35,8 @@ export function NativeWorkerSourceControl(props: {
     connection: WorkjetConnectionSummary,
   ) => Promise<{ readonly _tag: "saved" } | { readonly _tag: "failed"; readonly error: unknown }>;
   readonly unavailable: boolean;
+  readonly headless?: boolean;
+  readonly onStatusChange?: (status: WorkerSourceConnectionStatus | null) => void;
 }) {
   const query = useEnvironmentQuery(
     serverEnvironment.workjetDecisionHubConnections({
@@ -43,15 +57,19 @@ export function NativeWorkerSourceControl(props: {
     readonly scope: string;
     readonly message: string;
     readonly retryable?: boolean;
+    readonly authenticationRequired?: boolean;
   } | null>(null);
   const inFlight = useRef(false);
   const autoAttempted = useRef<string | null>(null);
   const request = workerSourceProvisionRequest(props.environmentId, props.instanceId);
   // The refreshed catalog replaces the provisioning receipt, including revocation.
-  const connections =
-    provisioned?.scope === scope && provisioned.queryData === query.data
-      ? [provisioned.connection]
-      : (query.data?.connections ?? []);
+  const connections = useMemo(
+    () =>
+      provisioned?.scope === scope && provisioned.queryData === query.data
+        ? [provisioned.connection]
+        : (query.data?.connections ?? []),
+    [provisioned, scope, query.data],
+  );
   const boundSource = connections.find(
     (entry) =>
       workerSourceConnectionForInstance([entry], props.instanceId) &&
@@ -71,20 +89,35 @@ export function NativeWorkerSourceControl(props: {
         : null);
   const ready = source?.status === "ready";
   const bound = source !== undefined && workerSourceIsBound(props.config, source);
+  const selectableConnections = useMemo(
+    () =>
+      connections.filter(
+        (entry) =>
+          entry.status === "ready" &&
+          workerSourceConnectionForInstance([entry], props.instanceId) &&
+          workerSourceBindingError(props.config, props.instanceId, entry) === null,
+      ),
+    [connections, props.instanceId, props.config],
+  );
+  const chooseConnection = !bound && selectableConnections.length > 1;
   const provision =
     typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
 
-  const connect = async () => {
+  const connect = async (renew = false, selectedConnectionId?: string) => {
+    const selected = selectableConnections.find(
+      (entry) => entry.connectionId === selectedConnectionId,
+    );
     if (
       !request ||
       props.unavailable ||
       query.isPending ||
       inFlight.current ||
-      bound ||
-      selectionError
+      (bound && !renew) ||
+      (selectionError && !selected) ||
+      (selectedConnectionId !== undefined && !selected)
     )
       return;
-    if (!ready && !provision) {
+    if (!selected && (!ready || renew) && !provision) {
       setError({ scope, message: "Open Workjet desktop to connect this project's workers." });
       return;
     }
@@ -94,13 +127,14 @@ export function NativeWorkerSourceControl(props: {
     setBusy(true);
     setError(null);
     try {
-      let accepted = ready ? source : undefined;
+      let accepted = selected ?? (ready && !renew ? source : undefined);
       if (!accepted && provision) {
         const result = await provision(request);
         if (currentContext.current.scope !== requestedScope) return;
         if (result._tag === "failed") {
           setError({
             scope: requestedScope,
+            authenticationRequired: result.code === "signed_out",
             message:
               result.code === "signed_out"
                 ? "Sign in to Business OS to connect workers."
@@ -167,22 +201,85 @@ export function NativeWorkerSourceControl(props: {
     void connectRef.current();
   }, [scope, props.unavailable, query.isPending, busy, bound, selectionError, request === null]);
 
-  const currentError = bound
-    ? null
-    : (selectionError ??
-      (error?.scope === scope ? error.message : null) ??
-      (!query.isPending && source !== undefined && !ready
-        ? source.status === "needs_auth"
-          ? "Worker connection needs authorization. Reconnect project workers."
-          : "The worker connection is unavailable. Reconnect project workers."
-        : null));
+  const currentError =
+    error?.scope === scope
+      ? error.message
+      : bound
+        ? null
+        : (selectionError ??
+          (error?.scope === scope ? error.message : null) ??
+          (!query.isPending && source !== undefined && !ready
+            ? source.status === "needs_auth"
+              ? "Worker connection needs authorization. Reconnect project workers."
+              : "The worker connection is unavailable. Reconnect project workers."
+            : !query.isPending &&
+                ready &&
+                props.config.schemaVersion === 2 &&
+                props.config.capabilityBindings.some(
+                  (binding) => binding.capabilityId === "ctox-business-os",
+                )
+              ? "A replacement worker connection is ready. Reconnect this thread to use it."
+              : null));
+  const canRetry = !selectionError && !(error?.scope === scope && error.retryable === false);
+  useEffect(() => {
+    props.onStatusChange?.(
+      currentError || chooseConnection
+        ? {
+            message: chooseConnection
+              ? error?.scope === scope
+                ? error.message
+                : "Choose worker access for this Supervisor."
+              : currentError!,
+            authenticationRequired:
+              !chooseConnection &&
+              (source?.status === "needs_auth" ||
+                (error?.scope === scope && error.authenticationRequired === true)),
+            retry: canRetry ? () => void connectRef.current(bound) : null,
+            disabled: props.unavailable || busy || query.isPending || request === null,
+            ...(chooseConnection
+              ? {
+                  choice: {
+                    connections: selectableConnections,
+                    select: (connectionId: string) => void connectRef.current(false, connectionId),
+                  },
+                }
+              : {}),
+          }
+        : null,
+    );
+  }, [
+    currentError,
+    chooseConnection,
+    selectableConnections,
+    error?.message,
+    source?.status,
+    error?.scope,
+    error?.authenticationRequired,
+    canRetry,
+    bound,
+    props.unavailable,
+    busy,
+    query.isPending,
+    request === null,
+    props.onStatusChange,
+  ]);
+  if (props.headless) return null;
   return (
     <span
       className="inline-flex shrink-0 items-center text-xs"
       data-workjet-worker-source-connection-id={bound ? source?.connectionId : undefined}
       data-workjet-worker-source-instance-id={bound ? source?.instanceId : undefined}
     >
-      {currentError && (selectionError || (error?.scope === scope && error.retryable === false)) ? (
+      {chooseConnection ? (
+        <WorkerSourceConnectionPicker
+          choice={{
+            connections: selectableConnections,
+            select: (connectionId) => void connectRef.current(false, connectionId),
+          }}
+          disabled={props.unavailable || busy || query.isPending || request === null}
+        />
+      ) : currentError &&
+        (selectionError || (error?.scope === scope && error.retryable === false)) ? (
         <span role="alert" className="text-amber-500">
           {currentError}
         </span>
@@ -193,10 +290,15 @@ export function NativeWorkerSourceControl(props: {
           title={currentError}
           className="rounded border px-2 py-1 text-amber-500 disabled:opacity-50"
           disabled={props.unavailable || busy || query.isPending || request === null}
-          onClick={() => void connectRef.current()}
+          onClick={() => void connectRef.current(bound)}
         >
           Erneut verbinden
         </button>
+      ) : null}
+      {chooseConnection && error?.scope === scope ? (
+        <span role="alert" className="text-amber-500">
+          {error.message}
+        </span>
       ) : null}
     </span>
   );

@@ -44,7 +44,7 @@ const result = Schema.Struct({
 });
 const tool = Tool.make("workjet_worker_kanban", {
   description:
-    "Persistent parents update their own compact slide-engine mini-kanban exactly once, before any other work at each goal-loop iteration (todo/doing/done/blocked, optional evidence). A second update in the same iteration is rejected; continue from the saved snapshot. Supervisors read their project's parent snapshots with action project. No caller can select another thread/project; one-shot workers do not maintain boards.",
+    "Persistent parents update their own compact worker mini-kanban exactly once, before any other work at each goal-loop iteration (todo/doing/done/blocked, optional evidence). A second update in the same iteration is rejected; continue from the saved snapshot. Supervisors read their project's parent snapshots with action project. No caller can select another thread/project; one-shot workers do not maintain boards.",
   parameters: WorkerKanbanInput,
   success: result,
 }).annotate(McpSchema.EnabledWhen, () => {

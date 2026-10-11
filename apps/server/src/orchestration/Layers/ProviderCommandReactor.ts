@@ -1,3 +1,4 @@
+import { answerOwnerEscalation } from "../../workjet/WorkerSupervisorDecisions.ts";
 import {
   type ChatAttachment,
   CommandId,
@@ -1717,6 +1718,7 @@ const make = Effect.gen(function* () {
       if (!thread) {
         return;
       }
+      if (yield* answerOwnerEscalation(event.payload.threadId, event.payload.requestId, event.payload.answers)) return;
       const hasSession = thread.session && thread.session.status !== "stopped";
       if (!hasSession) {
         return yield* appendProviderFailureActivity({

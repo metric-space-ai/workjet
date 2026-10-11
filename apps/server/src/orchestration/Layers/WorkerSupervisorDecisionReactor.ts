@@ -8,6 +8,8 @@ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { forkParked } from "../../serverActivation.ts";
 import {
   deliverWorkerDecisions,
+  recoverWorkerDecisionAnswers,
+  retryRetainedWorkerAnswers,
   resumeWorkerDecisionsFromSupervisor,
 } from "../../workjet/WorkerSupervisorDecisions.ts";
 
@@ -24,12 +26,14 @@ export const WorkerSupervisorDecisionReactorLive = Layer.effect(
   Effect.gen(function* () {
     const engine = yield* OrchestrationEngineService;
     const worker = yield* makeDrainableWorker((_: void) =>
-      resumeWorkerDecisionsFromSupervisor().pipe(
+      retryRetainedWorkerAnswers().pipe(
+        Effect.andThen(resumeWorkerDecisionsFromSupervisor()),
         Effect.andThen(deliverWorkerDecisions()),
         Effect.catch((error) => Effect.logWarning("worker decision delivery deferred", { error })),
       ),
     );
     const start = Effect.fn("WorkerSupervisorDecisionReactor.start")(function* () {
+      yield* recoverWorkerDecisionAnswers().pipe(Effect.orDie);
       yield* forkParked(
         Stream.runForEach(engine.streamDomainEvents, (event) =>
           event.aggregateKind === "thread" &&

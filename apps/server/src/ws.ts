@@ -1,3 +1,4 @@
+import { recordWorkerOwnerActivity } from "./workjet/WorkerSupervisorDecisions.ts";
 import { makeCtoxCalendarRpc } from "./workjet/ctox/CtoxCalendarRpc.ts";
 import { WorkjetCalendarError } from "@workjet/contracts";
 
@@ -1434,7 +1435,9 @@ const makeWsRpcLayer = (
 
             yield* runSetupProgram();
 
-            return yield* orchestrationEngine.dispatch(finalTurnStartCommand);
+            const result = yield* orchestrationEngine.dispatch(finalTurnStartCommand);
+            if (!manualWorkerPrepared) yield* recordWorkerOwnerActivity(finalTurnStartCommand).pipe(Effect.orDie);
+            return result;
           });
 
           return yield* bootstrapProgram.pipe(

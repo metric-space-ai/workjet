@@ -1,5 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -17,6 +19,11 @@ const tool = Tool.make("workjet_answer_worker", {
     "The bound project Supervisor answers a worker question or approval and resumes its original pending provider request. Use the decisionId received in your Supervisor chat, with answers keyed by question ID or decision accept/acceptForSession/decline/cancel. Workers cannot answer or escalate to the Owner through this tool.",
   parameters: WorkerSupervisorAnswer,
   success: Schema.Unknown,
+}).annotate(McpSchema.EnabledWhen, () => {
+  const fiber = Fiber.getCurrent();
+  if (!fiber) return false;
+  const invocation = Context.getOption(fiber.context, McpInvocationContext);
+  return Option.isSome(invocation) && invocation.value.projectTeamRole === "supervisor";
 });
 const register = Effect.gen(function* () {
   const server = yield* McpServer.McpServer;
@@ -47,6 +54,7 @@ const register = Effect.gen(function* () {
             ],
           });
         }).pipe(
+          Effect.provide(fiber.context),
           Effect.provideService(SqlClient.SqlClient, sql),
           Effect.provideService(ProjectionSnapshotQuery, query),
           Effect.provideService(ProviderService, providers),

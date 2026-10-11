@@ -23,6 +23,7 @@ export interface McpInvocationScope {
   readonly capabilities: ReadonlySet<McpCapability>;
   readonly activeWorkjetMcpCapabilityIds?: ReadonlySet<WorkjetCapabilityId>;
   readonly workjetRole?: WorkjetThreadRole;
+  readonly projectTeamRole?: "supervisor" | "specialist" | "worker";
   readonly decisionHubConnectionId?: WorkjetConnectionId;
   readonly ctoxBusinessOsBinding?: {
     readonly connectionId: WorkjetConnectionId;

@@ -1380,7 +1380,7 @@ export function derivePendingApprovals(
       activity.kind === "approval.requested" &&
       requestId &&
       requestKind &&
-      payload?.recipient !== "supervisor"
+      payload?.recipient !== "supervisor" && payload?.recipient !== "autonomous"
     ) {
       openByRequestId.set(requestId, {
         requestId,
@@ -1424,7 +1424,7 @@ export function derivePendingUserInputs(
     if (
       activity.kind === "user-input.requested" &&
       requestId &&
-      payload?.recipient !== "supervisor"
+      payload?.recipient !== "supervisor" && payload?.recipient !== "autonomous"
     ) {
       const questions = parseUserInputQuestions(payload);
       if (!questions) {

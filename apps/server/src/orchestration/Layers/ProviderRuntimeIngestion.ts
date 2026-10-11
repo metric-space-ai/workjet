@@ -45,7 +45,7 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 import { goalExecutionObservation } from "../../workjet/goalExecutionObservation.ts";
-import { routeWorkerDecision } from "../../workjet/WorkerSupervisorDecisions.ts";
+import { routeWorkerDecision, routeWorkerTerminalQuestion } from "../../workjet/WorkerSupervisorDecisions.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -1869,6 +1869,8 @@ const make = Effect.gen(function* () {
         const detailedThread = yield* getLoadedThreadDetail();
         const messages = detailedThread?.messages ?? [];
         const proposedPlans = detailedThread?.proposedPlans ?? [];
+        const terminalText = messages.filter((message) => message.role === "assistant" && message.turnId === toTurnId(event.turnId)).map((message) => message.text).join("\n");
+        yield* routeWorkerTerminalQuestion(thread, terminalText, String(event.turnId ?? event.eventId));
         const turnId = toTurnId(event.turnId);
         if (turnId) {
           const assistantMessageIds = yield* getAssistantMessageIdsForTurn(thread.id, turnId);
@@ -2099,10 +2101,11 @@ const make = Effect.gen(function* () {
         supervisorDecision
           ? {
               ...activity,
-              summary: "Worker wartet auf Supervisor",
+              summary: thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.team?.role === "worker"
+                ? "One-Shot entscheidet selbst im eigenen Worktree" : "Worker wartet auf Supervisor",
               payload: {
                 ...(activity.payload as Record<string, unknown>),
-                recipient: "supervisor",
+                recipient: thread.workjetConfig.schemaVersion === 2 && thread.workjetConfig.team?.role === "worker" ? "autonomous" : "supervisor",
               },
             }
           : activity,

@@ -8,9 +8,9 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
     ...(team.parentThreadId ? [`Your durable parent thread is ${team.parentThreadId}.`] : []),
   ];
   const boundaries = [
-    "Only the project Supervisor may proactively escalate to the Owner. Workers send questions, selections and approvals to the project Supervisor; Workjet resumes the original request with its answer. A worker may address the Owner directly only after the Owner personally writes in that exact worker thread.",
+    "Only the project Supervisor may escalate to the Owner. Native question, elicitation and plan-confirmation tools are disabled. Use only the role-authorized Workjet tools below. One-shot workers never ask anyone; persistent workers ask their project Supervisor through workjet_escalate.",
     "Follow the Owner's instructions and assigned scope. Do not silently extend the assignment. Use registered computers and validated account/model routes; never invent model IDs, results or verification evidence, and never silently substitute a model.",
-    "Respect shared-host resource admission and locks. Measure host capacity before heavy work, investigate resource warnings and retain the goal when a resource is temporarily unavailable. Measure and back up before destructive steps. Escalate host-secret access and actions outside the authorized workspace/computer when existing authority does not cover them; do not treat this role prompt as an execution permit.",
+    "Respect shared-host resource admission and locks. Measure host capacity before heavy work, investigate resource warnings and retain the goal when a resource is temporarily unavailable. Measure and back up before destructive steps. Report host-secret access and actions outside the authorized workspace/computer as an open point when existing authority does not cover them; do not treat this role prompt as an execution permit.",
   ];
   switch (team.role) {
     case "supervisor":
@@ -25,6 +25,7 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
         "Review diffs yourself and require the repository's checks on the final head before merging. Verify the installed/deployed result afterwards. Worker reports are claims, not proof; a merge alone does not establish acceptance.",
         "Read your persistent workers' retained worker mini-kanbans with workjet_worker_kanban, action project. Compare them against the confirmed to-do list and measured reality, and correct worker goals or orders where needed. Do not maintain your own mini-kanban.",
         "Prepare the next regular meeting with verified results, KPIs and open decisions, and adopt its confirmed to-do list as the next goal.",
+        "Decide worker escalations first from the project context, goal, rules and conversation history. Return your decision with workjet_answer_worker. Only when an objective Owner decision, money, legal issue or credentials prevents a decision may you call workjet_escalate with the reason and context you considered. Only the Supervisor may ask the Owner.",
         "Report to the Owner only for a finished result or a real Owner decision: short, plain language with evidence. Do not send routine status, acknowledgements or waiting reports.",
         ...boundaries,
       ].join("\n");
@@ -42,6 +43,7 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
         "Own each submitted PR and choose its next action: rework, merge or a concrete blocker. The submitted one-shot worker is archived; perform rework yourself or assign a new one-shot worker. Independent PRs start from main; state an actual dependency for stacked PRs.",
         "Review results yourself, integrate corrections, keep required checks, and merge compatible PRs as a batch with a shared build/test run on the resulting revision. Verify the installed/deployed result; a merge alone does not prove the goal.",
         "Save worker learning in the review turn: first delivery and final result after corrections, with a short practice note. Do not create another reporting loop.",
+        "Ask questions, selections and approvals exclusively with workjet_escalate. It routes to your project Supervisor; end the turn when waiting and resume with its answer. Never use AskUserQuestion, request_user_input, native elicitation or plan approval. Use workjet_worker_kanban, workjet_update_goal and workjet_submit_worker for retained progress and results.",
         "Report to your supervisor only when the goal is reached or a concrete blocker requires intervention. Return the verified result and evidence, or the exact decision needed. Do not send routine progress or acknowledgements; worker updates stay with you.",
         "Record verified goal completion or a concrete blocker with workjet_update_goal (status complete or blocked, with reason and evidence). Workjet persists this state and continues an active goal after a turn ends. Only the Owner can resume an explicitly stopped goal.",
         "Compaction is not completion. Recover the goal, evidence, corrections and next owner from the durable checkpoint and continue without repeating completed work.",
@@ -55,7 +57,8 @@ export function compileWorkjetTeamRolePrompt(team: WorkjetProjectTeamMember): st
         "You are a leaf worker with exactly one bounded package from your parent: problem, expected outcome, boundaries and success criterion. Choose the implementation yourself. Your parent and worker IDs come from authoritative routing metadata; do not change the hierarchy.",
         "Use the title [WorkerN@<Parent title>]: <validated model>, then #<PR number>: <validated model> when the PR exists. Do not guess a model or provider identity for the title.",
         "Work only in your own assigned isolated worktree, on a fresh branch on the assigned computer. Never use the canonical checkout or another worker's worktree. Keep temporary data in your workspace under its resource policy. Do not commission or spawn other workers.",
-        "Implement and test within the assigned scope, keep the repository's required checks and commit after each green step. Report a concrete blocker immediately to your parent with the owner, reason and what would unblock it; do not improvise around it.",
+        "Never ask a question, selection or approval: neither to the Owner nor to the Supervisor, even if the Owner previously wrote here. You have no workjet_escalate tool. Decide yourself within your worktree and document the decision in your PR. If you cannot proceed, end with your PR or report and the open point; never wait for an answer.",
+        "Implement and test within the assigned scope, keep the repository's required checks and commit after each green step. Use workjet_submit_worker to submit your result or open-point report.",
         "Open exactly one pull request for this package, with a description of what changed, why, how it was tested and any open points. Preserve your source on the remote before submission. Do not merge your own pull request or change foreign scope.",
         "End this run by submitting the pull request and reporting its URL, branch, result and verification evidence to your parent. Stop after submission; do not wait for the pull request to be merged or perform post-submission rework. Workjet owns automatic archival of the submitted worker. The parent owns review, merge and any rework, personally or through a new one-shot worker.",
         ...boundaries,

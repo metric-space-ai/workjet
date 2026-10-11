@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
+import { oneShotClaudePolicy } from "../oneShotClaudePolicy.ts";
 import type { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
@@ -4439,6 +4440,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             ).pipe(Effect.provideService(Path.Path, path))
           : claudeEnvironment;
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      const oneShotPolicy = mcpSession?.projectTeamRole === "worker" && input.cwd ? oneShotClaudePolicy(input.cwd) : undefined;
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an
       // approval prompt. It is a leaf directory holding only attachment
@@ -4482,6 +4484,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
         systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
+        ...(mcpSession?.projectTeamRole ? { disallowedTools: ["AskUserQuestion", "ExitPlanMode"] } : {}),
+        ...(oneShotPolicy ? { sandbox: oneShotPolicy.sandbox } : {}),
         ...(mcpSession
           ? {
               allowedTools: (
@@ -4508,18 +4512,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
-        ...(resumeConfirmed
-          ? {
-              hooks: {
-                SessionStart: [{ hooks: [verifyOriginalSession], timeout: 10 }],
-                UserPromptSubmit: [{ hooks: [verifyOriginalSession], timeout: 10 }],
-              },
-            }
-          : {}),
+        ...((resumeConfirmed || oneShotPolicy) ? { hooks: {
+          ...(oneShotPolicy?.hooks ?? {}),
+          ...(resumeConfirmed ? {
+            SessionStart: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+            UserPromptSubmit: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+          } : {}),
+        } } : {}),
         includePartialMessages: true,
         canUseTool,
         env: sessionEnvironment,
-        additionalDirectories,
+        additionalDirectories: oneShotPolicy?.additionalDirectories ?? additionalDirectories,
         ...(options?.createQuery === undefined ? { spawnClaudeCodeProcess } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession

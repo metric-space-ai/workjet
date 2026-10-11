@@ -15,6 +15,7 @@ import {
 
 export interface ThreadCapabilityContext {
   readonly workjetRole: WorkjetThreadRole;
+  readonly projectTeamRole?: "supervisor" | "specialist" | "worker";
   readonly mcpCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly promptCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly compiledManagedPrompt: string;
@@ -58,6 +59,7 @@ export function resolveThreadCapabilityContext(
   );
   return Object.freeze({
     workjetRole: workjetExecutionRole(workjetConfig),
+    ...(team ? { projectTeamRole: team.role } : {}),
     mcpCapabilityIds: Object.freeze(mcpManifests.map((manifest) => manifest.id)),
     promptCapabilityIds: Object.freeze(promptManifests.map((manifest) => manifest.id)),
     compiledManagedPrompt: compileCapabilityPrompt({

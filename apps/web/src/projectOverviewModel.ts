@@ -11,6 +11,8 @@ export type ProjectOverviewWorkerState =
   | "running"
   | "waiting"
   | "waitingSupervisor"
+  | "missingSupervisor"
+  | "supervisorTimedOut"
   | "asks"
   | "disrupted";
 export function projectOverviewWorkerState(
@@ -21,8 +23,11 @@ export function projectOverviewWorkerState(
     | "hasPendingUserInput"
     | "backgroundLiveness"
     | "waitingOnSupervisor"
+    | "workerDecisionProblem"
   >,
 ): ProjectOverviewWorkerState {
+  if (thread.workerDecisionProblem === "missing-supervisor") return "missingSupervisor";
+  if (thread.workerDecisionProblem === "timed-out") return "supervisorTimedOut";
   if (thread.waitingOnSupervisor) return "waitingSupervisor";
   if (thread.hasPendingApprovals || thread.hasPendingUserInput) return "asks";
   if (thread.session?.status === "error") return "disrupted";

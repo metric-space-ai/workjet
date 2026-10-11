@@ -39,7 +39,9 @@ mod linux {
         if port < 1024 || args.next().as_deref() != Some(std::ffi::OsStr::new("--")) {
             return Err(invalid("invalid model bridge command"));
         }
-        let executable = args.next().ok_or_else(|| invalid("missing worker executable"))?;
+        let executable = args
+            .next()
+            .ok_or_else(|| invalid("missing worker executable"))?;
         if !PathBuf::from(&executable).is_absolute() {
             return Err(invalid("worker executable must be absolute"));
         }
@@ -50,11 +52,17 @@ mod linux {
             || metadata.uid() != unsafe { libc::geteuid() }
             || metadata.mode() & 0o077 != 0
         {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "model socket identity changed"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "model socket identity changed",
+            ));
         }
         let network = fs::metadata("/proc/self/ns/net")?;
         if network.dev() == parent_net_device && network.ino() == parent_net_inode {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "worker network namespace is not isolated"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "worker network namespace is not isolated",
+            ));
         }
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         listener.set_nonblocking(true)?;
@@ -62,13 +70,15 @@ mod linux {
         let failed = Arc::new(AtomicBool::new(false));
         let bridge_stop = Arc::clone(&stop);
         let bridge_failed = Arc::clone(&failed);
-        let bridge = thread::Builder::new().name("worker-model-bridge".into()).spawn(move || {
-            let result = serve(listener, socket, bridge_stop);
-            if result.is_err() {
-                bridge_failed.store(true, Ordering::Release);
-            }
-            result
-        })?;
+        let bridge = thread::Builder::new()
+            .name("worker-model-bridge".into())
+            .spawn(move || {
+                let result = serve(listener, socket, bridge_stop);
+                if result.is_err() {
+                    bridge_failed.store(true, Ordering::Release);
+                }
+                result
+            })?;
         let child = Command::new(executable)
             .args(args)
             .stdin(Stdio::inherit())
@@ -95,10 +105,14 @@ mod linux {
             Err(error) => Err(error),
         };
         stop.store(true, Ordering::Release);
-        let result = bridge.join().map_err(|_| io::Error::other("worker model bridge panicked"))?;
+        let result = bridge
+            .join()
+            .map_err(|_| io::Error::other("worker model bridge panicked"))?;
         let status = status?;
         result?;
-        Ok(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(1)))
+        Ok(status
+            .code()
+            .unwrap_or_else(|| 128 + status.signal().unwrap_or(1)))
     }
 
     fn serve(listener: TcpListener, socket: PathBuf, stop: Arc<AtomicBool>) -> io::Result<()> {
@@ -122,15 +136,24 @@ mod linux {
                     }
                     let endpoint = socket.clone();
                     let cancelled = Arc::clone(&stop);
-                    match thread::Builder::new().name("worker-model-relay".into()).spawn(move || {
-                        relay(client, &endpoint, cancelled)
-                    }) {
+                    match thread::Builder::new()
+                        .name("worker-model-relay".into())
+                        .spawn(move || relay(client, &endpoint, cancelled))
+                    {
                         Ok(connection) => connections.push(connection),
-                        Err(error) => { result = Err(error); break; }
+                        Err(error) => {
+                            result = Err(error);
+                            break;
+                        }
                     }
                 }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(10)),
-                Err(error) => { result = Err(error); break; }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(10))
+                }
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
             }
         }
         stop.store(true, Ordering::Release);
@@ -151,40 +174,77 @@ mod linux {
         let local_stop = Arc::new(AtomicBool::new(false));
         let request_stop = Arc::clone(&local_stop);
         let global_stop = Arc::clone(&stop);
-        let forward = thread::Builder::new().name("worker-model-request".into()).spawn(move || {
-            let result = pump(&mut request, &mut target, &global_stop, &request_stop);
-            let _ = target.shutdown(Shutdown::Write);
-            if result.is_err() { request_stop.store(true, Ordering::Release); }
-            result
-        })?;
+        let forward = thread::Builder::new()
+            .name("worker-model-request".into())
+            .spawn(move || {
+                let result = pump(&mut request, &mut target, &global_stop, &request_stop);
+                let _ = target.shutdown(Shutdown::Write);
+                if result.is_err() {
+                    request_stop.store(true, Ordering::Release);
+                }
+                result
+            })?;
         let mut response = upstream;
         let mut destination = client;
         let result = pump(&mut response, &mut destination, &stop, &local_stop);
         local_stop.store(true, Ordering::Release);
         let _ = destination.shutdown(Shutdown::Both);
         let _ = response.shutdown(Shutdown::Both);
-        let request_result = forward.join().map_err(|_| io::Error::other("worker model relay panicked"))?;
+        let request_result = forward
+            .join()
+            .map_err(|_| io::Error::other("worker model relay panicked"))?;
         result?;
         request_result
     }
 
-    fn pump(from: &mut impl Read, to: &mut impl Write, stop: &AtomicBool, local_stop: &AtomicBool) -> io::Result<()> {
+    fn pump(
+        from: &mut impl Read,
+        to: &mut impl Write,
+        stop: &AtomicBool,
+        local_stop: &AtomicBool,
+    ) -> io::Result<()> {
         let mut buffer = [0_u8; BUFFER_BYTES];
         while !stop.load(Ordering::Acquire) && !local_stop.load(Ordering::Acquire) {
             match from.read(&mut buffer) {
                 Ok(0) => return Ok(()),
                 Ok(length) => {
                     let mut written = 0;
-                    while written < length && !stop.load(Ordering::Acquire) && !local_stop.load(Ordering::Acquire) {
+                    while written < length
+                        && !stop.load(Ordering::Acquire)
+                        && !local_stop.load(Ordering::Acquire)
+                    {
                         match to.write(&buffer[written..length]) {
-                            Ok(0) => return Err(io::Error::new(io::ErrorKind::WriteZero, "worker model stream closed")),
+                            Ok(0) => {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::WriteZero,
+                                    "worker model stream closed",
+                                ));
+                            }
                             Ok(count) => written += count,
-                            Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted) => continue,
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    io::ErrorKind::WouldBlock
+                                        | io::ErrorKind::TimedOut
+                                        | io::ErrorKind::Interrupted
+                                ) =>
+                            {
+                                continue;
+                            }
                             Err(error) => return Err(error),
                         }
                     }
-                },
-                Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted) => continue,
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    continue;
+                }
                 Err(error) => return Err(error),
             }
         }
@@ -198,17 +258,27 @@ mod linux {
         fn rejects_missing_and_invalid_bridge_arguments() {
             assert!(run(Vec::<OsString>::new().into_iter()).is_err());
             assert!(run(["/socket", "not-an-inode"].map(OsString::from).into_iter()).is_err());
-            assert!(run(["/socket", "1", "2", "0", "1", "2", "--", "/bin/true"].map(OsString::from).into_iter()).is_err());
+            assert!(
+                run(["/socket", "1", "2", "0", "1", "2", "--", "/bin/true"]
+                    .map(OsString::from)
+                    .into_iter())
+                .is_err()
+            );
         }
     }
 }
 
 pub fn run(args: impl Iterator<Item = std::ffi::OsString>) -> std::io::Result<i32> {
     #[cfg(target_os = "linux")]
-    { linux::run(args) }
+    {
+        linux::run(args)
+    }
     #[cfg(not(target_os = "linux"))]
     {
         let _ = args;
-        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "private worker model bridge requires Linux"))
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "private worker model bridge requires Linux",
+        ))
     }
 }

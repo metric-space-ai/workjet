@@ -27,7 +27,9 @@ it("passes the captured model and parent network identities to the native bridge
     "6",
     "--",
   ]);
-  expect(WORKER_MODEL_NAMESPACE_BASE_URL).toBe(`http://127.0.0.1:${WORKER_MODEL_NAMESPACE_PORT}/v1`);
+  expect(WORKER_MODEL_NAMESPACE_BASE_URL).toBe(
+    `http://127.0.0.1:${WORKER_MODEL_NAMESPACE_PORT}/v1`,
+  );
 });
 
 it("rejects a malformed or missing captured identity", () => {

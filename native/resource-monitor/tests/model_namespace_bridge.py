@@ -123,6 +123,24 @@ try:
     assert (workspace / "inside.txt").read_text() == "edited"
     assert secret.read_text() == "isolated-fixture-only"
     assert source_events == [("/v1/stream", "scoped-fixture"), ("/v1/stream", "wrong")]
+    bounded_probe = """import socket,time
+first = socket.create_connection(("127.0.0.1", 23197), timeout=2)
+time.sleep(0.1)
+second = socket.create_connection(("127.0.0.1", 23197), timeout=2)
+time.sleep(0.1)
+try:
+    third = socket.create_connection(("127.0.0.1", 23197), timeout=2)
+    try:
+        third.sendall(b"GET /v1/stream HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n")
+        assert b"503 Service Unavailable" in third.recv(4096)
+    finally:
+        third.close()
+finally:
+    first.close()
+    second.close()
+"""
+    limited = run(bridge(identity, ["/usr/bin/python3", "-c", bounded_probe]))
+    assert limited.returncode == 0, limited.stderr
     exited = run(bridge(identity, ["/bin/sh", "-c", "exit 23"]))
     assert exited.returncode == 23
     failed = run(bridge(identity, ["/missing-worker"]))
@@ -131,7 +149,7 @@ try:
                   stdinForwarded=True, framesUnchanged=True, firstFrameBeforeSourceCompletion=True,
                   scopedHeadersPreserved=True, deniedKeyPreserved=True, outsideTCPDenied=True,
                   outsideFileInvisible=True, workspaceEditSucceeded=True, childExitCodePreserved=True,
-                  spawnFailureTerminal=True, fixturesRemoved=True)
+                  spawnFailureTerminal=True, connectionsCapped=True, fixturesRemoved=True)
     print("MODEL_NAMESPACE_BRIDGE " + json.dumps(result))
 finally:
     if watchdog is not None:

@@ -144,7 +144,6 @@ CLI/file/MCP enforcement and native team admission remain required before an
 autonomous-worktree mode can be supported. Non-Linux hosts reject private IPC
 explicitly. This transport component is not installed G2 acceptance.
 
-
 ## Model bridge inside the worker network namespace
 
 The native helper's `--worker-model-bridge` command binds a loopback endpoint

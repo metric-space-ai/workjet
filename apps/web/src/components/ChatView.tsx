@@ -7492,7 +7492,7 @@ function ChatViewContent(props: ChatViewProps) {
                                   icon={GitBranchIcon}
                                   className="mx-auto mb-2 w-full max-w-5xl"
                                   action={{
-                                    label: "Branch wechseln",
+                                    label: "Wechseln",
                                     onClick: () => {
                                       setBranchRestoreConfirmOpen(false);
                                       void handleSwitchCheckoutToThread();
@@ -7503,7 +7503,7 @@ function ChatViewContent(props: ChatViewProps) {
                                     onClick: () => setBranchRestoreConfirmOpen(false),
                                   }}
                                 >
-                                  Ungesicherte Änderungen gehen mit nach{" "}
+                                  Änderungen gehen mit nach{" "}
                                   <code className="font-medium">
                                     {localCheckoutBranchMismatch.threadBranch}
                                   </code>

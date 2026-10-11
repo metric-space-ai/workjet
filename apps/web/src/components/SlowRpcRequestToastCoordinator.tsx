@@ -14,9 +14,10 @@ export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>)
   const thresholdSeconds = Math.round(
     Math.min(...requests.map((request) => request.thresholdMs)) / 1000,
   );
+  // Zahl und Einheit bleiben bei 420 px zusammen (geschütztes Leerzeichen).
   return count === 1
-    ? `1 Anfrage wartet länger als ${thresholdSeconds} s`
-    : `${count} Anfragen warten länger als ${thresholdSeconds} s`;
+    ? `1 Anfrage wartet länger als ${thresholdSeconds}\u00a0s`
+    : `${count} Anfragen warten länger als ${thresholdSeconds}\u00a0s`;
 }
 
 export function SlowRpcRequestToastCoordinator() {

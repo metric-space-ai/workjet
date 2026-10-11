@@ -288,6 +288,11 @@ function mergeMethodLabel(method: PullRequestMergeMethod): string {
   return "Zusammenführen";
 }
 
+/** Die Methode hinter der Frage, nur wenn sie vom einfachen Zusammenführen abweicht. */
+function mergeMethodSuffix(method: PullRequestMergeMethod): string {
+  return method === "merge" ? "" : ` (${mergeMethodLabel(method)})`;
+}
+
 /** Nur das Zeichen des Sammelstatus, für den eingeklappten Kopf. */
 function PullRequestChecksStateIcon({
   checksState,
@@ -1683,9 +1688,9 @@ export function PullRequestDetailPanel({
           markers={{ row: "pull-request-confirm" }}
           question={
             confirmAction === "merge"
-              ? `#${reference.number} zusammenführen (${mergeMethodLabel(selectedMergeMethod)})?`
+              ? `#${reference.number} zusammenführen${mergeMethodSuffix(selectedMergeMethod)}?`
               : confirmAction === "enable-auto-merge"
-                ? `#${reference.number} automatisch zusammenführen (${mergeMethodLabel(selectedMergeMethod)})?`
+                ? `#${reference.number} automatisch zusammenführen${mergeMethodSuffix(selectedMergeMethod)}?`
                 : `#${reference.number} ohne Zusammenführen schließen?`
           }
           variant={confirmAction === "close" ? "destructive" : "default"}

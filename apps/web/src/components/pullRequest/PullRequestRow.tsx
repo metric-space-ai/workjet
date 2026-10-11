@@ -108,10 +108,8 @@ function PullRequestRowImpl({
           // Bei 420 px steht, was rechts keinen Platz hat (Zeit, Diff, Freigabe), unter dem
           // Titel und bricht um, statt zu verschwinden.
           <span className="flex flex-wrap items-center gap-x-1.5 whitespace-normal sm:block sm:whitespace-nowrap">
-            <span className="font-mono text-[12px] break-all sm:break-normal">
-              {metaParts.join(" · ")}
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-[12px] tabular-nums sm:hidden">
+            <span className="font-mono text-[12px] break-words">{metaParts.join(" · ")}</span>
+            <span className="inline-flex flex-wrap items-center gap-x-1.5 text-[12px] whitespace-nowrap tabular-nums sm:hidden">
               <span>{formatRelativeTimeLabel(entry.updatedAt)}</span>
               <PullRequestDiffStat additions={entry.additions} deletions={entry.deletions} />
               {entry.reviewDecision === "approved" ? (

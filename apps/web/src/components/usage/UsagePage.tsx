@@ -269,7 +269,7 @@ export function UsagePage() {
               value={formatUsd(merged.costQuality.cacheSavingsUsd)}
               detail={
                 merged.costUsd > 0
-                  ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1)}× Kosten`
+                  ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1).replace(".", ",")}× Kosten`
                   : "—"
               }
             />
@@ -559,7 +559,7 @@ export function UsageLoading({
           },
         }}
       >
-        Verbrauch lädt länger als erwartet
+        Laden dauert länger
       </Banner>
     );
   }

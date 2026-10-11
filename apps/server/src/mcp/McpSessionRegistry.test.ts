@@ -293,3 +293,41 @@ it.effect("isolates Crew grants from provider config and revokes them on session
     );
   }),
 );
+
+it.effect(
+  "issues the same role-aware tool names to every harness and excludes escalation from One-Shots",
+  () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(() => 1000);
+      for (const harness of [
+        "claudeAgent",
+        "codex",
+        "opencode",
+        "grok",
+        "pi",
+        "cursor",
+        "minimax",
+        "greppy",
+        "ctox",
+      ]) {
+        for (const projectTeamRole of ["supervisor", "specialist", "worker"] as const) {
+          const issued = yield* registry.issue({
+            threadId: ThreadId.make(harness + "-" + projectTeamRole),
+            providerInstanceId: ProviderInstanceId.make(harness),
+            threadCapabilityContext: { ...emptyThreadCapabilityContext, projectTeamRole },
+          });
+          expect(issued.config.requiredWorkjetToolNames).toContain("workjet_worker_kanban");
+          expect(issued.config.requiredWorkjetToolNames).toContain("workjet_update_goal");
+          expect(issued.config.requiredWorkjetToolNames).toContain("workjet_submit_worker");
+          expect(issued.config.requiredWorkjetToolNames?.includes("workjet_escalate")).toBe(
+            projectTeamRole !== "worker",
+          );
+          expect(issued.config.requiredWorkjetToolNames?.includes("workjet_answer_worker")).toBe(
+            projectTeamRole === "supervisor",
+          );
+          const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+          expect((yield* registry.resolve(token))?.projectTeamRole).toBe(projectTeamRole);
+        }
+      }
+    }),
+);

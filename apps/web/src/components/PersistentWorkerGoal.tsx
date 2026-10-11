@@ -185,8 +185,8 @@ export function PersistentWorkerGoal({
               </Suspense>
             ) : (
               <p className="text-muted-foreground">
-                Für diesen Durchlauf liegt noch kein Slide-Engine-Board vor. Der Worker aktualisiert
-                es am Beginn des Durchlaufs.
+                Für diesen Durchlauf liegt noch kein Mini-Kanban des Workers vor. Der Worker
+                aktualisiert es am Beginn des Durchlaufs.
               </p>
             )}
             <p className="mt-2 text-muted-foreground">

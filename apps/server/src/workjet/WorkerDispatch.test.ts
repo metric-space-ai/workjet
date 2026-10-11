@@ -330,7 +330,7 @@ it.effect("preserves the project policy at the local worker's provider boundary"
       yield* service.dispatch(invocation, input);
       const create = h.commands.find((command) => command.type === "thread.create");
       expect(create?.workjetConfig).toMatchObject({ schemaVersion: 2, executionPolicy });
-      expect(create?.runtimeMode).toBe(parent.runtimeMode);
+      expect(create?.runtimeMode).toBe("full-access");
       expect(h.worktreeCreates).toEqual([]);
       expect(h.localAllocations).toHaveLength(1);
       expect(h.localAllocations[0]?.context).toMatchObject({
@@ -1269,7 +1269,7 @@ it.effect("atomically creates the worker and queues its first turn with inherite
         projectId: parent.projectId,
         title: deriveWorkerTitle(1, parent.title, inheritedModel.model),
         modelSelection: inheritedModel,
-        runtimeMode: "auto-accept-edits",
+        runtimeMode: "full-access",
         interactionMode: "plan",
         workjetConfig: {
           schemaVersion: 2,

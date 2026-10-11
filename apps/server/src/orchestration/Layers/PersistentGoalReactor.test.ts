@@ -235,8 +235,10 @@ describe("persistent goal reactor", () => {
           for (const [index, command] of h.starts.entries()) {
             expect(command.type).toBe("thread.turn.start");
             if (command.type !== "thread.turn.start") throw new Error("missing continuation");
-            expect(command.message.text).toContain(`Iteration ${index + 1}: before any other work`);
-            expect(command.message.text).toContain("slide-engine mini-kanban exactly once");
+            expect(command.message.text).toContain(
+              `Iteration ${index + 1}: If workjet_worker_kanban is available`,
+            );
+            expect(command.message.text).toContain("worker mini-kanban exactly once");
             expect(command.message.text.match(/workjet_worker_kanban/g)).toHaveLength(1);
           }
           const cfg = h.read().workjetConfig;
@@ -370,28 +372,34 @@ describe("persistent goal reactor", () => {
       ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("records an unsupported native control as a blocker instead of emulating success", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const h = yield* harness({
-          get: () =>
-            Effect.fail({
-              _tag: "UnsupportedNativeGoal",
-              message: "unsupported native goal protocol",
-            } as const),
-          set: () => Effect.void,
-        } as unknown as ProviderService["Service"]["nativeGoal"]);
-        yield* h.reactor.start();
-        yield* h.completeTurn("unsupported-native");
-        yield* h.reactor.drain;
-        const config = h.read().workjetConfig;
-        expect(config.schemaVersion === 2 && config.goal?.status).toBe("blocked");
-        expect(h.starts).toHaveLength(0);
-      }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+  it.effect(
+    "continues with a retained Workjet goal when the native goal protocol is explicitly unsupported",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const h = yield* harness({
+            get: () =>
+              Effect.fail({
+                _tag: "UnsupportedNativeGoal",
+                message: "unsupported native goal protocol",
+              } as const),
+            set: () => Effect.void,
+          } as unknown as ProviderService["Service"]["nativeGoal"]);
+          yield* h.reactor.start();
+          yield* h.completeTurn("unsupported-native");
+          yield* Deferred.await(h.signals[0]!);
+          yield* h.reactor.drain;
+          const config = h.read().workjetConfig;
+          expect(config.schemaVersion === 2 && config.goal?.status).toBe("active");
+          expect(config.schemaVersion === 2 && config.goal?.kanban?.cards[0]?.evidence).toContain(
+            "unverified",
+          );
+          expect(h.starts).toHaveLength(1);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
+  it.effect.each(["hasPendingApprovals", "hasPendingUserInput", "waitingOnSupervisor"] as const)(
     "retains %s instead of silently continuing",
     (field) =>
       Effect.scoped(

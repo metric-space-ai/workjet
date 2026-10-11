@@ -77,7 +77,9 @@ export function projectTeamStatus(thread: {
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly backgroundLiveness?: string | null | undefined;
+  readonly waitingOnSupervisor?: boolean | undefined;
 }) {
+  if (thread.waitingOnSupervisor) return { label: "Waiting for Supervisor", dot: "bg-indigo-400" };
   if (thread.hasPendingApprovals || thread.hasPendingUserInput)
     return { label: "Needs attention", dot: "bg-rose-400" };
   if (thread.session?.status === "error") return { label: "Error", dot: "bg-red-400" };

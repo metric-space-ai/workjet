@@ -15,6 +15,8 @@ export interface McpProviderSessionConfig {
   readonly cwd?: string;
   readonly activeWorkjetMcpCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly compiledManagedPrompt: string;
+  readonly requiredWorkjetToolNames?: ReadonlyArray<string>;
+  readonly projectTeamRole?: "supervisor" | "specialist" | "worker";
 }
 
 const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig>();

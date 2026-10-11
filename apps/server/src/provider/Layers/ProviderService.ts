@@ -29,6 +29,7 @@ import {
 } from "@workjet/contracts";
 import { causeErrorTag } from "@workjet/shared/observability";
 import { parseWorkjetThreadDeepLink } from "@workjet/shared/agentAwareness";
+import { isUnsupportedNativeGoal } from "../../workjet/workerToolFallback.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -43,6 +44,7 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { readHistoryContinuation, withImportedHistoryContext } from "../importedHistoryContext.ts";
 import {
   requireEnforcedExecutionPolicy,
+  requireOneShotWorktreeContainment,
   requirePersistedEnforcedExecutionPolicy,
 } from "../executionPolicy.ts";
 import * as ServerConfig from "../../config.ts";
@@ -519,6 +521,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     return yield* Effect.gen(function* () {
       const adapter = yield* registry.getByInstance(bindingInstanceId);
       const persistedWorkjetConfig = readPersistedWorkjetConfig(input.binding.runtimePayload);
+      yield* requireOneShotWorktreeContainment(
+        input.operation,
+        adapter.provider,
+        persistedWorkjetConfig,
+        readPersistedCwd(input.binding.runtimePayload),
+      );
       yield* requirePersistedEnforcedExecutionPolicy(
         input.operation,
         adapter.provider,
@@ -795,6 +803,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
+        yield* requireOneShotWorktreeContainment(
+          "ProviderService.startSession",
+          adapter.provider,
+          input.workjetConfig,
+          effectiveCwd,
+        );
         yield* requireEnforcedExecutionPolicy(
           "ProviderService.startSession",
           adapter.provider,
@@ -964,7 +978,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         config.goal?.status === "active" &&
         routed.adapter.nativeGoal
       ) {
-        const native = yield* routed.adapter.nativeGoal.get(input.threadId);
+        const native = yield* routed.adapter.nativeGoal
+          .get(input.threadId)
+          .pipe(
+            Effect.catch((error) =>
+              isUnsupportedNativeGoal(error) ? Effect.succeed(undefined) : Effect.fail(error),
+            ),
+          );
         if (native === null)
           yield* routed.adapter.nativeGoal.set(input.threadId, config.goal.objective, "active");
       }

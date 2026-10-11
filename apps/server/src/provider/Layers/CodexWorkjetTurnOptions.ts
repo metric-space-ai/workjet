@@ -18,12 +18,18 @@
  */
 export interface CodexWorkjetTurnOptionsInput {
   readonly compiledManagedPrompt?: string;
+  readonly oneShotWorkspaceRoot?: string;
 }
 
 export function codexWorkjetTurnOptions(
   input: CodexWorkjetTurnOptionsInput,
 ): CodexWorkjetTurnOptionsInput {
-  return input.compiledManagedPrompt === undefined
-    ? {}
-    : { compiledManagedPrompt: input.compiledManagedPrompt };
+  return {
+    ...(input.compiledManagedPrompt === undefined
+      ? {}
+      : { compiledManagedPrompt: input.compiledManagedPrompt }),
+    ...(input.oneShotWorkspaceRoot === undefined
+      ? {}
+      : { oneShotWorkspaceRoot: input.oneShotWorkspaceRoot }),
+  };
 }

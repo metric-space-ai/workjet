@@ -13,6 +13,7 @@ import { projectTranscriptRecords } from "./transcriptRecords.ts";
 
 import {
   CommandId,
+  DEFAULT_RUNTIME_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   hideSessionInitialization,
@@ -1016,12 +1017,7 @@ export const make = Effect.gen(function* () {
               instanceId: file.providerInstanceId,
               model: parsed.model ?? "unknown",
             },
-            // Imports have no isolated checkout. Never inherit bypass/full access
-            // or automatic approval of commands outside the project directory.
-            runtimeMode:
-              projectSupervisor?.runtimeMode === "approval-required"
-                ? ("approval-required" as const)
-                : ("auto-accept-edits" as const),
+            runtimeMode: DEFAULT_RUNTIME_MODE,
             interactionMode: "default" as const,
             workjetConfig: {
               ...DEFAULT_WORKJET_THREAD_CONFIG,

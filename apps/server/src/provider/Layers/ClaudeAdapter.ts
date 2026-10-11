@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
+import { oneShotClaudePolicy } from "../oneShotClaudePolicy.ts";
 import type { NativeSupervisorSdkJournal } from "../../workjet/NativeSupervisorSdkJournal.ts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
@@ -4365,6 +4366,59 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
+      // MCP elicitation uses the same provider event channel and central role policy as native questions.
+      const onElicitation: NonNullable<ClaudeQueryOptions["onElicitation"]> = (
+        request,
+        callbackOptions,
+      ) =>
+        runPromise(
+          Effect.gen(function* () {
+            const context = yield* Ref.get(contextRef);
+            if (!context) return { action: "cancel" as const };
+            const properties = Schema.decodeUnknownOption(
+              Schema.Record(Schema.String, Schema.Unknown),
+            )(request.requestedSchema?.properties);
+            const fields = Option.isSome(properties) ? Object.keys(properties.value) : [];
+            const questions = (fields.length ? fields : [request.message]).map((field) => ({
+              question: field,
+              header: request.message,
+              options: [],
+              multiSelect: false,
+            }));
+            const result = yield* handleAskUserQuestion(context, { questions }, callbackOptions);
+            if (result.behavior !== "allow") return { action: "cancel" as const };
+            const answers = Schema.decodeUnknownOption(
+              Schema.Record(Schema.String, Schema.Unknown),
+            )(result.updatedInput.answers);
+            const content: Record<string, string | number | boolean | string[]> = {};
+            if (Option.isSome(answers))
+              for (const field of fields) {
+                const value = answers.value[field];
+                const definition = Option.isSome(properties)
+                  ? Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(
+                      properties.value[field],
+                    )
+                  : Option.none();
+                const fieldType = Option.isSome(definition) ? definition.value.type : undefined;
+                if (fieldType === "boolean") content[field] = value === true || value === "true";
+                else if (
+                  (fieldType === "number" || fieldType === "integer") &&
+                  Number.isFinite(Number(value))
+                )
+                  content[field] = Number(value);
+                else if (
+                  typeof value === "string" ||
+                  typeof value === "number" ||
+                  typeof value === "boolean"
+                )
+                  content[field] = value;
+                else if (Array.isArray(value) && value.every((item) => typeof item === "string"))
+                  content[field] = value;
+              }
+            return { action: "accept" as const, content };
+          }),
+        );
+
       const claudeBinaryPath = claudeSdkExecutablePath;
       const extraArgs = workerSource ? {} : parseCliArgs(claudeSettings.launchArgs).flags;
       const modelSelection =
@@ -4439,6 +4493,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             ).pipe(Effect.provideService(Path.Path, path))
           : claudeEnvironment;
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      const oneShotPolicy =
+        mcpSession?.projectTeamRole === "worker" && input.cwd
+          ? oneShotClaudePolicy(input.cwd)
+          : undefined;
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an
       // approval prompt. It is a leaf directory holding only attachment
@@ -4482,6 +4540,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
         systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
+        ...(mcpSession?.projectTeamRole
+          ? { disallowedTools: ["AskUserQuestion", "ExitPlanMode"] }
+          : {}),
+        ...(oneShotPolicy ? { sandbox: oneShotPolicy.sandbox } : {}),
+        ...(mcpSession
+          ? {
+              allowedTools: (
+                mcpSession.requiredWorkjetToolNames ?? [
+                  "workjet_worker_kanban",
+                  "workjet_update_goal",
+                  "workjet_answer_worker",
+                ]
+              ).map((name) => `mcp__workjet__${name}`),
+            }
+          : {}),
         settingSources: workerSource ? [] : [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
@@ -4497,18 +4570,24 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
-        ...(resumeConfirmed
+        ...(resumeConfirmed || oneShotPolicy
           ? {
               hooks: {
-                SessionStart: [{ hooks: [verifyOriginalSession], timeout: 10 }],
-                UserPromptSubmit: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+                ...oneShotPolicy?.hooks,
+                ...(resumeConfirmed
+                  ? {
+                      SessionStart: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+                      UserPromptSubmit: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+                    }
+                  : {}),
               },
             }
           : {}),
         includePartialMessages: true,
         canUseTool,
+        onElicitation,
         env: sessionEnvironment,
-        additionalDirectories,
+        additionalDirectories: oneShotPolicy?.additionalDirectories ?? additionalDirectories,
         ...(options?.createQuery === undefined ? { spawnClaudeCodeProcess } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession

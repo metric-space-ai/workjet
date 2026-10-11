@@ -87,7 +87,7 @@ export const makeGreppyAcpRuntime = Effect.fn("makeGreppyAcpRuntime")(function* 
         : {}),
       authMethodId: "greppy.env",
       cancelPromptMode: "await-response",
-      mcpServers: [],
+      mcpServers: input.mcpServers ?? [],
     }).pipe(Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.spawner))),
   );
   return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(Effect.provide(context));

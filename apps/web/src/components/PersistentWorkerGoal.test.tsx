@@ -167,7 +167,7 @@ describe("persistent worker goal display", () => {
     expect(text).toContain("Mini-Kanban · Durchlauf 1");
     expect(text).toContain("vorheriger Stand");
     expect(text).not.toContain("Legacy card content");
-    expect(text).toContain("noch kein Slide-Engine-Board");
+    expect(text).toContain("noch kein Mini-Kanban des Workers");
   });
   it("renders the retained canonical SlideDocument through the engine", () => {
     const text = renderToStaticMarkup(

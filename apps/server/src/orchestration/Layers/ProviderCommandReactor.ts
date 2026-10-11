@@ -1,3 +1,5 @@
+import { answerOwnerEscalation } from "../../workjet/WorkerSupervisorDecisions.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import {
   type ChatAttachment,
   CommandId,
@@ -394,6 +396,7 @@ function buildGeneratedWorktreeBranchName(raw: string): string {
 }
 
 const make = Effect.gen(function* () {
+  const decisionSql = yield* Effect.serviceOption(SqlClient.SqlClient);
   const crypto = yield* Crypto.Crypto;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -1717,6 +1720,15 @@ const make = Effect.gen(function* () {
       if (!thread) {
         return;
       }
+      if (
+        Option.isSome(decisionSql) &&
+        (yield* answerOwnerEscalation(
+          event.payload.threadId,
+          event.payload.requestId,
+          event.payload.answers,
+        ).pipe(Effect.provideService(SqlClient.SqlClient, decisionSql.value)))
+      )
+        return;
       const hasSession = thread.session && thread.session.status !== "stopped";
       if (!hasSession) {
         return yield* appendProviderFailureActivity({

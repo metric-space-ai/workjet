@@ -66,8 +66,18 @@ try {
   browser = await chromium.launch({
     executablePath: "/usr/bin/google-chrome",
     headless: true,
-    args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--enable-logging=stderr", "--js-flags=--no-sandbox"],
-    env:{...process.env,XDG_CONFIG_HOME:NodePath.join(profile,"browser-config"),XDG_CACHE_HOME:NodePath.join(profile,"browser-cache")},
+    args: [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--enable-logging=stderr",
+      "--js-flags=--no-sandbox",
+    ],
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: NodePath.join(profile, "browser-config"),
+      XDG_CACHE_HOME: NodePath.join(profile, "browser-cache"),
+    },
   });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, locale: "de-DE" });
   const errors = [];

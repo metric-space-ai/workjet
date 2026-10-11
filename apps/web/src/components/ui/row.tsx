@@ -45,6 +45,12 @@ function RowStatusDot({ status, label }: { status: RowStatus; label?: string | u
   );
 }
 
+export interface RowDeleteOption {
+  readonly label: string;
+  readonly onSelect: () => void;
+  readonly disabled?: boolean;
+}
+
 export interface RowProps {
   readonly name: ReactNode;
   /** Höchstens eine kurze Meta-Zeile unter dem Namen, z. B. die Adresse. */
@@ -58,18 +64,10 @@ export interface RowProps {
   readonly activeLabel?: string;
   readonly onActiveChange?: (active: boolean) => void;
   readonly activeDisabled?: boolean;
+  /** Löschwege zur Wahl; ersetzen den einen Bestätigen-Knopf. */
+  readonly deleteOptions?: readonly RowDeleteOption[];
   /** Papierkorb; die Bestätigung ist eingebaut. */
   readonly onDelete?: () => void;
-  /**
-   * Mehrere Löschwege zur Wahl in der Bestätigung, z. B. „Nur aus Workjet
-   * entfernen“ und „Auch auf dem Rechner entfernen“. Ersetzt den einen
-   * Bestätigen-Knopf, wenn gesetzt.
-   */
-  readonly deleteOptions?: ReadonlyArray<{
-    readonly label: string;
-    readonly onSelect: () => void;
-    readonly disabled?: boolean;
-  }>;
   readonly deleteLabel?: string;
   readonly deleteConfirmTitle?: string;
   /** Seltene Aktionen hinter dem ⋯-Menü. */

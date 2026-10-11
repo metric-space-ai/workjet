@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 import {
   CtoxWorkjetProjectControlRequest,
+  DEFAULT_SUPERVISOR_TICK_CONFIGURATION,
   type CtoxWorkjetProjectMetadataProjection,
   type ProjectOverview,
 } from "@workjet/contracts";
@@ -141,6 +142,7 @@ export function ProjectOverviewEditor({
               info: validated.info ?? null,
               jourFixe: validated.jourFixe ?? null,
             };
+            next = { ...next, regularMeeting: metadata.jourFixe ?? null };
           }
         } catch {
           setState({
@@ -216,6 +218,46 @@ export function ProjectOverviewEditor({
           placeholder="https://example.com"
           disabled={state.pending}
         />
+        <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-tick`}>
+          Supervisor-Takt
+        </label>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              id={`${id}-supervisor-tick`}
+              type="checkbox"
+              checked={(draft.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION).enabled}
+              disabled={state.pending}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                supervisorTick: { ...(current.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION), enabled: event.target.checked },
+              }))}
+            />
+            An
+          </label>
+          <label className="flex min-w-0 items-center gap-2 text-xs">
+            Alle
+            <Input
+              aria-label="Supervisor-Takt in Minuten"
+              className="w-20"
+              type="number"
+              min={1}
+              max={10080}
+              step={1}
+              required
+              disabled={state.pending}
+              value={(draft.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION).intervalMinutes}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                supervisorTick: { ...(current.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION), intervalMinutes: Number(event.target.value) },
+              }))}
+            />
+            Minuten
+          </label>
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground sm:col-start-2">
+          Prüft Worker, offene PRs und Blocker. Laufende Supervisor-Turns werden übersprungen.
+        </p>
         {configuration && onSaveConfiguration && (
           <>
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-luma`}>

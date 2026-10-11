@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SupervisorTickStatus } from "./SupervisorTickStatus";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { projectOverviewWorkerState, type ProjectOwnerOverview } from "../projectOverviewModel";
@@ -34,6 +35,7 @@ export function ProjectOverviewView(props: {
         <header>
           <h1 className="break-words text-[22px] font-semibold tracking-tight">{data.title}</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{data.summary}</p>
+          <SupervisorTickStatus {...data.supervisorTick} />
           {props.actions}
         </header>
         <dl

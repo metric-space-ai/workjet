@@ -17,6 +17,8 @@ export type OverviewSlotDraft = {
 };
 export type OverviewDraft = {
   archived?: boolean | undefined;
+  supervisorTick?: ProjectOverview["supervisorTick"];
+  regularMeeting?: ProjectOverview["regularMeeting"];
   repositoryUrl?: string | undefined;
   websiteUrl: string;
   slots: [OverviewSlotDraft, OverviewSlotDraft, OverviewSlotDraft];
@@ -42,6 +44,8 @@ export function overviewDraft(overview: ProjectOverview | null | undefined): Ove
   };
   return {
     archived: overview?.archived,
+    supervisorTick: overview?.supervisorTick,
+    regularMeeting: overview?.regularMeeting,
     repositoryUrl:
       overview?.repositoryUrl === undefined ? undefined : (overview.repositoryUrl ?? ""),
     websiteUrl: overview?.websiteUrl ?? "",
@@ -60,6 +64,8 @@ export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
   };
   return decodeOverview({
     ...(draft.archived === undefined ? {} : { archived: draft.archived }),
+    ...(draft.supervisorTick === undefined ? {} : { supervisorTick: draft.supervisorTick }),
+    ...(draft.regularMeeting === undefined ? {} : { regularMeeting: draft.regularMeeting }),
     ...(draft.repositoryUrl === undefined
       ? {}
       : { repositoryUrl: draft.repositoryUrl.trim() || null }),

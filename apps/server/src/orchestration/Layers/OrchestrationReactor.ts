@@ -12,6 +12,7 @@ import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
 import { PersistentGoalReactor } from "./PersistentGoalReactor.ts";
 import { WorkerSupervisorDecisionReactor } from "./WorkerSupervisorDecisionReactor.ts";
+import { SupervisorTickReactor } from "./SupervisorTickReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
@@ -21,6 +22,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
   const persistentGoals = yield* PersistentGoalReactor;
   const workerDecisions = yield* WorkerSupervisorDecisionReactor;
+  const supervisorTicks = yield* SupervisorTickReactor;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
     yield* providerRuntimeIngestion.start();
@@ -30,6 +32,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* agentAwarenessRelay.start();
     yield* persistentGoals.start();
     yield* workerDecisions.start();
+    yield* supervisorTicks.start();
   });
 
   return {

@@ -65,7 +65,7 @@ export function PullRequestMarkdownEditor({
           disabled={saving}
           onClick={() => setPreview(false)}
         >
-          Write
+          Schreiben
         </Button>
         <Button
           size="xs"
@@ -73,7 +73,7 @@ export function PullRequestMarkdownEditor({
           disabled={saving}
           onClick={() => setPreview(true)}
         >
-          Preview
+          Vorschau
         </Button>
       </div>
       {preview ? (
@@ -97,7 +97,7 @@ export function PullRequestMarkdownEditor({
       )}
       <div className="flex justify-end gap-2">
         <Button size="xs" variant="ghost" disabled={saving} onClick={onCancel}>
-          Cancel
+          Abbrechen
         </Button>
         <Button
           size="xs"

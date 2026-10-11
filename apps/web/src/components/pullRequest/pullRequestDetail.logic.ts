@@ -59,9 +59,9 @@ export function pullRequestHandoffLabels(inThisThread: boolean) {
 
 /** Plain-language state, shown beside the author. Conflicts are a merge signal, not a state. */
 export function describePullRequestState(state: PullRequestState, isDraft: boolean): string {
-  if (state === "merged") return "Merged";
-  if (state === "closed") return "Closed";
-  return isDraft ? "Draft" : "Ready for review";
+  if (state === "merged") return "Gemergt";
+  if (state === "closed") return "Geschlossen";
+  return isDraft ? "Entwurf" : "Bereit zur Prüfung";
 }
 
 /** Chronological ascending, oldest to newest — reversed for the "newest" reading order. */
@@ -151,7 +151,7 @@ export function buildPullRequestTimeline(
       id: "created",
       at: detail.createdAt,
       kind: "opened" as const,
-      title: "opened this pull request",
+      title: "hat den Pull Request eröffnet",
       body: null,
       markdown: false,
       url: null,
@@ -201,7 +201,7 @@ export function buildPullRequestTimeline(
             id: "merged",
             at: detail.mergedAt,
             kind: "merged" as const,
-            title: "Pull request merged",
+            title: "Pull Request gemergt",
             body: null,
             markdown: false,
             url: null,
@@ -221,7 +221,7 @@ export function buildPullRequestTimeline(
             id: "closed",
             at: detail.closedAt,
             kind: "closed" as const,
-            title: "Pull request closed",
+            title: "Pull Request geschlossen",
             body: null,
             markdown: false,
             url: null,

@@ -301,7 +301,7 @@ function ConversationGroup({
                 {events.length.toLocaleString()} {events.length === 1 ? "Kommentar" : "Kommentare"}
               </span>
               <span className="block truncate text-[10px] text-muted-foreground">
-                {actors.length.toLocaleString()} {actors.length === 1 ? "author" : "authors"} ·{" "}
+                {actors.length.toLocaleString()} {actors.length === 1 ? "Autor" : "Autoren"} ·{" "}
                 {formatRelativeTimeLabel(first.at)}
               </span>
             </span>
@@ -349,7 +349,7 @@ function CommitEvent({
     <button
       type="button"
       className="group relative mb-5 block w-full rounded-sm pl-12 text-left outline-none [contain-intrinsic-block-size:48px] [content-visibility:auto] focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={`View commit ${event.id}`}
+      aria-label={`Commit ${event.id} anzeigen`}
       onClick={() => onOpen(event.id)}
     >
       <ActorTimelineMarker
@@ -388,7 +388,7 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
       : event.kind === "merged"
         ? {
             icon: <GitMergeIcon className="size-3.5" />,
-            label: "Pull Request zusammengeführt",
+            label: "Pull Request gemergt",
           }
         : {
             icon: <GitPullRequestClosedIcon className="size-3.5" />,

@@ -3,10 +3,7 @@ import type { useInstanceProviders } from "./useInstanceProviders";
 import { NativeProviderRowsView } from "./NativeProviderRows";
 import { Button } from "../ui/button";
 import {
-  describeGuestPreparationStage,
-  describeGuestPreparationReason,
   describeWorkjetProjectControlFailure,
-  workjetUiLanguage,
   type WorkjetProjectControlFailure,
 } from "../../workjetProjectControl";
 
@@ -15,47 +12,28 @@ export function InstanceConnectionStatus({
   failure,
   busy,
   reconnect,
-  language = workjetUiLanguage(),
 }: {
   readonly label: string;
   readonly failure: WorkjetProjectControlFailure;
   readonly busy: boolean;
   readonly reconnect: () => void;
-  readonly language?: "de" | "en";
 }) {
-  const de = language === "de";
-  const diagnostic = failure.preparation;
+  // One status line plus one button (UI-Vertrag §1 Banner). The preparation
+  // stage, error codes and HTTP status are raw diagnostics and belong on the
+  // Diagnose page, not in an expandable "Grund" block here.
   return (
     <div
       role="status"
-      className="space-y-1 py-2 text-xs text-muted-foreground"
+      className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs text-muted-foreground"
       data-workjet-instance-connection=""
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span>
-          {de
-            ? `Verbindung zur Instanz ${label} gestört – Konten der Instanz werden nicht geladen.`
-            : `Connection to instance ${label} interrupted – instance accounts cannot be loaded.`}
-        </span>
-        <Button size="xs" variant="ghost" disabled={busy} onClick={reconnect}>
-          {de ? "Neu verbinden" : "Reconnect"}
-        </Button>
-      </div>
-      <details>
-        <summary className="cursor-pointer">{de ? "Grund" : "Reason"}</summary>
-        <p className="py-1">{describeWorkjetProjectControlFailure(failure, null, language)}</p>
-        {diagnostic && (
-          <div>
-            <p>{describeGuestPreparationReason(diagnostic, language)}</p>
-            <p data-workjet-diagnostic-stage={diagnostic.stage}>
-              {de ? "Stufe" : "Stage"}: {describeGuestPreparationStage(diagnostic.stage, language)}{" "}
-              ({diagnostic.stage})
-              {diagnostic.errorCode !== undefined ? ` · Electron ${diagnostic.errorCode}` : ""}
-              {diagnostic.httpStatus !== undefined ? ` · HTTP ${diagnostic.httpStatus}` : ""}
-            </p>
-          </div>
-        )}
-      </details>
+      <span className="min-w-0">
+        Instanz {label} nicht verbunden ·{" "}
+        {describeWorkjetProjectControlFailure(failure, null, "de")}
+      </span>
+      <Button size="xs" variant="outline" disabled={busy} onClick={reconnect}>
+        Neu verbinden
+      </Button>
     </div>
   );
 }
@@ -69,7 +47,6 @@ export function InstanceProviderSection({
   readonly grok: InstanceGrokAccountPresentation;
   readonly providers: ReturnType<typeof useInstanceProviders>;
 }) {
-  const language = workjetUiLanguage();
   // Grok has its own admitted control channel. An older instance can support
   // that login while its general account-management channel is unavailable.
   const unsupportedProviders =
@@ -81,14 +58,8 @@ export function InstanceProviderSection({
       ? { _tag: "failed" as const, code: "guest_failed" as const }
       : undefined);
   return (
-    <div
-      role="rowgroup"
-      aria-label={`${language === "de" ? "Instanz" : "Instance"} ${label}`}
-      className="border-b border-border"
-    >
-      <div className="py-2 text-xs font-semibold">
-        {language === "de" ? "Instanz" : "Instance"} {label}
-      </div>
+    <div role="rowgroup" aria-label={`Instanz ${label}`} className="border-b border-border">
+      <div className="py-2 text-xs font-semibold">Instanz {label}</div>
       {failure ? (
         <InstanceConnectionStatus
           label={label}
@@ -108,18 +79,16 @@ export function InstanceProviderSection({
               className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs text-muted-foreground"
               data-workjet-provider-management-unavailable=""
             >
-              <span>
-                {describeWorkjetProjectControlFailure(unsupportedProviders, null, language)}
-              </span>
+              <span>{describeWorkjetProjectControlFailure(unsupportedProviders, null, "de")}</span>
               <Button
                 size="xs"
-                variant="ghost"
+                variant="outline"
                 disabled={providers.busy}
                 onClick={() => {
                   void providers.run({ action: "instance.providers.read" });
                 }}
               >
-                {language === "de" ? "Konten erneut laden" : "Refresh accounts"}
+                Konten neu laden
               </Button>
             </div>
           ) : (

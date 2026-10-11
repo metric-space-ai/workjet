@@ -38,7 +38,6 @@ import {
   useResourceTelemetryHistory,
 } from "../../lib/resourceTelemetryState";
 import { cn } from "../../lib/utils";
-import { ensureLocalApi } from "../../localApi";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -120,23 +119,23 @@ function categoryLabel(category: ResourceTelemetryProcessCategory): string {
     case "server":
       return "Server";
     case "server-child":
-      return "Backend child";
+      return "Backend-Kind";
     case "provider-root":
-      return "Provider";
+      return "Anbieter";
     case "terminal-root":
       return "Terminal";
     case "electron-main":
-      return "Electron main";
+      return "Electron-Haupt";
     case "electron-renderer":
       return "Renderer";
     case "electron-gpu":
       return "GPU";
     case "electron-utility":
-      return "Electron utility";
+      return "Electron-Hilfe";
     case "resource-monitor":
       return "Monitor";
     case "unknown-workjet":
-      return "Workjet process";
+      return "Workjet-Prozess";
   }
 }
 
@@ -150,13 +149,13 @@ function categoryDotClass(category: ResourceTelemetryProcessCategory): string {
 function ioSemanticsLabel(semantics: ResourceTelemetryIoSemantics): string {
   switch (semantics) {
     case "storage":
-      return "Storage bytes";
+      return "Speicher-Bytes";
     case "logical":
-      return "Logical bytes";
+      return "Logische Bytes";
     case "all-io":
-      return "All I/O bytes";
+      return "Alle I/O-Bytes";
     case "unavailable":
-      return "Unavailable";
+      return "Nicht verfügbar";
   }
 }
 
@@ -166,7 +165,7 @@ function booleanStateLabel(
 ): string {
   if (value === "true") return labels.true;
   if (value === "false") return labels.false;
-  return "Unknown";
+  return "—";
 }
 
 function sourceStatusTone(status: ResourceTelemetrySourceStatus): "default" | "warning" | "danger" {
@@ -219,16 +218,18 @@ function SourceStatusBadge({
 function LastSampleLabel({ sampledAt }: { sampledAt: DateTime.Utc | null }) {
   useRelativeTimeTick();
   if (!sampledAt) {
-    return <span className="text-[11px] text-muted-foreground/55">Waiting for sample</span>;
+    return <span className="text-[11px] text-muted-foreground/55">Wartet …</span>;
   }
   const relative = formatRelativeTime(DateTime.formatIso(sampledAt));
   if (!relative) {
-    return <span className="text-[11px] text-muted-foreground/55">Waiting for sample</span>;
+    return <span className="text-[11px] text-muted-foreground/55">Wartet …</span>;
   }
   return (
     <span className="text-[11px] text-muted-foreground/60">
-      Updated <span className="font-mono tabular-nums">{relative.value}</span>
-      {relative.suffix ? ` ${relative.suffix}` : ""}
+      {relative.suffix ? "Vor " : ""}
+      <span className="font-mono tabular-nums">
+        {relative.suffix ? relative.value : "gerade eben"}
+      </span>
     </span>
   );
 }
@@ -292,9 +293,9 @@ function AggregateCard({
       </div>
       <div className="mt-3.5 grid grid-cols-2 gap-x-4 gap-y-2.5">
         <MetricPair label="CPU" value={`${aggregate.currentCpuPercent.toFixed(1)}%`} />
-        <MetricPair label="Memory" value={formatBytes(aggregate.currentRssBytes)} />
-        <MetricPair label="Read" value={formatRate(aggregate.ioReadBytesPerSecond)} />
-        <MetricPair label="Write" value={formatRate(aggregate.ioWriteBytesPerSecond)} />
+        <MetricPair label="Speicher" value={formatBytes(aggregate.currentRssBytes)} />
+        <MetricPair label="Lesen" value={formatRate(aggregate.ioReadBytesPerSecond)} />
+        <MetricPair label="Schreiben" value={formatRate(aggregate.ioWriteBytesPerSecond)} />
       </div>
     </div>
   );
@@ -323,9 +324,9 @@ function HealthSource({ label, health }: { label: string; health: ResourceTeleme
         <div className="text-[13px] font-medium text-foreground">{label}</div>
         <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground/65">
           {expectedInBrowser
-            ? "Available when this page runs inside the desktop app."
+            ? "Nur in der Desktop-App"
             : Option.match(health.lastError, {
-                onNone: () => "No reported errors",
+                onNone: () => "Keine Fehler",
                 onSome: (error) => error,
               })}
         </div>
@@ -336,7 +337,7 @@ function HealthSource({ label, health }: { label: string; health: ResourceTeleme
         presentation={
           expectedInBrowser
             ? {
-                label: "Desktop only",
+                label: "Nur Desktop",
                 tone: "neutral",
               }
             : undefined
@@ -408,13 +409,13 @@ function ResourceHistoryChart({
     <div className="border-t border-border/60 px-4 py-4 sm:px-5">
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground/65">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-3 rounded-full bg-foreground/70" /> CPU average
+          <span className="h-1.5 w-3 rounded-full bg-foreground/70" /> CPU Mittel
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-3 rounded-full bg-sky-500/70" /> I/O reads
+          <span className="h-1.5 w-3 rounded-full bg-sky-500/70" /> I/O lesen
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-3 rounded-full bg-amber-500/80" /> I/O writes
+          <span className="h-1.5 w-3 rounded-full bg-amber-500/80" /> I/O schreiben
         </span>
       </div>
       <div className="flex h-32 items-end gap-1 overflow-hidden rounded-lg border border-border/40 bg-muted/8 px-2 pt-3 pb-2">
@@ -455,10 +456,10 @@ function ResourceHistoryChart({
                 }
               />
               <TooltipPopup side="top" className="space-y-0.5 text-left">
-                <div>CPU avg {bucket.avgCpuPercent.toFixed(1)}%</div>
-                <div>CPU peak {bucket.maxCpuPercent.toFixed(1)}%</div>
-                <div>Read {formatBytes(bucket.ioReadBytes)}</div>
-                <div>Write {formatBytes(bucket.ioWriteBytes)}</div>
+                <div>CPU Mittel {bucket.avgCpuPercent.toFixed(1)} %</div>
+                <div>CPU Spitze {bucket.maxCpuPercent.toFixed(1)} %</div>
+                <div>Lesen {formatBytes(bucket.ioReadBytes)}</div>
+                <div>Schreiben {formatBytes(bucket.ioWriteBytes)}</div>
               </TooltipPopup>
             </Tooltip>
           );
@@ -490,7 +491,7 @@ function ProcessTreeName({
           type="button"
           className="cursor-pointer inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={() => onToggle(process)}
-          aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
+          aria-label={collapsed ? `${name} aufklappen` : `${name} zuklappen`}
         >
           <ChevronIcon className="size-3.5" />
         </button>
@@ -535,23 +536,58 @@ function ProcessActions({
   }
   const isSignaling = signalingKeys.has(processIdentityKey(process));
   return (
-    <div className="flex items-center justify-end gap-1.5">
-      <button
-        type="button"
-        disabled={isSignaling}
-        className="cursor-pointer text-[10px] font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"
-        onClick={() => onSignal(process, "SIGINT")}
-      >
+    <ProcessSignalButtons
+      isSignaling={isSignaling}
+      onInterrupt={() => onSignal(process, "SIGINT")}
+      onKill={() => onSignal(process, "SIGKILL")}
+    />
+  );
+}
+
+/** INT und KILL als echte Buttons; KILL wird inline in der Zeile bestätigt. */
+function ProcessSignalButtons({
+  isSignaling,
+  onInterrupt,
+  onKill,
+}: {
+  isSignaling: boolean;
+  onInterrupt: () => void;
+  onKill: () => void;
+}) {
+  const [confirmingKill, setConfirmingKill] = useState(false);
+  if (confirmingKill) {
+    return (
+      <div className="flex items-center justify-end gap-1" role="group">
+        <Button
+          size="xs"
+          variant="destructive"
+          disabled={isSignaling}
+          onClick={() => {
+            setConfirmingKill(false);
+            onKill();
+          }}
+        >
+          KILL?
+        </Button>
+        <Button size="xs" variant="outline" onClick={() => setConfirmingKill(false)}>
+          Abbrechen
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <Button size="xs" variant="outline" disabled={isSignaling} onClick={onInterrupt}>
         INT
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        size="xs"
+        variant="outline"
         disabled={isSignaling}
-        className="cursor-pointer text-[10px] font-semibold text-destructive hover:underline disabled:opacity-50"
-        onClick={() => onSignal(process, "SIGKILL")}
+        onClick={() => setConfirmingKill(true)}
       >
         KILL
-      </button>
+      </Button>
     </div>
   );
 }
@@ -606,24 +642,24 @@ function ProcessTable({
         </colgroup>
         <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-[10px] uppercase tracking-[0.08em] text-muted-foreground/65">
           <tr>
-            <th className="px-4 py-2 font-semibold sm:pl-5">Process</th>
-            <th className="px-3 py-2 font-semibold">Category</th>
+            <th className="px-4 py-2 font-semibold sm:pl-5">Prozess</th>
+            <th className="px-3 py-2 font-semibold">Kategorie</th>
             <th className="px-3 py-2 text-right font-semibold">CPU</th>
-            <th className="px-3 py-2 text-right font-semibold">CPU Time</th>
-            <th className="px-3 py-2 text-right font-semibold">Memory</th>
-            <th className="px-3 py-2 text-right font-semibold">Read/s</th>
-            <th className="px-3 py-2 text-right font-semibold">Write/s</th>
-            <th className="px-3 py-2 text-right font-semibold">Read Total</th>
-            <th className="px-3 py-2 text-right font-semibold">Write Total</th>
+            <th className="px-3 py-2 text-right font-semibold">CPU-Zeit</th>
+            <th className="px-3 py-2 text-right font-semibold">Speicher</th>
+            <th className="px-3 py-2 text-right font-semibold">Lesen/s</th>
+            <th className="px-3 py-2 text-right font-semibold">Schreiben/s</th>
+            <th className="px-3 py-2 text-right font-semibold">Lesen gesamt</th>
+            <th className="px-3 py-2 text-right font-semibold">Schreiben gesamt</th>
             <th className="px-3 py-2 text-right font-semibold">PID</th>
-            <th className="px-2 py-2 text-right font-semibold sm:pr-4">Kill</th>
+            <th className="px-2 py-2 text-right font-semibold sm:pr-4">Signal</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/50">
           {visible.length === 0 ? (
             <tr>
               <td colSpan={11} className="px-4 py-5 text-xs text-muted-foreground sm:px-5">
-                Waiting for the native process monitor.
+                Wartet auf Prozess-Monitor …
               </td>
             </tr>
           ) : null}
@@ -707,14 +743,14 @@ function HistoryProcessTable({
         </colgroup>
         <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-[10px] uppercase tracking-[0.08em] text-muted-foreground/65">
           <tr>
-            <th className="px-4 py-2 font-semibold sm:pl-5">Process</th>
-            <th className="px-3 py-2 font-semibold">Category</th>
-            <th className="px-3 py-2 text-right font-semibold">CPU Time</th>
-            <th className="px-3 py-2 text-right font-semibold">Peak CPU</th>
-            <th className="px-3 py-2 text-right font-semibold">Peak Mem</th>
-            <th className="px-3 py-2 text-right font-semibold">Read</th>
-            <th className="px-3 py-2 text-right font-semibold">Write</th>
-            <th className="px-3 py-2 text-right font-semibold">Samples</th>
+            <th className="px-4 py-2 font-semibold sm:pl-5">Prozess</th>
+            <th className="px-3 py-2 font-semibold">Kategorie</th>
+            <th className="px-3 py-2 text-right font-semibold">CPU-Zeit</th>
+            <th className="px-3 py-2 text-right font-semibold">CPU Spitze</th>
+            <th className="px-3 py-2 text-right font-semibold">Max. Speicher</th>
+            <th className="px-3 py-2 text-right font-semibold">Lesen</th>
+            <th className="px-3 py-2 text-right font-semibold">Schreiben</th>
+            <th className="px-3 py-2 text-right font-semibold">Messpunkte</th>
             <th className="px-3 py-2 text-right font-semibold sm:pr-5">PID</th>
           </tr>
         </thead>
@@ -722,7 +758,7 @@ function HistoryProcessTable({
           {processes.length === 0 ? (
             <tr>
               <td colSpan={9} className="px-4 py-5 text-xs text-muted-foreground sm:px-5">
-                No retained process samples in this window.
+                Keine Messpunkte im Zeitraum
               </td>
             </tr>
           ) : null}
@@ -791,19 +827,19 @@ function AttributionTable({ entries }: { entries: ReadonlyArray<ResourceAttribut
         </colgroup>
         <thead className="border-b border-border/60 text-[10px] uppercase tracking-[0.08em] text-muted-foreground/65">
           <tr>
-            <th className="px-4 py-2 font-semibold sm:pl-5">Component</th>
-            <th className="px-3 py-2 font-semibold">Operation</th>
-            <th className="px-3 py-2 text-right font-semibold">Logical Read</th>
-            <th className="px-3 py-2 text-right font-semibold">Logical Write</th>
-            <th className="px-3 py-2 text-right font-semibold">Count</th>
-            <th className="px-3 py-2 text-right font-semibold sm:pr-5">Time</th>
+            <th className="px-4 py-2 font-semibold sm:pl-5">Komponente</th>
+            <th className="px-3 py-2 font-semibold">Vorgang</th>
+            <th className="px-3 py-2 text-right font-semibold">Log. Lesen</th>
+            <th className="px-3 py-2 text-right font-semibold">Log. Schreiben</th>
+            <th className="px-3 py-2 text-right font-semibold">Anzahl</th>
+            <th className="px-3 py-2 text-right font-semibold sm:pr-5">Zeit</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/50">
           {entries.length === 0 ? (
             <tr>
               <td colSpan={6} className="px-4 py-5 text-xs text-muted-foreground sm:px-5">
-                No instrumented application I/O has been recorded yet.
+                Noch keine Anwendungs-I/O
               </td>
             </tr>
           ) : null}
@@ -868,27 +904,6 @@ export function ResourceTelemetryDiagnostics() {
         setSignalingKeys(next);
       };
 
-      if (signal === "SIGKILL") {
-        let confirmed = false;
-        try {
-          confirmed = await ensureLocalApi().dialogs.confirm(
-            `Send SIGKILL to process ${process.identity.pid}? This cannot be handled by the process.`,
-            { variant: "destructive" },
-          );
-        } catch (error) {
-          clearSignaling();
-          toastManager.add({
-            type: "error",
-            title: "Could not confirm signal",
-            description: error instanceof Error ? error.message : `Failed to send ${signal}.`,
-          });
-          return;
-        }
-        if (!confirmed) {
-          clearSignaling();
-          return;
-        }
-      }
       const environmentId = primaryEnvironmentIdRef.current;
       if (environmentId === undefined) {
         clearSignaling();
@@ -910,18 +925,18 @@ export function ResourceTelemetryDiagnostics() {
           if (result.value.signaled) return;
           toastManager.add({
             type: "error",
-            title: `Could not send ${signal}`,
-            description: Option.getOrElse(
-              result.value.message,
-              () => `Failed to send ${signal} to process ${process.identity.pid}.`,
-            ),
+            title: `${signal} nicht gesendet`,
+            ...Option.match(result.value.message, {
+              onNone: () => ({}),
+              onSome: (message) => ({ description: message }),
+            }),
           });
         })
         .catch((error: unknown) => {
           toastManager.add({
             type: "error",
-            title: `Could not send ${signal}`,
-            description: error instanceof Error ? error.message : `Failed to send ${signal}.`,
+            title: `${signal} nicht gesendet`,
+            ...(error instanceof Error ? { description: error.message } : {}),
           });
         })
         .finally(() => {
@@ -937,9 +952,8 @@ export function ResourceTelemetryDiagnostics() {
       .catch((error: unknown) => {
         toastManager.add({
           type: "error",
-          title: "Could not restart resource monitor",
-          description:
-            error instanceof Error ? error.message : "The resource monitor retry failed.",
+          title: "Monitor nicht neu gestartet",
+          ...(error instanceof Error ? { description: error.message } : {}),
         });
       })
       .finally(() => {
@@ -963,7 +977,7 @@ export function ResourceTelemetryDiagnostics() {
   return (
     <>
       <SettingsSection
-        title="Resource monitor"
+        title="Ressourcen"
         icon={<ActivityIcon className="size-4 text-muted-foreground" />}
         headerAction={
           <div className="flex items-center gap-2">
@@ -980,7 +994,7 @@ export function ResourceTelemetryDiagnostics() {
                     className="size-5 rounded-sm p-0"
                     disabled={telemetry.isPending}
                     onClick={telemetry.refresh}
-                    aria-label="Refresh resource telemetry"
+                    aria-label="Ressourcen aktualisieren"
                   >
                     <RefreshCwIcon
                       className={cn("size-3", telemetry.isPending && "animate-spin")}
@@ -988,61 +1002,53 @@ export function ResourceTelemetryDiagnostics() {
                   </Button>
                 }
               />
-              <TooltipPopup side="top">Refresh telemetry snapshot</TooltipPopup>
+              <TooltipPopup side="top">Aktualisieren</TooltipPopup>
             </Tooltip>
           </div>
         }
       >
         <div className="@container/resource-telemetry overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03),0_8px_30px_rgb(0_0_0/0.035)]">
           <div className="flex flex-col gap-3 border-b border-border/60 bg-linear-to-r from-muted/45 via-muted/20 to-transparent px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-                Workjet system footprint
-              </div>
-              <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
-                Live native counters for the server, providers, terminals, desktop processes, and
-                the monitor itself.
-              </p>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+              Workjet gesamt
             </div>
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground/65">
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              Sampling every {snapshot ? formatSampleInterval(snapshot.sampleIntervalMs) : "..."}
+              {snapshot ? `Alle ${formatSampleInterval(snapshot.sampleIntervalMs)}` : "—"}
             </div>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y divide-border/55 @[46rem]/resource-telemetry:grid-cols-3">
             <IconStat
               icon={<CpuIcon className="size-3.5" />}
-              label="Current CPU"
+              label="CPU aktuell"
               value={allT3 ? `${allT3.currentCpuPercent.toFixed(1)}%` : "..."}
-              detail={allT3 ? `${formatCpuTime(allT3.cpuTimeMs)} observed CPU time` : undefined}
+              detail={allT3 ? `${formatCpuTime(allT3.cpuTimeMs)} CPU-Zeit` : undefined}
             />
             <IconStat
               icon={<MemoryStickIcon className="size-3.5" />}
-              label="Resident memory"
+              label="Speicher"
               value={allT3 ? formatBytes(allT3.currentRssBytes) : "..."}
-              detail={
-                allT3 ? `${formatBytes(allT3.peakRssBytes)} combined process peaks` : undefined
-              }
+              detail={allT3 ? `${formatBytes(allT3.peakRssBytes)} Spitzen gesamt` : undefined}
             />
             <IconStat
               icon={<ActivityIcon className="size-3.5" />}
-              label="Process count"
+              label="Prozesse"
               value={allT3 ? String(allT3.processCount) : "..."}
               detail={
-                allT3 ? `${allT3.processStarts} starts · ${allT3.processExits} exits` : undefined
+                allT3 ? `${allT3.processStarts} Starts · ${allT3.processExits} Enden` : undefined
               }
             />
             <IconStat
               icon={<HardDriveIcon className="size-3.5" />}
-              label="Read throughput"
+              label="Lesen"
               value={allT3 ? formatRate(allT3.ioReadBytesPerSecond) : "..."}
-              detail={allT3 ? `${formatBytes(allT3.ioReadBytes)} observed` : undefined}
+              detail={allT3 ? `${formatBytes(allT3.ioReadBytes)} gesamt` : undefined}
             />
             <IconStat
               icon={<DatabaseIcon className="size-3.5" />}
-              label="Write throughput"
+              label="Schreiben"
               value={allT3 ? formatRate(allT3.ioWriteBytesPerSecond) : "..."}
-              detail={allT3 ? `${formatBytes(allT3.ioWriteBytes)} observed` : undefined}
+              detail={allT3 ? `${formatBytes(allT3.ioWriteBytes)} gesamt` : undefined}
               tone={
                 allT3 && allT3.ioWriteBytesPerSecond >= 10 * 1_024 * 1_024
                   ? "danger"
@@ -1053,11 +1059,9 @@ export function ResourceTelemetryDiagnostics() {
             />
             <IconStat
               icon={<GaugeIcon className="size-3.5" />}
-              label="CPU speed limit"
-              value={
-                snapshot ? (speedLimit === null ? "Unknown" : `${speedLimit.toFixed(0)}%`) : "..."
-              }
-              detail={snapshot ? `${snapshot.power.thermalState} thermal state` : undefined}
+              label="CPU-Drossel"
+              value={snapshot ? (speedLimit === null ? "—" : `${speedLimit.toFixed(0)}%`) : "..."}
+              detail={snapshot ? `${snapshot.power.thermalState}` : undefined}
               tone={speedLimit !== null && speedLimit < 80 ? "warning" : "default"}
             />
           </div>
@@ -1080,7 +1084,7 @@ export function ResourceTelemetryDiagnostics() {
                 aggregate={snapshot.groups.electron}
               />
               <AggregateCard
-                label="Monitor overhead"
+                label="Monitor-Last"
                 accentClass="bg-amber-500/80"
                 aggregate={snapshot.groups.monitor}
               />
@@ -1090,13 +1094,13 @@ export function ResourceTelemetryDiagnostics() {
       </SettingsSection>
 
       <SettingsSection
-        title="Host & collection"
+        title="Host und Erfassung"
         icon={<GaugeIcon className="size-4 text-muted-foreground" />}
         headerAction={
           collectorNeedsRetry ? (
             <Button size="xs" variant="outline" disabled={isRetrying} onClick={retryCollector}>
               <RotateCcwIcon className={cn("size-3", isRetrying && "animate-spin")} />
-              Retry monitor
+              Erneut versuchen
             </Button>
           ) : null
         }
@@ -1107,29 +1111,29 @@ export function ResourceTelemetryDiagnostics() {
               <span className="flex size-6 items-center justify-center rounded-md bg-muted/60">
                 <BatteryIcon className="size-3.5" />
               </span>
-              Host state
+              Host-Zustand
             </div>
             {hasHostPowerSignal && snapshot ? (
               <>
                 <DetailRow
-                  label="Power source"
+                  label="Stromquelle"
                   value={booleanStateLabel(snapshot.power.onBattery, {
-                    true: "Battery",
-                    false: "External power",
+                    true: "Akku",
+                    false: "Netzteil",
                   })}
                 />
                 <DetailRow
-                  label="Low power mode"
+                  label="Energiesparen"
                   value={booleanStateLabel(snapshot.power.lowPowerMode, {
-                    true: "Enabled",
-                    false: "Disabled",
+                    true: "An",
+                    false: "Aus",
                   })}
                 />
                 <DetailRow
-                  label="Idle"
+                  label="Leerlauf"
                   value={`${booleanStateLabel(snapshot.power.idle, {
-                    true: "Idle",
-                    false: "Active",
+                    true: "Leerlauf",
+                    false: "Aktiv",
                   })}${
                     snapshot.power.idleSeconds === null
                       ? ""
@@ -1137,18 +1141,18 @@ export function ResourceTelemetryDiagnostics() {
                   }`}
                 />
                 <DetailRow
-                  label="Session"
+                  label="Sitzung"
                   value={
                     snapshot.power.suspended
-                      ? "Suspended"
+                      ? "Ruhezustand"
                       : booleanStateLabel(snapshot.power.locked, {
-                          true: "Locked",
-                          false: "Unlocked",
+                          true: "Gesperrt",
+                          false: "Entsperrt",
                         })
                   }
                 />
                 <DetailRow
-                  label="Thermal"
+                  label="Temperatur"
                   value={snapshot.power.thermalState}
                   valueClassName={
                     snapshot.power.thermalState === "serious" ||
@@ -1161,12 +1165,8 @@ export function ResourceTelemetryDiagnostics() {
             ) : (
               <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-4 py-5">
                 <div className="text-[13px] font-medium text-foreground">
-                  Desktop host signals not connected
+                  Desktop-Signale nicht verbunden
                 </div>
-                <p className="mt-1.5 max-w-sm text-[11px] leading-relaxed text-muted-foreground/70">
-                  Power, idle, lock, and thermal state are supplied by the desktop host. Process
-                  telemetry remains fully active in this browser session.
-                </p>
               </div>
             )}
           </div>
@@ -1175,22 +1175,22 @@ export function ResourceTelemetryDiagnostics() {
               <span className="flex size-6 items-center justify-center rounded-md bg-muted/60">
                 <GaugeIcon className="size-3.5" />
               </span>
-              Collection health
+              Erfassung
             </div>
             {snapshot ? (
               <>
-                <HealthSource label="Native process monitor" health={snapshot.health.native} />
-                <HealthSource label="Electron main process" health={snapshot.health.desktop} />
+                <HealthSource label="Prozess-Monitor" health={snapshot.health.native} />
+                <HealthSource label="Electron-Hauptprozess" health={snapshot.health.desktop} />
                 <DetailRow
-                  label="Collection time"
+                  label="Erfassungszeit"
                   value={formatDurationMicros(snapshot.health.collectionDurationMicros)}
                 />
                 <DetailRow
-                  label="Process scan"
-                  value={`${snapshot.health.retainedProcessCount}/${snapshot.health.scannedProcessCount} retained`}
+                  label="Prozess-Scan"
+                  value={`${snapshot.health.retainedProcessCount}/${snapshot.health.scannedProcessCount} behalten`}
                 />
                 <DetailRow
-                  label="Inaccessible"
+                  label="Unzugänglich"
                   value={String(snapshot.health.inaccessibleProcessCount)}
                   valueClassName={
                     snapshot.health.inaccessibleProcessCount > 0
@@ -1209,19 +1209,17 @@ export function ResourceTelemetryDiagnostics() {
                       })}`,
                   })}
                 />
-                <DetailRow label="Restarts" value={String(snapshot.health.restartCount)} />
+                <DetailRow label="Neustarts" value={String(snapshot.health.restartCount)} />
               </>
             ) : (
-              <div className="py-4 text-xs text-muted-foreground">
-                Waiting for collector health.
-              </div>
+              <div className="py-4 text-xs text-muted-foreground">Wartet auf Erfassung …</div>
             )}
           </div>
         </div>
       </SettingsSection>
 
       <SettingsSection
-        title="Resource timeline"
+        title="Ressourcenverlauf"
         icon={<HardDriveIcon className="size-4 text-muted-foreground" />}
         headerAction={
           <div className="flex items-center gap-2">
@@ -1232,7 +1230,7 @@ export function ResourceTelemetryDiagnostics() {
               className="size-5 rounded-sm p-0"
               disabled={history.isPending}
               onClick={history.refresh}
-              aria-label="Refresh resource history"
+              aria-label="Verlauf aktualisieren"
             >
               <RefreshCwIcon className={cn("size-3", history.isPending && "animate-spin")} />
             </Button>
@@ -1252,12 +1250,12 @@ export function ResourceTelemetryDiagnostics() {
       </SettingsSection>
 
       <SettingsSection
-        title="Live process tree"
+        title="Prozessbaum"
         icon={<CpuIcon className="size-4 text-muted-foreground" />}
         headerAction={
           snapshot ? (
             <span className="text-[10px] text-muted-foreground/55">
-              Identity: <span className="font-mono">PID + start time</span>
+              Kennung: <span className="font-mono">PID + Startzeit</span>
             </span>
           ) : null
         }
@@ -1272,10 +1270,10 @@ export function ResourceTelemetryDiagnostics() {
       </SettingsSection>
 
       <SettingsSection
-        title="Instrumented application I/O"
+        title="Anwendungs-I/O"
         icon={<DatabaseIcon className="size-4 text-muted-foreground" />}
         headerAction={
-          <span className="text-[10px] text-muted-foreground/55">Logical bytes by operation</span>
+          <span className="text-[10px] text-muted-foreground/55">Logische Bytes je Vorgang</span>
         }
       >
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03)]">

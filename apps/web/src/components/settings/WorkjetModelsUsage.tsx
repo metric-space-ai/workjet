@@ -9,10 +9,12 @@ import { RefreshCwIcon } from "lucide-react";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
+import { EmptyLoading } from "../ui/empty";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const number = (value: number) =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
-const modelName = (value: string | null) => value ?? "Unknown model";
+const modelName = (value: string | null) => value ?? "Unbekanntes Modell";
 const color = (model: string | null) => {
   let hash = 0;
   for (const character of model ?? "unknown")
@@ -54,8 +56,8 @@ function Tokens({
     <span
       title={
         value === null
-          ? "Not reported by the provider"
-          : `Measured in ${number(count)} of ${number(counters.requests)} requests`
+          ? "Vom Anbieter nicht gemeldet"
+          : `Gemessen in ${number(count)} von ${number(counters.requests)} Anfragen`
       }
     >
       {value === null ? "—" : `${count < counters.requests ? "≥ " : ""}${number(value)}`}
@@ -94,59 +96,63 @@ export function WorkjetModelsUsageView({
   return (
     <section
       className="mt-8 space-y-4 border-t border-border/60 pt-5"
-      aria-label="Model usage"
+      aria-label="Verbrauch"
       data-testid="models-usage"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Model usage</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Requests through this hub ·{" "}
-            {usage ? `${number(usage.totals.requests)} requests` : "Loading usage"}
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-lg font-semibold">Verbrauch</h2>
+          <span className="text-xs text-muted-foreground">
+            {usage ? `${number(usage.totals.requests)} Anfragen` : "—"}
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-md bg-muted/50 p-0.5" aria-label="Period">
+          <div className="flex gap-1" role="group" aria-label="Zeitraum">
             {([7, 30] as const).map((range) => (
-              <button
+              <Button
                 key={range}
-                type="button"
+                size="xs"
+                variant={days === range ? "default" : "outline"}
                 aria-pressed={days === range}
                 onClick={() => onDaysChange(range)}
                 data-workjet-action={`models.usage.${range}`}
-                className={`rounded-sm px-3 py-1 text-xs ${days === range ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
               >
-                {range} days
-              </button>
+                {range} Tage
+              </Button>
             ))}
           </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Refresh usage statistics"
-            disabled={pending}
-            onClick={onRefresh}
-          >
-            <RefreshCwIcon className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Aktualisieren"
+                  disabled={pending}
+                  onClick={onRefresh}
+                />
+              }
+            >
+              <RefreshCwIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipPopup>Aktualisieren</TooltipPopup>
+          </Tooltip>
         </div>
       </div>
       {error ? (
-        <p role="alert" className="flex items-center gap-3 text-sm text-destructive">
-          Could not load usage data.
-          <button className="underline underline-offset-2" onClick={onRefresh}>
-            Try again
-          </button>
-        </p>
+        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+          <span>Verbrauch nicht geladen.</span>
+          <Button size="xs" variant="outline" onClick={onRefresh}>
+            Erneut versuchen
+          </Button>
+        </div>
       ) : usage === null ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading usage data …
-        </p>
+        <EmptyLoading className="py-4" title="Verbrauch laden …" onRetry={onRefresh} />
       ) : usage.totals.requests === 0 ? (
         <p className="py-5 text-sm text-muted-foreground">
           {usage.availability === "not-collected-yet"
-            ? "No usage yet. New requests through this hub appear here after the first request."
-            : "No requests were recorded during this period."}
+            ? "Noch keine Anfragen"
+            : "Keine Anfragen im Zeitraum"}
         </p>
       ) : (
         <>
@@ -155,12 +161,12 @@ export function WorkjetModelsUsageView({
               <span>
                 {dateLabel(usage.startDate)} – {dateLabel(usage.endDate)}
               </span>
-              <span>Requests per day</span>
+              <span>Anfragen pro Tag</span>
             </div>
             <svg
               viewBox="0 0 760 190"
               role="img"
-              aria-label={`Daily model requests over ${days} days`}
+              aria-label={`Anfragen pro Tag, ${days} Tage`}
               className="w-full overflow-visible"
             >
               {[0, 0.5, 1].map((fraction) => (
@@ -197,7 +203,7 @@ export function WorkjetModelsUsageView({
                 }));
                 if (hasOther)
                   segments.push({
-                    model: "Other models",
+                    model: "Weitere Modelle",
                     count: [...day.models]
                       .filter(([model]) => !chartModels.includes(model))
                       .reduce((sum, [, count]) => sum + count, 0),
@@ -217,7 +223,7 @@ export function WorkjetModelsUsageView({
                           height={height}
                           fill={segment.fill}
                         >
-                          <title>{`${dateLabel(day.date)} · ${modelName(segment.model)} · ${number(segment.count)} requests`}</title>
+                          <title>{`${dateLabel(day.date)} · ${modelName(segment.model)} · ${number(segment.count)} Anfragen`}</title>
                         </rect>
                       );
                     })}
@@ -244,32 +250,24 @@ export function WorkjetModelsUsageView({
                   {modelName(model)}
                 </span>
               ))}
-              {hasOther && <span className="text-muted-foreground">Other models</span>}
+              {hasOther && <span className="text-muted-foreground">Weitere Modelle</span>}
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs tabular-nums">
-              <caption className="sr-only">
-                Model usage across all providers, sorted by request count
-              </caption>
+              <caption className="sr-only">Verbrauch je Modell</caption>
               <thead className="text-muted-foreground">
                 <tr>
-                  {[
-                    "Model",
-                    "requests",
-                    "Share",
-                    "Errors",
-                    "Input tokens",
-                    "Output tokens",
-                    "Cache reads",
-                  ].map((label, index) => (
-                    <th
-                      key={label}
-                      className={`pb-2 font-normal ${index === 0 ? "pr-4" : "px-2 text-right"}`}
-                    >
-                      {label}
-                    </th>
-                  ))}
+                  {["Modell", "Anfragen", "Anteil", "Fehler", "Eingabe", "Ausgabe", "Cache"].map(
+                    (label, index) => (
+                      <th
+                        key={label}
+                        className={`pb-2 font-normal ${index === 0 ? "pr-4" : "px-2 text-right"}`}
+                      >
+                        {label}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -314,12 +312,6 @@ export function WorkjetModelsUsageView({
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Token counts come from reported responses. ≥ marks partially measured values; — means
-            unavailable. Requests before collection began are not included.
-            {usage.totals.responseModelRequests < usage.totals.requests &&
-              " When a response does not provide a reliable model ID, the requested model ID is counted."}
-          </p>
         </>
       )}
     </section>

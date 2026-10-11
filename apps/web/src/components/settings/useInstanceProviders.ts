@@ -102,8 +102,7 @@ export function useInstanceProviders(instanceId: string | null) {
                   ? input.accountId
                   : null,
             ...(failure instanceof WorkjetProjectControlError ? { failure: failure.failure } : {}),
-            message:
-              failure instanceof Error ? failure.message : "Instance accounts could not be read.",
+            message: failure instanceof Error ? failure.message : "Konten nicht lesbar.",
           });
       } finally {
         if (controller.current === active && !active.signal.aborted && alive.current)
@@ -167,7 +166,7 @@ export function useInstanceProviders(instanceId: string | null) {
           setError({
             accountId,
             ...(failure instanceof WorkjetProjectControlError ? { failure: failure.failure } : {}),
-            message: failure instanceof Error ? failure.message : "Model check unavailable.",
+            message: failure instanceof Error ? failure.message : "Prüfung nicht verfügbar.",
           });
       } finally {
         if (controller.current === active && !active.signal.aborted && alive.current)

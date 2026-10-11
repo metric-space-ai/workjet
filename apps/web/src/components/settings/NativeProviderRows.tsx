@@ -51,12 +51,12 @@ function ProviderModels({
     <div className="col-span-full min-w-0 sm:col-span-1" role="cell">
       <Input
         nativeInput
-        aria-label={`Models for ${provider} on CTOX`}
+        aria-label={`Modelle für ${provider}`}
         className="h-7 text-xs"
         value={draft}
         disabled={busy}
         list={listId}
-        placeholder="Choose from the live account list"
+        placeholder="Modelle wählen …"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => {
           if (draft !== saved) select([...new Set(draft.split(/[\s,;]+/).filter(Boolean))]);
@@ -91,39 +91,39 @@ function ModelCheckStatus({
   readonly check: () => void;
 }) {
   const title = !supported
-    ? "Hi checks are not yet available for this provider on this CTOX instance."
+    ? "Prüfung nicht verfügbar"
     : probe
       ? (probe.status === "ok"
-          ? "Hi check passed"
-          : (probe.failure?.replaceAll("_", " ") ?? "Check unavailable")) +
+          ? "Prüfung bestanden"
+          : (probe.failure?.replaceAll("_", " ") ?? "Prüfung nicht verfügbar")) +
         " · " +
         probe.elapsedMs +
         " ms · " +
-        new Date(probe.checkedAtMs).toLocaleString() +
+        new Date(probe.checkedAtMs).toLocaleString("de-DE") +
         (probe.httpStatus === null ? "" : " · HTTP " + probe.httpStatus) +
         (probe.retryAtMs === null
           ? ""
-          : " · Gateway retry after " + new Date(probe.retryAtMs).toLocaleString())
-      : "Inference not checked. Check this model.";
+          : " · Neuversuch ab " + new Date(probe.retryAtMs).toLocaleString("de-DE"))
+      : "Nicht geprüft";
   return (
     <button
       type="button"
       disabled={disabled}
       title={title}
-      aria-label={`Check ${model}`}
+      aria-label={`${model} prüfen`}
       onClick={check}
       className="inline-flex shrink-0 items-center p-0.5 disabled:opacity-50"
     >
       {probe?.status === "ok" ? (
-        <CheckIcon aria-label="Model check passed" className="size-3 text-emerald-500" />
+        <CheckIcon aria-label="Prüfung bestanden" className="size-3 text-emerald-500" />
       ) : probe?.status === "failed" ? (
         <XIcon
-          aria-label={`Model check failed: ${probe.failure}`}
+          aria-label={`Prüfung fehlgeschlagen: ${probe.failure}`}
           className="size-3 text-destructive"
         />
       ) : (
         <CircleDashedIcon
-          aria-label={probe ? `Model check unavailable: ${probe.failure}` : "Inference not checked"}
+          aria-label={probe ? `Prüfung nicht verfügbar: ${probe.failure}` : "Nicht geprüft"}
           className="size-3 text-muted-foreground"
         />
       )}
@@ -139,6 +139,7 @@ function NativeAccountRow({
   run,
   check,
   error,
+  ordinal,
 }: {
   readonly account: WorkjetNativeProviderAccount;
   readonly registry: WorkjetNativeProviderRegistry;
@@ -147,8 +148,11 @@ function NativeAccountRow({
   readonly run: ReturnType<typeof useInstanceProviders>["run"];
   readonly check: ReturnType<typeof useInstanceProviders>["check"];
   readonly error: string | undefined;
+  /** 1-based position in the provider group; shown instead of the raw account id. */
+  readonly ordinal: number;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const accountName = `Konto ${ordinal}`;
   useEffect(() => setConfirmRemove(false), [account.revision]);
   const selected =
     registry.providers.find((entry) => entry.provider === account.provider)?.selection ?? [];
@@ -158,8 +162,8 @@ function NativeAccountRow({
   return (
     <>
       <div role="row" className={columns + " min-h-12 py-1.5"}>
-        <div role="cell" className="order-1 min-w-0 text-xs" title={account.id}>
-          <span>Account {account.id.slice(0, 8)}</span>
+        <div role="cell" className="order-1 min-w-0 text-xs">
+          <span>{accountName}</span>
           <p className="text-[11px] text-muted-foreground">CTOX · {label}</p>
         </div>
         <div
@@ -174,7 +178,7 @@ function NativeAccountRow({
               <label className="inline-flex min-w-0 items-center gap-1">
                 <input
                   type="checkbox"
-                  aria-label={`Use ${model} for instance account ${account.id}`}
+                  aria-label={`${model} für ${accountName}`}
                   checked={!account.excludedModels.includes(model)}
                   disabled={busy || !account.modelCatalog.models.includes(model)}
                   onChange={(event) => {
@@ -209,9 +213,7 @@ function NativeAccountRow({
               />
             </div>
           ))}
-          {selected.length === 0 && (
-            <span className="text-xs text-muted-foreground">Choose shared models above</span>
-          )}
+          {selected.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
           {account.modelChecks
             ?.filter((probe) => probe.status !== "ok" && selected.includes(probe.modelId))
             .map((probe) => (
@@ -224,13 +226,13 @@ function NativeAccountRow({
               >
                 {probe.modelId}: {probe.failure?.replaceAll("_", " ")}
                 {probe.failure === "auth"
-                  ? ". Reconnect this account on its CTOX instance, then check again."
+                  ? " · Konto neu verbinden"
                   : probe.failure === "model_not_found"
-                    ? ". Refresh the live model list and choose a listed model."
+                    ? " · Modellliste neu laden"
                     : probe.failure === "gateway_cooldown" && probe.retryAtMs !== null
-                      ? ". Gateway retry after " + new Date(probe.retryAtMs).toLocaleString()
+                      ? " · Neuversuch ab " + new Date(probe.retryAtMs).toLocaleString("de-DE")
                       : probe.source === "gateway"
-                        ? ". Check the instance connection and try again."
+                        ? " · Verbindung prüfen"
                         : ""}
               </span>
             ))}
@@ -241,7 +243,7 @@ function NativeAccountRow({
           )}
           {attempt?.success === false && (
             <span className="w-full text-[11px] text-destructive">
-              Live catalog: {attempt.failure ?? "unavailable"}
+              Modellliste: {attempt.failure ?? "nicht verfügbar"}
               {attempt.httpStatus ? ` · HTTP ${attempt.httpStatus}` : ""}
             </span>
           )}
@@ -255,12 +257,12 @@ function NativeAccountRow({
           {canEnable ? (
             <label
               className="relative inline-flex cursor-pointer items-center"
-              title={account.enabled ? "Disable this CTOX account" : "Enable this CTOX account"}
+              title={account.enabled ? "Konto deaktivieren" : "Konto aktivieren"}
             >
               <input
                 type="checkbox"
                 role="switch"
-                aria-label={`Use instance account ${account.id}`}
+                aria-label={`${accountName} aktiv`}
                 data-workjet-action={`models.instance.account.${account.id}.enabled`}
                 checked={account.enabled}
                 disabled={busy || confirmRemove}
@@ -290,13 +292,9 @@ function NativeAccountRow({
           ) : (
             <span
               className="text-[11px]"
-              title={
-                account.controls
-                  ? "Activation changes are not available for this account."
-                  : "Update CTOX to manage this account here."
-              }
+              title={account.controls ? "Nicht änderbar" : "CTOX aktualisieren"}
             >
-              {account.enabled ? "On" : "Off"}
+              {account.enabled ? "An" : "Aus"}
             </span>
           )}
         </div>
@@ -305,7 +303,7 @@ function NativeAccountRow({
             variant="ghost"
             size="icon-xs"
             disabled={busy || !account.enabled}
-            aria-label={`Refresh live models for instance account ${account.id}`}
+            aria-label={`Modelle von ${accountName} neu laden`}
             onClick={() => {
               void run({
                 action: "instance.providers.observe",
@@ -320,13 +318,13 @@ function NativeAccountRow({
             variant="ghost"
             size="icon-xs"
             disabled={busy || !canRemove}
-            aria-label={`Permanently remove instance account ${account.id}`}
+            aria-label={`${accountName} entfernen`}
             title={
               canRemove
-                ? "Remove this account and its credentials"
+                ? "Konto entfernen"
                 : account.controls
-                  ? "Removal is not available for this account."
-                  : "Update CTOX to remove this account here."
+                  ? "Entfernen nicht möglich"
+                  : "CTOX aktualisieren"
             }
             data-workjet-action={`models.instance.account.${account.id}.remove-start`}
             onClick={() => setConfirmRemove(true)}
@@ -338,23 +336,22 @@ function NativeAccountRow({
       {confirmRemove && canRemove && (
         <div role="row" className="flex flex-wrap items-center gap-2 py-1.5 text-xs">
           <span role="cell" className="min-w-0 flex-1">
-            Remove account {account.id.slice(0, 8)}, its credentials and account model settings
-            permanently?
+            {accountName} endgültig entfernen?
           </span>
           <div role="cell" className="flex gap-1">
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               disabled={busy}
               onClick={() => setConfirmRemove(false)}
             >
-              Cancel
+              Abbrechen
             </Button>
             <Button
               variant="destructive"
               size="sm"
               disabled={busy}
-              aria-label={`Confirm permanent removal of instance account ${account.id}`}
+              aria-label={`Entfernen von ${accountName} bestätigen`}
               data-workjet-action={`models.instance.account.${account.id}.remove-confirm`}
               onClick={async () => {
                 const result = await run({
@@ -366,7 +363,7 @@ function NativeAccountRow({
                 if (result) setConfirmRemove(false);
               }}
             >
-              Remove account
+              Entfernen
             </Button>
           </div>
         </div>
@@ -397,7 +394,7 @@ export function NativeProviderRowsView({
   if (state.connectionFailure) return null;
   const providers = [...new Set(state.registry?.accounts.map((account) => account.provider) ?? [])];
   return (
-    <div role="rowgroup" aria-label={`CTOX provider accounts on ${label}`}>
+    <div role="rowgroup" aria-label={`Konten auf ${label}`}>
       {state.error && !state.errorAccountId && (
         <p role="alert" className="py-1 text-xs text-destructive">
           {state.error}
@@ -426,7 +423,7 @@ function NativeProviderGroup({
   const ProviderIcon = knownProvider ? WORKJET_GATEWAY_PROVIDER_ICONS[knownProvider] : undefined;
   const providerLabel = knownProvider
     ? WORKJET_GATEWAY_PROVIDER_LABELS[knownProvider]
-    : provider || "CTOX accounts";
+    : provider || "CTOX-Konten";
   const checksSupported = provider === "claude";
   const checkAll = async () => {
     if (!checksSupported) return;
@@ -458,7 +455,7 @@ function NativeProviderGroup({
   return (
     <div
       role="rowgroup"
-      aria-label={`${providerLabel} accounts on ${label}`}
+      aria-label={`${providerLabel}-Konten auf ${label}`}
       className="border-b border-border/50"
     >
       <div role="row" className={columns + " min-h-9 py-1.5"}>
@@ -473,10 +470,10 @@ function NativeProviderGroup({
           role="cell"
           className="order-last col-span-full flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground sm:order-none sm:col-span-1"
         >
-          <span>{registry ? `${accounts.length} instance accounts` : "Accounts not loaded"}</span>
+          <span>{registry ? `${accounts.length} Konten` : "Konten nicht geladen"}</span>
           <Button
             size="xs"
-            variant="ghost"
+            variant="outline"
             disabled={
               !checksSupported ||
               state.busy ||
@@ -493,7 +490,7 @@ function NativeProviderGroup({
               void checkAll();
             }}
           >
-            {checkingAll ? "Checking…" : "Check all"}
+            {checkingAll ? "Prüft …" : "Alle prüfen"}
           </Button>
         </div>
         <div role="cell" className="hidden sm:block" />
@@ -503,7 +500,7 @@ function NativeProviderGroup({
             variant="ghost"
             size="icon-xs"
             disabled={state.busy}
-            aria-label={`Refresh CTOX accounts on ${label}`}
+            aria-label={`Konten auf ${label} neu laden`}
             onClick={() => {
               void refresh();
             }}
@@ -516,7 +513,7 @@ function NativeProviderGroup({
       {registry && accounts.length > 0 && (
         <div role="row" className={columns + " py-1"}>
           <div role="cell" className="col-span-full text-xs text-muted-foreground sm:col-span-1">
-            Shared models
+            Gemeinsame Modelle
           </div>
           <ProviderModels
             provider={provider}
@@ -556,9 +553,10 @@ function NativeProviderGroup({
         </div>
       )}
       {registry &&
-        accounts.map((account) => (
+        accounts.map((account, index) => (
           <NativeAccountRow
             key={account.id}
+            ordinal={index + 1}
             account={account}
             registry={registry}
             label={label}

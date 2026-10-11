@@ -63,12 +63,14 @@ describe("WorkjetGatewayModelRoutes", () => {
   it("shows the resolved upstream per model, naming the route or pool it came from", () => {
     const markup = renderToStaticMarkup(<WorkjetGatewayModelRoutes catalog={catalog} />);
 
-    expect(markup).toContain("Gateway model routing");
+    expect(markup).toContain("Modell-Routing");
     // A route wins over the account catalog, and the row says which route.
-    expect(markup).toContain("codex_route");
+    expect(markup).toContain("Route Codex route");
+    expect(markup).not.toContain("codex_route");
     expect(markup).toContain("Z.ai (GLM)");
     // The pool fallback names the pool.
-    expect(markup).toContain("pool zai_pool");
+    expect(markup).toContain("Pool Z.ai pool");
+    expect(markup).not.toContain("zai_pool");
   });
 
   it("surfaces an unresolvable model as its typed reason rather than hiding it", () => {
@@ -77,14 +79,14 @@ describe("WorkjetGatewayModelRoutes", () => {
     // `shared-model` is served by two providers with no route to decide; a
     // session pinned to it fails at start, so the page must not imply it works.
     expect(markup).toContain("shared-model");
-    expect(markup).toContain("model-ambiguous");
+    expect(markup).toContain("Modell mehrdeutig");
   });
 
-  it("explains the empty case instead of rendering a blank section", () => {
+  it("names the empty case instead of rendering a blank section", () => {
     const markup = renderToStaticMarkup(<WorkjetGatewayModelRoutes catalog={null} />);
 
-    expect(markup).toContain("No models yet");
-    expect(markup).toContain("default provider");
+    expect(markup).toContain("Keine Modelle");
+    expect(markup).toContain("Standardanbieter");
   });
 
   it("renders no editing control — this view is read-only", () => {

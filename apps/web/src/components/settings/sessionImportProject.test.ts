@@ -82,7 +82,7 @@ describe("session import destination preparation", () => {
         localProjects: [],
         port: deps,
       }),
-    ).rejects.toThrow("no longer available");
+    ).rejects.toThrow("nicht mehr verfügbar");
     expect(deps.createLocalProject).not.toHaveBeenCalled();
   });
   it("stops after an instance switch during the project listing", async () => {
@@ -103,7 +103,7 @@ describe("session import destination preparation", () => {
         localProjects: [],
         port: deps,
       }),
-    ).rejects.toThrow("changed");
+    ).rejects.toThrow("gewechselt");
     expect(deps.createLocalProject).not.toHaveBeenCalled();
     expect(deps.confirmLogicalProject).not.toHaveBeenCalled();
   });
@@ -243,7 +243,7 @@ describe("session import destination preparation", () => {
         ],
         port: deps,
       }),
-    ).rejects.toThrow("binding was not confirmed");
+    ).rejects.toThrow("nicht bestätigt");
     expect(deps.confirmLogicalProject).not.toHaveBeenCalled();
   });
   it("stops native confirmation if the active context changes during folder binding", async () => {
@@ -266,7 +266,7 @@ describe("session import destination preparation", () => {
         ],
         port: deps,
       }),
-    ).rejects.toThrow("changed");
+    ).rejects.toThrow("gewechselt");
     expect(deps.confirmLogicalProject).not.toHaveBeenCalled();
   });
   it("retains the local binding when native confirmation fails and reuses it on retry", async () => {

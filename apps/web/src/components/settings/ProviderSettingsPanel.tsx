@@ -51,7 +51,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useEnvironmentSessionState } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { getRelativeTimeState } from "../../timestampFormat";
 import {
   ConnectionStatusDot,
   connectionPhaseDotClassName,
@@ -74,7 +73,8 @@ import {
 } from "../ui/number-field";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { AddProviderInstancePanel } from "./AddProviderInstanceDialog";
+import { providerCheckedAgeLabel } from "./providerStatus";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
@@ -86,7 +86,6 @@ import {
   PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
 import {
-  PolicyTooltip,
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
@@ -157,27 +156,46 @@ export function shouldAutoRefreshProviders(
 
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
   useRelativeTimeTick();
-  const lastCheckedRelative = getRelativeTimeState(lastCheckedAt);
-
-  if (lastCheckedRelative.status === "missing") {
-    return null;
-  }
-
-  if (lastCheckedRelative.status === "invalid") {
-    return <span className="text-[11px] text-muted-foreground/50">Checked unavailable</span>;
-  }
-
+  if (lastCheckedAt === null) return null;
+  const label = providerCheckedAgeLabel(lastCheckedAt);
   return (
     <span className="text-[11px] text-muted-foreground/60">
-      {lastCheckedRelative.suffix ? (
-        <>
-          Checked <span className="font-mono tabular-nums">{lastCheckedRelative.value}</span>{" "}
-          {lastCheckedRelative.suffix}
-        </>
-      ) : (
-        <>Checked {lastCheckedRelative.value}</>
-      )}
+      {label.charAt(0).toUpperCase() + label.slice(1)}
     </span>
+  );
+}
+
+/** Ein Laden endet (UI-Vertrag §1.3): nach 10 s Statuszeile mit Wiederholen. */
+export const PROVIDER_LOADING_TIMEOUT_MS = 10_000;
+
+function LoadingStatusRow({
+  title,
+  slowStatus,
+  onRetry,
+}: {
+  readonly title: string;
+  readonly slowStatus: string;
+  readonly onRetry: () => void;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), PROVIDER_LOADING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <SettingsRow
+      title={slow ? slowStatus : title}
+      control={
+        slow ? (
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <RefreshCwIcon className="size-3.5" />
+            Erneut versuchen
+          </Button>
+        ) : (
+          <LoaderIcon className="size-4 animate-spin text-muted-foreground" aria-hidden />
+        )
+      }
+    />
   );
 }
 
@@ -190,38 +208,40 @@ function providerEnvironmentIcon(environment: EnvironmentPresentation) {
 }
 
 function providerEnvironmentDetail(environment: EnvironmentPresentation): string {
-  if (environment.entry.target._tag === "PrimaryConnectionTarget") return "Primary device";
+  if (environment.entry.target._tag === "PrimaryConnectionTarget") return "Dieser Rechner";
   if (environment.relayManaged) return "Workjet Connect";
   if (environment.entry.target._tag === "SshConnectionTarget") return "SSH";
-  if (isDesktopLocalConnectionTarget(environment.entry.target)) return "Local device";
-  return environment.displayUrl ?? "Remote device";
+  if (isDesktopLocalConnectionTarget(environment.entry.target)) return "Lokaler Rechner";
+  return "Entfernter Rechner";
 }
 
 function EnvironmentUnavailableRow({
   environment,
   access,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly access: Exclude<ProviderEnvironmentAccess, { kind: "editable" | "read-only" }>;
+  readonly onRetry: () => void;
 }) {
-  const isLoading = access.kind === "loading";
-  const title = isLoading
-    ? "Loading provider settings"
-    : access.kind === "error"
-      ? "Could not connect to this device"
-      : "Provider settings are unavailable";
-  const description = isLoading
-    ? access.reason === "permissions"
-      ? "Checking what this session is allowed to change."
-      : `Waiting for ${environment.label}'s configuration.`
-    : connectionStatusText(environment.connection);
-  // No spinner: this state can persist indefinitely for a wedged device, and a
-  // continuously repainting animation would run the whole time.
   return (
     // Titled like the section it stands in for, so the placeholder never
     // reads as a different page than the loaded state.
-    <SettingsSection title="Harness runtimes">
-      <SettingsRow title={title} description={description} />
+    <SettingsSection title="Harnesses">
+      {access.kind === "loading" ? (
+        // A wedged device can keep this state forever, so the load ends after
+        // 10 s with a status line and a retry instead of spinning on.
+        <LoadingStatusRow
+          title={`${environment.label} wird geladen`}
+          slowStatus="Keine Antwort vom Rechner"
+          onRetry={onRetry}
+        />
+      ) : (
+        <SettingsRow
+          title={access.kind === "error" ? "Keine Verbindung" : "Nicht verfügbar"}
+          status={connectionStatusText(environment.connection)}
+        />
+      )}
     </SettingsSection>
   );
 }
@@ -267,25 +287,40 @@ export function ProviderSettingsPanel({
     options.find((environment) => environment.environmentId === effectiveEnvironmentId) ?? null;
   const onlyPrimaryDevice =
     options.length === 1 && options[0]?.entry.target._tag === "PrimaryConnectionTarget";
+  // Retry for a load that never ends: there is no refetch for the catalog, so
+  // the retry re-mounts the device-dependent part of the page.
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  // The catalog hydrates asynchronously, so an empty list before it is ready
+  // means "not loaded yet", not "nothing is connected".
+  const devicesLoading = options.length === 0 && !isReady;
+  // One block per state (grok-p1-046): loading and an empty catalog each say
+  // so once — on the models page inside the model section itself, on the
+  // harnesses page here — and the picker only appears when there is something
+  // to pick.
+  const showDevicePicker = options.length > 0 && !onlyPrimaryDevice;
 
   return (
     <SettingsPageContainer
       {...(sections === "models" ? { className: "mx-0 max-w-[75rem] gap-8" } : {})}
     >
-      {!onlyPrimaryDevice ? (
-        <SettingsSection title="Environments">
-          {options.length === 0 ? (
-            // The catalog hydrates asynchronously, so an empty list before it is
-            // ready means "not loaded yet", not "nothing is connected".
-            <SettingsRow
-              title={isReady ? "No connected devices" : "Loading devices"}
-              description={
-                isReady
-                  ? "Connect an execution environment before configuring providers."
-                  : "Reading connected execution environments."
-              }
-            />
-          ) : (
+      {devicesLoading && sections === "harnesses" ? (
+        <SettingsSection title="Harnesses">
+          <LoadingStatusRow
+            key={loadAttempt}
+            title="Rechner werden geladen"
+            slowStatus="Keine Rechner gemeldet"
+            onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
+          />
+        </SettingsSection>
+      ) : null}
+      {!devicesLoading && options.length === 0 && sections === "harnesses" ? (
+        <SettingsSection title="Harnesses">
+          <SettingsRow title="Kein Rechner" />
+        </SettingsSection>
+      ) : null}
+      {showDevicePicker ? (
+        <SettingsSection title="Rechner">
+          {
             <div className="grid gap-1 sm:grid-cols-2">
               {options.map((environment) => {
                 const Icon = providerEnvironmentIcon(environment);
@@ -326,19 +361,23 @@ export function ProviderSettingsPanel({
                 );
               })}
             </div>
-          )}
+          }
         </SettingsSection>
       ) : null}
 
       {sections === "harnesses" && selectedEnvironment ? (
         <SelectedEnvironmentProviderSettings
-          key={selectedEnvironment.environmentId}
+          key={`${selectedEnvironment.environmentId}:${loadAttempt}`}
           environment={selectedEnvironment}
+          onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
         />
       ) : null}
 
       {sections === "models" ? (
-        <WorkjetGatewayAccountsSection environmentId={effectiveEnvironmentId} />
+        <WorkjetGatewayAccountsSection
+          environmentId={effectiveEnvironmentId}
+          devicesLoading={devicesLoading}
+        />
       ) : null}
     </SettingsPageContainer>
   );
@@ -346,19 +385,29 @@ export function ProviderSettingsPanel({
 
 export function WorkjetGatewayAccountsSection({
   environmentId,
+  devicesLoading = false,
 }: {
   readonly environmentId: EnvironmentId | null;
+  /** The device catalog has not hydrated yet: "no Code computer" is not known. */
+  readonly devicesLoading?: boolean;
 }) {
   const { selectedId } = useCtoxMode();
+  const [loadAttempt, setLoadAttempt] = useState(0);
   if (environmentId === null && selectedId)
     return <InstanceOnlyModels key={selectedId} instanceId={selectedId} />;
   if (environmentId === null) {
     return (
-      <SettingsSection title="Model access">
-        <SettingsRow
-          title="No Code computer assigned"
-          description="Assign a Code computer to the active Business OS before configuring models. Data from another instance is never used as a fallback."
-        />
+      <SettingsSection title="Modelle">
+        {devicesLoading ? (
+          <LoadingStatusRow
+            key={loadAttempt}
+            title="Rechner werden geladen"
+            slowStatus="Keine Rechner gemeldet"
+            onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
+          />
+        ) : (
+          <SettingsRow title="Kein Code-Rechner" />
+        )}
       </SettingsSection>
     );
   }
@@ -390,30 +439,30 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find((item) => item.id === instanceId)
       : undefined;
-  const label = instance?.displayName ?? "CTOX instance";
+  const label = instance?.displayName ?? "Instanz";
   const grok = useInstanceGrokAccount(instanceId, label);
   const providers = useInstanceProviders(instanceId);
   return (
-    <section aria-label="LLM providers" className="space-y-3">
+    <section aria-label="Modellkonten" className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">LLM providers</h2>
+        <h2 className="text-[13.5px] font-semibold">Modellkonten</h2>
         <Button size="sm" disabled={grok.checking || grok.installed} onClick={grok.start}>
           <PlusIcon className="size-3.5" />
-          Add Grok Build account on {label}
+          Grok-Konto hinzufügen
         </Button>
       </div>
       <div className="overflow-x-auto">
-        <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
+        <div role="table" aria-label="Modellkonten" className="min-w-[34rem]">
           <div
             role="row"
             className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
           >
-            <span role="columnheader">Provider / account</span>
-            <span role="columnheader">Models</span>
+            <span role="columnheader">Anbieter / Konto</span>
+            <span role="columnheader">Modelle</span>
             <span role="columnheader">Limits</span>
-            <span role="columnheader">Active</span>
+            <span role="columnheader">Aktiv</span>
             <span role="columnheader" className="sr-only">
-              Actions
+              Aktionen
             </span>
           </div>
           <InstanceProviderSection label={label} grok={grok} providers={providers} />
@@ -435,7 +484,7 @@ function InstanceGatewayModels({
     discovery !== "loading" && discovery._tag === "ready"
       ? discovery.instances.find((item) => item.id === instanceId)
       : undefined;
-  const label = instance?.displayName ?? "CTOX instance";
+  const label = instance?.displayName ?? "Instanz";
   const instanceGrok = useInstanceGrokAccount(instanceId, label);
   const providers = useInstanceProviders(instanceId);
   return (
@@ -451,25 +500,35 @@ function InstanceGatewayModels({
 
 function SelectedEnvironmentProviderSettings({
   environment,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly onRetry: () => void;
 }) {
   const isPrimary = environment.entry.target._tag === "PrimaryConnectionTarget";
   if (isPrimary) {
     // The desktop app owns its primary server outright; a browser session
     // checks the scopes its cookie session was granted.
     if (isElectron) {
-      return <AccessGatedProviderSettings environment={environment} operateAccess="granted" />;
+      return (
+        <AccessGatedProviderSettings
+          environment={environment}
+          operateAccess="granted"
+          onRetry={onRetry}
+        />
+      );
     }
-    return <PrimarySessionGatedProviderSettings environment={environment} />;
+    return <PrimarySessionGatedProviderSettings environment={environment} onRetry={onRetry} />;
   }
-  return <RemoteSessionGatedProviderSettings environment={environment} />;
+  return <RemoteSessionGatedProviderSettings environment={environment} onRetry={onRetry} />;
 }
 
 function PrimarySessionGatedProviderSettings({
   environment,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly onRetry: () => void;
 }) {
   const primarySessionState = usePrimarySessionState();
   const operateAccess = resolvePrimaryOperateAccess({
@@ -479,13 +538,21 @@ function PrimarySessionGatedProviderSettings({
     isPending: primarySessionState.isPending,
     hasError: primarySessionState.error !== null,
   });
-  return <AccessGatedProviderSettings environment={environment} operateAccess={operateAccess} />;
+  return (
+    <AccessGatedProviderSettings
+      environment={environment}
+      operateAccess={operateAccess}
+      onRetry={onRetry}
+    />
+  );
 }
 
 function RemoteSessionGatedProviderSettings({
   environment,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly onRetry: () => void;
 }) {
   const sessionState = useEnvironmentSessionState(environment.environmentId);
   const operateAccess = resolveRemoteOperateAccess({
@@ -493,15 +560,23 @@ function RemoteSessionGatedProviderSettings({
     isPending: sessionState.isPending,
     hasError: sessionState.hasError,
   });
-  return <AccessGatedProviderSettings environment={environment} operateAccess={operateAccess} />;
+  return (
+    <AccessGatedProviderSettings
+      environment={environment}
+      operateAccess={operateAccess}
+      onRetry={onRetry}
+    />
+  );
 }
 
 function AccessGatedProviderSettings({
   environment,
   operateAccess,
+  onRetry,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly operateAccess: ProviderOperateAccess;
+  readonly onRetry: () => void;
 }) {
   const access = classifyProviderEnvironmentAccess({
     connectionPhase: environment.connection.phase,
@@ -509,7 +584,9 @@ function AccessGatedProviderSettings({
     operateAccess,
   });
   if (access.kind !== "editable" && access.kind !== "read-only") {
-    return <EnvironmentUnavailableRow environment={environment} access={access} />;
+    return (
+      <EnvironmentUnavailableRow environment={environment} access={access} onRetry={onRetry} />
+    );
   }
   return (
     <EnvironmentProviderSettings
@@ -552,7 +629,7 @@ export function EnvironmentProviderSettings({
     reportFailure: false,
   });
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
-  const [isAddInstanceDialogOpen, setIsAddInstanceDialogOpen] = useState(false);
+  const [isAddInstancePanelOpen, setIsAddInstancePanelOpen] = useState(false);
   const [updatingProviderDrivers, setUpdatingProviderDrivers] = useState<
     ReadonlySet<ProviderDriverKind>
   >(() => new Set());
@@ -649,11 +726,8 @@ export function EnvironmentProviderSettings({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: `Could not update ${PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver}`,
-            description:
-              error instanceof Error
-                ? error.message
-                : "The provider update command could not be started.",
+            title: `${PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver}: Update fehlgeschlagen`,
+            ...(error instanceof Error ? { description: error.message } : {}),
           }),
         );
       }
@@ -848,8 +922,8 @@ export function EnvironmentProviderSettings({
       <SettingsSection
         id={searchableSetting("harnesses").id}
         // Named for what these actually are — harness CLI runtimes — so the
-        // gateway account section below can never read as a rival "providers".
-        title="Harness runtimes"
+        // gateway account section on Modelle can never read as a rival list.
+        title="Harnesses"
         headerAction={
           <div className="flex items-center gap-1.5">
             <ProviderLastChecked lastCheckedAt={lastCheckedAt} />
@@ -862,25 +936,9 @@ export function EnvironmentProviderSettings({
                         size="icon-xs"
                         variant="ghost"
                         className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                        onClick={() => setIsAddInstanceDialogOpen(true)}
-                        aria-label="Add provider instance"
-                      >
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup side="top">Add provider instance</TooltipPopup>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
                         disabled={isRefreshingProviders}
                         onClick={() => void refreshProviders()}
-                        aria-label="Refresh provider status"
+                        aria-label="Neu prüfen"
                       >
                         {isRefreshingProviders ? (
                           <LoaderIcon className="size-3 animate-spin" />
@@ -890,19 +948,14 @@ export function EnvironmentProviderSettings({
                       </Button>
                     }
                   />
-                  <TooltipPopup side="top">Refresh provider status</TooltipPopup>
+                  <TooltipPopup side="top">Neu prüfen</TooltipPopup>
                 </Tooltip>
               </>
             ) : null}
           </div>
         }
       >
-        {readOnly ? (
-          <SettingsRow
-            title="Limited permissions"
-            description={`This session can view ${environmentLabel}'s providers, but its credential does not allow changing their configuration.`}
-          />
-        ) : null}
+        {readOnly ? <SettingsRow title="Nur Ansicht" status={environmentLabel} /> : null}
         <div
           // `inert` blocks focus and interaction in one attribute, so the
           // read-only view stays byte-for-byte the editable layout without
@@ -912,22 +965,12 @@ export function EnvironmentProviderSettings({
           className={readOnly ? "space-y-1 opacity-50 select-none" : "space-y-1"}
         >
           <SettingsRow
-            title={
-              <span className="inline-flex items-center gap-1.5">
-                Health check interval
-                <PolicyTooltip>
-                  This interval is configured here, then the shared Background activity policy
-                  decides whether provider probes may run when the timer fires. Custom intervals
-                  appear as Advanced in General settings.
-                </PolicyTooltip>
-              </span>
-            }
-            description="Refresh provider availability, versions, auth state, and model metadata in the background. Set this to 0 seconds to rely on manual refreshes."
+            title="Prüfintervall"
             resetAction={
               providerHealthRefreshIntervalSeconds !==
               defaultProviderHealthRefreshIntervalSeconds ? (
                 <SettingResetButton
-                  label="provider health check interval"
+                  label="Prüfintervall"
                   onClick={() =>
                     updateSettings(
                       backgroundActivityOverrideSettings(
@@ -965,12 +1008,12 @@ export function EnvironmentProviderSettings({
                   }
                 >
                   <NumberFieldGroup>
-                    <NumberFieldDecrement aria-label="Decrease provider health check interval" />
-                    <NumberFieldInput aria-label="Provider health check interval in seconds" />
-                    <NumberFieldIncrement aria-label="Increase provider health check interval" />
+                    <NumberFieldDecrement aria-label="Prüfintervall verringern" />
+                    <NumberFieldInput aria-label="Prüfintervall (Sekunden)" />
+                    <NumberFieldIncrement aria-label="Prüfintervall erhöhen" />
                   </NumberFieldGroup>
                 </NumberField>
-                <span className="text-xs text-muted-foreground">seconds</span>
+                <span className="text-xs text-muted-foreground">Sekunden</span>
               </div>
             }
           />
@@ -1101,69 +1144,69 @@ export function EnvironmentProviderSettings({
             );
           })}
           {!serverProviders.some((provider) => provider.driver === "pi") ? (
-            <div className="rounded-xl transition-colors hover:bg-muted/20">
-              <div className="px-3 py-3 sm:px-4">
-                <div className="flex items-center gap-2">
-                  <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
-                    <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
-                    <span
-                      className={cn(
-                        "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
-                        // Green = probed available, muted = not probed yet,
-                        // red = probe answered "not available" — two greys made
-                        // failure indistinguishable from unknown (Befund K-B16).
-                        piCodeProbe?.availability === "available"
-                          ? "bg-emerald-500"
-                          : piCodeProbe === null
-                            ? "bg-muted-foreground/40"
-                            : "bg-red-500/80",
-                      )}
-                      aria-hidden
-                    />
+            <div className="rounded-lg transition-colors hover:bg-muted/20" data-slot="row">
+              <div className="flex min-w-0 items-center gap-3 px-3 py-2 sm:px-4">
+                <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+                  <PiCodeIcon className="size-4 text-foreground/80" aria-hidden />
+                  <span
+                    className={cn(
+                      "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-card",
+                      // Green = probed available, muted = not probed yet,
+                      // red = probe answered "not available" — two greys made
+                      // failure indistinguishable from unknown (Befund K-B16).
+                      piCodeProbe?.availability === "available"
+                        ? "bg-emerald-500"
+                        : piCodeProbe === null
+                          ? "bg-muted-foreground/40"
+                          : "bg-red-500/80",
+                    )}
+                    aria-hidden
+                  />
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3
+                      className="truncate text-[13.5px] font-medium text-foreground"
+                      data-slot="row-name"
+                    >
+                      Pi Code
+                    </h3>
+                    {piCodeProbe?.availability === "available" &&
+                    "version" in piCodeProbe &&
+                    piCodeProbe.version ? (
+                      <code className="shrink-0 text-xs text-muted-foreground">
+                        v{piCodeProbe.version}
+                      </code>
+                    ) : null}
+                  </div>
+                  <span className="truncate text-xs text-muted-foreground" data-slot="row-meta">
+                    {piCodeProbe === null
+                      ? "Wird geprüft"
+                      : piCodeProbe.availability === "available"
+                        ? "Installiert · nicht eingerichtet"
+                        : "Nicht installiert"}
                   </span>
-                  <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
-                    Pi Code
-                  </h3>
-                  {piCodeProbe?.availability === "available" &&
-                  "version" in piCodeProbe &&
-                  piCodeProbe.version ? (
-                    <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
-                      v{piCodeProbe.version}
-                    </code>
-                  ) : null}
                 </div>
-                <p className="mt-0.5 pl-7 text-xs text-muted-foreground">
-                  {piCodeProbe === null
-                    ? "Checking…"
-                    : piCodeProbe.availability === "available"
-                      ? "Installed · add a Pi Code instance to use it"
-                      : "Not installed on this machine"}
-                </p>
               </div>
             </div>
           ) : null}
         </div>
+        {!readOnly ? (
+          <AddProviderInstancePanel
+            open={isAddInstancePanelOpen}
+            environmentId={environmentId}
+            onOpenChange={setIsAddInstancePanelOpen}
+          />
+        ) : null}
       </SettingsSection>
 
       {readOnly ? (
-        <SettingsSection title="Import sessions">
-          <SettingsRow
-            title="Import unavailable"
-            description="This Code computer does not grant permission to inspect or copy local Codex and Claude Code sessions. No session metadata has been loaded."
-          />
+        <SettingsSection title="Sitzungen importieren">
+          <SettingsRow title="Import nicht erlaubt" />
         </SettingsSection>
       ) : (
         <SessionImportSection environmentId={environmentId} readOnly={false} />
       )}
-
-      {isAddInstanceDialogOpen ? (
-        <AddProviderInstanceDialog
-          open
-          environmentId={environmentId}
-          environmentLabel={environmentLabel}
-          onOpenChange={setIsAddInstanceDialogOpen}
-        />
-      ) : null}
     </>
   );
 }

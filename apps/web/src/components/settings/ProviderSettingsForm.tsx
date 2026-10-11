@@ -188,23 +188,16 @@ function ProviderSettingsFieldRow({
   onChange,
 }: ProviderSettingsFieldRowProps) {
   const inputId = `${idPrefix}-${field.key}`;
-  const descriptionClassName =
-    variant === "card"
-      ? "mt-1 block text-xs text-muted-foreground"
-      : "text-[11px] text-muted-foreground";
+  // Schema descriptions are explanations; the field shows only its label
+  // (UI-Vertrag §1.4, §2). `field.description` stays in the model for search
+  // and tooling but is never rendered.
   const label = <span className="text-xs font-medium text-foreground">{field.label}</span>;
-  const description = field.description ? (
-    <span className={descriptionClassName}>{field.description}</span>
-  ) : null;
 
   if (field.control === "switch") {
     return (
       <FieldFrame variant={variant}>
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            {label}
-            {description}
-          </div>
+          <div className="min-w-0">{label}</div>
           <Switch
             checked={readProviderConfigBoolean(value, field.key, field.defaultBooleanValue)}
             onCheckedChange={(checked) =>
@@ -232,7 +225,6 @@ function ProviderSettingsFieldRow({
             placeholder={field.placeholder}
             spellCheck={false}
           />
-          {description}
         </label>
       </FieldFrame>
     );
@@ -268,7 +260,6 @@ function ProviderSettingsFieldRow({
             spellCheck={false}
           />
         )}
-        {description}
       </label>
     </FieldFrame>
   );

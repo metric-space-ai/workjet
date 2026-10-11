@@ -35,8 +35,8 @@ export function NativeProviderLimits({
         className={`text-xs text-muted-foreground ${className}`}
         title={
           quota?.state === "unavailable"
-            ? "Reported limits could not be read (quota_read_failed). Reopen Models to try again."
-            : "This instance account has not reported limits."
+            ? `Limits nicht lesbar (${quota.errorClass})`
+            : "Keine Limits gemeldet"
         }
       >
         —

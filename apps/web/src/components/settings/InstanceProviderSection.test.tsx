@@ -41,9 +41,9 @@ describe("independent instance account capabilities", () => {
     const html = renderSection({ _tag: "failed", code: "unsupported" });
     expect(html).toContain("data-grok-login");
     expect(html).toContain("data-workjet-provider-management-unavailable");
-    expect(html).toContain("Update its Business OS shell");
+    expect(html).toContain("Business-OS-Shell aktualisieren");
     expect(html).not.toContain("data-workjet-instance-connection");
-    expect(html).not.toContain("connection to instance Welsch interrupted");
+    expect(html).not.toContain("Instanz Welsch nicht verbunden");
   });
 
   it("still blocks the Grok row when its own admitted channel requires authentication", () => {
@@ -53,7 +53,7 @@ describe("independent instance account capabilities", () => {
     );
     expect(html).not.toContain("data-grok-login");
     expect(html).toContain("data-workjet-instance-connection");
-    expect(html).toContain("Sign in to this instance to reconnect");
+    expect(html).toContain("Bei der Instanz anmelden, um sie zu verbinden");
   });
 
   it("does not reinterpret an actual transport failure or an untyped account error as support", () => {

@@ -1,7 +1,8 @@
-import { ChevronDownIcon, GitPullRequestIcon, InfoIcon, RefreshCwIcon } from "lucide-react";
+import { ChevronDownIcon, GitPullRequestIcon, RefreshCwIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   BackgroundActivitySettings,
   SourceControlProviderKind,
@@ -121,27 +122,6 @@ function backgroundActivityOverrideSettings(
   };
 }
 
-function BackgroundPolicyTooltip({ children }: { readonly children: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-            aria-label="Background policy details"
-          >
-            <InfoIcon className="size-3.5" />
-          </button>
-        }
-      />
-      <TooltipPopup side="top" className="max-w-72">
-        {children}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
 function optionLabel(value: Option.Option<string>): string | null {
   return Option.getOrNull(value);
 }
@@ -161,21 +141,21 @@ function authPresentation(auth: SourceControlProviderAuth): {
   readonly badge: "warning" | null;
 } {
   if (auth.status === "authenticated") {
-    return { label: "Authenticated", badge: null };
+    return { label: "Angemeldet", badge: null };
   }
   if (auth.status === "unauthenticated") {
-    return { label: "Not authenticated", badge: "warning" };
+    return { label: "Nicht angemeldet", badge: "warning" };
   }
-  return { label: "Status unknown", badge: null };
+  return { label: "Status unbekannt", badge: null };
 }
 
 function RedactedAccount(props: { readonly account: string | null }) {
   return (
     <RedactedSensitiveText
       value={props.account}
-      ariaLabel="Toggle source control account visibility"
-      revealTooltip="Click to reveal account"
-      hideTooltip="Click to hide account"
+      ariaLabel="Konto zeigen oder verbergen"
+      revealTooltip="Konto zeigen"
+      hideTooltip="Konto verbergen"
     />
   );
 }
@@ -225,21 +205,21 @@ function itemSummary({
   readonly authAccount: string | null;
 }) {
   if (isVcsNotReady(item)) {
-    return <span>Support for {item.label} is coming soon.</span>;
+    return <span>Bald verfügbar</span>;
   }
 
   if (item.status !== "available") {
-    return <span>Not available on this server: {item.installHint}</span>;
+    return <span>Auf diesem Server nicht verfügbar</span>;
   }
 
   if (auth) {
     if (auth.status === "authenticated") {
       return (
         <>
-          <span>Authenticated</span>
+          <span>Angemeldet</span>
           {authAccount ? (
             <>
-              <span aria-hidden>as</span>
+              <span aria-hidden>als</span>
               <RedactedAccount account={authAccount} />
             </>
           ) : null}
@@ -248,26 +228,16 @@ function itemSummary({
     }
 
     if (!item.executable) {
-      return <span>Available. {item.installHint}</span>;
+      return <span>Verfügbar</span>;
     }
 
     if (auth.status === "unauthenticated") {
-      return (
-        <span>
-          {item.label} is not authenticated on this server. Sign in or configure credentials using
-          the <code className="rounded bg-muted px-1 py-px text-[11px]">{item.executable}</code>{" "}
-          tool on the server host to enable change request features.
-        </span>
-      );
+      return <span>Auf dem Server nicht angemeldet</span>;
     }
-    return (
-      <span>
-        Could not verify {item.label}. {item.installHint}
-      </span>
-    );
+    return <span>Nicht geprüft</span>;
   }
 
-  return <span>Available</span>;
+  return <span>Verfügbar</span>;
 }
 
 function DiscoveryItemRow({
@@ -305,7 +275,7 @@ function DiscoveryItemRow({
               {version ? <code className="text-xs text-muted-foreground">{version}</code> : null}
               {isVcsNotReady(item) ? (
                 <Badge variant="warning" size="sm">
-                  Coming Soon
+                  Bald
                 </Badge>
               ) : null}
               {authStatus?.badge ? (
@@ -326,7 +296,7 @@ function DiscoveryItemRow({
                 className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                 onClick={() => setIsExpanded((open) => !open)}
                 aria-expanded={isExpanded}
-                aria-label={`Toggle ${item.label} details`}
+                aria-label={`${item.label}: Details`}
               >
                 <ChevronDownIcon
                   className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")}
@@ -334,7 +304,7 @@ function DiscoveryItemRow({
               </Button>
             ) : null}
             {!isVcsNotReady(item) ? (
-              <Switch checked={enabled} disabled aria-label={`${item.label} availability`} />
+              <Switch checked={enabled} disabled aria-label={`${item.label} verfügbar`} />
             ) : null}
           </div>
         </div>
@@ -375,12 +345,7 @@ function GitFetchIntervalSettings({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex min-w-0 items-center gap-1">
-            <span className="text-xs font-medium text-foreground">Fetch interval</span>
-            <BackgroundPolicyTooltip>
-              This interval is configured for Git only. The shared Background activity policy still
-              decides whether Git refreshes may run when the timer fires. Custom intervals appear as
-              Advanced in General settings.
-            </BackgroundPolicyTooltip>
+            <span className="text-xs font-medium text-foreground">Abrufintervall</span>
             <span
               className={cn(
                 "inline-flex size-5 shrink-0 items-center justify-center transition-opacity",
@@ -390,7 +355,7 @@ function GitFetchIntervalSettings({
             >
               {canResetFetchInterval ? (
                 <SettingResetButton
-                  label="fetch interval"
+                  label="Abrufintervall"
                   onClick={() =>
                     updateSettings(
                       backgroundActivityOverrideSettings(settings.backgroundActivity, {
@@ -402,10 +367,6 @@ function GitFetchIntervalSettings({
               ) : null}
             </span>
           </div>
-          <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-            Refresh remote branch status in the background. Set this to 0 seconds if Git credentials
-            or security keys should only be prompted by explicit Git actions.
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <NumberField
@@ -423,12 +384,12 @@ function GitFetchIntervalSettings({
             }
           >
             <NumberFieldGroup>
-              <NumberFieldDecrement aria-label="Decrease fetch interval" />
-              <NumberFieldInput aria-label="Automatic Git fetch interval in seconds" />
-              <NumberFieldIncrement aria-label="Increase fetch interval" />
+              <NumberFieldDecrement aria-label="Abrufintervall verringern" />
+              <NumberFieldInput aria-label="Abrufintervall (Sekunden)" />
+              <NumberFieldIncrement aria-label="Abrufintervall erhöhen" />
             </NumberFieldGroup>
           </NumberField>
-          <span className="text-xs text-muted-foreground">seconds</span>
+          <span className="text-xs text-muted-foreground">s</span>
         </div>
       </div>
     </div>
@@ -484,20 +445,14 @@ function EmptySourceControlDiscovery({
   const hasError = error !== null;
 
   return (
-    <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
+    <SettingsSection id={searchableSetting("source-control").id} title="Server">
       <Empty className="min-h-88">
         <EmptyMedia variant="icon">
           <GitPullRequestIcon />
         </EmptyMedia>
         <EmptyHeader>
-          <EmptyTitle>
-            {hasError ? "Could not scan the server environment" : "Nothing detected yet"}
-          </EmptyTitle>
-          <EmptyDescription>
-            {hasError
-              ? error
-              : "Install Git on the server, add optional hosting integrations or credentials your workspace needs, then rescan."}
-          </EmptyDescription>
+          <EmptyTitle>{hasError ? "Scan fehlgeschlagen" : "Nichts gefunden"}</EmptyTitle>
+          {hasError ? <EmptyDescription>{error}</EmptyDescription> : null}
         </EmptyHeader>
         <EmptyContent>
           <Button
@@ -508,7 +463,7 @@ function EmptySourceControlDiscovery({
             disabled={isPending}
           >
             <RefreshCwIcon className={cn("size-3.5", isPending && "animate-spin")} />
-            Scan
+            Erneut scannen
           </Button>
         </EmptyContent>
       </Empty>
@@ -518,13 +473,37 @@ function EmptySourceControlDiscovery({
 
 export function SourceControlSettingsPanel() {
   const target = useActiveBusinessOsSettingsEnvironment();
+  // Ein Laden endet immer: nach 10 s Statuszeile mit einer Aktion.
+  const resolving = target.phase === "resolving";
+  const [resolvingSlow, setResolvingSlow] = useState(false);
+  useEffect(() => {
+    if (!resolving) {
+      setResolvingSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setResolvingSlow(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [resolving]);
   if (target.phase !== "ready") {
+    const showInstanceAction = !resolving || resolvingSlow;
     return (
       <SettingsPageContainer>
-        <SettingsSection title="Source Control">
+        <SettingsSection title="Versionsverwaltung">
           <SettingsRow
-            title={target.phase === "resolving" ? "Instanz wird geladen" : "Nicht verfügbar"}
-            description="Source-Control-Einstellungen werden nur vom eindeutig autorisierten Code-Rechner der aktiven Business-OS-Instanz geladen."
+            title={
+              resolving
+                ? resolvingSlow
+                  ? "Keine Instanz erreichbar"
+                  : "Instanz lädt …"
+                : "Kein Code-Rechner"
+            }
+            control={
+              showInstanceAction ? (
+                <Button size="sm" variant="outline" render={<Link to="/settings/business-os" />}>
+                  Instanzen öffnen
+                </Button>
+              ) : undefined
+            }
           />
         </SettingsSection>
       </SettingsPageContainer>
@@ -553,6 +532,16 @@ function ScopedSourceControlSettingsPanel({
   const hasVersionControlSystems = result.versionControlSystems.length > 0;
   const hasDiscoveryItems = hasVersionControlSystems || result.sourceControlProviders.length > 0;
   const isInitialScanPending = discovery.isPending && discovery.data === null;
+  // Ein Laden endet immer: nach 10 s Statuszeile mit „Erneut versuchen“.
+  const [scanSlow, setScanSlow] = useState(false);
+  useEffect(() => {
+    if (!isInitialScanPending) {
+      setScanSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setScanSlow(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [isInitialScanPending]);
   const handleScan = () => {
     discovery.refresh();
   };
@@ -566,13 +555,13 @@ function ScopedSourceControlSettingsPanel({
             className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
             onClick={handleScan}
             disabled={discovery.isPending}
-            aria-label="Rescan server environment"
+            aria-label="Erneut scannen"
           >
             <RefreshCwIcon className={cn("size-3", discovery.isPending && "animate-spin")} />
           </Button>
         }
       />
-      <TooltipPopup side="top">Rescan Git and hosting integrations</TooltipPopup>
+      <TooltipPopup side="top">Erneut scannen</TooltipPopup>
     </Tooltip>
   );
 
@@ -580,15 +569,25 @@ function ScopedSourceControlSettingsPanel({
     <SettingsPageContainer>
       {isInitialScanPending ? (
         <>
-          <SourceControlSectionSkeleton title="Version Control" headerAction={scanButton} />
-          <SourceControlSectionSkeleton title="Source Control Providers" />
+          <SourceControlSectionSkeleton title="Versionsverwaltung" headerAction={scanButton} />
+          {scanSlow ? (
+            <div
+              role="status"
+              className="flex items-center gap-3 px-3 text-sm text-muted-foreground sm:px-4"
+            >
+              <span>Scan dauert länger</span>
+              <Button size="sm" variant="outline" onClick={handleScan}>
+                Erneut versuchen
+              </Button>
+            </div>
+          ) : null}
         </>
       ) : hasDiscoveryItems ? (
         <>
           {hasVersionControlSystems ? (
             <SettingsSection
               id={searchableSetting("source-control").id}
-              title="Version Control"
+              title="Versionsverwaltung"
               headerAction={scanButton}
             >
               {result.versionControlSystems.map((item) => (
@@ -604,7 +603,7 @@ function ScopedSourceControlSettingsPanel({
           {result.sourceControlProviders.length > 0 ? (
             <SettingsSection
               id={hasVersionControlSystems ? undefined : searchableSetting("source-control").id}
-              title="Source Control Providers"
+              title="Hosting-Anbieter"
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (

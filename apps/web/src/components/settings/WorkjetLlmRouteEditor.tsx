@@ -39,7 +39,7 @@ export function createWorkjetLlmRouteDraft(input: {
 
 export function saveWorkjetLlmRouteDraft(draft: WorkjetLlmRouteDraft): WorkjetLlmRoute {
   const label = draft.label.trim();
-  if (!label) throw new Error("Enter an LLM route label.");
+  if (!label) throw new Error("Routenname eingeben.");
   const base = { id: WorkjetLlmRouteId.make(draft.id), label };
   if (draft.gatewayAccountId)
     return {
@@ -51,7 +51,7 @@ export function saveWorkjetLlmRouteDraft(draft: WorkjetLlmRouteDraft): WorkjetLl
     };
   if (draft.nativeAccountReference !== undefined)
     return { ...base, nativeAccountReference: draft.nativeAccountReference };
-  throw new Error("Choose a provider-gateway account.");
+  throw new Error("Gateway-Konto wählen.");
 }
 
 export function WorkjetLlmRouteEditor({
@@ -77,19 +77,19 @@ export function WorkjetLlmRouteEditor({
     <form
       data-settings-inline-editor=""
       className="space-y-4 rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4"
-      aria-label={route ? `Edit LLM route ${route.label}` : "Add LLM route"}
+      aria-label={route ? `Route ${route.label} bearbeiten` : "Route hinzufügen"}
       onSubmit={(event) => {
         event.preventDefault();
         try {
           onSave(saveWorkjetLlmRouteDraft(draft));
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "The LLM route could not be saved.");
+          setError(cause instanceof Error ? cause.message : "Route nicht gespeichert.");
         }
       }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="workjet-route-label">Route label</Label>
+          <Label htmlFor="workjet-route-label">Name</Label>
           <Input
             id="workjet-route-label"
             nativeInput
@@ -98,11 +98,11 @@ export function WorkjetLlmRouteEditor({
               setDraft((current) => ({ ...current, label: event.target.value }));
               setError(null);
             }}
-            placeholder="Codex work account"
+            placeholder="Codex Arbeit"
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="workjet-route-provider">Provider-gateway account</Label>
+          <Label htmlFor="workjet-route-provider">Gateway-Konto</Label>
           <Select
             value={draft.gatewayAccountId || null}
             onValueChange={(value) => {
@@ -114,17 +114,12 @@ export function WorkjetLlmRouteEditor({
               setError(null);
             }}
           >
-            <SelectTrigger
-              id="workjet-route-provider"
-              aria-label="LLM route provider-gateway account"
-            >
+            <SelectTrigger id="workjet-route-provider" aria-label="Gateway-Konto der Route">
               <SelectValue>
                 {/* Never the raw account id: when the referenced account left
                     the catalog, say so instead of printing an opaque hash. */}
                 {selected?.label ??
-                  (draft.gatewayAccountId
-                    ? "Account missing from catalog"
-                    : "Choose provider-gateway account")}
+                  (draft.gatewayAccountId ? "Konto fehlt im Katalog" : "Gateway-Konto wählen")}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -137,14 +132,9 @@ export function WorkjetLlmRouteEditor({
           </Select>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Routes store only a reference to an existing provider-gateway account. Models stay on
-        workers, and provider credentials stay protected by the provider-gateway account authority.
-      </p>
       {entries.length === 0 ? (
         <p role="status" className="text-xs text-muted-foreground">
-          No Workjet provider-gateway accounts are available on this server. The Code provider list
-          contains harness runtimes and is intentionally not used here.
+          Keine Gateway-Konten
         </p>
       ) : null}
       {error ? (
@@ -154,14 +144,14 @@ export function WorkjetLlmRouteEditor({
       ) : null}
       <div className="flex justify-end gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          Cancel
+          Abbrechen
         </Button>
         <Button
           type="submit"
           size="sm"
           disabled={entries.length === 0 && draft.nativeAccountReference === undefined}
         >
-          Save route
+          Speichern
         </Button>
       </div>
     </form>

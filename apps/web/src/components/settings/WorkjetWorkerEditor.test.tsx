@@ -97,7 +97,7 @@ describe("WorkjetWorkerEditor", () => {
       role: "orchestrator" as const,
       capabilityIds: ["decision-hub" as const],
     };
-    expect(() => saveWorkjetWorkerDraft(draft)).toThrow("exactly one Decision Hub connection");
+    expect(() => saveWorkjetWorkerDraft(draft)).toThrow("Genau eine Decision-Hub-Verbindung");
 
     const saved = saveWorkjetWorkerDraft({
       ...draft,
@@ -132,8 +132,8 @@ describe("WorkjetWorkerEditor", () => {
     };
     const before = structuredClone(draft);
 
-    expect(workjetHarnessAvailabilityWarning(draft, [computer])).toContain(
-      "Enable it in Computers",
+    expect(workjetHarnessAvailabilityWarning(draft, [computer])).toBe(
+      "Codex CLI auf Remote devbox nicht verfügbar.",
     );
     expect(draft).toEqual(before);
   });
@@ -149,24 +149,26 @@ describe("WorkjetWorkerEditor", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Add Luma"');
-    expect(markup).toContain('aria-label="Luma personality"');
+    expect(markup).toContain('aria-label="Luma hinzufügen"');
+    expect(markup).toContain('aria-label="Luma-Persönlichkeit"');
     expect(markup).toContain('type="range"');
-    expect(markup).toContain('aria-label="Enable Luma personalization"');
+    expect(markup).toContain('aria-label="Persönlichkeit aktiv"');
 
     // Name and task lead; the retained slider profile is directly discoverable.
     const sections = [
+      ">Luma hinzufügen</div>",
       ">Name</label>",
-      ">Task</label>",
-      "Personality",
-      "Personality sliders",
-      "Harness",
-      "LLM route",
-      "Model",
-      "Reasoning",
-      "Tools",
-      "Target computer",
-      "Technical details",
+      ">Aufgabe</label>",
+      ">Persönlichkeit</h4>",
+      "Persönlichkeitsregler",
+      ">Harness</h4>",
+      ">LLM-Zugang</h4>",
+      ">Modell</label>",
+      ">Denkstufe</h4>",
+      ">Werkzeuge</h4>",
+      ">Rechner</h4>",
+      ">Abbrechen</button>",
+      ">Speichern</button>",
     ] as const;
     const order = sections.map((section) => markup.indexOf(section));
     expect(sections.filter((_s, i) => order[i]! < 0)).toEqual([]);
@@ -178,7 +180,13 @@ describe("WorkjetWorkerEditor", () => {
     expect(markup).toContain("Claude Code");
     expect(markup).toContain("OpenCode");
     expect(markup).toContain("Web Stack Browser");
-    // With a route chosen the panel names it.
-    expect(markup).toContain("Route: Codex work");
+    // With a route chosen the panel shows it as the selected choice.
+    expect(markup).toMatch(/aria-pressed="true"[^>]*>Codex work</);
+    // No disclosure, no raw ids, no explanatory sentences, no popup.
+    expect(markup).not.toContain("<details");
+    expect(markup).not.toContain("computer-1");
+    expect(markup).not.toContain("route-1");
+    expect(markup).not.toContain("Settings → Computers");
+    expect(markup).not.toContain('role="dialog"');
   });
 });

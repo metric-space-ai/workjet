@@ -14,7 +14,6 @@ import {
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 
 interface SettingsSearchTargetContextValue {
   readonly targetId: string | null;
@@ -85,30 +84,25 @@ function useSettingsSearchTarget<T extends HTMLElement>(id: string | undefined) 
 }
 
 /**
- * Info affordance explaining how a setting interacts with the shared
- * background policy. A POPOVER, not a hover tooltip: the control is a
- * clickable aria-labelled button, and a click that produces nothing reads as
- * a dead control (measured in the interactive review) — hover-only also
- * excludes touch and keyboard users.
+ * Info-Zeichen mit Tooltip (UI-Vertrag: Tooltips erlaubt, kein Popover mit
+ * Text). Nur für eine kurze Bezeichnung, nie für Erklärabsätze.
  */
 export function PolicyTooltip({ children }: { readonly children: string }) {
   return (
-    <Popover>
-      <PopoverTrigger
+    <Tooltip>
+      <TooltipTrigger
         render={
-          <button
-            type="button"
-            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
-            aria-label="Background policy details"
+          <span
+            role="img"
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground"
+            aria-label={children}
           >
             <InfoIcon className="size-3.5" />
-          </button>
+          </span>
         }
       />
-      <PopoverPopup side="top" className="max-w-72 p-3 text-sm">
-        {children}
-      </PopoverPopup>
-    </Popover>
+      <TooltipPopup side="top">{children}</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -135,23 +129,22 @@ export function ConfirmingDeleteButton({
   return armed ? (
     <Button
       type="button"
-      size="sm"
-      variant="ghost"
-      className="h-6 px-1.5 text-[11px] font-medium text-destructive hover:text-destructive"
-      aria-label={`Confirm delete ${label}`}
+      size="xs"
+      variant="destructive"
+      aria-label={`${label} wirklich löschen`}
       onClick={() => {
         setArmed(false);
         onDelete();
       }}
     >
-      Delete?
+      Löschen?
     </Button>
   ) : (
     <Button
       type="button"
       size="icon-xs"
       variant="ghost"
-      aria-label={`Delete ${label}`}
+      aria-label={`${label} löschen`}
       onClick={() => setArmed(true)}
     >
       <Trash2Icon className="size-3.5" />
@@ -189,10 +182,10 @@ export function SettingsSection({
       {...sectionProps}
       ref={targetRef}
       tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
-      className={cn("space-y-3", className)}
+      className={cn("space-y-1.5", className)}
     >
       <div className="flex min-h-8 items-center justify-between gap-4 px-3 sm:px-4">
-        <h2 className="flex items-center gap-2 text-lg font-semibold tracking-[-0.025em] text-foreground">
+        <h2 className="flex items-center gap-2 text-[13.5px] font-semibold text-foreground">
           {icon}
           {title}
         </h2>
@@ -203,9 +196,13 @@ export function SettingsSection({
   );
 }
 
+/**
+ * Einstellungszeile (UI-Vertrag §1.4): Bezeichnung (höchstens 3 Wörter) und
+ * Steuerelement, optional eine Statuszeile. Keine Beschreibung.
+ */
 export function SettingsRow({
   title,
-  description,
+  description: _description,
   status,
   resetAction,
   control,
@@ -214,6 +211,11 @@ export function SettingsRow({
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: ReactNode;
+  /**
+   * @deprecated Entfällt (UI-Vertrag §1.4) und wird nicht mehr gerendert.
+   * Bleibt nur, bis die Seiten der anderen Wellen (Instanzen, Rechner,
+   * Projekte) ihre Aufrufer bereinigt haben; dann ersatzlos streichen.
+   */
   description?: ReactNode;
   status?: ReactNode;
   resetAction?: ReactNode;
@@ -227,21 +229,20 @@ export function SettingsRow({
       {...rowProps}
       ref={targetRef}
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
-      className={cn("rounded-xl px-3 sm:px-4", children ? "pt-3 pb-1" : "py-3", className)}
+      className={cn(
+        "border-b border-border/60 px-3 last:border-b-0 sm:px-4",
+        children ? "pt-2.5 pb-1" : "py-2.5",
+        className,
+      )}
     >
-      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] sm:items-center sm:gap-8">
+      <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] sm:items-center sm:gap-4">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
-            <h3 className="text-sm font-medium tracking-[-0.005em] text-foreground">{title}</h3>
+            <h3 className="text-[13.5px] font-medium text-foreground">{title}</h3>
             <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
               {resetAction}
             </span>
           </div>
-          {description ? (
-            <p className="max-w-xl text-[13px] leading-[1.45] text-muted-foreground/95">
-              {description}
-            </p>
-          ) : null}
           {status ? <div className="pt-0.5 text-xs text-muted-foreground">{status}</div> : null}
         </div>
         {control ? (
@@ -271,7 +272,7 @@ export function SettingResetButton({
           <Button
             size="icon-xs"
             variant="ghost"
-            aria-label={`Reset ${label} to default`}
+            aria-label={`${label} zurücksetzen`}
             disabled={disabled}
             className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
             onClick={(event) => {
@@ -283,7 +284,7 @@ export function SettingResetButton({
           </Button>
         }
       />
-      <TooltipPopup side="top">Reset to default</TooltipPopup>
+      <TooltipPopup side="top">Zurücksetzen</TooltipPopup>
     </Tooltip>
   );
 }
@@ -309,12 +310,12 @@ export function SettingsPageContainer({
       <div
         className={cn(
           "settings-page-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto px-4 pb-7 sm:pb-10",
-          wide ? "pt-6 sm:px-5" : "pt-10 sm:px-8 sm:pt-12",
+          wide ? "pt-4 sm:px-5" : "pt-4 sm:px-5 sm:pt-5",
         )}
       >
         <div
           className={cn(
-            "flex w-full flex-col gap-12",
+            "flex w-full flex-col gap-5",
             wide ? "mr-auto max-w-[1200px]" : "mx-auto max-w-4xl",
             className,
           )}

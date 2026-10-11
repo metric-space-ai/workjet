@@ -22,23 +22,11 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 
-const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; description: string }> =
-  {
-    repo_conventions: {
-      label: "Repository conventions",
-      description: "In each project, matches recent change descriptions and change request titles.",
-    },
-    conventional_commits: {
-      label: "Conventional Commits",
-      description:
-        "Uses Conventional Commit prefixes for change descriptions; change request titles and descriptions stay concise.",
-    },
-    custom: {
-      label: "Custom instructions",
-      description:
-        "Applies your instructions to change descriptions and change request titles and descriptions in every project.",
-    },
-  };
+const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string }> = {
+  repo_conventions: { label: "Wie im Repository" },
+  conventional_commits: { label: "Conventional Commits" },
+  custom: { label: "Eigene Vorgabe" },
+};
 
 export function SourceControlWritingSettingsSection({
   environmentId,
@@ -75,14 +63,13 @@ export function SourceControlWritingSettingsSection({
   );
 
   return (
-    <SettingsSection title="Text generation">
+    <SettingsSection title="Texte">
       <SettingsRow
-        title="Source control writing style"
-        description={MODE_OPTIONS[style.mode].description}
+        title="Schreibstil"
         resetAction={
           isSourceControlWritingStyleDirty ? (
             <SettingResetButton
-              label="source control writing style"
+              label="Schreibstil"
               onClick={() =>
                 updateSettings({
                   sourceControlWritingStyle: {
@@ -107,7 +94,7 @@ export function SourceControlWritingSettingsSection({
               });
             }}
           >
-            <SelectTrigger className="w-full sm:w-56" aria-label="Source control writing style">
+            <SelectTrigger className="w-full sm:w-56" aria-label="Schreibstil">
               <SelectValue>{MODE_OPTIONS[style.mode].label}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -133,20 +120,19 @@ export function SourceControlWritingSettingsSection({
                 }
               }}
               rows={4}
-              placeholder="Keep titles concise. Use short bullet points in descriptions."
-              aria-label="Custom source control writing instructions"
+              placeholder="Kurze Titel, Stichpunkte"
+              aria-label="Eigene Vorgabe"
             />
           </div>
         ) : null}
       </SettingsRow>
 
       <SettingsRow
-        title="Follow change request templates"
-        description="Structures change request descriptions using the current repository's template when one is available."
+        title="PR-Vorlagen nutzen"
         resetAction={
           style.followChangeRequestTemplates !== defaults.followChangeRequestTemplates ? (
             <SettingResetButton
-              label="change request templates"
+              label="PR-Vorlagen nutzen"
               onClick={() =>
                 updateSettings({
                   sourceControlWritingStyle: {
@@ -167,14 +153,13 @@ export function SourceControlWritingSettingsSection({
                 },
               })
             }
-            aria-label="Follow change request templates"
+            aria-label="PR-Vorlagen nutzen"
           />
         }
       />
 
       <SettingsRow
-        title="Source control writer model"
-        description="Optional model override for change descriptions, change request titles and descriptions, and branch or bookmark names. Off uses the global text generation model."
+        title="Eigenes Modell"
         control={
           <div className="flex flex-wrap items-center justify-end gap-2">
             {usesDedicatedModel ? (
@@ -186,7 +171,7 @@ export function SourceControlWritingSettingsSection({
                 modelOptionsByInstance={modelOptionsByInstance}
                 triggerVariant="outline"
                 triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                triggerAriaLabel="Source control writer model"
+                triggerAriaLabel="Eigenes Modell"
                 onInstanceModelChange={(instanceId, model) => {
                   updateSettings({
                     sourceControlWriterModelSelection: createModelSelection(instanceId, model),
@@ -207,7 +192,7 @@ export function SourceControlWritingSettingsSection({
                     : null,
                 })
               }
-              aria-label="Use a separate source control writer model"
+              aria-label="Eigenes Modell"
             />
           </div>
         }

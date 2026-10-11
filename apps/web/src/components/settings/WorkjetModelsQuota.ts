@@ -73,9 +73,9 @@ export function normalizeModelsQuota(
           : seconds !== null && seconds >= 28 * DAY_SECONDS && seconds <= 31 * DAY_SECONDS
             ? "30 Tage"
             : seconds !== null && seconds > 0 && seconds < 7 * DAY_SECONDS
-              ? "Short-term"
+              ? "Kurzfristig"
               : provider === "codex" && window.name === "primary_window"
-                ? "Short-term"
+                ? "Kurzfristig"
                 : "unbekannt";
       const fresh =
         now >= window.observedAtMs && now - window.observedAtMs < MODELS_QUOTA_FRESH_FOR_MS;

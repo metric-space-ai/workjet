@@ -72,6 +72,30 @@ export function projectOverviewWorkerName(title: string, projectTitle: string) {
     : withoutHarness;
   return { name: short || withoutHarness, harness: suffix?.[1] ?? null };
 }
+/** Calendar date of the next configured weekly meeting, evaluated in its timezone. */
+export function projectOverviewNextMeetingDate(
+  recurring: NonNullable<GalleryProject["configuration"]>["jourFixe"],
+  now: number,
+) {
+  if (!recurring) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: recurring.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(now));
+  const value = (key: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === key)?.value);
+  const today = new Date(Date.UTC(value("year"), value("month") - 1, value("day")));
+  const offset = (recurring.weekday - (today.getUTCDay() || 7) + 7) % 7;
+  const [hour, minute] = recurring.time.split(":").map(Number);
+  const passed = offset === 0 && value("hour") * 60 + value("minute") >= hour! * 60 + minute!;
+  today.setUTCDate(today.getUTCDate() + offset + (passed ? 7 : 0));
+  return today.toISOString().slice(0, 10);
+}
 export function projectOverviewWorkerState(
   thread: Pick<
     EnvironmentThreadShell,
@@ -135,13 +159,8 @@ export function projectGoalSentence(goal: string): string {
     .replace(/\s+/gu, " ")
     .replace(/\s+([,.])/gu, "$1")
     .trim();
-  return (
-    new Intl.Segmenter(undefined, { granularity: "sentence" })
-      .segment(normalized)
-      [Symbol.iterator]()
-      .next()
-      .value?.segment.trim() ?? normalized
-  );
+  const sentences = new Intl.Segmenter(undefined, { granularity: "sentence" }).segment(normalized);
+  return sentences[Symbol.iterator]().next().value?.segment.trim() ?? normalized;
 }
 /** Only authoritative project scope, saved goals and evidenced values feed the owner overview. */
 export function buildProjectOwnerOverview(input: {
@@ -217,6 +236,7 @@ export function buildProjectOwnerOverview(input: {
   const prsSince =
     lastMeeting &&
     input.pullRequests !== undefined &&
+    merged.length > 0 &&
     merged.every((pr) => pr.mergedAt != null && Number.isFinite(Date.parse(pr.mergedAt)))
       ? merged.filter((pr) => Date.parse(pr.mergedAt!) >= lastMeeting.scheduled_at_ms).length
       : null;
@@ -327,7 +347,13 @@ export function buildProjectOwnerOverview(input: {
       }).format(new Date(at));
     const roles = (["supervisor", "parents", "workers"] as const).flatMap((role) => {
       const count = setup.filter((thread) => projectTeamSectionOf(thread) === role).length;
-      return count ? [count + " " + text[role]] : [];
+      const label =
+        count === 1 && role !== "supervisor"
+          ? role === "parents"
+            ? text.parentSingular
+            : text.workerSingular
+          : text[role];
+      return count ? [count + " " + label] : [];
     });
     history.push({
       id: "setup",
@@ -372,6 +398,10 @@ export function buildProjectOwnerOverview(input: {
     history: history.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 5),
     lastMeeting,
     recurring: project.configuration?.jourFixe ?? null,
+    nextMeetingDate: projectOverviewNextMeetingDate(
+      project.configuration?.jourFixe,
+      input.now ?? Date.now(),
+    ),
     supervisorLumaId: project.configuration?.supervisorLumaId ?? null,
     supervisorTick: {
       createdAt: supervisors[0]?.createdAt ?? null,

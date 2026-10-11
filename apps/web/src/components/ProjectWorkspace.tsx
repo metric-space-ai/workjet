@@ -124,7 +124,7 @@ function ProjectWorkspaceContent({
           <button
             type="button"
             onClick={() => setEditingParent(true)}
-            className="mt-2 rounded-full border border-border px-2.5 py-1 text-xs hover:bg-muted"
+            className="rounded-full border border-border px-2.5 py-1 text-xs hover:bg-muted"
           >
             + {text.addParent}
           </button>

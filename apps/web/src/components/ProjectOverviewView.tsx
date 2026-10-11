@@ -92,9 +92,12 @@ export function ProjectOverviewView(props: {
   const shortDate = (at: number) =>
     new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit" }).format(new Date(at));
   const meetingLabel = data.recurring
-    ? new Intl.DateTimeFormat(locale, { weekday: "long", timeZone: "UTC" }).format(
-        new Date(Date.UTC(2026, 0, 4 + data.recurring.weekday)),
-      ) +
+    ? new Intl.DateTimeFormat(locale, {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+        timeZone: "UTC",
+      }).format(new Date(data.nextMeetingDate! + "T00:00:00Z")) +
       " · " +
       data.recurring.time
     : text.noNextMeeting;
@@ -233,13 +236,22 @@ export function ProjectOverviewView(props: {
         {data.kpis.map((kpi) => (
           <div
             key={kpi.id}
-            className="min-w-0 rounded-lg border border-border bg-card px-3 py-2.5"
+            className={`min-w-0 rounded-lg border border-border bg-card px-3 py-2.5 ${kpi.id === "tokens" ? "col-span-2 min-[980px]:col-span-1" : ""}`}
             data-workjet-overview-kpi={kpi.id}
           >
             <dd
               className={`break-words text-[22px] font-semibold tabular-nums [overflow-wrap:anywhere] ${kpi.value === "—" ? "text-muted-foreground" : ""}`}
             >
-              {kpi.value}
+              {kpi.id === "tokens" && kpi.value.includes(" (") ? (
+                <>
+                  {kpi.value.slice(0, kpi.value.indexOf(" ("))}{" "}
+                  <span className="whitespace-nowrap text-[11px] font-medium text-muted-foreground">
+                    {kpi.value.slice(kpi.value.indexOf(" (") + 1)}
+                  </span>
+                </>
+              ) : (
+                kpi.value
+              )}
             </dd>
             <dt className="mt-0.5 text-xs text-muted-foreground">{kpi.label}</dt>
             {kpi.note && <dd className="mt-1 text-[11px] text-muted-foreground">{kpi.note}</dd>}

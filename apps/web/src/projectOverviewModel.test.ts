@@ -4,10 +4,21 @@ import {
   projectOverviewBudgetValue,
   projectOverviewStatusTone,
   projectOverviewWorkerName,
+  projectOverviewNextMeetingDate,
 } from "./projectOverviewModel";
 import { overviewFixture } from "./fixtures/project-overview.fixture-data";
 
 describe("dense owner overview model", () => {
+  it("shows the next meeting date in its configured timezone", () => {
+    const recurring = { weekday: 3, time: "13:00", timezone: "Europe/Berlin" };
+    expect(projectOverviewNextMeetingDate(recurring, Date.parse("2026-10-11T17:00:00Z"))).toBe(
+      "2026-10-14",
+    );
+    expect(projectOverviewNextMeetingDate(recurring, Date.parse("2026-10-14T11:00:00Z"))).toBe(
+      "2026-10-21",
+    );
+    expect(projectOverviewNextMeetingDate(null, Date.now())).toBeNull();
+  });
   it("uses dashes for missing values and omits the missing summary", () => {
     const input = overviewFixture("empty");
     const data = buildProjectOwnerOverview(input);

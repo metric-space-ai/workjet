@@ -123,7 +123,6 @@ export function overviewFixture(
     configuration: {
       id: projectId,
       title: "Molecularity",
-      workingCopies: [],
       jourFixe: { weekday: 3, time: "13:00", timezone: "Europe/Berlin" },
       repoUrl: "https://github.com/metric-space-ai/molecularity",
       ...(variant === "full"

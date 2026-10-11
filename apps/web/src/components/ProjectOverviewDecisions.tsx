@@ -31,7 +31,9 @@ export function ProjectOverviewQuestion(props: {
   const answers = buildPendingUserInputAnswers(props.pending.questions, drafts);
   return (
     <form
-      className="space-y-2"
+      className={
+        props.pending.questions.length > 1 ? "grid gap-2" : "flex flex-wrap items-end gap-2"
+      }
       onSubmit={async (event) => {
         event.preventDefault();
         if (!answers || busy) return;
@@ -47,9 +49,13 @@ export function ProjectOverviewQuestion(props: {
       }}
     >
       {props.pending.questions.map((question) => (
-        <fieldset key={question.id} disabled={busy} className="min-w-0 space-y-2">
+        <fieldset
+          key={question.id}
+          disabled={busy}
+          className="min-w-0 grow basis-[24rem] space-y-1"
+        >
           <legend className="break-words leading-5">{question.question}</legend>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {question.options.map((option) => (
               <button
                 key={option.label}
@@ -73,19 +79,19 @@ export function ProjectOverviewQuestion(props: {
                 {option.label}
               </button>
             ))}
+            <input
+              aria-label={question.question}
+              placeholder={text.answer}
+              value={drafts[question.id]?.customAnswer ?? ""}
+              className="min-w-32 flex-1 rounded border border-input bg-transparent px-2 py-1 text-xs"
+              onChange={(event) =>
+                setDrafts((previous) => ({
+                  ...previous,
+                  [question.id]: { customAnswer: event.target.value },
+                }))
+              }
+            />
           </div>
-          <input
-            aria-label={question.question}
-            placeholder={text.answer}
-            value={drafts[question.id]?.customAnswer ?? ""}
-            className="w-full min-w-0 rounded border border-input bg-transparent px-2 py-1 text-sm"
-            onChange={(event) =>
-              setDrafts((previous) => ({
-                ...previous,
-                [question.id]: { customAnswer: event.target.value },
-              }))
-            }
-          />
         </fieldset>
       ))}
       <button type="submit" disabled={!answers || busy} className={chip}>

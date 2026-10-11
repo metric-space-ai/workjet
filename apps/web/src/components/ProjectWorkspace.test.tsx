@@ -292,6 +292,7 @@ describe("owner project overview", () => {
       }).kpis[1]?.value,
     ).toBe("1");
     expect(overview([supervisor], { meeting }).kpis[1]?.value).toBe("—");
+    expect(overview([supervisor], { meeting, pullRequests: [] }).kpis[1]?.value).toBe("—");
   });
   it("keeps confirmed merges separate from closed proposals", () => {
     const data = overview([supervisor], {

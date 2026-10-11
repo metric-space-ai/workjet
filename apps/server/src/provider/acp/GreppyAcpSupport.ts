@@ -30,7 +30,10 @@ export function buildGreppyAcpSpawnInput(
 }
 
 export const makeGreppyAcpRuntime = Effect.fn("makeGreppyAcpRuntime")(function* (
-  input: Omit<AcpSessionRuntime.AcpSessionRuntimeOptions, "spawn" | "authMethodId" | "namespaceCapture"> & {
+  input: Omit<
+    AcpSessionRuntime.AcpSessionRuntimeOptions,
+    "spawn" | "authMethodId" | "namespaceCapture"
+  > & {
     readonly namespaceCapture?: WorkerNamespaceSessionCapture;
     readonly config: GreppySettings;
     readonly environment: NodeJS.ProcessEnv;
@@ -38,17 +41,24 @@ export const makeGreppyAcpRuntime = Effect.fn("makeGreppyAcpRuntime")(function* 
     readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   },
 ) {
-  const configured = buildGreppyAcpSpawnInput(input.config, input.cwd, input.environment, input.model);
-  const runtime = input.namespaceCapture === undefined
-    ? undefined
-    : yield* captureWorkerNamespaceRuntime(configured);
+  const configured = buildGreppyAcpSpawnInput(
+    input.config,
+    input.cwd,
+    input.environment,
+    input.model,
+  );
+  const runtime =
+    input.namespaceCapture === undefined
+      ? undefined
+      : yield* captureWorkerNamespaceRuntime(configured);
+  const { namespaceCapture, ...options } = input;
   const context = yield* Layer.build(
     AcpSessionRuntime.layer({
-      ...input,
+      ...options,
       spawn: runtime?.spawn ?? configured,
-      namespaceCapture: input.namespaceCapture && runtime
-        ? { ...input.namespaceCapture, runtimeFiles: runtime.runtimeFiles }
-        : undefined,
+      ...(namespaceCapture && runtime
+        ? { namespaceCapture: { ...namespaceCapture, runtimeFiles: runtime.runtimeFiles } }
+        : {}),
       authMethodId: "greppy.env",
       cancelPromptMode: "await-response",
       mcpServers: [],

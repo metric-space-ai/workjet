@@ -243,7 +243,7 @@ function NativeAccountRow({
             </span>
           )}
         </div>
-        <NativeProviderLimits quota={account.reportedQuota} />
+        <NativeProviderLimits provider={account.provider} quota={account.reportedQuota} />
         <div role="cell" className="flex justify-center">
           {canEnable ? (
             <label

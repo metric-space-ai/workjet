@@ -18,6 +18,7 @@ import * as DesktopSavedEnvironments from "../settings/DesktopSavedEnvironments.
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopConnectionCatalogStore from "./DesktopConnectionCatalogStore.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { DesktopKeyRecovery } from "./DesktopKeyRecovery.ts";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -52,6 +53,8 @@ function makeLayer(
   encryptionAvailable = true,
   failDecrypt: Ref.Ref<boolean> | null = null,
   fileSystemLayer: Layer.Layer<FileSystem.FileSystem> = NodeServices.layer,
+  recovery?: DesktopKeyRecovery["Service"],
+  safeStorage?: ElectronSafeStorage.ElectronSafeStorage["Service"],
 ) {
   const environmentLayer = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
@@ -68,12 +71,16 @@ function makeLayer(
       Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ WORKJET_HOME: baseDir })),
     ),
   );
-  const safeStorageLayer = makeSafeStorageLayer(encryptionAvailable, failDecrypt);
+  const safeStorageLayer =
+    safeStorage === undefined
+      ? makeSafeStorageLayer(encryptionAvailable, failDecrypt)
+      : Layer.succeed(ElectronSafeStorage.ElectronSafeStorage, safeStorage);
   const dependencies = Layer.mergeAll(
     environmentLayer,
     safeStorageLayer,
     NodeServices.layer,
     fileSystemLayer,
+    recovery === undefined ? Layer.empty : Layer.succeed(DesktopKeyRecovery, recovery),
   );
   const savedEnvironmentsLayer = DesktopSavedEnvironments.layer.pipe(
     Layer.provideMerge(dependencies),
@@ -98,6 +105,63 @@ const withStore = <A, E, R>(
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
 describe("DesktopConnectionCatalogStore", () => {
+  it.effect(
+    "automatically backs up and resets after confirmed key loss without a recovery click",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "catalog-key-loss-" });
+        let key = "first";
+        const storage = ElectronSafeStorage.ElectronSafeStorage.of({
+          isEncryptionAvailable: Effect.succeed(true),
+          selectedStorageBackend: Effect.succeed(Option.none()),
+          encryptString: (plaintext) => Effect.sync(() => Buffer.from(`${key}:${plaintext}`)),
+          decryptString: (bytes) =>
+            Effect.suspend(() => {
+              const ciphertext = Buffer.from(bytes).toString();
+              return ciphertext.startsWith(`${key}:`)
+                ? Effect.succeed(ciphertext.slice(key.length + 1))
+                : Effect.fail(
+                    new ElectronSafeStorage.ElectronSafeStorageDecryptError({
+                      cause: "changed fixture key",
+                    }),
+                  );
+            }),
+        });
+        const recovery = DesktopKeyRecovery.of({
+          inspect: Effect.succeed({
+            version: 1,
+            generation: "1-11111111-1111-4111-8111-111111111111",
+            pendingLogin: true,
+            unreadableStores: ["session", "catalog"],
+          }),
+          completeLogin: Effect.void,
+        });
+        const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+          Effect.provide(makeLayer(baseDir, true, null, NodeServices.layer, recovery, storage)),
+        );
+        yield* store.set(
+          '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":[],"remoteDpopTokens":[]}',
+        );
+        const catalogPath = `${baseDir}/userdata/connection-catalog.json`;
+        const original = yield* fs.readFileString(catalogPath);
+        key = "second";
+        // The changed key can encrypt new files; it cannot read the prior ciphertext.
+        const restored = yield* store.get;
+        assert.isTrue(Option.isSome(restored));
+        const backups = (yield* fs.readDirectory(`${baseDir}/userdata`)).filter((name) =>
+          name.endsWith(".bak"),
+        );
+        assert.equal(backups.length, 1);
+        assert.equal(yield* fs.readFileString(`${baseDir}/userdata/${backups[0]}`), original);
+        yield* store.get;
+        assert.equal(
+          (yield* fs.readDirectory(`${baseDir}/userdata`)).filter((name) => name.endsWith(".bak"))
+            .length,
+          1,
+        );
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
   it.effect("persists, reads, and clears an encrypted connection catalog", () =>
     withStore(
       Effect.gen(function* () {

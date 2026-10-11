@@ -1245,7 +1245,10 @@ export interface DesktopCtoxBridge {
   disconnectDecisionHub?: (
     input: CtoxDecisionHubDisconnectInput,
   ) => Promise<CtoxDecisionHubDisconnectResult>;
-  importInvite: (invite: string) => Promise<CtoxPairedInstanceImportResult>;
+  importInvite: (
+    invite: string,
+    replacesInstanceId?: string,
+  ) => Promise<CtoxPairedInstanceImportResult>;
   importManualPairing: (
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxPairedInstanceImportResult>;

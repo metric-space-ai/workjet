@@ -2,6 +2,7 @@ import { AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as NodeSqlite from "node:sqlite";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -340,7 +341,7 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
         ? Option.none<LocalServiceCredential>()
         : yield* read.pipe(
             Effect.catch((error) =>
-              binding !== undefined && ["unlock", "decrypt"].includes(error.operation)
+              binding !== undefined && ["unlock", "decrypt", "decode"].includes(error.operation)
                 ? Effect.succeed(Option.none<LocalServiceCredential>())
                 : Effect.fail(error),
             ),
@@ -382,7 +383,11 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
         // Ownership is held outside this directory and survives its atomic move.
         yield* fs.rename(
           directory,
-          path.join(baseDir, "runtime", `desktop-auth-retired-${NodeCrypto.randomUUID()}`),
+          path.join(
+            baseDir,
+            "runtime",
+            `desktop-auth-retired-${yield* Clock.currentTimeMillis}-${NodeCrypto.randomUUID()}`,
+          ),
         );
         if (platform !== "win32")
           yield* (yield* fs.open(path.join(baseDir, "runtime"), { flag: "r" })).sync;

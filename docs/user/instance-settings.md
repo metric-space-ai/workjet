@@ -16,3 +16,13 @@ In a browser, settings apply to the Workjet host you are connected to.
 
 Device connections are available under **Connected devices** on the instance page.
 Expand that section to connect a Workjet device or review its existing connections.
+
+If Workjet detects that its local encryption key was lost, sign in to **ctox.dev**
+once from the recovery screen. Workjet preserves unreadable files, reconnects its
+local background service, resets the saved connection catalog, and restores your
+managed instances and project list after sign-in. Project and conversation data
+remain in place.
+
+Saved direct, SSH and relay connections may need to be added again. For an
+instance paired without a ctox.dev account, choose **Neu koppeln** and supply fresh
+pairing details for the same instance. Its saved identity stays in place.

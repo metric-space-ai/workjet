@@ -21,6 +21,7 @@ vi.mock("electron", () => ({ session: { fromPartition } }));
 
 import { ctoxManagedSessionPartition } from "./CtoxManagedDiscovery.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
+import { DesktopKeyRecovery, DesktopKeyRecoveryError } from "../app/DesktopKeyRecovery.ts";
 
 function descriptor(id = "managed:tenant-a"): CtoxManagedInstance {
   return {
@@ -97,6 +98,58 @@ describe("CtoxElectronSessions", () => {
       return fakeSession;
     });
   });
+
+  it.effect(
+    "retires each old partition before Electron opens it and preserves its cached replacement",
+    () =>
+      Effect.gen(function* () {
+        const retirePartition = vi.fn(() => Effect.void);
+        const sessions = yield* CtoxElectronSessions.make.pipe(
+          Effect.provideService(DesktopKeyRecovery, {
+            inspect: Effect.succeed(undefined),
+            completeLogin: Effect.void,
+            retirePartition,
+          }),
+        );
+        yield* sessions.account;
+        yield* sessions.account;
+        yield* sessions.instance(descriptor());
+        yield* sessions.instance(descriptor());
+        assert.deepEqual(retirePartition.mock.calls, [
+          [CtoxElectronSessions.CTOX_CONTROL_PLANE_PARTITION],
+          [partitionOf(descriptor())],
+        ]);
+        assert.equal(fromPartition.mock.calls.length, 2);
+        assert.isTrue(
+          retirePartition.mock.invocationCallOrder[0]! < fromPartition.mock.invocationCallOrder[0]!,
+        );
+        assert.isTrue(
+          retirePartition.mock.invocationCallOrder[1]! < fromPartition.mock.invocationCallOrder[1]!,
+        );
+        for (const browserSession of fakeSessions.values()) {
+          assert.isEmpty(browserSession.clearStorageData.mock.calls);
+          assert.isEmpty(browserSession.clearCache.mock.calls);
+        }
+      }),
+  );
+
+  it.effect("does not open an old partition if preserving it fails", () =>
+    Effect.gen(function* () {
+      const sessions = yield* CtoxElectronSessions.make.pipe(
+        Effect.provideService(DesktopKeyRecovery, {
+          inspect: Effect.succeed(undefined),
+          completeLogin: Effect.void,
+          retirePartition: () =>
+            Effect.fail(
+              new DesktopKeyRecoveryError({ operation: "retire protected browser partition" }),
+            ),
+        }),
+      );
+      const result = yield* sessions.account.pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+      assert.isEmpty(fromPartition.mock.calls);
+    }),
+  );
 
   it.effect(
     "owns isolated deterministic account and instance sessions and memoizes each partition",

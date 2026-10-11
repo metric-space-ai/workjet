@@ -1,4 +1,5 @@
 import { openInstanceSetup } from "../../instanceSetup";
+import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { InstanceSetupDialog } from "./InstanceSetupDialog";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import type {
@@ -172,7 +173,10 @@ interface CtoxModeContextValue {
   readonly refresh: () => void;
   readonly login: () => void;
   readonly logout: () => void;
-  readonly importInvite: (invite: string) => Promise<CtoxMutationOutcome>;
+  readonly importInvite: (
+    invite: string,
+    replacesInstanceId?: string,
+  ) => Promise<CtoxMutationOutcome>;
   readonly importManualPairing: (
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxMutationOutcome>;
@@ -282,10 +286,14 @@ export function activateCtoxInstance(
 export async function submitCtoxInvite(
   bridge: DesktopCtoxBridge | undefined,
   invite: string,
+  replacesInstanceId?: string,
 ): Promise<CtoxMutationOutcome> {
   if (bridge === undefined) return { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
   try {
-    const result = await bridge.importInvite(invite);
+    const result =
+      replacesInstanceId === undefined
+        ? await bridge.importInvite(invite)
+        : await bridge.importInvite(invite, replacesInstanceId);
     return result._tag === "completed"
       ? { ok: true, message: CTOX_IMPORT_SUCCESS_MESSAGE }
       : { ok: false, message: CTOX_IMPORT_ERROR_MESSAGE };
@@ -562,20 +570,6 @@ export function CtoxModeProvider({
 
   useEffect(() => subscribeActiveWorkjetHostContext(refresh), [refresh]);
 
-  const login = useCallback(() => {
-    if (bridge === undefined) return;
-    setRefreshing(true);
-    void bridge
-      .login()
-      .then((result) => {
-        if (result._tag === "completed") applyDiscovery(result.discovery);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (mountedRef.current) setRefreshing(false);
-      });
-  }, [applyDiscovery, bridge]);
-
   const logout = useCallback(() => {
     if (bridge === undefined) return;
     setRefreshing(true);
@@ -601,8 +595,8 @@ export function CtoxModeProvider({
   }, [bridge, clearSelection, refresh]);
 
   const importInvite = useCallback(
-    async (invite: string) => {
-      const outcome = await submitCtoxInvite(bridge, invite);
+    async (invite: string, replacesInstanceId?: string) => {
+      const outcome = await submitCtoxInvite(bridge, invite, replacesInstanceId);
       if (outcome.ok) refresh();
       return outcome;
     },
@@ -650,12 +644,12 @@ export function CtoxModeProvider({
   );
 
   const select = useCallback(
-    async (instance: CtoxManagedInstance) => {
+    async (instance: CtoxManagedInstance, forceReconnect = false) => {
       if (!canActivateCtoxInstance(instance)) return false;
       // A re-selection retries a failed or stalled guest. A ready guest remains
       // attached without a needless reload.
       if (selectedIdRef.current === instance.id) {
-        if (connection !== "ready") {
+        if (forceReconnect || connection !== "ready") {
           setActivationKey((current) => current + 1);
           setConnection("connecting");
         }
@@ -674,6 +668,36 @@ export function CtoxModeProvider({
     [connection],
   );
   const isSelected = useCallback((instanceId: string) => selectedIdRef.current === instanceId, []);
+
+  const login = useCallback(() => {
+    if (bridge === undefined) return;
+    const restoringKey = discovery !== "loading" && discovery.keyRecovery?.pendingLogin === true;
+    const previousSelection = selectedIdRef.current;
+    setRefreshing(true);
+    void bridge
+      .login()
+      .then(async (result) => {
+        if (result._tag !== "completed" || !mountedRef.current) return;
+        applyDiscovery(result.discovery);
+        if (
+          restoringKey &&
+          result.discovery._tag === "ready" &&
+          result.discovery.keyRecovery?.pendingLogin === false
+        ) {
+          const managed = result.discovery.instances.filter(
+            (instance) => instance.source === "ctox_dev" && canActivateCtoxInstance(instance),
+          );
+          const target =
+            managed.find((instance) => instance.id === previousSelection) ?? managed[0];
+          if (target !== undefined && (await select(target, true)))
+            refreshWorkjetProjectRegistry(target.id);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mountedRef.current) setRefreshing(false);
+      });
+  }, [applyDiscovery, bridge, discovery, select]);
 
   const [appRailVersion, setAppRailVersion] = useState(0);
   const guestBoundsRef = useRef<CtoxGuestBounds | null>(null);
@@ -1625,7 +1649,15 @@ function CtoxInstanceCard({
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
         </button>
-        {removable && onRemove !== undefined ? (
+        {isPairedCtoxInstance(instance) && instance.status === "error" ? (
+          <button
+            type="button"
+            className="px-2 py-1 text-xs text-sidebar-foreground"
+            onClick={() => openInstanceSetup("link", instance.id)}
+          >
+            Neu koppeln
+          </button>
+        ) : removable && onRemove !== undefined ? (
           <Menu>
             <MenuTrigger
               className="invisible inline-flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:visible group-hover/ctox-instance:visible data-popup-open:visible"
@@ -1713,6 +1745,7 @@ export function PairingAddSurface({
   initialChoice = "invite",
   existingOnly = false,
   onBusyChange,
+  replacesInstanceId,
 }: {
   readonly onClose: () => void;
   readonly onImported: (outcome: CtoxMutationOutcome) => void;
@@ -1720,6 +1753,7 @@ export function PairingAddSurface({
   readonly initialChoice?: "invite" | "manual";
   readonly existingOnly?: boolean;
   readonly onBusyChange?: (busy: boolean) => void;
+  readonly replacesInstanceId?: string | undefined;
 }) {
   const { importInvite, importManualPairing, addSshManagedInstance } = useCtoxMode();
   const [choice, setChoice] = useState<"invite" | "manual" | "ssh">(initialChoice);
@@ -1769,7 +1803,7 @@ export function PairingAddSurface({
     event.preventDefault();
     setSubmitting(true);
     setFeedback(null);
-    void importInvite(invite)
+    void importInvite(invite, replacesInstanceId)
       .then(finish)
       .finally(() => setSubmitting(false));
   };
@@ -1795,7 +1829,10 @@ export function PairingAddSurface({
       setSubmitting(false);
       return;
     }
-    void importManualPairing(input)
+    void importManualPairing({
+      ...input,
+      ...(replacesInstanceId === undefined ? {} : { replacesInstanceId }),
+    })
       .then(finish)
       .finally(() => setSubmitting(false));
   };
@@ -2142,7 +2179,9 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
               CTOX Backend-Dienste sind nicht verfügbar.
             </p>
           ) : null}
-          {discovery !== "loading" && discovery.pairedUnavailable === true ? (
+          {discovery !== "loading" &&
+          discovery.pairedUnavailable === true &&
+          discovery.keyRecovery === undefined ? (
             <p className="mb-3 text-xs text-destructive" role="alert">
               Gespeicherte Backend-Verbindungen sind teilweise oder vollständig nicht lesbar. Die
               gespeicherten Daten wurden nicht verändert. Bitte den Schlüsselbundzugriff prüfen und

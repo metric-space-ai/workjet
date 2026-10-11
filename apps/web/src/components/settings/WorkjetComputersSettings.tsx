@@ -802,7 +802,7 @@ export function WorkjetComputersSettingsView({
                 className={cn(!active && "opacity-55")}
               >
                 <Row
-                  className="flex-wrap sm:flex-nowrap max-sm:[&>div:has(>[data-slot=row-name])]:basis-[calc(100%-1.25rem)] max-sm:[&>[data-slot=row-chips]]:flex-1 max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap max-sm:[&>[data-slot=row-chips]]:pl-5 max-sm:[&>[data-slot=row-actions]]:ml-auto max-sm:[&>[data-slot=row-actions]]:flex-wrap"
+                  className="flex-wrap sm:flex-nowrap max-sm:[&>div:has(>[data-slot=row-name])]:basis-[calc(100%-1.25rem)] max-sm:[&>[data-slot=row-chips]]:flex-1 max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap max-sm:[&>[data-slot=row-chips]]:pl-5 max-sm:[&>[data-slot=row-actions]]:ml-auto max-sm:[&>[data-slot=row-actions]]:max-w-full max-sm:[&>[data-slot=row-actions]]:flex-wrap max-sm:[&_[data-slot=row-confirm]]:min-w-0 max-sm:[&_[data-slot=row-confirm]]:flex-wrap"
                   status={status}
                   statusLabel={statusLabel}
                   name={label}

@@ -10,6 +10,7 @@ import {
   WorkjetComputerId,
   type ComputerFacts,
   type ComputerMetadata,
+  type CtoxWorkjetComputerProjection,
   type WorkjetComputer,
   type WorkjetConfiguration,
 } from "@workjet/contracts";
@@ -243,6 +244,7 @@ function Fixture() {
     (query.get("add") as AddComputerKind | null) ?? "ssh",
   );
   const membershipPhase = query.get("membership") === "loading" ? "loading" : "ready";
+  const [unassigned, setUnassigned] = useState<ReadonlyArray<string>>([]);
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex h-12 items-center gap-2 border-b border-border px-4 text-[13.5px]">
@@ -291,38 +293,40 @@ function Fixture() {
             phase: membershipPhase,
             pendingComputerId: null,
             error: null,
-            computers: [
-              {
-                id: "native-gpu3",
-                displayName: "gpu3",
-                detectedFacts: facts("machine-gpu3", 32, 128, []),
-                hostingMode: "workstation",
-                status: "assigned",
-                capabilities: ["claude-code", "build", "gpu"],
-                capabilityConfig: [
-                  {
-                    kind: "build",
-                    ssh_endpoint_ref: "endpoint-gpu3",
-                    slots: 1,
-                    jobs: 32,
-                    lane_root: "~/.workjet/build",
-                    disk_floor_gib: 20,
-                    toolchains: ["rust-stable"],
-                  },
-                  { kind: "gpu", model: "NVIDIA RTX A4500", vram_gib: 20 },
-                ],
-                selfHostedColocation: false,
-              },
-              {
-                id: "native-nas",
-                displayName: "flashstore24-nas",
-                hostingMode: "self_hosted",
-                status: "assigned",
-                capabilities: ["storage"],
-                agentless: true,
-                selfHostedColocation: false,
-              },
-            ],
+            computers: (
+              [
+                {
+                  id: "native-gpu3",
+                  displayName: "gpu3",
+                  detectedFacts: facts("machine-gpu3", 32, 128, []),
+                  hostingMode: "workstation",
+                  status: "assigned",
+                  capabilities: ["claude-code", "build", "gpu"],
+                  capabilityConfig: [
+                    {
+                      kind: "build",
+                      ssh_endpoint_ref: "endpoint-gpu3",
+                      slots: 1,
+                      jobs: 32,
+                      lane_root: "~/.workjet/build",
+                      disk_floor_gib: 20,
+                      toolchains: ["rust-stable"],
+                    },
+                    { kind: "gpu", model: "NVIDIA RTX A4500", vram_gib: 20 },
+                  ],
+                  selfHostedColocation: false,
+                },
+                {
+                  id: "native-nas",
+                  displayName: "flashstore24-nas",
+                  hostingMode: "self_hosted",
+                  status: "assigned",
+                  capabilities: ["storage"],
+                  agentless: true,
+                  selfHostedColocation: false,
+                },
+              ] satisfies ReadonlyArray<CtoxWorkjetComputerProjection>
+            ).filter((entry) => !unassigned.includes(entry.id)),
           }}
           capacities={Object.fromEntries(
             configuration.computers.map((entry) => [
@@ -352,6 +356,7 @@ function Fixture() {
             await delay(null, 600);
             if (query.get("remove") === "fail" && mode === "workjet-and-files")
               return { tone: "error" as const, text: "1 Pfad nicht entfernt" };
+            if (row.native) setUnassigned((current) => [...current, row.native!.id]);
             setConfiguration((current) => ({
               ...current,
               computers: current.computers.filter((entry) => entry.id !== row.computer?.id),

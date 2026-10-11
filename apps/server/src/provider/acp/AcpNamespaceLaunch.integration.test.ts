@@ -12,7 +12,7 @@ import { makeWorkerSourceModelSocket } from "../../workjet/WorkerSourceModelSock
 import type { WorkerNamespaceSpawnCapture } from "../../workjet/WorkerNamespaceSpawn.ts";
 
 const helper = process.env.WORKJET_TEST_NAMESPACE_HELPER;
-const hostPlatform = Effect.runSync(HostProcessPlatform);
+
 const agent = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../../scripts/acp-namespace-mock.py",
@@ -78,14 +78,14 @@ const fixture = async () => {
   }
 };
 
-describe.runIf(hostPlatform === "linux" && helper !== undefined)(
-  "ACP Linux namespace execution",
-  () => {
-    // CI without the Linux helper does not assert the kernel boundary. The gpu3 qualification builds it.
-    it.effect(
-      "starts the captured process and rejects daemon file/terminal callbacks across two turns",
-      () =>
-        Effect.acquireUseRelease(
+describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
+  // CI without the Linux helper does not assert the kernel boundary. The gpu3 qualification builds it.
+  it.effect(
+    "starts the captured process and rejects daemon file/terminal callbacks across two turns",
+    () =>
+      Effect.gen(function* () {
+        expect(yield* HostProcessPlatform).toBe("linux");
+        return yield* Effect.acquireUseRelease(
           Effect.tryPromise(fixture),
           (owned) =>
             Effect.gen(function* () {
@@ -151,11 +151,11 @@ describe.runIf(hostPlatform === "linux" && helper !== undefined)(
               );
             }),
           (owned) => Effect.promise(owned.close),
-        ).pipe(
-          Effect.provideService(HostProcessPlatform, hostPlatform),
-          Effect.provide(NodeServices.layer),
-        ),
-      { timeout: 15000 },
-    );
-  },
-);
+        );
+      }).pipe(
+        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provide(NodeServices.layer),
+      ),
+    { timeout: 15000 },
+  );
+});

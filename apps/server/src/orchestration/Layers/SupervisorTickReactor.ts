@@ -25,7 +25,9 @@ export class SupervisorTickReactor extends Context.Service<
   }
 >()("workjet/orchestration/Layers/SupervisorTickReactor") {}
 
-const decodePullRequests = Schema.decodeUnknownEffect(Schema.fromJsonString(SupervisorPullRequests));
+const decodePullRequests = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(SupervisorPullRequests),
+);
 
 export const makeSupervisorTickReactor = Effect.gen(function* () {
   const query = yield* ProjectionSnapshotQuery;

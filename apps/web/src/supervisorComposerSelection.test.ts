@@ -13,6 +13,7 @@ import {
   isSupervisorManualProfile,
   prepareSupervisorManualProfile,
   persistSupervisorComposerSelection,
+  supervisorSelectionForHarness,
 } from "./supervisorComposerSelection";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
 
@@ -134,6 +135,89 @@ describe("Supervisor composer selection persistence", () => {
       "project.list",
     ]);
     expect(write).toHaveBeenCalledOnce();
+  });
+  it("retains the model through a harness switch and creates a separate computer route", () => {
+    const gpu = {
+      ...computers[0]!,
+      id: WorkjetComputer.fields.id.make("gpu3"),
+      label: "gpu3",
+      harnesses: [{ harness: "codex-cli" as const, available: true }],
+    };
+    const next = supervisorSelectionForHarness("codex-cli", profile, [profile], gpu.id);
+    expect(next.modelId).toBe(profile.modelId);
+    const manual = prepareSupervisorManualProfile({
+      projectId: scope.projectId,
+      selection: { ...next, computerId: gpu.id },
+      configuration,
+      computers: [...computers, gpu],
+      models: [],
+    });
+    expect(manual).toMatchObject({
+      harness: "codex-cli",
+      computerId: gpu.id,
+      modelId: profile.modelId,
+    });
+    expect(configuration.workerProfiles).toEqual([profile]);
+    expect(() =>
+      prepareSupervisorManualProfile({
+        projectId: scope.projectId,
+        selection: { ...manual, harness: "grok-cli" },
+        configuration,
+        computers: [gpu],
+        models: [],
+      }),
+    ).toThrow("gpu3 cannot run grok-cli");
+  });
+  it("selects an existing Luma without rewriting instance configuration", async () => {
+    const write = vi.fn();
+    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, request) => {
+      if (request.action === "project.configure")
+        return {
+          _tag: "completed",
+          response: { action: request.action, commandId: request.commandId, project },
+        };
+      if (request.action === "project.list")
+        return {
+          _tag: "completed",
+          response: { action: request.action, projects: [project], count: 1, truncated: false },
+        };
+      throw new Error("Must never send a turn");
+    });
+    expect(
+      await persistSupervisorComposerSelection({
+        scope,
+        project,
+        profile,
+        snapshot: { revision: 1, configuration, updatedAtMs: null },
+        writeConfiguration: write,
+        readConfiguration: async () => ({ revision: 1, configuration, updatedAtMs: null }),
+        signal: new AbortController().signal,
+        isCurrent: () => true,
+        port,
+      }),
+    ).toEqual(project);
+    expect(write).not.toHaveBeenCalled();
+  });
+  it("does not select a route when the instance changes during read-back", async () => {
+    const port = vi.fn<WorkjetProjectControlPort>();
+    let current = true;
+    await expect(
+      persistSupervisorComposerSelection({
+        scope,
+        project,
+        profile,
+        snapshot: { revision: 1, configuration, updatedAtMs: null },
+        writeConfiguration: async () => "saved",
+        readConfiguration: async () => {
+          current = false;
+          return { revision: 1, configuration, updatedAtMs: null };
+        },
+        signal: new AbortController().signal,
+        isCurrent: () => current,
+        port,
+      }),
+    ).rejects.toThrow("project selection changed");
+    expect(port).not.toHaveBeenCalled();
   });
   it("refuses a configuration conflict before selecting a route", async () => {
     const port = vi.fn<WorkjetProjectControlPort>();

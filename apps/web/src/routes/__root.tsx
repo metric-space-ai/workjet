@@ -16,6 +16,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DeepLinkConfirmationDialog } from "../components/desktop/DeepLinkConfirmationDialog";
 import { UserDataMigrationDialog } from "../components/desktop/UserDataMigrationDialog";
+import { ConnectionCatalogWarning } from "../components/desktop/ConnectionCatalogWarning";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -145,6 +146,7 @@ function RootRouteView() {
         <SshPasswordPromptDialog />
         <UserDataMigrationDialog />
         <DeepLinkConfirmationDialog />
+        <ConnectionCatalogWarning />
         <ConfirmDialogHost />
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />

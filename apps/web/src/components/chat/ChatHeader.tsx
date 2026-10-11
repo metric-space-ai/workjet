@@ -14,6 +14,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -40,6 +41,7 @@ interface ChatHeaderProps {
   activeProjectCwd: string | null;
   activeProjectFaviconPath: string | null;
   rightPanelOpen: boolean;
+  approvalControl?: ReactNode;
   onNewThreadInProject: () => void;
 }
 
@@ -67,6 +69,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectCwd,
   activeProjectFaviconPath,
   rightPanelOpen,
+  approvalControl,
   onNewThreadInProject,
 }: ChatHeaderProps) {
   const activeThreadRef = useMemo(
@@ -237,6 +240,7 @@ export const ChatHeader = memo(function ChatHeader({
           )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {approvalControl}
     </div>
   );
 });

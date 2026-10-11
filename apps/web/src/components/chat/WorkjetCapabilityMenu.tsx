@@ -279,12 +279,18 @@ export function workjetConnectionStatusLabel(status: string): string {
   switch (status) {
     case "ready":
       return "bereit";
+    case "offline":
+      return "getrennt";
+    case "needs_auth":
+      return "Anmeldung nötig";
+    case "error":
+      return "Fehler";
+    case "unsupported":
+      return "nicht unterstützt";
     case "connecting":
       return "verbindet";
-    case "unavailable":
-      return "nicht verfügbar";
     default:
-      return "unbekannt";
+      return "nicht verfügbar";
   }
 }
 

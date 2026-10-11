@@ -26,6 +26,7 @@ import {
   WORKJET_GREPPY_FAILURE_TOAST,
   type WorkjetCapabilityMenuProps,
   workjetComposerCapabilityList,
+  workjetConnectionStatusLabel,
 } from "./WorkjetCapabilityMenu";
 
 const greppyManifest = builtInCapabilityManifests.find(({ id }) => id === GREPPY_CAPABILITY_ID);
@@ -478,5 +479,16 @@ describe("worker source connection action", () => {
     });
     expect(() => findByLabel(pinned, "Instanz verbinden")).toThrow();
     expect(() => findByLabel(WorkjetCapabilityMenuItems(props), "Instanz verbinden")).toThrow();
+  });
+});
+
+describe("workjetConnectionStatusLabel", () => {
+  it("names every connection status in German, never raw", () => {
+    expect(workjetConnectionStatusLabel("ready")).toBe("bereit");
+    expect(workjetConnectionStatusLabel("offline")).toBe("getrennt");
+    expect(workjetConnectionStatusLabel("needs_auth")).toBe("Anmeldung nötig");
+    expect(workjetConnectionStatusLabel("error")).toBe("Fehler");
+    expect(workjetConnectionStatusLabel("unsupported")).toBe("nicht unterstützt");
+    expect(workjetConnectionStatusLabel("something-new")).toBe("nicht verfügbar");
   });
 });

@@ -1,7 +1,8 @@
 /**
  * Banner (UI-Vertrag §1): Icon, eine Zeile, ein bis zwei Buttons.
  * Keine Absätze, keine Überschrift. Bei schmaler Breite bricht der Text um,
- * statt abgeschnitten zu werden; die Buttons bleiben immer sichtbar.
+ * statt abgeschnitten zu werden; reicht der Platz nicht, rutschen die Buttons
+ * rechtsbündig unter den Text und bleiben immer sichtbar.
  */
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -29,25 +30,31 @@ function Banner({ icon: Icon, children, action, secondaryAction, className }: Ba
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-[13.5px]",
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-3 py-2 text-[13.5px]",
         className,
       )}
       data-slot="banner"
       role="status"
     >
-      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]" data-slot="banner-text">
-        {children}
+      <span className="flex min-w-0 flex-1 basis-56 items-center gap-3">
+        <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]" data-slot="banner-text">
+          {children}
+        </span>
       </span>
-      {secondaryAction ? (
-        <Button size="sm" variant="outline" className="shrink-0" onClick={secondaryAction.onClick}>
-          {secondaryAction.label}
-        </Button>
-      ) : null}
-      {action ? (
-        <Button size="sm" className="shrink-0" onClick={action.onClick}>
-          {action.label}
-        </Button>
+      {secondaryAction || action ? (
+        <span className="ms-auto flex shrink-0 items-center gap-2" data-slot="banner-actions">
+          {secondaryAction ? (
+            <Button size="sm" variant="outline" onClick={secondaryAction.onClick}>
+              {secondaryAction.label}
+            </Button>
+          ) : null}
+          {action ? (
+            <Button size="sm" onClick={action.onClick}>
+              {action.label}
+            </Button>
+          ) : null}
+        </span>
       ) : null}
     </div>
   );

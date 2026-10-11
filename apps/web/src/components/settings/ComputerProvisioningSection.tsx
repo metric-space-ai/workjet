@@ -191,7 +191,9 @@ export function ComputerProvisioningSection({
         setStage("components");
         return;
       }
-      setStage(outcome.next === "fingerprint" && hostKey?._tag === "ready" ? "fingerprint" : "preflight");
+      setStage(
+        outcome.next === "fingerprint" && hostKey?._tag === "ready" ? "fingerprint" : "preflight",
+      );
       setFehler({
         message: outcome.message,
         retry: outcome.next === "fingerprint" ? "inspect" : "preflight",
@@ -251,7 +253,10 @@ export function ComputerProvisioningSection({
       setOperation(result.operation);
       setStage("operation");
     } catch (failure) {
-      setFehler({ message: errorText(failure), retry: action === "start" ? "start-backend" : "start" });
+      setFehler({
+        message: errorText(failure),
+        retry: action === "start" ? "start-backend" : "start",
+      });
     } finally {
       setBusy(false);
     }

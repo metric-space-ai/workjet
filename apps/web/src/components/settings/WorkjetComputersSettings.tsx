@@ -560,7 +560,13 @@ export function WorkjetComputersSettingsView({
             meta =
               computer.environmentId === environmentId
                 ? "Dieser Rechner"
-                : (target?.detail ?? (computer.presentationKind === "local" ? "Local" : "—"));
+                : target
+                  ? [target.label !== computer.label ? target.label : null, target.detail]
+                      .filter((part): part is string => !!part)
+                      .join(" · ")
+                  : computer.presentationKind === "local"
+                    ? "Local"
+                    : "—";
             if (snapshot) {
               const tools = computer.harnesses.filter(
                 (declared) =>
@@ -593,7 +599,7 @@ export function WorkjetComputersSettingsView({
                     +{tools.length - 3}
                   </Chip>,
                 );
-            } else if (!disconnected && inspection?.error) {
+            } else if (!disconnected && !connecting && inspection?.error) {
               chips.push(
                 <Chip key="tool-error" tone="error" title={inspection.error}>
                   Werkzeuge ?

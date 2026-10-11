@@ -121,9 +121,7 @@ export function buildRoleEnrollment(input: {
       endpoint_ref: endpointRef,
       protocol: "ssh",
       root:
-        savedStorage?.protocol === "ssh"
-          ? savedStorage.root
-          : `${WORKJET_COMPUTER_ROOT}/storage`,
+        savedStorage?.protocol === "ssh" ? savedStorage.root : `${WORKJET_COMPUTER_ROOT}/storage`,
       quota_gib: savedStorage?.quota_gib ?? null,
       purposes: savedStorage?.purposes ?? ["artifacts"],
     };

@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Der Test liest die Quelldateien direkt.
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import type { CtoxWorkjetComputerProjection } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,7 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { AddComputerInline, type AddComputerInlineProps } from "./AddComputerInline";
 import { buildRoleEnrollment, DEFAULT_COMPUTER_ROLES } from "./ComputerCapabilitiesEditor";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 
 const base: AddComputerInlineProps = {
   open: true,
@@ -93,7 +93,7 @@ describe("Rechner hinzufügen (inline)", () => {
       "ComputerCapabilitiesEditor.tsx",
       "ConnectionsSettings.tsx",
     ]
-      .map((file) => readFileSync(join(HERE, file), "utf8"))
+      .map((file) => NodeFS.readFileSync(NodePath.join(HERE, file), "utf8"))
       .join("\n");
     for (const sentence of [
       "Add a computer to the selected Business OS",

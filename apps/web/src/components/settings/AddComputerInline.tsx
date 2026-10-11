@@ -53,9 +53,19 @@ export type AddComputerOutcome =
 
 type Phase =
   | { readonly kind: "form" }
-  | { readonly kind: "hostkey"; readonly request: AddComputerRequest; readonly algorithm: string; readonly fingerprint: string }
+  | {
+      readonly kind: "hostkey";
+      readonly request: AddComputerRequest;
+      readonly algorithm: string;
+      readonly fingerprint: string;
+    }
   | { readonly kind: "running" }
-  | { readonly kind: "key"; readonly publicKey: string; readonly publicKeySha256: string; readonly where: string };
+  | {
+      readonly kind: "key";
+      readonly publicKey: string;
+      readonly publicKeySha256: string;
+      readonly where: string;
+    };
 
 const SEGMENTS: ReadonlyArray<{ readonly value: AddComputerKind; readonly label: string }> = [
   { value: "local", label: "Local" },
@@ -283,7 +293,11 @@ export function AddComputerInline({
       finish();
     } catch (failure) {
       setPhase({ kind: "form" });
-      setFehler(failure instanceof Error && failure.message ? failure.message : "Hinzufügen fehlgeschlagen.");
+      setFehler(
+        failure instanceof Error && failure.message
+          ? failure.message
+          : "Hinzufügen fehlgeschlagen.",
+      );
     } finally {
       setStep(null);
     }
@@ -343,7 +357,11 @@ export function AddComputerInline({
           }
         } catch (failure) {
           setPhase({ kind: "form" });
-          setFehler(failure instanceof Error && failure.message ? failure.message : "Host nicht erreichbar.");
+          setFehler(
+            failure instanceof Error && failure.message
+              ? failure.message
+              : "Host nicht erreichbar.",
+          );
           return;
         } finally {
           setStep(null);

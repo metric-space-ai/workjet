@@ -624,9 +624,18 @@ describe("one machine = one row", () => {
   const gpu3 = { ...computer("computer-gpu3", remoteEnvironmentId), label: "gpu3-a4500" };
 
   it("merges the instance entry gpu3 with the SSH connection gpu3-a4500", () => {
-    const rows = mergeComputerRows([gpu3], [native("native-gpu3", "gpu3")], [
-      { environmentId: remoteEnvironmentId, label: "lan-gpu3", presentationKind: "ssh", detail: "ssh://lan-gpu3" },
-    ]);
+    const rows = mergeComputerRows(
+      [gpu3],
+      [native("native-gpu3", "gpu3")],
+      [
+        {
+          environmentId: remoteEnvironmentId,
+          label: "lan-gpu3",
+          presentationKind: "ssh",
+          detail: "ssh://lan-gpu3",
+        },
+      ],
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.computer?.id).toBe("computer-gpu3");
     expect(rows[0]?.native?.id).toBe("native-gpu3");

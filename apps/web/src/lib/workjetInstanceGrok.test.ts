@@ -33,20 +33,26 @@ const readPort = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => {
 
 describe("native instance Grok consumer", () => {
   it("shows the real catalog rejection and the exact existing sign-in actions", async () => {
-    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => ({
-      _tag: "completed",
-      response: {
-        version: 1,
-        action: input.action,
-        operationId: grokOperationId(input),
-        installed: true,
-        accountLabel: "Grok Build subscription",
-        login: null,
-        models: [],
-        check: null,
-        catalogError: { errorCode: "request_failed", upstream: { status: 401, stage: "catalog" } },
-      },
-    }));
+    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => {
+      if (input.action !== "instance.grok.read") throw new Error("Unexpected request");
+      return {
+        _tag: "completed",
+        response: {
+          version: 1,
+          action: input.action,
+          operationId: grokOperationId(input),
+          installed: true,
+          accountLabel: "Grok Build subscription",
+          login: null,
+          models: [],
+          check: null,
+          catalogError: {
+            errorCode: "request_failed",
+            upstream: { status: 401, stage: "catalog" },
+          },
+        },
+      };
+    });
     const response = await requestInstanceGrok(
       "managed:welsch",
       { action: "instance.grok.read" },
@@ -70,26 +76,29 @@ describe("native instance Grok consumer", () => {
   ] as const)(
     "classifies received HTTP %s at %s without inventing a cooldown",
     async (status, stage, diagnosis, action) => {
-      const port = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => ({
-        _tag: "completed",
-        response: {
-          version: 1,
-          action: input.action,
-          operationId: grokOperationId(input),
-          installed: true,
-          accountLabel: "Grok Build subscription",
-          login: null,
-          models: ["grok-4.7"],
-          check: {
-            modelId: "grok-4.7",
-            status: "error",
-            checkedAt: 0,
-            latencyMs: null,
-            errorCode: "request_failed",
-            upstream: { status, stage },
+      const port = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => {
+        if (input.action !== "instance.grok.check") throw new Error("Unexpected request");
+        return {
+          _tag: "completed",
+          response: {
+            version: 1,
+            action: input.action,
+            operationId: grokOperationId(input),
+            installed: true,
+            accountLabel: "Grok Build subscription",
+            login: null,
+            models: ["grok-4.7"],
+            check: {
+              modelId: "grok-4.7",
+              status: "error",
+              checkedAt: 0,
+              latencyMs: null,
+              errorCode: "request_failed",
+              upstream: { status, stage },
+            },
           },
-        },
-      }));
+        };
+      });
       const response = await requestInstanceGrok(
         "managed:welsch",
         { action: "instance.grok.check", modelId: "grok-4.7" },
@@ -122,20 +131,24 @@ describe("native instance Grok consumer", () => {
     { status: 600, stage: "inference" },
     { status: 401, stage: "unknown" },
   ])("rejects malformed upstream provenance %s", async (upstream) => {
-    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => ({
-      _tag: "completed",
-      response: {
-        version: 1,
-        action: input.action,
-        operationId: grokOperationId(input),
-        installed: true,
-        accountLabel: "Grok Build subscription",
-        login: null,
-        models: [],
-        check: null,
-        catalogError: { errorCode: "request_failed", upstream },
-      },
-    }));
+    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => {
+      if (input.action !== "instance.grok.read") throw new Error("Unexpected request");
+      // Deliberately malformed wire data at the mock transport boundary.
+      return {
+        _tag: "completed",
+        response: {
+          version: 1,
+          action: input.action,
+          operationId: grokOperationId(input),
+          installed: true,
+          accountLabel: "Grok Build subscription",
+          login: null,
+          models: [],
+          check: null,
+          catalogError: { errorCode: "request_failed", upstream },
+        },
+      } as unknown as Awaited<ReturnType<WorkjetProjectControlPort>>;
+    });
     await expect(
       requestInstanceGrok(
         "managed:welsch",

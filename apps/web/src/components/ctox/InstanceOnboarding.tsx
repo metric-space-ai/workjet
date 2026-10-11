@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { RefreshCwIcon } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { canActivateCtoxInstance, useCtoxMode } from "./CtoxModeShell";
 import { Button } from "../ui/button";
@@ -62,16 +62,19 @@ export function InstanceOnboardingView({
   selectedId,
   onSelect,
   onRetry,
+  onManage = () => {},
 }: {
   readonly state: Exclude<InstanceOnboardingState, "ready">;
   readonly instances: readonly CtoxManagedInstance[];
   readonly selectedId?: string | null;
   readonly onSelect: (instance: CtoxManagedInstance) => void;
   readonly onRetry: () => void;
+  /** Öffnet Einstellungen › Instanzen (dort liegt auch „Instanz hinzufügen“). */
+  readonly onManage?: () => void;
 }) {
   const selected = instances.find((instance) => instance.id === selectedId);
   const manage = (
-    <Button variant="outline" size="sm" render={<Link to="/settings/business-os" />}>
+    <Button variant="outline" size="sm" onClick={onManage}>
       Instanzen verwalten
     </Button>
   );
@@ -100,7 +103,7 @@ export function InstanceOnboardingView({
   } else {
     title = "Instanz verbinden";
     actions = (
-      <Button size="sm" render={<Link to="/settings/business-os" />}>
+      <Button size="sm" onClick={onManage}>
         Instanz hinzufügen
       </Button>
     );
@@ -170,6 +173,7 @@ export function InstanceOnboarding({
   readonly state: Exclude<InstanceOnboardingState, "ready">;
 }) {
   const mode = useCtoxMode();
+  const navigate = useNavigate();
   const instances =
     mode.discovery !== "loading" && mode.discovery._tag === "ready" ? mode.discovery.instances : [];
   const selected = instances.find((instance) => instance.id === mode.selectedId);
@@ -202,6 +206,7 @@ export function InstanceOnboarding({
       selectedId={mode.selectedId}
       onSelect={(instance) => void mode.select(instance)}
       onRetry={retry}
+      onManage={() => void navigate({ to: "/settings/business-os" })}
     />
   );
 }

@@ -47,8 +47,9 @@ describe("instance-first network navigation", () => {
     const html = renderToStaticMarkup(
       <WorkjetKeyRecoveryView onLogin={() => undefined} catalogReset />,
     );
-    expect(html).toContain("Workjet hat seinen lokalen Schlüssel verloren.");
+    expect(html).toContain("Neu anmelden");
     expect(html).toContain("Bei ctox.dev anmelden");
+    expect(html).not.toContain("Schlüssel verloren");
     expect(html.match(/<button\b/g)).toHaveLength(1);
     expect(html).not.toContain("Reconnect Workjet Desktop");
     expect(html).not.toContain("Back up and reset");
@@ -152,29 +153,35 @@ describe("instance-first network navigation", () => {
       ),
     ).toBe("connecting");
   });
-  it("shows every first-start entry on the main screen without a project action", () => {
+  it("shows a calm first-start state with exactly one action and never the network", () => {
     const html = renderToStaticMarkup(
       <InstanceOnboardingView
         state="create-or-connect"
         instances={[]}
         onSelect={() => {}}
-        onRefresh={() => {}}
-        network={<div>Network fixture</div>}
+        onRetry={() => {}}
       />,
     );
-    for (const label of [
-      "Dieser Computer",
-      "SSH-Rechner",
-      "Tailscale-Rechner",
-      "QR-Code scannen",
-      "Link eingeben",
-      "Server, Raum und Passwort",
-      "ctox.dev",
-    ])
-      expect(html).toContain(label);
-    expect(html).not.toContain("project.add");
-    expect(html).not.toContain("Add project");
-    expect(html).not.toContain("Business OS hinzufügen");
+    expect(html).toContain("Instanz verbinden");
+    expect(html).toContain("Instanz hinzufügen");
+    expect(html.match(/<a\b|<button\b/g)).toHaveLength(1);
+    expect(html).not.toContain("Netzwerk");
+    expect(html).not.toContain("network");
+  });
+  it("offers a retry and the instance settings when the selected instance fails", () => {
+    const html = renderToStaticMarkup(
+      <InstanceOnboardingView
+        state="failed"
+        instances={[alpha]}
+        selectedId={alpha.id}
+        onSelect={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(html).toContain("ist nicht erreichbar");
+    expect(html).toContain("Erneut verbinden");
+    expect(html).toContain("Instanzen verwalten");
+    expect(html).not.toContain("Netzwerk");
   });
   it("routes different entry points through one resettable setup request", () => {
     openInstanceSetup("ssh");

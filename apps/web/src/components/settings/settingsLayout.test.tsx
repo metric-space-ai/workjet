@@ -12,11 +12,10 @@ afterEach(() => {
 });
 
 describe("Einstellungszeile (UI-Vertrag §1.4)", () => {
-  it("rendert keine Beschreibung, nur Bezeichnung, Status und Steuerelement", () => {
+  it("hat nur Bezeichnung, Status und Steuerelement, keine Beschreibung", () => {
     const markup = renderToStaticMarkup(
       <SettingsRow
         title="Zeilenumbruch"
-        description="Dieser Erklärsatz darf nicht erscheinen."
         status="Aktiv"
         control={<button type="button">Umschalten</button>}
       />,

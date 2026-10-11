@@ -810,7 +810,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         />
         <SettingsRow
           title="Symbol"
-          description={faviconPath ?? "Automatisch"}
+          status={faviconPath ?? "Automatisch"}
           resetAction={
             faviconPath !== null ? (
               <SettingResetButton
@@ -1218,7 +1218,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         {workjetFile.status === "invalid" ? (
           <SettingsRow
             title="workjet.json ist ungültig"
-            description="JSON-Syntax und Symbolwerte prüfen."
             className="text-warning"
           />
         ) : null}

@@ -57,8 +57,19 @@ export interface RowProps {
   readonly active?: boolean;
   readonly activeLabel?: string;
   readonly onActiveChange?: (active: boolean) => void;
+  readonly activeDisabled?: boolean;
   /** Papierkorb; die Bestätigung ist eingebaut. */
   readonly onDelete?: () => void;
+  /**
+   * Mehrere Löschwege zur Wahl in der Bestätigung, z. B. „Nur aus Workjet
+   * entfernen“ und „Auch auf dem Rechner entfernen“. Ersetzt den einen
+   * Bestätigen-Knopf, wenn gesetzt.
+   */
+  readonly deleteOptions?: ReadonlyArray<{
+    readonly label: string;
+    readonly onSelect: () => void;
+    readonly disabled?: boolean;
+  }>;
   readonly deleteLabel?: string;
   readonly deleteConfirmTitle?: string;
   /** Seltene Aktionen hinter dem ⋯-Menü. */
@@ -76,7 +87,9 @@ function Row({
   active,
   activeLabel = "Aktiv",
   onActiveChange,
+  activeDisabled,
   onDelete,
+  deleteOptions,
   deleteLabel = "Löschen",
   deleteConfirmTitle,
   menuActions,
@@ -84,7 +97,8 @@ function Row({
   className,
 }: RowProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const showActions = onActiveChange !== undefined || onDelete !== undefined || menuActions?.length;
+  const canDelete = onDelete !== undefined || (deleteOptions?.length ?? 0) > 0;
+  const showActions = onActiveChange !== undefined || canDelete || menuActions?.length;
 
   return (
     <div
@@ -113,30 +127,48 @@ function Row({
             <Switch
               aria-label={activeLabel}
               checked={active ?? false}
+              disabled={activeDisabled}
               onCheckedChange={(checked) => onActiveChange(checked === true)}
             />
           ) : null}
-          {onDelete && confirmingDelete ? (
+          {canDelete && confirmingDelete ? (
             <div className="flex items-center gap-1.5" data-slot="row-confirm" role="group">
               <span className="text-xs text-muted-foreground">
                 {deleteConfirmTitle ?? `${deleteLabel}?`}
               </span>
-              <Button
-                size="xs"
-                variant="destructive"
-                onClick={() => {
-                  setConfirmingDelete(false);
-                  onDelete();
-                }}
-              >
-                {deleteLabel}
-              </Button>
+              {deleteOptions?.length ? (
+                deleteOptions.map((option) => (
+                  <Button
+                    key={option.label}
+                    size="xs"
+                    variant="destructive"
+                    disabled={option.disabled}
+                    onClick={() => {
+                      setConfirmingDelete(false);
+                      option.onSelect();
+                    }}
+                  >
+                    {option.label}
+                  </Button>
+                ))
+              ) : (
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  onClick={() => {
+                    setConfirmingDelete(false);
+                    onDelete?.();
+                  }}
+                >
+                  {deleteLabel}
+                </Button>
+              )}
               <Button size="xs" variant="outline" onClick={() => setConfirmingDelete(false)}>
                 Abbrechen
               </Button>
             </div>
           ) : null}
-          {onDelete && !confirmingDelete ? (
+          {canDelete && !confirmingDelete ? (
             <Tooltip>
               <TooltipTrigger
                 render={

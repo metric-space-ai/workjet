@@ -202,7 +202,6 @@ export function SettingsSection({
  */
 export function SettingsRow({
   title,
-  description: _description,
   status,
   resetAction,
   control,
@@ -211,12 +210,6 @@ export function SettingsRow({
   ...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: ReactNode;
-  /**
-   * @deprecated Entfällt (UI-Vertrag §1.4) und wird nicht mehr gerendert.
-   * Bleibt nur, bis die Seiten der anderen Wellen (Instanzen, Rechner,
-   * Projekte) ihre Aufrufer bereinigt haben; dann ersatzlos streichen.
-   */
-  description?: ReactNode;
   status?: ReactNode;
   resetAction?: ReactNode;
   control?: ReactNode;

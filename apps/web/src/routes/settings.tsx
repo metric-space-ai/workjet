@@ -22,16 +22,35 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
+  const [confirming, setConfirming] = useState(false);
 
+  if (confirming)
+    return (
+      <span className="flex items-center gap-1.5">
+        <Button
+          size="xs"
+          variant="destructive"
+          onClick={() => {
+            setConfirming(false);
+            void restoreDefaults({ confirmed: true });
+          }}
+        >
+          Zurücksetzen
+        </Button>
+        <Button size="xs" variant="outline" onClick={() => setConfirming(false)}>
+          Abbrechen
+        </Button>
+      </span>
+    );
   return (
     <Button
       size="xs"
       variant="ghost"
       disabled={changedSettingLabels.length === 0}
-      onClick={() => void restoreDefaults()}
+      onClick={() => setConfirming(true)}
     >
       <RotateCcwIcon className="mx-1 size-3.5" />
-      Restore defaults
+      Standard wiederherstellen
     </Button>
   );
 }

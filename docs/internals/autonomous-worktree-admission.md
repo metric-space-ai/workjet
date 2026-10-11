@@ -162,3 +162,35 @@ captured socket at the fixed private path and pass the captured parent network
 identity. The bridge is not that launcher, an Owner/team permit or a filesystem/
 MCP boundary. Drivers still reject autonomous-worktree; no support or installed
 G2 acceptance is claimed from this component alone.
+
+## Captured process launch
+
+The native `--worker-namespace-launch` entry creates the Linux filesystem,
+PID, user, IPC, UTS and network namespaces before the CLI starts. The server
+supplies the original private-checkout and Git identities, private profile,
+model socket/network capture and individually captured runtime files. It
+mounts the original checkout at its original path, keeps Git metadata inside
+it, mounts only the assigned profile for writable harness state, and exposes
+the captured runtime files and system /usr read only. The root is read only;
+temporary files remain inside the namespace.
+
+Mounts use captured descriptors. The helper rejects replaced identities,
+symlink directory ancestors, shared Git metadata, non-private profiles and an
+unregistered executable. Both native entries close inherited descriptors
+before the CLI runs, including descriptors used to establish mounts. This
+prevents an open host directory from carrying authority around the filesystem
+boundary. The launcher replaces itself with the container supervisor; CLI
+stdin/stdout and exit status remain on the existing process channels.
+
+The common ACP runtime consumes an internal `namespaceCapture` option before
+its real spawn. The option requires original isolated Git custody, an exact
+cwd, a resolved executable and the source-only environment. It does not come
+from a client config, a runtimeMode flag or a project policy reference.
+
+This is a process-boundary component, not native execution admission. Verified
+runtime/profile capture production and recovery, actual Owner/team authority,
+provider-specific producers, and confined server-mediated Git/file/MCP actions
+are still required. No supported autonomous-worktree mode or installed G2
+acceptance is claimed. The retained Linux fixture runs actual file edits,
+compilation, Git commit and streamed HTTP over private model IPC; it uses no
+real provider account or model.

@@ -11,6 +11,8 @@ use sysinfo::{
 
 mod model_namespace_bridge;
 mod safe_worktree_cleanup;
+mod worker_fds;
+mod worker_namespace_launcher;
 
 const PROTOCOL_VERSION: u32 = 2;
 const MIN_SAMPLE_INTERVAL_MS: u64 = 250;
@@ -670,6 +672,9 @@ fn main() -> io::Result<()> {
     let mut args = std::env::args_os();
     let _program = args.next();
     if let Some(command) = args.next() {
+        if command == "--worker-namespace-launch" {
+            std::process::exit(worker_namespace_launcher::run(args)?);
+        }
         if command == "--worker-model-bridge" {
             std::process::exit(model_namespace_bridge::run(args)?);
         }

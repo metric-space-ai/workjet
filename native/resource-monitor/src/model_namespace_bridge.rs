@@ -64,6 +64,7 @@ mod linux {
                 "worker network namespace is not isolated",
             ));
         }
+        crate::worker_fds::close_inherited()?;
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         listener.set_nonblocking(true)?;
         let stop = Arc::new(AtomicBool::new(false));

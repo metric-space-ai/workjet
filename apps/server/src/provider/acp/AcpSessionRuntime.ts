@@ -20,6 +20,10 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@workjet/shared/shell";
+import {
+  workerNamespaceSpawnInput,
+  type WorkerNamespaceSpawnCapture,
+} from "../../workjet/WorkerNamespaceSpawn.ts";
 
 import {
   collectSessionConfigOptionValues,
@@ -59,6 +63,8 @@ export interface AcpSpawnInput {
 
 export interface AcpSessionRuntimeOptions {
   readonly spawn: AcpSpawnInput;
+  /** Internal server custody; never supplied by a client or inferred from runtimeMode. */
+  readonly namespaceCapture?: WorkerNamespaceSpawnCapture;
   readonly cwd: string;
   readonly resumeSessionId?: string;
   /** Claimed native work requires the provider's load RPC response, not replay-idle inference. */
@@ -334,24 +340,32 @@ export const make = (
         ),
       );
 
+    const spawn = yield* Effect.try({
+      try: () =>
+        options.namespaceCapture
+          ? workerNamespaceSpawnInput(options.spawn, options.namespaceCapture)
+          : options.spawn,
+      catch: (cause) =>
+        new EffectAcpErrors.AcpSpawnError({ command: options.spawn.command, cause }),
+    });
     const spawnCommand = yield* resolveSpawnCommand(
-      options.spawn.command,
-      options.spawn.args,
-      options.spawn.env
+      spawn.command,
+      spawn.args,
+      spawn.env
         ? {
-            env: options.spawn.env,
-            extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
+            env: spawn.env,
+            extendEnv: spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
           }
         : {},
     );
     const child = yield* spawner
       .spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-          ...(options.spawn.cwd ? { cwd: options.spawn.cwd } : {}),
-          ...(options.spawn.env
+          ...(spawn.cwd ? { cwd: spawn.cwd } : {}),
+          ...(spawn.env
             ? {
-                env: options.spawn.env,
-                extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
+                env: spawn.env,
+                extendEnv: spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
               }
             : {}),
           shell: spawnCommand.shell,

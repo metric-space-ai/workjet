@@ -116,7 +116,11 @@ import {
   ProjectCreateSourceSegment,
   ProjectFolderFields,
 } from "../components/ProjectCreateSources";
-import type { ProjectCreateSource } from "../components/ProjectCreateSources.logic";
+import {
+  defaultCloneBaseDirectory,
+  knownCloneTargetFolders,
+  type ProjectCreateSource,
+} from "../components/ProjectCreateSources.logic";
 import { useProjectCreateSources } from "../components/useProjectCreateSources";
 import { threadEnvironment } from "../state/threads";
 import { APP_DISPLAY_NAME } from "~/branding";
@@ -1048,6 +1052,28 @@ function InlineProjectCreate({
   useEffect(() => onProjectCreateRequest(() => setOpen(true)), []);
   const [source, setSource] = useState<ProjectCreateSource>("new");
   const sources = useProjectCreateSources({ active: open, source });
+  const knownProjects = useProjects();
+  const { environments: scopedEnvironments } = useBusinessOsScopedEnvironments();
+  const cloneTargetFolders = useMemo(() => {
+    const environment = scopedEnvironments.find(
+      (candidate) => candidate.environmentId === sources.environmentId,
+    );
+    return knownCloneTargetFolders(
+      defaultCloneBaseDirectory(environment?.serverConfig?.settings?.addProjectBaseDirectory),
+      knownProjects
+        .filter((project) => project.environmentId === sources.environmentId)
+        .map((project) => project.workspaceRoot),
+    );
+  }, [knownProjects, scopedEnvironments, sources.environmentId]);
+  // „Ordner wählen“ für den Zielordner nutzt dieselbe Ordnerwahl wie „Aus
+  // Ordner“ und übernimmt den gewählten Pfad als Zielordner.
+  const cloneTargetPick = useRef(false);
+  const { folderPath: sourcesFolderPath, setBaseDirectory: setSourcesBaseDirectory } = sources;
+  useEffect(() => {
+    if (!cloneTargetPick.current) return;
+    cloneTargetPick.current = false;
+    setSourcesBaseDirectory(sourcesFolderPath);
+  }, [setSourcesBaseDirectory, sourcesFolderPath]);
   const [title, setTitle] = useState("");
   const [titleEdited, setTitleEdited] = useState(false);
   const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
@@ -1176,6 +1202,17 @@ function InlineProjectCreate({
     }
   };
 
+  const pickCloneTarget = async () => {
+    setError(null);
+    cloneTargetPick.current = true;
+    try {
+      if ((await sources.pickFolder()) === null) cloneTargetPick.current = false;
+    } catch (failure) {
+      cloneTargetPick.current = false;
+      setError(failure instanceof Error ? failure.message : "Ordner nicht gewählt.");
+    }
+  };
+
   const computerSelect = (
     <ProjectComputerSelect
       options={sources.computerOptions}
@@ -1250,10 +1287,13 @@ function InlineProjectCreate({
             onRepositoryChange={sources.setRepository}
             baseDirectory={sources.baseDirectory}
             onBaseDirectoryChange={sources.setBaseDirectory}
+            targetFolders={cloneTargetFolders}
+            onPickTarget={sources.canPickFolder ? () => void pickCloneTarget() : null}
+            picking={sources.picking}
           />
         ) : null}
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]">
-          <label className="grid gap-1 text-sm">
+          <label className="grid min-w-0 gap-1 text-[13.5px]">
             Name
             <Input
               autoFocus={source === "new"}
@@ -1267,7 +1307,7 @@ function InlineProjectCreate({
               }}
             />
           </label>
-          <div className="grid gap-1 text-sm">
+          <div className="grid min-w-0 gap-1 text-[13.5px]">
             <span>Instanz</span>
             <Select
               value={instanceId ?? ""}

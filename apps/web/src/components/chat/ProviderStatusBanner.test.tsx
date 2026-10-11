@@ -40,7 +40,7 @@ describe("ProviderStatusBanner", () => {
     );
 
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain('aria-label="Dismiss Codex provider warning"');
+    expect(markup).toContain('aria-label="Codex-Warnung schließen"');
     expect(markup).toContain("absolute top-2 right-2");
   });
 
@@ -61,6 +61,6 @@ describe("ProviderStatusBanner", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Dismiss Codex provider error"');
+    expect(markup).toContain('aria-label="Codex-Fehler schließen"');
   });
 });

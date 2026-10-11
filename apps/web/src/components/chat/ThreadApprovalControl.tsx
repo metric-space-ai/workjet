@@ -25,7 +25,7 @@ export function ThreadApprovalControl({
   return (
     <span className="no-drag inline-flex items-center gap-2 text-xs text-secondary-label">
       <select
-        aria-label="Thread approval policy"
+        aria-label="Freigaberegel"
         className="rounded border border-border bg-background px-1 py-0.5"
         value={runtimeMode === projectPolicy ? "project" : runtimeMode}
         disabled={disabled || saving}
@@ -44,17 +44,17 @@ export function ThreadApprovalControl({
           }
         }}
       >
-        <option value="project">Project policy</option>
-        <option value="approval-required">Require approvals</option>
+        <option value="project">Projektregel</option>
+        <option value="approval-required">Freigabe nötig</option>
         <option value="auto" disabled={!hasOwnWorktree}>
-          Workspace autonomy
+          Workspace-Autonomie
         </option>
-        <option value="auto-accept-edits">Accept workspace edits</option>
+        <option value="auto-accept-edits">Änderungen annehmen</option>
         <option value="full-access" disabled={!hasOwnWorktree}>
-          Full access
+          Vollzugriff
         </option>
       </select>
-      {error ? <span role="status">Policy could not be saved.</span> : null}
+      {error ? <span role="status">Regel nicht gespeichert</span> : null}
     </span>
   );
 }

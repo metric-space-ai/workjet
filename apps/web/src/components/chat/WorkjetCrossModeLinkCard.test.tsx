@@ -134,10 +134,10 @@ describe("cross-mode card vocabulary", () => {
 
   it("never claims a dispatched command was applied", () => {
     // The server cannot observe what Business OS did with the command.
-    expect(crossModeApprovalLabel("not-required")).toBe("sent");
-    expect(crossModeApprovalLabel(null)).toBe("sent");
-    expect(crossModeApprovalLabel("pending")).toBe("awaiting approval");
-    expect(crossModeApprovalLabel("rejected")).toBe("rejected");
+    expect(crossModeApprovalLabel("not-required")).toBe("gesendet");
+    expect(crossModeApprovalLabel(null)).toBe("gesendet");
+    expect(crossModeApprovalLabel("pending")).toBe("Freigabe ausstehend");
+    expect(crossModeApprovalLabel("rejected")).toBe("abgelehnt");
   });
 });
 
@@ -159,7 +159,7 @@ describe("WorkjetCrossModeLinkCard", () => {
   it("renders the redacted title and the object reference, and no record", () => {
     const card = WorkjetCrossModeLinkCard({ model: model() }) as InspectableElement;
     const text = textContent(card);
-    expect(text).toContain("Linked to");
+    expect(text).toContain("Verknüpft mit");
     expect(text).toContain("ACME Q3 renewal");
     expect(text).toContain("crm/deal/deal_4711");
   });
@@ -203,10 +203,10 @@ describe("WorkjetCrossModeLinkCard", () => {
     const returned = WorkjetCrossModeLinkCard({
       model: model({ kind: "return", operation: "request-review", approval: "pending" }),
     }) as InspectableElement;
-    expect(textContent(returned)).toContain("awaiting approval");
+    expect(textContent(returned)).toContain("Freigabe ausstehend");
 
     expect(textContent(WorkjetCrossModeLinkCard({ model: model() }))).not.toContain(
-      "awaiting approval",
+      "Freigabe ausstehend",
     );
   });
 });

@@ -247,7 +247,7 @@ function TimelineLoadEarlierHeader({
           disabled={loading}
           className="w-full py-1.5 text-xs text-muted-foreground/60 hover:text-foreground disabled:cursor-default"
         >
-          {loading ? "Loading earlier turns…" : "Load earlier turns"}
+          {loading ? "Wird geladen …" : "Frühere laden"}
         </button>
       </div>
     </div>
@@ -676,11 +676,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     if (hideEmptyPlaceholder) {
       return null;
     }
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-placeholder text-sm">Send a message to start the conversation.</p>
-      </div>
-    );
+    return <div className="flex h-full items-center justify-center" />;
   }
 
   return (
@@ -904,7 +900,7 @@ function TimelineMinimap({
     >
       <div className="relative h-full w-full select-none">
         <button
-          aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
+          aria-label={`Zur Nachricht: ${activeItem?.userText ?? "Nachricht"}`}
           className={cn(
             "absolute top-1/2 left-3 -translate-y-1/2 cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
             // The strip is width-capped to the side gutter so it never overlays
@@ -1002,7 +998,7 @@ function TimelineMinimap({
             >
               <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
                 <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
-                  {activeItem.userText ?? "User message"}
+                  {activeItem.userText ?? "Nachricht"}
                 </span>
                 {activeItem.assistantText ? (
                   <span
@@ -1103,7 +1099,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   <button
                     type="button"
                     className="h-full w-full cursor-zoom-in"
-                    aria-label={`Preview ${image.name}`}
+                    aria-label={`Vorschau ${image.name}`}
                     onClick={() => {
                       const preview = buildExpandedImagePreview(regularImages, image.id);
                       if (!preview) return;
@@ -1185,13 +1181,13 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
             variant="ghost"
             disabled={activity.isRevertingCheckpoint || activity.isWorking}
             onClick={() => ctx.onRevertUserMessage(messageId)}
-            aria-label="Revert to this message"
+            aria-label="Hierhin zurücksetzen"
           />
         }
       >
         <Undo2Icon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Revert to this message</TooltipPopup>
+      <TooltipPopup side="top">Hierhin zurücksetzen</TooltipPopup>
     </Tooltip>
   );
 }
@@ -1405,10 +1401,10 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
         <span className="shrink-0">
           {row.createdAt ? (
             <>
-              Working for <WorkingTimer createdAt={row.createdAt} />
+              Läuft seit <WorkingTimer createdAt={row.createdAt} />
             </>
           ) : (
-            "Working..."
+            "Läuft …"
           )}
         </span>
         {workingStepLabel ? (
@@ -1466,9 +1462,9 @@ const WorkGroupSection = memo(function WorkGroupSection({
   const onlyToolEntries = nonEmptyEntries.every((entry) => workLogEntryIsToolLike(entry));
   const groupLabel = onlyToolEntries
     ? nonEmptyEntries.length === 1
-      ? "1 tool call"
-      : `${nonEmptyEntries.length} tool calls`
-    : "Work Log";
+      ? "1 Werkzeugaufruf"
+      : `${nonEmptyEntries.length} Werkzeugaufrufe`
+    : "Arbeitsprotokoll";
 
   if (nonEmptyEntries.length === 0) return null;
 
@@ -1498,11 +1494,11 @@ function WorkGroupToggleTimelineRow({
   const ctx = use(TimelineRowCtx);
   const labelNoun = row.onlyToolEntries
     ? row.hiddenCount === 1
-      ? "tool call"
-      : "tool calls"
+      ? "Werkzeugaufruf"
+      : "Werkzeugaufrufe"
     : row.hiddenCount === 1
-      ? "log entry"
-      : "log entries";
+      ? "Eintrag"
+      : "Einträge";
 
   return (
     <button
@@ -1521,11 +1517,11 @@ function WorkGroupToggleTimelineRow({
       </span>
       {row.expanded ? (
         <span className="font-medium text-foreground">
-          Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
+          Weniger {row.onlyToolEntries ? "Werkzeugaufrufe" : "Einträge"}
         </span>
       ) : (
         <span className="font-medium text-foreground">
-          +{row.hiddenCount} previous {labelNoun}
+          +{row.hiddenCount} frühere {labelNoun}
         </span>
       )}
     </button>
@@ -1653,7 +1649,7 @@ function UserMessagePreviewAnnotationCard(props: {
         <button
           type="button"
           className="size-14 shrink-0 cursor-zoom-in overflow-hidden border-r border-border/70 bg-muted"
-          aria-label={`Preview ${props.image.name}`}
+          aria-label={`Vorschau ${props.image.name}`}
           onClick={() => {
             if (!props.image) return;
             const preview = buildExpandedImagePreview([props.image], props.image.id);
@@ -1662,7 +1658,7 @@ function UserMessagePreviewAnnotationCard(props: {
         >
           <img
             src={props.image.previewUrl}
-            alt="Annotated preview crop"
+            alt="Vorschau-Ausschnitt"
             className="size-full object-cover"
           />
         </button>
@@ -1766,7 +1762,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
               onClick={() => setExpanded((value) => !value)}
               className="-ml-1 h-6 rounded-md px-1.5 text-secondary-label text-xs hover:bg-muted/55 hover:text-message-foreground"
             >
-              {expanded ? "Show less" : "Show full message"}
+              {expanded ? "Weniger" : "Alles anzeigen"}
             </Button>
           ) : null}
           {props.footer ? (
@@ -2314,7 +2310,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
         {totalTokens > 0 ? (
           <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
         ) : null}
-        <span className="text-info-foreground">{live ? "Open Lumas ▸" : "View ▸"}</span>
+        <span className="text-info-foreground">{live ? "Lumas öffnen ▸" : "Ansehen ▸"}</span>
       </span>
     </button>
   );
@@ -2533,13 +2529,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                     render={
                       <span
                         className="flex size-4 items-center justify-center"
-                        aria-label="Tool call failed"
+                        aria-label="Fehlgeschlagen"
                       />
                     }
                   >
                     <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
                   </TooltipTrigger>
-                  <TooltipPopup>Failed</TooltipPopup>
+                  <TooltipPopup>Fehlgeschlagen</TooltipPopup>
                 </Tooltip>
               ) : showSuccessIndicator ? (
                 <Tooltip>
@@ -2554,7 +2550,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                       />
                     </span>
                   </TooltipTrigger>
-                  <TooltipPopup>Completed</TooltipPopup>
+                  <TooltipPopup>Fertig</TooltipPopup>
                 </Tooltip>
               ) : showNeutralIndicator ? (
                 <Tooltip>
@@ -2563,7 +2559,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                   >
                     <MinusIcon className="block size-3 shrink-0 opacity-70" aria-hidden />
                   </TooltipTrigger>
-                  <TooltipPopup>Empty</TooltipPopup>
+                  <TooltipPopup>Leer</TooltipPopup>
                 </Tooltip>
               ) : null}
             </span>

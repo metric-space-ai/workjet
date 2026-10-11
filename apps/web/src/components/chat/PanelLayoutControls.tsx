@@ -43,7 +43,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
                 className="shrink-0 [-webkit-app-region:no-drag]"
                 pressed={terminalOpen}
                 onPressedChange={onToggleTerminal}
-                aria-label="Toggle terminal drawer"
+                aria-label="Terminal umschalten"
                 variant="ghost"
                 size="sm"
                 disabled={!terminalAvailable}
@@ -54,8 +54,8 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           />
           <TooltipPopup side="bottom">
             {terminalAvailable
-              ? `Toggle terminal drawer${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
-              : "Terminal drawer is unavailable"}
+              ? `Terminal umschalten${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
+              : "Terminal nicht verfügbar"}
           </TooltipPopup>
         </Tooltip>
       ) : null}
@@ -68,8 +68,8 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               onPressedChange={onToggleRightPanel}
               aria-label={
                 liveAgentCount > 0
-                  ? `Toggle right panel, ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} working`
-                  : "Toggle right panel"
+                  ? `Seitenleiste umschalten, ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} aktiv`
+                  : "Seitenleiste umschalten"
               }
               variant="ghost"
               size="sm"
@@ -89,12 +89,12 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
         />
         <TooltipPopup side="bottom">
           {rightPanelAvailable
-            ? `Toggle right panel${rightPanelShortcutLabel ? ` (${rightPanelShortcutLabel})` : ""}${
+            ? `Seitenleiste umschalten${rightPanelShortcutLabel ? ` (${rightPanelShortcutLabel})` : ""}${
                 liveAgentCount > 0
-                  ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} working`
+                  ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} aktiv`
                   : ""
               }`
-            : "Right panel is unavailable"}
+            : "Seitenleiste nicht verfügbar"}
         </TooltipPopup>
       </Tooltip>
     </div>
@@ -108,7 +108,7 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
   maximized: boolean;
   onToggle: () => void;
 }) {
-  const label = maximized ? "Restore panel size" : "Maximize panel";
+  const label = maximized ? "Panelgröße zurücksetzen" : "Panel maximieren";
   return (
     <Tooltip>
       <TooltipTrigger

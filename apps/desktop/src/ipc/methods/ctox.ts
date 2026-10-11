@@ -73,13 +73,17 @@ function encodeSafe<A, I>(schema: Schema.Codec<A, I>, value: A): Effect.Effect<I
 
 const RAIL_INSTANCE_KEY_PREFIX = "instance:";
 
-const finishKeyRecovery = (discovery: import("@workjet/contracts").CtoxManagedDiscoveryResult) =>
+const finishKeyRecovery = (
+  discovery: import("@workjet/contracts").CtoxManagedDiscoveryResult,
+  successfulLoginId?: string,
+) =>
   Effect.gen(function* () {
     const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
     if (
       Option.isNone(recovery) ||
-      (yield* recovery.value.inspect)?.pendingLogin !== true ||
-      discovery._tag !== "ready"
+      ((yield* recovery.value.inspect)?.pendingLogin !== true && successfulLoginId === undefined) ||
+      discovery._tag !== "ready" ||
+      discovery.sessionVerified !== true
     )
       return;
     const launch = yield* Effect.serviceOption(CtoxManagedLaunch.CtoxManagedLaunch);
@@ -89,6 +93,7 @@ const finishKeyRecovery = (discovery: import("@workjet/contracts").CtoxManagedDi
     yield* recoverManagedAfterLogin({
       discovery,
       recovery: recovery.value,
+      ...(successfulLoginId === undefined ? {} : { successfulLoginId }),
       reconnect: (instance) =>
         Effect.andThen(sessions.value.instance(instance), launch.value.launch(instance)),
     });
@@ -253,7 +258,7 @@ export const login: DesktopIpc.DesktopIpcMethod<
             const managed = yield* auth.refresh.pipe(
               Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
             );
-            yield* finishKeyRecovery(managed);
+            yield* finishKeyRecovery(managed, loginResult.value.loginId);
             return yield* encodeSafe(CtoxManagedLoginResult, {
               _tag: "completed",
               discovery: yield* registry.merge(managed),

@@ -51,7 +51,13 @@ const CtoxManagedLaunchOperation = Schema.Literals([
 
 export class CtoxManagedLaunchError extends Schema.TaggedErrorClass<CtoxManagedLaunchError>()(
   "CtoxManagedLaunchError",
-  { operation: CtoxManagedLaunchOperation },
+  {
+    operation: CtoxManagedLaunchOperation,
+    reason: Schema.optionalKey(Schema.Literals(["login_required", "repair_failed"])),
+    httpStatus: Schema.optionalKey(
+      Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 })),
+    ),
+  },
 ) {
   override get message(): string {
     return "The managed CTOX launch exchange failed.";
@@ -222,7 +228,7 @@ async function fetchJson(
   try {
     const candidate: unknown = await browserSession.fetch(url, init);
     if (!isResponse(candidate)) return undefined;
-    const payload = await candidate.json();
+    const payload = await candidate.json().catch(() => undefined);
     return { response: candidate, payload };
   } catch {
     return undefined;
@@ -230,6 +236,21 @@ async function fetchJson(
 }
 
 const { logInfo } = makeComponentLogger("ctox-managed-launch");
+
+function requiresLogin(
+  exchange: { readonly response: FetchResponse; readonly payload: unknown } | undefined,
+): boolean {
+  return (
+    exchange !== undefined &&
+    (exchange.response.status === 401 ||
+      exchange.response.status === 403 ||
+      (isRecord(exchange.payload) &&
+        typeof exchange.payload.error === "string" &&
+        ["AUTH_REQUIRED", "LOGIN_REQUIRED", "NOT_AUTHENTICATED", "UNAUTHENTICATED"].includes(
+          exchange.payload.error.toUpperCase(),
+        )))
+  );
+}
 
 export const make = (options: CtoxManagedLaunchOptions = {}) =>
   Effect.gen(function* () {
@@ -254,12 +275,22 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
       const recovery = yield* (keyRecovery?.inspect ?? Effect.succeed(undefined)).pipe(
         Effect.mapError(() => new CtoxManagedLaunchError({ operation: "launch-contract" })),
       );
+      if (recovery?.pendingLogin === true)
+        return yield* new CtoxManagedLaunchError({
+          operation: "launch-contract",
+          reason: "login_required",
+        });
       if (
         recovery?.instanceRepairs?.some(
-          (entry) => entry.instanceId === descriptor.id && entry.state === "repair_failed",
+          (entry) =>
+            entry.instanceId === descriptor.id &&
+            (entry.state === "repair_failed" || entry.state === "login_required"),
         )
       )
-        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
+        return yield* new CtoxManagedLaunchError({
+          operation: "launch-contract",
+          reason: "repair_failed",
+        });
       if ((yield* accessState(descriptor.id)) !== "enabled")
         return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
       const tenantId = tenantIdOf(descriptor);
@@ -297,24 +328,25 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         },
         "launch-token",
       );
-      if (
-        device !== undefined &&
-        token !== undefined &&
-        !token.response.ok &&
-        (token.response.status === 401 ||
-          (isRecord(token.payload) && token.payload.error === "AUTH_REQUIRED"))
-      ) {
+      if (device !== undefined && requiresLogin(token)) {
         token = yield* Effect.tryPromise({
           try: async () => {
             const response = await device.request("/api/desktop/launch-token", {
               method: "POST",
               body: encodeUnknownJson({ tenantId }),
             });
-            return { response, payload: await response.json() };
+            return { response, payload: await response.json().catch(() => undefined) };
           },
-          catch: () => new CtoxManagedLaunchError({ operation: "launch-token" }),
+          catch: () =>
+            new CtoxManagedLaunchError({ operation: "launch-token", reason: "login_required" }),
         });
       }
+      if (requiresLogin(token))
+        return yield* new CtoxManagedLaunchError({
+          operation: "launch-token",
+          reason: "login_required",
+          ...(token === undefined ? {} : { httpStatus: token.response.status }),
+        });
       if (token === undefined || !token.response.ok || !isRecord(token.payload)) {
         return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
       }
@@ -347,6 +379,12 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         },
         "launch-config",
       );
+      if (requiresLogin(exchange))
+        return yield* new CtoxManagedLaunchError({
+          operation: "launch-config",
+          reason: "login_required",
+          ...(exchange === undefined ? {} : { httpStatus: exchange.response.status }),
+        });
       if (exchange === undefined || !exchange.response.ok || !isRecord(exchange.payload)) {
         return yield* new CtoxManagedLaunchError({ operation: "launch-config" });
       }

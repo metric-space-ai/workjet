@@ -279,6 +279,7 @@ function makeGuestHarness(
   let discovery: CtoxManagedDiscoveryResult = {
     _tag: "ready",
     instances: [descriptor],
+    sessionVerified: true,
   };
   const refreshAccount = vi.fn(() => Effect.succeed(discovery));
   const auth = CtoxDevAuth.CtoxDevAuth.of({

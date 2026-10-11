@@ -19,8 +19,13 @@ export function manualProjectWorkerParent(
 ): OrchestrationThreadShell | undefined {
   const config = normalizeWorkjetThreadConfig(thread.workjetConfig);
   // Project affiliation and a user-selected checkout do not commission a worker.
-  // Dispatched team workers already own their WorkerDispatch checkout.
-  if (config.role !== "worker" || config.team) return;
+  // Dispatched team workers already own their checkout. A roleless agent-created
+  // chat is marked as a team worker at creation and still needs its first checkout.
+  if (
+    config.role !== "worker" ||
+    (config.team && (config.team.role !== "worker" || thread.worktreePath !== null))
+  )
+    return;
   const parents = threads.filter(
     (candidate) =>
       candidate.id === config.parent.threadId &&
@@ -51,8 +56,9 @@ export function manualProjectWorkerConfig(
   environmentId: EnvironmentId,
   goal: string,
 ): WorkjetThreadConfig {
+  const config = normalizeWorkjetThreadConfig(thread.workjetConfig);
   return {
-    ...normalizeWorkjetThreadConfig(thread.workjetConfig),
+    ...config,
     schemaVersion: 2,
     role: "worker",
     parent: { environmentId, threadId: parent.id },
@@ -61,7 +67,7 @@ export function manualProjectWorkerConfig(
       projectId: thread.projectId,
       threadId: thread.id,
       parentThreadId: parent.id,
-      packageId: `manual:${thread.id}`,
+      packageId: config.team?.role === "worker" ? config.team.packageId : `manual:${thread.id}`,
       goal: goal.trim().slice(0, 4096) || thread.title,
       createdAt: thread.createdAt,
     },

@@ -736,6 +736,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       commandId: createCommandId,
       threadId: workerThreadId,
       projectId: parent.projectId,
+      createdByThreadId: parent.id,
       title,
       modelSelection,
       runtimeMode: parent.runtimeMode,

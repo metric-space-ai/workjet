@@ -692,6 +692,8 @@ export const ThreadCreateCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   projectId: ProjectId,
+  /** Explicit agent creation; absent for human-created chats. */
+  createdByThreadId: Schema.optional(ThreadId),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -887,6 +889,7 @@ export const ThreadWorkjetConfigSetCommand = Schema.Struct({
 
 const ThreadBootstrapCreateThread = Schema.Struct({
   projectId: ProjectId,
+  createdByThreadId: Schema.optional(ThreadId),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,

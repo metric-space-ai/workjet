@@ -1,4 +1,4 @@
-import { openInstanceSetup } from "../../instanceSetup";
+import { openInstanceSetup, openInstanceRePair } from "../../instanceSetup";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { InstanceSetupDialog } from "./InstanceSetupDialog";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
@@ -181,6 +181,10 @@ interface CtoxModeContextValue {
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxMutationOutcome>;
   readonly removePairedInstance: (instance: CtoxManagedInstance) => Promise<CtoxMutationOutcome>;
+  readonly setInstanceState: (
+    instance: CtoxManagedInstance,
+    state: "enabled" | "disabled" | "removed",
+  ) => Promise<CtoxMutationOutcome>;
   readonly addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,
   ) => Promise<CtoxMutationOutcome>;
@@ -224,6 +228,7 @@ export function isRemovableCtoxInstance(instance: CtoxManagedInstance): boolean 
 }
 
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {
+  if ((instance.workjetState ?? "enabled") !== "enabled") return false;
   if (instance.source === "ctox_dev") return instance.status === "available";
   // A local daemon is launchable exactly while it is answering: the main
   // process mints its pairing material from that daemon on every activation.
@@ -265,7 +270,10 @@ export function groupCtoxInstances(
     key,
     label,
     instances: instances
-      .filter((instance) => sourceGroupKey(instance.source) === key)
+      .filter(
+        (instance) =>
+          instance.workjetState !== "removed" && sourceGroupKey(instance.source) === key,
+      )
       .toSorted((left, right) =>
         left.displayName === right.displayName
           ? left.id.localeCompare(right.id)
@@ -477,6 +485,17 @@ export function applyCtoxGuestStateEvent(
   return next;
 }
 
+export function useCtoxInstanceState(
+  instanceId: string | null,
+): CtoxManagedInstance["workjetState"] {
+  const mode = useContext(CtoxModeContext);
+  return mode?.discovery !== undefined &&
+    mode.discovery !== "loading" &&
+    mode.discovery._tag === "ready"
+    ? mode.discovery.instances.find((instance) => instance.id === instanceId)?.workjetState
+    : undefined;
+}
+
 export function useCtoxMode(): CtoxModeContextValue {
   const value = useContext(CtoxModeContext);
   if (value === null) throw new Error("CTOX mode shell must be rendered inside CtoxModeProvider.");
@@ -610,6 +629,37 @@ export function CtoxModeProvider({
       return outcome;
     },
     [bridge, refresh],
+  );
+
+  const setInstanceState = useCallback(
+    async (instance: CtoxManagedInstance, state: "enabled" | "disabled" | "removed") => {
+      if (!bridge?.setInstanceState)
+        return { ok: false, message: "Instance settings require the desktop app." };
+      if (state === "disabled" && selectedIdRef.current === instance.id)
+        return { ok: false, message: "Select another instance before disabling this one." };
+      const result = await bridge.setInstanceState({
+        instanceId: instance.id,
+        state,
+        selectedInstanceId: selectedIdRef.current,
+      });
+      if (result._tag !== "completed")
+        return { ok: false, message: "The instance change could not be saved." };
+      setDiscovery((current) =>
+        current !== "loading" && current._tag === "ready"
+          ? {
+              ...current,
+              instances: current.instances.map((row) =>
+                row.id === instance.id ? { ...row, workjetState: state } : row,
+              ),
+            }
+          : current,
+      );
+      if (state === "removed" && selectedIdRef.current === instance.id)
+        await clearSelection("idle");
+      refresh();
+      return { ok: true, message: "" };
+    },
+    [bridge, clearSelection, refresh],
   );
 
   const removePairedInstance = useCallback(
@@ -930,6 +980,7 @@ export function CtoxModeProvider({
       importInvite,
       importManualPairing,
       removePairedInstance,
+      setInstanceState,
       addSshManagedInstance,
       removeSshManagedInstance,
       select,
@@ -962,6 +1013,7 @@ export function CtoxModeProvider({
       refresh,
       refreshing,
       removePairedInstance,
+      setInstanceState,
       removeSshManagedInstance,
       reportGuestBounds,
       select,
@@ -1653,7 +1705,7 @@ function CtoxInstanceCard({
           <button
             type="button"
             className="px-2 py-1 text-xs text-sidebar-foreground"
-            onClick={() => openInstanceSetup("link", instance.id)}
+            onClick={() => openInstanceRePair(instance)}
           >
             Neu koppeln
           </button>

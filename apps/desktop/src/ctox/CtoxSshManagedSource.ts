@@ -421,6 +421,7 @@ export type CtoxSshExec = (
 ) => Effect.Effect<CtoxSshExecResult, CtoxSshExecError>;
 
 export interface CtoxSshManagedDiscoveryOptions {
+  readonly shouldProbe?: (instanceId: string) => Effect.Effect<boolean>;
   readonly exec?: CtoxSshExec;
   readonly nowEpochMs?: () => number;
 }
@@ -578,7 +579,11 @@ export const discoverCtoxSshManagedInstances = Effect.fn(
       : options.nowEpochMs();
   const discovered = yield* Effect.forEach(
     bounded,
-    (entry) => discoverOne(entry, options.exec, nowEpochMs),
+    (entry) =>
+      Effect.gen(function* () {
+        const allowed = options.shouldProbe === undefined || (yield* options.shouldProbe(entry.id));
+        return yield* discoverOne(entry, allowed ? options.exec : undefined, nowEpochMs);
+      }),
     { concurrency: SSH_DISCOVERY_CONCURRENCY },
   );
   return discovered as readonly CtoxSshManagedInstance[];

@@ -588,6 +588,14 @@ describe("CTOX instance presentation", () => {
     });
 
     expect(canActivateCtoxInstance(managed)).toBe(true);
+    expect(isRemovableCtoxInstance(managed)).toBe(false);
+    expect(canActivateCtoxInstance({ ...managed, workjetState: "disabled" })).toBe(false);
+    expect(canActivateCtoxInstance({ ...paired, workjetState: "removed" })).toBe(false);
+    expect(
+      groupCtoxInstances([{ ...managed, workjetState: "removed" }]).every(
+        (group) => group.instances.length === 0,
+      ),
+    ).toBe(true);
     expect(canActivateCtoxInstance(paired)).toBe(true);
     expect(canActivateCtoxInstance(invited)).toBe(true);
     expect(canActivateCtoxInstance(expired)).toBe(false);

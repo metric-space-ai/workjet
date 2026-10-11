@@ -96,6 +96,8 @@ import type { ClientSettings } from "./settings.ts";
 import type {
   CtoxAppActionResult,
   CtoxDiscoveryResult,
+  CtoxInstancePreferenceInput,
+  CtoxInstancePreferenceResult,
   CtoxDecisionHubDisconnectInput,
   CtoxDecisionHubDisconnectResult,
   CtoxDecisionHubProvisionInput,
@@ -1237,6 +1239,7 @@ export interface DesktopBridge {
 
 export interface DesktopCtoxBridge {
   refresh: () => Promise<CtoxDiscoveryResult>;
+  setInstanceState?: (input: CtoxInstancePreferenceInput) => Promise<CtoxInstancePreferenceResult>;
   login: () => Promise<CtoxManagedLoginResult>;
   logout: () => Promise<CtoxManagedActionResult>;
   provisionDecisionHub?: (

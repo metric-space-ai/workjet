@@ -17,12 +17,12 @@ In a browser, settings apply to the Workjet host you are connected to.
 Device connections are available under **Connected devices** on the instance page.
 Expand that section to connect a Workjet device or review its existing connections.
 
-If Workjet detects that its local encryption key was lost, sign in to **ctox.dev**
-once from the recovery screen. Workjet preserves unreadable files, reconnects its
-local background service, resets the saved connection catalog, and restores your
-managed instances and project list after sign-in. Project and conversation data
-remain in place.
+Each row has an **Enabled** switch. Turning it off stops Workjet connections, guests, synchronization and instance probes while keeping the pairing and local project data. The setting survives a restart. Turn it on to reconnect with the existing pairing. Select another instance before disabling the selected one; **Selected** describes the current selection, separately from the switch.
 
-Saved direct, SSH and relay connections may need to be added again. For an
-instance paired without a ctox.dev account, choose **Neu koppeln** and supply fresh
-pairing details for the same instance. Its saved identity stays in place.
+Use the trash icon to remove a connection from this Workjet. Confirm inline on the settings page. This does not delete the CTOX instance or its data, and projects, threads and worktrees stay on this computer. Their instance requests show **Instance removed**. Disabled instance requests show **Instance disabled**.
+
+Managed instances are hidden locally and can be restored through **Add instance**. Paired instances use the existing unpairing path and can be paired again. The local instance has no trash icon; it can be disabled.
+
+If Workjet detects that its local encryption key was lost, sign in to **ctox.dev** once from the recovery screen. Workjet preserves unreadable files, reconnects its local background service, resets the saved connection catalog, and restores enabled managed instances and their project list after sign-in. Disabled and locally removed instances stay disconnected. Project and conversation data remain in place.
+
+Saved direct, SSH and relay connections may need to be added again. For an instance paired without a ctox.dev account, choose **Pair again** and supply fresh pairing details for the same instance. Its saved identity stays in place. Pairing again uses the same action for lost-key recovery and expired or broken connections.

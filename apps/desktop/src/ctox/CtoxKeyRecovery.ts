@@ -6,6 +6,7 @@ import type {
   CtoxElectronSessionOperationError,
 } from "./CtoxElectronSessions.ts";
 import type { CtoxManagedLaunchError } from "./CtoxManagedLaunch.ts";
+import { accessState } from "./CtoxInstancePreferences.ts";
 
 /** Managed credentials are issued by the control plane, never decoded from the accountless registry. */
 export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")(function* (input: {
@@ -25,7 +26,11 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
     input.discovery.instances.filter(
       (instance) => instance.source === "ctox_dev" && instance.status === "available",
     ),
-    input.reconnect,
+    (instance) =>
+      Effect.gen(function* () {
+        if ((yield* accessState(instance.id)) !== "enabled") return;
+        yield* input.reconnect(instance);
+      }),
     { concurrency: 2, discard: true },
   ).pipe(
     Effect.mapError(

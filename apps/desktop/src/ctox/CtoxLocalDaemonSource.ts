@@ -144,6 +144,7 @@ export interface CtoxLocalDaemonDiscoveryOptions {
    * session fetch, so this module never reaches for a global HTTP client.
    */
   readonly probe?: CtoxLocalDaemonProbe;
+  readonly shouldProbe?: (instanceId: string) => Effect.Effect<boolean>;
 }
 
 function isLoopbackHostname(hostname: string): boolean {
@@ -396,8 +397,11 @@ export const discoverCtoxLocalDaemonNativeTargets = Effect.fn(
       descriptor.healthUrl === undefined
         ? undefined
         : normalizeCtoxLocalDaemonHealthUrl(descriptor.healthUrl);
+    const allowed =
+      options.shouldProbe === undefined ||
+      (yield* options.shouldProbe(ctoxLocalDaemonInstanceId(descriptorPath)));
     const runtimeStatus =
-      healthUrl === undefined || options.probe === undefined
+      !allowed || healthUrl === undefined || options.probe === undefined
         ? ctoxDaemonDeclaredStatus(descriptor, nowEpochMs)
         : yield* probeHealth(options.probe, healthUrl);
 

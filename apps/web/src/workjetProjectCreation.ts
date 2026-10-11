@@ -7,6 +7,7 @@ import { ProjectId } from "@workjet/contracts";
 import {
   createWorkjetProject,
   listWorkjetProjects,
+  workjetUiLanguage,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
 
@@ -28,6 +29,8 @@ export type WorkjetProjectCreationOutcome =
         | "invalid_input"
         | "invalid_projection"
         | "not_active"
+        | "instance_disabled"
+        | "instance_removed"
         | "launch_failed"
         | "authentication_required"
         | "unsupported"
@@ -47,6 +50,14 @@ export function workjetProjectCreationFailureMessage(code: string): string {
       return "Sign in to the selected instance to add this project.";
     case "unsupported":
       return "The selected instance does not provide project management. Update its Business OS shell in Settings, then retry.";
+    case "instance_disabled":
+      return workjetUiLanguage() === "de"
+        ? "Instanz deaktiviert. Das Projekt bleibt lokal gespeichert."
+        : "Instance disabled. The project remains saved locally.";
+    case "instance_removed":
+      return workjetUiLanguage() === "de"
+        ? "Instanz entfernt. Das Projekt bleibt lokal gespeichert."
+        : "Instance removed. The project remains saved locally.";
     case "not_active":
       return "The selected CTOX instance is no longer connected.";
     case "launch_failed":

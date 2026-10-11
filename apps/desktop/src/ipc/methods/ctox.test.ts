@@ -12,12 +12,14 @@ import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvision
 import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
+import * as CtoxInstancePreferences from "../../ctox/CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
 import * as IpcChannels from "../channels.ts";
 import {
   activate,
   ensurePooled,
+  setInstanceState,
   methods,
   importInvite,
   importManualPairing,
@@ -55,6 +57,121 @@ const pairedInstance = {
     nativePeerObserved: false,
   },
 } as const;
+
+describe("instance activity and removal", () => {
+  for (const source of ["ctox_dev", "manual_pairing", "local_daemon"] as const) {
+    it.effect("persists activity and guards selected instance for " + source, () => {
+      const row = {
+        ...pairedInstance,
+        id: source === "ctox_dev" ? "managed:fixture" : pairedInstance.id,
+        source,
+      };
+      const stored: string[] = [];
+      const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
+        read: Effect.succeed([row]),
+        remember: () => Effect.void,
+        set: (_row, state) => Effect.sync(() => void stored.push(state)),
+      });
+      return Effect.gen(function* () {
+        assert.deepEqual(
+          yield* setInstanceState.handler({
+            instanceId: row.id,
+            state: "disabled",
+            selectedInstanceId: row.id,
+          }),
+          { _tag: "failed", code: "selected_instance" },
+        );
+        assert.deepEqual(stored, []);
+        assert.deepEqual(
+          yield* setInstanceState.handler({
+            instanceId: row.id,
+            state: "disabled",
+            selectedInstanceId: null,
+          }),
+          { _tag: "completed" },
+        );
+        assert.deepEqual(stored, ["disabled"]);
+        const result = yield* setInstanceState.handler({
+          instanceId: row.id,
+          state: "removed",
+          selectedInstanceId: null,
+        });
+        assert.deepEqual(
+          result,
+          source === "local_daemon"
+            ? { _tag: "failed", code: "local_not_removable" }
+            : { _tag: "completed" },
+        );
+        assert.deepEqual(
+          stored,
+          source === "local_daemon" ? ["disabled"] : ["disabled", "removed"],
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            authorityLayers({
+              instances: [],
+              registry: {
+                merge: () => Effect.die("A local activity change must not discover or connect"),
+              },
+            }),
+            removalCleanupLayer(),
+          ),
+        ),
+        Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, store),
+      );
+    });
+  }
+});
+
+describe("reenabling a saved instance", () => {
+  it.effect("persists before connecting and reuses the existing pairing", () => {
+    const events: string[] = [];
+    const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
+      read: Effect.succeed([pairedInstance]),
+      remember: () => Effect.void,
+      set: (_row, state) => Effect.sync(() => void events.push("persist:" + state)),
+    });
+    return Effect.gen(function* () {
+      assert.deepEqual(
+        yield* setInstanceState.handler({
+          instanceId: pairedInstance.id,
+          state: "disabled",
+          selectedInstanceId: null,
+        }),
+        { _tag: "completed" },
+      );
+      assert.deepEqual(
+        yield* setInstanceState.handler({
+          instanceId: pairedInstance.id,
+          state: "enabled",
+          selectedInstanceId: null,
+        }),
+        { _tag: "completed" },
+      );
+      assert.deepEqual(events, ["persist:disabled", "stop", "persist:enabled", "connect"]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryLayer(),
+          removalCleanupLayer({
+            deactivateInstance: () =>
+              Effect.sync(() => {
+                events.push("stop");
+                return { _tag: "completed" } as const;
+              }),
+            ensurePooled: () =>
+              Effect.sync(() => {
+                events.push("connect");
+                return { _tag: "ready", instanceId: pairedInstance.id } as const;
+              }),
+          }),
+        ),
+      ),
+      Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, store),
+    );
+  });
+});
 
 function registryLayer(
   overrides: Partial<CtoxInstanceRegistry.CtoxInstanceRegistry["Service"]> = {},
@@ -108,6 +225,7 @@ function authorityLayers(input: {
 
 function removalCleanupLayer(
   input: {
+    readonly ensurePooled?: CtoxGuestManager.CtoxGuestManager["Service"]["ensurePooled"];
     readonly deactivate?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivate"];
     readonly deactivateAll?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivateAll"];
     readonly deactivateInstance?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivateInstance"];
@@ -118,7 +236,7 @@ function removalCleanupLayer(
     enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
     exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
     activate: () => Effect.die("unused"),
-    ensurePooled: () => Effect.die("unused"),
+    ensurePooled: input.ensurePooled ?? (() => Effect.die("unused")),
     suspend: Effect.succeed({ _tag: "completed" }),
     deactivate: input.deactivate ?? Effect.succeed({ _tag: "completed" }),
     deactivateAll: input.deactivateAll ?? Effect.succeed({ _tag: "completed" }),
@@ -164,90 +282,94 @@ function accountCleanupLayer(
 }
 
 describe("CTOX IPC methods", () => {
-  it.effect(
-    "reconnects managed instances through the login handler after exactly one identity check",
-    () => {
-      let pendingLogin = true;
-      let signIns = 0;
-      const events: string[] = [];
-      const managed = {
-        ...pairedInstance,
-        id: "managed:tenant-fixture",
-        source: "ctox_dev",
-        status: "available",
-      } as const;
-      const recovery = DesktopKeyRecovery.of({
-        inspect: Effect.sync(() => ({
-          version: 1,
-          generation: "1-11111111-1111-4111-8111-111111111111",
-          pendingLogin,
-          unreadableStores: ["session", "catalog"],
-        })),
-        completeLogin: Effect.sync(() => {
-          events.push("complete");
-          pendingLogin = false;
-        }),
-      });
-      const auth = CtoxDevAuth.CtoxDevAuth.of({
-        login: Effect.sync(() => {
-          signIns++;
-          events.push("login");
-          return { _tag: "completed", via: "url" } as const;
-        }),
-        refresh: Effect.succeed({ _tag: "ready", instances: [managed] }),
-        logout: Effect.void,
-      });
-      const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
-        account: Effect.die("No extra account dialog."),
-        instance: (instance) =>
-          Effect.sync(() => {
-            events.push(`partition:${instance.id}`);
-            return {} as Session;
+  for (const workjetState of ["enabled", "disabled", "removed"] as const)
+    it.effect(
+      "respects " + workjetState + " during managed key recovery after one identity check",
+      () => {
+        let pendingLogin = true;
+        let signIns = 0;
+        const events: string[] = [];
+        const managed = {
+          ...pairedInstance,
+          id: "managed:tenant-fixture",
+          source: "ctox_dev",
+          status: "available",
+        } as const;
+        const recovery = DesktopKeyRecovery.of({
+          inspect: Effect.sync(() => ({
+            version: 1,
+            generation: "1-11111111-1111-4111-8111-111111111111",
+            pendingLogin,
+            unreadableStores: ["session", "catalog"],
+          })),
+          completeLogin: Effect.sync(() => {
+            events.push("complete");
+            pendingLogin = false;
           }),
-        clearInstance: () => Effect.die("Do not delete old storage."),
-      });
-      const launch = CtoxManagedLaunch.CtoxManagedLaunch.of({
-        launch: (instance) =>
-          Effect.sync(() => {
-            events.push(`pair:${instance.id}`);
-            return {
-              launchUrl: "https://tenant-fixture.ctox.dev/",
-              launchOrigin: "https://tenant-fixture.ctox.dev",
-            };
+        });
+        const auth = CtoxDevAuth.CtoxDevAuth.of({
+          login: Effect.sync(() => {
+            signIns++;
+            events.push("login");
+            return { _tag: "completed", via: "url" } as const;
           }),
-        resolveBusinessOsInstanceId: () => Effect.die("No old-secret identity lookup."),
-      });
-      return Effect.gen(function* () {
-        const result = yield* login
-          .handler(undefined)
-          .pipe(
+          refresh: Effect.succeed({ _tag: "ready", instances: [managed] }),
+          logout: Effect.void,
+        });
+        const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
+          account: Effect.die("No extra account dialog."),
+          instance: (instance) =>
+            Effect.sync(() => {
+              events.push(`partition:${instance.id}`);
+              return {} as Session;
+            }),
+          clearInstance: () => Effect.die("Do not delete old storage."),
+        });
+        const launch = CtoxManagedLaunch.CtoxManagedLaunch.of({
+          launch: (instance) =>
+            Effect.sync(() => {
+              events.push(`pair:${instance.id}`);
+              return {
+                launchUrl: "https://tenant-fixture.ctox.dev/",
+                launchOrigin: "https://tenant-fixture.ctox.dev",
+              };
+            }),
+          resolveBusinessOsInstanceId: () => Effect.die("No old-secret identity lookup."),
+        });
+        return Effect.gen(function* () {
+          const result = yield* login.handler(undefined).pipe(
             Effect.provideService(DesktopKeyRecovery, recovery),
+            Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, {
+              read: Effect.succeed([{ ...managed, workjetState }]),
+              remember: () => Effect.void,
+              set: () => Effect.die("Automatic recovery must not change activity preferences."),
+            }),
             Effect.provideService(CtoxElectronSessions.CtoxElectronSessions, sessions),
             Effect.provideService(CtoxManagedLaunch.CtoxManagedLaunch, launch),
           );
-        assert.deepEqual(result, {
-          _tag: "completed",
-          discovery: { _tag: "ready", instances: [managed] },
-        });
-        assert.equal(signIns, 1);
-        assert.isFalse(pendingLogin);
-        assert.deepEqual(events, [
-          "login",
-          `partition:${managed.id}`,
-          `pair:${managed.id}`,
-          "complete",
-        ]);
-      }).pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            accountCleanupLayer(),
-            Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
-            registryLayer(),
+          assert.deepEqual(result, {
+            _tag: "completed",
+            discovery: { _tag: "ready", instances: [managed] },
+          });
+          assert.equal(signIns, 1);
+          assert.isFalse(pendingLogin);
+          assert.deepEqual(
+            events,
+            workjetState === "enabled"
+              ? ["login", `partition:${managed.id}`, `pair:${managed.id}`, "complete"]
+              : ["login", "complete"],
+          );
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              accountCleanupLayer(),
+              Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
+              registryLayer(),
+            ),
           ),
-        ),
-      );
-    },
-  );
+        );
+      },
+    );
   it.effect("resolves only the canonical paired authority id without secret material", () => {
     const resolveBusinessOsInstanceId = vi.fn(() => Effect.succeed("office-1" as never));
     return Effect.gen(function* () {
@@ -834,6 +956,95 @@ describe("CTOX IPC methods", () => {
           importInvite: () => Effect.succeed(unsafeInstance),
         }),
       ),
+    );
+  });
+});
+
+describe("shared pairing recovery and removal actions", () => {
+  for (const previousState of ["disabled", "removed"] as const)
+    for (const kind of ["invite", "manual"] as const)
+      it.effect(
+        "explicit " + kind + " re-pair restores " + previousState + " and preserves the id",
+        () => {
+          const restored: string[] = [];
+          const inviteImport = vi.fn(() => Effect.succeed(pairedInstance));
+          const manualImport = vi.fn(() => Effect.succeed(pairedInstance));
+          return Effect.gen(function* () {
+            const result =
+              kind === "invite"
+                ? yield* importInvite.handler({
+                    invite: "{}",
+                    replacesInstanceId: pairedInstance.id,
+                  })
+                : yield* importManualPairing.handler({
+                    displayName: "Office",
+                    instanceId: "office",
+                    syncRoom: "ctox-business-os:office",
+                    signalingUrls: ["wss://signal.example.com"],
+                    signalingAuthVersion: "ctox-role-bound-v1",
+                    browserToken: "raw-browser-token",
+                    browserTokenHash:
+                      "294dbc745bd2c516e81ae8a8bea452be757f78ae306a24f91c080885bd8bdf97",
+                    nativeTokenHash:
+                      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    replacesInstanceId: pairedInstance.id,
+                  });
+            assert.deepEqual(result, { _tag: "completed", instance: pairedInstance });
+            assert.deepEqual(restored, [pairedInstance.id + ":enabled"]);
+            if (kind === "invite")
+              expect(inviteImport).toHaveBeenCalledWith("{}", pairedInstance.id);
+            else
+              expect(manualImport).toHaveBeenCalledWith(
+                expect.objectContaining({ replacesInstanceId: pairedInstance.id }),
+              );
+          }).pipe(
+            Effect.provide(
+              registryLayer({ importInvite: inviteImport, importManualPairing: manualImport }),
+            ),
+            Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, {
+              read: Effect.succeed([{ ...pairedInstance, workjetState: previousState }]),
+              remember: () => Effect.void,
+              set: (row, state) => Effect.sync(() => void restored.push(row.id + ":" + state)),
+            }),
+          );
+        },
+      );
+
+  it.effect("uses existing paired removal cleanup after persisting the local stop marker", () => {
+    const events: string[] = [];
+    return Effect.gen(function* () {
+      const result = yield* setInstanceState.handler({
+        instanceId: pairedInstance.id,
+        state: "removed",
+        selectedInstanceId: null,
+      });
+      assert.deepEqual(result, { _tag: "failed", code: "persistence_failed" });
+      assert.deepEqual(events, ["persist:removed", "registry", "stop", "clear"]);
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          registryLayer({
+            removePairedInstance: () =>
+              Effect.sync(() => {
+                events.push("registry");
+                return { descriptor: pairedInstance, secretRecordRemoved: false };
+              }),
+          }),
+          removalCleanupLayer({
+            deactivateInstance: () =>
+              Effect.sync(() => {
+                events.push("stop");
+                return { _tag: "completed" } as const;
+              }),
+            clearInstance: () => Effect.sync(() => void events.push("clear")),
+          }),
+        ),
+      ),
+      Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, {
+        read: Effect.succeed([pairedInstance]),
+        remember: () => Effect.void,
+        set: (_row, state) => Effect.sync(() => void events.push("persist:" + state)),
+      }),
     );
   });
 });

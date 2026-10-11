@@ -1,3 +1,5 @@
+import { InstancesTable } from "./InstancesTable";
+import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { openInstanceSetup } from "../../instanceSetup";
 import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
 import type {
@@ -16,7 +18,6 @@ import {
   PlusIcon,
   RefreshCwIcon,
   SmartphoneIcon,
-  UnplugIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -24,11 +25,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
-import {
-  canActivateCtoxInstance,
-  isRemovableCtoxInstance,
-  useCtoxMode,
-} from "../ctox/CtoxModeShell";
+import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { INSTANCE_SETTINGS_NAV_ITEMS } from "./settingsNavigation";
 import { Button } from "../ui/button";
 import {
@@ -42,14 +39,7 @@ import {
 } from "../ui/dialog";
 import { QRCodeSvg } from "../ui/qr-code";
 import { Spinner } from "../ui/spinner";
-import {
-  AlertDialog,
-  AlertDialogPopup,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-} from "../ui/alert-dialog";
+
 import {
   businessOsDeviceControlErrorMessage,
   createBusinessOsDeviceInvite,
@@ -78,19 +68,6 @@ export function resolveActiveBusinessOsInstanceId(target: CrossModeTarget | null
   return target?.mode === "business-os" && target.ctoxInstanceId !== undefined
     ? target.ctoxInstanceId
     : null;
-}
-
-function instanceStatus(instance: CtoxManagedInstance): string {
-  if (instance.status === "available" || instance.status === "paired") {
-    return instance.healthSummary.dataPlaneReady
-      ? "Connected and synchronized"
-      : "Connected, sync degraded";
-  }
-  if (instance.status === "needs_auth") return "Sign-in required";
-  if (instance.status === "pairing_expired") return "Device authorization expired";
-  if (instance.status === "offline") return "Unavailable";
-  if (instance.status === "installing") return "Setting up";
-  return "Connection failed";
 }
 
 export function manualConnectionCredentialText(credential: string, visible: boolean): string {
@@ -374,7 +351,14 @@ export function BusinessOsSettingsView({
   onLoadManualConnection,
   revokingInvite = false,
   onRemoveInstance,
+  onStateChange,
+  language = "en",
 }: {
+  readonly language?: "de" | "en";
+  readonly onStateChange?: (
+    instance: CtoxManagedInstance,
+    state: "enabled" | "disabled" | "removed",
+  ) => Promise<string | null>;
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
   readonly requiresInstanceSelection?: boolean;
@@ -404,46 +388,10 @@ export function BusinessOsSettingsView({
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const selectedDisplayName = selected === null ? null : ctoxInstanceDisplayTitle(selected);
   const navigate = useNavigate();
-  const [switchingInstanceId, setSwitchingInstanceId] = useState<string | null>(null);
-  const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [removalTarget, setRemovalTarget] = useState<CtoxManagedInstance | null>(null);
-  const [removing, setRemoving] = useState(false);
-  const [removalError, setRemovalError] = useState<string | null>(null);
-
-  const chooseInstance = async (instance: CtoxManagedInstance) => {
-    if (onSelectInstance === undefined) return;
-    setSwitchingInstanceId(instance.id);
-    setSelectionError(null);
-    try {
-      if ((await onSelectInstance(instance.id)) === false) {
-        setSelectionError("The instance switch could not be confirmed. Please try again.");
-      }
-    } catch {
-      setSelectionError("The instance could not be selected. Please try again.");
-    } finally {
-      setSwitchingInstanceId(null);
-    }
-  };
-
-  const confirmRemoval = async () => {
-    if (removalTarget === null || onRemoveInstance === undefined) return;
-    setRemoving(true);
-    setRemovalError(null);
-    try {
-      const error = await onRemoveInstance(removalTarget);
-      if (error === null) setRemovalTarget(null);
-      else setRemovalError(error);
-    } catch {
-      setRemovalError("The connection could not be removed. Please try again.");
-    } finally {
-      setRemoving(false);
-    }
-  };
-
   return (
     <SettingsPageContainer className="gap-6">
       <SettingsSection
-        title="Instances"
+        title={language === "de" ? "Instanzen" : "Instances"}
         headerAction={
           <div className="flex items-center gap-2">
             <Button
@@ -453,30 +401,38 @@ export function BusinessOsSettingsView({
               disabled={refreshDisabled || onRefresh === undefined}
             >
               <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
-              Refresh
+              {language === "de" ? "Aktualisieren" : "Refresh"}
             </Button>
             <Button size="sm" onClick={() => openInstanceSetup()}>
               <PlusIcon aria-hidden />
-              Add instance
+              {language === "de" ? "Instanz hinzufügen" : "Add instance"}
             </Button>
           </div>
         }
       >
         <p className="px-3 text-[13px] text-muted-foreground sm:px-4">
-          Manage your CTOX instances and open their settings.
+          {language === "de"
+            ? "Deaktivierte Instanzen behalten ihre Verbindung und lokalen Daten."
+            : "Disabled instances retain their pairing and local data."}
         </p>
         <div>
           {loading ? (
             <p className="text-sm text-muted-foreground" role="status">
-              Loading CTOX instances …
+              {language === "de" ? "Instanzen werden geladen …" : "Loading CTOX instances …"}
             </p>
           ) : discoveryFailed ? (
             <div className="flex items-start gap-3" role="alert">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               <div>
-                <p className="text-sm font-medium">Could not load CTOX instances</p>
+                <p className="text-sm font-medium">
+                  {language === "de"
+                    ? "Instanzen konnten nicht geladen werden"
+                    : "Could not load CTOX instances"}
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Check the connection and choose Refresh to try again.
+                  {language === "de"
+                    ? "Die Instanzliste ist derzeit nicht erreichbar."
+                    : "The instance list is currently unreachable."}
                 </p>
               </div>
             </div>
@@ -484,75 +440,34 @@ export function BusinessOsSettingsView({
             <div className="flex items-start gap-3" role="status">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               <div>
-                <p className="text-sm font-medium">No CTOX instance connected</p>
+                <p className="text-sm font-medium">
+                  {language === "de"
+                    ? "Noch keine Instanz verbunden"
+                    : "No CTOX instance connected"}
+                </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Connect an existing CTOX master or set up a new instance.
+                  {language === "de"
+                    ? "Verbinde eine bestehende Instanz oder richte eine neue ein."
+                    : "Connect an existing CTOX master or set up a new instance."}
                 </p>
               </div>
             </div>
           ) : (
-            <ul aria-label="CTOX instances" className="divide-y divide-border/60">
-              {instances.map((instance) => (
-                <li key={instance.id}>
-                  <SettingsRow
-                    title={ctoxInstanceDisplayTitle(instance)}
-                    description={
-                      instance.domain ??
-                      (instance.source === "local_daemon" ? "This computer" : undefined)
-                    }
-                    status={instanceStatus(instance)}
-                    control={
-                      <>
-                        {instance.id === activeInstanceId ? (
-                          <span
-                            className="px-2 text-xs font-medium text-primary"
-                            aria-label="Active instance"
-                          >
-                            Active
-                          </span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={
-                              onSelectInstance === undefined ||
-                              switchingInstanceId !== null ||
-                              removing ||
-                              !canActivateCtoxInstance(instance)
-                            }
-                            onClick={() => void chooseInstance(instance)}
-                          >
-                            {switchingInstanceId === instance.id ? (
-                              <Spinner className="size-3.5" />
-                            ) : null}
-                            {switchingInstanceId === instance.id ? "Selecting …" : "Select"}
-                          </Button>
-                        )}
-                        {onRemoveInstance !== undefined && isRemovableCtoxInstance(instance) ? (
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            disabled={switchingInstanceId !== null || removing}
-                            aria-label={`Remove connection to ${ctoxInstanceDisplayTitle(instance)}`}
-                            onClick={() => {
-                              setRemovalError(null);
-                              setRemovalTarget(instance);
-                            }}
-                          >
-                            <UnplugIcon aria-hidden />
-                          </Button>
-                        ) : null}
-                      </>
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-          {selectionError === null ? null : (
-            <p className="px-4 py-2 text-sm text-destructive" role="alert">
-              {selectionError}
-            </p>
+            <InstancesTable
+              instances={instances}
+              activeInstanceId={activeInstanceId}
+              language={language}
+              onSelect={onSelectInstance}
+              onStateChange={
+                onStateChange ??
+                (onRemoveInstance === undefined
+                  ? undefined
+                  : (instance, state) =>
+                      state === "removed"
+                        ? onRemoveInstance(instance)
+                        : Promise.resolve("This Workjet version cannot change instance activity."))
+              }
+            />
           )}
         </div>
       </SettingsSection>
@@ -688,35 +603,6 @@ export function BusinessOsSettingsView({
         </div>
       </details>
 
-      <AlertDialog
-        open={removalTarget !== null}
-        onOpenChange={(open) => {
-          if (!open && !removing) setRemovalTarget(null);
-        }}
-      >
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove instance connection?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {removalTarget === null ? "" : ctoxInstanceDisplayTitle(removalTarget)} will be
-              removed from Workjet. The instance and its data will be preserved.
-            </AlertDialogDescription>
-            {removalError === null ? null : (
-              <p role="alert" className="text-sm text-destructive">
-                {removalError}
-              </p>
-            )}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <Button variant="outline" disabled={removing} onClick={() => setRemovalTarget(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={removing} onClick={() => void confirmRemoval()}>
-              {removing ? "Removing …" : "Remove connection"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
       <DevicePairingDialog
         instanceName={selectedDisplayName}
         invite={activeInvite}
@@ -753,6 +639,7 @@ export async function importBusinessOsSettingsInvite(
 }
 
 export function BusinessOsSettings() {
+  const language = useProjectOverviewLanguage();
   const {
     bridge,
     discovery,
@@ -760,8 +647,7 @@ export function BusinessOsSettings() {
     refreshing,
     selectedId: activeInstanceId,
     select,
-    removePairedInstance,
-    removeSshManagedInstance,
+    setInstanceState,
   } = useCtoxMode();
   const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
@@ -780,11 +666,16 @@ export function BusinessOsSettings() {
     return instance !== undefined && (await select(instance));
   };
 
-  const removeInstance = async (instance: CtoxManagedInstance): Promise<string | null> => {
-    const result = await (instance.source === "ssh_managed"
-      ? removeSshManagedInstance(instance)
-      : removePairedInstance(instance));
-    return result.ok ? null : result.message;
+  const changeInstanceState = async (
+    instance: CtoxManagedInstance,
+    state: "enabled" | "disabled" | "removed",
+  ): Promise<string | null> => {
+    const result = await setInstanceState(instance, state);
+    return result.ok
+      ? null
+      : language === "de"
+        ? "Die Änderung konnte nicht gespeichert werden. Bitte erneut versuchen."
+        : result.message;
   };
 
   useEffect(() => {
@@ -944,7 +835,8 @@ export function BusinessOsSettings() {
       devicesError={devicesError}
       deviceManagementBlockedReason={deviceManagementBlockedReason}
       onSelectInstance={selectInstance}
-      onRemoveInstance={removeInstance}
+      language={language}
+      onStateChange={changeInstanceState}
       onRefresh={() => void refresh()}
       {...(!deviceControlAvailable ? {} : { onAddDevice: () => void createDeviceInvite() })}
       addingDevice={addingDevice}

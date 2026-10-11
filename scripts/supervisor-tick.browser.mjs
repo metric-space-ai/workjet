@@ -52,6 +52,7 @@ try {
     {
       cwd: repo,
       env: process.env,
+      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

@@ -168,6 +168,29 @@ pub(crate) mod linux {
         Ok(())
     }
     fn parent_directories(command: &mut Command, paths: impl Iterator<Item = PathBuf>) {
+        // Debian tool names such as cc and awk point through /etc/alternatives.
+        // Recreate only symlinks whose final executable is already in read-only /usr.
+        // Never mount the host's /etc directory or alternatives contents.
+        let mut aliases = std::collections::BTreeMap::new();
+        if let Ok(entries) = fs::read_dir("/usr/bin") {
+            for entry in entries.flatten() {
+                let Ok(alias) = fs::read_link(entry.path()) else { continue };
+                if alias.parent() != Some(Path::new("/etc/alternatives")) {
+                    continue;
+                }
+                let Ok(executable) = fs::canonicalize(entry.path()) else { continue };
+                let Ok(metadata) = fs::metadata(&executable) else { continue };
+                if executable.starts_with("/usr") && metadata.is_file() && metadata.mode() & 0o111 != 0 {
+                    aliases.insert(alias, executable);
+                }
+            }
+        }
+        if !aliases.is_empty() {
+            command.args(["--dir", "/etc/alternatives"]);
+            for (alias, executable) in aliases {
+                command.arg("--symlink").arg(executable).arg(alias);
+            }
+        }
         let mut directories = BTreeSet::new();
         for path in paths {
             for parent in path.ancestors().skip(1) {

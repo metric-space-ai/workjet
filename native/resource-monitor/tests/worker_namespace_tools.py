@@ -96,7 +96,7 @@ try:
     assert target.read_text() == "one\n🙂two\nthree\n"
     checks.append("bounded-text-and-special-files-denied")
 
-    result = tool({"kind": "terminal", "command": "/usr/bin/sh", "args": ["-c", "printf '%s' \"$OWNED_VALUE\"; printf 'int main(void){return 0;}' >main.c; cc main.c -o tool-build; ./tool-build"],
+    result = tool({"kind": "terminal", "command": "/usr/bin/sh", "args": ["-c", "set -e; test ! -e /etc/passwd; printf '%s' \"$OWNED_VALUE\"; printf 'int main(void){return 0;}' >main.c; cc main.c -o tool-build; ./tool-build"],
                    "cwd": str(workspace), "env": {"OWNED_VALUE": "terminal-result"}})
     assert result.stdout == "terminal-result" and (workspace / "tool-build").is_file()
     tool({"kind": "terminal", "command": "/usr/bin/touch", "args": [str(outside)], "cwd": str(workspace), "env": {}}, succeeds=False)

@@ -37,9 +37,9 @@ describe("compact project gallery", () => {
     expect(markup).not.toContain("Open website");
     expect(markup).not.toContain("If the website blocks");
     expect(markup).not.toContain("Nicht eingerichtet");
-    expect(markup).toContain("Users");
-    expect(markup).toContain("Queries");
-    expect(markup).toContain("Latency");
+    expect(markup).toContain("Nutzer");
+    expect(markup).toContain("Abfragen");
+    expect(markup).toContain("Latenz");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
   it("uses the project logo for a domain without a saved preview", () => {
@@ -123,7 +123,7 @@ describe("compact project gallery", () => {
     expect(markup).toContain("Ready");
     expect(markup).toContain('href="https://greppy.xyz/plan"');
     expect(markup).toContain("7 tasks");
-    expect(markup).toMatch(/<dd class="[^"]*text-lg[^"]*">7 tasks<\/dd>/);
+    expect(markup).toMatch(/<dd class="[^"]*text-\[22px\][^"]*">7 tasks<\/dd>/);
     expect(markup).not.toMatch(/<dt[^>]*class="[^"]*truncate/);
   });
 });

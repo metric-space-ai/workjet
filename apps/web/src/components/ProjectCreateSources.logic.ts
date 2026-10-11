@@ -74,6 +74,44 @@ export function defaultCloneBaseDirectory(setting: string | null | undefined): s
   return trimmed.length > 0 ? trimmed : "~/";
 }
 
+/** Elternordner eines Pfads, ohne abschließenden Trenner; leer für Wurzeln. */
+function parentDirectory(path: string): string {
+  const trimmed = path.trim().replace(/[/\\]+$/, "");
+  const index = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return index > 0 ? trimmed.slice(0, index) : "";
+}
+
+export interface ProjectCloneTargetFolder {
+  readonly path: string;
+  readonly label: string;
+}
+
+/**
+ * Bekannte Zielordner für „Repository klonen“ (erkennen statt fragen): der
+ * Projektordner des Rechners und die Elternordner seiner Arbeitskopien,
+ * ohne Dubletten, höchstens `limit` Einträge.
+ */
+export function knownCloneTargetFolders(
+  baseDirectorySetting: string,
+  workspaceRoots: readonly (string | null | undefined)[],
+  limit = 6,
+): ProjectCloneTargetFolder[] {
+  const seen = new Set<string>();
+  const folders: ProjectCloneTargetFolder[] = [];
+  for (const candidate of [
+    baseDirectorySetting,
+    ...workspaceRoots.map((root) => parentDirectory(root ?? "")),
+  ]) {
+    const path = candidate.trim().replace(/(.)[/\\]+$/, "$1");
+    if (path.length === 0 || seen.has(path)) continue;
+    seen.add(path);
+    const segments = path.split(/[/\\]/).filter((segment) => segment.length > 0);
+    folders.push({ path, label: segments.at(-1) ?? path });
+    if (folders.length >= limit) break;
+  }
+  return folders;
+}
+
 /** Target folder of a clone: base folder plus the repository folder name. */
 export function joinCloneDestination(baseDirectory: string, folderName: string): string {
   const base = baseDirectory.trim().length > 0 ? baseDirectory.trim() : "~/";

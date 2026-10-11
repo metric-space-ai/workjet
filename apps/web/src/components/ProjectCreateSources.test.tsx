@@ -16,6 +16,7 @@ import {
   cloneProjectRepository,
   deriveRepositoryFolderName,
   joinCloneDestination,
+  knownCloneTargetFolders,
   pickProjectFolder,
   readyCloneProviders,
   resolveProjectComputer,
@@ -219,6 +220,55 @@ describe("Repository klonen", () => {
       />,
     );
     expect(urlOnly).not.toContain('aria-label="Anbieter"');
+  });
+
+  it("offers known folders and „Ordner wählen“ for the target folder, free text as fallback", () => {
+    expect(
+      knownCloneTargetFolders("~/projekte/", [
+        "/Users/m/code/alpha",
+        "/Users/m/code/beta",
+        null,
+        "~/projekte/gamma",
+      ]),
+    ).toEqual([
+      { path: "~/projekte", label: "projekte" },
+      { path: "/Users/m/code", label: "code" },
+    ]);
+    const html = renderToStaticMarkup(
+      <ProjectCloneFields
+        computer={null}
+        providers={["url"]}
+        provider="url"
+        onProviderChange={() => {}}
+        repository=""
+        onRepositoryChange={() => {}}
+        baseDirectory="~/projekte/"
+        onBaseDirectoryChange={() => {}}
+        targetFolders={knownCloneTargetFolders("~/projekte", ["/Users/m/code/alpha"])}
+        onPickTarget={() => {}}
+      />,
+    );
+    expect(html).toContain('data-workjet-clone-target="~/projekte"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('data-workjet-action="project.add.clone.pick-target"');
+    expect(html).toContain("Ordner wählen");
+    expect(html).toContain('aria-label="Zielordner"');
+  });
+
+  it("stacks provider and URL at narrow width instead of truncating", () => {
+    const html = renderToStaticMarkup(
+      <ProjectCloneFields
+        computer={null}
+        providers={["url", "github"]}
+        provider="url"
+        onProviderChange={() => {}}
+        repository="https://github.com/metric-space-ai/workjet.git"
+        onRepositoryChange={() => {}}
+        baseDirectory="~/"
+        onBaseDirectoryChange={() => {}}
+      />,
+    );
+    expect(html).toContain("grid min-w-0 gap-2 sm:flex");
   });
 });
 

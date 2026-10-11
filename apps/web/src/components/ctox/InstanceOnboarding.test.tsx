@@ -1,9 +1,11 @@
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   canMountSelectedInstance,
+  INSTANCE_ONBOARDING_SLOW_MS,
   resolveInstanceOnboardingState,
+  startInstanceOnboardingSlowTimer,
   InstanceOnboardingView,
   InstanceNavigationBoundary,
   InstanceSidebarBoundary,
@@ -211,5 +213,78 @@ describe("network evidence labels", () => {
     expect(
       instanceAppsLabel({ _tag: "completed", instanceId: "alpha", source: "live", apps: [] }),
     ).toBe("0 Apps");
+  });
+});
+
+describe("instance onboarding ends every wait", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(["loading", "connecting"] as const)("reports %s as slow after exactly 10 s", (state) => {
+    vi.useFakeTimers();
+    const onSlow = vi.fn();
+    const stop = startInstanceOnboardingSlowTimer(state, onSlow);
+    expect(INSTANCE_ONBOARDING_SLOW_MS).toBe(10_000);
+    vi.advanceTimersByTime(9_999);
+    expect(onSlow).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onSlow).toHaveBeenCalledTimes(1);
+    stop?.();
+  });
+
+  it("cancels the timer on cleanup and never waits in other states", () => {
+    vi.useFakeTimers();
+    const onSlow = vi.fn();
+    startInstanceOnboardingSlowTimer("connecting", onSlow)?.();
+    vi.advanceTimersByTime(20_000);
+    expect(onSlow).not.toHaveBeenCalled();
+    for (const state of ["select", "failed", "create-or-connect"] as const)
+      expect(startInstanceOnboardingSlowTimer(state, onSlow)).toBeUndefined();
+  });
+
+  it.each(["loading", "connecting"] as const)(
+    "offers „Erneut verbinden“ and „Instanzen verwalten“ once %s is slow",
+    (state) => {
+      const waiting = renderToStaticMarkup(
+        <InstanceOnboardingView
+          state={state}
+          instances={[alpha]}
+          selectedId={alpha.id}
+          onSelect={() => {}}
+          onRetry={() => {}}
+        />,
+      );
+      expect(waiting).not.toContain("Erneut verbinden");
+      const slow = renderToStaticMarkup(
+        <InstanceOnboardingView
+          state={state}
+          instances={[alpha]}
+          selectedId={alpha.id}
+          onSelect={() => {}}
+          onRetry={() => {}}
+          slow
+        />,
+      );
+      expect(slow).toContain("Erneut verbinden");
+      expect(slow).toContain("Instanzen verwalten");
+      expect(slow).toContain("data-workjet-onboarding-status");
+    },
+  );
+
+  it("lists instances as rows with a status dot", () => {
+    const html = renderToStaticMarkup(
+      <InstanceOnboardingView
+        state="select"
+        instances={[alpha, { ...alpha, id: "beta", displayName: "Beta", status: "offline" }]}
+        onSelect={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(html.match(/data-slot="row"/g)).toHaveLength(2);
+    expect(html.match(/data-slot="row-status"/g)).toHaveLength(2);
+    expect(html).toContain('aria-label="verbunden"');
+    expect(html).toContain('aria-label="getrennt"');
+    expect(html).toContain("lucide-server");
   });
 });

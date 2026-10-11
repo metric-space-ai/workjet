@@ -337,12 +337,11 @@ describe("owner project overview", () => {
       "running",
     );
   });
-  it("keeps technical configuration and prompts inside collapsed diagnosis", () => {
+  it("keeps technical configuration and prompts out of the overview (no diagnosis expander)", () => {
     const html = markup([supervisor, specialist]);
-    const diagnosis = html.indexOf('data-workjet-overview-section="diagnosis"');
-    expect(html.slice(0, diagnosis)).not.toContain("gpt-6.1-sol");
-    expect(html.slice(diagnosis)).toContain("gpt-6.1-sol");
-    expect(html).not.toContain("<details open");
+    expect(html).not.toContain('data-workjet-overview-section="diagnosis"');
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("gpt-6.1-sol");
     expect(html).not.toMatch(/noch nicht verfügbar|not yet available/iu);
     expect(html).not.toContain("Rohdaten");
   });
@@ -352,7 +351,7 @@ describe("owner project overview", () => {
   it("follows the mock's section order and translates all overview navigation in both languages", () => {
     for (const language of ["de", "en"] as const) {
       const html = markup([supervisor], language);
-      const positions = ["kpis", "goals", "results", "history", "diagnosis"].map((section) =>
+      const positions = ["kpis", "goals", "results", "history"].map((section) =>
         html.indexOf('data-workjet-overview-section="' + section + '"'),
       );
       expect(positions).toEqual([...positions].sort((a, b) => a - b));

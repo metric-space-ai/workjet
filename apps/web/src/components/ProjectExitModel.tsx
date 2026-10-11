@@ -1,4 +1,3 @@
-import { useId, useState } from "react";
 import type { WorkjetExitModelAssessment, WorkjetExitModelResources } from "@workjet/contracts";
 import { RotateCcwIcon } from "lucide-react";
 import {
@@ -14,7 +13,6 @@ import {
 } from "../projectExitModel";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 
 export function ProjectExitModelSummary({
   projectId,
@@ -39,7 +37,7 @@ export function ProjectExitModelSummary({
         (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
       }
       data-workjet-action={"project.exit_model.open:" + projectId}
-      className="absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double border-foreground/70 bg-background/90 px-4 py-2 text-center text-3xl leading-none font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums shadow-sm hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+      className="absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double border-foreground/70 bg-background/90 px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums shadow-sm hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
       data-workjet-exit-model-status={view.status}
       data-workjet-exit-model-stamp=""
     >
@@ -101,7 +99,7 @@ export function ProjectExitModelReport({
     >
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-medium">Kennzahl · Exit in 5 Jahren</h2>
+          <h2 className="text-[13.5px] font-medium">Kennzahl · Exit in 5 Jahren</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           {onRefresh && (
@@ -129,7 +127,7 @@ export function ProjectExitModelReport({
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <div className="min-w-0">
           <p
-            className="break-words text-3xl font-semibold tracking-tight tabular-nums"
+            className="break-words text-[22px] font-semibold tracking-tight tabular-nums"
             data-workjet-exit-model-value=""
           >
             {view.value}
@@ -158,25 +156,25 @@ export function ProjectExitModelReport({
       </div>
 
       {error && (
-        <p role="alert" className="mt-3 text-sm text-destructive">
+        <p role="alert" className="mt-3 text-[13.5px] text-destructive">
           {error}
         </p>
       )}
       <p role="status" className="mt-3 text-xs text-muted-foreground">
         {!onRefresh
-          ? "Bewertung braucht eine verbundene Instanz."
+          ? "Instanz nicht verbunden"
           : researching
             ? "Bewertung läuft …"
             : current?.status === "provisional"
-              ? "Prognose mit deklarierten Annahmen."
+              ? "Prognose mit Annahmen"
               : view.stale
-                ? "Stand veraltet — bitte aktualisieren."
+                ? "Stand veraltet"
                 : ""}
       </p>
       {(current?.missing_inputs.length ?? 0) > 0 && (
         <div className="mt-4" data-workjet-exit-model-missing="">
           <h3 className="text-xs font-medium">Fehlende Angaben</h3>
-          <ul className="mt-1 list-disc space-y-1 pl-4 text-sm text-muted-foreground">
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-[13.5px] text-muted-foreground">
             {current!.missing_inputs.map((input, index) => (
               <li key={index} className="break-words [overflow-wrap:anywhere]">
                 {formatExitMissingInput(input, current)}
@@ -195,7 +193,9 @@ export function ProjectExitModelReport({
 
       {result && (
         <details className="mt-5 border-t border-border pt-3">
-          <summary className="cursor-pointer text-sm font-medium">Szenarien und Bewertung</summary>
+          <summary className="cursor-pointer text-[13.5px] font-medium">
+            Szenarien und Bewertung
+          </summary>
           <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-3">
             <Metric label="Median-Erlös" value={formatExitEur(result.p50_eur)} />
             <Metric
@@ -243,7 +243,7 @@ export function ProjectExitModelReport({
 
       {current?.diagnostics?.length ? (
         <details className="mt-4 border-t border-border pt-3">
-          <summary className="cursor-pointer text-sm font-medium">
+          <summary className="cursor-pointer text-[13.5px] font-medium">
             Unternehmenswert und Finanzierung
           </summary>
           <div className="mt-3 overflow-x-auto">
@@ -282,7 +282,7 @@ export function ProjectExitModelReport({
 
       {plan || proposal || current?.sources.length ? (
         <details className="mt-4 border-t border-border pt-3">
-          <summary className="cursor-pointer text-sm font-medium">
+          <summary className="cursor-pointer text-[13.5px] font-medium">
             Ressourcen, Annahmen und Quellen
           </summary>
           {proposal && (
@@ -323,7 +323,7 @@ export function ProjectExitModelReport({
                 />
               </dl>
               {plan.assumptions.length > 0 && (
-                <ul className="mt-3 list-disc space-y-1 pl-4 text-sm text-muted-foreground">
+                <ul className="mt-3 list-disc space-y-1 pl-4 text-[13.5px] text-muted-foreground">
                   {plan.assumptions.map((assumption, index) => (
                     <li key={index}>{assumption}</li>
                   ))}
@@ -332,7 +332,7 @@ export function ProjectExitModelReport({
             </>
           )}
           {current?.sources.length ? (
-            <ul className="mt-4 space-y-3 text-sm">
+            <ul className="mt-4 space-y-3 text-[13.5px]">
               {current.sources.map((source) => {
                 const url = exitSourceUrl(source.reference);
                 return (
@@ -370,7 +370,7 @@ export function ProjectExitModelReport({
 
       {current?.history.length ? (
         <details className="mt-4 border-t border-border pt-3">
-          <summary className="cursor-pointer text-sm font-medium">
+          <summary className="cursor-pointer text-[13.5px] font-medium">
             Bewertungsverlauf · {current.history.length}
           </summary>
           <div className="mt-3 overflow-x-auto">
@@ -407,7 +407,7 @@ export function ProjectExitModelReport({
 function Metric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="min-w-0">
-      <dd className="break-words text-sm font-medium tabular-nums">{value}</dd>
+      <dd className="break-words text-[13.5px] font-medium tabular-nums">{value}</dd>
       <dt className="mt-0.5 text-[11px] text-muted-foreground">{label}</dt>
     </div>
   );

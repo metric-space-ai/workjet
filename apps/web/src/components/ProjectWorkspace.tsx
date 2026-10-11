@@ -129,7 +129,7 @@ function ProjectWorkspaceContent({
     );
   return (
     <SidebarInset className="min-h-0 min-w-0 overflow-auto">
-      <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-sm">
+      <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-[13.5px]">
         <WorkspaceBreadcrumb ariaLabel={text.overview}>
           <WorkspaceBreadcrumbItem className="min-w-0 shrink">
             <span className="truncate">{project.title}</span>
@@ -153,7 +153,9 @@ function ProjectWorkspaceContent({
             ) : null}
             <InlinePanel
               // The header row wraps; an open panel takes its own full line.
-              {...(editingParent ? { className: "mt-2 basis-full text-sm text-foreground" } : {})}
+              {...(editingParent
+                ? { className: "mt-2 basis-full text-[13.5px] text-foreground" }
+                : {})}
               triggerLabel={text.addParent}
               open={editingParent}
               onOpenChange={(open) => {
@@ -167,7 +169,7 @@ function ProjectWorkspaceContent({
               statusTone="error"
               onSubmit={() => void submitParent()}
             >
-              <label className="grid gap-1 text-sm">
+              <label className="grid gap-1 text-[13.5px]">
                 {text.name}
                 <Input
                   required
@@ -176,7 +178,7 @@ function ProjectWorkspaceContent({
                   onChange={(event) => setDomain(event.target.value)}
                 />
               </label>
-              <label className="grid gap-1 text-sm">
+              <label className="grid gap-1 text-[13.5px]">
                 {text.goal}
                 <textarea
                   required

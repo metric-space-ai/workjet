@@ -4,9 +4,6 @@
   "verstoesse": [
     "b|components/JourFixeRoom.tsx|<button type=\"button\" onClick={onBack} className=\"truncate hover:underline\">",
     "b|components/JourFixeRoom.tsx|className=\"block w-full text-left text-sm hover:underline\"",
-    "b|components/ProjectOverviewCard.tsx|className=\"block truncate text-[11px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline focus-",
-    "b|components/ProjectOverviewCard.tsx|className=\"hover:underline focus-visible:outline focus-visible:outline-ring\"",
-    "b|components/ProjectOverviewDecisions.tsx|<button type=\"button\" className=\"text-xs text-primary hover:underline\" onClick={open}>",
     "b|components/Sidebar.tsx|\"inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 ",
     "b|components/Sidebar.tsx|\"shrink-0 text-xs tabular-nums hover:underline\",",
     "b|components/Sidebar.tsx|className=\"inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hove",
@@ -17,7 +14,6 @@
     "b|components/ctox/CtoxModeShell.tsx|className=\"text-xs text-sidebar-muted-foreground underline-offset-2 hover:underline disabled:opacity-50\"",
     "d|components/desktop/SshPasswordPromptDialog.tsx|Date.now()); const [responseError, setResponseError] = useState",
     "d|components/settings/NativeProviderRows.tsx|) : probe?.status === \"failed\" ? (",
-    "d|components/settings/ProjectSettingsPanel.tsx|group.projectKey === projectKey) ?? null; // Remember the members of the last rendered group so a grouping-rule change /",
     "d|components/settings/ProjectSettingsPanel.tsx|script.command === fileScript.command // script.name.toLowerCase() === fileScript.name.toLowerCase(), ), ), [scripts, wo",
     "d|components/settings/ProviderInstanceCard.tsx|void) / undefined; /** * Optional outer reset button rendered next to the driver icon. Built-in * default slots supply a",
     "d|components/settings/ProviderModelsSection.tsx|0 // model.name !== model.slug; return (",

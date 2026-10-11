@@ -11,6 +11,7 @@ import {
   PROJECT_CLONE_PROVIDERS,
   PROJECT_CREATE_SOURCES,
   type ProjectCloneProvider,
+  type ProjectCloneTargetFolder,
   type ProjectComputerOption,
   type ProjectCreateSource,
 } from "./ProjectCreateSources.logic";
@@ -62,7 +63,7 @@ export function ProjectComputerSelect(props: {
   const connected = props.options.filter((option) => option.connected);
   const label = connected.find((option) => option.environmentId === props.value)?.label ?? null;
   return (
-    <div className="grid gap-1 text-sm">
+    <div className="grid min-w-0 gap-1 text-[13.5px]">
       <span>Rechner</span>
       <Select
         value={props.value ?? ""}
@@ -100,12 +101,12 @@ export function ProjectFolderFields(props: {
     <div className="grid gap-3">
       <div className="grid gap-3 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
         {props.computer}
-        <label className="grid gap-1 text-sm">
+        <label className="grid min-w-0 gap-1 text-[13.5px]">
           Ordner
-          <div className="flex min-w-0 gap-2">
+          <div className="grid min-w-0 gap-2 sm:flex">
             <Input
               aria-label="Ordner"
-              className="min-w-0 flex-1"
+              className="w-full min-w-0 sm:flex-1"
               placeholder="~/projekte/name"
               spellCheck={false}
               value={props.path}
@@ -158,7 +159,12 @@ export function ProjectCloneFields(props: {
   readonly onRepositoryChange: (repository: string) => void;
   readonly baseDirectory: string;
   readonly onBaseDirectoryChange: (baseDirectory: string) => void;
+  /** Bekannte Ordner des Rechners als Auswahl; Freitext bleibt Fallback. */
+  readonly targetFolders?: readonly ProjectCloneTargetFolder[];
+  readonly onPickTarget?: (() => void) | null;
+  readonly picking?: boolean;
 }) {
+  const normalizedBase = props.baseDirectory.trim().replace(/(.)[/\\]+$/, "$1");
   const entry =
     PROJECT_CLONE_PROVIDERS.find((candidate) => candidate.value === props.provider) ??
     PROJECT_CLONE_PROVIDERS[0]!;
@@ -169,9 +175,9 @@ export function ProjectCloneFields(props: {
     <div className="grid gap-3">
       <div className="grid gap-3 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
         {props.computer}
-        <div className="grid gap-1 text-sm">
+        <div className="grid min-w-0 gap-1 text-[13.5px]">
           <span>Repository</span>
-          <div className="flex min-w-0 gap-2">
+          <div className="grid min-w-0 gap-2 sm:flex">
             {providerEntries.length > 1 ? (
               <Select
                 value={props.provider}
@@ -180,7 +186,7 @@ export function ProjectCloneFields(props: {
                   if (next !== undefined) props.onProviderChange(next.value);
                 }}
               >
-                <SelectTrigger aria-label="Anbieter" className="w-36 shrink-0">
+                <SelectTrigger aria-label="Anbieter" className="w-full shrink-0 sm:w-36">
                   <SelectValue>{entry.label}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="start" alignItemWithTrigger={false}>
@@ -194,7 +200,7 @@ export function ProjectCloneFields(props: {
             ) : null}
             <Input
               aria-label="Repository"
-              className="min-w-0 flex-1"
+              className="w-full min-w-0 sm:flex-1"
               placeholder={entry.placeholder}
               spellCheck={false}
               value={props.repository}
@@ -204,16 +210,54 @@ export function ProjectCloneFields(props: {
           </div>
         </div>
       </div>
-      <label className="grid gap-1 text-sm">
-        Zielordner
+      <div className="grid min-w-0 gap-1 text-[13.5px]">
+        <span>Zielordner</span>
+        {(props.targetFolders?.length ?? 0) > 0 || props.onPickTarget ? (
+          <div
+            aria-label="Bekannte Ordner"
+            className="flex flex-wrap gap-1.5"
+            role="group"
+            data-workjet-clone-targets=""
+          >
+            {props.targetFolders?.map((folder) => (
+              <Button
+                key={folder.path}
+                type="button"
+                size="xs"
+                variant={folder.path === normalizedBase ? "default" : "outline"}
+                aria-pressed={folder.path === normalizedBase}
+                title={folder.path}
+                data-workjet-clone-target={folder.path}
+                onClick={() => props.onBaseDirectoryChange(folder.path)}
+              >
+                <FolderIcon />
+                {folder.label}
+              </Button>
+            ))}
+            {props.onPickTarget ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={props.picking}
+                data-workjet-action="project.add.clone.pick-target"
+                onClick={props.onPickTarget}
+              >
+                <FolderOpenIcon />
+                Ordner wählen
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         <Input
           aria-label="Zielordner"
+          className="w-full min-w-0"
           placeholder="~/"
           spellCheck={false}
           value={props.baseDirectory}
           onChange={(event) => props.onBaseDirectoryChange(event.target.value)}
         />
-      </label>
+      </div>
     </div>
   );
 }

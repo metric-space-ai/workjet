@@ -39,6 +39,15 @@ export type SaveProjectKpiPrompts = (
   expectedRevision: number,
 ) => Promise<boolean>;
 
+/** Sichtbarer Kurzstatus je nativem Ergebnisstatus; Rohcodes bleiben in `reasonCode`. */
+const KPI_STATUS_LABEL: Record<ProjectKpiRecord["result"]["status"], string> = {
+  resolving: "Wird berechnet",
+  ready: "",
+  stale: "Veraltet",
+  missing_source: "Quelle fehlt",
+  failed: "Fehlgeschlagen",
+};
+
 /** An edited sentence or an out-of-scope/old result must never reuse its old value. */
 export function projectKpiPresentation(
   record: ProjectKpiRecord | undefined,
@@ -51,17 +60,18 @@ export function projectKpiPresentation(
     value: "—",
     source: "",
     calculatedAt: null as number | null,
+    reasonCode: undefined as string | undefined,
   };
-  if (!record) return { ...fallback, status: "unconfigured", detail: "Nicht eingerichtet" };
+  if (!record) return { ...fallback, status: "unconfigured", detail: "—" };
   if (draftPrompt?.trim() !== record.prompt.prompt.trim())
-    return { ...fallback, status: "changed", detail: "Neu berechnet nach Speichern" };
+    return { ...fallback, status: "changed", detail: "Nach Speichern neu" };
   const result = record.result;
   if (result.status !== "ready" && result.status !== "stale")
     return {
       ...fallback,
       status: result.status,
-      detail:
-        result.reason_code ?? (result.status === "resolving" ? "Wird berechnet" : result.status),
+      detail: KPI_STATUS_LABEL[result.status],
+      reasonCode: result.reason_code,
       message: result.message,
     };
   const snapshot = result.snapshot;
@@ -75,7 +85,12 @@ export function projectKpiPresentation(
     !Number.isFinite(snapshot.freshness.calculated_at_ms) ||
     Math.abs(snapshot.freshness.calculated_at_ms) > 8.64e15
   )
-    return { ...fallback, status: "failed", detail: "invalid_snapshot" };
+    return {
+      ...fallback,
+      status: "failed",
+      detail: KPI_STATUS_LABEL.failed,
+      reasonCode: "invalid_snapshot",
+    };
   const names = {
     native_metric: "CTOX",
     github_metric: "GitHub",
@@ -87,7 +102,8 @@ export function projectKpiPresentation(
     source: [...new Set(snapshot.sources.map((source) => names[source.kind]))].join(" + "),
     calculatedAt: snapshot.freshness.calculated_at_ms,
     status: result.status,
-    detail: result.status === "stale" ? (result.reason_code ?? "stale") : "",
+    detail: result.status === "stale" ? KPI_STATUS_LABEL.stale : "",
+    reasonCode: result.reason_code,
     message: result.message,
   };
 }

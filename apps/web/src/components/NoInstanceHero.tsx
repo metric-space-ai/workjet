@@ -4,7 +4,7 @@ import { Button } from "./ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 
-/** Shown in the main area when no CTOX instance is selected, so there is nothing to load. */
+/** Leerzustand im Hauptbereich, solange keine Instanz gewählt ist. */
 export function NoInstanceHero() {
   return (
     <SidebarInset
@@ -15,9 +15,7 @@ export function NoInstanceHero() {
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                Keine CTOX-Instanz
-              </EmptyTitle>
+              <EmptyTitle className="text-[22px] text-foreground">Instanz verbinden</EmptyTitle>
               <div className="mt-6 flex justify-center">
                 <Button
                   size="sm"
@@ -25,7 +23,7 @@ export function NoInstanceHero() {
                   onClick={() => openInstanceSetup()}
                 >
                   <PlusIcon className="size-4" />
-                  Instanz verbinden
+                  Instanz hinzufügen
                 </Button>
               </div>
             </EmptyHeader>

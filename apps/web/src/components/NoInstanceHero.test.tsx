@@ -5,7 +5,8 @@ import { NoInstanceHero } from "./NoInstanceHero";
 describe("no instance hero", () => {
   it("explains what is missing and offers one clear action to connect an instance", () => {
     const html = renderToStaticMarkup(<NoInstanceHero />);
-    expect(html).toContain("Keine CTOX-Instanz");
+    expect(html).toContain("Instanz verbinden");
+    expect(html).toContain("Instanz hinzufügen");
     expect(html).toContain("Instanz verbinden");
     expect(html).toContain('data-workjet-action="instance.connect.empty"');
     expect(html).toContain('data-workjet-no-instance=""');

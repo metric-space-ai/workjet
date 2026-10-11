@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ProjectExitModelPanel, ProjectExitModelSummary } from "./ProjectExitModel";
 import type { ProjectOverview } from "@workjet/contracts";
 import { ArrowUpRightIcon, EllipsisIcon, XIcon } from "lucide-react";
@@ -10,14 +10,8 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
-import {
-  projectKpiPresentation,
-  type PromptedProjectKpis,
-  type SaveProjectKpiPrompts,
-} from "../projectKpis";
+import { projectKpiPresentation, type PromptedProjectKpis } from "../projectKpis";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { ProjectOverviewEditor, type ProjectConfigurationValues } from "./ProjectOverviewEditor";
-import { ProjectSupervisorLumaField } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 
@@ -27,11 +21,9 @@ export function ProjectOverviewCard({
   onSave,
   canArchive = false,
   statistics,
-  onSaveConfiguration,
+  onConfigure,
   kpis,
-  onSaveKpis,
   ctoxInstanceId = null,
-  onReadKpis,
   reorderHandle,
   tokenBudget,
 }: {
@@ -39,38 +31,15 @@ export function ProjectOverviewCard({
   readonly tokenBudget?: ReactNode;
   readonly ctoxInstanceId?: string | null;
   readonly kpis?: PromptedProjectKpis | undefined;
-  readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
-  readonly onReadKpis?: ((projectId: string) => Promise<PromptedProjectKpis | null>) | undefined;
   readonly reorderHandle?: ReactNode;
   readonly onOpen: () => void;
-  readonly onSaveConfiguration?:
-    | ((next: ProjectConfigurationValues) => Promise<boolean>)
-    | undefined;
+  /** Projekt-Einstellungen leben unter Einstellungen › Projekte (Ort C). */
+  readonly onConfigure?: (() => void) | undefined;
   readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   readonly canArchive?: boolean | undefined;
   readonly statistics?: GalleryProjectStatistics | undefined;
 }) {
-  const [editing, setEditing] = useState(false);
   const [assessing, setAssessing] = useState(false);
-  const [kpiReadAttempt, setKpiReadAttempt] = useState(0);
-  const [kpiReadStatus, setKpiReadStatus] = useState<"idle" | "pending" | "ready" | "failed">(
-    "idle",
-  );
-  useEffect(() => {
-    if (!editing || !onReadKpis) return;
-    let active = true;
-    setKpiReadStatus("pending");
-    void onReadKpis(project.id)
-      .then((result) => {
-        if (active) setKpiReadStatus(result === null ? "failed" : "ready");
-      })
-      .catch(() => {
-        if (active) setKpiReadStatus("failed");
-      });
-    return () => {
-      active = false;
-    };
-  }, [editing, onReadKpis, project.id, kpiReadAttempt]);
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -107,9 +76,8 @@ export function ProjectOverviewCard({
         .replace(/\/$/, "")
         .toLowerCase();
   const archived = overview.archived === true;
-  // Manage and exit open inline in the card (drei Orte, keine Popups); the
-  // gallery grid lets an expanded card span the full row.
-  const expanded = (editing && onSave !== undefined) || assessing;
+  // Der Exit öffnet inline in der Karte; das Raster lässt die Karte die Zeile füllen.
+  const expanded = assessing;
   const changeArchive = async () => {
     if (!onSave || archivePending) return false;
     setArchivePending(true);
@@ -117,7 +85,6 @@ export function ProjectOverviewCard({
     try {
       if (!(await onSave({ ...overview, archived: !archived })))
         throw new Error("Projekt nicht gespeichert.");
-      setEditing(false);
       return true;
     } catch {
       setArchiveError("Projekt nicht gespeichert.");
@@ -135,7 +102,7 @@ export function ProjectOverviewCard({
       <div className="flex min-w-0 items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <h2
-            className="break-words text-sm leading-5 font-medium"
+            className="break-words text-[13.5px] leading-5 font-medium"
             title={project.title}
             data-workjet-project-title=""
           >
@@ -144,7 +111,7 @@ export function ProjectOverviewCard({
                 href={website ?? undefined}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="hover:underline focus-visible:outline focus-visible:outline-ring"
+                className="hover:text-primary focus-visible:outline focus-visible:outline-ring"
               >
                 {project.title}
               </a>
@@ -158,7 +125,7 @@ export function ProjectOverviewCard({
               target="_blank"
               rel="noreferrer noopener"
               title={website}
-              className="block truncate text-[11px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline focus-visible:outline focus-visible:outline-ring"
+              className="block truncate text-xs text-muted-foreground hover:text-primary focus-visible:outline focus-visible:outline-ring"
             >
               {website}
             </a>
@@ -166,7 +133,7 @@ export function ProjectOverviewCard({
         </div>
         {tokenBudget}
         {reorderHandle}
-        {(repository || onSave) && (
+        {(repository || onSave || onConfigure) && (
           <Menu>
             <MenuTrigger
               aria-label={`Aktionen für ${project.title}`}
@@ -175,13 +142,11 @@ export function ProjectOverviewCard({
               <EllipsisIcon className="size-4" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end">
-              {onSave && (
+              {onConfigure && (
                 <MenuItem
-                  onClick={() => {
-                    setAssessing(false);
-                    setEditing(true);
-                  }}
+                  onClick={onConfigure}
                   aria-label={`${project.title} konfigurieren`}
+                  data-workjet-action={`project.configure.gallery:${project.key}`}
                 >
                   Projekt konfigurieren
                 </MenuItem>
@@ -249,7 +214,7 @@ export function ProjectOverviewCard({
                     className="size-16"
                   />
                 ) : (
-                  <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-2xl font-semibold tracking-tight text-foreground/70">
+                  <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-[22px] font-semibold tracking-tight text-foreground/70">
                     {project.title.slice(0, 2).toUpperCase()}
                   </span>
                 )}
@@ -268,10 +233,7 @@ export function ProjectOverviewCard({
             <ProjectExitModelSummary
               projectId={project.id}
               assessment={project.configuration?.exitModel ?? null}
-              onOpen={() => {
-                setEditing(false);
-                setAssessing(true);
-              }}
+              onOpen={() => setAssessing(true)}
             />
           </div>
           <div className="border-t border-border px-3 py-3">
@@ -297,7 +259,7 @@ export function ProjectOverviewCard({
                     >
                       {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
                     </dt>
-                    <dd className="order-first min-w-0 break-words text-lg leading-6 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+                    <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
                       {metric ? (
                         <span
                           title={metric.message ?? metric.detail}
@@ -313,14 +275,13 @@ export function ProjectOverviewCard({
                           —
                         </span>
                       ) : slot.kind === "link" ? (
-                        <a
-                          href={slot.url}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="text-primary underline"
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
                         >
                           Link öffnen
-                        </a>
+                        </Button>
                       ) : slot.kind === "updated" ? (
                         <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
                           {activityAt === null ? "—" : projectUpdateAge(activityAt)}
@@ -343,59 +304,6 @@ export function ProjectOverviewCard({
           {archiveError}
         </p>
       )}
-      {editing && (
-        <section
-          aria-label={`${project.title} verwalten`}
-          className="border-t border-border px-3 py-3"
-          data-settings-inline-editor=""
-          data-workjet-project-card-section="configure"
-        >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">Projekt verwalten</h3>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label="Schließen"
-              onClick={() => setEditing(false)}
-            >
-              <XIcon className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-          {kpiReadStatus === "pending" && (
-            <p role="status" className="mb-3 text-xs text-muted-foreground">
-              KPI-Abfragen werden geladen …
-            </p>
-          )}
-          {kpiReadStatus === "failed" && (
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p role="alert" className="text-xs text-destructive">
-                KPI-Abfragen nicht geladen.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setKpiReadAttempt((attempt) => attempt + 1)}
-              >
-                Erneut versuchen
-              </Button>
-            </div>
-          )}
-          {onSave && (
-            <ProjectOverviewEditor
-              overview={overview}
-              configuration={project.configuration}
-              onSaveConfiguration={onSaveConfiguration}
-              onSave={onSave}
-              renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
-              onCancel={() => setEditing(false)}
-              kpis={scopedKpis}
-              onSaveKpis={onSaveKpis}
-              onArchive={canArchive ? changeArchive : undefined}
-              archived={archived}
-            />
-          )}
-        </section>
-      )}
       {assessing && (
         <section
           aria-label={`Exit in fünf Jahren · ${project.title}`}
@@ -403,7 +311,7 @@ export function ProjectOverviewCard({
           data-workjet-project-card-section="exit"
         >
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">Exit in fünf Jahren</h3>
+            <h3 className="text-[13.5px] font-medium">Exit in fünf Jahren</h3>
             <Button
               size="icon-xs"
               variant="ghost"

@@ -9,7 +9,7 @@ import * as Crypto from "effect/Crypto";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { CommandId, MessageId, EventId } from "@workjet/contracts";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
-import { McpInvocationContext } from "../../McpInvocationContext.ts";
+import { McpInvocationContext, requireWorkjetMember } from "../../McpInvocationContext.ts";
 import {
   WorkjetEscalation,
   escalateWorkjetDecision,
@@ -122,6 +122,7 @@ export const WorkerAutonomyToolkitRegistrationLive = Layer.effectDiscard(
         handle: (payload) =>
           Effect.withFiber((fiber) =>
             Effect.gen(function* () {
+              yield* requireWorkjetMember();
               const invocation = yield* McpInvocationContext;
               const result =
                 tool.name === "workjet_escalate"

@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
-import { McpInvocationContext } from "../../McpInvocationContext.ts";
+import { McpInvocationContext, requireWorkjetMember } from "../../McpInvocationContext.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProviderService } from "../../../provider/Services/ProviderService.ts";
@@ -42,6 +42,7 @@ const register = Effect.gen(function* () {
         const providers = Context.getUnsafe(fiber.context, ProviderService);
         const invocation = Context.getUnsafe(fiber.context, McpInvocationContext);
         return Effect.gen(function* () {
+          yield* requireWorkjetMember();
           const input = yield* Schema.decodeUnknownEffect(WorkerSupervisorAnswer)(payload);
           const result = yield* answerWorkerDecision(invocation.threadId, input);
           return new McpSchema.CallToolResult({
@@ -55,6 +56,7 @@ const register = Effect.gen(function* () {
             ],
           });
         }).pipe(
+          Effect.provideService(McpInvocationContext, invocation),
           Effect.provideService(
             OrchestrationEngineService,
             Context.getUnsafe(fiber.context, OrchestrationEngineService),

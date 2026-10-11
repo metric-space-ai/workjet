@@ -32,6 +32,8 @@ import {
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import { projectControlReadKey } from "@workjet/shared/projectControlRead";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -1021,6 +1023,10 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const context = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(context);
     const ownerScope = yield* Effect.scope;
+    const pendingProjectReads = new WeakMap<
+      WebContents,
+      Map<string, Deferred.Deferred<Option.Option<unknown>>>
+    >();
     const budget = options.budget ?? new CtoxGuestBudget(CTOX_GUEST_POOL_LIMIT);
     let latestHostTheme: CtoxHostThemeInput | undefined;
     let registeredSessionComputerIds: readonly string[] = [];
@@ -2135,7 +2141,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }
         // Sync may never settle. Keep the pool unlocked so switching and
         // closing still work, and return a bounded failure to the caller.
-        const pending = yield* Effect.tryPromise({
+        const execution = Effect.tryPromise({
           try: () =>
             guest.view.webContents.executeJavaScript(
               buildGuestProjectControlExpression(request),
@@ -2165,6 +2171,34 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           ),
           Effect.timeoutOption("30 seconds"),
         );
+        const readKey = projectControlReadKey(request);
+        const pending = yield* Effect.gen(function* () {
+          if (readKey === null) return yield* execution;
+          const contents = guest.view.webContents;
+          let reads = pendingProjectReads.get(contents);
+          if (!reads) pendingProjectReads.set(contents, (reads = new Map()));
+          const existing = reads.get(readKey);
+          if (existing) {
+            yield* Effect.annotateCurrentSpan("request.coalesced", true);
+            return yield* Deferred.await(existing);
+          }
+          const receipt = Deferred.makeUnsafe<Option.Option<unknown>>();
+          reads.set(readKey, receipt);
+          // The manager owns this bounded read, so cancelling one subscriber
+          // cannot cancel other subscribers or retain a timed-out entry.
+          const currentReads = reads;
+          yield* Deferred.into(
+            execution.pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  currentReads.delete(readKey);
+                }),
+              ),
+            ),
+            receipt,
+          ).pipe(Effect.forkIn(ownerScope));
+          return yield* Deferred.await(receipt);
+        });
         if (Option.isNone(pending)) {
           yield* Effect.logWarning("CTOX project control timed out", {
             instanceId,

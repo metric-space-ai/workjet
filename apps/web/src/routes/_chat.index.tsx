@@ -690,11 +690,7 @@ function ProjectGallery({
         !nativeProjectIds.split("\n").includes(projectId)
       )
         return null;
-      const result = await readWorkjetProjectKpis(
-        instanceId,
-        ProjectId.make(projectId),
-        newCommandId(),
-      );
+      const result = await readWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
       if (
         !scope.active ||
         kpiScope.current !== scope ||

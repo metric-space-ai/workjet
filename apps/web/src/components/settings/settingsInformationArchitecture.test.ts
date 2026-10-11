@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../AppSidebarLayout.tsx?raw";
-import machinesRouteSource from "../../routes/machines.tsx?raw";
+import routeTreeSource from "../../routeTree.gen.ts?raw";
 import connectionsRouteSource from "../../routes/settings.connections.tsx?raw";
 import keybindingsRouteSource from "../../routes/settings.keybindings.tsx?raw";
 import settingsRouteSource from "../../routes/settings.tsx?raw";
@@ -47,8 +47,17 @@ describe("Workjet settings information architecture", () => {
     expect(connectionsRouteSource).not.toContain("ConnectionsSettings");
     expect(keybindingsRouteSource).toContain('redirect({ to: "/settings/general"');
     expect(keybindingsRouteSource).not.toContain("KeybindingsSettingsPanel");
-    expect(machinesRouteSource).toContain('redirect({ to: "/settings/business-os"');
-    expect(machinesRouteSource).not.toContain("MachinesPage");
+  });
+
+  it("has no pages outside Dev, Ops and Settings: /machines is gone, usage is Settings › Verbrauch", () => {
+    expect(routeTreeSource).not.toContain("fullPath: '/machines'");
+    expect(routeTreeSource).not.toContain("fullPath: '/usage'");
+    expect(routeTreeSource).toContain("fullPath: '/settings/usage'");
+    expect(SETTINGS_NAV_ITEMS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Verbrauch", to: "/settings/usage" }),
+      ]),
+    );
   });
 
   it("keeps one labelled Settings footer entry and no global Machines navigation", () => {

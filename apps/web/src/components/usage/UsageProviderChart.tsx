@@ -318,7 +318,7 @@ export function UsageProviderChart({
             viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label={`${resolution === "hour" ? "Hourly" : "Daily"} ${metric === "tokens" ? "processed tokens" : "cost"} by provider`}
+            aria-label={`${metric === "tokens" ? "Tokens" : "Kosten"} je ${resolution === "hour" ? "Stunde" : "Tag"} und Harness`}
           >
             {ticks.map((tick) => {
               const y = toY(tick);

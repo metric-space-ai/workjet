@@ -10,7 +10,8 @@ export type SettingsPath =
   | "/settings/workjet"
   | "/settings/source-control"
   | "/settings/diagnostics"
-  | "/settings/archived";
+  | "/settings/archived"
+  | "/settings/usage";
 
 export interface SettingsSearchItem {
   readonly id: string;
@@ -39,6 +40,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
   "/settings/archived": "Archiv",
+  "/settings/usage": "Verbrauch",
 };
 
 const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly string[]>> = {
@@ -51,6 +53,7 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
   "/settings/source-control": ["Source Control"],
   "/settings/diagnostics": ["Diagnostics"],
   "/settings/archived": ["Archive"],
+  "/settings/usage": ["Usage", "Kosten", "Tokens"],
 };
 
 /**

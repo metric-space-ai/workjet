@@ -1,6 +1,5 @@
 import { openInstanceSetup, openInstanceRePair } from "../../instanceSetup";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
-import { InstanceSetupDialog } from "./InstanceSetupDialog";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import type {
   CtoxDiscoveryResult,
@@ -1024,12 +1023,7 @@ export function CtoxModeProvider({
     ],
   );
 
-  return (
-    <CtoxModeContext value={value}>
-      {children}
-      <InstanceSetupDialog />
-    </CtoxModeContext>
-  );
+  return <CtoxModeContext value={value}>{children}</CtoxModeContext>;
 }
 
 export function ctoxInstanceStatusLabel(

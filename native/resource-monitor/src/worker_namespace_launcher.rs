@@ -410,10 +410,10 @@ pub(crate) mod linux {
             .env("TMPDIR", "/tmp")
             .env("TMP", "/tmp")
             .env("TEMP", "/tmp");
-        if let Some(home) = std::env::var_os("HOME") {
-            if !PathBuf::from(home).starts_with(&plan.profile.path) {
-                return Err(denied("worker HOME is outside its private profile"));
-            }
+        if let Some(home) = std::env::var_os("HOME")
+            && !PathBuf::from(home).starts_with(&plan.profile.path)
+        {
+            return Err(denied("worker HOME is outside its private profile"));
         }
         Err(command.exec())
     }

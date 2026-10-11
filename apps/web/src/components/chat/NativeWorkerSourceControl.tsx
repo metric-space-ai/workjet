@@ -71,20 +71,31 @@ export function NativeWorkerSourceControl(props: {
         : null);
   const ready = source?.status === "ready";
   const bound = source !== undefined && workerSourceIsBound(props.config, source);
+  const selectableConnections = connections.filter(
+    (entry) =>
+      entry.status === "ready" &&
+      workerSourceConnectionForInstance([entry], props.instanceId) &&
+      workerSourceBindingError(props.config, props.instanceId, entry) === null,
+  );
+  const chooseConnection = !bound && selectableConnections.length > 1;
   const provision =
     typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
 
-  const connect = async (renew = false) => {
+  const connect = async (renew = false, selectedConnectionId?: string) => {
+    const selected = selectableConnections.find(
+      (entry) => entry.connectionId === selectedConnectionId,
+    );
     if (
       !request ||
       props.unavailable ||
       query.isPending ||
       inFlight.current ||
       (bound && !renew) ||
-      selectionError
+      (selectionError && !selected) ||
+      (selectedConnectionId !== undefined && !selected)
     )
       return;
-    if ((!ready || renew) && !provision) {
+    if (!selected && (!ready || renew) && !provision) {
       setError({ scope, message: "Open Workjet desktop to connect this project's workers." });
       return;
     }
@@ -94,7 +105,7 @@ export function NativeWorkerSourceControl(props: {
     setBusy(true);
     setError(null);
     try {
-      let accepted = ready && !renew ? source : undefined;
+      let accepted = selected ?? (ready && !renew ? source : undefined);
       if (!accepted && provision) {
         const result = await provision(request);
         if (currentContext.current.scope !== requestedScope) return;
@@ -192,7 +203,25 @@ export function NativeWorkerSourceControl(props: {
       data-workjet-worker-source-connection-id={bound ? source?.connectionId : undefined}
       data-workjet-worker-source-instance-id={bound ? source?.instanceId : undefined}
     >
-      {currentError && (selectionError || (error?.scope === scope && error.retryable === false)) ? (
+      {chooseConnection ? (
+        <select
+          aria-label="Choose worker access"
+          className="max-w-56 rounded border px-2 py-1 disabled:opacity-50"
+          value=""
+          disabled={props.unavailable || busy || query.isPending || request === null}
+          onChange={(event) => void connectRef.current(false, event.target.value)}
+        >
+          <option value="" disabled>
+            Choose worker access…
+          </option>
+          {selectableConnections.map((entry) => (
+            <option key={entry.connectionId} value={entry.connectionId}>
+              {entry.displayName} · {entry.connectionId.split(":").at(-1)?.slice(0, 8)}
+            </option>
+          ))}
+        </select>
+      ) : currentError &&
+        (selectionError || (error?.scope === scope && error.retryable === false)) ? (
         <span role="alert" className="text-amber-500">
           {currentError}
         </span>
@@ -218,6 +247,11 @@ export function NativeWorkerSourceControl(props: {
         >
           {busy ? "Renewing worker access…" : "Renew worker access"}
         </button>
+      ) : null}
+      {chooseConnection && error?.scope === scope ? (
+        <span role="alert" className="text-amber-500">
+          {error.message}
+        </span>
       ) : null}
     </span>
   );

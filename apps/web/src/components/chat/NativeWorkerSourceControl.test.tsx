@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
   isPending: false,
   refresh: vi.fn(),
   effects: [] as Array<() => void>,
-  connect: null as { current: (renew?: boolean) => Promise<void> } | null,
+  connect: null as { current: (renew?: boolean, connectionId?: string) => Promise<void> } | null,
 }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
@@ -25,7 +25,7 @@ vi.mock("react", async (original) => ({
   useRef: (value: unknown) => {
     const ref = { current: value };
     if (typeof value === "function")
-      state.connect = ref as { current: (renew?: boolean) => Promise<void> };
+      state.connect = ref as { current: (renew?: boolean, connectionId?: string) => Promise<void> };
     return ref;
   },
 }));
@@ -121,9 +121,10 @@ describe("automatic supervisor worker connection", () => {
     const html = render({ config: boundConfig });
     expect(html).toContain(`data-workjet-worker-source-connection-id="${connection.connectionId}"`);
     expect(html).not.toContain("Erneut verbinden");
+    expect(html).not.toContain('aria-label="Choose worker access"');
   });
 
-  it("shows an actionable ambiguity without a reconnect button or another grant", () => {
+  it("offers an explicit same-instance choice for an expired binding without issuing another grant", async () => {
     state.data = {
       connections: [
         { ...connection, status: "needs_auth" },
@@ -142,12 +143,76 @@ describe("automatic supervisor worker connection", () => {
       ],
     };
     const html = render({ config: boundConfig });
-    expect(html).toContain("Multiple authorized worker connections");
-    expect(html).toContain('role="alert"');
+    expect(html).toContain('aria-label="Choose worker access"');
+    expect(html).toContain("cccccccc");
+    expect(html).toContain("dddddddd");
     expect(html).not.toContain("Erneut verbinden");
     state.effects.forEach((effect) => effect());
     expect(provision).not.toHaveBeenCalled();
     expect(props.bindConnection).not.toHaveBeenCalled();
+    await state.connect!.current(false, state.data.connections[2]!.connectionId);
+    expect(props.bindConnection).toHaveBeenCalledExactlyOnceWith(state.data.connections[2]);
+    expect(provision).not.toHaveBeenCalled();
+    expect(state.data.connections[1]!.status).toBe("ready");
+  });
+
+  it("binds a new chat to the explicitly chosen ready grant and never guesses or renews", async () => {
+    const replacement = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    state.data = { connections: [connection, replacement] };
+    const html = render();
+    expect(html).toContain('aria-label="Choose worker access"');
+    state.effects.forEach((effect) => effect());
+    expect(props.bindConnection).not.toHaveBeenCalled();
+    expect(provision).not.toHaveBeenCalled();
+    await state.connect!.current(false, replacement.connectionId);
+    expect(props.bindConnection).toHaveBeenCalledExactlyOnceWith(replacement);
+    expect(provision).not.toHaveBeenCalled();
+    expect(state.data.connections).toEqual([connection, replacement]);
+  });
+
+  it("rejects explicit choices outside the ready selected-instance catalog", async () => {
+    const foreign = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        "ctox-dev-worker-source:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      ),
+      instanceId: "foreign.ctox.dev",
+    };
+    state.data = { connections: [foreign] };
+    render();
+    await state.connect!.current(false, foreign.connectionId);
+    await state.connect!.current(false, "missing");
+    expect(props.bindConnection).not.toHaveBeenCalled();
+    expect(provision).not.toHaveBeenCalled();
+    const retargeted = { ...connection, instanceId: "foreign.ctox.dev" };
+    state.data = { connections: [retargeted] };
+    render({ config: boundConfig });
+    await state.connect!.current(false, retargeted.connectionId);
+    expect(props.bindConnection).not.toHaveBeenCalled();
+    state.data = { connections: [{ ...connection, status: "needs_auth" }] };
+    render();
+    await state.connect!.current(false, connection.connectionId);
+    expect(props.bindConnection).not.toHaveBeenCalled();
+    expect(provision).not.toHaveBeenCalled();
+  });
+
+  it("does not select or issue a grant while the environment is unavailable", async () => {
+    const replacement = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    state.data = { connections: [connection, replacement] };
+    expect(render({ unavailable: true })).toContain('aria-label="Choose worker access"');
+    await state.connect!.current(false, replacement.connectionId);
+    expect(props.bindConnection).not.toHaveBeenCalled();
+    expect(provision).not.toHaveBeenCalled();
   });
 
   it("displays an immutable-instance rejection instead of offering a doomed retry", () => {

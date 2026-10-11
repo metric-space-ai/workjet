@@ -1,21 +1,21 @@
-import * as Assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import * as FS from "node:fs/promises";
-import { createRequire } from "node:module";
-import * as Path from "node:path";
-const repo = Path.resolve(import.meta.dirname, "..");
-const require = createRequire(Path.join(repo, "apps/desktop/package.json"));
+import * as NodeAssert from "node:assert/strict";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeModule from "node:module";
+import * as NodePath from "node:path";
+const repo = NodePath.resolve(import.meta.dirname, "..");
+const require = NodeModule.createRequire(NodePath.join(repo, "apps/desktop/package.json"));
 const { chromium } = require("playwright-core");
 const output = process.env.SUPERVISOR_TICK_ARTIFACT_DIR;
-Assert.ok(output, "SUPERVISOR_TICK_ARTIFACT_DIR must be an owned directory");
-await FS.mkdir(output, { recursive: true });
-const profile = await FS.mkdtemp(Path.join(process.env.TMPDIR, "supervisor-tick-browser-"));
+NodeAssert.ok(output, "SUPERVISOR_TICK_ARTIFACT_DIR must be an owned directory");
+await NodeFSP.mkdir(output, { recursive: true });
+const profile = await NodeFSP.mkdtemp(NodePath.join(process.env.TMPDIR, "supervisor-tick-browser-"));
 const title = "Kontrollrunde Prüfprojekt";
 let server, browser;
 const errors = [];
 const launched = [];
 async function command(args) {
-  const child = spawn(process.execPath, args, {
+  const child = NodeChildProcess.spawn(process.execPath, args, {
     cwd: repo,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -44,14 +44,14 @@ try {
     "--title",
     title,
   ]);
-  server = spawn(process.execPath, ["scripts/dev-runner.ts", "dev", "--home-dir", profile], {
+  server = NodeChildProcess.spawn(process.execPath, ["scripts/dev-runner.ts", "dev", "--home-dir", profile], {
     cwd: repo,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   launched.push({ pid: server.pid, purpose: "isolated Workjet web stack" });
-  await FS.writeFile(
-    Path.join(output, "processes.json"),
+  await NodeFSP.writeFile(
+    NodePath.join(output, "processes.json"),
     JSON.stringify({
       owner: process.env.BUILD_LANE_OWNER,
       profile,
@@ -116,17 +116,17 @@ try {
     await page.goto(origin);
     await page.getByRole("button", { name: "Open " + title, exact: true }).click();
     await page.locator("[data-workjet-supervisor-tick]").waitFor();
-    Assert.match(
+    NodeAssert.match(
       await page.locator("[data-workjet-supervisor-tick]").innerText(),
       /Letzte Kontrolle:.*Nächste:/s,
     );
-    Assert.equal(
+    NodeAssert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
       "overview horizontal overflow",
     );
     await page.screenshot({
-      path: Path.join(output, "overview-" + width + ".png"),
+      path: NodePath.join(output, "overview-" + width + ".png"),
       fullPage: true,
     });
   }
@@ -138,12 +138,12 @@ try {
     const editor = page.locator("[data-workjet-project-overview-editor]");
     await editor.waitFor();
     const interval = editor.getByRole("spinbutton", { name: "Supervisor-Takt in Minuten" });
-    Assert.equal(await interval.inputValue(), "30");
+    NodeAssert.equal(await interval.inputValue(), "30");
     await page.screenshot({
-      path: Path.join(output, "settings-" + width + ".png"),
+      path: NodePath.join(output, "settings-" + width + ".png"),
       fullPage: true,
     });
-    Assert.equal(
+    NodeAssert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
       "settings horizontal overflow",
@@ -164,17 +164,17 @@ try {
   await page.getByRole("button", { name: "Project actions for " + title, exact: true }).click();
   await page.getByRole("menuitem", { name: "Configure " + title, exact: true }).click();
   const restored = page.locator("[data-workjet-project-overview-editor]");
-  Assert.equal(
+  NodeAssert.equal(
     await restored.getByRole("spinbutton", { name: "Supervisor-Takt in Minuten" }).inputValue(),
     "45",
   );
-  Assert.equal(await restored.getByRole("checkbox").isChecked(), false);
+  NodeAssert.equal(await restored.getByRole("checkbox").isChecked(), false);
   await restored.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Open " + title, exact: true }).click();
   await page.getByText("Nächste: aus", { exact: true }).waitFor();
-  Assert.deepEqual(errors, []);
-  await FS.writeFile(
-    Path.join(output, "result.json"),
+  NodeAssert.deepEqual(errors, []);
+  await NodeFSP.writeFile(
+    NodePath.join(output, "result.json"),
     JSON.stringify(
       {
         pass: true,
@@ -207,11 +207,11 @@ try {
         resolve();
       });
     });
-    Assert.notEqual(server.exitCode, null, "Owned dev stack must stop on SIGINT");
+    NodeAssert.notEqual(server.exitCode, null, "Owned dev stack must stop on SIGINT");
   }
-  await FS.rm(profile, { recursive: true, force: true });
-  await FS.writeFile(
-    Path.join(output, "processes.json"),
+  await NodeFSP.rm(profile, { recursive: true, force: true });
+  await NodeFSP.writeFile(
+    NodePath.join(output, "processes.json"),
     JSON.stringify({
       owner: process.env.BUILD_LANE_OWNER,
       launched,
@@ -220,3 +220,4 @@ try {
     }),
   );
 }
+

@@ -15,6 +15,7 @@ import {
 import { decideOrchestrationCommand } from "./decider.ts";
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
 
+const decodeEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const start = "2026-10-11T09:00:00.000Z";
 const due = "2026-10-11T09:30:00.000Z";
 const afterDowntime = "2026-10-11T12:00:00.000Z";
@@ -112,7 +113,7 @@ it.layer(NodeServices.layer)("supervisor control round admission", (it) => {
         );
         let replayed = model;
         for (const event of first.events)
-          replayed = yield* projectEvent(replayed, yield* Schema.decodeUnknownEffect(OrchestrationEvent)({
+          replayed = yield* projectEvent(replayed, yield* decodeEvent({
             ...event,
             sequence: replayed.snapshotSequence + 1,
           }));

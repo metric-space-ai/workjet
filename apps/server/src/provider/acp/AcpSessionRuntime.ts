@@ -2,9 +2,11 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+import { makeWorkerNamespaceTools } from "../../workjet/WorkerNamespaceTools.ts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -20,6 +22,10 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@workjet/shared/shell";
+import {
+  workerNamespaceSpawnInput,
+  type WorkerNamespaceSpawnCapture,
+} from "../../workjet/WorkerNamespaceSpawn.ts";
 
 import {
   collectSessionConfigOptionValues,
@@ -59,6 +65,10 @@ export interface AcpSpawnInput {
 
 export interface AcpSessionRuntimeOptions {
   readonly spawn: AcpSpawnInput;
+  /** Internal server custody; never supplied by a client or inferred from runtimeMode. */
+  readonly namespaceCapture?: WorkerNamespaceSpawnCapture;
+  /** Fresh admission of the captured original Source; required for namespace execution. */
+  readonly namespaceAdmission?: (signal: AbortSignal) => Promise<void>;
   readonly cwd: string;
   readonly resumeSessionId?: string;
   /** Claimed native work requires the provider's load RPC response, not replay-idle inference. */
@@ -334,31 +344,77 @@ export const make = (
         ),
       );
 
+    const originalAdmission = options.namespaceAdmission;
+    const admissionMutex = yield* Semaphore.make(1);
+    let namespaceFailure: EffectAcpErrors.AcpTransportError | undefined;
+    const admissionError = (cause: unknown) =>
+      new EffectAcpErrors.AcpTransportError({
+        detail: "Confined worker Source admission failed or expired",
+        cause,
+      });
+    const namespaceAdmission = options.namespaceCapture
+      ? admissionMutex.withPermit(
+          Effect.suspend(() =>
+            namespaceFailure
+              ? Effect.fail(namespaceFailure)
+              : Effect.tryPromise({
+                  try: (signal) =>
+                    originalAdmission
+                      ? originalAdmission(signal)
+                      : Promise.reject(new Error("Missing original Source admission")),
+                  catch: admissionError,
+                }).pipe(
+                  Effect.timeout("10 seconds"),
+                  Effect.mapError(admissionError),
+                  Effect.catch((error) =>
+                    Effect.sync(() => {
+                      namespaceFailure = error;
+                    }).pipe(Effect.andThen(Effect.fail(error))),
+                  ),
+                ),
+          ),
+        )
+      : Effect.void;
+    yield* namespaceAdmission;
+    // The lifetime guard stays outside this scope so revocation can close the
+    // owned CLI, transport and tool children without interrupting itself.
+    const processScope = options.namespaceCapture
+      ? yield* Scope.fork(runtimeScope, "sequential")
+      : runtimeScope;
+
+    const spawn = yield* Effect.try({
+      try: () =>
+        options.namespaceCapture
+          ? workerNamespaceSpawnInput(options.spawn, options.namespaceCapture, options.mcpServers)
+          : options.spawn,
+      catch: (cause) =>
+        new EffectAcpErrors.AcpSpawnError({ command: options.spawn.command, cause }),
+    });
     const spawnCommand = yield* resolveSpawnCommand(
-      options.spawn.command,
-      options.spawn.args,
-      options.spawn.env
+      spawn.command,
+      spawn.args,
+      spawn.env
         ? {
-            env: options.spawn.env,
-            extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
+            env: spawn.env,
+            extendEnv: spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
           }
         : {},
     );
     const child = yield* spawner
       .spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-          ...(options.spawn.cwd ? { cwd: options.spawn.cwd } : {}),
-          ...(options.spawn.env
+          ...(spawn.cwd ? { cwd: spawn.cwd } : {}),
+          ...(spawn.env
             ? {
-                env: options.spawn.env,
-                extendEnv: options.spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
+                env: spawn.env,
+                extendEnv: spawn.env.WORKJET_SOURCE_ISOLATED !== "true",
               }
             : {}),
           shell: spawnCommand.shell,
         }),
       )
       .pipe(
-        Effect.provideService(Scope.Scope, runtimeScope),
+        Effect.provideService(Scope.Scope, processScope),
         Effect.mapError(
           (cause) =>
             new EffectAcpErrors.AcpSpawnError({
@@ -380,9 +436,51 @@ export const make = (
           : {}),
         ...(options.protocolLogging?.logger ? { logger: options.protocolLogging.logger } : {}),
       }),
-    ).pipe(Effect.provideService(Scope.Scope, runtimeScope));
+    ).pipe(Effect.provideService(Scope.Scope, processScope));
 
     const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
+    const namespaceTools = options.namespaceCapture
+      ? yield* makeWorkerNamespaceTools(
+          options.namespaceCapture,
+          options.spawn.env ?? {},
+          (sessionId) =>
+            Ref.get(startStateRef).pipe(
+              Effect.flatMap((state) =>
+                state._tag === "Started" && state.result.sessionId === sessionId
+                  ? Effect.void
+                  : Effect.fail(
+                      new EffectAcpErrors.AcpTransportError({
+                        detail: "Confined tool session does not match the active ACP session",
+                        cause: "Session custody mismatch",
+                      }),
+                    ),
+              ),
+            ),
+          namespaceAdmission,
+        ).pipe(Effect.provideService(Scope.Scope, processScope))
+      : undefined;
+    if (namespaceTools) {
+      yield* acp.handleReadTextFile(namespaceTools.readTextFile);
+      yield* acp.handleWriteTextFile(namespaceTools.writeTextFile);
+      yield* acp.handleCreateTerminal(namespaceTools.createTerminal);
+      yield* acp.handleTerminalOutput(namespaceTools.terminalOutput);
+      yield* acp.handleTerminalWaitForExit(namespaceTools.terminalWaitForExit);
+      yield* acp.handleTerminalKill(namespaceTools.terminalKill);
+      yield* acp.handleTerminalRelease(namespaceTools.terminalRelease);
+    }
+
+    if (options.namespaceCapture) {
+      yield* Effect.gen(function* () {
+        while (yield* child.isRunning) {
+          yield* Effect.race(Effect.sleep("10 seconds"), child.exitCode.pipe(Effect.ignore));
+          if (yield* child.isRunning) yield* namespaceAdmission;
+        }
+      }).pipe(
+        Effect.onError(() => Scope.close(processScope, Exit.void)),
+        Effect.ignore,
+        Effect.forkIn(runtimeScope),
+      );
+    }
 
     yield* acp.handleSessionUpdate((notification) =>
       Effect.gen(function* () {
@@ -422,11 +520,11 @@ export const make = (
     );
     const initializeClientCapabilities = {
       fs: {
-        readTextFile: false,
-        writeTextFile: false,
-        ...options.clientCapabilities?.fs,
+        readTextFile: namespaceTools !== undefined,
+        writeTextFile: namespaceTools !== undefined,
+        ...(namespaceTools ? {} : options.clientCapabilities?.fs),
       },
-      terminal: options.clientCapabilities?.terminal ?? false,
+      terminal: namespaceTools !== undefined || (options.clientCapabilities?.terminal ?? false),
       ...(options.clientCapabilities?.auth ? { auth: options.clientCapabilities.auth } : {}),
       ...(options.clientCapabilities?.elicitation
         ? { elicitation: options.clientCapabilities.elicitation }
@@ -435,6 +533,7 @@ export const make = (
     } satisfies NonNullable<EffectAcpSchema.InitializeRequest["clientCapabilities"]>;
 
     const getStartedState = Effect.gen(function* () {
+      if (namespaceFailure) return yield* namespaceFailure;
       const state = yield* Ref.get(startStateRef);
       if (state._tag === "Started") {
         return state.result;
@@ -680,6 +779,7 @@ export const make = (
     });
 
     const start = Effect.gen(function* () {
+      if (namespaceFailure) return yield* namespaceFailure;
       const deferred = yield* Deferred.make<
         AcpSessionRuntimeStartResult,
         EffectAcpErrors.AcpError
@@ -714,13 +814,20 @@ export const make = (
     return {
       handleRequestPermission: acp.handleRequestPermission,
       handleElicitation: acp.handleElicitation,
-      handleReadTextFile: acp.handleReadTextFile,
-      handleWriteTextFile: acp.handleWriteTextFile,
-      handleCreateTerminal: acp.handleCreateTerminal,
-      handleTerminalOutput: acp.handleTerminalOutput,
-      handleTerminalWaitForExit: acp.handleTerminalWaitForExit,
-      handleTerminalKill: acp.handleTerminalKill,
-      handleTerminalRelease: acp.handleTerminalRelease,
+      handleReadTextFile: (handler) =>
+        namespaceTools ? Effect.void : acp.handleReadTextFile(handler),
+      handleWriteTextFile: (handler) =>
+        namespaceTools ? Effect.void : acp.handleWriteTextFile(handler),
+      handleCreateTerminal: (handler) =>
+        namespaceTools ? Effect.void : acp.handleCreateTerminal(handler),
+      handleTerminalOutput: (handler) =>
+        namespaceTools ? Effect.void : acp.handleTerminalOutput(handler),
+      handleTerminalWaitForExit: (handler) =>
+        namespaceTools ? Effect.void : acp.handleTerminalWaitForExit(handler),
+      handleTerminalKill: (handler) =>
+        namespaceTools ? Effect.void : acp.handleTerminalKill(handler),
+      handleTerminalRelease: (handler) =>
+        namespaceTools ? Effect.void : acp.handleTerminalRelease(handler),
       handleSessionUpdate: acp.handleSessionUpdate,
       handleElicitationComplete: acp.handleElicitationComplete,
       handleUnknownExtRequest: acp.handleUnknownExtRequest,
@@ -762,9 +869,15 @@ export const make = (
             yield* Ref.set(activePromptFiberRef, Option.some(promptRpcFiber));
             return yield* Fiber.join(promptRpcFiber).pipe(
               Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.succeed(cancelledResponse)
-                  : Effect.failCause(cause),
+                namespaceFailure
+                  ? Effect.fail(namespaceFailure)
+                  : Cause.hasInterruptsOnly(cause)
+                    ? Effect.succeed(cancelledResponse)
+                    : Effect.failCause(cause),
+              ),
+              // Closing a rejected Source is not a successful turn or Owner cancellation.
+              Effect.flatMap((response) =>
+                namespaceFailure ? Effect.fail(namespaceFailure) : Effect.succeed(response),
               ),
               Effect.ensuring(
                 Effect.gen(function* () {

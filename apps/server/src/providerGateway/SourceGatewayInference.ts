@@ -5,6 +5,7 @@ import {
   type WorkjetGatewayInferenceResult,
   WorkjetGatewayAdmissionInput,
   WorkjetRemoteWorkerPermit,
+  WorkjetExecutionPolicy,
   type EnvironmentId,
   type WorkjetGatewayBindModelInput,
   type WorkjetGatewayModelBinding,
@@ -20,6 +21,7 @@ const decodePermit = Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit);
 const decodeAdmission = Schema.decodeUnknownEffect(WorkjetGatewayAdmissionInput);
 const decodeInference = Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput);
 const samePermit = Schema.toEquivalence(WorkjetRemoteWorkerPermit);
+const sameExecutionPolicy = Schema.toEquivalence(Schema.UndefinedOr(WorkjetExecutionPolicy));
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 const failure = (reason: WorkjetGatewayInferenceError["reason"]) =>
@@ -139,7 +141,11 @@ export function makeSourceGatewayInference(dependencies: {
     if (
       binding.sourceEnvironmentId !== environmentId ||
       binding.targetEnvironmentId === environmentId ||
-      binding.workspaceKey !== binding.requestId
+      binding.workspaceKey !== binding.requestId ||
+      !sameExecutionPolicy(binding.executionPolicy, input.workerRequest.executionPolicy) ||
+      (binding.executionPolicy !== undefined &&
+        (binding.executionPolicy.projectId !== binding.projectId ||
+          binding.projectId !== input.workerRequest.project.id))
     )
       return yield* failure("binding-mismatch");
     const selected = {

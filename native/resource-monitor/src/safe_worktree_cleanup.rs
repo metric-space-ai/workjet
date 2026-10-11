@@ -78,7 +78,11 @@ mod unix {
         }
         // SAFETY: fstat initialized the value on success.
         let stat = unsafe { stat.assume_init() };
-        Ok((stat.st_dev as u64, stat.st_ino as u64))
+        let device = stat.st_dev;
+        // macOS dev_t is signed 32-bit; Linux dev_t is already u64.
+        #[cfg(target_os = "macos")]
+        let device = device as u64;
+        Ok((device, stat.st_ino))
     }
 
     fn read_regular_file_at(parent: &OwnedFd, name: &CStr) -> io::Result<String> {

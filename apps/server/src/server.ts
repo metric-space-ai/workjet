@@ -552,7 +552,12 @@ const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydrationLive.pipe(
+      Layer.provide(IsolatedWorkerWorktreeStore.layer),
+      Layer.provide(ResourceMonitorBinary.layer),
+    ),
+  ),
   // The CTOX driver resolves each thread's native scope instead of spawning a
   // process. It takes these optionally — a build without them reports the
   // instance unavailable rather than dragging the session-directory chain into

@@ -55,7 +55,14 @@ const submit = Effect.fn("workjet.submitWorkerResult")(function* (input: typeof 
     });
   const query = yield* ProjectionSnapshotQuery;
   const found = yield* query.getThreadShellById(invocation.threadId);
-  if (Option.isNone(found) || found.value.deletedAt != null || found.value.archivedAt != null || found.value.workjetConfig.schemaVersion !== 2 || (found.value.workjetConfig.team?.role !== "worker" && found.value.workjetConfig.team?.role !== "specialist"))
+  if (
+    Option.isNone(found) ||
+    found.value.deletedAt != null ||
+    found.value.archivedAt != null ||
+    found.value.workjetConfig.schemaVersion !== 2 ||
+    (found.value.workjetConfig.team?.role !== "worker" &&
+      found.value.workjetConfig.team?.role !== "specialist")
+  )
     return yield* new WorkerSupervisorDecisionError({ message: "Worker thread is unavailable." });
   const thread = found.value;
   const parentId = found.value.workjetConfig.team?.parentThreadId;

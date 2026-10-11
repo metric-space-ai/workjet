@@ -521,7 +521,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     return yield* Effect.gen(function* () {
       const adapter = yield* registry.getByInstance(bindingInstanceId);
       const persistedWorkjetConfig = readPersistedWorkjetConfig(input.binding.runtimePayload);
-      yield* requireOneShotWorktreeContainment(input.operation, adapter.provider, persistedWorkjetConfig, readPersistedCwd(input.binding.runtimePayload));
+      yield* requireOneShotWorktreeContainment(
+        input.operation,
+        adapter.provider,
+        persistedWorkjetConfig,
+        readPersistedCwd(input.binding.runtimePayload),
+      );
       yield* requirePersistedEnforcedExecutionPolicy(
         input.operation,
         adapter.provider,
@@ -798,7 +803,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
-        yield* requireOneShotWorktreeContainment("ProviderService.startSession", adapter.provider, input.workjetConfig, effectiveCwd);
+        yield* requireOneShotWorktreeContainment(
+          "ProviderService.startSession",
+          adapter.provider,
+          input.workjetConfig,
+          effectiveCwd,
+        );
         yield* requireEnforcedExecutionPolicy(
           "ProviderService.startSession",
           adapter.provider,

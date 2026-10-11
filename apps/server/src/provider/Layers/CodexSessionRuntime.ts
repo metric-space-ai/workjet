@@ -427,7 +427,9 @@ export function buildTurnStartParams(input: {
   const collaborationMode = buildCodexCollaborationMode({
     ...(input.oneShotWorkspaceRoot
       ? { interactionMode: "default" as const }
-      : input.interactionMode ? { interactionMode: input.interactionMode } : {}),
+      : input.interactionMode
+        ? { interactionMode: input.interactionMode }
+        : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     ...codexWorkjetTurnOptions(input),

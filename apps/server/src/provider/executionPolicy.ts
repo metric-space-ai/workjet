@@ -40,10 +40,18 @@ export const requirePersistedEnforcedExecutionPolicy = Effect.fn(
 });
 
 /** Until a harness enforces writes and cwd, One-Shots fail closed instead of running with host-wide bypass. */
-export const requireOneShotWorktreeContainment = Effect.fn("requireOneShotWorktreeContainment")(function* (
-  operation: string, provider: ProviderDriverKind, config: WorkjetThreadConfig | undefined, cwd: string | undefined,
-) {
-  if (config?.schemaVersion !== 2 || config.team?.role !== "worker") return;
-  if (!cwd || (provider !== "codex" && provider !== "claudeAgent"))
-    return yield* new ProviderValidationError({operation,issue:`One-Shot '${provider}' cannot start: enforced worktree containment is unavailable. Report the open point; never wait for approval or run outside the worktree.`});
-});
+export const requireOneShotWorktreeContainment = Effect.fn("requireOneShotWorktreeContainment")(
+  function* (
+    operation: string,
+    provider: ProviderDriverKind,
+    config: WorkjetThreadConfig | undefined,
+    cwd: string | undefined,
+  ) {
+    if (config?.schemaVersion !== 2 || config.team?.role !== "worker") return;
+    if (!cwd || (provider !== "codex" && provider !== "claudeAgent"))
+      return yield* new ProviderValidationError({
+        operation,
+        issue: `One-Shot '${provider}' cannot start: enforced worktree containment is unavailable. Report the open point; never wait for approval or run outside the worktree.`,
+      });
+  },
+);

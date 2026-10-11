@@ -4835,17 +4835,36 @@ describe("ClaudeAdapterLive", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
-      const session = yield* adapter.startSession({threadId: THREAD_ID,provider:ProviderDriverKind.make("claudeAgent"),runtimeMode:"full-access"});
-      yield* Stream.take(adapter.streamEvents,3).pipe(Stream.runDrain);
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
       const elicitation = harness.getLastCreateQueryInput()?.options.onElicitation;
       assert.ok(elicitation);
-      const response = elicitation({serverName:"workjet",message:"Which authorised path?",requestedSchema:{type:"object",properties:{path:{type:"string"}}}},{signal:new AbortController().signal});
+      const response = elicitation(
+        {
+          serverName: "workjet",
+          message: "Which authorised path?",
+          requestedSchema: { type: "object", properties: { path: { type: "string" } } },
+        },
+        { signal: new AbortController().signal },
+      );
       const requested = yield* Stream.runHead(adapter.streamEvents);
-      assert.equal(requested._tag,"Some");
-      if (requested._tag !== "Some" || requested.value.type !== "user-input.requested") throw new Error("Missing elicitation request");
-      yield* adapter.respondToUserInput(session.threadId,ApprovalRequestId.make(requested.value.requestId!),{path:"Continue"});
-      yield* Stream.take(adapter.streamEvents,1).pipe(Stream.runDrain);
-      assert.deepEqual(yield* Effect.promise(() => response),{action:"accept",content:{path:"Continue"}});
+      assert.equal(requested._tag, "Some");
+      if (requested._tag !== "Some" || requested.value.type !== "user-input.requested")
+        throw new Error("Missing elicitation request");
+      yield* adapter.respondToUserInput(
+        session.threadId,
+        ApprovalRequestId.make(requested.value.requestId!),
+        { path: "Continue" },
+      );
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+      assert.deepEqual(yield* Effect.promise(() => response), {
+        action: "accept",
+        content: { path: "Continue" },
+      });
     }).pipe(Effect.provide(harness.layer));
   });
 

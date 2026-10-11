@@ -1720,9 +1720,15 @@ const make = Effect.gen(function* () {
       if (!thread) {
         return;
       }
-      if (Option.isSome(decisionSql) && (yield* answerOwnerEscalation(
-          event.payload.threadId, event.payload.requestId, event.payload.answers,
-        ).pipe(Effect.provideService(SqlClient.SqlClient, decisionSql.value)))) return;
+      if (
+        Option.isSome(decisionSql) &&
+        (yield* answerOwnerEscalation(
+          event.payload.threadId,
+          event.payload.requestId,
+          event.payload.answers,
+        ).pipe(Effect.provideService(SqlClient.SqlClient, decisionSql.value)))
+      )
+        return;
       const hasSession = thread.session && thread.session.status !== "stopped";
       if (!hasSession) {
         return yield* appendProviderFailureActivity({

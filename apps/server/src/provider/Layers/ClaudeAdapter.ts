@@ -4367,30 +4367,57 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
       // MCP elicitation uses the same provider event channel and central role policy as native questions.
-      const onElicitation: NonNullable<ClaudeQueryOptions["onElicitation"]> = (request, callbackOptions) =>
-        runPromise(Effect.gen(function* () {
-          const context = yield* Ref.get(contextRef);
-          if (!context) return {action: "cancel" as const};
-          const properties = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(request.requestedSchema?.properties);
-          const fields = Option.isSome(properties) ? Object.keys(properties.value) : [];
-          const questions = (fields.length ? fields : [request.message]).map((field) => ({
-            question: field, header: request.message, options: [], multiSelect: false,
-          }));
-          const result = yield* handleAskUserQuestion(context, {questions}, callbackOptions);
-          if (result.behavior !== "allow") return {action: "cancel" as const};
-          const answers = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(result.updatedInput.answers);
-          const content: Record<string, string | number | boolean | string[]> = {};
-          if (Option.isSome(answers)) for (const field of fields) {
-            const value = answers.value[field];
-            const definition = Option.isSome(properties) ? Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(properties.value[field]) : Option.none();
-            const fieldType = Option.isSome(definition) ? definition.value.type : undefined;
-            if (fieldType === "boolean") content[field] = value === true || value === "true";
-            else if ((fieldType === "number" || fieldType === "integer") && Number.isFinite(Number(value))) content[field] = Number(value);
-            else if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") content[field] = value;
-            else if (Array.isArray(value) && value.every((item) => typeof item === "string")) content[field] = value;
-          }
-          return {action: "accept" as const, content};
-        }));
+      const onElicitation: NonNullable<ClaudeQueryOptions["onElicitation"]> = (
+        request,
+        callbackOptions,
+      ) =>
+        runPromise(
+          Effect.gen(function* () {
+            const context = yield* Ref.get(contextRef);
+            if (!context) return { action: "cancel" as const };
+            const properties = Schema.decodeUnknownOption(
+              Schema.Record(Schema.String, Schema.Unknown),
+            )(request.requestedSchema?.properties);
+            const fields = Option.isSome(properties) ? Object.keys(properties.value) : [];
+            const questions = (fields.length ? fields : [request.message]).map((field) => ({
+              question: field,
+              header: request.message,
+              options: [],
+              multiSelect: false,
+            }));
+            const result = yield* handleAskUserQuestion(context, { questions }, callbackOptions);
+            if (result.behavior !== "allow") return { action: "cancel" as const };
+            const answers = Schema.decodeUnknownOption(
+              Schema.Record(Schema.String, Schema.Unknown),
+            )(result.updatedInput.answers);
+            const content: Record<string, string | number | boolean | string[]> = {};
+            if (Option.isSome(answers))
+              for (const field of fields) {
+                const value = answers.value[field];
+                const definition = Option.isSome(properties)
+                  ? Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(
+                      properties.value[field],
+                    )
+                  : Option.none();
+                const fieldType = Option.isSome(definition) ? definition.value.type : undefined;
+                if (fieldType === "boolean") content[field] = value === true || value === "true";
+                else if (
+                  (fieldType === "number" || fieldType === "integer") &&
+                  Number.isFinite(Number(value))
+                )
+                  content[field] = Number(value);
+                else if (
+                  typeof value === "string" ||
+                  typeof value === "number" ||
+                  typeof value === "boolean"
+                )
+                  content[field] = value;
+                else if (Array.isArray(value) && value.every((item) => typeof item === "string"))
+                  content[field] = value;
+              }
+            return { action: "accept" as const, content };
+          }),
+        );
 
       const claudeBinaryPath = claudeSdkExecutablePath;
       const extraArgs = workerSource ? {} : parseCliArgs(claudeSettings.launchArgs).flags;

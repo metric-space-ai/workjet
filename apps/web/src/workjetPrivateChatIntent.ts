@@ -1,7 +1,8 @@
-import { CommandId, ProjectId, WorkjetConnectionId, IsoDateTime } from "@workjet/contracts";
+import { CommandId, IsoDateTime, ProjectId, WorkjetConnectionId } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
-// Draft-owned write-ahead intent also retains project ownership after binding.
+// Draft-owned write-ahead intent retains project ownership after binding.
+// Draft persistence must not depend on project control or other UI modules.
 export const WorkjetPrivateChatIntent = Schema.Struct({
   instanceId: Schema.String,
   connectionId: WorkjetConnectionId,

@@ -96,7 +96,7 @@ export function parseWorkjetPersonalizationMatrices(
     )
   ) {
     throw new Error(
-      `W must be ${String(detailCount)} × ${String(groupCount)} with weights from -1 to 1.`,
+      `W muss ${String(detailCount)} × ${String(groupCount)} sein, Gewichte von -1 bis 1.`,
     );
   }
   if (
@@ -110,7 +110,7 @@ export function parseWorkjetPersonalizationMatrices(
     )
   ) {
     throw new Error(
-      `A must be ${String(detailCount)} × ${String(detailCount)} with weights from -1 to 1.`,
+      `A muss ${String(detailCount)} × ${String(detailCount)} sein, Gewichte von -1 bis 1.`,
     );
   }
   return {
@@ -278,7 +278,7 @@ export function WorkjetWorkerPersonalizationEditor({
       });
       setShowMatrices(false);
     } catch (cause) {
-      setMatrixError(cause instanceof Error ? cause.message : "Invalid matrices.");
+      setMatrixError(cause instanceof Error ? cause.message : "Ungültige Matrizen.");
     }
   };
 
@@ -286,14 +286,14 @@ export function WorkjetWorkerPersonalizationEditor({
     <section className="overflow-hidden rounded-xl border border-border/60 bg-background/20">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
         <h4 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          Personality sliders
+          Persönlichkeitsregler
         </h4>
         <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          Personalization
+          Aktiv
           <Switch
             checked={value.enabled}
             onCheckedChange={(enabled) => onChange({ ...value, enabled: Boolean(enabled) })}
-            aria-label="Enable Luma personalization"
+            aria-label="Persönlichkeit aktiv"
           />
         </label>
       </div>
@@ -314,7 +314,7 @@ export function WorkjetWorkerPersonalizationEditor({
                 value={group.meta.value}
                 disabled={!value.enabled || activeTargetIndex >= 0}
                 onChange={(event) => updateMeta(groupIndex, Number(event.target.value))}
-                aria-label={`${group.meta.left} to ${group.meta.right}`}
+                aria-label={`${group.meta.left} bis ${group.meta.right}`}
                 className="h-5 w-full cursor-pointer accent-primary disabled:cursor-not-allowed"
               />
               <span className="text-right text-xs font-medium leading-tight">
@@ -324,7 +324,7 @@ export function WorkjetWorkerPersonalizationEditor({
                 type="button"
                 disabled={!value.enabled}
                 aria-expanded={visible}
-                aria-label={`${visible ? "Hide" : "Show"} ${group.title}`}
+                aria-label={`${group.title} ${visible ? "ausblenden" : "einblenden"}`}
                 onClick={() =>
                   setVisibleGroups((current) => {
                     const next = new Set(current);
@@ -357,29 +357,30 @@ export function WorkjetWorkerPersonalizationEditor({
               <Button
                 type="button"
                 size="xs"
-                variant={customizing ? "outline" : "ghost"}
+                variant={customizing ? "default" : "outline"}
+                aria-pressed={customizing}
                 onClick={() => {
                   setCustomizing((current) => !current);
                   setActiveTargetId(null);
                 }}
               >
-                Customize
+                Anpassen
               </Button>
               {customizing ? (
-                <Button type="button" size="xs" variant="ghost" onClick={openMatrices}>
+                <Button type="button" size="xs" variant="outline" onClick={openMatrices}>
                   W/A
                 </Button>
               ) : null}
               <Button
                 type="button"
                 size="xs"
-                variant="ghost"
+                variant="outline"
                 onClick={() => {
                   setVisibleGroups(new Set());
                   setActiveTargetId(null);
                 }}
               >
-                Hide all
+                Alle ausblenden
               </Button>
             </div>
           </div>
@@ -389,20 +390,21 @@ export function WorkjetWorkerPersonalizationEditor({
               <span className="font-medium">
                 {flat[activeTargetIndex]?.detail.left} ↔ {flat[activeTargetIndex]?.detail.right}
               </span>
-              <span className="ml-auto">Direction</span>
+              <span className="ml-auto">Richtung</span>
               <select
+                aria-label="Richtung"
                 value={weightDirection}
                 onChange={(event) =>
                   setWeightDirection(event.target.value as "to-target" | "from-target")
                 }
                 className="rounded-md border border-border/70 bg-background px-2 py-1 text-foreground"
               >
-                <option value="to-target">Others → target</option>
-                <option value="from-target">Target → others</option>
+                <option value="to-target">Andere → Ziel</option>
+                <option value="from-target">Ziel → andere</option>
               </select>
               <button
                 type="button"
-                aria-label="Close weighting mode"
+                aria-label="Gewichtung schließen"
                 onClick={() => setActiveTargetId(null)}
               >
                 <XIcon className="size-3.5" />
@@ -424,7 +426,7 @@ export function WorkjetWorkerPersonalizationEditor({
                       {customizing ? (
                         <button
                           type="button"
-                          aria-label={`Add detail slider to ${group.title}`}
+                          aria-label={`Regler zu ${group.title} hinzufügen`}
                           className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                           onClick={() =>
                             setEditing({ groupId: group.id, axisId: null, left: "", right: "" })
@@ -435,7 +437,7 @@ export function WorkjetWorkerPersonalizationEditor({
                       ) : null}
                       <button
                         type="button"
-                        aria-label={`Hide ${group.title}`}
+                        aria-label={`${group.title} ausblenden`}
                         className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                         onClick={() =>
                           setVisibleGroups((current) => {
@@ -478,7 +480,7 @@ export function WorkjetWorkerPersonalizationEditor({
                               <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/detail:opacity-100 group-hover/detail:opacity-100">
                                 <button
                                   type="button"
-                                  aria-label={`Edit weighting for ${detail.left} to ${detail.right}`}
+                                  aria-label={`Gewichtung ${detail.left} bis ${detail.right}`}
                                   onClick={() =>
                                     setActiveTargetId((current) =>
                                       current === detail.id ? null : detail.id,
@@ -490,7 +492,7 @@ export function WorkjetWorkerPersonalizationEditor({
                                 </button>
                                 <button
                                   type="button"
-                                  aria-label={`Edit detail slider ${detail.left} to ${detail.right}`}
+                                  aria-label={`Regler ${detail.left} bis ${detail.right} bearbeiten`}
                                   onClick={() =>
                                     setEditing({
                                       groupId: group.id,
@@ -505,7 +507,7 @@ export function WorkjetWorkerPersonalizationEditor({
                                 </button>
                                 <button
                                   type="button"
-                                  aria-label={`Remove detail slider ${detail.left} to ${detail.right}`}
+                                  aria-label={`Regler ${detail.left} bis ${detail.right} entfernen`}
                                   onClick={() => removeAxis(detail.id)}
                                   className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                 >
@@ -527,7 +529,7 @@ export function WorkjetWorkerPersonalizationEditor({
                               onChange={(event) =>
                                 updateDetail(detailIndex, Number(event.target.value))
                               }
-                              aria-label={`${detail.left} to ${detail.right}`}
+                              aria-label={`${detail.left} bis ${detail.right}`}
                               className="h-4 min-w-0 flex-1 cursor-pointer accent-primary disabled:cursor-not-allowed"
                             />
                             {isWeight ? (
@@ -547,27 +549,27 @@ export function WorkjetWorkerPersonalizationEditor({
                         nativeInput
                         value={editing.left}
                         onChange={(event) => setEditing({ ...editing, left: event.target.value })}
-                        placeholder="Left pole for prompt (English)"
-                        aria-label="Left pole for prompt in English"
+                        placeholder="Linker Pol (englisch)"
+                        aria-label="Linker Pol"
                       />
                       <Input
                         nativeInput
                         value={editing.right}
                         onChange={(event) => setEditing({ ...editing, right: event.target.value })}
-                        placeholder="Right pole for prompt (English)"
-                        aria-label="Right pole for prompt in English"
+                        placeholder="Rechter Pol (englisch)"
+                        aria-label="Rechter Pol"
                       />
                       <div className="flex justify-end gap-1">
                         <Button
                           type="button"
                           size="xs"
-                          variant="ghost"
+                          variant="outline"
                           onClick={() => setEditing(null)}
                         >
-                          Cancel
+                          Abbrechen
                         </Button>
                         <Button type="button" size="xs" onClick={saveAxis}>
-                          Save
+                          Speichern
                         </Button>
                       </div>
                     </div>
@@ -580,21 +582,21 @@ export function WorkjetWorkerPersonalizationEditor({
             <div className="mt-3 space-y-2 rounded-lg border border-border/60 bg-muted/10 p-2.5">
               <div className="grid gap-2 lg:grid-cols-2">
                 <label className="space-y-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                  W · Meta → detail
+                  W · Meta → Detail
                   <Textarea
                     value={matrixW}
                     onChange={(event) => setMatrixW(event.target.value)}
                     className="min-h-56 font-mono text-[10px] normal-case"
-                    aria-label="Meta to detail weight matrix"
+                    aria-label="Gewichte Meta zu Detail"
                   />
                 </label>
                 <label className="space-y-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                  A · Detail → detail
+                  A · Detail → Detail
                   <Textarea
                     value={matrixA}
                     onChange={(event) => setMatrixA(event.target.value)}
                     className="min-h-56 font-mono text-[10px] normal-case"
-                    aria-label="Detail influence weight matrix"
+                    aria-label="Gewichte Detail zu Detail"
                   />
                 </label>
               </div>
@@ -603,13 +605,13 @@ export function WorkjetWorkerPersonalizationEditor({
                 <Button
                   type="button"
                   size="xs"
-                  variant="ghost"
+                  variant="outline"
                   onClick={() => setShowMatrices(false)}
                 >
-                  Cancel
+                  Abbrechen
                 </Button>
                 <Button type="button" size="xs" onClick={applyMatrices}>
-                  Apply
+                  Übernehmen
                 </Button>
               </div>
             </div>

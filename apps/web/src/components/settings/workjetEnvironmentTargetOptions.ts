@@ -25,12 +25,12 @@ export function workjetEnvironmentTargetOptions(
       const presentationKind = environmentPresentationKind(environment);
       const detail =
         presentationKind === "local"
-          ? "Local environment"
+          ? "Lokal"
           : presentationKind === "workjet-connect"
-            ? "Relay connection"
+            ? "Relay-Verbindung"
             : presentationKind === "ssh"
-              ? (environment.displayUrl ?? "SSH environment")
-              : (environment.displayUrl ?? "Remote environment");
+              ? (environment.displayUrl ?? "SSH")
+              : (environment.displayUrl ?? "Entfernt");
       const hostId = environment.serverConfig?.environment.hostId;
       return {
         environmentId: environment.environmentId,

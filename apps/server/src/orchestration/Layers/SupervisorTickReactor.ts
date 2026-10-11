@@ -4,8 +4,10 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { SupervisorMeetingPreparation } from "../../workjet/SupervisorMeetingPreparation.ts";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -40,6 +42,7 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
   const github = yield* GitHubCli;
   const registry = yield* SourceControlProviderRegistry;
   const usage = yield* Effect.serviceOption(UsageService);
+  const preparation = yield* Effect.serviceOption(SupervisorMeetingPreparation);
 
   const reconcile = Effect.fn("SupervisorTickReactor.reconcile")(function* () {
     const model = yield* query.getCommandReadModel();
@@ -176,24 +179,23 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
       );
       if (tokenBudget.usageStatus === "unavailable")
         sourceErrors.push("Token usage unavailable or timed out");
-      const text = supervisorTickPrompt(
-        supervisorTickSituation({
-          project,
-          threads: model.threads,
-          since,
-          now,
-          pullRequests,
-          sourceErrors,
-          errors,
-          escalations,
-          changes,
-          tokenBudget,
-          meetingMinutes: minutesUntilRegularMeeting(project.overview?.regularMeeting, now),
-        }),
-      );
+      const situation = supervisorTickSituation({
+        project,
+        threads: model.threads,
+        since,
+        now,
+        pullRequests,
+        sourceErrors,
+        errors,
+        escalations,
+        changes,
+        tokenBudget,
+        meetingMinutes: minutesUntilRegularMeeting(project.overview?.regularMeeting, now),
+      });
+      const text = supervisorTickPrompt(situation);
       // Admission is rechecked atomically against the engine's current model after source collection.
       const createdAt = DateTime.formatIso(yield* DateTime.now);
-      yield* engine
+      const admission = yield* engine
         .dispatch({
           type: "thread.supervisor.tick",
           commandId: CommandId.make(`server:supervisor-tick:${supervisor.id}:${dueAt}`),
@@ -203,13 +205,32 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
           text,
         })
         .pipe(
-          Effect.catch((error) =>
+          Effect.tapError((error) =>
             Effect.logWarning("Supervisor control round failed", {
               threadId: supervisor.id,
               error,
             }),
           ),
+          Effect.option,
         );
+      if (Option.isSome(preparation) && Option.isSome(admission)) {
+        const events = yield* Stream.runCollect(engine.readEvents(admission.value.sequence - 1, 1));
+        if (
+          events.some(
+            (event) =>
+              event.type === "thread.turn-start-requested" &&
+              event.payload.threadId === supervisor.id,
+          )
+        ) {
+          yield* preparation.value
+            .run({ project, supervisor, now, situation, tokenBudget })
+            .pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Meeting preparation deferred", { projectId: project.id, error }),
+              ),
+            );
+        }
+      }
     }
   });
   const start = Effect.fn("SupervisorTickReactor.start")(function* () {

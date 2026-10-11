@@ -4,6 +4,7 @@ import {
   EnvironmentId,
   ProjectId,
   WorkjetComputerId,
+  DEFAULT_MEETING_PREPARATION_CONFIGURATION,
   type ProjectOverview,
 } from "@workjet/contracts";
 import {
@@ -35,6 +36,25 @@ const local = (
         },
 });
 describe("real project overview", () => {
+  it("retains saved meeting preparation while unrelated overview data changes", () => {
+    const saved: ProjectOverview = {
+      websiteUrl: null,
+      slots: [null, null, null],
+      meetingPreparation: {
+        ...DEFAULT_MEETING_PREPARATION_CONFIGURATION,
+        enabled: false,
+        leadMinutes: [720, 60],
+      },
+    };
+    const draft = overviewDraft(saved);
+    draft.websiteUrl = "https://ctox.dev";
+    const updated = decodeOverviewDraft(draft);
+    expect(updated.meetingPreparation).toEqual(saved.meetingPreparation);
+    expect(updated.websiteUrl).toBe("https://ctox.dev");
+    expect(
+      decodeOverviewDraft(overviewDraft({ websiteUrl: null, slots: [null, null, null] })),
+    ).not.toHaveProperty("meetingPreparation");
+  });
   it("uses only domain-shaped titles for an unsaved overview and preserves saved clearing", () => {
     const card = {
       key: "a:native",

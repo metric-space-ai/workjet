@@ -25,6 +25,7 @@ export * from "./workjetCalendar.ts";
 export * from "./workjetProjectTeam.ts";
 export * from "./workjetGoal.ts";
 export * from "./supervisorTick.ts";
+export * from "./meetingPreparation.ts";
 export * from "./workjetExecutionPolicy.ts";
 export * from "./workjetParentTeamBinding.ts";
 export * from "./remoteWorker.ts";

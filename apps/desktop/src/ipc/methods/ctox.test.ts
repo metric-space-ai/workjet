@@ -12,12 +12,14 @@ import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvision
 import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
+import * as CtoxInstancePreferences from "../../ctox/CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
 import * as IpcChannels from "../channels.ts";
 import {
   activate,
   ensurePooled,
+  setInstanceState,
   methods,
   importInvite,
   importManualPairing,
@@ -55,6 +57,67 @@ const pairedInstance = {
     nativePeerObserved: false,
   },
 } as const;
+
+describe("instance activity and removal", () => {
+  for (const source of ["ctox_dev", "manual_pairing", "local_daemon"] as const) {
+    it.effect("persists activity and guards selected instance for " + source, () => {
+      const row = {
+        ...pairedInstance,
+        id: source === "ctox_dev" ? "managed:fixture" : pairedInstance.id,
+        source,
+      };
+      const stored: string[] = [];
+      const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
+        read: Effect.succeed([]),
+        set: (_row, state) => Effect.sync(() => void stored.push(state)),
+      });
+      return Effect.gen(function* () {
+        assert.deepEqual(
+          yield* setInstanceState.handler({
+            instanceId: row.id,
+            state: "disabled",
+            selectedInstanceId: row.id,
+          }),
+          { _tag: "failed", code: "selected_instance" },
+        );
+        assert.deepEqual(stored, []);
+        assert.deepEqual(
+          yield* setInstanceState.handler({
+            instanceId: row.id,
+            state: "disabled",
+            selectedInstanceId: null,
+          }),
+          { _tag: "completed" },
+        );
+        assert.deepEqual(stored, ["disabled"]);
+        const result = yield* setInstanceState.handler({
+          instanceId: row.id,
+          state: "removed",
+          selectedInstanceId: null,
+        });
+        assert.deepEqual(
+          result,
+          source === "local_daemon"
+            ? { _tag: "failed", code: "local_not_removable" }
+            : { _tag: "completed" },
+        );
+        assert.deepEqual(
+          stored,
+          source === "local_daemon" ? ["disabled"] : ["disabled", "removed"],
+        );
+      }).pipe(
+        Effect.provide(
+          authorityLayers({
+            instances: [],
+            registry: { merge: () => Effect.succeed({ _tag: "ready", instances: [row] }) },
+          }),
+        ),
+        Effect.provide(removalCleanupLayer()),
+        Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, store),
+      );
+    });
+  }
+});
 
 function registryLayer(
   overrides: Partial<CtoxInstanceRegistry.CtoxInstanceRegistry["Service"]> = {},

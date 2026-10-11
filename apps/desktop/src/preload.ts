@@ -283,6 +283,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   ctox: {
     refresh: () => ipcRenderer.invoke(IpcChannels.CTOX_REFRESH_CHANNEL),
+    setInstanceState: (input) => ipcRenderer.invoke(IpcChannels.CTOX_INSTANCE_STATE_CHANNEL, input),
     login: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGIN_CHANNEL),
     logout: () => ipcRenderer.invoke(IpcChannels.CTOX_LOGOUT_CHANNEL),
     provisionDecisionHub: (input) =>

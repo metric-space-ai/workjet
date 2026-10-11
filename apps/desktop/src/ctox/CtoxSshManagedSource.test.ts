@@ -29,6 +29,27 @@ import {
 const NOW = 1_800_000_000_000;
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
+describe("disabled SSH discovery", () => {
+  it.effect("keeps the row without executing SSH, then resumes using the same config", () =>
+    Effect.gen(function* () {
+      const configured = entry("fixture.example");
+      const exec = vi.fn(() => Effect.succeed({ stdout: descriptorJson() }));
+      yield* discoverCtoxSshManagedInstances([configured], {
+        exec,
+        nowEpochMs: () => NOW,
+        shouldProbe: () => Effect.succeed(false),
+      });
+      assert.equal(exec.mock.calls.length, 0);
+      yield* discoverCtoxSshManagedInstances([configured], {
+        exec,
+        nowEpochMs: () => NOW,
+        shouldProbe: () => Effect.succeed(true),
+      });
+      assert.equal(exec.mock.calls.length, 1);
+    }),
+  );
+});
+
 function emptyDocument(): CtoxSshManagedConfigDocument {
   return { version: 1, instances: [] };
 }

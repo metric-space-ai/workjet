@@ -40,6 +40,7 @@ import * as CtoxGuestManager from "./CtoxGuestManager.ts";
 import * as CtoxGuestWindows from "./CtoxGuestWindows.ts";
 import { DesktopIpcInvocation } from "../ipc/DesktopIpc.ts";
 import * as DesktopIpc from "../ipc/DesktopIpc.ts";
+import * as CtoxInstancePreferences from "./CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
@@ -542,6 +543,35 @@ function makeHostWindow() {
     },
   };
 }
+
+describe("disabled instance guest admission", () => {
+  for (const state of ["disabled", "removed"] as const) {
+    it.effect("does not connect or create a guest when " + state, () => {
+      const harness = makeGuestHarness();
+      const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
+        read: Effect.succeed([{ ...descriptor, workjetState: state }]),
+        set: () => Effect.void,
+      });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(yield* manager.ensurePooled(descriptor.id), {
+          _tag: "failed",
+          code: state === "disabled" ? "instance_disabled" : "instance_removed",
+        });
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          { _tag: "failed", code: state === "disabled" ? "instance_disabled" : "instance_removed" },
+        );
+        expect(harness.refreshAccount).not.toHaveBeenCalled();
+        expect(harness.launch).not.toHaveBeenCalled();
+        expect(harness.views).toHaveLength(0);
+      }).pipe(
+        Effect.provide(harness.layer),
+        Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, store),
+      );
+    });
+  }
+});
 
 describe("CtoxGuestWindows", () => {
   const bounds = { x: 280, y: 44, width: 1_000, height: 700 };

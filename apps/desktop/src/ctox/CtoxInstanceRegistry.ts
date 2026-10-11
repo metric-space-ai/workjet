@@ -34,6 +34,7 @@ import * as Semaphore from "effect/Semaphore";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { preferences, accessState, applyPreferences } from "./CtoxInstancePreferences.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
 import {
@@ -1061,6 +1062,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     env: process.env,
     ...(options.nowEpochMs === undefined ? {} : { nowEpochMs: options.nowEpochMs }),
     ...options.localDaemon,
+    shouldProbe: (id) => accessState(id).pipe(Effect.map((state) => state === "enabled")),
   };
   // Discovery runs with the services acquired here, never with the caller's.
   const discoverLocalInstances = discoverCtoxLocalDaemonNativeTargets(localDaemonOptions).pipe(
@@ -1078,6 +1080,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       ? undefined
       : makeCtoxSshExec({ spawner: spawnerOption.value, fileSystem, path }));
   const sshManagedOptions: CtoxSshManagedDiscoveryOptions = {
+    shouldProbe: (id) => accessState(id).pipe(Effect.map((state) => state === "enabled")),
     ...(sshExec === undefined ? {} : { exec: sshExec }),
     ...(options.nowEpochMs === undefined ? {} : { nowEpochMs: options.nowEpochMs }),
     ...(options.sshManaged?.nowEpochMs === undefined
@@ -1351,6 +1354,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   const resolvePairedLaunch = Effect.fn("CtoxInstanceRegistry.resolvePairedLaunch")(function* (
     instanceId: string,
   ) {
+    if ((yield* accessState(instanceId)) !== "enabled") return yield* registryError("not_found");
     if (!/^paired:(?:pairing_invite|manual_pairing):[A-Za-z0-9_-]{22}$/.test(instanceId)) {
       return yield* registryError("not_found");
     }
@@ -1435,6 +1439,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
 
   const resolveLocalDaemonTarget = Effect.fn("CtoxInstanceRegistry.resolveLocalDaemonTarget")(
     function* (instanceId: string) {
+      if ((yield* accessState(instanceId)) !== "enabled") return yield* registryError("not_found");
       const discovered = yield* discoverLocalInstances;
       const withShellStatus = yield* attachShellStatuses(discovered.map((entry) => entry.instance));
       const target = discovered.find((entry) => entry.instance.id === instanceId);
@@ -1453,6 +1458,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
 
   const resolveSshManagedTarget = Effect.fn("CtoxInstanceRegistry.resolveSshManagedTarget")(
     function* (instanceId: string) {
+      if ((yield* accessState(instanceId)) !== "enabled") return yield* registryError("not_found");
       // Discovery is re-run rather than cached: an SSH-managed row may only be
       // launched while its daemon is answering right now, the same rule the
       // local-daemon path applies.
@@ -1674,6 +1680,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           const [local, ssh] = yield* Effect.all([discoverLocalInstances, discoverSshInstances], {
             concurrency: 2,
           });
+          const stored = yield* preferences;
           const merged = mergeCtoxInstanceSources(managed, paired, [
             ...local.map((entry) => entry.instance),
             ...ssh.map((entry) => entry.instance),
@@ -1691,6 +1698,14 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
                   },
                 };
           if (merged._tag !== "ready") {
+            if (stored.length > 0)
+              return {
+                _tag: "ready" as const,
+                instances: stored,
+                managedState: managed._tag,
+                ...recoveryStatus,
+                ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
+              };
             return {
               ...merged,
               ...recoveryStatus,
@@ -1700,7 +1715,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
           return {
             ...merged,
             ...recoveryStatus,
-            instances: yield* attachShellStatuses(merged.instances),
+            instances: applyPreferences(yield* attachShellStatuses(merged.instances), stored),
             ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
           };
         }).pipe(Effect.withSpan("CtoxInstanceRegistry.merge")),

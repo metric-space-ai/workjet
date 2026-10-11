@@ -4,6 +4,8 @@ import {
   CtoxInstanceAuthorityResolveInput,
   CtoxInstanceAuthorityResolveResult,
   CtoxDiscoveryResult,
+  CtoxInstancePreferenceInput,
+  CtoxInstancePreferenceResult,
   CtoxDecisionHubDisconnectInput,
   CtoxDecisionHubDisconnectResult,
   CtoxDecisionHubProvisionInput,
@@ -54,6 +56,7 @@ import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
+import * as CtoxInstancePreferences from "../../ctox/CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
 import { DesktopKeyRecovery, DesktopKeyRecoveryError } from "../../app/DesktopKeyRecovery.ts";
@@ -108,6 +111,63 @@ const railKeyFor = Effect.fn("ctox.railKeyFor")(function* (instanceId: string) {
     .pipe(Effect.orElseSucceed(() => undefined));
   return identity === undefined ? fallback : { identity, legacyInstanceId: instanceId };
 });
+
+export const setInstanceState: DesktopIpc.DesktopIpcMethod<
+  never,
+  | CtoxInstancePreferences.CtoxInstancePreferences
+  | CtoxInstanceRegistry.CtoxInstanceRegistry
+  | CtoxDevAuth.CtoxDevAuth
+  | CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_INSTANCE_STATE_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* Schema.decodeUnknownEffect(CtoxInstancePreferenceInput)(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      const failure = (code: Extract<CtoxInstancePreferenceResult, { _tag: "failed" }>["code"]) =>
+        encodeSafe(CtoxInstancePreferenceResult, { _tag: "failed", code });
+      if (input._tag === "None") return yield* failure("invalid_input");
+      const { instanceId, state, selectedInstanceId } = input.value;
+      if (state === "disabled" && instanceId === selectedInstanceId)
+        return yield* failure("selected_instance");
+      const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+      const store = yield* CtoxInstancePreferences.CtoxInstancePreferences;
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      const managed = instanceId.startsWith("managed:")
+        ? yield* auth.refresh.pipe(
+            Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
+          )
+        : ({ _tag: "signed_out" } as const);
+      const discovery = yield* registry.merge(managed);
+      const descriptor =
+        discovery._tag === "ready"
+          ? discovery.instances.find((row) => row.id === instanceId)
+          : undefined;
+      if (descriptor === undefined) return yield* failure("not_found");
+      if (state === "removed" && descriptor.source === "local_daemon")
+        return yield* failure("local_not_removable");
+      const result = yield* Effect.gen(function* () {
+        // Persist the stop marker first. New admissions cannot race guest teardown.
+        yield* store.set(descriptor, state);
+        if (state !== "enabled") {
+          const guests = yield* CtoxGuestManager.CtoxGuestManager;
+          const stopped = yield* guests.deactivateInstance(instanceId);
+          if (stopped._tag !== "completed") return yield* Effect.fail(undefined);
+        }
+        if (state === "removed") {
+          if (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") {
+            const removed = yield* registry.removePairedInstance(instanceId);
+            if (!removed.secretRecordRemoved) return yield* Effect.fail(undefined);
+          } else if (descriptor.source === "ssh_managed")
+            yield* registry.removeSshManagedInstance(instanceId);
+        }
+      }).pipe(Effect.result);
+      return yield* Result.isFailure(result)
+        ? failure("persistence_failed")
+        : encodeSafe(CtoxInstancePreferenceResult, { _tag: "completed" });
+    }),
+};
 
 export const refresh: DesktopIpc.DesktopIpcMethod<
   never,
@@ -1000,10 +1060,12 @@ type CtoxIpcServices =
   | CtoxGuestManager.CtoxGuestManager
   | CtoxInstanceRegistry.CtoxInstanceRegistry
   | CtoxManagedLaunch.CtoxManagedLaunch
-  | CtoxShellFleet.CtoxShellFleet;
+  | CtoxShellFleet.CtoxShellFleet
+  | CtoxInstancePreferences.CtoxInstancePreferences;
 
 export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcServices>[] = [
   refresh,
+  setInstanceState,
   login,
   logout,
   provisionDecisionHub,

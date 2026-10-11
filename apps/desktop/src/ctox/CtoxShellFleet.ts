@@ -679,7 +679,9 @@ export const make = Effect.fn("CtoxShellFleet.make")(function* () {
       Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
     );
     const discovery = yield* registry.merge(managed);
-    return discovery._tag === "ready" ? discovery.instances : [];
+    return discovery._tag === "ready"
+      ? discovery.instances.filter((instance) => (instance.workjetState ?? "enabled") === "enabled")
+      : [];
   });
 
   const inventory = Effect.gen(function* () {

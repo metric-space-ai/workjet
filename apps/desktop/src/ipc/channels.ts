@@ -96,6 +96,7 @@ export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
 // Everything below this line is fork-owned. Upstream additions belong ABOVE
 // it, so the two streams append to different regions and stop colliding on
 // the last line of the file (docs/workjet-plan.md §14). Keep this block last.
+export const CTOX_INSTANCE_STATE_CHANNEL = "desktop:ctox-instance-state";
 export const CTOX_REFRESH_CHANNEL = "desktop:ctox-refresh";
 export const CTOX_LOGIN_CHANNEL = "desktop:ctox-login";
 export const CTOX_LOGOUT_CHANNEL = "desktop:ctox-logout";

@@ -32,6 +32,7 @@ import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestWindows from "./ctox/CtoxGuestWindows.ts";
+import * as CtoxInstancePreferences from "./ctox/CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
@@ -259,7 +260,7 @@ const desktopCtoxControlLayer = Layer.mergeAll(
               ok: response.ok,
             })),
       },
-    }),
+    }).pipe(Layer.provideMerge(CtoxInstancePreferences.layer)),
   ),
   Layer.provideMerge(CtoxElectronSessions.layer),
   Layer.provideMerge(desktopFoundationLayer),

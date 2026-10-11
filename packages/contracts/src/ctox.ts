@@ -226,11 +226,32 @@ export const CtoxManagedInstance = Schema.Struct({
   architecture: Schema.optionalKey(CtoxHostArchitecture),
   decisionHub: Schema.optionalKey(CtoxDecisionHubAvailability),
   shellUpdate: Schema.optionalKey(BusinessOsShellUpdateStatus),
+  workjetState: Schema.optionalKey(Schema.Literals(["enabled", "disabled", "removed"])),
   healthSummary: CtoxManagedInstanceHealth,
 });
 export type CtoxManagedInstance = typeof CtoxManagedInstance.Type;
 
 /** Resolve a Desktop presentation row to the canonical Business OS authority. */
+export const CtoxInstancePreferenceInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  state: Schema.Literals(["enabled", "disabled", "removed"]),
+  selectedInstanceId: Schema.NullOr(CtoxManagedInstanceId),
+});
+export type CtoxInstancePreferenceInput = typeof CtoxInstancePreferenceInput.Type;
+export const CtoxInstancePreferenceResult = Schema.Union([
+  Schema.TaggedStruct("completed", {}),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals([
+      "invalid_input",
+      "selected_instance",
+      "local_not_removable",
+      "not_found",
+      "persistence_failed",
+    ]),
+  }),
+]);
+export type CtoxInstancePreferenceResult = typeof CtoxInstancePreferenceResult.Type;
+
 export const CtoxInstanceAuthorityResolveInput = Schema.Struct({
   instanceId: CtoxManagedInstanceId,
 });
@@ -1197,6 +1218,8 @@ export const CtoxWorkjetProjectControlResult = Schema.Union([
       "invalid_input",
       "not_active",
       "launch_failed",
+      "instance_disabled",
+      "instance_removed",
       "authentication_required",
       "unsupported",
       "timeout",
@@ -2027,6 +2050,8 @@ export const CtoxManagedGuestResult = Schema.Union([
       "launch_failed",
       "guest_failed",
       "not_active",
+      "instance_disabled",
+      "instance_removed",
       "authentication_required",
     ]),
     discovery: Schema.optionalKey(

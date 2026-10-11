@@ -181,6 +181,10 @@ interface CtoxModeContextValue {
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxMutationOutcome>;
   readonly removePairedInstance: (instance: CtoxManagedInstance) => Promise<CtoxMutationOutcome>;
+  readonly setInstanceState: (
+    instance: CtoxManagedInstance,
+    state: "enabled" | "disabled" | "removed",
+  ) => Promise<CtoxMutationOutcome>;
   readonly addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,
   ) => Promise<CtoxMutationOutcome>;
@@ -220,10 +224,11 @@ export function isSshManagedCtoxInstance(instance: CtoxManagedInstance): boolean
 
 /** Instances the user configured themselves and may therefore remove again. */
 export function isRemovableCtoxInstance(instance: CtoxManagedInstance): boolean {
-  return isPairedCtoxInstance(instance) || isSshManagedCtoxInstance(instance);
+  return instance.source !== "local_daemon";
 }
 
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {
+  if ((instance.workjetState ?? "enabled") !== "enabled") return false;
   if (instance.source === "ctox_dev") return instance.status === "available";
   // A local daemon is launchable exactly while it is answering: the main
   // process mints its pairing material from that daemon on every activation.
@@ -612,6 +617,37 @@ export function CtoxModeProvider({
     [bridge, refresh],
   );
 
+  const setInstanceState = useCallback(
+    async (instance: CtoxManagedInstance, state: "enabled" | "disabled" | "removed") => {
+      if (!bridge?.setInstanceState)
+        return { ok: false, message: "Instance settings require the desktop app." };
+      if (state === "disabled" && selectedIdRef.current === instance.id)
+        return { ok: false, message: "Select another instance before disabling this one." };
+      const result = await bridge.setInstanceState({
+        instanceId: instance.id,
+        state,
+        selectedInstanceId: selectedIdRef.current,
+      });
+      if (result._tag !== "completed")
+        return { ok: false, message: "The instance change could not be saved." };
+      setDiscovery((current) =>
+        current !== "loading" && current._tag === "ready"
+          ? {
+              ...current,
+              instances: current.instances.map((row) =>
+                row.id === instance.id ? { ...row, workjetState: state } : row,
+              ),
+            }
+          : current,
+      );
+      if (state === "removed" && selectedIdRef.current === instance.id)
+        await clearSelection("idle");
+      refresh();
+      return { ok: true, message: "" };
+    },
+    [bridge, clearSelection, refresh],
+  );
+
   const removePairedInstance = useCallback(
     async (instance: CtoxManagedInstance) => {
       const outcome = await removeCtoxPairedInstance(bridge, instance);
@@ -930,6 +966,7 @@ export function CtoxModeProvider({
       importInvite,
       importManualPairing,
       removePairedInstance,
+      setInstanceState,
       addSshManagedInstance,
       removeSshManagedInstance,
       select,
@@ -962,6 +999,7 @@ export function CtoxModeProvider({
       refresh,
       refreshing,
       removePairedInstance,
+      setInstanceState,
       removeSshManagedInstance,
       reportGuestBounds,
       select,

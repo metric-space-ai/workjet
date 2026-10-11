@@ -94,17 +94,28 @@ function InstanceSetupContent({
         </p>
       ) : null}
       {instances
-        .filter((instance) => step !== "managed" || instance.source === "ctox_dev")
+        .filter(
+          (instance) =>
+            (instance.workjetState !== "removed" || instance.source === "ctox_dev") &&
+            (step !== "managed" || instance.source === "ctox_dev"),
+        )
         .map((instance) => (
           <Button
             key={instance.id}
             variant="outline"
             className="w-full justify-start"
-            disabled={busy || !canActivateCtoxInstance(instance)}
+            disabled={
+              busy || (instance.workjetState !== "removed" && !canActivateCtoxInstance(instance))
+            }
             onClick={async () => {
               onBusyChange(true);
               setSelectionError(null);
               try {
+                if (instance.workjetState === "removed" && instance.source === "ctox_dev") {
+                  const restored = await mode.setInstanceState(instance, "enabled");
+                  if (!restored.ok) setSelectionError(restored.message);
+                  return;
+                }
                 if (await mode.select(instance)) closeInstanceSetup();
                 else setSelectionError("Instanzwechsel nicht bestätigt. Bitte erneut versuchen.");
               } catch {
@@ -115,7 +126,11 @@ function InstanceSetupContent({
             }}
           >
             {ctoxInstanceDisplayTitle(instance)}
-            {!canActivateCtoxInstance(instance) ? " · Nicht erreichbar" : ""}
+            {instance.workjetState === "removed"
+              ? " · Wieder hinzufügen"
+              : !canActivateCtoxInstance(instance)
+                ? " · Nicht erreichbar"
+                : ""}
           </Button>
         ))}
       {selectionError && (

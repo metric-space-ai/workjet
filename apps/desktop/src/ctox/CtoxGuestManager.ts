@@ -53,6 +53,7 @@ import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import { CtoxGuestBudget, type CtoxGuestLease } from "./CtoxGuestBudget.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
+import { accessState } from "./CtoxInstancePreferences.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
@@ -1558,6 +1559,15 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (!state.businessOsModeActive) {
             return [{ _tag: "failed", code: "not_active" } as const, state] as const;
           }
+          const access = yield* accessState(instanceId);
+          if (access !== "enabled")
+            return [
+              {
+                _tag: "failed",
+                code: access === "disabled" ? "instance_disabled" : "instance_removed",
+              } as const,
+              state,
+            ] as const;
           const stamp = ++guestUseSequence;
           const outgoing =
             state.activeId !== undefined && state.activeId !== instanceId
@@ -1638,6 +1648,15 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const ensurePooled = (instanceId: string): Effect.Effect<CtoxManagedGuestResult> =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.gen(function* () {
+          const access = yield* accessState(instanceId);
+          if (access !== "enabled")
+            return [
+              {
+                _tag: "failed",
+                code: access === "disabled" ? "instance_disabled" : "instance_removed",
+              } as const,
+              state,
+            ] as const;
           const stamp = ++guestUseSequence;
           const pool = new Map(state.pool);
           const warm = pool.get(instanceId);

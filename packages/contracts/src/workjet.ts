@@ -17,6 +17,7 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
+import { ComputerMetadata } from "./computerDetection.ts";
 
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
@@ -115,6 +116,7 @@ export const WorkjetComputer = Schema.Struct({
   label: TrimmedNonEmptyString,
   environmentId: EnvironmentId,
   presentationKind: WorkjetComputerPresentationKind,
+  metadata: Schema.optionalKey(ComputerMetadata),
   harnesses: Schema.Array(WorkjetHarnessConfiguration).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),

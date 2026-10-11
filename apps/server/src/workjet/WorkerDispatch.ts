@@ -320,13 +320,23 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       computerId ??= configuration.selectedComputerId ?? undefined;
       if (computerId === undefined) {
         const localComputers = configuration.computers.filter(
-          (computer) => computer.environmentId === invocation.environmentId,
+          (computer) =>
+            computer.environmentId === invocation.environmentId &&
+            computer.metadata?.active !== false,
         );
         if (localComputers.length === 1) computerId = localComputers[0]?.id;
+        else if (
+          localComputers.length === 0 &&
+          configuration.computers.some(
+            (computer) => computer.environmentId === invocation.environmentId,
+          )
+        )
+          return yield* failure("computer-unavailable");
       }
       if (computerId !== undefined) {
         const matches = configuration.computers.filter((computer) => computer.id === computerId);
-        if (matches.length !== 1) return yield* failure("computer-unavailable");
+        if (matches.length !== 1 || matches[0]!.metadata?.active === false)
+          return yield* failure("computer-unavailable");
         targetEnvironmentId = matches[0]!.environmentId;
       }
     } else if (computerId !== undefined) {

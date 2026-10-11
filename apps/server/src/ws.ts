@@ -2188,11 +2188,11 @@ const makeWsRpcLayer = (
         [WS_METHODS.workjetLumaUpdate]: (input) =>
           lumaConfiguration?.update(input) ??
           Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
-        [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
+        [WS_METHODS.serverUpdateSettings]: ({ patch, expectedWorkjet }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
             serverSettings
-              .updateSettings(patch)
+              .updateSettings(patch, expectedWorkjet)
               .pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
             {
               "rpc.aggregate": "server",

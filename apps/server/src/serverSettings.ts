@@ -10,6 +10,8 @@
  *
  * @module ServerSettings
  */
+// @effect-diagnostics nodeBuiltinImport:off -- Structural CAS comparison at the settings persistence boundary.
+import { isDeepStrictEqual } from "node:util";
 import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
@@ -23,6 +25,7 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
+  type WorkjetConfiguration,
 } from "@workjet/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -132,6 +135,7 @@ export class ServerSettingsService extends Context.Service<
     /** Patch settings and persist. Returns the new full settings object. */
     readonly updateSettings: (
       patch: ServerSettingsPatch,
+      expectedWorkjet?: WorkjetConfiguration,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     /** Stream of settings change events. */
@@ -164,17 +168,21 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
         : {}),
     });
     const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
+    const writeSemaphore = yield* Semaphore.make(1);
 
     return {
       start: Effect.void,
       ready: Effect.void,
       getSettings: Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider)),
-      updateSettings: (patch) =>
-        Ref.get(currentSettingsRef).pipe(
-          Effect.map((currentSettings) => applyServerSettingsPatch(currentSettings, patch)),
-          Effect.flatMap(normalizeServerSettings),
-          Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
-          Effect.map(resolveTextGenerationProvider),
+      updateSettings: (patch, expectedWorkjet) =>
+        writeSemaphore.withPermits(1)(
+          Effect.gen(function* () {
+            const current = yield* Ref.get(currentSettingsRef);
+            yield* checkExpectedWorkjet(current.workjet, expectedWorkjet, "<memory>");
+            const next = yield* normalizeServerSettings(applyServerSettingsPatch(current, patch));
+            yield* Ref.set(currentSettingsRef, next);
+            return resolveTextGenerationProvider(next);
+          }),
         ),
       streamChanges: Stream.empty,
       subscribeChanges: Effect.succeed(Stream.empty),
@@ -183,6 +191,21 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
 
 export const layerTest = (overrides: DeepPartial<ServerSettings> = {}) =>
   Layer.effect(ServerSettingsService, makeTest(overrides));
+
+const checkExpectedWorkjet = (
+  current: WorkjetConfiguration,
+  expected: WorkjetConfiguration | undefined,
+  settingsPath: string,
+) =>
+  expected === undefined || isDeepStrictEqual(current, expected)
+    ? Effect.void
+    : Effect.fail(
+        new ServerSettingsError({
+          settingsPath,
+          operation: "compare-workjet",
+          cause: new Error("Computer settings changed concurrently; reload and retry."),
+        }),
+      );
 
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJsonExit = Schema.decodeUnknownExit(ServerSettingsJson);
@@ -608,11 +631,12 @@ const make = Effect.gen(function* () {
       Effect.flatMap(materializeProviderEnvironmentSecrets),
       Effect.map(resolveTextGenerationProvider),
     ),
-    updateSettings: (patch) =>
+    updateSettings: (patch, expectedWorkjet) =>
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const validatedPatch = yield* validateAutomaticWorktreeRootPatch(patch);
           const current = yield* getSettingsFromCache;
+          yield* checkExpectedWorkjet(current.workjet, expectedWorkjet, settingsPath);
           const nextPersisted = yield* persistProviderEnvironmentSecrets(
             current,
             applyServerSettingsPatch(current, validatedPatch),

@@ -10,6 +10,8 @@ import {
   type PickedThemeFile,
 } from "@workjet/contracts";
 import * as NodeOS from "node:os";
+import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
+import { DesktopComputers } from "../../computers/DesktopComputers.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
@@ -149,7 +151,27 @@ export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
   result: Schema.String,
   handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBearerToken")(function* () {
     const localAuth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
-    return yield* localAuth.getBearerToken;
+    const token = yield* localAuth.getBearerToken;
+    const computers = yield* Effect.serviceOption(DesktopComputers);
+    if (computers._tag === "Some") {
+      const pool = yield* DesktopBackendPool.DesktopBackendPool;
+      const primary = yield* pool.primary;
+      const config = yield* primary.currentConfig;
+      if (config._tag === "Some") {
+        const descriptor = yield* fetchRemoteEnvironmentDescriptor({
+          httpBaseUrl: config.value.httpBaseUrl.href,
+        }).pipe(Effect.option);
+        if (descriptor._tag === "Some")
+          yield* computers.value.onConnected({
+            _tag: "add",
+            id: descriptor.value.environmentId,
+            label: NodeOS.hostname(),
+            environmentId: descriptor.value.environmentId,
+            connection: { _tag: "local" },
+          });
+      }
+    }
+    return token;
   }),
 });
 

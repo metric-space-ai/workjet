@@ -154,6 +154,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () =>
       ipcRenderer.removeListener(IpcChannels.CONNECTION_CATALOG_WARNING_CHANNEL, handler);
   },
+  controlComputers: (input) => ipcRenderer.invoke(IpcChannels.COMPUTERS_CONTROL_CHANNEL, input),
+  listComputerSshKeys: () => ipcRenderer.invoke(IpcChannels.COMPUTERS_SSH_KEYS_CHANNEL),
+  assignDetectedComputer: (input) =>
+    ipcRenderer.invoke(IpcChannels.COMPUTERS_ASSIGN_CHANNEL, input),
   discoverSshHosts: () => ipcRenderer.invoke(IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL),
   discoverTailscalePeers: () => ipcRenderer.invoke(IpcChannels.DISCOVER_TAILSCALE_PEERS_CHANNEL),
   ensureSshEnvironment: async (target, options) =>

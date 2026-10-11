@@ -54,6 +54,7 @@ export * from "./workjetSupervisor.ts";
 export * from "./workjetSupervisorExecution.ts";
 export * from "./businessOsShell.ts";
 export * from "./computerProvisioning.ts";
+export * from "./computerDetection.ts";
 export * from "./mobileShell.ts";
 export * from "./workjetProjectFile.ts";
 export * from "./editor.ts";

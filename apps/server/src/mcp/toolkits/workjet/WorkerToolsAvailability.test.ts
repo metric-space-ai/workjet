@@ -3,12 +3,17 @@ import {
   EnvironmentId,
   ProviderInstanceId,
   ThreadId,
+  ProjectId,
   type OrchestrationThreadShell,
   type OrchestrationCommand,
 } from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as NodeSqliteClient from "../../../persistence/NodeSqliteClient.ts";
+import { runMigrations } from "../../../persistence/Migrations.ts";
+import { WorkerAutonomyToolkitRegistrationLive } from "./WorkerAutonomyTool.ts";
 import * as Option from "effect/Option";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 import * as Invocation from "../../McpInvocationContext.ts";
@@ -26,18 +31,22 @@ for (const harness of [
   "pi",
   "cursor",
   "minimax",
+  "greppy",
+  "ctox",
 ] as const) {
   it.effect(
     `exposes callable kanban and goal tools in a ${harness} persistent turn without optional capabilities`,
     () =>
       Effect.gen(function* () {
+        yield* runMigrations();
+        const sql = yield* SqlClient.SqlClient;
         const threadId = ThreadId.make(`persistent-${harness}`);
         const commands: OrchestrationCommand[] = [];
         const query = {
           getThreadShellById: () =>
             Effect.succeed(
               Option.some({
-                id: threadId,
+                id: threadId, projectId: ProjectId.make("project"), runtimeMode: "full-access", interactionMode: "default",
                 archivedAt: null,
                 deletedAt: null,
                 workjetConfig: {
@@ -76,6 +85,9 @@ for (const harness of [
             },
           });
           expect(goal.isError).toBe(false);
+          const escalation = yield* server.callTool({name:"workjet_escalate",arguments:{question:"Which authorised implementation?",options:["A","B"]}});
+          expect(escalation.isError).toBe(false);
+          expect((yield* sql`SELECT supervisor_thread_id,request_json FROM workjet_worker_supervisor_decisions`)[0]).toMatchObject({supervisor_thread_id:null});
         }).pipe(
           Effect.provideService(Invocation.McpInvocationContext, {
             environmentId: EnvironmentId.make("isolated-tools"),
@@ -83,6 +95,7 @@ for (const harness of [
             providerInstanceId: ProviderInstanceId.make(harness),
             providerSessionId: "current-turn",
             workjetRole: "standard",
+            projectTeamRole: "specialist",
             capabilities: new Set<Invocation.McpCapability>(),
             activeWorkjetMcpCapabilityIds: new Set<
               import("@workjet/contracts").WorkjetCapabilityId
@@ -105,16 +118,17 @@ for (const harness of [
           Effect.provideService(ProjectionSnapshotQuery, query),
           Effect.provideService(OrchestrationEngineService, engine),
           Effect.provide(
-            Layer.mergeAll(GoalToolkitRegistrationLive, WorkerKanbanToolkitRegistrationLive).pipe(
+            Layer.mergeAll(GoalToolkitRegistrationLive, WorkerKanbanToolkitRegistrationLive, WorkerAutonomyToolkitRegistrationLive).pipe(
               Layer.provideMerge(McpServer.McpServer.layer),
-              Layer.provide(NodeServices.layer),
+              Layer.provideMerge(NodeServices.layer),
             ),
           ),
         );
         expect(commands.map((command) => command.type)).toEqual([
           "thread.worker-kanban.set",
           "thread.goal.set",
+          "thread.activity.append",
         ]);
-      }),
+      }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 }

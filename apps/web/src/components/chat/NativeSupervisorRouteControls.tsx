@@ -1,6 +1,5 @@
 import {
   WS_METHODS,
-  WorkjetConnectionId,
   extractLumaInstanceDocument,
   type WorkjetLumaSnapshot,
   type WorkjetWorkerProfile,
@@ -85,12 +84,7 @@ export function NativeSupervisorRouteControls(props: {
       (membership.instanceId === props.scope?.instanceId &&
         membership.computers.some((entry) => entry.id === computer.id)),
   );
-  const target = props.workerSourceBinding?.instanceId
-    ? {
-        connectionId: WorkjetConnectionId.make(props.workerSourceBinding.connectionId),
-        instanceId: props.workerSourceBinding.instanceId,
-      }
-    : null;
+  const target = lumas.instanceId === props.scope?.instanceId ? (lumas.target ?? null) : null;
   const instance = useEnvironmentQuery(
     target && environment
       ? serverEnvironment.lumaConfiguration({

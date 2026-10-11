@@ -58,6 +58,9 @@ export function useProjectSupervisorLumas(boundSource?: {
   return {
     instanceId: scope.presentationInstanceId,
     instanceName: connection?.displayName ?? null,
+    target: connection
+      ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
+      : null,
     phase,
     profiles: phase === "ready" ? (snapshot.data?.configuration?.workerProfiles ?? []) : [],
   };

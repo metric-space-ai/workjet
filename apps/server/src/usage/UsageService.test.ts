@@ -126,6 +126,52 @@ it.layer(NodeServices.layer)("bundled usage pricing", (it) => {
             ["no-turns", "no-turns"],
           ],
         );
+        // Changing harness and deleting its runtime must retain already consumed project usage.
+        yield* sql`UPDATE provider_session_runtime SET provider_name = 'codex', resume_cursor_json = '{"threadId":"next-session"}' WHERE thread_id = 'known-worker'`;
+        yield* sql`DELETE FROM provider_session_runtime WHERE thread_id = 'known-worker'`;
+        yield* sql`DELETE FROM projection_thread_sessions WHERE thread_id = 'known-worker'`;
+        yield* sql`UPDATE projection_threads SET archived_at = '2026-10-11T00:00:00Z' WHERE thread_id = 'known-worker'`;
+        const afterCleanup = yield* usage.readSummary({
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-17"),
+          sinceTime: "2026-10-10T12:00:00Z",
+          untilTime: "2026-10-17T12:00:00Z",
+          timeZone: "UTC",
+        });
+        assert.deepEqual(afterCleanup.buckets, projectSummary.buckets);
+        const recordAssistantUsage = usage.recordAssistantUsage;
+        if (!recordAssistantUsage) throw new Error("Usage observation writer is unavailable");
+        for (let copy = 0; copy < 2; copy++)
+          yield* recordAssistantUsage({
+            threadId: "known-worker",
+            sessionId: "sdk-fixture-session",
+            messageId: "sdk-message",
+            model: knownModel,
+            createdAt: "2026-10-10T12:01:00Z",
+            usage: { input_tokens: 40, output_tokens: 5, cache_read_input_tokens: 10 },
+          });
+        const sdkUsage = yield* usage.readSummary({
+          projectId: "usage-project",
+          sinceDay: UsageDay.make("2026-10-10"),
+          untilDay: UsageDay.make("2026-10-17"),
+          timeZone: "UTC",
+        });
+        assert.equal(
+          sdkUsage.buckets.reduce((sum, bucket) => sum + bucket.records, 0),
+          3,
+        );
+        assert.equal(
+          sdkUsage.buckets.reduce(
+            (sum, bucket) =>
+              sum +
+              bucket.totals.uncachedInputTokens +
+              bucket.totals.cachedInputTokens +
+              bucket.totals.outputTokens,
+            0,
+          ),
+          355,
+        );
         const boundary = yield* usage.readSummary({
           projectId: "usage-project",
           sinceDay: UsageDay.make("2026-10-03"),

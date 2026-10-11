@@ -269,7 +269,18 @@ it("reads and claims the same native offer and joins actual SDK child/query/jour
   const readTokenBudgetContext = vi
     .fn()
     .mockResolvedValue("Workjet project token budget: 2.3B. Known cycle consumption: 1.800B.");
-  const result = await runNextNativeSupervisorSdkTurn({ ...options, readTokenBudgetContext });
+  const observeAssistantUsage = vi
+    .fn()
+    .mockRejectedValue(new Error("Usage sink temporarily unavailable"));
+  const result = await runNextNativeSupervisorSdkTurn({
+    ...options,
+    readTokenBudgetContext,
+    observeAssistantUsage,
+  });
+  expect(observeAssistantUsage).toHaveBeenCalledWith(
+    "fixture-project",
+    expect.objectContaining({ type: "assistant", session_id: "fixture-original-sdk-session" }),
+  );
   expect(readTokenBudgetContext).toHaveBeenCalledWith("fixture-project");
   expect(vi.mocked(query).mock.calls[0]?.[0].options?.systemPrompt).toContain(
     "Known cycle consumption: 1.800B",

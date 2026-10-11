@@ -42,7 +42,7 @@ export function ProjectTokenBudget({ project }: { readonly project: GalleryProje
             .map((t) => `${t.role} · ${t.title}`),
   );
   if (project.local === null) unknown.push("Projekt ist noch nicht lokal gebunden");
-  if (project.native) unknown.push("Native Threads: Usage-Zuordnung noch unvollständig");
+  if (project.native) unknown.push("Threads: Usage-Zuordnung noch unvollständig");
   const measured =
     usage.environments.some((e) => (e.summary?.buckets.length ?? 0) > 0) ||
     (unknown.length === 0 &&

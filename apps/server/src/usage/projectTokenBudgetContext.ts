@@ -14,7 +14,15 @@ export const currentProjectTokenBudgetContext = Effect.fn("currentProjectTokenBu
     const query = yield* ProjectionSnapshotQuery;
     const usage = yield* Effect.serviceOption(UsageService);
     const model = yield* query.getCommandReadModel();
-    const project = model.projects.find((project) => project.id === projectId);
+    const bound = model.threads.find(
+      (thread) =>
+        thread.workjetConfig.schemaVersion === 2 &&
+        thread.workjetConfig.team?.role === "supervisor" &&
+        thread.workjetConfig.ctoxProject?.nativeProjectId === projectId,
+    );
+    const project = model.projects.find(
+      (project) => project.id === projectId || project.id === bound?.projectId,
+    );
     if (!project) return null;
     const budget = project.overview?.tokenBudget;
     const now = yield* Clock.currentTimeMillis;
@@ -23,7 +31,7 @@ export const currentProjectTokenBudgetContext = Effect.fn("currentProjectTokenBu
       ? null
       : yield* usage.value
           .readSummary({
-            projectId,
+            projectId: project.id,
             sinceDay: UsageDay.make(cycle.start.slice(0, 10)),
             untilDay: UsageDay.make(cycle.end.slice(0, 10)),
             sinceTime: cycle.start,

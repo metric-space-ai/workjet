@@ -80,6 +80,7 @@ export type UsageTokenTotals = typeof UsageTokenTotals.Type;
  * to `costUsd`.
  */
 export const UsageBucket = Schema.Struct({
+  sourceKey: Schema.optional(TrimmedNonEmptyString),
   projectId: Schema.optional(TrimmedNonEmptyString),
   threadId: Schema.optional(TrimmedNonEmptyString),
   role: Schema.optional(Schema.String),

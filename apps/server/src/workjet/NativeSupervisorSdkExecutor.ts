@@ -96,6 +96,11 @@ export async function runNextNativeSupervisorSdkTurn(options: {
   /** Private opt-in only for a qualified native with the confirmed-goal contract. */
   readonly includeConfirmedGoalRead?: boolean;
   readonly readTokenBudgetContext?: (projectId: ProjectId) => Promise<string | null>;
+  /** Actual SDK messages only; usage is retained by the existing priced UsageService. */
+  readonly observeAssistantUsage?: (
+    projectId: ProjectId,
+    message: import("@anthropic-ai/claude-agent-sdk").SDKAssistantMessage,
+  ) => Promise<void>;
 }): Promise<NativeSupervisorSdkTurnDrain | null> {
   options.serviceSignal.throwIfAborted();
   const request = options.source.request.bind(options.source);
@@ -347,6 +352,10 @@ export async function runNextNativeSupervisorSdkTurn(options: {
       try {
         for await (const message of actualRuntime) {
           await journal.observeSdkMessage(message, turnId);
+          if (message.type === "assistant")
+            await options
+              .observeAssistantUsage?.(ProjectId.make(offer.route.project_id), message)
+              .catch(() => {});
           if (message.type === "result") {
             resultSeen = true;
             break;

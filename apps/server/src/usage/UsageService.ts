@@ -12,6 +12,7 @@
  * @module UsageService
  */
 import * as NodeOS from "node:os";
+import { usageSourceFingerprintKey } from "@workjet/shared/usageMerge";
 
 import {
   USAGE_CONTRACT_VERSION,
@@ -73,10 +74,28 @@ const ScanCacheJson = Schema.fromJsonString(Schema.Unknown as unknown as Schema.
 const decodeScanCacheFile = Schema.decodeUnknownEffect(ScanCacheJson);
 const encodeScanCacheFile = Schema.encodeEffect(ScanCacheJson);
 
+export interface AssistantUsageObservation {
+  readonly threadId: string;
+  readonly sessionId: string;
+  readonly messageId: string;
+  readonly model: string;
+  readonly createdAt: string;
+  readonly usage: {
+    readonly input_tokens: number;
+    readonly output_tokens: number;
+    readonly cache_read_input_tokens?: number;
+    readonly cache_creation_input_tokens?: number;
+  };
+}
+
 export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    /** Provider observations without a persistent CLI transcript enter this same priced scan. */
+    readonly recordAssistantUsage?: (
+      input: AssistantUsageObservation,
+    ) => Effect.Effect<void, UsageReadError>;
   }
 >()("workjet/usage/UsageService") {}
 
@@ -155,6 +174,7 @@ export const make = Effect.gen(function* () {
 
     return [
       { provider: "claude" as const, dir: claudeDir },
+      { provider: "claude" as const, dir: path.join(config.stateDir, "usage", "claude") },
       { provider: "codex" as const, dir: path.join(codexLayout.sharedHomePath, "sessions") },
     ];
   });
@@ -326,16 +346,36 @@ export const make = Effect.gen(function* () {
         ),
       );
     }
+    const historicalBindings =
+      input.projectId === undefined || Option.isNone(sql)
+        ? []
+        : yield* sql.value<ProjectThread>`
+        SELECT t.project_id AS "projectId", t.thread_id AS "threadId", t.title,
+          COALESCE(json_extract(t.workjet_config_json, '$.team.role'), json_extract(t.workjet_config_json, '$.role'), 'standard') AS role,
+          b.provider_name AS provider, b.session_id AS "sessionId", NULL AS "latestTurnAt"
+        FROM usage_session_bindings b JOIN projection_threads t ON t.thread_id = b.thread_id
+        WHERE t.project_id = ${input.projectId}
+      `.pipe(
+            Effect.mapError(
+              (cause) =>
+                new UsageReadError({
+                  reason: "scanFailed",
+                  detail: "Project session history could not be read.",
+                  cause,
+                }),
+            ),
+          );
     const sessionThreads = new Map<string, ProjectThread>();
     const ambiguousSessions = new Set<string>();
-    for (const thread of projectThreads) {
+    for (const thread of [...projectThreads, ...historicalBindings]) {
       if (!thread.sessionId) continue;
       const provider =
         thread.provider === "claudeAgent" || thread.provider === "claude-code"
           ? "claude"
           : thread.provider;
       const key = `${provider}:${thread.sessionId}`;
-      if (sessionThreads.has(key)) ambiguousSessions.add(key);
+      if (sessionThreads.has(key) && sessionThreads.get(key)!.threadId !== thread.threadId)
+        ambiguousSessions.add(key);
       else sessionThreads.set(key, thread);
     }
     const measuredThreads = new Set<string>();
@@ -345,6 +385,12 @@ export const make = Effect.gen(function* () {
 
     for (const { provider, dir } of dirs) {
       const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
+      const sourceKey = usageSourceFingerprintKey({
+        hostId,
+        provider,
+        resolvedHomePath: dir,
+        volumeId,
+      });
       const exists = yield* fileSystem
         .exists(dir)
         .pipe(Effect.catchCause(() => Effect.succeed(false)));
@@ -384,7 +430,7 @@ export const make = Effect.gen(function* () {
           const key = `${record.provider}:${record.sessionId}`;
           const thread = ambiguousSessions.has(key) ? undefined : sessionThreads.get(key);
           if (input.projectId !== undefined && thread === undefined) continue;
-          if (aggregator.add(record, thread) && record.sessionId.length > 0) {
+          if (aggregator.add(record, thread, sourceKey) && record.sessionId.length > 0) {
             sessionIds.add(record.sessionId);
             if (thread) measuredThreads.add(thread.threadId);
           }
@@ -449,7 +495,41 @@ export const make = Effect.gen(function* () {
     } satisfies UsageSummary;
   }, scanMutex.withPermit);
 
-  return { readSummary } as const;
+  const recordAssistantUsage = Effect.fn("UsageService.recordAssistantUsage")(
+    function* (input: AssistantUsageObservation) {
+      if (Option.isNone(sql))
+        return yield* new UsageReadError({
+          reason: "scanFailed",
+          detail: "Provider usage attribution is unavailable.",
+        });
+      const directory = path.join(config.stateDir, "usage", "claude");
+      const document = yield* encodeScanCacheFile({
+        type: "assistant",
+        timestamp: input.createdAt,
+        sessionId: input.sessionId,
+        message: { id: input.messageId, model: input.model, usage: input.usage },
+      });
+      yield* sql.value`INSERT OR IGNORE INTO usage_session_bindings (thread_id, provider_name, session_id)
+      VALUES (${input.threadId}, 'claudeAgent', ${input.sessionId})`;
+      yield* fileSystem.makeDirectory(directory, { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(directory, "sdk-" + input.createdAt.slice(0, 10) + ".jsonl"),
+        document + "\n",
+        { flag: "a" },
+      );
+    },
+    scanMutex.withPermit,
+    Effect.mapError(
+      (cause) =>
+        new UsageReadError({
+          reason: "scanFailed",
+          detail: "Provider usage observation could not be retained.",
+          cause,
+        }),
+    ),
+  );
+
+  return { readSummary, recordAssistantUsage } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

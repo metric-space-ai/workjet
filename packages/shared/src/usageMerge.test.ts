@@ -9,7 +9,32 @@ import {
 } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
+import { mergeUsage, usageSourceFingerprintKey, type EnvironmentUsage } from "./usageMerge.ts";
+
+it("deduplicates a shared root while retaining a private SDK root of the same provider", () => {
+  const sources = [
+    { provider: "claude" as const, hostId: "host", homePath: "/shared" },
+    { provider: "claude" as const, hostId: "host", homePath: "/private-sdk" },
+  ];
+  const roots = summary([], sources);
+  const shared = bucket({
+    model: DEFAULT_MODEL,
+    sourceKey: usageSourceFingerprintKey(roots.sources[0]!.fingerprint),
+  });
+  const privateSdk = bucket({
+    model: DEFAULT_MODEL,
+    sourceKey: usageSourceFingerprintKey(roots.sources[1]!.fingerprint),
+  });
+  const merged = mergeUsage(
+    [
+      environment("a", summary([shared], [sources[0]!])),
+      environment("b", { ...roots, buckets: [shared, privateSdk] }),
+    ],
+    USAGE_CONTRACT_VERSION,
+  );
+  expect(merged.totalTokens).toBe(2320);
+  expect(merged.records).toBe(10);
+});
 
 function bucket(overrides: Partial<UsageBucket> = {}): UsageBucket {
   return {

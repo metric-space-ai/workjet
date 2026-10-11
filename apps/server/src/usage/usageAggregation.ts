@@ -114,6 +114,7 @@ export class UsageAggregator {
   add(
     record: UsageRecord,
     attribution?: { projectId: string; threadId: string; role: string },
+    sourceKey?: string,
   ): boolean {
     if (record.dedupeKey !== null) {
       if (this.#seen.has(record.dedupeKey)) {
@@ -148,7 +149,7 @@ export class UsageAggregator {
             this.#hourlyWindow.sinceTimeMs +
               Math.floor((record.timestampMs - this.#hourlyWindow.sinceTimeMs) / HOUR_MS) * HOUR_MS,
           ).toISOString();
-    const key = `${day}\u0000${hourStart}\u0000${record.provider}\u0000${record.model}\u0000${attribution?.projectId ?? ""}\u0000${attribution?.threadId ?? ""}\u0000${attribution?.role ?? ""}`;
+    const key = `${day}\u0000${hourStart}\u0000${record.provider}\u0000${record.model}\u0000${attribution?.projectId ?? ""}\u0000${attribution?.threadId ?? ""}\u0000${attribution?.role ?? ""}\u0000${sourceKey ?? ""}`;
     let bucket = this.#buckets.get(key);
     if (bucket === undefined) {
       bucket = {
@@ -191,9 +192,11 @@ export class UsageAggregator {
         projectId = "",
         threadId = "",
         role = "",
+        sourceKey = "",
       ] = key.split("\u0000");
       buckets.push({
         ...(projectId === "" ? {} : { projectId, threadId, role }),
+        ...(sourceKey === "" ? {} : { sourceKey }),
         day: day as UsageDay,
         ...(hourStart === "" ? {} : { hourStart }),
         provider: provider as UsageBucket["provider"],

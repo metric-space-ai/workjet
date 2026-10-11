@@ -4,6 +4,8 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeHttp from "node:http";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeUtil from "node:util";
+import type { WorkerSourceRuntimeCustody } from "../../workjet/WorkerSourceCustodyStore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -34,7 +36,8 @@ const agent = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../../../scripts/acp-namespace-mock.py",
 );
-const fixture = async () => {
+const fixture = async (variant?: string) => {
+  let originalRuntime: WorkerSourceRuntimeCustody | undefined;
   const root = await NodeFSP.mkdtemp(
     NodePath.join(await NodeFSP.realpath(process.env.TMPDIR ?? "/tmp"), "wj-greppy-ns-"),
   );
@@ -111,6 +114,12 @@ const fixture = async () => {
         modelId: "gpt-6.1-sol",
         harness: "greppy",
         modelSocketRoot: NodePath.join(root, "model-ipc"),
+        captureRuntime: async (capture) => {
+          if (variant === "runtime-denied" || (originalRuntime &&
+            !NodeUtil.isDeepStrictEqual(originalRuntime, capture)))
+            throw new Error("Original runtime custody rejected");
+          originalRuntime = capture;
+        },
         nativeProfile: { harness: "greppy", directory: NodePath.join(root, "profile") },
       },
     );
@@ -163,6 +172,8 @@ const fixture = async () => {
 describe.runIf(helper !== undefined)("Greppy original runtime/custody production path", () => {
   for (const variant of [
     "two-turns",
+    "runtime-denied",
+    "runtime-replaced",
     "missing-receipt",
     "changed-digest",
     "replaced-root",
@@ -175,7 +186,7 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
       variant,
       () =>
         Effect.acquireUseRelease(
-          Effect.tryPromise(fixture),
+          Effect.tryPromise(() => fixture(variant)),
           (owned) =>
             Effect.gen(function* () {
               const originalSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -218,6 +229,7 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                 if (
                   variant === "missing-receipt" ||
                   variant === "changed-digest" ||
+                  variant === "runtime-denied" ||
                   variant === "replaced-root"
                 ) {
                   expect(started._tag).toBe("Failure");
@@ -225,6 +237,20 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                   return;
                 }
                 expect(started._tag).toBe("Success");
+                if (variant === "runtime-replaced") {
+                  const stopped = yield* adapter.stopSession(owned.input.threadId);
+                  expect(stopped?.terminated).toBe(true);
+                  const before = children.length;
+                  yield* Effect.promise(async () => {
+                    await NodeFSP.rename(owned.script, owned.script + "-original");
+                    await NodeFSP.copyFile(owned.script + "-original", owned.script);
+                    await NodeFSP.chmod(owned.script, 0o700);
+                  });
+                  expect((yield* adapter.startSession(owned.input).pipe(Effect.result))._tag)
+                    .toBe("Failure");
+                  expect(children.length).toBe(before);
+                  return;
+                }
                 yield* adapter.sendTurn({
                   threadId: owned.input.threadId,
                   input: variant === "two-turns" ? "first" : "hold-terminal",

@@ -17,6 +17,7 @@ import {
   type WorkerSourcePrivateProfile,
 } from "./WorkerSourcePrivateProfile.ts";
 import type { WorkerNamespaceFileCapture } from "./WorkerNamespaceSpawn.ts";
+import type { WorkerSourceProfileCustody, WorkerSourceRuntimeCustody } from "./WorkerSourceCustodyStore.ts";
 import { Schema } from "effect";
 import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
 import type { WorkerSubmission } from "./WorkerSubmission.ts";
@@ -105,6 +106,7 @@ function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void 
 export interface WorkerSourceHarness {
   readonly nativeProfile?: WorkerSourceNativeProfile;
   readonly nativeProfileCapture?: WorkerNamespaceFileCapture;
+  readonly captureRuntime?: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
   readonly modelSocket?: WorkerSourceModelSocketDescription;
   readonly isRevoked: () => boolean;
   readonly identity: Readonly<
@@ -139,9 +141,14 @@ export async function installWorkerSourceRoute(
     readonly modelId: string;
     readonly modelSocketRoot?: string;
     readonly harness?: RemoteWorkerHarness;
+    readonly captureRuntime?: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
     readonly nativeProfile?: {
       readonly harness: WorkerSourceNativeProfile["harness"];
       readonly directory: string;
+      readonly persistence?: {
+        readonly original: WorkerSourceProfileCustody | null;
+        readonly capture: (custody: WorkerSourceProfileCustody) => Promise<void>;
+      };
     };
   },
 ): Promise<WorkerSourceHarness> {
@@ -362,6 +369,12 @@ export async function installWorkerSourceRoute(
   let nativeProfile: WorkerSourceNativeProfile | undefined;
   let modelSocket: Awaited<ReturnType<typeof makeWorkerSourceModelSocket>> | undefined;
   try {
+    if (pin.nativeProfile?.persistence) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try { await source("admit", {}, controller.signal); }
+      finally { clearTimeout(timeout); }
+    }
     if (pin.modelSocketRoot !== undefined)
       modelSocket = await makeWorkerSourceModelSocket(pin.modelSocketRoot, onRequest);
     if (pin.nativeProfile) {
@@ -374,7 +387,9 @@ export async function installWorkerSourceRoute(
           apiKey,
         });
       if (modelSocket !== undefined) {
-        privateProfile = await makeWorkerSourcePrivateProfile(pin.nativeProfile.directory, create);
+        privateProfile = await makeWorkerSourcePrivateProfile(
+          pin.nativeProfile.directory, create, pin.nativeProfile.persistence,
+        );
         nativeProfile = privateProfile.profile;
       } else {
         nativeProfile = create(pin.nativeProfile.directory);
@@ -405,6 +420,7 @@ export async function installWorkerSourceRoute(
   const harness: WorkerSourceHarness = {
     ...(nativeProfile ? { nativeProfile } : {}),
     ...(privateProfile ? { nativeProfileCapture: privateProfile.capture } : {}),
+    ...(pin.captureRuntime ? { captureRuntime: pin.captureRuntime } : {}),
     ...(modelSocket ? { modelSocket: modelSocket.description } : {}),
     isRevoked: () => revoked,
     identity: Object.freeze({

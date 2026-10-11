@@ -138,3 +138,66 @@ it.effect("rejects a symlinked root and revoked private-directory permissions", 
     });
   }),
 );
+
+for (const target of ["root", "profile", "home"] as const) {
+  it.effect(`does not recover or write scoped config through a replaced ${target}`, () =>
+    Effect.gen(function* () {
+      const { base, platform } = yield* baseDirectory;
+      if (platform !== "linux") return;
+      yield* Effect.promise(async () => {
+        const root = NodePath.join(base, "profiles");
+        const first = await makeWorkerSourcePrivateProfile(root, create);
+        const original = first.custody;
+        const directory = first.profile.directory;
+        await first.close();
+        const swapped = target === "root" ? root :
+          target === "profile" ? directory : NodePath.join(directory, "home");
+        await NodeFSP.rename(swapped, swapped + "-held");
+        if (target === "home") {
+          const foreign = NodePath.join(base, "foreign-home");
+          await NodeFSP.mkdir(foreign, { mode: 0o700 });
+          await NodeFSP.symlink(foreign, swapped);
+        } else {
+          await NodeFSP.mkdir(swapped, { mode: 0o700 });
+        }
+        const replacedProfile = target === "root" ? NodePath.join(root, NodePath.basename(directory)) : directory;
+        if (target === "root") await NodeFSP.mkdir(replacedProfile, { mode: 0o700 });
+        const marker = NodePath.join(replacedProfile, "config.yaml");
+        await NodeFSP.writeFile(marker, "replacement must stay unchanged");
+        await expect(makeWorkerSourcePrivateProfile(root, create, {
+          original, capture: async () => {},
+        })).rejects.toThrow();
+        expect(await NodeFSP.readFile(marker, "utf8")).toBe("replacement must stay unchanged");
+        if (target === "home") expect(await NodeFSP.readdir(NodePath.join(base, "foreign-home"))).toEqual([]);
+      });
+    }),
+  );
+}
+
+it.effect("persists custody before publishing a scoped key and can recover interrupted initialization", () =>
+  Effect.gen(function* () {
+    const { base, platform } = yield* baseDirectory;
+    if (platform !== "linux") return;
+    yield* Effect.promise(async () => {
+      const root = NodePath.join(base, "profiles");
+      let captured: Awaited<ReturnType<typeof makeWorkerSourcePrivateProfile>>["custody"] | undefined;
+      await expect(makeWorkerSourcePrivateProfile(root, create, {
+        original: null,
+        capture: async (custody) => {
+          captured = custody;
+          expect(await NodeFSP.readdir(custody.profile.path)).toEqual([]);
+          throw new Error("interrupted after persisted capture");
+        },
+      })).rejects.toThrow("interrupted");
+      expect(captured).toBeDefined();
+      const recovered = await makeWorkerSourcePrivateProfile(root, create, {
+        original: captured!,
+        capture: async (custody) => expect(custody).toEqual(captured),
+      });
+      cleanups.push(recovered.close);
+      expect(recovered.capture).toEqual(captured!.profile);
+      expect(await NodeFSP.readFile(NodePath.join(recovered.profile.directory, "config.yaml"), "utf8"))
+        .toContain("scoped-profile-fixture");
+    });
+  }),
+);

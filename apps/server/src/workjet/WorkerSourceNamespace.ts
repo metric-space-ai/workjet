@@ -8,12 +8,14 @@ import { ResourceMonitorBinary } from "../resourceTelemetry/ResourceMonitorBinar
 import { IsolatedWorkerWorktreeStore } from "./IsolatedWorkerWorktreeStore.ts";
 import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
 import type { WorkerNamespaceSpawnCapture } from "./WorkerNamespaceSpawn.ts";
+import type { WorkerSourceRuntimeCustody } from "./WorkerSourceCustodyStore.ts";
 
 export type WorkerNamespaceSessionCapture = Omit<
   WorkerNamespaceSpawnCapture,
   "runtimeFiles" | "runtimeDirectories"
 > & {
   readonly revalidate: (signal: AbortSignal) => Promise<void>;
+  readonly captureRuntime?: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
 };
 
 /** This is process custody, not an Owner/team grant. The common policy boundary
@@ -90,5 +92,6 @@ export const prepareWorkerSourceNamespace = Effect.fn("prepareWorkerSourceNamesp
     profile,
     modelSocket: source.modelSocket,
     revalidate,
+    ...(source.captureRuntime ? { captureRuntime: source.captureRuntime } : {}),
   } satisfies WorkerNamespaceSessionCapture;
 });

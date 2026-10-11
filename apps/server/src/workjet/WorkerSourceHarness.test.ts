@@ -558,3 +558,43 @@ it.effect(
       yield* Effect.promise(() => verifySourceOnlyLoopback(platform, environment.TMPDIR));
     }),
 );
+
+it.effect("a failed fresh Source admission cannot create or capture a recovery profile", () =>
+  Effect.gen(function* () {
+    const environment = yield* HostProcessEnvironment;
+    const platform = yield* HostProcessPlatform;
+    if (platform !== "linux") return;
+    yield* Effect.promise(async () => {
+      const root = await NodeFSP.mkdtemp(NodePath.join(environment.TMPDIR ?? NodeOS.tmpdir(), "source-profile-denied-"));
+      cleanups.push(() => NodeFSP.rm(root, { recursive: true, force: true }));
+      const server = NodeHttp.createServer((req, res) => {
+        req.resume();
+        res.writeHead(403, { "content-type": "application/json" }).end("{}");
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      cleanups.push(async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("fixture listener");
+      let captures = 0;
+      const profileRoot = NodePath.join(root, "profiles");
+      await expect(installWorkerSourceRoute(NodePath.basename(root), {
+        sourceEnvironmentId: "source", targetEnvironmentId: "target",
+        requestId: NodePath.basename(root), requestDigest: "immutable-digest",
+        capability: "fixture-capability", port: address.port,
+      }, {
+        targetEnvironmentId: "target", requestDigest: "immutable-digest",
+        modelId: "gpt-6.1-sol", harness: "greppy",
+        modelSocketRoot: NodePath.join(root, "model-ipc"),
+        nativeProfile: {
+          harness: "greppy", directory: profileRoot,
+          persistence: { original: null, capture: async () => { captures++; } },
+        },
+      })).rejects.toThrow("could not be prepared");
+      expect(captures).toBe(0);
+      expect(await NodeFSP.readdir(root)).toEqual([]);
+    });
+  }),
+);

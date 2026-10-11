@@ -301,3 +301,33 @@ cancellation. Subsequent starts and prompts fail with that Source-admission erro
 tool/terminal checks cannot extend a rejected admission. Ordinary sessions have
 no lifetime guard. This does not enable autonomous-worktree, enroll a native
 Parent or supply confined MCP or other harness runtime bundles.
+
+## Source profile and runtime recovery
+
+For a policy-bearing native Source profile, the target reserves a SQLite record
+for the immutable worker/request digest, Source and target environments, harness,
+selected Source model and profile root. It records the original root and private
+child identities before publishing scoped configuration. A restart reopens only
+those same directories, retains harness session files and regenerates configuration
+with a new ephemeral Source-route key. It reads no old account credentials or
+installed application profile.
+
+Recovery requires fresh Source admission before opening or changing the profile.
+Missing/replaced directories, symlinked nested HOME/XDG paths and non-private
+ownership or permissions are rejected. Configuration replacement uses the
+original directory descriptor and an exclusive staged file, so it cannot write
+through a replacement path, symlink or hard link. Interrupted initialization
+after a persisted capture can resume that original empty directory.
+
+The actual Greppy namespace factory records its configured executable and runtime
+file identities before its first launch. Subsequent starts compare with the same
+immutable record, including after SQLite reopens. A replaced binary or interpreter
+fails before spawning and is not enrolled by observing its new path. Runtime
+upgrades require an explicit new allocation. A recovered route creates fresh
+private model IPC under current Source authority; old process-dependent socket
+paths and capabilities are not revived.
+
+This local journal is process custody, not native Owner/team authorization.
+Other provider launchers still need their runtime producers. Supported policy
+modes remain empty. Full server/process recovery with a real model in the installed
+product remains an acceptance requirement.

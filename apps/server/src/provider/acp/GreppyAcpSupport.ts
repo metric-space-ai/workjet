@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
-import { captureWorkerNamespaceRuntime } from "../../workjet/WorkerNamespaceRuntime.ts";
+import { captureWorkerNamespaceRuntime, WorkerNamespaceRuntimeError } from "../../workjet/WorkerNamespaceRuntime.ts";
 import type { WorkerNamespaceSessionCapture } from "../../workjet/WorkerSourceNamespace.ts";
 
 export function buildGreppyAcpSpawnInput(
@@ -51,6 +51,18 @@ export const makeGreppyAcpRuntime = Effect.fn("makeGreppyAcpRuntime")(function* 
     input.namespaceCapture === undefined
       ? undefined
       : yield* captureWorkerNamespaceRuntime(configured);
+  const persistRuntime = input.namespaceCapture?.captureRuntime;
+  if (runtime && persistRuntime)
+    yield* Effect.tryPromise({
+      try: () => persistRuntime({
+        command: runtime.spawn.command,
+        runtimeFiles: runtime.runtimeFiles,
+      }),
+      catch: (cause) => new WorkerNamespaceRuntimeError({
+        issue: "Worker runtime differs from its original persisted Source custody.",
+        cause,
+      }),
+    });
   const { namespaceCapture, ...options } = input;
   const context = yield* Layer.build(
     AcpSessionRuntime.layer({

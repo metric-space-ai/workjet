@@ -42,7 +42,7 @@ export function resolveNativeProjectOpening(input: {
   if (input.localEnvironmentId === null || !input.localConnected)
     return {
       _tag: "blocked",
-      message: "Connect the local Code environment to open this supervisor.",
+      message: "Lokale Code-Umgebung nicht verbunden.",
     } as const;
   if (
     input.projects.some(
@@ -52,8 +52,7 @@ export function resolveNativeProjectOpening(input: {
   )
     return {
       _tag: "blocked",
-      message:
-        "This local project ID is already bound to another instance. Its conversation has been preserved.",
+      message: "Projekt-ID gehört bereits zu einer anderen Instanz.",
     } as const;
   return {
     _tag: "create",

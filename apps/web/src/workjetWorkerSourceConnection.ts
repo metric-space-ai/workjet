@@ -122,8 +122,7 @@ export function workerSourceBindingFailure(error: unknown): {
       return { message: error.detail, retryable: false };
   }
   return {
-    message:
-      "The server could not save the worker connection. Check the server connection and try again.",
+    message: "Verbindung nicht gespeichert.",
     retryable: true,
   };
 }
@@ -134,7 +133,5 @@ export function workerSourceBindingError(
   connection: WorkjetConnectionSummary,
 ): string | null {
   const next = withWorkerSourceConnection(config, selectedInstanceId, connection);
-  return next
-    ? retainWorkjetCtoxBinding(config, next).error
-    : "Select an authorized worker connection for this project's instance.";
+  return next ? retainWorkjetCtoxBinding(config, next).error : "Freigegebene Verbindung wählen.";
 }

@@ -7,7 +7,7 @@ export class JourFixePcmFramer {
   private used = 0;
 
   constructor(sampleRate: number) {
-    if (sampleRate !== JOUR_FIXE_SAMPLE_RATE) throw new Error("Microphone requires 16 kHz audio.");
+    if (sampleRate !== JOUR_FIXE_SAMPLE_RATE) throw new Error("Mikrofon braucht 16-kHz-Audio.");
   }
 
   push(samples: Float32Array): Uint8Array[] {
@@ -47,7 +47,7 @@ export class JourFixeUtteranceSegmenter {
 
   push(pcm: Uint8Array): JourFixeUtteranceEvent[] {
     if (pcm.byteLength !== JOUR_FIXE_FRAME_SAMPLES * 2)
-      throw new Error("Invalid microphone frame.");
+      throw new Error("Ungültiger Mikrofon-Frame.");
     const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
     let energy = 0;
     for (let index = 0; index < JOUR_FIXE_FRAME_SAMPLES; index++) {
@@ -112,13 +112,11 @@ export class JourFixeAudioDrain {
   push(frame: Uint8Array) {
     if (this.stopped) return;
     if (frame.byteLength !== JOUR_FIXE_FRAME_SAMPLES * 2) {
-      this.fail(new Error("Invalid microphone frame."));
+      this.fail(new Error("Ungültiger Mikrofon-Frame."));
       return;
     }
     if (this.queue.length >= 32) {
-      this.fail(
-        new Error("Audio connection cannot keep up. Microphone stopped; reconnect to continue."),
-      );
+      this.fail(new Error("Audioverbindung überlastet. Mikrofon gestoppt."));
       return;
     }
     this.queue.push(frame.slice());
@@ -147,7 +145,7 @@ export class JourFixeAudioDrain {
       }
     } catch (error) {
       if (!this.stopped)
-        this.fail(error instanceof Error ? error : new Error("Audio connection failed."));
+        this.fail(error instanceof Error ? error : new Error("Audioverbindung fehlgeschlagen."));
     } finally {
       this.running = false;
     }

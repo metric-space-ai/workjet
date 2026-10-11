@@ -6,7 +6,10 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@workjet/shared/DrainableWorker";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { forkParked } from "../../serverActivation.ts";
-import { deliverWorkerDecisions, resumeWorkerDecisionsFromSupervisor } from "../../workjet/WorkerSupervisorDecisions.ts";
+import {
+  deliverWorkerDecisions,
+  resumeWorkerDecisionsFromSupervisor,
+} from "../../workjet/WorkerSupervisorDecisions.ts";
 
 export class WorkerSupervisorDecisionReactor extends Context.Service<
   WorkerSupervisorDecisionReactor,
@@ -21,7 +24,8 @@ export const WorkerSupervisorDecisionReactorLive = Layer.effect(
   Effect.gen(function* () {
     const engine = yield* OrchestrationEngineService;
     const worker = yield* makeDrainableWorker((_: void) =>
-      resumeWorkerDecisionsFromSupervisor().pipe(Effect.andThen(deliverWorkerDecisions()),
+      resumeWorkerDecisionsFromSupervisor().pipe(
+        Effect.andThen(deliverWorkerDecisions()),
         Effect.catch((error) => Effect.logWarning("worker decision delivery deferred", { error })),
       ),
     );

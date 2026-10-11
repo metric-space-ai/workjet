@@ -95,30 +95,45 @@ const query = {
     ),
 } as unknown as ProjectionSnapshotQuery["Service"];
 
-it.effect("resumes from a completed native Supervisor reply and ignores worker text and partial replies", () =>
-  Effect.gen(function* () {
-    yield* setup;
-    const sql = yield* SqlClient.SqlClient;
-    yield* routeWorkerDecision(worker, request("native"));
-    yield* sql`UPDATE workjet_worker_supervisor_decisions SET notified = 1`;
-    const answer = yield* Schema.encodeEffect(Schema.fromJsonString(WorkerSupervisorAnswer))({ decisionId: "worker:native", answers: { choice: "Continue" } });
-    const text = "<workjet_worker_decision>" + answer + "</workjet_worker_decision>";
-    const responses: unknown[] = [];
-    const providers = { respondToUserInput: (input: unknown) => Effect.sync(() => { responses.push(input); }) } as unknown as ProviderService["Service"];
-    const resume = resumeWorkerDecisionsFromSupervisor().pipe(Effect.provideService(ProjectionSnapshotQuery, query), Effect.provideService(ProviderService, providers));
-    yield* sql`INSERT INTO projection_thread_messages (message_id,thread_id,role,text,is_streaming,created_at,updated_at)
+it.effect(
+  "resumes from a completed native Supervisor reply and ignores worker text and partial replies",
+  () =>
+    Effect.gen(function* () {
+      yield* setup;
+      const sql = yield* SqlClient.SqlClient;
+      yield* routeWorkerDecision(worker, request("native"));
+      yield* sql`UPDATE workjet_worker_supervisor_decisions SET notified = 1`;
+      const answer = yield* Schema.encodeEffect(Schema.fromJsonString(WorkerSupervisorAnswer))({
+        decisionId: "worker:native",
+        answers: { choice: "Continue" },
+      });
+      const text = "<workjet_worker_decision>" + answer + "</workjet_worker_decision>";
+      const responses: unknown[] = [];
+      const providers = {
+        respondToUserInput: (input: unknown) =>
+          Effect.sync(() => {
+            responses.push(input);
+          }),
+      } as unknown as ProviderService["Service"];
+      const resume = resumeWorkerDecisionsFromSupervisor().pipe(
+        Effect.provideService(ProjectionSnapshotQuery, query),
+        Effect.provideService(ProviderService, providers),
+      );
+      yield* sql`INSERT INTO projection_thread_messages (message_id,thread_id,role,text,is_streaming,created_at,updated_at)
       VALUES ('worker-answer','worker','assistant',${text},0,${NOW},${NOW})`;
-    yield* resume;
-    expect(responses).toHaveLength(0);
-    yield* sql`INSERT INTO projection_thread_messages (message_id,thread_id,role,text,is_streaming,created_at,updated_at)
+      yield* resume;
+      expect(responses).toHaveLength(0);
+      yield* sql`INSERT INTO projection_thread_messages (message_id,thread_id,role,text,is_streaming,created_at,updated_at)
       VALUES ('supervisor-answer','supervisor','assistant',${text},1,${NOW},${NOW})`;
-    yield* resume;
-    expect(responses).toHaveLength(0);
-    yield* sql`UPDATE projection_thread_messages SET is_streaming=0 WHERE message_id='supervisor-answer'`;
-    yield* resume;
-    yield* resume;
-    expect(responses).toEqual([{ threadId: workerId, requestId: "native", answers: { choice: "Continue" } }]);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+      yield* resume;
+      expect(responses).toHaveLength(0);
+      yield* sql`UPDATE projection_thread_messages SET is_streaming=0 WHERE message_id='supervisor-answer'`;
+      yield* resume;
+      yield* resume;
+      expect(responses).toEqual([
+        { threadId: workerId, requestId: "native", answers: { choice: "Continue" } },
+      ]);
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );
 
 it.effect(

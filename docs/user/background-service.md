@@ -20,6 +20,12 @@ files, and reconnects. Cancel or an unconfirmed revocation leaves recovery infor
 in place. Unknown or conflicting identities require explicit repair. This flow still
 needs validation in the signed app.
 
+When failures across independent encrypted stores confirm local encryption key
+loss, Desktop repairs this service session automatically without a confirmation
+dialog. It revokes the identified old session before preserving its files and
+creating a replacement. You then sign in to ctox.dev once to restore managed
+instance access. A single damaged file still uses the confirmation flow above.
+
 On a Linux host, Workjet can run as a background service for your user. It starts when the machine
 boots and keeps running after you log out.
 

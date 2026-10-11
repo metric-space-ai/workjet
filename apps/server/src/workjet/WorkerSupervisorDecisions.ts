@@ -77,7 +77,7 @@ export const routeWorkerDecision = Effect.fn("workjet.routeWorkerDecision")(func
     (decision_id, worker_thread_id, supervisor_thread_id, project_id, request_id, kind, request_json, created_at)
     VALUES (${`${thread.id}:${requestId}`}, ${thread.id}, ${supervisors[0]?.threadId ?? null},
       ${thread.projectId}, ${requestId}, ${event.type === "user-input.requested" ? "question" : "approval"},
-      ${(yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(event.payload))}, ${event.createdAt}) ON CONFLICT (decision_id) DO NOTHING`;
+      ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(event.payload)}, ${event.createdAt}) ON CONFLICT (decision_id) DO NOTHING`;
   return true;
 });
 
@@ -125,7 +125,7 @@ export const deliverWorkerDecisions = Effect.fn("workjet.deliverWorkerDecisions"
             `A project worker is waiting for your decision: [${row.workerThreadId}](/#/${encodeURIComponent(environmentId)}/${encodeURIComponent(row.workerThreadId)}).`,
             `Decision ID: ${row.decisionId}. Request kind: ${row.kind}.`,
             `Question, options or requested action: ${row.requestJson}`,
-            "Decide within the Owner’s instructions. Call workjet_answer_worker with this decisionId and answers keyed by question id, or an approval decision. This resumes the original worker request. Only you may escalate to the Owner when an Owner decision is necessary.",
+            "Decide within the Owner’s instructions. If workjet_answer_worker is available, call it with this decisionId and answers keyed by question id, or an approval decision. If your harness has no such tool, reply ONLY with <workjet_worker_decision>{\"decisionId\":\"" + row.decisionId + "\",\"answers\":{\"question-id\":\"selected answer\"}}</workjet_worker_decision> (for approvals replace answers with decision accept/acceptForSession/decline/cancel). Workjet reads this completed Supervisor reply and resumes the original request. Only you may escalate to the Owner when an Owner decision is necessary.",
           ].join("\n\n"),
         },
         runtimeMode: supervisor.runtimeMode,
@@ -135,6 +135,27 @@ export const deliverWorkerDecisions = Effect.fn("workjet.deliverWorkerDecisions"
       { deferWhileBusy: true },
     );
     yield* sql`UPDATE workjet_worker_supervisor_decisions SET notified = 1 WHERE decision_id = ${row.decisionId}`;
+  }
+});
+
+/** A native Supervisor without MCP may answer through one exact, completed assistant message. */
+export const resumeWorkerDecisionsFromSupervisor = Effect.fn("workjet.resumeWorkerDecisionsFromSupervisor")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql<DecisionRow>`SELECT decision_id AS "decisionId", supervisor_thread_id AS "supervisorThreadId", created_at AS "createdAt"
+    FROM workjet_worker_supervisor_decisions WHERE status = 'pending' AND notified = 1 AND supervisor_thread_id IS NOT NULL
+    ORDER BY created_at LIMIT 16`;
+  for (const row of rows) {
+    const messages = yield* sql<{ text: string }>`SELECT substr(text, 1, 16384) AS text FROM projection_thread_messages
+      WHERE thread_id = ${row.supervisorThreadId} AND role = 'assistant' AND is_streaming = 0 AND created_at >= ${row.createdAt}
+      ORDER BY created_at DESC LIMIT 3`;
+    for (const message of messages) {
+      const payload = /^\s*<workjet_worker_decision>([\s\S]+)<\/workjet_worker_decision>\s*$/.exec(message.text)?.[1];
+      if (!payload) continue;
+      const answer = Schema.decodeUnknownOption(Schema.fromJsonString(WorkerSupervisorAnswer), { onExcessProperty: "error" })(payload);
+      if (Option.isNone(answer) || answer.value.decisionId !== row.decisionId) continue;
+      yield* answerWorkerDecision(ThreadId.make(row.supervisorThreadId!), answer.value);
+      break;
+    }
   }
 });
 

@@ -7,8 +7,14 @@ const goal = initialWorkerGoal("Deliver the assigned project outcome.", "2026-10
 describe("worker goal tools and neutral prompts", () => {
   it("emulates only explicitly unsupported native goal protocols", () => {
     expect(isUnsupportedNativeGoal({ cause: { code: -32601 } })).toBe(true);
-    expect(isUnsupportedNativeGoal({ message: "Codex native goal controls are unsupported by this runtime." })).toBe(true);
-    expect(isUnsupportedNativeGoal({ message: "Token plan usage limit has been reached" })).toBe(false);
+    expect(
+      isUnsupportedNativeGoal({
+        message: "Codex native goal controls are unsupported by this runtime.",
+      }),
+    ).toBe(true);
+    expect(isUnsupportedNativeGoal({ message: "Token plan usage limit has been reached" })).toBe(
+      false,
+    );
     expect(isUnsupportedNativeGoal({ message: "Connection timed out" })).toBe(false);
   });
   it("makes missing tools non-blocking and keeps project names out of continuation instructions", () => {

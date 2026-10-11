@@ -40,7 +40,10 @@ const register = Effect.gen(function* () {
             isError: false,
             structuredContent: result,
             content: [
-              { type: "text", text: (yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(result)) },
+              {
+                type: "text",
+                text: yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(result),
+              },
             ],
           });
         }).pipe(

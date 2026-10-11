@@ -372,27 +372,31 @@ describe("persistent goal reactor", () => {
       ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("continues with a retained Workjet goal when the native goal protocol is explicitly unsupported", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const h = yield* harness({
-          get: () =>
-            Effect.fail({
-              _tag: "UnsupportedNativeGoal",
-              message: "unsupported native goal protocol",
-            } as const),
-          set: () => Effect.void,
-        } as unknown as ProviderService["Service"]["nativeGoal"]);
-        yield* h.reactor.start();
-        yield* h.completeTurn("unsupported-native");
-        yield* Deferred.await(h.signals[0]!);
-        yield* h.reactor.drain;
-        const config = h.read().workjetConfig;
-        expect(config.schemaVersion === 2 && config.goal?.status).toBe("active");
-        expect(config.schemaVersion === 2 && config.goal?.kanban?.cards[0]?.evidence).toContain("unverified");
-        expect(h.starts).toHaveLength(1);
-      }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+  it.effect(
+    "continues with a retained Workjet goal when the native goal protocol is explicitly unsupported",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const h = yield* harness({
+            get: () =>
+              Effect.fail({
+                _tag: "UnsupportedNativeGoal",
+                message: "unsupported native goal protocol",
+              } as const),
+            set: () => Effect.void,
+          } as unknown as ProviderService["Service"]["nativeGoal"]);
+          yield* h.reactor.start();
+          yield* h.completeTurn("unsupported-native");
+          yield* Deferred.await(h.signals[0]!);
+          yield* h.reactor.drain;
+          const config = h.read().workjetConfig;
+          expect(config.schemaVersion === 2 && config.goal?.status).toBe("active");
+          expect(config.schemaVersion === 2 && config.goal?.kanban?.cards[0]?.evidence).toContain(
+            "unverified",
+          );
+          expect(h.starts).toHaveLength(1);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect.each(["hasPendingApprovals", "hasPendingUserInput", "waitingOnSupervisor"] as const)(

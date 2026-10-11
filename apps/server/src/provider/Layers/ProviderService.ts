@@ -965,9 +965,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         config.goal?.status === "active" &&
         routed.adapter.nativeGoal
       ) {
-        const native = yield* routed.adapter.nativeGoal.get(input.threadId).pipe(
-        Effect.catch(error => isUnsupportedNativeGoal(error) ? Effect.succeed(undefined) : Effect.fail(error)),
-      );
+        const native = yield* routed.adapter.nativeGoal
+          .get(input.threadId)
+          .pipe(
+            Effect.catch((error) =>
+              isUnsupportedNativeGoal(error) ? Effect.succeed(undefined) : Effect.fail(error),
+            ),
+          );
         if (native === null)
           yield* routed.adapter.nativeGoal.set(input.threadId, config.goal.objective, "active");
       }

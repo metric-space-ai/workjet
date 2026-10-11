@@ -15,7 +15,10 @@ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { workerGoalContinuationText } from "../../workjet/workerGoal.ts";
-import { isUnsupportedNativeGoal, workerTurnKanbanFallback } from "../../workjet/workerToolFallback.ts";
+import {
+  isUnsupportedNativeGoal,
+  workerTurnKanbanFallback,
+} from "../../workjet/workerToolFallback.ts";
 
 export class PersistentGoalReactor extends Context.Service<
   PersistentGoalReactor,
@@ -115,7 +118,9 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
                   .pipe(Effect.timeout("10 seconds"), Effect.as(native));
               return Effect.succeed(native);
             }),
-            Effect.catch(error => isUnsupportedNativeGoal(error) ? Effect.succeed(undefined) : Effect.fail(error)),
+            Effect.catch((error) =>
+              isUnsupportedNativeGoal(error) ? Effect.succeed(undefined) : Effect.fail(error),
+            ),
             Effect.result,
           );
         }),

@@ -21,7 +21,7 @@ it.effect("migrates all project roles once, records old modes and retains later 
       yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode, created_at, updated_at)
         VALUES (${id}, 'project', ${id}, '{}', ${mode}, '2026-10-11T00:00:00Z', '2026-10-11T00:00:00Z')`;
       yield* sql`INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json)
-        VALUES (${id}, 'thread', ${id}, 1, 'thread.created', '2026-10-11T00:00:00Z', 'user', ${(yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({ runtimeMode: mode }))}, '{}')`;
+        VALUES (${id}, 'thread', ${id}, 1, 'thread.created', '2026-10-11T00:00:00Z', 'user', ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({ runtimeMode: mode })}, '{}')`;
     }
     assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 82 }), [
       [82, "WorkerAutonomyDefaults"],

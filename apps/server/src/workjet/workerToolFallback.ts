@@ -4,9 +4,15 @@ import type { TurnId, WorkjetThreadGoal, WorkjetWorkerKanban } from "@workjet/co
 export function isUnsupportedNativeGoal(error: unknown, depth = 0): boolean {
   if (!error || typeof error !== "object" || depth > 3) return false;
   const value = error as Record<string, unknown>;
-  return value.code === -32601 || value._tag === "UnsupportedNativeGoal" ||
-    (typeof value.message === "string" && /(?:unsupported|not supported).*goal|goal.*(?:unsupported|not supported)|method (?:not found|.*not.*supported)/i.test(value.message)) ||
-    isUnsupportedNativeGoal(value.cause, depth + 1);
+  return (
+    value.code === -32601 ||
+    value._tag === "UnsupportedNativeGoal" ||
+    (typeof value.message === "string" &&
+      /(?:unsupported|not supported).*goal|goal.*(?:unsupported|not supported)|method (?:not found|.*not.*supported)/i.test(
+        value.message,
+      )) ||
+    isUnsupportedNativeGoal(value.cause, depth + 1)
+  );
 }
 
 /** Turn text is a report, never a completion or verification receipt. */

@@ -16,7 +16,7 @@ describe("compact project gallery", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={{ ...project, title }} onOpen={() => {}} />,
     );
-    expect(markup).toContain(`alt="Saved website preview for ${title}"`);
+    expect(markup).toContain(`alt="Gespeicherte Vorschau von ${title}"`);
     expect(markup).toContain("<img");
     expect(markup).not.toContain("<iframe");
     expect(markup).toContain("2026-10-07");
@@ -30,8 +30,8 @@ describe("compact project gallery", () => {
     expect(markup).toMatch(
       /<h2[^>]*><a[^>]*href="https:\/\/greppy.xyz"[^>]*>greppy.xyz<\/a><\/h2>/,
     );
-    expect(markup).toContain('alt="Saved website preview for greppy.xyz"');
-    expect(markup).toContain('aria-label="Open greppy.xyz"');
+    expect(markup).toContain('alt="Gespeicherte Vorschau von greppy.xyz"');
+    expect(markup).toContain('aria-label="greppy.xyz öffnen"');
     expect(markup).not.toContain("<iframe");
     expect(markup).not.toContain("Hide preview");
     expect(markup).not.toContain("Open website");
@@ -47,8 +47,8 @@ describe("compact project gallery", () => {
       <ProjectOverviewCard project={{ ...project, title: "example.org" }} onOpen={() => {}} />,
     );
     expect(markup).toContain('href="https://example.org"');
-    expect(markup).toContain('aria-label="Project logo for example.org"');
-    expect(markup).toContain('aria-label="Open example.org"');
+    expect(markup).toContain('aria-label="Logo von example.org"');
+    expect(markup).toContain('aria-label="example.org öffnen"');
     expect(markup).not.toContain("<img");
     expect(markup).not.toContain("<iframe");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
@@ -76,7 +76,7 @@ describe("compact project gallery", () => {
         canArchive
       />,
     );
-    expect(markup).toContain('aria-label="Project actions for greppy.xyz"');
+    expect(markup).toContain('aria-label="Aktionen für greppy.xyz"');
     expect(markup).not.toContain("Configure greppy.xyz KPIs");
     expect(markup).not.toContain("lucide-pencil");
     expect(markup).not.toContain("<iframe");
@@ -89,9 +89,9 @@ describe("compact project gallery", () => {
     );
     expect(markup).not.toContain("Configure greppy.xyz KPIs");
     expect(markup).not.toContain("lucide-pencil");
-    expect(markup).toContain('aria-label="Project actions for greppy.xyz"');
-    expect(markup).not.toContain("Archive project");
-    expect(markup).not.toContain("Restore project");
+    expect(markup).toContain('aria-label="Aktionen für greppy.xyz"');
+    expect(markup).not.toContain("Projekt archivieren");
+    expect(markup).not.toContain("Projekt wiederherstellen");
   });
   it("preserves all three configured fields and an explicitly cleared website", () => {
     const overview: ProjectOverview = {

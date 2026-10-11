@@ -27,8 +27,8 @@ describe("project calendar", () => {
         ]}
       />,
     );
-    expect(html).toContain('aria-label="Calendar view"');
-    expect(html).toContain("Project meetings");
+    expect(html).toContain('aria-label="Kalenderansicht"');
+    expect(html).toContain("Regeltermine");
     expect(html).toContain('data-calendar-day="2026-10-07"');
     expect(html).toContain('aria-label="ctox.dev, ');
     expect(html).toContain('aria-label="greppy.xyz, ');
@@ -38,7 +38,7 @@ describe("project calendar", () => {
 
   it("offers the day, week, month and year views", () => {
     const html = renderToStaticMarkup(<ProjectCalendar projects={[]} initialDate="2026-10-07" />);
-    for (const label of ["Day", "Week", "Month", "Year", "Today", "Previous", "Next"]) {
+    for (const label of ["Tag", "Woche", "Monat", "Jahr", "Heute", "Zurück", "Weiter"]) {
       expect(html).toContain(label);
     }
   });
@@ -47,7 +47,7 @@ describe("project calendar", () => {
     const html = renderToStaticMarkup(
       <ProjectCalendar initialDate="2026-10-07" projects={[project("miltonticket.app")]} />,
     );
-    expect(html).toContain('aria-label="Projects without a regular meeting"');
+    expect(html).toContain('aria-label="Projekte ohne Regeltermin"');
     expect(html).toContain("miltonticket.app");
     expect(html).toContain('data-workjet-action="project.open.calendar:instance:miltonticket.app"');
     expect(html).not.toContain('title="miltonticket.app · ');
@@ -91,9 +91,9 @@ describe("native project session calendar", () => {
           sessions={[session]}
         />,
       );
-      expect(html).toContain("Session (running)");
-      expect(html).toContain('aria-label="Calendar project"');
-      expect(html).toContain("All projects");
+      expect(html).toContain("Sitzung (running)");
+      expect(html).toContain('aria-label="Kalenderprojekt"');
+      expect(html).toContain("Alle Projekte");
     });
   }
   it("marks retained data stale when the native read fails", () => {
@@ -105,6 +105,6 @@ describe("native project session calendar", () => {
         sessionsStatus="unavailable"
       />,
     );
-    expect(html).toContain("Previously loaded sessions may be out of date");
+    expect(html).toContain("Geladene Sitzungen können veraltet sein");
   });
 });

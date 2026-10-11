@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { describeSlowRequests, resolveSlowRequestLocale } from "./SlowRpcRequestToastCoordinator";
+import { describeSlowRequests } from "./SlowRpcRequestToastCoordinator";
 
 const request = {
   requestId: "request-1",
@@ -11,13 +11,16 @@ const request = {
 };
 
 describe("slow request copy", () => {
-  it("uses one language consistently for German and English locales", () => {
-    expect(resolveSlowRequestLocale("de-DE")).toBe("de");
-    expect(resolveSlowRequestLocale("en-US")).toBe("en");
-    expect(describeSlowRequests([request], "de")).toBe("1 Anfrage wartet länger als 15 s.");
-    expect(describeSlowRequests([request, { ...request, requestId: "request-2" }], "de")).toBe(
-      "2 Anfragen warten länger als 15 s.",
+  it("is one German line without a second sentence", () => {
+    expect(describeSlowRequests([request])).toBe("1 Anfrage wartet länger als 15 s");
+    expect(describeSlowRequests([request, { ...request, requestId: "request-2" }])).toBe(
+      "2 Anfragen warten länger als 15 s",
     );
-    expect(describeSlowRequests([request], "en")).toBe("1 request waiting longer than 15s.");
+  });
+
+  it("reports the smallest threshold the batch has passed", () => {
+    expect(describeSlowRequests([request, { ...request, thresholdMs: 5_000 }])).toBe(
+      "2 Anfragen warten länger als 5 s",
+    );
   });
 });

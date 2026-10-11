@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBusinessOsScopedEnvironments } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
-import { ProviderUpdateEnvironmentRows } from "./ProviderUpdateEnvironmentRows";
 import { useLocalEnvironmentUpdateGroups } from "./ProviderUpdateLaunchNotification.environments";
 import {
   collectProviderUpdateCandidates,
@@ -33,9 +32,9 @@ function useHasLocalSecondaryEnvironment(): boolean {
 }
 
 /**
- * The provider update popover. With a WSL backend present it splits the update
- * trigger per environment; without one (the common case) it falls back to the
- * single-prompt flow so non-WSL users see no change.
+ * Provider update toast (one line, one action). With a WSL backend present the
+ * per-environment update lives in Settings › Harnesses and the toast links
+ * there; without one (the common case) the single-prompt flow updates in place.
  */
 export function ProviderUpdateLaunchNotification() {
   const hasLocalSecondary = useHasLocalSecondaryEnvironment();
@@ -164,23 +163,12 @@ function ProviderUpdateEnvironmentsNotification() {
           updateProviders: candidateUnion,
           oneClickProviders: candidateUnion,
         }).title,
-        description: (
-          <ProviderUpdateEnvironmentRows
-            onInteract={() => {
-              hasInteractedRef.current = true;
-              const active = activeToastRef.current;
-              if (active) {
-                toastManager.update(active.toastId, { timeout: 0 });
-              }
-            }}
-          />
-        ),
         timeout: 8_000,
         actionProps: {
-          children: "Settings",
+          children: "Harnesses",
           onClick: openProviderSettings,
         },
-        actionVariant: "outline",
+        actionVariant: "default",
         data: {
           hideCopyButton: true,
           leadingIcon: <DownloadIcon aria-hidden="true" className="size-4 text-success" />,

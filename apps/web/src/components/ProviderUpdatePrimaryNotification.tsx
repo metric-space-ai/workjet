@@ -66,7 +66,8 @@ function updateProviderUpdateToast(input: {
     toastManager.update(input.toastId, {
       type: input.view.type,
       title: input.view.title,
-      description: input.view.description,
+      // Eine Zeile (UI-Vertrag): nur der Titel, keine Erklärzeile.
+      description: undefined,
       timeout: 0,
       // Base UI merges toast updates with the existing toast. Explicitly clear
       // the prompt action so its guarded Update handler cannot linger as a
@@ -87,10 +88,10 @@ function updateProviderUpdateToast(input: {
     stackedThreadToast({
       type: input.view.type,
       title: input.view.title,
-      description: input.view.description,
+      description: undefined,
       timeout: 0,
       actionProps: {
-        children: "Settings",
+        children: "Harnesses",
         onClick: input.openSettings,
       },
       actionVariant: "outline",
@@ -283,20 +284,20 @@ export function ProviderUpdatePrimaryNotification() {
       })();
     };
 
+    // Eine Zeile, eine Aktion: „OpenCode 1.19.0 verfügbar · [Aktualisieren]“.
     toastId = toastManager.add(
       stackedThreadToast({
         type: initialView.type,
         title: initialView.title,
-        description: initialView.description,
         timeout: 8_000,
         actionProps:
           oneClickProviders.length > 0
             ? {
-                children: "Update",
+                children: "Aktualisieren",
                 onClick: runUpdates,
               }
             : {
-                children: "Settings",
+                children: "Harnesses",
                 onClick: openSettings,
               },
         actionVariant: oneClickProviders.length > 0 ? "default" : "outline",
@@ -307,15 +308,6 @@ export function ProviderUpdatePrimaryNotification() {
             ) : undefined,
           hideCopyButton: true,
           onClose: dismissPrompt,
-          ...(oneClickProviders.length > 0
-            ? {
-                secondaryActionProps: {
-                  children: "Settings",
-                  onClick: openSettings,
-                },
-                secondaryActionVariant: "outline" as const,
-              }
-            : {}),
         },
       }),
     );

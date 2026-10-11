@@ -2,6 +2,16 @@ import type { ServerConfigStreamEvent } from "@workjet/contracts";
 
 export const KEYBINDINGS_SUCCESS_TOAST_COOLDOWN_MS = 2_000;
 
+/**
+ * Toast-Texte (UI-Vertrag: eine Zeile, höchstens eine Aktion, keine
+ * Erklärzeile). Der Aufrufer in `__root.tsx` rendert sie als Titel ohne
+ * `description`; die Fehlermeldung der Konfiguration gehört nach Diagnose.
+ */
+export const KEYBINDINGS_UPDATE_TOAST_COPY = {
+  success: { title: "Tastenkürzel neu geladen" },
+  invalid: { title: "Tastenkürzel ungültig", action: "keybindings.json öffnen" },
+} as const;
+
 export type KeybindingsUpdateToastDecision =
   | { readonly _tag: "Success" }
   | { readonly _tag: "InvalidConfiguration"; readonly message: string };

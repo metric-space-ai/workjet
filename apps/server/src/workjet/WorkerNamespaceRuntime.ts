@@ -76,7 +76,11 @@ export const captureWorkerNamespaceRuntime = Effect.fn("captureWorkerNamespaceRu
         header.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]));
       const header = await capture(command);
       if (elf(header)) {
-        if ([spawn.command, command].some((path) => ["node", "nodejs"].includes(NodePath.basename(path)))) {
+        if (
+          [spawn.command, command].some((path) =>
+            ["node", "nodejs"].includes(NodePath.basename(path)),
+          )
+        ) {
           const entry = spawn.args[0];
           if (!entry || !NodePath.isAbsolute(entry) || !/\.(?:c?js|mjs)$/.test(entry))
             throw new Error("Node worker requires an explicit JavaScript entry file");

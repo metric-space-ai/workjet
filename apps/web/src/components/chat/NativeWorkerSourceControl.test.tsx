@@ -8,7 +8,11 @@ import {
   type WorkjetConnectionSummary,
 } from "@workjet/contracts";
 import { withWorkerSourceConnection } from "../../workjetWorkerSourceConnection";
-import { NativeWorkerSourceControl } from "./NativeWorkerSourceControl";
+import {
+  NativeWorkerSourceControl,
+  type WorkerSourceConnectionStatus,
+} from "./NativeWorkerSourceControl";
+import { NativeSupervisorConnectionStatus } from "./NativeSupervisorConnectionStatus";
 
 const state = vi.hoisted(() => ({
   data: { connections: [] as WorkjetConnectionSummary[] },
@@ -67,6 +71,140 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("automatic supervisor worker connection", () => {
+  it("exposes the headless choice in the Supervisor status row and saves the chosen binding", async () => {
+    const replacement = {
+      ...connection,
+      displayName: "Build workers",
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    state.data = { connections: [connection, replacement] };
+    let status: WorkerSourceConnectionStatus | null = null;
+    let savedConfig = props.config;
+    const bindConnection = vi.fn(async (selected: WorkjetConnectionSummary) => {
+      savedConfig = withWorkerSourceConnection(savedConfig, props.instanceId, selected)!;
+      return { _tag: "saved" as const };
+    });
+    const onStatusChange = (next: WorkerSourceConnectionStatus | null) => {
+      status = next;
+    };
+    expect(render({ headless: true, onStatusChange, bindConnection })).toBe("");
+    state.effects.forEach((effect) => effect());
+    const choiceStatus = status as WorkerSourceConnectionStatus | null;
+    expect(choiceStatus?.choice?.connections).toEqual([connection, replacement]);
+    const html = renderToStaticMarkup(
+      <NativeSupervisorConnectionStatus
+        message={choiceStatus?.message ?? null}
+        workerStatus={choiceStatus}
+      />,
+    );
+    expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Choose worker access"');
+    expect(html).not.toContain("Multiple authorized");
+    expect(html).not.toContain("Reconnect");
+    expect(bindConnection).not.toHaveBeenCalled();
+    choiceStatus!.choice!.select(replacement.connectionId);
+    await bindConnection.mock.results[0]!.value;
+    await Promise.resolve();
+    expect(bindConnection).toHaveBeenCalledExactlyOnceWith(replacement);
+    expect(savedConfig.capabilityBindings).toContainEqual({
+      capabilityId: "ctox-business-os",
+      target: {
+        kind: "ctox-connection",
+        connectionId: replacement.connectionId,
+        instanceId: replacement.instanceId,
+      },
+    });
+    expect(provision).not.toHaveBeenCalled();
+    state.effects = [];
+    render({ headless: true, config: savedConfig, onStatusChange });
+    state.effects.forEach((effect) => effect());
+    expect(status).toBeNull();
+  });
+
+  it.each(["unique", "bound"] as const)("keeps the headless %s status row empty", (kind) => {
+    const replacement = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    state.data = { connections: kind === "bound" ? [connection, replacement] : [connection] };
+    const onStatusChange = vi.fn();
+    render({
+      headless: true,
+      config: kind === "bound" ? boundConfig : props.config,
+      onStatusChange,
+    });
+    state.effects.forEach((effect) => effect());
+    expect(onStatusChange).toHaveBeenCalledWith(null);
+    expect(
+      renderToStaticMarkup(<NativeSupervisorConnectionStatus message={null} workerStatus={null} />),
+    ).toBe("");
+  });
+
+  it("excludes foreign and expired access from the headless choice and refuses their IDs", () => {
+    const replacement = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    const foreign = {
+      ...connection,
+      displayName: "Foreign workers",
+      instanceId: "foreign.ctox.dev",
+      connectionId: WorkjetConnectionId.make(
+        "ctox-dev-worker-source:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee:ffffffff-ffff-4fff-8fff-ffffffffffff",
+      ),
+    };
+    const expired = {
+      ...connection,
+      displayName: "Expired workers",
+      status: "needs_auth" as const,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:dddddddd-dddd-4ddd-8ddd-dddddddddddd`,
+      ),
+    };
+    state.data = { connections: [connection, replacement, foreign, expired] };
+    const onStatusChange = vi.fn();
+    render({ headless: true, onStatusChange });
+    state.effects.forEach((effect) => effect());
+    const status = onStatusChange.mock.calls.at(-1)![0] as WorkerSourceConnectionStatus;
+    expect(status.choice?.connections).toEqual([connection, replacement]);
+    const html = renderToStaticMarkup(
+      <NativeSupervisorConnectionStatus message={status.message} workerStatus={status} />,
+    );
+    expect(html).not.toContain("Foreign workers");
+    expect(html).not.toContain("Expired workers");
+    status.choice!.select(foreign.connectionId);
+    status.choice!.select(expired.connectionId);
+    expect(props.bindConnection).not.toHaveBeenCalled();
+    expect(provision).not.toHaveBeenCalled();
+  });
+
+  it("offers ready replacements without requiring login for the expired bound source", () => {
+    const replacements = [
+      "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    ].map((id) => ({
+      ...connection,
+      connectionId: WorkjetConnectionId.make(`ctox-dev-worker-source:${tenant}:${id}`),
+    }));
+    state.data = { connections: [{ ...connection, status: "needs_auth" }, ...replacements] };
+    const onStatusChange = vi.fn();
+    render({ headless: true, config: boundConfig, onStatusChange });
+    state.effects.forEach((effect) => effect());
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authenticationRequired: false,
+        choice: expect.objectContaining({ connections: replacements }),
+      }),
+    );
+    expect(provision).not.toHaveBeenCalled();
+  });
+
   it("reports one authentication recovery status while rendering headlessly", () => {
     state.data = {
       connections: [{ ...connection, status: "needs_auth", reason: "Sign in again." }],

@@ -148,6 +148,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   clearConnectionCatalog: () => ipcRenderer.invoke(IpcChannels.CLEAR_CONNECTION_CATALOG_CHANNEL),
   recoverConnectionCatalog: () =>
     ipcRenderer.invoke(IpcChannels.RECOVER_CONNECTION_CATALOG_CHANNEL),
+  onConnectionCatalogWarning: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on(IpcChannels.CONNECTION_CATALOG_WARNING_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(IpcChannels.CONNECTION_CATALOG_WARNING_CHANNEL, handler);
+  },
   discoverSshHosts: () => ipcRenderer.invoke(IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL),
   discoverTailscalePeers: () => ipcRenderer.invoke(IpcChannels.DISCOVER_TAILSCALE_PEERS_CHANNEL),
   ensureSshEnvironment: async (target, options) =>

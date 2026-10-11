@@ -132,14 +132,11 @@ export const makeWorkerNamespaceTools = (
       Deferred.fail(terminal.done, error("Terminal released")).pipe(
         Effect.andThen(Scope.close(terminal.scope, Exit.void)),
       );
-    const closeAll = Effect.fn("WorkerNamespaceTools.closeAll")(
-      function* () {
-        const owned = [...terminals.values()];
-        terminals.clear();
-        yield* Effect.forEach(owned, close, { discard: true });
-      },
-      Effect.uninterruptible,
-    );
+    const closeAll = Effect.fn("WorkerNamespaceTools.closeAll")(function* () {
+      const owned = [...terminals.values()];
+      terminals.clear();
+      yield* Effect.forEach(owned, close, { discard: true });
+    }, Effect.uninterruptible);
     yield* Effect.addFinalizer(closeAll);
     let admissionFailure: AcpErrors.AcpError | undefined;
     const admit = Effect.fn("WorkerNamespaceTools.admit")(function* () {

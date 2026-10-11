@@ -70,11 +70,11 @@ export const prepareWorkerSourceNamespace = Effect.fn("prepareWorkerSourceNamesp
     Effect.mapError(() => failure("Worker namespace native launcher is unavailable.")),
   );
   const revalidate = async (signal?: AbortSignal) => {
-    const current = () =>
-      readWorkerSourceHarness(input.threadId) === source && !source.isRevoked();
+    const current = () => readWorkerSourceHarness(input.threadId) === source && !source.isRevoked();
     if (!current()) throw failure("Worker namespace original source route is unavailable.");
     await source.admit(signal);
-    if (!current()) throw failure("Worker namespace original source route changed during admission.");
+    if (!current())
+      throw failure("Worker namespace original source route changed during admission.");
   };
   yield* Effect.tryPromise({
     try: revalidate,

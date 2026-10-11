@@ -240,8 +240,7 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                   const held = children.at(-1)!;
                   expect(yield* held.isRunning).toBe(true);
                   const before = owned.admissions();
-                  if (variant === "revoked-source-tools")
-                    yield* Effect.promise(owned.revokeSource);
+                  if (variant === "revoked-source-tools") yield* Effect.promise(owned.revokeSource);
                   else yield* Effect.sync(owned.denySource);
                   if (variant === "expired-source-running") {
                     yield* TestClock.adjust("10 seconds");
@@ -249,12 +248,15 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                   } else {
                     yield* adapter.sendTurn({
                       threadId: owned.input.threadId,
-                      input: variant === "expired-source-cleanup" ? "cleanup-only" : "source-denied",
+                      input:
+                        variant === "expired-source-cleanup" ? "cleanup-only" : "source-denied",
                     });
                   }
                   expect(yield* held.isRunning).toBe(false);
                   expect(owned.admissions() - before).toBe(
-                    variant === "revoked-source-tools" || variant === "expired-source-cleanup" ? 0 : 1,
+                    variant === "revoked-source-tools" || variant === "expired-source-cleanup"
+                      ? 0
+                      : 1,
                   );
                   expect(
                     yield* Effect.tryPromise(() =>

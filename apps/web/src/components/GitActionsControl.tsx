@@ -242,7 +242,7 @@ function formatElapsedDescription(startedAtMs: number | null): string | undefine
   }
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;
-  return `Läuft seit ${minutes} min ${seconds} s`;
+  return `Läuft seit ${minutes} Min. ${seconds} s`;
 }
 
 function resolveProgressDescription(progress: ActiveGitActionProgress): string | undefined {

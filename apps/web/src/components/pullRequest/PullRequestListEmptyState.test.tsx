@@ -1,11 +1,14 @@
 /**
- * Which of the four states wins, and which of them offer to ask the hosts again. The component is
- * called as a plain function and its tree read for text: the elements are walked rather than
- * invoked, so the button's own hooks never run outside a render.
+ * Welcher Leerzustand gewinnt, und dass jeder genau einen Button hat. Die
+ * Komponente wird als Funktion aufgerufen und ihr Baum nach Text gelesen; die
+ * Elemente werden nur durchlaufen, nie gerendert.
  */
 import { isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
+import { Button } from "../ui/button";
+import { PULL_REQUEST_LIST_LOADING_TIMEOUT_MS, PullRequestListLoading } from "./PullRequestGhosts";
 import { PullRequestListEmptyState } from "./PullRequestListEmptyState";
 
 function textOf(node: ReactNode): string {
@@ -13,6 +16,13 @@ function textOf(node: ReactNode): string {
   if (Array.isArray(node)) return node.map(textOf).join(" ");
   if (!isValidElement(node)) return "";
   return textOf((node as ReactElement<{ children?: ReactNode }>).props.children);
+}
+
+function countButtons(node: ReactNode): number {
+  if (Array.isArray(node)) return node.reduce((sum: number, child) => sum + countButtons(child), 0);
+  if (!isValidElement(node)) return 0;
+  const self = node.type === Button ? 1 : 0;
+  return self + countButtons((node as ReactElement<{ children?: ReactNode }>).props.children);
 }
 
 const baseProps = {
@@ -28,27 +38,52 @@ const baseProps = {
   onRefresh: () => {},
 };
 
+function tree(props: Partial<typeof baseProps>): ReactNode {
+  return PullRequestListEmptyState({ ...baseProps, ...props });
+}
+
 function render(props: Partial<typeof baseProps>): string {
-  return textOf(PullRequestListEmptyState({ ...baseProps, ...props }));
+  return textOf(tree(props));
 }
 
 describe("PullRequestListEmptyState", () => {
-  it("asks for a project ahead of anything a search or a filter could say", () => {
+  it("fragt zuerst nach einem Projekt, vor Suche und Filter", () => {
     const text = render({ hasProjects: false, searching: true, query: "fix", filtered: true });
-    expect(text).toContain("No projects in this workspace");
-    expect(text).toContain("Add project");
+    expect(text).toContain("Keine Projekte");
+    expect(text).toContain("Projekt hinzufügen");
   });
 
-  it("leaves the retry off the states where asking again could not change the answer", () => {
-    expect(render({ hasProjects: false })).not.toContain("Check again");
-    expect(render({ searching: true, query: "fix" })).not.toContain("Check again");
+  it("zeigt bei laufender Suche das Laden mit Frist statt eines Leerzustands", () => {
+    const node = tree({ searching: true, query: "fix" });
+    expect(isValidElement(node) && node.type === PullRequestListLoading).toBe(true);
   });
 
-  it("offers the retry once the hosts have answered", () => {
-    expect(render({})).toContain("Check again");
-    expect(render({ filtered: true })).toContain("Check again");
-    expect(render({ query: "fix" })).toContain("Check again");
-    expect(render({ canLoadMore: true })).toContain("Load more pull requests");
-    expect(render({ refreshing: true })).toContain("Checking...");
+  it("hat in jedem Leerzustand genau einen Button", () => {
+    for (const props of [
+      { hasProjects: false },
+      {},
+      { filtered: true },
+      { query: "fix" },
+      { canLoadMore: true },
+    ]) {
+      expect(countButtons(tree(props))).toBe(1);
+    }
+  });
+
+  it("bietet nach der Antwort der Hosts genau die passende Aktion", () => {
+    expect(render({})).toContain("Erneut prüfen");
+    expect(render({ filtered: true })).toContain("Keine Treffer mit Filter");
+    expect(render({ query: "fix" })).toContain("Suche löschen");
+    expect(render({ canLoadMore: true })).toContain("Mehr laden");
+    expect(render({ refreshing: true })).toContain("Prüft …");
+  });
+});
+
+describe("PullRequestListLoading", () => {
+  it("zeigt zuerst Platzhalterzeilen und endet nach 10 s (UI-Vertrag §1.3)", () => {
+    expect(PULL_REQUEST_LIST_LOADING_TIMEOUT_MS).toBe(10_000);
+    const html = renderToStaticMarkup(<PullRequestListLoading rows={3} onRetry={() => {}} />);
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain("Erneut versuchen");
   });
 });

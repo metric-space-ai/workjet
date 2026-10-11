@@ -46,21 +46,21 @@ export function resolvePullRequestState(input: {
 }): StatePresentation {
   if (input.state === "merged") {
     return {
-      label: "Merged",
+      label: "Zusammengeführt",
       toneClassName: "text-violet-600 dark:text-violet-300/90",
       Icon: GitMergeIcon,
     };
   }
   if (input.state === "closed") {
     return {
-      label: "Closed",
+      label: "Geschlossen",
       toneClassName: "text-red-600 dark:text-red-300/90",
       Icon: GitPullRequestClosedIcon,
     };
   }
   if (input.isDraft) {
     return {
-      label: "Draft",
+      label: "Entwurf",
       toneClassName: "text-zinc-500 dark:text-zinc-400/80",
       Icon: GitPullRequestDraftIcon,
     };
@@ -69,13 +69,13 @@ export function resolvePullRequestState(input: {
     return {
       // "Has conflicts" leaves out the one thing a reader wants when the warning triangle catches
       // their eye, so name the branch it collides with wherever the caller knows it.
-      label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
+      label: input.baseBranch ? `Konflikt mit ${input.baseBranch}` : "Konflikt",
       toneClassName: "text-destructive",
       Icon: TriangleAlertIcon,
     };
   }
   return {
-    label: "Open",
+    label: "Offen",
     toneClassName: "text-emerald-600 dark:text-emerald-300/90",
     Icon: GitPullRequestIcon,
   };
@@ -117,15 +117,19 @@ export function PullRequestStateGlyph({
 }
 
 const CHECK_STATUS_PRESENTATION = {
-  pending: { label: "Running", Icon: LoaderIcon, toneClassName: "animate-spin text-amber-500" },
+  pending: { label: "Läuft", Icon: LoaderIcon, toneClassName: "animate-spin text-amber-500" },
   success: {
-    label: "Passed",
+    label: "Bestanden",
     Icon: CircleCheckIcon,
     toneClassName: "text-emerald-600 dark:text-emerald-300/90",
   },
-  failure: { label: "Failed", Icon: CircleXIcon, toneClassName: "text-destructive" },
-  cancelled: { label: "Cancelled", Icon: CircleXIcon, toneClassName: "text-destructive" },
-  skipped: { label: "Skipped", Icon: CircleDashedIcon, toneClassName: "text-muted-foreground/70" },
+  failure: { label: "Fehlgeschlagen", Icon: CircleXIcon, toneClassName: "text-destructive" },
+  cancelled: { label: "Abgebrochen", Icon: CircleXIcon, toneClassName: "text-destructive" },
+  skipped: {
+    label: "Übersprungen",
+    Icon: CircleDashedIcon,
+    toneClassName: "text-muted-foreground/70",
+  },
   neutral: { label: "Neutral", Icon: CircleDashedIcon, toneClassName: "text-muted-foreground/70" },
 } as const satisfies Record<
   PullRequestCheckStatus,
@@ -152,17 +156,17 @@ export function PullRequestCheckStatusIcon({ status }: { status: PullRequestChec
  */
 const CHECKS_STATE_PRESENTATION = {
   passing: {
-    label: "All checks have passed",
+    label: "Checks bestanden",
     Icon: CircleCheckIcon,
     toneClassName: "text-emerald-600 dark:text-emerald-300/90",
   },
   failing: {
-    label: "Some checks were not successful",
+    label: "Checks fehlgeschlagen",
     Icon: CircleXIcon,
     toneClassName: "text-destructive",
   },
   pending: {
-    label: "Some checks haven't completed yet",
+    label: "Checks laufen",
     Icon: CircleDotIcon,
     toneClassName: "text-amber-600 dark:text-amber-400/90",
   },
@@ -304,13 +308,13 @@ export function PullRequestMetaLine({
 }
 
 export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
-  if (checks.length === 0) return "No checks reported";
+  if (checks.length === 0) return "Keine Checks";
   const failed = checks.filter(
     (check) => check.status === "failure" || check.status === "cancelled",
   ).length;
   const pending = checks.filter((check) => check.status === "pending").length;
   const passed = checks.filter((check) => check.status === "success").length;
-  if (failed > 0) return `${failed} of ${checks.length} failing`;
-  if (pending > 0) return `${pending} of ${checks.length} running`;
-  return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
+  if (failed > 0) return `${failed} von ${checks.length} fehlgeschlagen`;
+  if (pending > 0) return `${pending} von ${checks.length} laufen`;
+  return passed === checks.length ? "Alle bestanden" : `${passed} von ${checks.length} bestanden`;
 }

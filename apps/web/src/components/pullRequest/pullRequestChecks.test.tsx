@@ -1,12 +1,11 @@
 import type { EnvironmentId, ProjectId, PullRequestCheck } from "@workjet/contracts";
-import { Children, isValidElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
+import { PullRequestChecksList } from "./PullRequestChecksPopover";
 import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
-import { PullRequestRow } from "./PullRequestRow";
+import { PullRequestRow, pullRequestRowStatus } from "./PullRequestRow";
 import { pullRequestChecksState } from "./pullRequestPresentation";
-import { PopoverTrigger } from "../ui/popover";
 
 function check(status: PullRequestCheck["status"]): PullRequestCheck {
   return { name: `check-${status}`, status, description: null, url: null };
@@ -25,17 +24,6 @@ describe("pullRequestChecksState", () => {
     expect(pullRequestChecksState([])).toBe(null);
   });
 });
-
-/** Every element of the tree the row returned, so a nested indicator can be looked for. */
-function flatten(node: ReactNode): ReadonlyArray<ReturnType<typeof Object>> {
-  const found: unknown[] = [];
-  for (const child of Children.toArray(node)) {
-    if (!isValidElement(child)) continue;
-    found.push(child);
-    found.push(...flatten((child.props as { readonly children?: ReactNode }).children));
-  }
-  return found as ReadonlyArray<ReturnType<typeof Object>>;
-}
 
 function entry(overrides: Partial<EnvironmentPullRequestEntry>): EnvironmentPullRequestEntry {
   return {
@@ -62,44 +50,58 @@ function entry(overrides: Partial<EnvironmentPullRequestEntry>): EnvironmentPull
   } as EnvironmentPullRequestEntry;
 }
 
-function row(overrides: Partial<EnvironmentPullRequestEntry>): ReactNode {
-  return PullRequestRow.type({
-    entry: entry(overrides),
-    selected: false,
-    showProjectTitle: false,
-    showProvider: false,
-    onSelect: () => {},
-  });
+function row(overrides: Partial<EnvironmentPullRequestEntry>): string {
+  return renderToStaticMarkup(
+    <PullRequestRow
+      entry={entry(overrides)}
+      selected={false}
+      showProjectTitle={false}
+      showProvider={false}
+      onSelect={() => {}}
+    />,
+  );
 }
 
-describe("PullRequestRow checks indicator", () => {
-  function indicators(node: ReactNode): number {
-    return flatten(node).filter(
-      (element) => (element as { type?: unknown }).type === PullRequestChecksPopover,
-    ).length;
-  }
+describe("PullRequestRow als Zeile", () => {
+  it("zeigt den Checks-Chip nur, wenn der Host einen Sammelstatus meldet", () => {
+    expect(row({ checksState: "failing" })).toContain('data-slot="pull-request-checks-chip"');
+    expect(row({})).not.toContain('data-slot="pull-request-checks-chip"');
+  });
 
-  it("shows the indicator only for a row the host reported a rollup for", () => {
-    expect(indicators(row({ checksState: "failing" }))).toBe(1);
-    expect(indicators(row({}))).toBe(0);
+  it("trägt Statuspunkt, Nummer, Titel und Branch als Meta", () => {
+    const html = row({ checksState: "passing" });
+    expect(html).toContain('data-slot="row-status"');
+    expect(html).toContain("#1");
+    expect(html).toContain("Add the pull requests page");
+    expect(html).toContain('data-slot="row-meta"');
+    expect(html).toContain("feat/page");
+  });
+
+  it("klappt die Checks inline auf statt in einem Popover", () => {
+    const html = row({ checksState: "passing" });
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('data-slot="pull-request-checks-list"');
+    expect(html).not.toContain("popover");
+  });
+
+  it("setzt den Statuspunkt nach Zustand", () => {
+    expect(pullRequestRowStatus({ state: "open", isDraft: false })).toBe("ok");
+    expect(pullRequestRowStatus({ state: "open", isDraft: true })).toBe("busy");
+    expect(
+      pullRequestRowStatus({ state: "open", isDraft: false, mergeability: "conflicting" }),
+    ).toBe("error");
+    expect(pullRequestRowStatus({ state: "merged", isDraft: false })).toBe("off");
+    expect(pullRequestRowStatus({ state: "closed", isDraft: false })).toBe("off");
   });
 });
 
-describe("PullRequestChecksPopover trigger", () => {
-  it("declares non-native button semantics for its span trigger", () => {
-    const tree = PullRequestChecksPopover({ checksState: "passing", checks: [] });
-    const trigger = flatten(tree).find(
-      (element) => (element as { type?: unknown }).type === PopoverTrigger,
-    ) as
-      | {
-          props?: {
-            nativeButton?: boolean;
-            render?: { type?: unknown };
-          };
-        }
-      | undefined;
-
-    expect(trigger?.props?.nativeButton).toBe(false);
-    expect(trigger?.props?.render?.type).toBe("span");
+describe("PullRequestChecksList", () => {
+  it("listet mitgegebene Checks inline, ohne zu lesen", () => {
+    const html = renderToStaticMarkup(
+      <PullRequestChecksList checks={[check("success"), check("failure")]} />,
+    );
+    expect(html.match(/data-slot="pull-request-check"/g)?.length).toBe(2);
+    expect(html).toContain("Bestanden");
+    expect(html).toContain("Fehlgeschlagen");
   });
 });

@@ -276,6 +276,29 @@ fn parse_api_quota(
                     .flatten();
                 result.push(QuotaWindow {
                     name: format!("{model}_{period}"),
+                    source: Some(QuotaSource {
+                        field: percent.into(),
+                        value: remaining,
+                        window_seconds: item
+                            .get(reset)
+                            .and_then(|v| v.as_i64())
+                            .zip(
+                                item.get(if period == "weekly" {
+                                    "weekly_start_time"
+                                } else {
+                                    "start_time"
+                                })
+                                .and_then(|v| v.as_i64()),
+                            )
+                            .and_then(|(end, start)| end.checked_sub(start))
+                            .filter(|duration| *duration > 0 && duration % 1000 == 0)
+                            .and_then(|duration| u64::try_from(duration / 1000).ok()),
+                        status: item
+                            .get(status)
+                            .and_then(|v| v.as_u64())
+                            .and_then(|v| u32::try_from(v).ok()),
+                        ..Default::default()
+                    }),
                     model_pattern: (model != "general").then(|| model.to_owned()),
                     tool_only: !llm,
                     not_in_plan: no_bucket,
@@ -316,10 +339,26 @@ fn parse_api_quota(
                 .filter(|v| (0.0..=100.0).contains(v));
             result.push(QuotaWindow {
                 name: format!("{kind}_{index}"),
+                source: Some(QuotaSource {
+                    field: "percentage".into(),
+                    value: used,
+                    unit: item
+                        .get("unit")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| u32::try_from(v).ok()),
+                    number: item
+                        .get("number")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| u32::try_from(v).ok()),
+                    ..Default::default()
+                }),
                 tool_only: kind != "TOKENS_LIMIT",
                 remaining_percent: used.map(|v| 100.0 - v),
-                // Vendor contract does not establish reset timestamp semantics.
-                resets_at_ms: None,
+                // Qualified provider readings report nextResetTime as epoch milliseconds.
+                resets_at_ms: item
+                    .get("nextResetTime")
+                    .and_then(|v| v.as_i64())
+                    .filter(|v| *v > 0),
                 observed_at_ms: observed,
                 ..Default::default()
             });
@@ -373,7 +412,7 @@ mod provenance_tests {
 use crate::{
     account_policy::{
         balance_is_exhausted, is_model_not_found_cooldown, quota_is_exhausted, AccountBalance,
-        AccountState, QuotaWindow,
+        AccountState, QuotaSource, QuotaWindow,
     },
     secret_store::WorkjetSecretStore,
 };
@@ -738,6 +777,15 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
                 .and_then(|v| v.checked_mul(1000));
             windows.push(QuotaWindow {
                 name: name.into(),
+                source: Some(QuotaSource {
+                    field: "used_percent".into(),
+                    value: used,
+                    window_seconds: window
+                        .get("limit_window_seconds")
+                        .and_then(|v| v.as_u64())
+                        .filter(|v| *v > 0),
+                    ..Default::default()
+                }),
                 remaining_percent: used.map(|v| 100.0 - v),
                 resets_at_ms: reset,
                 observed_at_ms: observed,
@@ -765,6 +813,12 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
                 .map(|v| v.timestamp_millis());
             windows.push(QuotaWindow {
                 name: name.into(),
+                source: Some(QuotaSource {
+                    field: "utilization".into(),
+                    value: used,
+                    window_seconds: Some(if name == "five_hour" { 18_000 } else { 604_800 }),
+                    ..Default::default()
+                }),
                 remaining_percent: used.map(|v| 100.0 - v),
                 resets_at_ms: reset,
                 observed_at_ms: observed,

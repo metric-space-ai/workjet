@@ -17,9 +17,11 @@ it does not establish a pay-as-you-go inference failure.
 
 Z.ai uses the raw key in Authorization at `/api/monitor/usage/quota/limit`.
 TOKENS_LIMIT percentage is used percentage; TIME_LIMIT is MCP/tool quota.
-Only TOKENS_LIMIT affects LLM selection. Reset semantics and CREDIT_LIMIT scope
-are not established by the inspected vendor contract, so reset stays unknown
-and unrecognized scopes do not block inference.
+Only TOKENS_LIMIT affects LLM selection. Raw unit/number and the qualified
+nextResetTime epoch-millisecond reset are retained. The renderer owns window
+qualification; unknown unit encodings stay unknown. CREDIT_LIMIT scope remains
+unestablished, so unrecognized scopes do not block inference.
+
 
 Probe and parse failures report quota errors without rejecting inference
 authentication. Positive readings expire for display; known exhausted windows

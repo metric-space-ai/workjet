@@ -85,8 +85,23 @@ export function DeepLinkConfirmationDialog({
 }
 
 /**
+ * Das Ziel eines Links als Ort, nie als rohe URL (UI-Vertrag §2):
+ * Einstellungen, Pull Requests, neue Unterhaltung, Unterhaltung, Projekte.
+ */
+export function describeDeepLinkTarget(path: string): string {
+  const segments = path.split("/").filter((segment) => segment.length > 0);
+  const [first] = segments;
+  if (!first) return "Projekte";
+  if (first === "settings") return "Einstellungen";
+  if (first === "pull-requests") return "Pull Requests";
+  if (first === "draft") return "Neue Unterhaltung";
+  if (segments.length >= 2) return "Unterhaltung";
+  return "Workjet";
+}
+
+/**
  * Presentational half: an inline bar under the header (no modal) with the
- * canonical target and nothing else. It never navigates on its own — the
+ * target place and nothing else. It never navigates on its own — the
  * caller's `onConfirm` does.
  */
 export function DeepLinkConfirmationPrompt({
@@ -108,7 +123,7 @@ export function DeepLinkConfirmationPrompt({
         cancel: "deep-link-dismiss",
       }}
       question="Externen Link öffnen?"
-      target={link.canonicalUrl}
+      target={describeDeepLinkTarget(link.path)}
       onCancel={onDismiss}
       onConfirm={onConfirm}
     />

@@ -31,12 +31,6 @@ export interface GitQuickAction {
   hint?: string;
 }
 
-export interface DefaultBranchActionDialogCopy {
-  title: string;
-  description: string;
-  continueLabel: string;
-}
-
 export type DefaultBranchConfirmableAction =
   | "push"
   | "create_pr"
@@ -61,8 +55,10 @@ export function buildGitActionProgressStages(input: {
   terminology?: ChangeRequestTerminology;
 }): string[] {
   const terminology = input.terminology ?? DEFAULT_CHANGE_REQUEST_TERMINOLOGY;
-  const branchStages = input.featureBranch ? ["Feature-Ref wird vorbereitet …"] : [];
-  const pushStage = input.pushTarget ? `Push nach ${input.pushTarget} …` : "Push läuft …";
+  const branchStages = input.featureBranch ? ["Zweig wird angelegt …"] : [];
+  const pushStage = input.pushTarget
+    ? `Hochladen nach ${input.pushTarget} …`
+    : "Wird hochgeladen …";
   const prStages = [
     `${terminology.shortLabel} wird vorbereitet …`,
     `${terminology.shortLabel}-Inhalt wird erzeugt …`,
@@ -80,8 +76,8 @@ export function buildGitActionProgressStages(input: {
   const commitStages = !shouldIncludeCommitStages
     ? []
     : input.hasCustomCommitMessage
-      ? ["Commit läuft …"]
-      : ["Commit-Nachricht wird erzeugt …", "Commit läuft …"];
+      ? ["Wird übernommen …"]
+      : ["Nachricht wird erzeugt …", "Wird übernommen …"];
   if (input.action === "commit") {
     return [...branchStages, ...commitStages];
   }
@@ -124,7 +120,7 @@ export function buildMenuItems(
 
   const commitItem: GitActionMenuItem = {
     id: "commit",
-    label: "Commit",
+    label: "Übernehmen",
     disabled: !canCommit,
     icon: "commit",
     kind: "open_dialog",
@@ -139,7 +135,7 @@ export function buildMenuItems(
     commitItem,
     {
       id: "push",
-      label: "Push",
+      label: "Hochladen",
       disabled: !canPush,
       icon: "push",
       kind: "open_dialog",
@@ -171,12 +167,12 @@ export function resolveQuickAction(
   hasPrimaryRemote = true,
 ): GitQuickAction {
   if (isBusy) {
-    return { label: "Commit", disabled: true, kind: "show_hint", hint: "Git-Aktion läuft." };
+    return { label: "Übernehmen", disabled: true, kind: "show_hint", hint: "Git-Aktion läuft." };
   }
 
   if (!gitStatus) {
     return {
-      label: "Commit",
+      label: "Übernehmen",
       disabled: true,
       kind: "show_hint",
       hint: "Git-Zustand nicht verfügbar.",
@@ -194,22 +190,27 @@ export function resolveQuickAction(
 
   if (!hasBranch) {
     return {
-      label: "Commit",
+      label: "Übernehmen",
       disabled: true,
       kind: "show_hint",
-      hint: "Erst Branch anlegen.",
+      hint: "Erst Zweig anlegen.",
     };
   }
 
   if (hasChanges) {
     if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
-      return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
+      return { label: "Übernehmen", disabled: false, kind: "run_action", action: "commit" };
     }
     if (hasOpenPr || isDefaultRef) {
-      return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
+      return {
+        label: "Übernehmen & hochladen",
+        disabled: false,
+        kind: "run_action",
+        action: "commit_push",
+      };
     }
     return {
-      label: `Commit, push & ${terminology.shortLabel}`,
+      label: `Übernehmen, hochladen & ${terminology.shortLabel}`,
       disabled: false,
       kind: "run_action",
       action: "commit_push_pr",
@@ -222,7 +223,7 @@ export function resolveQuickAction(
         return { label: `${terminology.shortLabel} ansehen`, disabled: false, kind: "open_pr" };
       }
       return {
-        label: "Repository veröffentlichen",
+        label: "Veröffentlichen",
         disabled: false,
         kind: "open_publish",
       };
@@ -232,22 +233,22 @@ export function resolveQuickAction(
         return { label: `${terminology.shortLabel} ansehen`, disabled: false, kind: "open_pr" };
       }
       return {
-        label: "Push",
+        label: "Hochladen",
         disabled: true,
         kind: "show_hint",
-        hint: "Keine lokalen Commits.",
+        hint: "Nichts zum Hochladen.",
       };
     }
     if (hasOpenPr || isDefaultRef) {
       return {
-        label: "Push",
+        label: "Hochladen",
         disabled: false,
         kind: "run_action",
         action: isDefaultRef ? "commit_push" : "push",
       };
     }
     return {
-      label: `Push & ${terminology.shortLabel} erstellen`,
+      label: `Hochladen & ${terminology.shortLabel} erstellen`,
       disabled: false,
       kind: "run_action",
       action: "create_pr",
@@ -256,16 +257,16 @@ export function resolveQuickAction(
 
   if (isDiverged) {
     return {
-      label: "Ref abgleichen",
+      label: "Abgleichen",
       disabled: true,
       kind: "show_hint",
-      hint: "Branch weicht ab, erst Rebase/Merge.",
+      hint: "Zweig weicht ab, erst zusammenführen.",
     };
   }
 
   if (isBehind) {
     return {
-      label: "Pull",
+      label: "Herunterladen",
       disabled: false,
       kind: "run_pull",
     };
@@ -274,14 +275,14 @@ export function resolveQuickAction(
   if (isAhead) {
     if (hasOpenPr || isDefaultRef) {
       return {
-        label: "Push",
+        label: "Hochladen",
         disabled: false,
         kind: "run_action",
         action: isDefaultRef ? "commit_push" : "push",
       };
     }
     return {
-      label: `Push & ${terminology.shortLabel} erstellen`,
+      label: `Hochladen & ${terminology.shortLabel} erstellen`,
       disabled: false,
       kind: "run_action",
       action: "create_pr",
@@ -302,10 +303,10 @@ export function resolveQuickAction(
   }
 
   return {
-    label: "Commit",
+    label: "Übernehmen",
     disabled: true,
     kind: "show_hint",
-    hint: "Branch ist aktuell.",
+    hint: "Zweig ist aktuell.",
   };
 }
 
@@ -322,43 +323,10 @@ export function requiresDefaultBranchConfirmation(
   );
 }
 
-export function resolveDefaultBranchActionDialogCopy(input: {
-  action: DefaultBranchConfirmableAction;
-  branchName: string;
-  includesCommit: boolean;
-  terminology?: ChangeRequestTerminology;
-}): DefaultBranchActionDialogCopy {
-  const branchLabel = input.branchName;
-  const suffix = ` on "${branchLabel}". You can continue on this ref or create a feature ref and run the same action there.`;
-  const terminology = input.terminology ?? DEFAULT_CHANGE_REQUEST_TERMINOLOGY;
-
-  if (input.action === "push" || input.action === "commit_push") {
-    if (input.includesCommit) {
-      return {
-        title: "Commit & push to default ref?",
-        description: `This action will commit and push changes${suffix}`,
-        continueLabel: `Commit & push to ${branchLabel}`,
-      };
-    }
-    return {
-      title: "Push to default ref?",
-      description: `This action will push local commits${suffix}`,
-      continueLabel: `Push to ${branchLabel}`,
-    };
-  }
-
-  if (input.includesCommit) {
-    return {
-      title: `Commit, push & create ${terminology.shortLabel} from default ref?`,
-      description: `This action will commit, push, and create a ${terminology.singular}${suffix}`,
-      continueLabel: `Commit, push & create ${terminology.shortLabel}`,
-    };
-  }
-  return {
-    title: `Push & create ${terminology.shortLabel} from default ref?`,
-    description: `This action will push local commits and create a ${terminology.singular}${suffix}`,
-    continueLabel: `Push & create ${terminology.shortLabel}`,
-  };
+/** Der Ordnername des Arbeitsverzeichnisses als Repository-Name. */
+export function repositoryNameFromPath(path: string): string {
+  const segments = path.split(/[\\/]/u).filter((segment) => segment.length > 0);
+  return (segments.at(-1) ?? "").replace(/[^A-Za-z0-9._-]+/gu, "-");
 }
 
 export function resolveThreadBranchUpdate(

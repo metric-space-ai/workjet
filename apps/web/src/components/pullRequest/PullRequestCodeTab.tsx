@@ -845,7 +845,7 @@ export function PullRequestCodeTab({
             kind="draft"
             rangeLabel={`${draft.path}:${draft.line}`}
             text=""
-            submitLabel="Zum Review hinzufügen"
+            submitLabel="Zur Prüfung hinzufügen"
             {...(onAskAboutSelection
               ? {
                   secondaryAction: {
@@ -904,7 +904,7 @@ export function PullRequestCodeTab({
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Review schließen"
+              aria-label="Prüfung schließen"
               className="absolute right-2 top-2"
               onClick={() => setReviewOpen(false)}
             >
@@ -931,7 +931,7 @@ export function PullRequestCodeTab({
             <MessageSquareIcon className="size-3.5" />
             Review
             {pendingComments.length > 0 ? (
-              <span className="flex size-4 items-center justify-center rounded-full bg-accent text-[10px] tabular-nums text-accent-foreground">
+              <span className="flex size-4 items-center justify-center rounded-full bg-accent text-[11px] tabular-nums text-accent-foreground">
                 {pendingComments.length}
               </span>
             ) : null}

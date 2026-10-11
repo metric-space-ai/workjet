@@ -69,7 +69,7 @@ export function UserDataMigrationDialog() {
   );
 }
 
-/** Presentational half: one line under the header, „Überspringen“ and „Importieren“. */
+/** Presentational half: one line under the header, „Importieren“ and „Überspringen“. */
 export function UserDataMigrationBanner({
   offer,
   isResponding,
@@ -95,6 +95,15 @@ export function UserDataMigrationBanner({
       actions={
         <>
           <Button
+            data-user-data-migration-accept=""
+            disabled={isResponding}
+            size="sm"
+            type="button"
+            onClick={() => onRespond(true)}
+          >
+            {failed ? "Erneut importieren" : "Importieren"}
+          </Button>
+          <Button
             data-user-data-migration-decline=""
             disabled={isResponding}
             size="sm"
@@ -104,22 +113,15 @@ export function UserDataMigrationBanner({
           >
             Überspringen
           </Button>
-          <Button
-            data-user-data-migration-accept=""
-            disabled={isResponding}
-            size="sm"
-            type="button"
-            onClick={() => onRespond(true)}
-          >
-            {failed ? "Erneut importieren" : "Importieren"}
-          </Button>
         </>
       }
+      bodyClassName="min-w-[min(100%,18rem)]"
+      className="flex-wrap"
       icon={failed ? TriangleAlertIcon : FolderInputIcon}
       label={line}
       tone={failed ? "destructive" : "neutral"}
     >
-      <span className="min-w-0 truncate" role={failed ? "alert" : undefined} title={line}>
+      <span className="min-w-0 break-words" role={failed ? "alert" : undefined}>
         {line}
       </span>
     </InlineNoticeRow>

@@ -95,7 +95,7 @@ export function PullRequestSearchInput({
         type="text"
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
-        placeholder="Suchen, z. B. label:bug"
+        placeholder="Suchen"
         aria-label="Pull Requests durchsuchen"
         // Tracks the shared input's height at both widths, so it stays level with the icon
         // button beside it rather than towering over it on wide screens.
@@ -137,8 +137,8 @@ const REVIEW_OPTIONS = [
   { value: UNFILTERED_VALUE, label: "Alle", Icon: LayersIcon },
   { value: "approved", label: "Freigegeben", Icon: CircleCheckIcon },
   { value: "changes-requested", label: "Änderungen angefragt", Icon: CircleXIcon },
-  { value: "review-required", label: "Review offen", Icon: CircleDashedIcon },
-  { value: "none", label: "Ohne Review", Icon: CircleSlashIcon },
+  { value: "review-required", label: "Prüfung offen", Icon: CircleDashedIcon },
+  { value: "none", label: "Ohne Prüfung", Icon: CircleSlashIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 
 const CHECKS_OPTIONS = [
@@ -309,14 +309,14 @@ export function PullRequestFiltersMenu({
         />
         <MenuSeparator />
         <PullRequestFilterRadioGroup
-          label="Review"
+          label="Prüfung"
           value={filters.review ?? UNFILTERED_VALUE}
           options={REVIEW_OPTIONS}
           onChange={(next) => onFilters(withFilter("review", next))}
         />
         <MenuSeparator />
         <PullRequestFilterRadioGroup
-          label="Checks"
+          label="Prüfungen"
           value={filters.checks ?? UNFILTERED_VALUE}
           options={CHECKS_OPTIONS}
           onChange={(next) => onFilters(withFilter("checks", next))}
@@ -401,7 +401,7 @@ export function PullRequestFiltersMenu({
                     />
                     <span className="min-w-0 flex-1 truncate">{project.title}</span>
                     {reason === undefined ? null : (
-                      <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400/90">
+                      <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[11px] font-medium text-amber-600 dark:text-amber-400/90">
                         Nicht verfügbar
                       </span>
                     )}

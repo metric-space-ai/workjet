@@ -46,6 +46,7 @@ describe("user data migration banner", () => {
     ).actions.props.children;
     actions[0]?.props.onClick();
     actions[1]?.props.onClick();
-    expect(answers).toEqual([false, true]);
+    // Eine Knopfreihenfolge überall: [Importieren] [Überspringen].
+    expect(answers).toEqual([true, false]);
   });
 });

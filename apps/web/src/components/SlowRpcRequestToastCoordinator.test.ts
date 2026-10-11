@@ -12,15 +12,15 @@ const request = {
 
 describe("slow request copy", () => {
   it("is one German line without a second sentence", () => {
-    expect(describeSlowRequests([request])).toBe("1 Anfrage wartet länger als 15 s");
+    expect(describeSlowRequests([request])).toBe("1 Anfrage wartet länger als 15\u00a0s");
     expect(describeSlowRequests([request, { ...request, requestId: "request-2" }])).toBe(
-      "2 Anfragen warten länger als 15 s",
+      "2 Anfragen warten länger als 15\u00a0s",
     );
   });
 
   it("reports the smallest threshold the batch has passed", () => {
     expect(describeSlowRequests([request, { ...request, thresholdMs: 5_000 }])).toBe(
-      "2 Anfragen warten länger als 5 s",
+      "2 Anfragen warten länger als 5\u00a0s",
     );
   });
 });

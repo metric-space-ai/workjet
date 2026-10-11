@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { InlineConfirmBarProps } from "../InlineNoticeSlot";
-import { DeepLinkConfirmationPrompt } from "./DeepLinkConfirmationDialog";
+import { DeepLinkConfirmationPrompt, describeDeepLinkTarget } from "./DeepLinkConfirmationDialog";
 
 const link: DesktopPendingDeepLink = {
   linkId: "deep-link-1",
@@ -16,7 +16,15 @@ const link: DesktopPendingDeepLink = {
 };
 
 describe("DeepLinkConfirmationPrompt", () => {
-  it("asks inline (no modal) and shows the canonical target the confirmation applies to", () => {
+  it("names the target as a place, never as a raw URL", () => {
+    expect(describeDeepLinkTarget("/")).toBe("Projekte");
+    expect(describeDeepLinkTarget("/settings/usage")).toBe("Einstellungen");
+    expect(describeDeepLinkTarget("/pull-requests")).toBe("Pull Requests");
+    expect(describeDeepLinkTarget("/draft/abc")).toBe("Neue Unterhaltung");
+    expect(describeDeepLinkTarget("/env-1/thread-1")).toBe("Unterhaltung");
+  });
+
+  it("asks inline (no modal) and shows the target place the confirmation applies to", () => {
     const markup = renderToStaticMarkup(
       <DeepLinkConfirmationPrompt
         link={link}
@@ -27,7 +35,8 @@ describe("DeepLinkConfirmationPrompt", () => {
 
     expect(markup).toContain("data-deep-link-confirmation");
     expect(markup).toContain("Externen Link öffnen?");
-    expect(markup).toMatch(/data-deep-link-target[^>]*>workjet:\/\/app\/threads\/abc\?tab=diff</);
+    expect(markup).toMatch(/data-deep-link-target[^>]*>Unterhaltung</);
+    expect(markup).not.toContain("workjet://");
     expect(markup).toContain(">Öffnen<");
     expect(markup).toContain(">Abbrechen<");
     expect(markup).not.toContain('role="dialog"');

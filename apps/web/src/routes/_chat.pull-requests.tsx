@@ -1329,7 +1329,7 @@ function PullRequestsRouteView() {
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
           title="Pull Requests nicht verfügbar"
-          error="CTOX-Server aktualisieren"
+          error="Instanz aktualisieren"
         />
       ) : firstLoad ? (
         <PullRequestListLoading rows={7} onRetry={() => void refreshFromHost()} />

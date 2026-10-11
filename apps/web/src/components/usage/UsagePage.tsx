@@ -1,29 +1,30 @@
 import type { UsageProviderKind } from "@workjet/contracts";
-import { CheckIcon, RefreshCwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckIcon, ClockIcon, RefreshCwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@workjet/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
-import {
-  enumerateDays,
-  enumerateHourStarts,
-  formatPercent,
-  formatTokens,
-  formatUsd,
-  formatUsageCost,
-  makeWindow,
-} from "@workjet/shared/usageFormat";
+import { enumerateDays, enumerateHourStarts, makeWindow } from "@workjet/shared/usageFormat";
 import { SettingsPageContainer } from "../settings/settingsLayout";
+import { Banner } from "../ui/banner";
 import { Button } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
-import { formatUsageDateTime, formatUsageDay, formatUsageHour } from "./usageFormatDe";
+import {
+  formatUsageCostDe as formatUsageCost,
+  formatUsageDateTime,
+  formatUsageDay,
+  formatUsageHour,
+  formatUsagePercent as formatPercent,
+  formatUsageTokens as formatTokens,
+  formatUsageUsd as formatUsd,
+} from "./usageFormatDe";
 import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
 
 const WINDOW_OPTIONS = [
-  { days: 1, label: "24 h" },
+  { days: 1, label: "24 Std." },
   { days: 7, label: "7 Tage" },
   { days: 30, label: "30 Tage" },
   { days: 90, label: "90 Tage" },
@@ -32,12 +33,12 @@ const WINDOW_OPTIONS = [
 const METRIC_OPTIONS: ReadonlyArray<{ readonly value: UsageChartMetric; readonly label: string }> =
   [
     { value: "cost", label: "Kosten" },
-    { value: "tokens", label: "Tokens" },
+    { value: "tokens", label: "Token" },
   ];
 
 type Breakdown = "model" | "time";
 
-/** Einstellungen › Verbrauch: Kosten und Tokens je Harness und Modell. */
+/** Einstellungen › Verbrauch: Kosten und Token je Harness und Modell. */
 export function UsagePage() {
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: 30,
@@ -145,7 +146,7 @@ export function UsagePage() {
       {settling ? (
         <>
           {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
-          <UsageSkeleton />
+          <UsageLoading onRetry={refreshWindow} />
         </>
       ) : (
         <>
@@ -161,7 +162,7 @@ export function UsagePage() {
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-0.5">
                 <span className="text-xs text-muted-foreground">
-                  {metric === "cost" ? "Kosten zum API-Preis" : "Tokens gesamt"}
+                  {metric === "cost" ? "API-Kosten" : "Token gesamt"}
                 </span>
                 <span className="text-[22px] font-semibold text-foreground tabular-nums">
                   {metric === "cost"
@@ -201,7 +202,7 @@ export function UsagePage() {
                     </div>
                     <span className="text-xs text-muted-foreground tabular-nums">
                       {metric === "cost"
-                        ? `${formatPercent(share)} · ${formatTokens(provider.totalTokens)} Tokens`
+                        ? `${formatPercent(share)} · ${formatTokens(provider.totalTokens)} Token`
                         : `${formatPercent(share)} · ${formatUsageCost(provider.costUsd, unpriced)}`}
                     </span>
                   </div>
@@ -244,7 +245,7 @@ export function UsagePage() {
 
           <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-5">
             <Metric
-              label="Tokens"
+              label="Token"
               value={formatTokens(merged.totalTokens)}
               detail={`Ø ${formatTokens(periodAverage)} je ${periodLabel}`}
             />
@@ -261,14 +262,14 @@ export function UsagePage() {
             <Metric
               label="Ausgabe"
               value={formatTokens(merged.outputTokens)}
-              detail={`${formatTokens(merged.reasoningTokens)} Reasoning`}
+              detail={`${formatTokens(merged.reasoningTokens)} Denken`}
             />
             <Metric
               label="Cache-Ersparnis"
               value={formatUsd(merged.costQuality.cacheSavingsUsd)}
               detail={
                 merged.costUsd > 0
-                  ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1)}× Kosten`
+                  ? `${(merged.costQuality.cacheSavingsUsd / merged.costUsd).toFixed(1).replace(".", ",")}× Kosten`
                   : "—"
               }
             />
@@ -296,7 +297,7 @@ export function UsagePage() {
                     <th className="py-1.5 font-normal">Modell</th>
                     <th className="py-1.5 text-right font-normal">Kosten</th>
                     <th className="py-1.5 text-right font-normal">Anteil</th>
-                    <th className="py-1.5 text-right font-normal">Tokens</th>
+                    <th className="py-1.5 text-right font-normal">Token</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -342,7 +343,7 @@ export function UsagePage() {
                       </th>
                     ))}
                     <th className="py-1.5 text-right font-normal">Gesamt</th>
-                    <th className="py-1.5 text-right font-normal">Tokens</th>
+                    <th className="py-1.5 text-right font-normal">Token</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -523,13 +524,47 @@ function UsageDeviceStrip({
 
 /** Deterministic bar heights (each unique: they double as keys). */
 const SKELETON_BAR_HEIGHTS = [34, 58, 41, 72, 22, 12, 49, 63, 80, 38, 55, 26, 44, 67];
-const SKELETON_METRIC_LABELS = [
-  "Tokens",
-  "Cache-Lesen",
-  "Ohne Cache",
-  "Ausgabe",
-  "Cache-Ersparnis",
-];
+const SKELETON_METRIC_LABELS = ["Token", "Cache-Lesen", "Ohne Cache", "Ausgabe", "Cache-Ersparnis"];
+
+/** Nach dieser Zeit endet das Laden sichtbar (UI-Vertrag §1.3). */
+export const USAGE_LOADING_TIMEOUT_MS = 10_000;
+
+/**
+ * Laden mit Ende: höchstens 10 s Platzhalter, danach eine Statuszeile mit
+ * „Erneut versuchen“. Der Klick fragt neu und startet die Frist von vorn.
+ */
+export function UsageLoading({
+  onRetry,
+  timeoutMs = USAGE_LOADING_TIMEOUT_MS,
+}: {
+  readonly onRetry: () => void;
+  readonly timeoutMs?: number;
+}) {
+  const [attempt, setAttempt] = useState(0);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), timeoutMs);
+    return () => clearTimeout(timer);
+  }, [attempt, timeoutMs]);
+  if (slow) {
+    return (
+      <Banner
+        icon={ClockIcon}
+        action={{
+          label: "Erneut versuchen",
+          onClick: () => {
+            onRetry();
+            setSlow(false);
+            setAttempt((value) => value + 1);
+          },
+        }}
+      >
+        Laden dauert länger
+      </Banner>
+    );
+  }
+  return <UsageSkeleton />;
+}
 
 /**
  * Static stand-in with the loaded page's shape: headline, provider split,
@@ -546,7 +581,7 @@ function UsageSkeleton() {
       >
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-0.5">
-            <span className="text-xs text-muted-foreground">Kosten zum API-Preis</span>
+            <span className="text-xs text-muted-foreground">API-Kosten</span>
             <div className="my-1 h-6 w-32 rounded-sm bg-muted" />
           </div>
 

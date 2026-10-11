@@ -39,7 +39,9 @@ import {
   resolveThreadBranchMetadataPatch,
   resolveQuickAction,
   resolveThreadBranchUpdate,
+  repositoryNameFromPath,
 } from "./GitActionsControl.logic";
+import { InlineConfirmBar } from "~/components/InlineNoticeSlot";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Group, GroupSeparator } from "~/components/ui/group";
@@ -240,7 +242,7 @@ function formatElapsedDescription(startedAtMs: number | null): string | undefine
   }
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;
-  return `Läuft seit ${minutes} min ${seconds} s`;
+  return `Läuft seit ${minutes} Min. ${seconds} s`;
 }
 
 function resolveProgressDescription(progress: ActiveGitActionProgress): string | undefined {
@@ -276,45 +278,45 @@ function getMenuActionDisabledReason({
     if (!hasChanges) {
       return "Keine Änderungen";
     }
-    return "Commit nicht möglich";
+    return "Übernehmen nicht möglich";
   }
 
   if (item.id === "push") {
     if (!hasBranch) {
-      return "Kein Branch ausgecheckt";
+      return "Kein Zweig ausgecheckt";
     }
     if (hasChanges) {
-      return "Erst Änderungen committen";
+      return "Erst Änderungen übernehmen";
     }
     if (isBehind) {
-      return "Hinter Upstream, erst pullen";
+      return "Veraltet, erst herunterladen";
     }
     if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
       return "Kein Remote „origin“";
     }
     if (!isAhead) {
-      return "Nichts zu pushen";
+      return "Nichts zum Hochladen";
     }
-    return "Push nicht möglich";
+    return "Hochladen nicht möglich";
   }
 
   if (hasOpenPr) {
     return `${terminology.shortLabel} nicht verfügbar`;
   }
   if (!hasBranch) {
-    return "Kein Branch ausgecheckt";
+    return "Kein Zweig ausgecheckt";
   }
   if (hasChanges) {
-    return "Erst Änderungen committen";
+    return "Erst Änderungen übernehmen";
   }
   if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
     return "Kein Remote „origin“";
   }
   if (!isAhead) {
-    return "Keine neuen Commits";
+    return "Keine neuen Änderungen";
   }
   if (isBehind) {
-    return "Hinter Upstream, erst pullen";
+    return "Veraltet, erst herunterladen";
   }
   return `${terminology.shortLabel} nicht möglich`;
 }
@@ -323,11 +325,13 @@ function getMenuActionDisabledReason({
 function defaultBranchConfirmTitle(pending: PendingDefaultBranchAction): string {
   const branch = pending.branchName;
   if (pending.action === "push" || pending.action === "commit_push") {
-    return pending.includesCommit ? `Committen und auf ${branch} pushen?` : `Auf ${branch} pushen?`;
+    return pending.includesCommit
+      ? `Übernehmen und auf ${branch} hochladen?`
+      : `Auf ${branch} hochladen?`;
   }
   return pending.includesCommit
-    ? `Von ${branch} committen, pushen und PR erstellen?`
-    : `Von ${branch} pushen und PR erstellen?`;
+    ? `Von ${branch} übernehmen, hochladen und PR erstellen?`
+    : `Von ${branch} hochladen und PR erstellen?`;
 }
 
 function GitActionItemIcon({
@@ -360,8 +364,8 @@ function GitQuickActionIcon({
     }
     return <SourceControlIcon className={iconClassName} />;
   }
-  if (quickAction.label === "Commit") return <GitCommitIcon className={iconClassName} />;
-  if (quickAction.label === "Push") return <CloudUploadIcon className={iconClassName} />;
+  if (quickAction.label === "Übernehmen") return <GitCommitIcon className={iconClassName} />;
+  if (quickAction.label === "Hochladen") return <CloudUploadIcon className={iconClassName} />;
   return <InfoIcon className={iconClassName} />;
 }
 
@@ -448,8 +452,9 @@ function PublishRepositoryPanel(props: PublishRepositoryPanelProps) {
       ? selectedPublishProvider
       : (firstReadyPublishProvider ?? selectedPublishProvider ?? "github");
   const selectedPublishProviderReadiness = publishProviderReadiness[publishProvider];
+  // Erkennen statt fragen: Konto und Ordnername sind vorbefüllt.
   const publishRepositoryPrefill = publishAccountByProvider[publishProvider]
-    ? `${publishAccountByProvider[publishProvider]}/`
+    ? `${publishAccountByProvider[publishProvider]}/${repositoryNameFromPath(props.gitCwd)}`
     : "";
   const publishRepository = publishRepositoryOverride ?? publishRepositoryPrefill;
   const currentPublishProvider = publishProviderOption(publishProvider);
@@ -539,7 +544,7 @@ function PublishRepositoryPanel(props: PublishRepositoryPanelProps) {
 
   return (
     <InlinePanel
-      triggerLabel="Repository veröffentlichen"
+      triggerLabel="Veröffentlichen"
       open={props.open}
       onOpenChange={handleOpenChange}
       submitLabel="Veröffentlichen"
@@ -880,7 +885,7 @@ export default function GitActionsControl({
     if (!prUrl) {
       toastManager.add({
         type: "error",
-        title: "Keine offene Pull Request",
+        title: "Kein offener Pull Request",
         data: threadToastData,
       });
       return;
@@ -1024,7 +1029,7 @@ export default function GitActionsControl({
             progress.lastOutputLine = event.text;
             break;
           case "hook_finished":
-            progress.title = progress.currentPhaseLabel ?? "Committet …";
+            progress.title = progress.currentPhaseLabel ?? "Wird übernommen …";
             progress.hookName = null;
             progress.hookStartedAtMs = null;
             progress.lastOutputLine = null;
@@ -1197,7 +1202,7 @@ export default function GitActionsControl({
     if (quickAction.kind === "run_pull") {
       const toastId = toastManager.add({
         type: "loading",
-        title: "Pullt …",
+        title: "Wird heruntergeladen …",
         timeout: 0,
         data: threadToastData,
       });
@@ -1213,7 +1218,7 @@ export default function GitActionsControl({
             toastId,
             stackedThreadToast({
               type: "error",
-              title: "Pull fehlgeschlagen",
+              title: "Herunterladen fehlgeschlagen",
               description: error instanceof Error ? error.message : undefined,
               ...(threadToastData !== undefined ? { data: threadToastData } : {}),
             }),
@@ -1224,7 +1229,7 @@ export default function GitActionsControl({
         const pullResult = result.value;
         toastManager.update(toastId, {
           type: "success",
-          title: pullResult.status === "pulled" ? "Gepullt" : "Bereits aktuell",
+          title: pullResult.status === "pulled" ? "Heruntergeladen" : "Bereits aktuell",
           data: threadToastData,
         });
       })();
@@ -1434,18 +1439,18 @@ export default function GitActionsControl({
                   }}
                 >
                   <CloudUploadIcon />
-                  Repository veröffentlichen
+                  Veröffentlichen
                 </MenuItem>
               ) : null}
               {gitStatusForActions?.refName === null ? (
-                <MenuItem disabled>Kein Branch ausgecheckt</MenuItem>
+                <MenuItem disabled>Kein Zweig ausgecheckt</MenuItem>
               ) : null}
               {gitStatusForActions &&
               gitStatusForActions.refName !== null &&
               !gitStatusForActions.hasWorkingTreeChanges &&
               gitStatusForActions.behindCount > 0 &&
               gitStatusForActions.aheadCount === 0 ? (
-                <MenuItem disabled>Hinter Upstream, erst pullen</MenuItem>
+                <MenuItem disabled>Veraltet, erst herunterladen</MenuItem>
               ) : null}
               {gitStatusError ? (
                 <MenuItem disabled title={gitStatusError}>
@@ -1461,17 +1466,17 @@ export default function GitActionsControl({
           für einen neuen Branch. Kein Dialog (drei Orte, keine Popups). */}
       {isCommitDialogOpen ? (
         <InlinePanel
-          triggerLabel="Commit"
+          triggerLabel="Übernehmen"
           open
           onOpenChange={(open) => {
             if (!open) closeCommitPanel();
           }}
-          submitLabel={commitOnNewBranch ? "Auf neuem Branch committen" : "Committen"}
+          submitLabel={commitOnNewBranch ? "Auf neuem Zweig übernehmen" : "Übernehmen"}
           submitDisabled={noneSelected}
           onSubmit={commitOnNewBranch ? runDialogActionOnNewBranch : runDialogAction}
           status={
             isDefaultRef && !commitOnNewBranch
-              ? `Achtung: ${gitStatusForActions?.refName ?? "Standard-Branch"} ist der Standard-Branch`
+              ? `${gitStatusForActions?.refName ?? "Standardzweig"} ist der Standardzweig`
               : null
           }
           className="w-full"
@@ -1550,10 +1555,10 @@ export default function GitActionsControl({
             </ScrollArea>
           )}
           <Textarea
-            aria-label="Commit-Nachricht"
+            aria-label="Nachricht"
             value={dialogCommitMessage}
             onChange={(event) => setDialogCommitMessage(event.target.value)}
-            placeholder="Nachricht (leer = automatisch)"
+            placeholder="Nachricht"
             size="sm"
           />
           <label className="flex items-center gap-2 text-[13.5px]">
@@ -1561,12 +1566,12 @@ export default function GitActionsControl({
               checked={commitOnNewBranch}
               onCheckedChange={(checked) => setCommitOnNewBranch(checked === true)}
             />
-            Neuer Branch
+            Neuer Zweig
           </label>
         </InlinePanel>
       ) : null}
 
-      {/* Ohne Remote steht „Repository veröffentlichen“ direkt im Git-Bereich. */}
+      {/* Ohne Remote steht „Veröffentlichen“ direkt im Git-Bereich. */}
       {canPublishRepository || isPublishDialogOpen ? (
         <PublishRepositoryPanel
           open={isPublishDialogOpen}
@@ -1576,27 +1581,20 @@ export default function GitActionsControl({
         />
       ) : null}
 
-      {/* Bestätigung für den Standard-Branch inline, nie als Dialog. */}
+      {/* Bestätigung für den Standardzweig inline, nie als Dialog. */}
       {pendingDefaultBranchAction !== null ? (
-        <div
-          className="flex w-full flex-wrap items-center gap-2 rounded-lg border bg-card/40 px-3 py-2 text-[13.5px]"
-          data-slot="git-default-branch-confirm"
-          role="group"
-          aria-label="Bestätigung"
-        >
-          <span className="min-w-0 flex-1 truncate">
-            {defaultBranchConfirmTitle(pendingDefaultBranchAction)}
-          </span>
-          <Button size="xs" variant="outline" onClick={() => setPendingDefaultBranchAction(null)}>
-            Abbrechen
-          </Button>
-          <Button size="xs" variant="outline" onClick={continuePendingDefaultBranchAction}>
-            Auf {pendingDefaultBranchAction.branchName}
-          </Button>
-          <Button size="xs" onClick={checkoutFeatureBranchAndContinuePendingAction}>
-            Neuer Branch
-          </Button>
-        </div>
+        <InlineConfirmBar
+          className="rounded-lg border"
+          confirmLabel={`Auf ${pendingDefaultBranchAction.branchName}`}
+          markers={{ row: "git-default-branch-confirm" }}
+          question={defaultBranchConfirmTitle(pendingDefaultBranchAction)}
+          secondary={{
+            label: "Neuer Zweig",
+            onClick: checkoutFeatureBranchAndContinuePendingAction,
+          }}
+          onCancel={() => setPendingDefaultBranchAction(null)}
+          onConfirm={continuePendingDefaultBranchAction}
+        />
       ) : null}
     </div>
   );

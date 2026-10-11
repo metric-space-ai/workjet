@@ -64,6 +64,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { InlineConfirmBar } from "../InlineNoticeSlot";
 import { Input } from "../ui/input";
 import {
   Menu,
@@ -105,7 +106,6 @@ import {
   resolvePickableEnvironments,
   type PickableEnvironment,
 } from "./pullRequestProjectAssignment.logic";
-import { PullRequestChecksChip, PullRequestChecksList } from "./PullRequestChecksPopover";
 import {
   PullRequestActorLabel,
   PullRequestDiffStat,
@@ -119,43 +119,43 @@ import {
 type DetailTab = "summary" | "timeline" | "code";
 
 const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
-  merge: "Pull Request gemergt",
-  ready: "Bereit zum Review",
+  merge: "Pull Request zusammengeführt",
+  ready: "Bereit zur Prüfung",
   draft: "Zu Entwurf gemacht",
   close: "Pull Request geschlossen",
   reopen: "Pull Request wieder geöffnet",
-  "update-branch": "Branch aktualisiert",
+  "update-branch": "Zweig aktualisiert",
   // True whichever it did: a pull request that was already mergeable merges the moment this is
   // armed, and the client has no way to tell that apart from one still waiting on something.
-  "enable-auto-merge": "Auto-Merge an",
-  "disable-auto-merge": "Auto-Merge aus",
+  "enable-auto-merge": "Automatisch zusammenführen an",
+  "disable-auto-merge": "Automatisch zusammenführen aus",
 };
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
 const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
-  merge: "Merge fehlgeschlagen",
+  merge: "Zusammenführen fehlgeschlagen",
   ready: "Nicht als bereit markiert",
   draft: "Nicht zu Entwurf gemacht",
   close: "Nicht geschlossen",
   reopen: "Nicht wieder geöffnet",
-  "update-branch": "Branch nicht aktualisiert",
-  "enable-auto-merge": "Auto-Merge nicht aktiviert",
-  "disable-auto-merge": "Auto-Merge nicht deaktiviert",
+  "update-branch": "Zweig nicht aktualisiert",
+  "enable-auto-merge": "Automatisches Zusammenführen nicht aktiviert",
+  "disable-auto-merge": "Automatisches Zusammenführen nicht deaktiviert",
 };
 
 /** What to try, for the times the host says only that it refused. */
 const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
-  merge: "Abgelehnt: Schreibrechte, Checks, Konflikte prüfen",
+  merge: "Abgelehnt: Schreibrechte, Prüfungen, Konflikte prüfen",
   ready: "Abgelehnt: Schreibrechte prüfen",
   draft: "Abgelehnt: Schreibrechte prüfen",
   close: "Abgelehnt: Schreibrechte prüfen",
-  reopen: "Abgelehnt: Schreibrechte und Branch prüfen",
+  reopen: "Abgelehnt: Schreibrechte und Zweig prüfen",
   // Said for the merge commit, which is what an update is unless a rebase was asked for. The
   // rebase has its own reasons to fail and its own sentence below.
   "update-branch": "Abgelehnt: Schreibrechte und Konflikte prüfen",
   // The one refusal that is usually a repository setting rather than anything about this branch:
   // GitHub will not arm an auto-merge at all unless the repository has the feature switched on.
-  "enable-auto-merge": "Abgelehnt: Auto-Merge-Einstellung und Rechte prüfen",
+  "enable-auto-merge": "Abgelehnt: Einstellung und Rechte prüfen",
   "disable-auto-merge": "Abgelehnt: Schreibrechte prüfen",
 };
 
@@ -164,7 +164,7 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
  * its own merits, because GitHub replays the commits and stops at the first that does not apply.
  * Offering the merge commit only makes sense to somebody who did not already choose it.
  */
-const UPDATE_BRANCH_REBASE_FAILURE_HINT = "Rebase abgebrochen: Merge-Commit versuchen";
+const UPDATE_BRANCH_REBASE_FAILURE_HINT = "Rebase abgebrochen: Zusammenführen versuchen";
 
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Übersicht" },
@@ -285,7 +285,12 @@ function PullRequestBaseFreshnessWarning({
 function mergeMethodLabel(method: PullRequestMergeMethod): string {
   if (method === "squash") return "Squash";
   if (method === "rebase") return "Rebase";
-  return "Merge-Commit";
+  return "Zusammenführen";
+}
+
+/** Die Methode hinter der Frage, nur wenn sie vom einfachen Zusammenführen abweicht. */
+function mergeMethodSuffix(method: PullRequestMergeMethod): string {
+  return method === "merge" ? "" : ` (${mergeMethodLabel(method)})`;
 }
 
 /** Nur das Zeichen des Sammelstatus, für den eingeklappten Kopf. */
@@ -424,7 +429,6 @@ export function PullRequestDetailPanel({
   const [confirmAction, setConfirmAction] = useState<
     "merge" | "close" | "enable-auto-merge" | null
   >(null);
-  const [checksOpen, setChecksOpen] = useState(false);
   // Which handoff is preparing, keyed so a per-finding button can say "Preparing..." on itself
   // alone. One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
@@ -592,10 +596,10 @@ export function PullRequestDetailPanel({
         updateMethod === "rebase"
           ? UPDATE_BRANCH_REBASE_FAILURE_HINT
           : ACTION_FAILURE_HINTS[action];
+      // Eine Zeile (UI-Vertrag §1 Toast): was nicht geschah · warum.
       toastManager.add({
         type: "error",
-        title: ACTION_FAILURE_LABELS[action],
-        description: readableFailure(failure, hint),
+        title: `${ACTION_FAILURE_LABELS[action]} · ${readableFailure(failure, hint)}`,
       });
       return;
     }
@@ -628,8 +632,7 @@ export function PullRequestDetailPanel({
       // rewritten is the one thing a failed save must not cost them.
       toastManager.add({
         type: "error",
-        title: "Titel nicht gespeichert",
-        description: readableFailure(squashAtomCommandFailure(result), "Vom Host abgelehnt"),
+        title: `Titel nicht gespeichert · ${readableFailure(squashAtomCommandFailure(result), "Vom Host abgelehnt")}`,
       });
       return;
     }
@@ -746,7 +749,7 @@ export function PullRequestDetailPanel({
     // never expires, and an explicit one would survive the update and pin the result on screen.
     const toastId = toastManager.add({
       type: "loading",
-      title: "Checkout wird vorbereitet …",
+      title: "Wird ausgecheckt …",
     });
     // Wherever the reader chose to act: the thread, the checkout it is pointed at and the composer
     // the task lands in are all one server's, and picking another one moves all three.
@@ -782,8 +785,9 @@ export function PullRequestDetailPanel({
         prepareThread.error instanceof Error ? prepareThread.error.message : null;
       toastManager.update(toastId, {
         type: "error",
-        title: "Checkout fehlgeschlagen",
-        ...(detailMessage ? { description: detailMessage } : {}),
+        title: detailMessage
+          ? `Auschecken fehlgeschlagen · ${detailMessage}`
+          : "Auschecken fehlgeschlagen",
       });
       return;
     }
@@ -804,8 +808,7 @@ export function PullRequestDetailPanel({
       // outcome worth stopping for, since it reads as success and is not.
       toastManager.update(toastId, {
         type: "error",
-        title: "Unterhaltung nicht umgestellt",
-        description: `Branch: ${prepared.value.branch}`,
+        title: `Unterhaltung nicht auf ${prepared.value.branch} umgestellt`,
       });
       return;
     }
@@ -817,7 +820,7 @@ export function PullRequestDetailPanel({
     // success, because everything else about the handoff did happen.
     const staleCheckoutToast = {
       type: "warning",
-      title: "Checkout nicht aktuell",
+      title: "Ausgecheckt, nicht aktuell",
     } as const;
     if (task === null) {
       toastManager.update(
@@ -837,7 +840,7 @@ export function PullRequestDetailPanel({
       prepared.value.isOnPullRequestHead
         ? {
             type: "success",
-            title: "Checkout bereit",
+            title: "Ausgecheckt",
           }
         : staleCheckoutToast,
     );
@@ -1013,8 +1016,9 @@ export function PullRequestDetailPanel({
           >
             {detail && statePresentation ? (
               <>
-                <span className="min-w-0 truncate" title={detail.repository}>
-                  {detail.repository}
+                {/* Nur der Name, kein Rohpfad (UI-Vertrag §2). */}
+                <span className="min-w-0 truncate">
+                  {detail.repository.split("/").at(-1) ?? detail.repository}
                 </span>
                 <button
                   type="button"
@@ -1064,13 +1068,13 @@ export function PullRequestDetailPanel({
                 {conflicting ? (
                   <Badge
                     variant="error"
-                    className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px] text-destructive"
+                    className="h-5 shrink-0 gap-1 rounded px-1.5 text-[11px] text-destructive"
                   >
                     <TriangleAlertIcon className="size-3" />
                     Konflikte
                   </Badge>
                 ) : checksSummary ? (
-                  <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
                     {checksState !== null ? (
                       <PullRequestChecksStateIcon checksState={checksState} />
                     ) : null}
@@ -1117,8 +1121,8 @@ export function PullRequestDetailPanel({
                         >
                           <GitMergeIcon className="size-3.5" />
                           {method === "rebase"
-                            ? "Branch per Rebase aktualisieren"
-                            : "Branch aktualisieren"}
+                            ? "Zweig per Rebase aktualisieren"
+                            : "Zweig aktualisieren"}
                         </MenuItem>
                       ))
                     : null}
@@ -1147,7 +1151,7 @@ export function PullRequestDetailPanel({
                           ) : (
                             <GitPullRequestDraftIcon className="size-3.5" />
                           )}
-                          {detail.isDraft ? "Bereit zum Review" : "Zu Entwurf machen"}
+                          {detail.isDraft ? "Bereit zur Prüfung" : "Zu Entwurf machen"}
                         </MenuItem>
                       ) : null}
                       {/* The same merge, left with the host to carry out once the things it
@@ -1161,7 +1165,7 @@ export function PullRequestDetailPanel({
                           onClick={() => void perform("disable-auto-merge")}
                         >
                           <GitMergeIcon className="size-3.5" />
-                          Auto-Merge aus
+                          Automatisch zusammenführen aus
                         </MenuItem>
                       ) : !autoMergeArmed &&
                         !detail.isDraft &&
@@ -1173,7 +1177,7 @@ export function PullRequestDetailPanel({
                           onClick={() => setConfirmAction("enable-auto-merge")}
                         >
                           <GitMergeIcon className="size-3.5" />
-                          Auto-Merge an
+                          Automatisch zusammenführen an
                         </MenuItem>
                       ) : null}
                       {/* A preference for the merge action rather than a second action, so it
@@ -1295,16 +1299,16 @@ export function PullRequestDetailPanel({
               {autoMergeArmed ? (
                 <Badge
                   variant="info"
-                  className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px]"
+                  className="h-5 shrink-0 gap-1 rounded px-1.5 text-[11px]"
                   title="Host führt zusammen, sobald bereit"
                 >
                   <GitMergeIcon aria-hidden className="size-3" />
-                  Auto-Merge
+                  Automatisch
                 </Badge>
               ) : null}
               {primaryAction === "ready" ? (
                 <Button size="xs" disabled={actionPending} onClick={() => void perform("ready")}>
-                  Bereit zum Review
+                  Bereit zur Prüfung
                 </Button>
               ) : primaryAction === "merge" ? (
                 <Button
@@ -1318,7 +1322,7 @@ export function PullRequestDetailPanel({
             </>
           ) : null}
           {onClose ? (
-            <Button size="icon-xs" variant="ghost" aria-label="Panel einklappen" onClick={onClose}>
+            <Button size="icon-xs" variant="ghost" aria-label="Einklappen" onClick={onClose}>
               <PanelRightIcon className="size-3.5" />
             </Button>
           ) : null}
@@ -1514,8 +1518,8 @@ export function PullRequestDetailPanel({
                   <button
                     type="button"
                     className="grid min-w-0 max-w-64 shrink cursor-pointer rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-                    aria-label={isBranchCopied ? "Branch kopiert" : "Branch kopieren"}
-                    title={isBranchCopied ? "Kopiert" : "Branch kopieren"}
+                    aria-label={isBranchCopied ? "Zweig kopiert" : "Zweig kopieren"}
+                    title={isBranchCopied ? "Kopiert" : "Zweig kopieren"}
                     onClick={() => copyBranchToClipboard(detail.headBranch)}
                   >
                     <code
@@ -1560,7 +1564,7 @@ export function PullRequestDetailPanel({
                   className="h-auto gap-1.5 rounded-md px-3 py-1.5 text-xs text-destructive"
                 >
                   <TriangleAlertIcon className="size-3.5" />
-                  Merge-Konflikte
+                  Konflikte
                 </Badge>
                 <Button
                   size="xs"
@@ -1597,22 +1601,15 @@ export function PullRequestDetailPanel({
                   </button>
                 ))}
                 {tab === "summary" ? (
-                  // Der Chip klappt die Checks inline unter den Reitern auf; ohne Checks
-                  // bleibt nur das Zeichen.
-                  checksState !== null ? (
-                    <PullRequestChecksChip
-                      className="ml-auto"
-                      checksState={checksState}
-                      summary={checksSummary}
-                      expanded={checksOpen}
-                      onToggle={() => setChecksOpen((open) => !open)}
-                    />
-                  ) : (
-                    <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  // Nur der Sammelstatus: die Prüfungen selbst stehen einmal, im Überblick.
+                  <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                    {checksState !== null ? (
+                      <PullRequestChecksStateIcon checksState={checksState} />
+                    ) : (
                       <CircleDotIcon aria-hidden className="size-3.5" />
-                      {checksSummary}
-                    </span>
-                  )
+                    )}
+                    {checksSummary}
+                  </span>
                 ) : tab === "timeline" ? (
                   <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                     <PullRequestMetaLine
@@ -1659,7 +1656,7 @@ export function PullRequestDetailPanel({
                     <Button
                       size="xs"
                       variant="ghost"
-                      className="h-7 px-2 text-[10px] text-muted-foreground"
+                      className="h-7 px-2 text-[11px] text-muted-foreground"
                       aria-label={timelineOrder === "newest" ? "Älteste zuerst" : "Neueste zuerst"}
                       onClick={() =>
                         setTimelineOrder((value) => (value === "newest" ? "oldest" : "newest"))
@@ -1672,51 +1669,41 @@ export function PullRequestDetailPanel({
                 ) : null}
               </nav>
             ) : null}
-            {detail && tab === "summary" && checksOpen && checksState !== null ? (
-              <PullRequestChecksList className="px-4 pb-3" checks={detail.checks} />
-            ) : null}
           </div>
         </div>
       </div>
 
       {/* Bestätigung inline unter dem Kopf, nie als Dialog (drei Orte, keine Popups). */}
       {confirmAction !== null ? (
-        <div
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-card/40 px-4 py-2 text-[13.5px]"
-          data-slot="pull-request-confirm"
-          role="group"
-          aria-label="Bestätigung"
-        >
-          <span className="min-w-0 flex-1 truncate">
-            {confirmAction === "merge"
-              ? `#${reference.number} zusammenführen (${mergeMethodLabel(selectedMergeMethod)})?`
-              : confirmAction === "enable-auto-merge"
-                ? `Auto-Merge für #${reference.number} (${mergeMethodLabel(selectedMergeMethod)})?`
-                : `#${reference.number} ohne Merge schließen?`}
-          </span>
-          <Button size="xs" variant="outline" onClick={() => setConfirmAction(null)}>
-            Abbrechen
-          </Button>
-          <Button
-            size="xs"
-            variant={confirmAction === "close" ? "destructive" : "default"}
-            disabled={actionPending}
-            onClick={() => {
-              const action = confirmAction;
-              setConfirmAction(null);
-              if (action === "merge") void perform("merge", selectedMergeMethod);
-              if (action === "enable-auto-merge")
-                void perform("enable-auto-merge", selectedMergeMethod);
-              if (action === "close") void perform("close");
-            }}
-          >
-            {confirmAction === "merge"
+        <InlineConfirmBar
+          busy={actionPending}
+          className="sm:px-4"
+          confirmLabel={
+            confirmAction === "merge"
               ? "Zusammenführen"
               : confirmAction === "enable-auto-merge"
-                ? "Auto-Merge an"
-                : "Schließen"}
-          </Button>
-        </div>
+                ? "Automatisch zusammenführen"
+                : "Schließen"
+          }
+          markers={{ row: "pull-request-confirm" }}
+          question={
+            confirmAction === "merge"
+              ? `#${reference.number} zusammenführen${mergeMethodSuffix(selectedMergeMethod)}?`
+              : confirmAction === "enable-auto-merge"
+                ? `#${reference.number} automatisch zusammenführen${mergeMethodSuffix(selectedMergeMethod)}?`
+                : `#${reference.number} ohne Zusammenführen schließen?`
+          }
+          variant={confirmAction === "close" ? "destructive" : "default"}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            const action = confirmAction;
+            setConfirmAction(null);
+            if (action === "merge") void perform("merge", selectedMergeMethod);
+            if (action === "enable-auto-merge")
+              void perform("enable-auto-merge", selectedMergeMethod);
+            if (action === "close") void perform("close");
+          }}
+        />
       ) : null}
 
       <div

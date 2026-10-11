@@ -4,21 +4,15 @@ import { Toast } from "@base-ui/react/toast";
 import {
   useEffect,
   useMemo,
-  useState,
   type CSSProperties,
   type ComponentPropsWithoutRef,
-  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { useParams } from "@tanstack/react-router";
 import { type ScopedThreadRef, type ThreadId } from "@workjet/contracts";
 import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
   CircleAlertIcon,
   CircleCheckIcon,
-  CopyIcon,
   InfoIcon,
   LoaderCircleIcon,
   TriangleAlertIcon,
@@ -28,14 +22,12 @@ import {
 import { cn } from "~/lib/utils";
 import { buttonVariants } from "~/components/ui/button";
 import { useComposerDraftStore } from "~/composerDraftStore";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { resolveThreadRouteTarget } from "~/threadRoutes";
 import {
   buildVisibleToastLayout,
   shouldHideCollapsedToastContent,
   shouldRenderThreadScopedToast,
 } from "./toast.logic";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
 export type ThreadToastData = {
   threadRef?: ScopedThreadRef | null;
@@ -44,11 +36,14 @@ export type ThreadToastData = {
   tooltipStyle?: boolean;
   onClose?: (() => void) | undefined;
   dismissAfterVisibleMs?: number;
+  /** @deprecated Es gibt keinen Kopierknopf mehr. */
   hideCopyButton?: boolean;
+  /** Nur die erste wird gezeigt, und nur ohne `actionProps` (höchstens eine Aktion). */
   additionalActions?: ReadonlyArray<{
     id: string;
     props: ComponentPropsWithoutRef<"button">;
   }>;
+  /** Nur ohne `actionProps` gezeigt (höchstens eine Aktion). */
   secondaryActionProps?: ComponentPropsWithoutRef<"button">;
   secondaryActionVariant?:
     | "default"
@@ -58,10 +53,11 @@ export type ThreadToastData = {
     | "link"
     | "outline"
     | "secondary";
-  /** Optional extra body shown after toggling “Show details” (e.g. a list of pending RPCs). */
+  /** @deprecated Wird nicht mehr angezeigt: Toasts haben eine Zeile, keine Aufklapper. */
   expandableContent?: ReactNode;
+  /** @deprecated Wird nicht mehr angezeigt. */
   expandableLabels?: { expand?: string; collapse?: string };
-  /** When set with `expandableContent`, the summary + label act as one text disclosure (no separate chevron row). */
+  /** @deprecated Wird nicht mehr angezeigt. */
   expandableDescriptionTrigger?: boolean;
   actionLayout?: "inline" | "stacked-end";
   actionVariant?:
@@ -87,7 +83,7 @@ const TOAST_ICONS = {
   warning: TriangleAlertIcon,
 } as const;
 
-/** Visually shorten long error bodies; clipboard copy still uses the full `description` string. */
+/** Visually shorten long error bodies. */
 const ERROR_DESCRIPTION_CLAMP_MIN_CHARS = 180;
 function errorDescriptionClampClass(type: unknown, description: unknown): string | undefined {
   if (type !== "error" || typeof description !== "string") {
@@ -116,153 +112,22 @@ function handleToastDismissClick(
   manager.close(toastId);
 }
 
-function CopyErrorButton({ text }: { text: string }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error-message" });
-  const label = isCopied ? "Copied error" : "Copy error";
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            aria-label={label}
-            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground/80 transition-colors hover:text-muted-foreground"
-            onClick={() => copyToClipboard(text)}
-            type="button"
-          />
-        }
-      >
-        {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
-      </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
-    </Tooltip>
-  );
-}
-
-/** Scrollable cap for long expandable lists (~10rem); keeps the toast from growing without bound. */
-const toastExpandablePanelClassName =
-  "mt-2 max-h-40 min-h-0 overflow-y-auto overscroll-contain pr-0.5 select-text";
-
-function ToastExpandableSection({
-  children,
-  labels,
-}: {
-  children: ReactNode;
-  labels: { expand?: string; collapse?: string };
-}) {
-  const [open, setOpen] = useState(false);
-  const expandLabel = labels.expand ?? "Show details";
-  const collapseLabel = labels.collapse ?? "Hide details";
-
-  return (
-    <div className="min-w-0">
-      <button
-        aria-expanded={open}
-        className="inline-flex cursor-pointer items-center gap-1 rounded-md py-0.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        onClick={() => setOpen((prev) => !prev)}
-        type="button"
-      >
-        {open ? (
-          <ChevronUpIcon className="size-3.5 shrink-0 opacity-80" strokeWidth={2.25} />
-        ) : (
-          <ChevronDownIcon className="size-3.5 shrink-0 opacity-80" strokeWidth={2.25} />
-        )}
-        {open ? collapseLabel : expandLabel}
-      </button>
-      {open ? <div className={toastExpandablePanelClassName}>{children}</div> : null}
-    </div>
-  );
-}
-
-function ToastDescriptionAndExpandable({
-  toastData,
+/** Die Beschreibung als Statuszeile; keine Aufklapper, kein Kopierknopf (UI-Vertrag §1 Toast). */
+function ToastDescriptionLine({
   toastDescription,
   toastType,
 }: {
-  toastData: ThreadToastData | undefined;
   toastDescription: unknown;
   toastType: unknown;
 }) {
-  const expandableContent = toastData?.expandableContent;
-  const labels = toastData?.expandableLabels ?? {};
-  const descriptionTrigger = toastData?.expandableDescriptionTrigger ?? false;
-  const descriptionClassName = cn(
-    "min-w-0 select-text wrap-break-word text-muted-foreground",
-    errorDescriptionClampClass(toastType, toastDescription),
-  );
-  const [open, setOpen] = useState(false);
-
-  if (!expandableContent) {
-    return <Toast.Description className={descriptionClassName} data-slot="toast-description" />;
-  }
-
-  if (!descriptionTrigger) {
-    return (
-      <>
-        <Toast.Description className={descriptionClassName} data-slot="toast-description" />
-        <ToastExpandableSection labels={labels}>{expandableContent}</ToastExpandableSection>
-      </>
-    );
-  }
-
-  const expandLabel = labels.expand ?? "Show details";
-  const collapseLabel = labels.collapse ?? "Hide details";
-
-  const toggle = () => setOpen((v) => !v);
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      toggle();
-    }
-  };
-
   return (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <div
-              aria-label={open ? collapseLabel : expandLabel}
-              aria-expanded={open}
-              className={cn(
-                "group flex min-w-0 w-full cursor-pointer select-none items-start gap-1.5 rounded-sm text-left outline-none ring-offset-background",
-                "transition-colors hover:bg-muted/40",
-                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-              )}
-              onClick={toggle}
-              onKeyDown={onKeyDown}
-              role="button"
-              tabIndex={0}
-            />
-          }
-        >
-          <div className="min-w-0 flex-1">
-            <Toast.Description
-              className={cn(
-                "min-w-0 select-none wrap-break-word text-muted-foreground",
-                errorDescriptionClampClass(toastType, toastDescription),
-              )}
-              data-slot="toast-description"
-            />
-          </div>
-          {open ? (
-            <ChevronUpIcon
-              aria-hidden
-              className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-80"
-              strokeWidth={2.25}
-            />
-          ) : (
-            <ChevronDownIcon
-              aria-hidden
-              className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-80"
-              strokeWidth={2.25}
-            />
-          )}
-        </TooltipTrigger>
-        <TooltipPopup side="top">{open ? collapseLabel : expandLabel}</TooltipPopup>
-      </Tooltip>
-      {open ? <div className={toastExpandablePanelClassName}>{expandableContent}</div> : null}
-    </>
+    <Toast.Description
+      className={cn(
+        "min-w-0 select-text wrap-break-word text-muted-foreground",
+        errorDescriptionClampClass(toastType, toastDescription),
+      )}
+      data-slot="toast-description"
+    />
   );
 }
 
@@ -273,7 +138,6 @@ interface ToastBodyDescriptor {
   readonly stackedActionLayout: boolean;
   readonly actionVariant: NonNullable<ThreadToastData["actionVariant"]>;
   readonly secondaryActionVariant: NonNullable<ThreadToastData["secondaryActionVariant"]>;
-  readonly copyErrorText: string | null;
   readonly hasTrailingControls: boolean;
   readonly inlineContentEndPad: string;
 }
@@ -291,24 +155,16 @@ function deriveToastBodyDescriptor(toast: {
     toast.data?.actionVariant ?? "default";
   const secondaryActionVariant: NonNullable<ThreadToastData["secondaryActionVariant"]> =
     toast.data?.secondaryActionVariant ?? "outline";
-  const copyErrorText =
-    toast.type === "error" && typeof toast.description === "string" && !toast.data?.hideCopyButton
-      ? toast.description
-      : null;
   const hasAdditionalActions = (toast.data?.additionalActions?.length ?? 0) > 0;
   const hasSecondaryAction = toast.data?.secondaryActionProps !== undefined;
   const hasTrailingControls =
-    copyErrorText !== null ||
-    toast.actionProps !== undefined ||
-    hasAdditionalActions ||
-    hasSecondaryAction;
+    toast.actionProps !== undefined || hasAdditionalActions || hasSecondaryAction;
   const inlineContentEndPad = hasTrailingControls ? "pr-6" : "pr-10";
   return {
     Icon,
     stackedActionLayout,
     actionVariant,
     secondaryActionVariant,
-    copyErrorText,
     hasTrailingControls,
     inlineContentEndPad,
   };
@@ -324,7 +180,6 @@ interface ToastBodyContentProps extends ToastBodyDescriptor {
 function ToastBodyContent({
   stackedActionLayout,
   Icon,
-  copyErrorText,
   actionProps,
   actionVariant,
   secondaryActionVariant,
@@ -333,11 +188,12 @@ function ToastBodyContent({
   toastDescription,
   toastType,
 }: ToastBodyContentProps) {
-  const additionalActions = toastData?.additionalActions ?? [];
-  const secondaryActionProps = toastData?.secondaryActionProps;
+  // Höchstens eine Aktion (UI-Vertrag §1 Toast): die Primäraktion, sonst die erste weitere.
+  const fallbackActionProps = actionProps
+    ? undefined
+    : (toastData?.secondaryActionProps ?? toastData?.additionalActions?.[0]?.props);
   const leadingIcon = toastData?.leadingIcon;
-  const { className: secondaryActionClassName, ...secondaryActionRest } =
-    secondaryActionProps ?? {};
+  const { className: fallbackActionClassName, ...fallbackActionRest } = fallbackActionProps ?? {};
 
   return (
     <>
@@ -364,11 +220,7 @@ function ToastBodyContent({
           )}
         >
           <Toast.Title className="min-w-0 wrap-break-word font-medium" data-slot="toast-title" />
-          <ToastDescriptionAndExpandable
-            toastData={toastData}
-            toastDescription={toastDescription}
-            toastType={toastType}
-          />
+          <ToastDescriptionLine toastDescription={toastDescription} toastType={toastType} />
         </div>
       </div>
       {hasTrailingControls ? (
@@ -378,24 +230,12 @@ function ToastBodyContent({
             stackedActionLayout ? "w-full justify-end" : "shrink-0",
           )}
         >
-          {copyErrorText !== null ? <CopyErrorButton text={copyErrorText} /> : null}
-          {additionalActions.map(({ id, props: { className, ...props } }) => (
+          {fallbackActionProps ? (
             <button
-              {...props}
+              {...fallbackActionRest}
               className={cn(
                 buttonVariants({ size: "xs", variant: secondaryActionVariant }),
-                className,
-              )}
-              key={id}
-              type="button"
-            />
-          ))}
-          {secondaryActionProps ? (
-            <button
-              {...secondaryActionRest}
-              className={cn(
-                buttonVariants({ size: "xs", variant: secondaryActionVariant }),
-                secondaryActionClassName,
+                fallbackActionClassName,
               )}
               type="button"
             />
@@ -667,7 +507,7 @@ function Toasts({ position }: { position: ToastPosition }) {
               />
               <div className={toastCornerDismissClass}>
                 <button
-                  aria-label="Dismiss notification"
+                  aria-label="Hinweis schließen"
                   className={toastCornerOrbClass}
                   data-slot="toast-close"
                   onClick={() =>
@@ -758,7 +598,7 @@ function AnchoredToasts() {
                     <>
                       <div className={toastCornerDismissClass}>
                         <button
-                          aria-label="Dismiss notification"
+                          aria-label="Hinweis schließen"
                           className={toastCornerOrbClass}
                           data-slot="toast-close"
                           onClick={() =>

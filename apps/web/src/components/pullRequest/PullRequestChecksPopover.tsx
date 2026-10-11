@@ -40,14 +40,14 @@ function LazyChecksBody({
   if (detailQuery.error !== null) {
     return (
       <p className="text-muted-foreground text-xs" role="status">
-        Checks nicht verfügbar
+        Prüfungen nicht verfügbar
       </p>
     );
   }
   if (detailQuery.data === null) {
     return (
       <p className="text-muted-foreground text-xs" role="status">
-        {detailQuery.isPending ? "Checks laden …" : "Keine Checks"}
+        {detailQuery.isPending ? "Prüfungen laden …" : "Keine Prüfungen"}
       </p>
     );
   }
@@ -56,7 +56,7 @@ function LazyChecksBody({
 
 function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
   if (checks.length === 0) {
-    return <p className="text-muted-foreground text-xs">Keine Checks</p>;
+    return <p className="text-muted-foreground text-xs">Keine Prüfungen</p>;
   }
   return (
     <ul className="flex flex-col gap-0.5">
@@ -109,7 +109,7 @@ export function PullRequestChecksChip({
   className,
 }: {
   checksState: PullRequestChecksState;
-  /** Zählung wie „2 von 5 fehlgeschlagen“, wo die Checks bekannt sind. */
+  /** Zählung wie „2 von 5 fehlgeschlagen“, wo die Prüfungen bekannt sind. */
   summary?: string | null;
   expanded: boolean;
   onToggle: () => void;
@@ -120,7 +120,7 @@ export function PullRequestChecksChip({
     <button
       type="button"
       aria-expanded={expanded}
-      aria-label={`Checks: ${summary ?? presentation.label}`}
+      aria-label={`Prüfungen: ${summary ?? presentation.label}`}
       data-slot="pull-request-checks-chip"
       onClick={(event) => {
         event.stopPropagation();
@@ -133,7 +133,8 @@ export function PullRequestChecksChip({
       )}
     >
       <presentation.Icon aria-hidden className={cn("size-3", presentation.toneClassName)} />
-      <span className="whitespace-nowrap">{summary ?? presentation.label}</span>
+      {/* Bei 420 px nur das Zeichen: der Titel braucht die Breite. */}
+      <span className="hidden whitespace-nowrap sm:inline">{summary ?? presentation.label}</span>
       <ChevronDownIcon
         aria-hidden
         className={cn("size-3 transition-transform", expanded ? "rotate-180" : "")}

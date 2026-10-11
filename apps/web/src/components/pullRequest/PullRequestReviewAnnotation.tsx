@@ -68,7 +68,7 @@ export function PendingReviewCommentCard({
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <MessageSquareIcon className="size-3.5" />
-        <span>Offen, wird mit dem Review gesendet</span>
+        <span>Offen, wird mit der Prüfung gesendet</span>
         <Button
           size="icon-xs"
           variant="ghost"

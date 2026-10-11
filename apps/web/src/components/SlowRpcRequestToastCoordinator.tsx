@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { type SlowRpcAckRequest, useSlowRpcAckRequests } from "../rpc/requestLatencyState";
@@ -13,13 +14,15 @@ export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>)
   const thresholdSeconds = Math.round(
     Math.min(...requests.map((request) => request.thresholdMs)) / 1000,
   );
+  // Zahl und Einheit bleiben bei 420 px zusammen (geschütztes Leerzeichen).
   return count === 1
-    ? `1 Anfrage wartet länger als ${thresholdSeconds} s`
-    : `${count} Anfragen warten länger als ${thresholdSeconds} s`;
+    ? `1 Anfrage wartet länger als ${thresholdSeconds}\u00a0s`
+    : `${count} Anfragen warten länger als ${thresholdSeconds}\u00a0s`;
 }
 
 export function SlowRpcRequestToastCoordinator() {
   const slowRequests = useSlowRpcAckRequests();
+  const navigate = useNavigate();
   const toastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
 
   useEffect(() => {
@@ -31,10 +34,15 @@ export function SlowRpcRequestToastCoordinator() {
       return;
     }
 
+    // Die eine erlaubte Aktion: die Einzelheiten stehen in Einstellungen › Diagnose.
     const nextToast = {
       timeout: 0,
       title: describeSlowRequests(slowRequests),
       type: "warning" as const,
+      actionProps: {
+        children: "Diagnose",
+        onClick: () => void navigate({ to: "/settings/diagnostics" }),
+      },
     };
 
     if (toastIdRef.current === null) {
@@ -42,7 +50,7 @@ export function SlowRpcRequestToastCoordinator() {
     } else {
       toastManager.update(toastIdRef.current, nextToast);
     }
-  }, [slowRequests]);
+  }, [navigate, slowRequests]);
 
   useEffect(
     () => () => {

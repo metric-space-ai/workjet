@@ -168,9 +168,9 @@ describe("Models account recovery", () => {
     ];
     const health = modelsAccountHealth({ ...account, quota }, 2000);
     expect(health.status).toBe("unknown");
-    expect(health.windows[0]?.remainingPercent).toBe(135);
+    expect(health.windows[0]?.remainingPercent).toBe(100);
     expect(health.windows[1]?.unlimited).toBe(true);
-    expect(health.windows[2]?.label).toContain("MiniMax-M3");
+    expect(health.windows[2]?.tooltip).toContain("MiniMax-M3");
     expect(health.windows).toHaveLength(3);
   });
   it.each([401, 403, 429])("does not offer re-login for a usage-only %s", (httpStatus) => {

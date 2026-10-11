@@ -40,7 +40,10 @@ export interface ModelsAccountHealth {
     readonly fresh: boolean;
   } | null;
   readonly windows: ReadonlyArray<{
+    readonly id?: string;
     readonly label: string;
+    readonly tooltip?: string;
+    readonly unknownReason?: string | null;
     readonly unlimited?: boolean;
     readonly notInPlan?: boolean;
     readonly remainingPercent: number | null;
@@ -250,14 +253,19 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
   if (health?.balance) {
     const balance = health.balance;
     return (
-      <span
-        className="text-xs tabular-nums"
-        title={`${balance.fresh ? "Available" : "Last reported"} API balance · ${new Date(balance.observedAtMs).toLocaleString()}${health.quotaError ? " · Refresh failed" : ""}`}
-      >
-        {balance.currency}{" "}
-        {balance.availableBalance.toLocaleString(undefined, { maximumSignificantDigits: 6 })}
-        {!balance.fresh && <span className="ml-1 text-muted-foreground">stale</span>}
-      </span>
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground" title="Anbieter meldet kein Limit">
+          —
+        </span>
+        <span
+          className="text-xs tabular-nums"
+          title={`${balance.fresh ? "Available" : "Last reported"} API balance · ${new Date(balance.observedAtMs).toLocaleString()}${health.quotaError ? " · Refresh failed" : ""}`}
+        >
+          {balance.currency}{" "}
+          {balance.availableBalance.toLocaleString(undefined, { maximumSignificantDigits: 6 })}
+          {!balance.fresh && <span className="ml-1 text-muted-foreground">stale</span>}
+        </span>
+      </div>
     );
   }
   if (!health || health.windows.length === 0)
@@ -269,7 +277,7 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
             ? "Checking provider limits"
             : health?.quotaError
               ? "Provider limits could not be refreshed"
-              : "This provider does not report limits to the hub."
+              : "Anbieter meldet kein Limit"
         }
       >
         —
@@ -277,22 +285,33 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
     );
   return (
     <div className="flex flex-col gap-1 text-[11px] tabular-nums">
-      {health.windows.map((window) => {
+      {health.windows.map((window, index) => {
         const remaining = window.remainingPercent;
         const reported = remaining !== null && !window.notInPlan && !window.unlimited;
         return (
           <span
-            key={window.label}
-            className="flex items-center gap-1.5"
-            title={`${window.label}${window.resetsAtMs === null ? "" : ` · resets ${resetLabel(window.resetsAtMs)}`}${health.observedAtMs === null ? "" : ` · observed ${new Date(health.observedAtMs).toLocaleString()}`}${health.quotaError ? " · Refresh failed" : ""}`}
+            key={window.id ?? `${window.label}:${index}`}
+            className="flex flex-wrap items-center gap-1.5"
+            title={`${window.tooltip ?? window.label}${window.resetsAtMs === null ? "" : ` · resets ${resetLabel(window.resetsAtMs)}`}${health.observedAtMs === null ? "" : ` · observed ${new Date(health.observedAtMs).toLocaleString()}`}${health.quotaError ? " · Refresh failed" : ""}`}
           >
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">{window.label}</span>
+            <span className="min-w-0 flex-1 text-muted-foreground">{window.label}</span>
             {reported && (
-              <span aria-hidden className="h-1 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
+              <span
+                role="meter"
+                aria-label={`${window.label} verbleibend`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={remaining}
+                className="h-1 w-8 shrink-0 overflow-hidden rounded-full bg-muted"
+              >
                 <span
                   className={cn(
                     "block h-full",
-                    remaining === 0 ? "bg-amber-500" : "bg-emerald-500/80",
+                    remaining <= 5
+                      ? "bg-red-500"
+                      : remaining <= 20
+                        ? "bg-amber-500"
+                        : "bg-emerald-500/80",
                   )}
                   style={{ width: `${Math.max(0, Math.min(100, remaining ?? 0))}%` }}
                 />
@@ -304,9 +323,10 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
                 : window.unlimited
                   ? "∞"
                   : remaining === null
-                    ? "—"
+                    ? "unbekannt"
                     : `${remaining > 0 && remaining < 1 ? "<1" : Math.floor(remaining)}%`}
             </span>
+            {reported && remaining === 0 && <span className="text-red-500">Limit reached</span>}
           </span>
         );
       })}
@@ -439,7 +459,7 @@ export function WorkjetModelsKeyForm({
 }
 
 const MODELS_TABLE_COLUMNS =
-  "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
+  "grid grid-cols-[minmax(0,1fr)_minmax(7rem,1fr)_2rem_3rem] sm:grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-2 sm:gap-x-3";
 
 function AccountRow({
   account,
@@ -561,7 +581,7 @@ function AccountRow({
             </div>
           )}
         </div>
-        <div role="cell" className="min-w-0">
+        <div role="cell" className="col-span-4 row-start-2 min-w-0 sm:col-span-1 sm:row-start-auto">
           <WorkjetModelsCell
             account={account}
             state={state}
@@ -571,10 +591,16 @@ function AccountRow({
             }
           />
         </div>
-        <div role="cell" className="min-w-0">
+        <div
+          role="cell"
+          className="col-start-2 row-start-1 min-w-0 sm:col-start-auto sm:row-start-auto"
+        >
           <AccountLimits health={health} />
         </div>
-        <div role="cell" className="flex justify-center">
+        <div
+          role="cell"
+          className="col-start-3 row-start-1 flex justify-center sm:col-start-auto sm:row-start-auto"
+        >
           <label
             className="relative inline-flex cursor-pointer items-center"
             title={account.enabled ? "Disable for Workjet" : "Enable for Workjet"}
@@ -604,7 +630,10 @@ function AccountRow({
             </span>
           </label>
         </div>
-        <div role="cell" className="flex items-center gap-1">
+        <div
+          role="cell"
+          className="col-start-4 row-start-1 flex items-center gap-1 sm:col-start-auto sm:row-start-auto"
+        >
           <Button
             size="icon-xs"
             variant="ghost"
@@ -657,7 +686,7 @@ function AccountRow({
                 (accessDenied
                   ? "The provider denied access (HTTP 403). Check this account's permissions and subscription."
                   : health?.status === "cooldown"
-                    ? "Limit reached. Available accounts handle new requests."
+                    ? "This account is cooling down. Available accounts handle new requests."
                     : "Provider unavailable."))}
             {health?.retryAtMs != null && ` Gateway retry after: ${resetLabel(health.retryAtMs)}.`}
           </span>
@@ -1006,7 +1035,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           </p>
         )}
       <div className="overflow-x-auto">
-        <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
+        <div role="table" aria-label="LLM provider accounts" className="min-w-0 sm:min-w-[34rem]">
           <div
             role="row"
             className={cn(
@@ -1015,7 +1044,9 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             )}
           >
             <span role="columnheader">Provider / account</span>
-            <span role="columnheader">Models</span>
+            <span role="columnheader" className="hidden sm:block">
+              Models
+            </span>
             <span role="columnheader">Limits</span>
             <span role="columnheader" className="text-center">
               Active

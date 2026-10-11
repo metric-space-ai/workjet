@@ -15,6 +15,7 @@ import {
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { modelCheckDescription } from "./WorkjetModelsCell";
 import { parseModels } from "./WorkjetModelsFields";
+import { modelsAccountHealth } from "./WorkjetModelsHealth";
 
 const first: WorkjetGatewayAccountSummary = {
   id: WorkjetGatewayAccountId.make("account-a"),
@@ -93,6 +94,80 @@ function html(overrides: Partial<typeof state> = {}) {
   return renderToStaticMarkup(<WorkjetModelsProviders {...state} {...overrides} />);
 }
 describe("Provider account table", () => {
+  it("renders shrinking remaining bars, unknown reasons and exhaustion only at zero", () => {
+    const base = {
+      accountId: first.id,
+      provider: "codex" as const,
+      authentication: "authenticated" as const,
+      disabled: false,
+      usable: true,
+      cooldownUntilMs: 5000,
+      errorCode: null,
+      httpStatus: 429,
+      generationHttpStatus: 429,
+      observedAtMs: 1000,
+      balance: null,
+      quotaSupported: true,
+      quotaRefreshing: false,
+      quotaError: null,
+    };
+    for (const [remainingPercent, color] of [
+      [100, "bg-emerald-500/80"],
+      [20, "bg-amber-500"],
+      [5, "bg-red-500"],
+      [0, "bg-red-500"],
+    ] as const) {
+      const health = modelsAccountHealth(
+        {
+          ...base,
+          quota: [
+            {
+              name: "primary_window",
+              remainingPercent,
+              resetsAtMs: 5000,
+              observedAtMs: 1000,
+              modelPattern: null,
+              toolOnly: false,
+              notInPlan: false,
+              unlimited: false,
+              boostPermille: null,
+            },
+          ],
+        },
+        2000,
+      );
+      const rendered = html({ accountHealth: { [first.id]: health } });
+      expect(rendered).toContain(`width:${remainingPercent}%`);
+      expect(rendered).toContain(color);
+      expect(rendered.includes("Limit reached")).toBe(remainingPercent === 0);
+      expect(rendered).toContain(`aria-valuenow="${remainingPercent}"`);
+    }
+    const health = modelsAccountHealth(
+      {
+        ...base,
+        provider: "xai",
+        quota: [
+          {
+            name: "unexpected",
+            remainingPercent: 100,
+            resetsAtMs: 5000,
+            observedAtMs: 1000,
+            modelPattern: null,
+            toolOnly: false,
+            notInPlan: false,
+            unlimited: false,
+            boostPermille: null,
+          },
+        ],
+      },
+      2000,
+    );
+    const rendered = html({ accountHealth: { [first.id]: health } });
+    expect(rendered).toContain("unbekannt");
+    expect(rendered).toContain("Richtung des Anbieterwerts ist nicht belegt");
+    expect(rendered).not.toContain("Limit reached");
+    expect(rendered).not.toContain('role="meter"');
+  });
   it("groups an instance outage once while local xAI remains active and verified", () => {
     const failure = {
       _tag: "failed" as const,
@@ -236,7 +311,7 @@ describe("Provider account table", () => {
     expect(rendered).not.toContain("Gateway pools");
     expect(rendered).not.toContain("LLM routes");
     expect(rendered).not.toContain("Re-login");
-    expect(rendered).toContain("This provider does not report limits to the hub.");
+    expect(rendered).toContain("Anbieter meldet kein Limit");
     expect(rendered).toContain("Add provider");
     expect(rendered).toContain("Check all");
     expect(rendered).toContain("Actions for work@example.test");

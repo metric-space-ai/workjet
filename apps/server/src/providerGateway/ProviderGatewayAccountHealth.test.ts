@@ -21,6 +21,33 @@ const status = (accounts: unknown) => ({
   account_health: { schema: "workjet.provider-gateway.account-health.v1", accounts },
 });
 describe("gateway account health", () => {
+  it("preserves whitelisted raw quota evidence while accepting older hosts", () => {
+    const source = { field: "percentage", value: 42, windowSeconds: 604800, status: null };
+    const quota = [
+      {
+        name: "TOKENS_LIMIT_1",
+        source,
+        remainingPercent: 58,
+        resetsAtMs: null,
+        observedAtMs: 1000,
+      },
+    ];
+    expect(
+      decodeAccountHealth(status([{ ...account, provider: "zai", quota }]))?.[0]?.quota[0]?.source,
+    ).toEqual(source);
+    for (const patch of [
+      { field: "guessed" },
+      { value: 101 },
+      { value: -1 },
+      { windowSeconds: -1 },
+    ]) {
+      expect(
+        decodeAccountHealth(
+          status([{ ...account, quota: [{ ...quota[0], source: { ...source, ...patch } }] }]),
+        ),
+      ).toBeUndefined();
+    }
+  });
   it("defaults older hosts to unknown balance and validates monetary readings", () => {
     const { balance: omitted, ...older } = account;
     expect(omitted).toBeNull();

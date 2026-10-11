@@ -15,6 +15,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 import {
   BusinessOsSettingsView,
   importBusinessOsSettingsInvite,
+  formatInviteValidity,
   manualConnectionCredentialText,
   resolveActiveBusinessOsInstanceId,
   visibleBusinessOsInstances,
@@ -238,6 +239,7 @@ describe("Business OS settings scope", () => {
   });
 
   it("shows device pairing inline, never as a dialog", () => {
+    const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
         instances={[instance("local:welsch", "WELSCH", "local_daemon")]}
@@ -246,14 +248,14 @@ describe("Business OS settings scope", () => {
         activeInvite={{
           inviteId: "invite-1",
           link: "workjet://pair?payload=abc",
-          expiresAt: "2026-10-11T23:30:00Z",
+          expiresAt,
           manualConnection: {
             signalingUrls: ["wss://signal.example.test"],
             room: "room-1",
             browserToken: "token",
             browserTokenHash: "hash",
             authVersion: "ctox-role-bound-v1",
-            expiresAt: "2026-10-11T23:30:00Z",
+            expiresAt,
           } as never,
         }}
         onCloseInvite={() => undefined}
@@ -265,8 +267,19 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain("QR-Code");
     expect(markup).toContain("Verbindungsdaten");
     expect(markup).toContain("Gültig bis");
+    expect(markup).toContain("noch 30 Min.");
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain("Connect a Workjet device");
+  });
+
+  it("states the invite validity with the remaining time", () => {
+    const expiresAt = "2026-10-11T23:30:00Z";
+    const now = Date.parse(expiresAt);
+    expect(formatInviteValidity(expiresAt, now - 23 * 60_000)).toMatch(
+      /^Gültig bis .+ · noch 23 Min\.$/u,
+    );
+    expect(formatInviteValidity(expiresAt, now - 3 * 3_600_000)).toMatch(/noch 3 Std\.$/u);
+    expect(formatInviteValidity(expiresAt, now + 1)).toBe("Abgelaufen");
   });
 
   it("keeps the manual browser credential masked until the user explicitly reveals it", () => {

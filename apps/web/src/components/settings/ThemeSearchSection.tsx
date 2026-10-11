@@ -189,7 +189,7 @@ export function ThemeSearchSection({
   );
 
   return (
-    <section aria-label="Theme-Suche" className="space-y-3">
+    <section aria-label="Themensuche" className="space-y-3">
       <div className="relative flex gap-2" role="search">
         <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input

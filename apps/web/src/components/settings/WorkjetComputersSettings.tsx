@@ -819,13 +819,13 @@ export function WorkjetComputersSettingsView({
                       {chips}
                     </span>
                   }
-                  {...(onActiveChange && computer
+                  {...(onActiveChange
                     ? {
                         active,
                         activeLabel: `${label} aktiv`,
                         // Ohne Metadaten bleibt der Schalter sichtbar, aber gesperrt:
                         // jede Zeile hat dieselbe Spalte.
-                        activeDisabled: !metadata,
+                        activeDisabled: !computer || !metadata,
                         onActiveChange: (checked: boolean) => onActiveChange(row, checked),
                       }
                     : {})}

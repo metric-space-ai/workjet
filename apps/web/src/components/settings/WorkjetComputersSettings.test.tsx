@@ -299,8 +299,12 @@ describe("native computer capabilities", () => {
     expect(markup).toContain("Weitere Aktionen für computer-local");
     expect(markup).toContain('aria-label="flashstore24-nas entfernen"');
     expect(markup).toContain('aria-label="computer-local entfernen"');
-    // Der Instanz-Eintrag allein hat keinen Workjet-Datensatz, also keinen Schalter.
-    expect(markup.match(/role="switch"/g)).toHaveLength(1);
+    // Jede Zeile hat denselben Schalter; der Instanz-Eintrag ohne Workjet-Datensatz
+    // zeigt ihn gesperrt.
+    expect(markup.match(/role="switch"/g)).toHaveLength(2);
+    expect(markup).toMatch(
+      /aria-label="flashstore24-nas aktiv"[^>]*disabled|disabled[^>]*aria-label="flashstore24-nas aktiv"/,
+    );
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain('role="alertdialog"');
   });

@@ -152,10 +152,10 @@ describe("searchSettings", () => {
         to: "/settings/workjet",
       },
     ]);
-    expect(searchSettings("worktree-speicher")).toEqual([
+    expect(searchSettings("arbeitskopien-speicher")).toEqual([
       {
         id: "automatic-worktree-storage",
-        title: "Worktree-Speicher",
+        title: "Arbeitskopien-Speicher",
         to: "/settings/workjet",
         targetId: "workjet-execution",
       },

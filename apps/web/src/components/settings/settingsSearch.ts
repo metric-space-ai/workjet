@@ -277,7 +277,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "automatic-worktree-storage",
-    title: "Worktree-Speicher",
+    title: "Arbeitskopien-Speicher",
     to: "/settings/workjet",
     targetId: "workjet-execution",
   },

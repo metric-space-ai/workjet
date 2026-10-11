@@ -402,6 +402,17 @@ function IndexDraftLanding() {
           ctoxInstanceId={activeCtoxInstanceId}
           openMeeting={meetingProjectKey === project.key}
           threads={threads}
+          onOpenPullRequests={() =>
+            void navigate({
+              to: "/pull-requests",
+              search: {
+                involvement: "all",
+                state: "open",
+                projectId: landingProject.id,
+                environmentId: landingProject.environmentId,
+              },
+            })
+          }
           onAddParent={async (domain, goal) => {
             if (
               !supervisor ||

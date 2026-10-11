@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { GitPullRequestIcon } from "lucide-react";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
@@ -22,6 +23,7 @@ import {
 import { SidebarInset } from "./ui/sidebar";
 import { InlinePanel } from "./ui/inline-panel";
 import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 
 type Props = {
   readonly project: GalleryProject;
@@ -31,6 +33,8 @@ type Props = {
   readonly ctoxInstanceId?: string | null;
   readonly openMeeting?: boolean;
   readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
+  /** Öffnet die Pull-Request-Liste dieses Projekts. */
+  readonly onOpenPullRequests?: () => void;
 };
 export function ProjectWorkspace(props: Props) {
   return (
@@ -46,6 +50,7 @@ function ProjectWorkspaceContent({
   onOpenChat,
   onAddParent,
   onOpenJourFixe,
+  onOpenPullRequests,
   ctoxInstanceId,
   openMeeting = false,
 }: Props) {
@@ -139,42 +144,50 @@ function ProjectWorkspaceContent({
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
         actions={
-          <InlinePanel
-            // The header row wraps; an open panel takes its own full line.
-            {...(editingParent ? { className: "mt-2 basis-full text-sm text-foreground" } : {})}
-            triggerLabel={text.addParent}
-            open={editingParent}
-            onOpenChange={(open) => {
-              setEditingParent(open);
-              if (!open) setFailed(false);
-            }}
-            submitLabel={saving ? text.saving : text.addParent}
-            submitDisabled={!domain.trim() || !goal.trim()}
-            busy={saving}
-            status={failed ? text.addFailed : undefined}
-            statusTone="error"
-            onSubmit={() => void submitParent()}
-          >
-            <label className="grid gap-1 text-sm">
-              {text.name}
-              <Input
-                required
-                maxLength={256}
-                value={domain}
-                onChange={(event) => setDomain(event.target.value)}
-              />
-            </label>
-            <label className="grid gap-1 text-sm">
-              {text.goal}
-              <textarea
-                required
-                maxLength={4096}
-                value={goal}
-                onChange={(event) => setGoal(event.target.value)}
-                className="min-h-24 rounded-md border border-input bg-transparent p-2"
-              />
-            </label>
-          </InlinePanel>
+          <>
+            {onOpenPullRequests ? (
+              <Button size="sm" variant="outline" onClick={onOpenPullRequests}>
+                <GitPullRequestIcon />
+                Pull Requests
+              </Button>
+            ) : null}
+            <InlinePanel
+              // The header row wraps; an open panel takes its own full line.
+              {...(editingParent ? { className: "mt-2 basis-full text-sm text-foreground" } : {})}
+              triggerLabel={text.addParent}
+              open={editingParent}
+              onOpenChange={(open) => {
+                setEditingParent(open);
+                if (!open) setFailed(false);
+              }}
+              submitLabel={saving ? text.saving : text.addParent}
+              submitDisabled={!domain.trim() || !goal.trim()}
+              busy={saving}
+              status={failed ? text.addFailed : undefined}
+              statusTone="error"
+              onSubmit={() => void submitParent()}
+            >
+              <label className="grid gap-1 text-sm">
+                {text.name}
+                <Input
+                  required
+                  maxLength={256}
+                  value={domain}
+                  onChange={(event) => setDomain(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                {text.goal}
+                <textarea
+                  required
+                  maxLength={4096}
+                  value={goal}
+                  onChange={(event) => setGoal(event.target.value)}
+                  className="min-h-24 rounded-md border border-input bg-transparent p-2"
+                />
+              </label>
+            </InlinePanel>
+          </>
         }
         {...(data.decisions.length
           ? {

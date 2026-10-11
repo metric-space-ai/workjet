@@ -66,7 +66,9 @@ function SettingsContentLayout() {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const [restoreSignal, setRestoreSignal] = useState(0);
-  const isInstanceManagement = location.pathname === "/settings/business-os";
+  // Instanzen und Verbrauch brauchen keinen Instanzkontext.
+  const isInstanceManagement =
+    location.pathname === "/settings/business-os" || location.pathname === "/settings/usage";
   const canShowSettings = isInstanceManagement || instanceContext.canEditInstanceSettings;
   const showRestoreDefaults =
     location.pathname === "/settings/general" && instanceContext.canEditInstanceSettings;
@@ -137,7 +139,7 @@ function SettingsContentLayout() {
             <Outlet />
           ) : discovery === "loading" ? (
             <p role="status" className="px-6 py-8 text-sm text-muted-foreground">
-              Loading instances …
+              Instanzen werden geladen …
             </p>
           ) : (
             <Navigate to="/settings/business-os" replace />

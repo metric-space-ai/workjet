@@ -1,6 +1,5 @@
 import { type ServerLifecycleWelcomePayload } from "@workjet/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@workjet/client-runtime/environment";
-import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import {
   Outlet,
   createRootRoute,
@@ -53,6 +52,7 @@ import {
 } from "../state/server";
 import { readProject, setActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
 import {
+  KEYBINDINGS_UPDATE_TOAST_COPY,
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
@@ -384,8 +384,7 @@ function EventRouter() {
     if (decision._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: "Keybindings updated",
-        description: "Keybindings configuration reloaded successfully.",
+        title: KEYBINDINGS_UPDATE_TOAST_COPY.success.title,
       });
       return;
     }
@@ -393,11 +392,10 @@ function EventRouter() {
     toastManager.add(
       stackedThreadToast({
         type: "warning",
-        title: "Invalid keybindings configuration",
-        description: decision.message,
+        title: KEYBINDINGS_UPDATE_TOAST_COPY.invalid.title,
         actionVariant: "outline",
         actionProps: {
-          children: "Open keybindings.json",
+          children: KEYBINDINGS_UPDATE_TOAST_COPY.invalid.action,
           onClick: () => {
             if (!serverConfig || !primaryEnvironment) {
               return;
@@ -418,13 +416,10 @@ function EventRouter() {
               if (result._tag === "Success") {
                 return;
               }
-              const error = squashAtomCommandFailure(result);
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Unable to open keybindings file",
-                  description:
-                    error instanceof Error ? error.message : "Unknown error opening file.",
+                  title: "keybindings.json lässt sich nicht öffnen",
                 }),
               );
             })();

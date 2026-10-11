@@ -311,7 +311,7 @@ function IndexDraftLanding() {
             input: {
               threadId,
               projectId: target.projectId,
-              title: "Project supervisor",
+              title: "Projekt-Supervisor",
               modelSelection,
               runtimeMode: DEFAULT_RUNTIME_MODE,
               interactionMode: "default",

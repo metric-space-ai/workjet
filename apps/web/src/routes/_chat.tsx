@@ -112,8 +112,7 @@ function ChatRouteGlobalShortcuts() {
           toastManager.add(
             stackedThreadToast({
               type: "info",
-              title: "Preview is desktop-only",
-              description: "Open CTOX in the desktop app to use the in-app preview.",
+              title: "Vorschau nur in der Desktop-App",
             }),
           );
           return;

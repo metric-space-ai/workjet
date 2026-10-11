@@ -112,7 +112,8 @@ export function supervisorTickSituation(input: {
       goalChangedSinceControl: goal != null && Date.parse(goal.updatedAt) > Date.parse(input.since),
       kanbanChangedSinceControl:
         goal?.kanban != null && Date.parse(goal.kanban.updatedAt) > Date.parse(input.since),
-      kanban: goal?.kanban?.cards.map((card) => ({
+      kanbanCount: goal?.kanban?.cards.length ?? 0,
+      kanban: goal?.kanban?.cards.slice(0, 20).map((card) => ({
         id: card.id,
         title: clip(card.title),
         status: card.status,
@@ -120,8 +121,8 @@ export function supervisorTickSituation(input: {
       changedAt: input.changes.filter((v) => v.threadId === t.id).map((v) => v.occurredAt),
     };
   };
-  const text = JSON.stringify({
-    project: { id: input.project.id, title: input.project.title },
+  const snapshot = {
+    project: { id: input.project.id, title: clip(input.project.title) },
     since: input.since,
     persistentWorkers: members
       .filter(
@@ -151,14 +152,28 @@ export function supervisorTickSituation(input: {
         redWithoutMovement: state.red && Date.parse(pr.updatedAt) <= Date.parse(input.since),
       };
     }),
-    escalations: input.escalations,
+    escalations: [...input.escalations],
     errorsAndTimeouts: input.errors.map((e) => ({ ...e, summary: clip(e.summary) })),
     tokenBudget: null,
     minutesUntilNextRegularMeeting: input.meetingMinutes,
     sourceErrors: input.sourceErrors,
-    limits: { pullRequests: 100, errors: 50, changes: 100 },
-  });
-  return text.length <= 62000
-    ? text
-    : text.slice(0, 62000) + "\nLagebild gekürzt: weitere Einträge im Projektverlauf.";
+    limits: { pullRequests: 100, errors: 50, changes: 100, kanbanCardsPerWorker: 20 },
+    truncated: false,
+    collectedCounts: {
+      workers: members.length, pullRequests: input.pullRequests.length,
+      escalations: input.escalations.length, errors: input.errors.length,
+    },
+  };
+  const groups = [snapshot.persistentWorkers, snapshot.oneShotWorkers, snapshot.pullRequests, snapshot.escalations, snapshot.errorsAndTimeouts];
+  let text = JSON.stringify(snapshot);
+  // Keep every source category and valid JSON when a project has a long history.
+  while (text.length > 62000) {
+    const largest = groups.filter((rows) => rows.length > 1)
+      .sort((a, b) => JSON.stringify(b).length - JSON.stringify(a).length)[0];
+    if (!largest) break;
+    largest.splice(Math.ceil(largest.length / 2));
+    snapshot.truncated = true;
+    text = JSON.stringify(snapshot);
+  }
+  return text;
 }

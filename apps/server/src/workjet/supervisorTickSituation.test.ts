@@ -146,6 +146,23 @@ describe("supervisor situation", () => {
     expect(snapshot.tokenBudget).toBeNull();
     expect(snapshot.minutesUntilNextRegularMeeting).toBe(60);
   });
+  it("keeps large rounds compact with valid JSON and every source category", () => {
+    const text = supervisorTickSituation({
+      project: { id: projectId, title: "Control", workspaceRoot: null, defaultModelSelection: null, scripts: [],
+        createdAt: base.createdAt, updatedAt: base.updatedAt, deletedAt: null },
+      threads: Array.from({ length: 500 }, (_, index) => ({ ...base, id: ThreadId.make("worker-" + index) })),
+      since: base.createdAt, now, pullRequests: Array.from({ length: 100 }, () => pr),
+      sourceErrors: [], meetingMinutes: 60, changes: [], escalations: [],
+      errors: [{ threadId: base.id, kind: "provider.timeout", summary: "Timed out", createdAt: base.updatedAt }],
+    });
+    expect(text.length).toBeLessThanOrEqual(62000);
+    const snapshot = JSON.parse(text);
+    expect(snapshot.truncated).toBe(true);
+    expect(snapshot.persistentWorkers.length).toBeGreaterThan(0);
+    expect(snapshot.pullRequests.length).toBeGreaterThan(0);
+    expect(snapshot.errorsAndTimeouts[0].kind).toBe("provider.timeout");
+    expect(snapshot.collectedCounts.workers).toBe(500);
+  });
   it("does not treat unknown or pending checks as green", () => {
     expect(supervisorPullRequestState({ ...pr, statusCheckRollup: null }).ready).toBe(false);
     expect(

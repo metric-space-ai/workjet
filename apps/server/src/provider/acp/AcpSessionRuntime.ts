@@ -869,9 +869,15 @@ export const make = (
             yield* Ref.set(activePromptFiberRef, Option.some(promptRpcFiber));
             return yield* Fiber.join(promptRpcFiber).pipe(
               Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
+                namespaceFailure
+                  ? Effect.fail(namespaceFailure)
+                  : Cause.hasInterruptsOnly(cause)
                   ? Effect.succeed(cancelledResponse)
                   : Effect.failCause(cause),
+              ),
+              // Closing a rejected Source is not a successful turn or Owner cancellation.
+              Effect.flatMap((response) =>
+                namespaceFailure ? Effect.fail(namespaceFailure) : Effect.succeed(response),
               ),
               Effect.ensuring(
                 Effect.gen(function* () {

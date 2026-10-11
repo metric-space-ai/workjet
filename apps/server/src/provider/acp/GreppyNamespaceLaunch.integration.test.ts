@@ -248,11 +248,16 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                     yield* children[0]!.exitCode.pipe(Effect.result);
                     expect(yield* children[0]!.isRunning).toBe(false);
                   } else {
-                    yield* adapter.sendTurn({
-                      threadId: owned.input.threadId,
-                      input:
-                        variant === "expired-source-cleanup" ? "cleanup-only" : "source-denied",
-                    });
+                    const result = yield* adapter
+                      .sendTurn({
+                        threadId: owned.input.threadId,
+                        input:
+                          variant === "expired-source-cleanup" ? "cleanup-only" : "source-denied",
+                      })
+                      .pipe(Effect.result);
+                    expect(result._tag).toBe(
+                      variant === "expired-source-cleanup" ? "Success" : "Failure",
+                    );
                   }
                   expect(yield* held.isRunning).toBe(false);
                   expect(owned.admissions() - before).toBe(

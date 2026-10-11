@@ -139,9 +139,13 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                 }
                 expect(callbacks).toBe(0);
                 const commits = yield* Effect.tryPromise(() =>
-                  Promise.resolve(NodeChildProcess.execFileSync("/usr/bin/git", [
-                    "-C", owned.workspace, "rev-list", "--count", "HEAD",
-                  ], { timeout: 5000, encoding: "utf8" }).trim()),
+                  Promise.resolve(
+                    NodeChildProcess.execFileSync(
+                      "/usr/bin/git",
+                      ["-C", owned.workspace, "rev-list", "--count", "HEAD"],
+                      { timeout: 5000, encoding: "utf8" },
+                    ).trim(),
+                  ),
                 );
                 expect(commits).toBe("2");
                 expect(
@@ -174,9 +178,15 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                 Effect.scoped,
                 Effect.provideService(
                   ChildProcessSpawner.ChildProcessSpawner,
-                  ChildProcessSpawner.make((command) => spawner.spawn(command).pipe(
-                    Effect.tap((child) => Effect.sync(() => { children.push(child); })),
-                  )),
+                  ChildProcessSpawner.make((command) =>
+                    spawner.spawn(command).pipe(
+                      Effect.tap((child) =>
+                        Effect.sync(() => {
+                          children.push(child);
+                        }),
+                      ),
+                    ),
+                  ),
                 ),
                 Effect.onError(() =>
                   Effect.tryPromise(() =>

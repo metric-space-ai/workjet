@@ -83,7 +83,8 @@ import {
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
-import { primaryServerProvidersAtom } from "../../state/server";
+import { primaryServerConfigAtom, primaryServerProvidersAtom } from "../../state/server";
+import { formatVersionChipLabel } from "../VersionChip";
 import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTime } from "../../timestampFormat";
@@ -181,11 +182,18 @@ function backgroundActivityProfileSettings(profile: BackgroundActivityProfile) {
   };
 }
 
+/** Dieselbe Versionszeile wie der VersionChip (UI-Vertrag §6), nur lesend. */
 function AboutVersionTitle() {
+  const environment = useAtomValue(primaryServerConfigAtom)?.environment ?? null;
+  const label = formatVersionChipLabel(
+    APP_VERSION,
+    environment?.serverVersion ?? null,
+    environment?.label ?? null,
+  );
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2">
       <span>Version</span>
-      <code className="text-[11px] font-medium text-muted-foreground">{APP_VERSION}</code>
+      <span className="text-[12px] font-medium text-muted-foreground tabular-nums">{label}</span>
     </span>
   );
 }

@@ -1,0 +1,34 @@
+/* Diagnose-Tabellen: unter 640 px Zeilenblöcke statt horizontalem Scrollen. */
+@media (max-width: 639px) {
+  .resource-telemetry-table,
+  .resource-telemetry-table tbody {
+    display: block;
+    width: 100%;
+  }
+  .resource-telemetry-table colgroup,
+  .resource-telemetry-table thead {
+    display: none;
+  }
+  .resource-telemetry-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 12px;
+    padding: 8px 12px;
+  }
+  .resource-telemetry-table td {
+    display: flex;
+    min-width: 0;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 !important;
+    text-align: left !important;
+  }
+  .resource-telemetry-table td:first-child,
+  .resource-telemetry-table td[colspan] {
+    grid-column: 1 / -1;
+  }
+  .resource-telemetry-table td[data-label]:not(:first-child)::before {
+    content: attr(data-label);
+    color: var(--muted-foreground);
+  }
+}

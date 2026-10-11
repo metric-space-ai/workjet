@@ -42,10 +42,10 @@ function render(value: ScopedSupervisorTurnCapabilities | null, disabled = false
 describe("Owner-selected Supervisor message kind", () => {
   it("keeps Task as the default and exposes Chat only after scoped support", () => {
     expect(render(null)).toContain(
-      '<option value="conversation" disabled="">Chat (unavailable)</option>',
+      '<option value="conversation" disabled="">Chat (nicht verfügbar)</option>',
     );
     expect(render(capability)).toContain('<option value="conversation">Chat</option>');
-    expect(render(capability)).toContain('<option value="work" selected="">Task</option>');
+    expect(render(capability)).toContain('<option value="work" selected="">Aufgabe</option>');
   });
   it.each(["instanceId", "projectId", "threadId"] as const)(
     "rejects a late capability from a previous %s",
@@ -72,8 +72,6 @@ describe("Owner-selected Supervisor message kind", () => {
     ).toBe(false);
   });
   it("preserves the uncertain-submission lock even when Chat is supported", () => {
-    expect(render(capability, true)).toContain(
-      '<select aria-label="Supervisor message type" disabled=""',
-    );
+    expect(render(capability, true)).toContain('<select aria-label="Nachrichtenart" disabled=""');
   });
 });

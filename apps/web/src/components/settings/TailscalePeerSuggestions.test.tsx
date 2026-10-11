@@ -43,13 +43,13 @@ describe("Tailscale peer suggestions", () => {
     render(bridge, select);
     await settle();
     const tree = render(bridge, select);
-    const action = visitElements(tree, (element) => element.props.children === "Use computer");
+    const action = visitElements(tree, (element) => element.props.children === "Übernehmen");
     expect(action).not.toBeNull();
     (action?.props.onClick as () => void)();
     expect(select).toHaveBeenCalledWith("100.87.204.48");
     expect(JSON.stringify(tree)).toContain("gpu1-A6000");
     expect(JSON.stringify(tree)).not.toContain("gpu3-A4500");
-    expect(JSON.stringify(tree).match(/Use computer/gu)).toHaveLength(1);
+    expect(JSON.stringify(tree).match(/Übernehmen/gu)).toHaveLength(1);
     expect(JSON.stringify(tree)).not.toContain("known hosts");
   });
   it("shows unavailable without exposing rejected CLI text", async () => {
@@ -57,9 +57,9 @@ describe("Tailscale peer suggestions", () => {
     render(bridge);
     await settle();
     const text = JSON.stringify(render(bridge));
-    expect(text).toContain("Tailscale discovery is unavailable");
+    expect(text).toContain("Tailscale nicht verfügbar");
     expect(text).not.toContain("tskey-secret");
-    expect(text).not.toContain("Use computer");
+    expect(text).not.toContain("Übernehmen");
   });
   it("ignores a stale response after the bridge changes", async () => {
     let complete!: (value: DesktopTailscalePeers) => void;

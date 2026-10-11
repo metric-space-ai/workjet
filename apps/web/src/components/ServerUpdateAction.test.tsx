@@ -63,8 +63,8 @@ describe("ServerUpdateAction", () => {
     });
     expect(testState.toast).toHaveBeenCalledWith({
       type: "success",
-      title: "Test server updated",
-      description: "Reconnected on workjet@0.0.31.",
+      title: "Test server aktualisiert",
+      description: "Verbunden mit workjet@0.0.31",
     });
   });
 
@@ -113,7 +113,7 @@ describe("ServerUpdateProgress", () => {
       />,
     );
 
-    expect(markup).toContain("Restarting…");
+    expect(markup).toContain("Startet neu …");
     // The wait state is monochrome and calm: no versions, no step rail, no
     // success/warning colors, one duty-cycled pulse on the dot.
     expect(markup).not.toContain("0.0.30");
@@ -136,7 +136,7 @@ describe("ServerUpdateProgress", () => {
       />,
     );
 
-    expect(markup).toContain("Downloading…");
+    expect(markup).toContain("Wird geladen …");
     expect(markup).not.toContain("Install");
   });
 

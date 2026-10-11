@@ -198,7 +198,7 @@ describe("instance-first network navigation", () => {
 
 describe("network evidence labels", () => {
   it("does not infer an SSH host from a display name or a pairing label", () => {
-    expect(instanceHostLabel(alpha)).toBe("Dieser Computer");
+    expect(instanceHostLabel(alpha)).toBe("Dieser Rechner");
     expect(instanceHostLabel({ ...alpha, source: "pairing_invite", displayName: "gpu3" })).toBe(
       "Hostname noch nicht gemeldet",
     );

@@ -337,7 +337,7 @@ export function ProjectOverviewView(props: {
               className="hidden grid-cols-[minmax(0,1fr)_9rem_7rem_6.5rem] gap-3 border-b border-border px-3 py-1.5 text-xs text-muted-foreground sm:grid"
               role="row"
             >
-              <span role="columnheader">Thread</span>
+              <span role="columnheader">Unterhaltung</span>
               <span role="columnheader">Harness · Modell</span>
               <span role="columnheader">{text.connection}</span>
               <span role="columnheader">{text.status}</span>

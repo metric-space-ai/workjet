@@ -53,10 +53,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   interactionMode: ProviderInteractionMode;
   onToggleInteractionMode: () => void;
 }) {
-  const interactionModeTooltip =
-    props.interactionMode === "plan"
-      ? "Plan mode — click to return to normal build mode"
-      : "Default mode — click to enter plan mode";
+  const interactionModeTooltip = props.interactionMode === "plan" ? "Planmodus" : "Normaler Modus";
 
   if (!props.showInteractionModeToggle) return null;
 
@@ -85,7 +82,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             <ComposerControlIcon icon={BotIcon} opticalSize="large" />
           )}
           <span className="sr-only sm:not-sr-only">
-            {props.interactionMode === "plan" ? "Plan" : "Build"}
+            {props.interactionMode === "plan" ? "Planen" : "Bauen"}
           </span>
         </TooltipTrigger>
         <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
@@ -299,12 +296,12 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
       {props.traitsPicker ??
         (props.workerMode ? null : (
           <Tooltip>
-            <TooltipTrigger render={<ComposerControl aria-label="Effort" disabled type="button" />}>
-              Effort —
+            <TooltipTrigger
+              render={<ComposerControl aria-label="Aufwand" disabled type="button" />}
+            >
+              Aufwand —
             </TooltipTrigger>
-            <TooltipPopup side="top">
-              This model does not expose an effort setting on this harness
-            </TooltipPopup>
+            <TooltipPopup side="top">Nicht verfügbar</TooltipPopup>
           </Tooltip>
         ))}
       {contextWindowControl}

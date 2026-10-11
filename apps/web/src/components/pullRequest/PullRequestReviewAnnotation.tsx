@@ -178,7 +178,7 @@ export function ReviewThreadCard({
           {thread.isResolved ? "Erledigt" : "Offen"} · {thread.comments.length}{" "}
           {thread.comments.length === 1 ? "Kommentar" : "Kommentare"}
         </button>
-        {thread.isOutdated ? <span>outdated</span> : null}
+        {thread.isOutdated ? <span>veraltet</span> : null}
         {onFix ? (
           <Button
             size="xs"
@@ -275,14 +275,14 @@ export function ReviewThreadCard({
                 />
                 <div className="mt-2 flex justify-end gap-2">
                   <Button size="xs" variant="ghost" onClick={() => setReplying(false)}>
-                    Cancel
+                    Abbrechen
                   </Button>
                   <Button
                     size="xs"
                     disabled={pending || reply.trim().length === 0}
                     onClick={() => void send()}
                   >
-                    Reply
+                    Antworten
                   </Button>
                 </div>
               </div>
@@ -293,7 +293,7 @@ export function ReviewThreadCard({
                 className="mt-2 px-1"
                 onClick={() => setReplying(true)}
               >
-                Reply
+                Antworten
               </Button>
             )
           ) : null}

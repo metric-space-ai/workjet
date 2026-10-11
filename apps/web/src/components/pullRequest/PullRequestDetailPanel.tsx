@@ -119,50 +119,44 @@ import {
 type DetailTab = "summary" | "timeline" | "code";
 
 const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
-  merge: "Pull request merged",
-  ready: "Marked ready for review",
-  draft: "Converted to draft",
-  close: "Pull request closed",
-  reopen: "Pull request reopened",
-  "update-branch": "Branch updated with the base branch",
+  merge: "Pull Request gemergt",
+  ready: "Bereit zum Review",
+  draft: "Zu Entwurf gemacht",
+  close: "Pull Request geschlossen",
+  reopen: "Pull Request wieder geöffnet",
+  "update-branch": "Branch aktualisiert",
   // True whichever it did: a pull request that was already mergeable merges the moment this is
   // armed, and the client has no way to tell that apart from one still waiting on something.
-  "enable-auto-merge":
-    "Auto-merge turned on — merges as soon as this is ready, sooner if it already is",
-  "disable-auto-merge": "Auto-merge turned off",
+  "enable-auto-merge": "Auto-Merge an",
+  "disable-auto-merge": "Auto-Merge aus",
 };
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
 const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
-  merge: "Could not merge this pull request",
-  ready: "Could not mark this ready for review",
-  draft: "Could not convert this to a draft",
-  close: "Could not close this pull request",
-  reopen: "Could not reopen this pull request",
-  "update-branch": "Could not update this branch",
-  "enable-auto-merge": "Could not turn on auto-merge",
-  "disable-auto-merge": "Could not turn off auto-merge",
+  merge: "Merge fehlgeschlagen",
+  ready: "Nicht als bereit markiert",
+  draft: "Nicht zu Entwurf gemacht",
+  close: "Nicht geschlossen",
+  reopen: "Nicht wieder geöffnet",
+  "update-branch": "Branch nicht aktualisiert",
+  "enable-auto-merge": "Auto-Merge nicht aktiviert",
+  "disable-auto-merge": "Auto-Merge nicht deaktiviert",
 };
 
 /** What to try, for the times the host says only that it refused. */
 const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
-  merge:
-    "The host refused the merge. Check that you have write access, that the checks it requires have passed, and that the branch is not conflicting.",
-  ready: "The host refused it. Check that you have write access to this repository.",
-  draft: "The host refused it. Check that you have write access to this repository.",
-  close: "The host refused it. Check that you have write access, or that you opened it.",
-  reopen:
-    "The host refused it. Check that you have write access, and that the branch still exists.",
+  merge: "Abgelehnt: Schreibrechte, Checks, Konflikte prüfen",
+  ready: "Abgelehnt: Schreibrechte prüfen",
+  draft: "Abgelehnt: Schreibrechte prüfen",
+  close: "Abgelehnt: Schreibrechte prüfen",
+  reopen: "Abgelehnt: Schreibrechte und Branch prüfen",
   // Said for the merge commit, which is what an update is unless a rebase was asked for. The
   // rebase has its own reasons to fail and its own sentence below.
-  "update-branch":
-    "The host refused it. Check that you have write access to the branch — one from a fork also needs its author to allow edits from maintainers — and that it does not conflict with the base.",
+  "update-branch": "Abgelehnt: Schreibrechte und Konflikte prüfen",
   // The one refusal that is usually a repository setting rather than anything about this branch:
   // GitHub will not arm an auto-merge at all unless the repository has the feature switched on.
-  "enable-auto-merge":
-    "The host refused it. Check that this repository allows auto-merge, that you have write access, and that there is something left for it to wait on.",
-  "disable-auto-merge":
-    "The host refused it. Check that you have write access, and that the merge has not already happened.",
+  "enable-auto-merge": "Abgelehnt: Auto-Merge-Einstellung und Rechte prüfen",
+  "disable-auto-merge": "Abgelehnt: Schreibrechte prüfen",
 };
 
 /**
@@ -170,8 +164,7 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
  * its own merits, because GitHub replays the commits and stops at the first that does not apply.
  * Offering the merge commit only makes sense to somebody who did not already choose it.
  */
-const UPDATE_BRANCH_REBASE_FAILURE_HINT =
-  "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.";
+const UPDATE_BRANCH_REBASE_FAILURE_HINT = "Rebase abgebrochen: Merge-Commit versuchen";
 
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Übersicht" },
@@ -635,11 +628,8 @@ export function PullRequestDetailPanel({
       // rewritten is the one thing a failed save must not cost them.
       toastManager.add({
         type: "error",
-        title: "The title could not be saved",
-        description: readableFailure(
-          squashAtomCommandFailure(result),
-          "The host refused the new title.",
-        ),
+        title: "Titel nicht gespeichert",
+        description: readableFailure(squashAtomCommandFailure(result), "Vom Host abgelehnt"),
       });
       return;
     }
@@ -709,11 +699,7 @@ export function PullRequestDetailPanel({
       writeTaskToComposer(attachTarget, task);
       toastManager.add({
         type: "success",
-        title: "Added to the composer",
-        description:
-          task.prompt.length > 0
-            ? "The question is in the composer — read it over, then send."
-            : "The pull request is in the composer — type your question, then send.",
+        title: "Im Eingabefeld",
       });
       return;
     }
@@ -724,20 +710,13 @@ export function PullRequestDetailPanel({
     if (opened === null) {
       toastManager.add({
         type: "error",
-        title: "Could not open a thread",
-        description: "Try again from the project, or open a thread first.",
+        title: "Unterhaltung nicht geöffnet",
       });
       return;
     }
     toastManager.add({
       type: "success",
-      title: "Asked in a thread",
-      // "Ask" leaves the composer empty on purpose, so saying the question is in it would send
-      // the reader looking for something that is not there. The chips are what landed.
-      description:
-        task.prompt.length > 0
-          ? "The question is in the composer — read it over, then send."
-          : "The pull request is in the composer — type your question, then send.",
+      title: "In Unterhaltung gefragt",
     });
   };
 
@@ -757,8 +736,7 @@ export function PullRequestDetailPanel({
       writeTaskToComposer(attachTarget, task);
       toastManager.add({
         type: "success",
-        title: "Added to the composer",
-        description: "The task is in the composer — read it over, then send.",
+        title: "Im Eingabefeld",
       });
       return;
     }
@@ -768,7 +746,7 @@ export function PullRequestDetailPanel({
     // never expires, and an explicit one would survive the update and pin the result on screen.
     const toastId = toastManager.add({
       type: "loading",
-      title: "Preparing the pull request checkout...",
+      title: "Checkout wird vorbereitet …",
     });
     // Wherever the reader chose to act: the thread, the checkout it is pointed at and the composer
     // the task lands in are all one server's, and picking another one moves all three.
@@ -787,8 +765,7 @@ export function PullRequestDetailPanel({
       // working tree than to prepare a worktree nobody asked for.
       toastManager.update(toastId, {
         type: "error",
-        title: "Could not open a thread for the checkout",
-        description: "Try again from the project, or open a thread first.",
+        title: "Unterhaltung nicht geöffnet",
       });
       return;
     }
@@ -805,7 +782,7 @@ export function PullRequestDetailPanel({
         prepareThread.error instanceof Error ? prepareThread.error.message : null;
       toastManager.update(toastId, {
         type: "error",
-        title: "Could not prepare the pull request checkout",
+        title: "Checkout fehlgeschlagen",
         ...(detailMessage ? { description: detailMessage } : {}),
       });
       return;
@@ -827,8 +804,8 @@ export function PullRequestDetailPanel({
       // outcome worth stopping for, since it reads as success and is not.
       toastManager.update(toastId, {
         type: "error",
-        title: "Checked out, but the thread stayed where it was",
-        description: `The checkout is ready on \`${prepared.value.branch}\`. Point a thread at it from the branch picker, then ask again.`,
+        title: "Unterhaltung nicht umgestellt",
+        description: `Branch: ${prepared.value.branch}`,
       });
       return;
     }
@@ -840,9 +817,7 @@ export function PullRequestDetailPanel({
     // success, because everything else about the handoff did happen.
     const staleCheckoutToast = {
       type: "warning",
-      title: "Checked out, but not on the latest commits",
-      description:
-        "The checkout could not be moved onto the pull request's latest commits, so the code there is older than the pull request. Uncommitted work or local commits keep it where it is.",
+      title: "Checkout nicht aktuell",
     } as const;
     if (task === null) {
       toastManager.update(
@@ -850,11 +825,7 @@ export function PullRequestDetailPanel({
         prepared.value.isOnPullRequestHead
           ? {
               type: "success",
-              title: mode === "local" ? "Checked out here" : "Checked out",
-              description:
-                mode === "local"
-                  ? "This repository is on the pull request's branch, with a thread open on it."
-                  : "The pull request is in its own worktree, with a thread open on it.",
+              title: mode === "local" ? "Hier ausgecheckt" : "Ausgecheckt",
             }
           : staleCheckoutToast,
       );
@@ -866,8 +837,7 @@ export function PullRequestDetailPanel({
       prepared.value.isOnPullRequestHead
         ? {
             type: "success",
-            title: "Checkout ready",
-            description: "The task is in the composer — read it over, then send.",
+            title: "Checkout bereit",
           }
         : staleCheckoutToast,
     );
@@ -1329,7 +1299,7 @@ export function PullRequestDetailPanel({
                   title="Host führt zusammen, sobald bereit"
                 >
                   <GitMergeIcon aria-hidden className="size-3" />
-                  Auto-merge
+                  Auto-Merge
                 </Badge>
               ) : null}
               {primaryAction === "ready" ? (
@@ -1674,7 +1644,7 @@ export function PullRequestDetailPanel({
                           activityError
                             ? "Commits nicht verfügbar"
                             : `${detail.commits.length.toLocaleString()} ${
-                                detail.commits.length === 1 ? "commit" : "commits"
+                                detail.commits.length === 1 ? "Commit" : "Commits"
                               }`
                         }
                       >

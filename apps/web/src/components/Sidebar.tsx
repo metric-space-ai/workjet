@@ -268,7 +268,7 @@ function WorkingDuration(props: { startedAt: string | null }) {
 }
 
 function terminalProcessLabel(count: number): string {
-  return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
+  return `${count} Terminal-Prozess${count === 1 ? "" : "e"} aktiv`;
 }
 
 function SidebarThreadTooltip({
@@ -339,7 +339,7 @@ function SidebarThreadTooltip({
             <div className="flex min-w-0 items-start gap-2 text-warning">
               <CircleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0 stroke-current" />
               <div className="min-w-0 flex-1 wrap-break-word leading-5">
-                You're currently checked out on another branch.
+                Anderer Branch ausgecheckt
               </div>
             </div>
           ) : null}
@@ -371,7 +371,7 @@ function SidebarThreadTooltip({
           {thread.session?.lastError ? (
             <div className="flex min-w-0 items-center gap-2 text-red-600 dark:text-red-400">
               <CircleAlertIcon className="size-3 shrink-0 stroke-current" />
-              <div className="min-w-0 truncate">Error occurred</div>
+              <div className="min-w-0 truncate">Fehler aufgetreten</div>
             </div>
           ) : null}
         </div>
@@ -551,8 +551,8 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
             <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
               <button
                 type="button"
-                aria-label="Discard draft"
-                title="Discard draft"
+                aria-label="Entwurf verwerfen"
+                title="Entwurf verwerfen"
                 onClick={handleDiscard}
                 className="pointer-events-none inline-flex cursor-pointer items-center rounded-md bg-transparent px-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100"
               >
@@ -840,7 +840,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const topStatus =
     status === "working"
       ? {
-          label: "Working",
+          label: "Läuft",
           icon: "working" as const,
           // No shimmer: a label that animates forever is noise in a sidebar
           // full of them (and repaints every vsync on high-refresh displays).
@@ -853,37 +853,37 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         ? {
             // Monitoring is calm background presence, not active progress
             // (monitoring-pill D6), so it keeps the label at full strength.
-            label: "Monitoring",
+            label: "Beobachtet",
             icon: null,
             className: "text-sky-600 dark:text-sky-400",
           }
         : status === "approval"
           ? {
-              label: "Approval",
+              label: "Freigabe",
               icon: null,
               className: "text-amber-700 dark:text-amber-300",
             }
           : status === "input"
             ? {
-                label: "Input",
+                label: "Eingabe",
                 icon: null,
                 className: "text-indigo-600 dark:text-indigo-300",
               }
             : status === "failed"
               ? {
-                  label: "Failed",
+                  label: "Fehlgeschlagen",
                   icon: null,
                   className: "text-red-700 dark:text-red-300",
                 }
               : isWoke
                 ? {
-                    label: "Woke",
+                    label: "Geweckt",
                     icon: "woke" as const,
                     className: "text-amber-700 dark:text-amber-300",
                   }
                 : isUnread
                   ? {
-                      label: "Done",
+                      label: "Fertig",
                       icon: "done" as const,
                       className: "text-emerald-700 dark:text-emerald-300",
                     }
@@ -1092,7 +1092,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     <input
       autoFocus
       value={renamingTitle}
-      aria-label="Thread title"
+      aria-label="Titel der Unterhaltung"
       onChange={(event) => onRenameTitleChange(event.target.value)}
       onFocus={(event) => event.currentTarget.select()}
       onKeyDown={handleRenameKeyDown}
@@ -1226,7 +1226,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {props.teamParentTitle ? (
               <span
                 className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
-                title={`Dispatched by ${props.teamParentTitle}`}
+                title={`Beauftragt von ${props.teamParentTitle}`}
               >
                 {props.teamParentTitle}
               </span>
@@ -1234,7 +1234,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
-                Regenerating title
+                Titel wird erzeugt
               </span>
             ) : null}
             {/* The PR badge stays outside the hover-fading slot: it must
@@ -1261,8 +1261,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   // merged while snoozed); the signal must survive the trip.
                   <button
                     type="button"
-                    aria-label="Dismiss Woke notification"
-                    title="Dismiss Woke notification"
+                    aria-label="Hinweis verwerfen"
+                    title="Hinweis verwerfen"
                     onClick={handleAcknowledgeWokeClick}
                     className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
                   >
@@ -1270,7 +1270,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     <span role="status">
                       {props.projectTeam
                         ? overviewText[projectOverviewWorkerState(thread)]
-                        : "Woke"}
+                        : "Geweckt"}
                     </span>
                   </button>
                 ) : (
@@ -1287,7 +1287,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 !props.snoozeSupported ? null : (
                   <button
                     type="button"
-                    aria-label="Wake thread now"
+                    aria-label="Jetzt wecken"
                     onClick={handleUnsnoozeClick}
                     className={cn(
                       "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -1301,7 +1301,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
                 <button
                   type="button"
-                  aria-label="Un-settle thread"
+                  aria-label="Wieder öffnen"
                   onClick={handleUnsettleClick}
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -1314,7 +1314,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : (
                 <button
                   type="button"
-                  aria-label="Settle thread"
+                  aria-label="Erledigen"
                   onClick={handleSettleClick}
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -1395,8 +1395,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 props.pinningSupported ? (
                   <button
                     type="button"
-                    aria-label="Unpin thread"
-                    title="Unpin thread"
+                    aria-label="Lösen"
+                    title="Lösen"
                     onClick={handleUnpinClick}
                     className="inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
@@ -1404,7 +1404,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   </button>
                 ) : (
                   <PinIcon
-                    aria-label="Pinned"
+                    aria-label="Angeheftet"
                     role="img"
                     className="size-3 shrink-0 text-muted-foreground/65"
                   />
@@ -1431,8 +1431,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     isWokeStatus ? (
                       <button
                         type="button"
-                        aria-label="Dismiss Woke notification"
-                        title="Dismiss Woke notification"
+                        aria-label="Hinweis verwerfen"
+                        title="Hinweis verwerfen"
                         onClick={handleAcknowledgeWokeClick}
                         className={cn(
                           "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring",
@@ -1492,12 +1492,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     {props.settlementSupported ? (
                       <button
                         type="button"
-                        aria-label="Settle thread"
+                        aria-label="Erledigen"
                         onClick={handleSettleClick}
                         className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
                       >
                         <CheckIcon className="size-3.5" />
-                        Settle
+                        Erledigen
                       </button>
                     ) : null}
                   </span>
@@ -1508,7 +1508,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
-                  Regenerating title
+                  Titel wird erzeugt
                 </span>
               ) : null}
             </div>
@@ -1527,7 +1527,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {props.teamParentTitle ? (
                 <span
                   className="max-w-28 truncate rounded border border-border px-1 text-[10px] text-muted-foreground"
-                  title={`Dispatched by ${props.teamParentTitle}`}
+                  title={`Beauftragt von ${props.teamParentTitle}`}
                 >
                   {props.teamParentTitle}
                 </span>
@@ -1759,7 +1759,7 @@ export default function Sidebar() {
     onCopy: ({ path }) => {
       toastManager.add({
         type: "success",
-        title: "Path copied",
+        title: "Pfad kopiert",
         description: path,
       });
     },
@@ -1767,8 +1767,8 @@ export default function Sidebar() {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy path",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: "Kopieren fehlgeschlagen",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         }),
       );
     },
@@ -1778,7 +1778,7 @@ export default function Sidebar() {
     onCopy: ({ branch }) => {
       toastManager.add({
         type: "success",
-        title: "Branch copied",
+        title: "Branch kopiert",
         description: branch,
       });
     },
@@ -1786,8 +1786,8 @@ export default function Sidebar() {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy branch",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: "Kopieren fehlgeschlagen",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         }),
       );
     },
@@ -1796,7 +1796,7 @@ export default function Sidebar() {
     onCopy: ({ threadId }) => {
       toastManager.add({
         type: "success",
-        title: "Thread ID copied",
+        title: "ID kopiert",
         description: threadId,
       });
     },
@@ -1804,8 +1804,8 @@ export default function Sidebar() {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy thread ID",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: "Kopieren fehlgeschlagen",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         }),
       );
     },
@@ -1814,7 +1814,7 @@ export default function Sidebar() {
     onCopy: ({ link }) => {
       toastManager.add({
         type: "success",
-        title: "Workjet link copied",
+        title: "Workjet-Link kopiert",
         description: link,
       });
     },
@@ -1822,8 +1822,8 @@ export default function Sidebar() {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy Workjet link",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: "Kopieren fehlgeschlagen",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         }),
       );
     },
@@ -2077,8 +2077,8 @@ export default function Sidebar() {
       } catch (error) {
         toastManager.add({
           type: "error",
-          title: "Could not open project",
-          description: error instanceof Error ? error.message : "Please try again.",
+          title: "Projekt konnte nicht geöffnet werden",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         });
       } finally {
         projectSwitchPending.current = false;
@@ -2110,8 +2110,8 @@ export default function Sidebar() {
           } catch (error) {
             toastManager.add({
               type: "error",
-              title: "Could not open project overview",
-              description: error instanceof Error ? error.message : "Please try again.",
+              title: "Übersicht konnte nicht geöffnet werden",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             });
           } finally {
             projectSwitchPending.current = false;
@@ -2139,8 +2139,8 @@ export default function Sidebar() {
         } catch (error) {
           toastManager.add({
             type: "error",
-            title: "Could not open project",
-            description: error instanceof Error ? error.message : "Please try again.",
+            title: "Projekt konnte nicht geöffnet werden",
+            description: error instanceof Error ? error.message : "Unbekannter Fehler",
           });
         } finally {
           projectSwitchPending.current = false;
@@ -2161,8 +2161,8 @@ export default function Sidebar() {
       } catch (error) {
         toastManager.add({
           type: "error",
-          title: "Could not open project",
-          description: error instanceof Error ? error.message : "Please try again.",
+          title: "Projekt konnte nicht geöffnet werden",
+          description: error instanceof Error ? error.message : "Unbekannter Fehler",
         });
       } finally {
         projectSwitchPending.current = false;
@@ -2737,7 +2737,7 @@ export default function Sidebar() {
         const trimmed = title.trim();
         setRenamingThreadKey(null);
         if (trimmed.length === 0) {
-          toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
+          toastManager.add({ type: "warning", title: "Titel darf nicht leer sein" });
           return;
         }
         if (trimmed === originalTitle) return;
@@ -2750,8 +2750,8 @@ export default function Sidebar() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to rename thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              title: "Umbenennen fehlgeschlagen",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             }),
           );
         }
@@ -2833,8 +2833,8 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Failed to settle thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: "Erledigen fehlgeschlagen",
+                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
                 }),
               );
             }
@@ -2861,8 +2861,8 @@ export default function Sidebar() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to un-settle thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              title: "Wieder öffnen fehlgeschlagen",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             }),
           );
         }
@@ -2879,8 +2879,8 @@ export default function Sidebar() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to wake thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              title: "Wecken fehlgeschlagen",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             }),
           );
         }
@@ -2972,8 +2972,8 @@ export default function Sidebar() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to pin thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              title: "Anheften fehlgeschlagen",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             }),
           );
         }
@@ -2990,8 +2990,8 @@ export default function Sidebar() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to unpin thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              title: "Lösen fehlgeschlagen",
+              description: error instanceof Error ? error.message : "Unbekannter Fehler",
             }),
           );
         }
@@ -3055,8 +3055,8 @@ export default function Sidebar() {
             toastManager.add(
               stackedThreadToast({
                 type: "error",
-                title: "Failed to reorder pinned threads",
-                description: error instanceof Error ? error.message : "An error occurred.",
+                title: "Sortieren fehlgeschlagen",
+                description: error instanceof Error ? error.message : "Unbekannter Fehler",
               }),
             );
             return;
@@ -3114,9 +3114,9 @@ export default function Sidebar() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to snooze thread",
+              title: "Zurückstellen fehlgeschlagen",
               description:
-                outcome.error instanceof Error ? outcome.error.message : "An error occurred.",
+                outcome.error instanceof Error ? outcome.error.message : "Unbekannter Fehler",
             }),
           );
           return;
@@ -3127,10 +3127,10 @@ export default function Sidebar() {
         toastManager.add(
           stackedThreadToast({
             type: "success",
-            title: `Snoozed until ${snoozeWakeDescription(preset.snoozedUntil, new Date(), timestampFormat)}`,
+            title: `Zurückgestellt bis ${snoozeWakeDescription(preset.snoozedUntil, new Date(), timestampFormat)}`,
             timeout: 5_000,
             actionProps: {
-              children: "Undo",
+              children: "Rückgängig",
               onClick: () => attemptUnsnooze(threadRef),
             },
           }),
@@ -3182,12 +3182,12 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Settle (${count})` },
+            { id: "settle", label: `Erledigen (${count})` },
             ...(canSnoozeSelection
               ? [
                   {
                     id: "snooze",
-                    label: `Snooze (${count})`,
+                    label: `Zurückstellen (${count})`,
                     children: snoozePresets.map((preset) => ({
                       id: `snooze:${preset.id}`,
                       label: `${preset.label} (${preset.whenLabel})`,
@@ -3196,8 +3196,8 @@ export default function Sidebar() {
                 ]
               : []),
             ...(titleRegenerationMenuItem ? [titleRegenerationMenuItem] : []),
-            { id: "mark-unread", label: `Mark unread (${count})` },
-            { id: "delete", label: `Delete (${count})`, destructive: true },
+            { id: "mark-unread", label: `Ungelesen (${count})` },
+            { id: "delete", label: `Löschen (${count})`, destructive: true },
           ],
           position,
         ),
@@ -3234,15 +3234,12 @@ export default function Sidebar() {
                 type: failedCount > 0 ? "warning" : "success",
                 title:
                   failedCount > 0
-                    ? `Snoozed ${snoozedCount} of ${selectedThreads.length} threads`
-                    : `Snoozed ${snoozedCount} thread${snoozedCount === 1 ? "" : "s"}`,
-                description:
-                  failedCount > 0
-                    ? `${failedCount} thread${failedCount === 1 ? "" : "s"} couldn't be snoozed.`
-                    : undefined,
+                    ? `${snoozedCount} von ${selectedThreads.length} zurückgestellt`
+                    : `${snoozedCount} zurückgestellt`,
+                description: failedCount > 0 ? `${failedCount} fehlgeschlagen` : undefined,
                 timeout: 5_000,
                 actionProps: {
-                  children: "Undo",
+                  children: "Rückgängig",
                   onClick: () => {
                     for (const threadRef of snoozedThreadRefs) attemptUnsnooze(threadRef);
                   },
@@ -3254,9 +3251,9 @@ export default function Sidebar() {
             toastManager.add(
               stackedThreadToast({
                 type: "error",
-                title: "Failed to snooze threads",
+                title: "Zurückstellen fehlgeschlagen",
                 description:
-                  firstError instanceof Error ? firstError.message : "An error occurred.",
+                  firstError instanceof Error ? firstError.message : "Unbekannter Fehler",
               }),
             );
           }
@@ -3275,8 +3272,8 @@ export default function Sidebar() {
             toastManager.add(
               stackedThreadToast({
                 type: "error",
-                title: "Failed to regenerate thread titles",
-                description: error instanceof Error ? error.message : "An error occurred.",
+                title: "Titel erzeugen fehlgeschlagen",
+                description: error instanceof Error ? error.message : "Unbekannter Fehler",
               }),
             );
           }
@@ -3312,10 +3309,7 @@ export default function Sidebar() {
       if (confirmThreadDelete) {
         const confirmed = await settlePromise(() =>
           api.dialogs.confirm(
-            [
-              `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-              "This permanently clears conversation history for these threads.",
-            ].join("\n"),
+            [count === 1 ? "Unterhaltung löschen?" : `${count} Unterhaltungen löschen?`].join("\n"),
             { variant: "destructive" },
           ),
         );
@@ -3338,8 +3332,8 @@ export default function Sidebar() {
             toastManager.add(
               stackedThreadToast({
                 type: "error",
-                title: "Failed to delete threads",
-                description: error instanceof Error ? error.message : "An error occurred.",
+                title: "Löschen fehlgeschlagen",
+                description: error instanceof Error ? error.message : "Unbekannter Fehler",
               }),
             );
           }
@@ -3447,8 +3441,8 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Could not create thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: "Unterhaltung konnte nicht erstellt werden",
+                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
                 }),
               );
             }
@@ -3483,8 +3477,8 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Failed to regenerate thread title",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: "Titel erzeugen fehlgeschlagen",
+                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
                 }),
               );
             }
@@ -3498,8 +3492,7 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Path unavailable",
-                  description: "This thread does not have a workspace path to copy.",
+                  title: "Kein Pfad vorhanden",
                 }),
               );
               return;
@@ -3525,13 +3518,9 @@ export default function Sidebar() {
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(
-                  [
-                    `Delete thread "${thread.title}"?`,
-                    "This permanently clears conversation history for this thread.",
-                  ].join("\n"),
-                  { variant: "destructive" },
-                ),
+                api.dialogs.confirm([`„${thread.title}“ löschen?`].join("\n"), {
+                  variant: "destructive",
+                }),
               );
               if (confirmed._tag === "Failure" || !confirmed.value) return;
             }
@@ -3541,8 +3530,8 @@ export default function Sidebar() {
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Failed to delete thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: "Löschen fehlgeschlagen",
+                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
                 }),
               );
               return;
@@ -3666,8 +3655,7 @@ export default function Sidebar() {
         if (target === undefined) {
           toastManager.add({
             type: "warning",
-            title: "No working copy on this computer",
-            description: "Choose a computer with an active working copy of this project.",
+            title: "Keine Arbeitskopie auf diesem Rechner",
           });
           return;
         }
@@ -3883,8 +3871,8 @@ export default function Sidebar() {
                 void router.navigate({ to: "/" }).catch((error) => {
                   toastManager.add({
                     type: "error",
-                    title: "Could not open project overview",
-                    description: error instanceof Error ? error.message : "Please try again.",
+                    title: "Übersicht konnte nicht geöffnet werden",
+                    description: error instanceof Error ? error.message : "Unbekannter Fehler",
                   });
                 });
               }}
@@ -4345,8 +4333,8 @@ export default function Sidebar() {
                         >
                           <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
                             {snoozedShelfExpanded
-                              ? "Snoozed"
-                              : `Snoozed (${snoozedThreads.length})`}
+                              ? "Zurückgestellt"
+                              : `Zurückgestellt (${snoozedThreads.length})`}
                           </span>
                           <span className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
                           <ChevronDownIcon
@@ -4455,7 +4443,7 @@ export default function Sidebar() {
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {projects.length === 0 && workjetProjects.length === 0 ? (
                 <>
-                  <span>No projects yet</span>
+                  <span>Noch keine Projekte</span>
                   <button
                     type="button"
                     data-workjet-action="project.add.sidebar"
@@ -4463,14 +4451,14 @@ export default function Sidebar() {
                     className="inline-flex items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
+                    Projekt hinzufügen
                   </button>
                 </>
               ) : workjetProjects.length > 0 &&
                 projects.length === 0 &&
                 !hasResolvableSidebarComputer ? (
                 <>
-                  <span>Choose a computer to start a session</span>
+                  <span>Kein Rechner gewählt</span>
                   <Button
                     type="button"
                     size="xs"
@@ -4478,17 +4466,17 @@ export default function Sidebar() {
                     onClick={() => void router.navigate({ to: "/settings/computers" })}
                   >
                     <ServerIcon aria-hidden className="size-3.5" />
-                    Choose computer
+                    Rechner wählen
                   </Button>
                 </>
               ) : workjetProjects.length > 0 && sidebarAvailableProjectCount === 0 ? (
-                <span>Project available, but no working copy on this computer</span>
+                <span>Keine Arbeitskopie auf diesem Rechner</span>
               ) : selectedWorkjetProject ? (
-                `No chats in ${selectedWorkjetProject.title} yet`
+                "Noch keine Unterhaltungen"
               ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
+                "Noch keine Unterhaltungen"
               ) : (
-                "Choose a project to see its chats"
+                "Kein Projekt gewählt"
               )}
             </div>
           ) : null}

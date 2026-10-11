@@ -84,11 +84,11 @@ export function CrossModeNotificationRow({
           {notification.detail}
         </span>
         <span className="sr-only">
-          {` Open in ${crossModeModeLabel(notification.target.mode)}.`}
+          {` In ${crossModeModeLabel(notification.target.mode)} öffnen.`}
         </span>
       </button>
       <button
-        aria-label="Dismiss notification"
+        aria-label="Ausblenden"
         className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
         data-cross-mode-notification-dismiss=""
         onClick={() => onDismiss(notification.notificationId)}
@@ -116,7 +116,7 @@ export function CrossModeNotificationList({
         data-cross-mode-notifications-loading=""
         role="status"
       >
-        Checking both modes for cross-mode activity…
+        Wird geladen …
       </p>
     );
   }
@@ -127,7 +127,7 @@ export function CrossModeNotificationList({
         data-cross-mode-notifications-empty=""
         role="status"
       >
-        No cross-mode activity. Links, approvals, and results appear here.
+        Keine Aktivität
       </p>
     );
   }
@@ -228,7 +228,7 @@ export function CrossModeNotificationCenter() {
 
   if (snapshot.settled && snapshot.notifications.length === 0) return null;
   return (
-    <section aria-label="Cross-mode activity" className="flex flex-col gap-2">
+    <section aria-label="Modusübergreifende Aktivität" className="flex flex-col gap-2">
       <CrossModePendingApprovalIndicator onOpen={onOpen} view={view} />
       <CrossModeNotificationList onDismiss={onDismiss} onOpen={onOpen} snapshot={snapshot} />
     </section>

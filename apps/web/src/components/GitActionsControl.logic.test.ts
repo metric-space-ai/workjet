@@ -47,7 +47,7 @@ describe("when: ref is clean and has an open PR", () => {
       }),
       false,
     );
-    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
+    assert.deepInclude(quick, { kind: "open_pr", label: "PR ansehen", disabled: false });
   });
 
   it("buildMenuItems disables commit/push and enables open PR", () => {
@@ -83,7 +83,7 @@ describe("when: ref is clean and has an open PR", () => {
       },
       {
         id: "pr",
-        label: "View PR",
+        label: "PR ansehen",
         disabled: false,
         icon: "pr",
         kind: "open_pr",
@@ -99,7 +99,7 @@ describe("when: actions are busy", () => {
       kind: "show_hint",
       label: "Commit",
       disabled: true,
-      hint: "Git action in progress.",
+      hint: "Git-Aktion läuft.",
     });
   });
 
@@ -124,7 +124,7 @@ describe("when: actions are busy", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -141,7 +141,7 @@ describe("when: git status is unavailable", () => {
       kind: "show_hint",
       label: "Commit",
       disabled: true,
-      hint: "Git status is unavailable.",
+      hint: "Git-Zustand nicht verfügbar.",
     });
   });
 
@@ -204,7 +204,7 @@ describe("when: ref is clean, ahead, and has an open PR", () => {
       },
       {
         id: "pr",
-        label: "View PR",
+        label: "PR ansehen",
         disabled: false,
         icon: "pr",
         kind: "open_pr",
@@ -219,7 +219,7 @@ describe("when: ref is clean, ahead, and has no open PR", () => {
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "create_pr",
-      label: "Push & create PR",
+      label: "Push & PR erstellen",
     });
   });
 
@@ -244,7 +244,7 @@ describe("when: ref is clean, ahead, and has no open PR", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: false,
         icon: "pr",
         kind: "open_dialog",
@@ -271,11 +271,11 @@ describe("when: source control provider uses merge requests", () => {
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "create_pr",
-      label: "Push & create MR",
+      label: "Push & MR erstellen",
     });
     assert.deepInclude(items[2], {
       id: "pr",
-      label: "Create MR",
+      label: "MR erstellen",
     });
   });
 });
@@ -291,7 +291,7 @@ describe("when: ref is clean, up to date, and has no open PR", () => {
 
     const quick = resolveQuickAction(syncedFeature, false);
     assert.deepInclude(quick, {
-      label: "Create PR",
+      label: "PR erstellen",
       disabled: false,
       kind: "run_action",
       action: "create_pr",
@@ -330,7 +330,7 @@ describe("when: ref is clean, up to date, and has no open PR", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -367,7 +367,7 @@ describe("when: ref is behind upstream", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -381,10 +381,10 @@ describe("when: ref has diverged from upstream", () => {
   it("resolveQuickAction returns a disabled sync hint", () => {
     const quick = resolveQuickAction(status({ aheadCount: 2, behindCount: 1 }), false);
     assert.deepEqual(quick, {
-      label: "Sync ref",
+      label: "Ref abgleichen",
       disabled: true,
       kind: "show_hint",
-      hint: "Branch has diverged from upstream. Rebase/merge first.",
+      hint: "Branch weicht ab, erst Rebase/Merge.",
     });
   });
 });
@@ -457,7 +457,7 @@ describe("when: working tree has local changes", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -499,7 +499,7 @@ describe("when: working tree has local changes", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -573,7 +573,7 @@ describe("when: working tree has local changes and ref is behind upstream", () =
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -613,7 +613,7 @@ describe("when: HEAD is detached and there are no local changes", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -632,7 +632,7 @@ describe("when: ref has no upstream configured", () => {
     assert.deepInclude(quick, {
       kind: "show_hint",
       label: "Push",
-      hint: "No local commits to push.",
+      hint: "Keine lokalen Commits.",
       disabled: true,
     });
   });
@@ -655,7 +655,7 @@ describe("when: ref has no upstream configured", () => {
     );
     assert.deepInclude(quick, {
       kind: "open_pr",
-      label: "View PR",
+      label: "PR ansehen",
       disabled: false,
     });
   });
@@ -705,7 +705,7 @@ describe("when: ref has no upstream configured", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -726,7 +726,7 @@ describe("when: ref has no upstream configured", () => {
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "create_pr",
-      label: "Push & create PR",
+      label: "Push & PR erstellen",
       disabled: false,
     });
   });
@@ -744,7 +744,7 @@ describe("when: ref has no upstream configured", () => {
     );
     assert.deepEqual(quick, {
       kind: "open_publish",
-      label: "Publish repository",
+      label: "Repository veröffentlichen",
       disabled: false,
     });
   });
@@ -770,7 +770,7 @@ describe("when: ref has no upstream configured", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: false,
         icon: "pr",
         kind: "open_dialog",
@@ -811,7 +811,7 @@ describe("when: ref has no upstream configured", () => {
     assert.deepInclude(quick, {
       kind: "show_hint",
       label: "Push",
-      hint: "No local commits to push.",
+      hint: "Keine lokalen Commits.",
       disabled: true,
     });
   });
@@ -864,7 +864,7 @@ describe("when: ref has no upstream configured", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "PR erstellen",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -941,7 +941,7 @@ describe("buildGitActionProgressStages", () => {
       hasWorkingTreeChanges: false,
       pushTarget: "origin/feature/test",
     });
-    assert.deepEqual(stages, ["Pushing to origin/feature/test..."]);
+    assert.deepEqual(stages, ["Push nach origin/feature/test …"]);
   });
 
   it("shows push and PR progress for create-pr actions that still need a push", () => {
@@ -953,10 +953,10 @@ describe("buildGitActionProgressStages", () => {
       shouldPushBeforePr: true,
     });
     assert.deepEqual(stages, [
-      "Pushing to origin/feature/test...",
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
+      "Push nach origin/feature/test …",
+      "PR wird vorbereitet …",
+      "PR-Inhalt wird erzeugt …",
+      "PR wird erstellt …",
     ]);
   });
 
@@ -968,9 +968,9 @@ describe("buildGitActionProgressStages", () => {
       shouldPushBeforePr: false,
     });
     assert.deepEqual(stages, [
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
+      "PR wird vorbereitet …",
+      "PR-Inhalt wird erzeugt …",
+      "PR wird erstellt …",
     ]);
   });
 
@@ -982,9 +982,9 @@ describe("buildGitActionProgressStages", () => {
       pushTarget: "origin/feature/test",
     });
     assert.deepEqual(stages, [
-      "Generating commit message...",
-      "Committing...",
-      "Pushing to origin/feature/test...",
+      "Commit-Nachricht wird erzeugt …",
+      "Commit läuft …",
+      "Push nach origin/feature/test …",
     ]);
   });
 
@@ -996,11 +996,11 @@ describe("buildGitActionProgressStages", () => {
       pushTarget: "origin/feature/test",
     });
     assert.deepEqual(stages, [
-      "Committing...",
-      "Pushing to origin/feature/test...",
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
+      "Commit läuft …",
+      "Push nach origin/feature/test …",
+      "PR wird vorbereitet …",
+      "PR-Inhalt wird erzeugt …",
+      "PR wird erstellt …",
     ]);
   });
 });

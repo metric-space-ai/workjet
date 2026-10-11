@@ -89,10 +89,10 @@ export function ProjectSupervisorLumaSummaryView({
   return (
     <span title={selected?.computerId}>
       {selected
-        ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
+        ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
         : phase === "loading"
-          ? "Loading configured Luma…"
-          : "Configured Luma unavailable"}
+          ? "Luma wird geladen …"
+          : "Luma nicht verfügbar"}
     </span>
   );
 }
@@ -119,9 +119,9 @@ export function ProjectSupervisorLumaSelect({
         disabled={disabled || phase !== "ready"}
         onChange={(event) => onChange(event.target.value || null)}
       >
-        <option value="">Current instance default</option>
+        <option value="">Instanz-Standard</option>
         {value !== null && selected === undefined && (
-          <option value={value}>Saved Luma unavailable · {value}</option>
+          <option value={value}>Gespeicherte Luma fehlt · {value}</option>
         )}
         {profiles.map((profile) => (
           <option key={profile.id} value={profile.id}>
@@ -131,14 +131,14 @@ export function ProjectSupervisorLumaSelect({
       </select>
       <span className="break-words text-xs text-muted-foreground" role="status">
         {phase === "loading"
-          ? "Loading instance Lumas…"
+          ? "Lumas werden geladen …"
           : phase === "unavailable"
-            ? "Instance Lumas are unavailable. The saved selection is retained."
+            ? "Lumas nicht verfügbar · Auswahl bleibt"
             : selected
-              ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
+              ? `Konfiguriert · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId} · ${selected.computerId}`
               : value !== null
-                ? "The saved Luma is not in this instance’s current configuration."
-                : "Uses the existing instance default. Choose a Luma in Settings to configure its route."}
+                ? "Luma fehlt in dieser Instanz"
+                : "Instanz-Standard"}
       </span>
     </div>
   );

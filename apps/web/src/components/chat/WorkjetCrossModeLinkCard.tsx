@@ -118,29 +118,29 @@ export function crossModeObjectLabel(
 export function crossModeApprovalLabel(approval: WorkjetCrossModeCommandApproval | null): string {
   switch (approval) {
     case "not-required":
-      return "sent";
+      return "gesendet";
     case "pending":
-      return "awaiting approval";
+      return "Freigabe ausstehend";
     case "approved":
-      return "approved";
+      return "freigegeben";
     case "rejected":
-      return "rejected";
+      return "abgelehnt";
     default:
-      return "sent";
+      return "gesendet";
   }
 }
 
 const APPROVAL_TONE: Record<string, string> = {
-  sent: "text-muted-foreground",
-  "awaiting approval": "text-warning-foreground",
-  approved: "text-success-foreground",
-  rejected: "text-destructive",
+  gesendet: "text-muted-foreground",
+  "Freigabe ausstehend": "text-warning-foreground",
+  freigegeben: "text-success-foreground",
+  abgelehnt: "text-destructive",
 };
 
 export const CROSS_MODE_OPERATION_LABEL: Record<WorkjetCrossModeOperation, string> = {
-  "submit-result": "Submit result",
-  "request-review": "Request review",
-  "follow-up": "Follow up",
+  "submit-result": "Ergebnis senden",
+  "request-review": "Review anfordern",
+  "follow-up": "Nachfassen",
 };
 
 /**
@@ -300,9 +300,9 @@ function WorkjetCrossModeActionRow(props: {
         <div className="flex flex-col gap-1 rounded-md border border-border/60 bg-background/60 p-1.5">
           {state.open === "submit-result" ? (
             <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              Outcome
+              Ergebnis
               <select
-                aria-label="Result outcome"
+                aria-label="Ergebnis"
                 disabled={busy}
                 className={actionFieldClass}
                 value={state.outcome}
@@ -313,15 +313,15 @@ function WorkjetCrossModeActionRow(props: {
                   })
                 }
               >
-                <option value="completed">completed</option>
-                <option value="failed">failed</option>
-                <option value="cancelled">cancelled</option>
+                <option value="completed">Fertig</option>
+                <option value="failed">Fehlgeschlagen</option>
+                <option value="cancelled">Abgebrochen</option>
               </select>
             </label>
           ) : null}
           <textarea
-            aria-label="Evidence summary"
-            placeholder="What was done, and what the reviewer should check"
+            aria-label="Nachweis"
+            placeholder="Nachweis"
             rows={2}
             disabled={busy}
             className={actionFieldClass}
@@ -335,7 +335,7 @@ function WorkjetCrossModeActionRow(props: {
               onClick={close}
               className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent/30"
             >
-              Cancel
+              Abbrechen
             </button>
             <button
               type="button"
@@ -363,8 +363,8 @@ export function WorkjetCrossModeLinkCard(props: WorkjetCrossModeLinkCardProps) {
   const isLink = model.kind === "link";
   const DirectionIcon = isLink ? LinkIcon : ArrowUpRightIcon;
   const lead = isLink
-    ? "Linked to"
-    : `${model.operation === null ? "Returned to" : CROSS_MODE_OPERATION_LABEL[model.operation]} →`;
+    ? "Verknüpft mit"
+    : `${model.operation === null ? "Zurück an" : CROSS_MODE_OPERATION_LABEL[model.operation]} →`;
   const objectLabel = crossModeObjectLabel(model);
   const approval = crossModeApprovalLabel(model.approval);
   const linkable = onOpenBusinessOsObject !== undefined;
@@ -382,7 +382,7 @@ export function WorkjetCrossModeLinkCard(props: WorkjetCrossModeLinkCardProps) {
           <button
             type="button"
             data-workjet-crossmode-open
-            title="Return to Business OS"
+            title="Zu Business OS"
             className="min-w-0 truncate font-mono text-[11px] text-info-foreground underline-offset-2 hover:underline"
             onClick={() =>
               onOpenBusinessOsObject({
@@ -458,6 +458,6 @@ export function workjetCrossModeFailureMessage(error: unknown): string {
     CROSS_MODE_FAILURE_REASONS.has(error.reason)
       ? (error.reason as WorkjetCrossModeError["reason"])
       : null;
-  if (reason === null) return "The return to Business OS failed.";
+  if (reason === null) return "Rückgabe an Business OS fehlgeschlagen";
   return new WorkjetCrossModeError({ reason }).message;
 }

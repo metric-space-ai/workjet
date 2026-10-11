@@ -84,8 +84,8 @@ const idle = { session: null, hasPendingApprovals: false, hasPendingUserInput: f
 it("uses the exact project labels and includes roleless project chats", () => {
   expect(PROJECT_TEAM_SECTIONS.map((section) => section.label)).toEqual([
     "Supervisor",
-    "Persistent Worker",
-    "One-Shot Worker",
+    "Feste Lumas",
+    "Einmal-Lumas",
   ]);
   expect(projectTeamSectionOf(plain)).toBe("workers");
 });
@@ -193,7 +193,7 @@ describe("project team row state", () => {
   it("shows actual running sessions and background work in yellow", () => {
     for (const status of ["running", "starting"]) {
       expect(projectTeamStatus({ ...idle, session: { status } })).toEqual({
-        label: "Working",
+        label: "Arbeitet",
         dot: "bg-amber-400",
       });
     }
@@ -203,13 +203,13 @@ describe("project team row state", () => {
   it("distinguishes waiting for Michael, failed sessions, and idle histories", () => {
     expect(
       projectTeamStatus({ ...idle, hasPendingApprovals: true, session: { status: "running" } }),
-    ).toEqual({ label: "Needs attention", dot: "bg-rose-400" });
+    ).toEqual({ label: "Braucht Aufmerksamkeit", dot: "bg-rose-400" });
     expect(projectTeamStatus({ ...idle, hasPendingUserInput: true }).dot).toBe("bg-rose-400");
     expect(projectTeamStatus({ ...idle, session: { status: "error" } })).toEqual({
-      label: "Error",
+      label: "Fehler",
       dot: "bg-red-400",
     });
-    expect(projectTeamStatus(idle)).toEqual({ label: "Idle", dot: "bg-muted-foreground/50" });
+    expect(projectTeamStatus(idle)).toEqual({ label: "Bereit", dot: "bg-muted-foreground/50" });
   });
 
   it("uses the assistant's latest message before an older plan caption", () => {
@@ -236,7 +236,7 @@ describe("project team row state", () => {
       planProgress: { step: "Old plan" },
     };
     expect(projectTeamProgressPreview(imported)).toBe("Installed. Verification complete.");
-    expect(projectTeamStatus(imported)).toEqual({ label: "Idle", dot: "bg-muted-foreground/50" });
+    expect(projectTeamStatus(imported)).toEqual({ label: "Bereit", dot: "bg-muted-foreground/50" });
     expect(
       projectTeamProgressPreview({
         ...imported,

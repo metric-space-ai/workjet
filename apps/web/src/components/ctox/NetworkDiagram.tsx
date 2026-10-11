@@ -181,14 +181,14 @@ export function NetworkDiagram({
               style={{ left: start + (count - 1) * 224 - 100, top: 426 }}
               disabled={empty || !canAdd}
               onClick={onAdd}
-              aria-label="Computer hinzufügen"
+              aria-label="Rechner hinzufügen"
             >
               <span className="network-node-icon">
                 <PlusIcon size={22} />
               </span>
               <span className="network-node-copy">
-                <strong>Computer hinzufügen</strong>
-                <small>Local · SSH · Tailscale</small>
+                <strong>Rechner hinzufügen</strong>
+                <small>Lokal · SSH · Tailscale</small>
               </span>
             </button>
           </div>

@@ -28,7 +28,7 @@ describe("Jour fixe speech room hook", () => {
     const html = renderToStaticMarkup(
       <JourFixeSpeechRoom {...props} meeting={{ ...meeting, state: "live" }} />,
     );
-    expect(html).not.toContain("Start microphone");
+    expect(html).not.toContain("Mikrofon an");
   });
   it("keeps live microphone capture unavailable when only native narration is installed", () => {
     const html = renderToStaticMarkup(
@@ -38,8 +38,8 @@ describe("Jour fixe speech room hook", () => {
         meeting={{ ...meeting, state: "live" }}
       />,
     );
-    expect(html).not.toContain("Start microphone");
-    expect(html).toContain("Next slide");
+    expect(html).not.toContain("Mikrofon an");
+    expect(html).toContain("Nächste Folie");
   });
   it("keeps the same room controls for the local helper and gateway", () => {
     const render = (kind: JourFixeSpeechProvider["kind"]) =>
@@ -51,12 +51,12 @@ describe("Jour fixe speech room hook", () => {
         />,
       );
     expect(render("local-helper")).toBe(render("ctox-gateway"));
-    expect(render("local-helper")).toContain("Start microphone");
+    expect(render("local-helper")).toContain("Mikrofon an");
   });
   it("does not offer live capture during review", () => {
     const html = renderToStaticMarkup(
       <JourFixeSpeechRoom {...props} speechProvider={provider("local-helper")} />,
     );
-    expect(html).not.toContain("Start microphone");
+    expect(html).not.toContain("Mikrofon an");
   });
 });

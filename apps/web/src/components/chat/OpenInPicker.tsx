@@ -257,9 +257,9 @@ export const OpenInPicker = memo(function OpenInPicker({
   ]);
 
   return (
-    <Group aria-label="Open in editor">
+    <Group aria-label="Im Editor öffnen">
       <Button
-        aria-label={compact ? "Open file in preferred editor" : undefined}
+        aria-label={compact ? "Im Editor öffnen" : undefined}
         className="ps-[8.5px]"
         size="xs"
         variant="outline"
@@ -279,7 +279,7 @@ export const OpenInPicker = memo(function OpenInPicker({
               : "sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5"
           }
         >
-          Open
+          Öffnen
         </span>
       </Button>
       <GroupSeparator {...(!compact ? { className: "hidden @3xl/header-actions:block" } : {})} />
@@ -287,7 +287,7 @@ export const OpenInPicker = memo(function OpenInPicker({
         <MenuTrigger
           render={
             <Button
-              aria-label={compact ? "Choose editor" : "Copy options"}
+              aria-label={compact ? "Editor wählen" : "Weitere Editoren"}
               size="icon-xs"
               variant="outline"
             />
@@ -296,7 +296,7 @@ export const OpenInPicker = memo(function OpenInPicker({
           <ChevronDownIcon aria-hidden="true" className="size-4" />
         </MenuTrigger>
         <MenuPopup align="end">
-          {options.length === 0 && <MenuItem disabled>No installed editors found</MenuItem>}
+          {options.length === 0 && <MenuItem disabled>Keine Editoren gefunden</MenuItem>}
           {options.map(({ label, Icon, value, kind }) => (
             <MenuItem key={value} onClick={() => openInEditor(value)}>
               <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />

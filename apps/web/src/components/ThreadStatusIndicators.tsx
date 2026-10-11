@@ -28,7 +28,7 @@ export interface PrStatusIndicator {
 }
 
 export interface TerminalStatusIndicator {
-  label: "Terminal process running";
+  label: "Terminal-Prozess aktiv";
   colorClass: string;
   pulse: boolean;
 }
@@ -133,7 +133,7 @@ export function terminalStatusFromRunningIds(
     return null;
   }
   return {
-    label: "Terminal process running",
+    label: "Terminal-Prozess aktiv",
     colorClass: "text-teal-600 dark:text-teal-300/90",
     pulse: true,
   };

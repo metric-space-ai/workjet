@@ -26,7 +26,7 @@ describe("project budget overview", () => {
       />,
     );
     expect(markup).toContain("unbekannt/2.3B");
-    expect(markup).toContain("Usage teilweise unbekannt");
+    expect(markup).toContain("Verbrauch teilweise unbekannt");
     expect(markup).toContain("worker · gpu3");
   });
   it("highlights 80% without a blocking control", () => {

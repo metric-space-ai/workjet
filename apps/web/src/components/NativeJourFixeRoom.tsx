@@ -60,8 +60,8 @@ function NativeJourFixeRoomContent({
         if (!cancelled)
           setError(
             reason instanceof Error
-              ? `The meeting presentation could not be loaded: ${reason.message}`
-              : "The meeting presentation could not be loaded.",
+              ? `Folien nicht geladen: ${reason.message}`
+              : "Folien nicht geladen.",
           );
       },
     );
@@ -103,7 +103,8 @@ function NativeJourFixeRoomContent({
         }
       },
       (reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : "Meeting unavailable.");
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : "Termin nicht verfügbar.");
       },
     );
     return () => {
@@ -123,10 +124,9 @@ function NativeJourFixeRoomContent({
         <Button size="sm" variant="ghost" onClick={onBack}>
           ← {projectTitle}
         </Button>
-        <h1 className="mt-5 text-xl font-semibold">Jour fixe</h1>
+        <h1 className="mt-5 text-xl font-semibold">Regeltermin</h1>
         <p className="mt-2 text-sm text-muted-foreground" role="status">
-          {error ??
-            (result ? "No meeting has been prepared for this project yet." : "Loading meeting…")}
+          {error ?? (result ? "Noch kein Termin vorbereitet" : "Termin wird geladen …")}
         </p>
         <Button
           className="mt-4"
@@ -134,11 +134,11 @@ function NativeJourFixeRoomContent({
           variant="outline"
           onClick={() =>
             void refresh().catch((reason: unknown) =>
-              setError(reason instanceof Error ? reason.message : "Meeting unavailable."),
+              setError(reason instanceof Error ? reason.message : "Termin nicht verfügbar."),
             )
           }
         >
-          Refresh
+          Aktualisieren
         </Button>
       </main>
     );
@@ -149,7 +149,7 @@ function NativeJourFixeRoomContent({
       setError(null);
     } catch (reason) {
       if (!active.current || !session.hasPendingChange()) throw reason;
-      setError(reason instanceof Error ? reason.message : "This change has not been confirmed.");
+      setError(reason instanceof Error ? reason.message : "Änderung nicht bestätigt.");
       // Keep the original room action pending, inputs frozen and draft intact.
       await new Promise<void>((resolve, reject) => {
         recovery.current = { resolve, reject };
@@ -169,7 +169,7 @@ function NativeJourFixeRoomContent({
       pending?.resolve();
     } catch (reason) {
       if (active.current)
-        setError(reason instanceof Error ? reason.message : "Change remains unconfirmed.");
+        setError(reason instanceof Error ? reason.message : "Änderung unbestätigt.");
     } finally {
       retrying.current = false;
       if (active.current) setRetryBusy(false);
@@ -185,7 +185,7 @@ function NativeJourFixeRoomContent({
           <span className="min-w-0 flex-1">{error}</span>
           {session.hasPendingChange() && (
             <Button size="sm" variant="outline" disabled={retryBusy} onClick={() => void retry()}>
-              Retry change
+              Erneut versuchen
             </Button>
           )}
         </div>

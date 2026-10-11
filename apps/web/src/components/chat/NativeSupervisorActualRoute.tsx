@@ -20,9 +20,9 @@ export function NativeSupervisorActualRoute({
     <p
       role="status"
       className="mt-1 text-xs text-muted-foreground"
-      title={`Observed ${new Date(actual.published_at_ms).toLocaleString()}`}
+      title={`Beobachtet ${new Date(actual.published_at_ms).toLocaleString()}`}
     >
-      Last execution · {harness} · {actual.model}
+      Letzte Ausführung · {harness} · {actual.model}
     </p>
   );
 }

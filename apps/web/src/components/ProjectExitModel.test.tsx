@@ -17,9 +17,9 @@ describe("project exit assessment display", () => {
       <ProjectExitModelReport projectId="project" assessment={assessment} />,
     );
     expect(markup).toContain("8.1k EUR");
-    expect(markup).toContain("Provisional");
+    expect(markup).toContain("Vorläufig");
     expect(markup).toContain("100%");
-    expect(markup).toContain("Assessment history · 2");
+    expect(markup).toContain("Bewertungsverlauf · 2");
     expect(markup).toContain("Fictitious test values");
     expect(markup).toContain("test fixture only; not a real project");
     expect(markup).not.toContain("since previous calculated assessment");
@@ -100,7 +100,7 @@ describe("project exit assessment display", () => {
     );
     expect(markup).toMatch(/data-workjet-exit-model-value="">—<\/p>/);
     expect(markup).toContain("Confirmed sale perimeter");
-    expect(markup).toContain("Assessment history · 1");
+    expect(markup).toContain("Bewertungsverlauf · 1");
     expect(markup).toContain("800k EUR");
   });
 
@@ -113,6 +113,6 @@ describe("project exit assessment display", () => {
       />,
     );
     expect(markup).not.toContain("800k EUR");
-    expect(markup).toContain("Assessment unavailable");
+    expect(markup).toContain("Bewertung nicht verfügbar");
   });
 });

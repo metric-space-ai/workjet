@@ -651,7 +651,7 @@ export function PullRequestCodeTab({
             <>
               <span>Rest des Diffs nicht geladen</span>
               <Button size="xs" variant="outline" onClick={() => diffQuery.refresh()}>
-                Retry
+                Erneut versuchen
               </Button>
             </>
           ) : diffQuery.isPending ? (
@@ -967,7 +967,7 @@ export function PullRequestCodeTab({
           <DropdownMenu>
             <DropdownMenuTrigger
               className="inline-flex h-6 max-w-64 items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-accent-foreground outline-none transition-colors hover:bg-accent/80 focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={`Diff scope: ${scopeLabel}`}
+              aria-label={`Diff-Umfang: ${scopeLabel}`}
             >
               <span className="truncate">{scopeLabel}</span>
               <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
@@ -1003,7 +1003,7 @@ export function PullRequestCodeTab({
                   onClick={() => setVisibleCommitCount((count) => count + COMMIT_PAGE_SIZE)}
                 >
                   <span className="text-muted-foreground">
-                    Show more ({orderedCommits.length - visibleCommitCount} left)
+                    Mehr ({orderedCommits.length - visibleCommitCount} weitere)
                   </span>
                 </DropdownMenuItem>
               ) : null}
@@ -1014,7 +1014,7 @@ export function PullRequestCodeTab({
             competed for a strip this narrow and every one of them truncated to nothing. */}
         <PullRequestMetaLine>
           <span className="shrink-0 tabular-nums">
-            {files.length} {files.length === 1 ? "file" : "files"}
+            {files.length} {files.length === 1 ? "Datei" : "Dateien"}
             {nextCursor === null ? "" : "+"}
           </span>
           {withheldContent ? (
@@ -1025,10 +1025,7 @@ export function PullRequestCodeTab({
                   className="size-3.5 text-amber-600 dark:text-amber-500"
                 />
               </TooltipTrigger>
-              <TooltipPopup side="bottom">
-                The host withheld part of this diff — a file that cannot be shown inline, or a
-                change too large to display.
-              </TooltipPopup>
+              <TooltipPopup side="bottom">Diff nicht vollständig</TooltipPopup>
             </Tooltip>
           ) : null}
           {commit !== null && review.inlineComment ? (
@@ -1039,9 +1036,7 @@ export function PullRequestCodeTab({
                   className="size-3.5"
                 />
               </TooltipTrigger>
-              <TooltipPopup side="bottom">
-                A comment is anchored to the whole change, so switch to All commits to write one.
-              </TooltipPopup>
+              <TooltipPopup side="bottom">Zeilenkommentare nur bei „Alle Commits“</TooltipPopup>
             </Tooltip>
           ) : null}
         </PullRequestMetaLine>
@@ -1234,8 +1229,8 @@ export function PullRequestCodeTab({
                 </span>
                 <span className="sr-only">
                   {orphanThreads.length === 1
-                    ? "1 conversation"
-                    : `${orphanThreads.length} conversations`}
+                    ? "1 Unterhaltung"
+                    : `${orphanThreads.length} Unterhaltungen`}
                 </span>
               </CollapsibleTrigger>
             </h2>
@@ -1252,7 +1247,9 @@ export function PullRequestCodeTab({
                       {threads.map((thread) => (
                         <div key={thread.id}>
                           {thread.line === null ? null : (
-                            <p className="px-3 text-xs text-muted-foreground">Line {thread.line}</p>
+                            <p className="px-3 text-xs text-muted-foreground">
+                              Zeile {thread.line}
+                            </p>
                           )}
                           {renderThreadCard(thread)}
                         </div>

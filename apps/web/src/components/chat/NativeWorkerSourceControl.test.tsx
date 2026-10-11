@@ -100,7 +100,7 @@ describe("automatic supervisor worker connection", () => {
       />,
     );
     expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="Choose worker access"');
+    expect(html).toContain('aria-label="Luma-Zugang wählen"');
     expect(html).not.toContain("Multiple authorized");
     expect(html).not.toContain("Reconnect");
     expect(bindConnection).not.toHaveBeenCalled();
@@ -274,7 +274,7 @@ describe("automatic supervisor worker connection", () => {
     const html = render({ config: boundConfig });
     expect(html).toContain(`data-workjet-worker-source-connection-id="${connection.connectionId}"`);
     expect(html).not.toContain("Erneut verbinden");
-    expect(html).not.toContain('aria-label="Choose worker access"');
+    expect(html).not.toContain('aria-label="Luma-Zugang wählen"');
   });
 
   it("offers an explicit same-instance choice for an expired binding without issuing another grant", async () => {
@@ -296,7 +296,7 @@ describe("automatic supervisor worker connection", () => {
       ],
     };
     const html = render({ config: boundConfig });
-    expect(html).toContain('aria-label="Choose worker access"');
+    expect(html).toContain('aria-label="Luma-Zugang wählen"');
     expect(html).toContain("cccccccc");
     expect(html).toContain("dddddddd");
     expect(html).not.toContain("Erneut verbinden");
@@ -318,7 +318,7 @@ describe("automatic supervisor worker connection", () => {
     };
     state.data = { connections: [connection, replacement] };
     const html = render();
-    expect(html).toContain('aria-label="Choose worker access"');
+    expect(html).toContain('aria-label="Luma-Zugang wählen"');
     state.effects.forEach((effect) => effect());
     expect(props.bindConnection).not.toHaveBeenCalled();
     expect(provision).not.toHaveBeenCalled();
@@ -362,7 +362,7 @@ describe("automatic supervisor worker connection", () => {
       ),
     };
     state.data = { connections: [connection, replacement] };
-    expect(render({ unavailable: true })).toContain('aria-label="Choose worker access"');
+    expect(render({ unavailable: true })).toContain('aria-label="Luma-Zugang wählen"');
     await state.connect!.current(false, replacement.connectionId);
     expect(props.bindConnection).not.toHaveBeenCalled();
     expect(provision).not.toHaveBeenCalled();
@@ -435,8 +435,8 @@ describe("automatic supervisor worker connection", () => {
       ],
     };
     const html = render({ config: boundConfig });
-    expect(html).toContain('aria-label="Reconnect project workers"');
-    expect(html).toContain("A replacement worker connection is ready.");
+    expect(html).toContain('aria-label="Lumas neu verbinden"');
+    expect(html).toContain("Neue Luma-Verbindung bereit");
     expect(html).not.toContain("data-workjet-worker-source-connection-id=");
     state.effects.forEach((effect) => effect());
     expect(props.bindConnection).toHaveBeenCalledExactlyOnceWith(replacement);
@@ -449,8 +449,8 @@ it("shows reconnect for a previously bound source whose authorization was reject
     connections: [{ ...connection, status: "needs_auth", reason: "authentication-required" }],
   };
   const html = render({ config: boundConfig });
-  expect(html).toContain('aria-label="Reconnect project workers"');
-  expect(html).toContain("Worker connection needs authorization.");
+  expect(html).toContain('aria-label="Lumas neu verbinden"');
+  expect(html).toContain("Luma-Verbindung braucht Freigabe");
   expect(html).not.toContain("data-workjet-worker-source-connection-id=");
   expect(html).not.toContain("data-workjet-worker-source-instance-id=");
 });

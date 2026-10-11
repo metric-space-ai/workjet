@@ -134,10 +134,10 @@ export function ProjectOverviewDecisions(props: {
           <p>
             {language === "de"
               ? approval.requestKind === "file-read"
-                ? "Darf dieser Worker eine Datei lesen?"
+                ? "Darf diese Luma eine Datei lesen?"
                 : approval.requestKind === "file-change"
-                  ? "Darf dieser Worker Dateien ändern?"
-                  : "Darf dieser Worker die angeforderte Aktion ausführen?"
+                  ? "Darf diese Luma Dateien ändern?"
+                  : "Darf diese Luma die Aktion ausführen?"
               : approval.requestKind === "file-read"
                 ? "May this worker read a file?"
                 : approval.requestKind === "file-change"

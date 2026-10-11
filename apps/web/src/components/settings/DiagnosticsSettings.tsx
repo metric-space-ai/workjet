@@ -484,10 +484,10 @@ function ProcessDiagnosticsTable({
             <th className="px-4 py-2 font-semibold sm:pl-5">Name</th>
             <th className="px-3 py-2 text-right font-semibold">CPU</th>
             <th className="px-3 py-2 text-right font-semibold">Speicher</th>
-            <th className="px-3 py-2 font-semibold">Command</th>
+            <th className="px-3 py-2 font-semibold">Befehl</th>
             <th className="px-3 py-2 text-right font-semibold">PID</th>
             <th className="px-3 py-2 font-semibold">Typ</th>
-            <th className="p-2 text-right font-semibold sm:pr-4">Kill</th>
+            <th className="p-2 text-right font-semibold sm:pr-4">Beenden</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/50">
@@ -642,7 +642,8 @@ function ProcessResourceHistoryChart({
                 }
               />
               <TooltipPopup side="top">
-                Avg {bucket.avgCpuPercent.toFixed(1)}%, peak {bucket.maxCpuPercent.toFixed(1)}%
+                Mittel {bucket.avgCpuPercent.toFixed(1)} %, Spitze {bucket.maxCpuPercent.toFixed(1)}{" "}
+                %
               </TooltipPopup>
             </Tooltip>
           );
@@ -716,7 +717,7 @@ function ProcessResourceHistoryTable({
             <th className="px-3 py-2 text-right font-semibold">Mittel</th>
             <th className="px-3 py-2 text-right font-semibold">Spitze</th>
             <th className="px-3 py-2 text-right font-semibold">Max. Speicher</th>
-            <th className="px-3 py-2 font-semibold">Command</th>
+            <th className="px-3 py-2 font-semibold">Befehl</th>
             <th className="px-3 py-2 text-right font-semibold sm:pr-5">PID</th>
           </tr>
         </thead>
@@ -1231,7 +1232,7 @@ export function DiagnosticsSettingsPanel() {
       <SettingsSection title="Häufigste Fehler">
         {data && data.commonFailures.length > 0 ? (
           <DiagnosticsTable
-            headers={["Span", "Count", "Cause", "Last Seen"]}
+            headers={["Span", "Anzahl", "Ursache", "Zuletzt"]}
             minTableWidth="min-w-[760px]"
           >
             {data.commonFailures.map((failure) => (
@@ -1259,7 +1260,7 @@ export function DiagnosticsSettingsPanel() {
       <SettingsSection title="Langsamste Spans">
         {data && data.slowestSpans.length > 0 ? (
           <DiagnosticsTable
-            headers={["Span", "Duration", "Ended", "Trace"]}
+            headers={["Span", "Dauer", "Ende", "Trace"]}
             minTableWidth="min-w-[900px]"
             columnWidths={["w-[44%]", "w-[14%]", "w-[12%]", "w-[30%]"]}
           >
@@ -1304,7 +1305,7 @@ export function DiagnosticsSettingsPanel() {
               <thead className="border-b border-border/60 text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold sm:pl-5">Zeit</th>
-                  <th className="whitespace-nowrap px-4 py-2.5 font-semibold">Level</th>
+                  <th className="whitespace-nowrap px-4 py-2.5 font-semibold">Stufe</th>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold">Span</th>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold">Meldung</th>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold sm:pr-5">Trace</th>
@@ -1350,7 +1351,7 @@ export function DiagnosticsSettingsPanel() {
       <SettingsSection title="Häufigste Spans">
         {data && data.topSpansByCount.length > 0 ? (
           <DiagnosticsTable
-            headers={["Span", "Count", "Failures", "Average", "Max"]}
+            headers={["Span", "Anzahl", "Fehler", "Mittel", "Max."]}
             minTableWidth="min-w-[760px]"
             columnWidths={["w-[48%]", "w-[13%]", "w-[13%]", "w-[13%]", "w-[13%]"]}
           >

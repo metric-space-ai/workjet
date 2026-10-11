@@ -547,7 +547,7 @@ export function ProjectOverviewEditor({
                   message: saved ? "" : "Das Projekt konnte nicht gespeichert werden.",
                 });
               } catch {
-                setState({ pending: false, message: "Couldn’t save the project. Try again." });
+                setState({ pending: false, message: "Speichern fehlgeschlagen." });
               }
             }}
           >

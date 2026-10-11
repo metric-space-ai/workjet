@@ -285,7 +285,7 @@ export function ComputerProvisioningSection({
             <div className="flex gap-1" role="radiogroup" aria-label="Ziel">
               {(
                 [
-                  ["local", "Local"],
+                  ["local", "Lokal"],
                   ["ssh", "SSH"],
                 ] as const
               ).map(([value, label]) => (

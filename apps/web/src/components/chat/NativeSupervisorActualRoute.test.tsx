@@ -14,7 +14,7 @@ describe("observed Supervisor model", () => {
     const html = renderToStaticMarkup(
       <NativeSupervisorActualRoute state={{ phase: "ready", route }} />,
     );
-    expect(html).toContain("Last execution · Claude Code · claude-opus-5-5");
+    expect(html).toContain("Letzte Ausführung · Claude Code · claude-opus-5-5");
     expect(html).not.toContain(route.actual.account_id);
     expect(html).not.toContain(route.actual.sdk_session_id);
     expect(html).not.toContain("Configured ·");

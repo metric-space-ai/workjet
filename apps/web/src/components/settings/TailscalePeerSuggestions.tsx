@@ -35,14 +35,11 @@ export function TailscalePeerSuggestions({
   return (
     <section
       className="space-y-3 rounded-lg border border-border/60 p-3"
-      aria-label="Tailscale computers"
+      aria-label="Tailscale-Rechner"
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium">Tailscale computers</p>
-          <p className="text-xs text-muted-foreground">
-            From Tailscale on this computer. Online status does not guarantee SSH access.
-          </p>
+          <p className="text-xs font-medium">Tailscale-Rechner</p>
         </div>
         <Button
           size="xs"
@@ -50,16 +47,16 @@ export function TailscalePeerSuggestions({
           disabled={result === null || disabled}
           onClick={() => setRevision((value) => value + 1)}
         >
-          Refresh
+          Aktualisieren
         </Button>
       </div>
       <div role="status" className="text-xs text-muted-foreground">
         {result === null
-          ? "Checking Tailscale…"
+          ? "Tailscale wird geprüft …"
           : result.status === "unavailable"
-            ? "Tailscale discovery is unavailable. Start Tailscale and sign in on this computer, then refresh."
+            ? "Tailscale nicht verfügbar"
             : online.length === 0
-              ? "No online Tailscale computers found."
+              ? "Keine Rechner online"
               : null}
       </div>
       {result?.status === "available"
@@ -72,7 +69,7 @@ export function TailscalePeerSuggestions({
                 disabled={disabled}
                 onClick={() => onSelect(peer.hostname)}
               >
-                Use computer
+                Übernehmen
               </Button>
             </div>
           ))

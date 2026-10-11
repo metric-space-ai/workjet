@@ -106,8 +106,8 @@ export function updateWorkjetComputerHarness(
 
 export function saveWorkjetComputerDraft(draft: WorkjetComputerDraft): WorkjetComputer {
   const label = draft.label.trim();
-  if (!label) throw new Error("Enter a computer label.");
-  if (!draft.environmentId) throw new Error("Choose a computer connection.");
+  if (!label) throw new Error("Bezeichnung fehlt.");
+  if (!draft.environmentId) throw new Error("Verbindung fehlt.");
   const harnesses: WorkjetHarnessConfiguration[] = draft.harnesses.map((entry) => {
     const executableOverride = entry.executableOverride.trim();
     return {
@@ -133,7 +133,7 @@ export async function persistWorkjetComputerDraft(
   computer?: WorkjetComputer | null,
 ): Promise<void> {
   const environment = environments.find((item) => item.environmentId === draft.environmentId);
-  if (!environment && !computer) throw new Error("Choose a connected computer.");
+  if (!environment && !computer) throw new Error("Kein verbundener Rechner.");
   await onSave(
     saveWorkjetComputerDraft({
       ...draft,
@@ -148,11 +148,11 @@ const PRESENTATION_OPTIONS: ReadonlyArray<{
   readonly id: WorkjetComputerPresentationKind;
   readonly label: string;
 }> = [
-  { id: "local", label: "Local" },
-  { id: "workjet-connect", label: "Relay connection" },
+  { id: "local", label: "Lokal" },
+  { id: "workjet-connect", label: "Relay-Verbindung" },
   { id: "ssh", label: "SSH" },
   { id: "tailscale", label: "Tailscale" },
-  { id: "remote", label: "Remote" },
+  { id: "remote", label: "Fernzugriff" },
 ];
 
 /**
@@ -182,8 +182,8 @@ function HarnessAvailabilityNote({
       role={isProblem ? "alert" : undefined}
     >
       {isProblem
-        ? `Switched on, but this host cannot run it. ${view.reason}`
-        : `Installed on this host${view.version === undefined ? "" : ` (${view.version})`}, but switched off here.`}
+        ? `Eingeschaltet, hier nicht lauffähig: ${view.reason}`
+        : `Installiert${view.version === undefined ? "" : ` (${view.version})`}, aber ausgeschaltet`}
     </p>
   );
 }
@@ -231,7 +231,7 @@ export function WorkjetComputerEditor({
         "space-y-4",
         !compact && "rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4",
       )}
-      aria-label={computer ? `Edit computer ${computer.label}` : "Add computer"}
+      aria-label={computer ? `Rechner ${computer.label} bearbeiten` : "Rechner hinzufügen"}
       aria-busy={saving}
       onSubmit={async (event) => {
         event.preventDefault();
@@ -243,7 +243,7 @@ export function WorkjetComputerEditor({
         try {
           await persistWorkjetComputerDraft(draft, environments, onSave, computer);
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "The computer could not be saved.");
+          setError(cause instanceof Error ? cause.message : "Rechner nicht gespeichert.");
         } finally {
           saveInFlight.current = false;
           setSaving(false);
@@ -254,7 +254,7 @@ export function WorkjetComputerEditor({
         <div className={cn("grid gap-3", !compact && "sm:grid-cols-2")}>
           {!computer ? (
             <div className="space-y-1.5">
-              <Label htmlFor="workjet-computer-environment">Connection</Label>
+              <Label htmlFor="workjet-computer-environment">Verbindung</Label>
               <Select
                 value={draft.environmentId || null}
                 onValueChange={(value) => {
@@ -266,8 +266,8 @@ export function WorkjetComputerEditor({
                   setError(null);
                 }}
               >
-                <SelectTrigger id="workjet-computer-environment" aria-label="Computer connection">
-                  <SelectValue>{selectedEnvironment?.label ?? "Choose computer"}</SelectValue>
+                <SelectTrigger id="workjet-computer-environment" aria-label="Rechnerverbindung">
+                  <SelectValue>{selectedEnvironment?.label ?? "Rechner wählen"}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {environments.map((environment) => (
@@ -280,7 +280,7 @@ export function WorkjetComputerEditor({
             </div>
           ) : null}
           <div className="space-y-1.5">
-            <Label htmlFor="workjet-computer-label">Name</Label>
+            <Label htmlFor="workjet-computer-label">Bezeichnung</Label>
             <Input
               id="workjet-computer-label"
               nativeInput
@@ -292,23 +292,20 @@ export function WorkjetComputerEditor({
             />
           </div>
           <div className={cn("space-y-1.5", !compact && "sm:col-span-2")}>
-            <Label htmlFor="workjet-computer-kind">Connection type</Label>
+            <Label htmlFor="workjet-computer-kind">Verbindungsart</Label>
             <p id="workjet-computer-kind" className="text-sm text-muted-foreground">
               {PRESENTATION_OPTIONS.find(
                 (option) =>
                   option.id ===
                   (computer?.presentationKind ?? selectedEnvironment?.presentationKind),
-              )?.label ?? "Unavailable connection"}
+              )?.label ?? "—"}
             </p>
           </div>
         </div>
 
         <div className="space-y-2">
           <div>
-            <h3 className="text-sm font-medium">Coding tools</h3>
-            <p className="text-xs text-muted-foreground">
-              Choose which installed tools Workjet may use on this computer.
-            </p>
+            <h3 className="text-sm font-medium">Coding-Werkzeuge</h3>
           </div>
           {draft.harnesses.map((configuration) => {
             const label = WORKJET_HARNESS_OPTIONS.find(
@@ -342,13 +339,13 @@ export function WorkjetComputerEditor({
                         }),
                       )
                     }
-                    placeholder="Optional executable override"
-                    aria-label={`${label} executable override`}
+                    placeholder="Programmpfad (optional)"
+                    aria-label={`${label}: Programmpfad`}
                   />
                 ) : (
                   <details>
                     <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
-                      Executable override…
+                      Programmpfad …
                     </summary>
                     <Input
                       id={inputId}
@@ -361,8 +358,8 @@ export function WorkjetComputerEditor({
                           }),
                         )
                       }
-                      placeholder="Optional executable override"
-                      aria-label={`${label} executable override`}
+                      placeholder="Programmpfad (optional)"
+                      aria-label={`${label}: Programmpfad`}
                     />
                   </details>
                 )}
@@ -375,7 +372,7 @@ export function WorkjetComputerEditor({
                       }),
                     )
                   }
-                  aria-label={`${label} available`}
+                  aria-label={`${label} verfügbar`}
                 />
                 <HarnessAvailabilityNote
                   compact={compact}
@@ -392,7 +389,7 @@ export function WorkjetComputerEditor({
 
         {environments.length === 0 ? (
           <p role="status" className="text-xs text-muted-foreground">
-            Waiting for the environment catalog. Pair new remote environments in the section below.
+            Rechnerliste wird geladen …
           </p>
         ) : null}
         {error ? (
@@ -402,10 +399,10 @@ export function WorkjetComputerEditor({
         ) : null}
         <div className="flex justify-end gap-2">
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-            Cancel
+            Abbrechen
           </Button>
           <Button type="submit" size="sm">
-            {saving ? "Saving…" : "Save computer"}
+            {saving ? "Wird gespeichert …" : "Speichern"}
           </Button>
         </div>
       </fieldset>

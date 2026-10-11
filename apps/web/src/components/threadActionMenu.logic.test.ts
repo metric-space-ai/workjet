@@ -56,7 +56,7 @@ describe("buildThreadActionMenuItems", () => {
     const item = buildThreadActionMenuItems({ ...baseState, isRegeneratingTitle: true }).find(
       (candidate) => candidate.id === "regenerate-title",
     );
-    expect(item).toMatchObject({ label: "Regenerating…", disabled: true });
+    expect(item).toMatchObject({ label: "Wird erzeugt …", disabled: true });
   });
 
   it("marks delete as destructive and keeps it last", () => {

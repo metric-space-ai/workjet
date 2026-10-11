@@ -52,15 +52,16 @@ export function projectKpiPresentation(
     source: "",
     calculatedAt: null as number | null,
   };
-  if (!record) return { ...fallback, status: "unconfigured", detail: "Not configured" };
+  if (!record) return { ...fallback, status: "unconfigured", detail: "Nicht eingerichtet" };
   if (draftPrompt?.trim() !== record.prompt.prompt.trim())
-    return { ...fallback, status: "changed", detail: "Recalculated after saving" };
+    return { ...fallback, status: "changed", detail: "Neu berechnet nach Speichern" };
   const result = record.result;
   if (result.status !== "ready" && result.status !== "stale")
     return {
       ...fallback,
       status: result.status,
-      detail: result.reason_code ?? (result.status === "resolving" ? "Resolving" : result.status),
+      detail:
+        result.reason_code ?? (result.status === "resolving" ? "Wird berechnet" : result.status),
       message: result.message,
     };
   const snapshot = result.snapshot;
@@ -78,7 +79,7 @@ export function projectKpiPresentation(
   const names = {
     native_metric: "CTOX",
     github_metric: "GitHub",
-    connected_metric: "Connected source",
+    connected_metric: "Verbundene Quelle",
   };
   return {
     label: snapshot.label,

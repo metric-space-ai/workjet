@@ -4,7 +4,7 @@ import { SmartphoneIcon } from "lucide-react";
 import { useManagedRelayDevices } from "../../cloud/managedRelayState";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { Skeleton } from "../ui/skeleton";
 import {
   mobileClientNotificationDetail,
@@ -28,7 +28,7 @@ function MobileClientStatusBadge({
 }) {
   return (
     <Badge variant={enabled ? "success" : "outline"}>
-      {label}: {enabled ? "On" : "Off"}
+      {label}: {enabled ? "An" : "Aus"}
     </Badge>
   );
 }
@@ -50,11 +50,8 @@ function MobileClientRow({ device }: { readonly device: RelayClientDeviceRecord 
         </p>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        <MobileClientStatusBadge
-          enabled={device.notifications.enabled}
-          label="Push notifications"
-        />
-        <MobileClientStatusBadge enabled={device.liveActivities.enabled} label="Live Activities" />
+        <MobileClientStatusBadge enabled={device.notifications.enabled} label="Push-Mitteilungen" />
+        <MobileClientStatusBadge enabled={device.liveActivities.enabled} label="Live-Aktivitäten" />
       </div>
       <p className="mt-1.5 text-xs leading-[1.125rem] text-muted-foreground/80">
         {mobileClientNotificationDetail(device)}
@@ -65,7 +62,7 @@ function MobileClientRow({ device }: { readonly device: RelayClientDeviceRecord 
 
 function MobileClientsSkeleton() {
   return (
-    <div aria-label="Loading mobile clients" className="divide-y border-t" role="status">
+    <div aria-label="Mobilgeräte werden geladen" className="divide-y border-t" role="status">
       {MOBILE_CLIENT_SKELETON_ROWS.map((row) => (
         <div key={row} className="py-4">
           <div className="flex gap-3">
@@ -92,10 +89,7 @@ function EmptyMobileClients() {
         <SmartphoneIcon />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle className="text-[1.0625rem] leading-6">No mobile clients</EmptyTitle>
-        <EmptyDescription className="text-[0.8125rem] leading-[1.125rem]">
-          Sign in to CTOX on your iPhone to register it for push notifications and Live Activities.
-        </EmptyDescription>
+        <EmptyTitle className="text-[1.0625rem] leading-6">Noch keine Mobilgeräte</EmptyTitle>
       </EmptyHeader>
     </Empty>
   );
@@ -110,8 +104,7 @@ export function MobileClientsUserProfilePage() {
 
   return (
     <ClerkUserProfilePage
-      title="Mobile clients"
-      description="Devices registered to receive Workjet Connect activity from your environments."
+      title="Mobilgeräte"
       action={
         <ClerkUserProfileRefreshButton
           isPending={devicesState.isPending}
@@ -126,13 +119,11 @@ export function MobileClientsUserProfilePage() {
             role="alert"
           >
             <div>
-              <p className="font-medium text-destructive-foreground">
-                Could not load mobile clients
-              </p>
+              <p className="font-medium text-destructive-foreground">Mobilgeräte nicht geladen</p>
               <p className="mt-0.5 text-xs text-muted-foreground">{devicesState.error}</p>
             </div>
             <Button size="xs" variant="outline" onClick={devicesState.refresh}>
-              Try again
+              Erneut versuchen
             </Button>
           </div>
         ) : null}

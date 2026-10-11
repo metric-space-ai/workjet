@@ -95,7 +95,7 @@ function formatSampleInterval(valueMs: number): string {
   if (valueMs < 1_000) return `${Math.max(0, Math.round(valueMs))} ms`;
   const seconds = valueMs / 1_000;
   return `${seconds.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${
-    seconds === 1 ? "second" : "seconds"
+    seconds === 1 ? "Sekunde" : "Sekunden"
   }`;
 }
 
@@ -168,6 +168,22 @@ function booleanStateLabel(
   return "—";
 }
 
+const THERMAL_STATE_LABELS: Record<string, string> = {
+  unknown: "—",
+  nominal: "Normal",
+  fair: "Erhöht",
+  serious: "Hoch",
+  critical: "Kritisch",
+};
+
+const SOURCE_STATUS_LABELS: Record<ResourceTelemetrySourceStatus, string> = {
+  starting: "Startet",
+  healthy: "OK",
+  degraded: "Eingeschränkt",
+  unavailable: "Nicht verfügbar",
+  stopped: "Gestoppt",
+};
+
 function sourceStatusTone(status: ResourceTelemetrySourceStatus): "default" | "warning" | "danger" {
   if (status === "healthy") return "default";
   if (status === "starting" || status === "degraded") return "warning";
@@ -210,7 +226,7 @@ function SourceStatusBadge({
           tone === "danger" && "bg-destructive",
         )}
       />
-      {label} {presentation?.label ?? status}
+      {label} {presentation?.label ?? SOURCE_STATUS_LABELS[status]}
     </span>
   );
 }
@@ -288,7 +304,7 @@ function AggregateCard({
           {label}
         </div>
         <div className="rounded-md bg-muted/55 px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-muted-foreground/70">
-          {aggregate.processCount} {aggregate.processCount === 1 ? "process" : "processes"}
+          {aggregate.processCount} {aggregate.processCount === 1 ? "Prozess" : "Prozesse"}
         </div>
       </div>
       <div className="mt-3.5 grid grid-cols-2 gap-x-4 gap-y-2.5">
@@ -982,7 +998,7 @@ export function ResourceTelemetryDiagnostics() {
         headerAction={
           <div className="flex items-center gap-2">
             {snapshot ? (
-              <SourceStatusBadge label="Native" status={snapshot.health.native.status} />
+              <SourceStatusBadge label="Nativ" status={snapshot.health.native.status} />
             ) : null}
             <LastSampleLabel sampledAt={snapshot?.readAt ?? null} />
             <Tooltip>
@@ -1153,7 +1169,9 @@ export function ResourceTelemetryDiagnostics() {
                 />
                 <DetailRow
                   label="Temperatur"
-                  value={snapshot.power.thermalState}
+                  value={
+                    THERMAL_STATE_LABELS[snapshot.power.thermalState] ?? snapshot.power.thermalState
+                  }
                   valueClassName={
                     snapshot.power.thermalState === "serious" ||
                     snapshot.power.thermalState === "critical"
@@ -1201,7 +1219,7 @@ export function ResourceTelemetryDiagnostics() {
                 <DetailRow
                   label="Sidecar"
                   value={Option.match(snapshot.health.sidecarVersion, {
-                    onNone: () => "Unavailable",
+                    onNone: () => "—",
                     onSome: (version) =>
                       `${version}${Option.match(snapshot.health.sidecarPid, {
                         onNone: () => "",
@@ -1277,11 +1295,6 @@ export function ResourceTelemetryDiagnostics() {
         }
       >
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03)]">
-          <div className="bg-muted/15 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground sm:px-5">
-            Native counters identify which process is reading or writing. These application-level
-            counters identify known Workjet operations so process spikes can be correlated with
-            specific persistence and logging paths.
-          </div>
           <AttributionTable entries={snapshot?.attribution.entries ?? []} />
         </div>
       </SettingsSection>

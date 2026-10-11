@@ -267,13 +267,12 @@ export function assertLumaLiveModelChoice(
   if (account?.provider !== "claude") return;
   const model = draft.modelId.trim();
   if (prior?.modelId === model && prior.llmRouteId === draft.llmRouteId) return;
-  if (!account.enabled) throw new Error("Enable this account in Settings → Models.");
+  if (!account.enabled) throw new Error("Konto unter Einstellungen → Modelle aktivieren.");
   if (catalog?.accountId !== account.id || catalog.state !== "observed" || catalog.reason !== null)
-    throw new Error("Refresh this account's live model list before choosing a new model.");
-  if (!catalog.modelIds.includes(model))
-    throw new Error("Choose a model from this account's live list.");
+    throw new Error("Modellliste zuerst aktualisieren.");
+  if (!catalog.modelIds.includes(model)) throw new Error("Modell aus der Live-Liste wählen.");
   if (!account.modelIds.includes(model) || account.excludedModelIds?.includes(model))
-    throw new Error(`Enable ${model} for this account in Settings → Models first.`);
+    throw new Error(`${model} unter Einstellungen → Modelle aktivieren.`);
 }
 
 const EMPTY_NATIVE_ACCOUNTS: readonly WorkjetNativeProviderAccount[] = [];

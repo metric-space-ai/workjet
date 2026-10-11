@@ -59,7 +59,7 @@ export function ComposerPendingElementContextChip({
             ) : null}
             <button
               type="button"
-              aria-label={`Remove ${label}`}
+              aria-label={`${label} entfernen`}
               className={COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME}
               onClick={(event) => {
                 event.preventDefault();

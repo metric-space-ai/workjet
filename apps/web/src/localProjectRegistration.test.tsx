@@ -27,7 +27,7 @@ describe("retained project instance status", () => {
       expect(markup).toContain('data-workjet-project-instance-state="' + state + '"');
       expect(markup).toContain("The project and its history stay saved.");
       expect(markup).not.toContain("text-destructive");
-      expect(markup).not.toContain("Retry sync");
+      expect(markup).not.toContain("Erneut versuchen");
     },
   );
   it.each(["disabled", "removed"] as const)(

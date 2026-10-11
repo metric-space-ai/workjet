@@ -632,17 +632,16 @@ export function CtoxModeProvider({
 
   const setInstanceState = useCallback(
     async (instance: CtoxManagedInstance, state: "enabled" | "disabled" | "removed") => {
-      if (!bridge?.setInstanceState)
-        return { ok: false, message: "Instance settings require the desktop app." };
+      if (!bridge?.setInstanceState) return { ok: false, message: "Nur in der Desktop-App" };
       if (state === "disabled" && selectedIdRef.current === instance.id)
-        return { ok: false, message: "Select another instance before disabling this one." };
+        return { ok: false, message: "Zuerst andere Instanz wählen" };
       const result = await bridge.setInstanceState({
         instanceId: instance.id,
         state,
         selectedInstanceId: selectedIdRef.current,
       });
       if (result._tag !== "completed")
-        return { ok: false, message: "The instance change could not be saved." };
+        return { ok: false, message: "Instanzänderung nicht gespeichert" };
       setDiscovery((current) =>
         current !== "loading" && current._tag === "ready"
           ? {
@@ -2167,7 +2166,7 @@ export function CtoxSidebarFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={() => void navigate({ to: "/settings/business-os" })}>
             <SettingsIcon />
-            <span>Settings</span>
+            <span>Einstellungen</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

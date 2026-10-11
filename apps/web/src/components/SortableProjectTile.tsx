@@ -34,7 +34,7 @@ export function SortableProjectTile({
       className="touch-none cursor-grab active:cursor-grabbing"
       {...attributes}
       {...listeners}
-      aria-label={`Move ${label}`}
+      aria-label={`${label} verschieben`}
     >
       <GripVerticalIcon className="size-4" aria-hidden="true" />
     </Button>

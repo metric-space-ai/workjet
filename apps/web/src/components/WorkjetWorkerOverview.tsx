@@ -39,19 +39,19 @@ interface WorkerTurnPresentation {
 }
 
 const WORKER_TURN_PRESENTATION: Record<WorkerTurnState, WorkerTurnPresentation> = {
-  idle: { label: "Idle", dotClass: "bg-muted-foreground/40", pulse: false },
-  running: { label: "Running", dotClass: "bg-amber-500 dark:bg-amber-300/90", pulse: true },
+  idle: { label: "Inaktiv", dotClass: "bg-muted-foreground/40", pulse: false },
+  running: { label: "Läuft", dotClass: "bg-amber-500 dark:bg-amber-300/90", pulse: true },
   completed: {
-    label: "Completed",
+    label: "Fertig",
     dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
     pulse: false,
   },
   interrupted: {
-    label: "Interrupted",
+    label: "Unterbrochen",
     dotClass: "bg-orange-500 dark:bg-orange-300/90",
     pulse: false,
   },
-  error: { label: "Error", dotClass: "bg-red-500 dark:bg-red-300/90", pulse: false },
+  error: { label: "Fehler", dotClass: "bg-red-500 dark:bg-red-300/90", pulse: false },
 };
 
 export function resolveWorkerTurnState(

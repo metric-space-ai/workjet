@@ -25,14 +25,14 @@ const REACTION_EMOJI: Record<PullRequestReactionContent, string> = {
 
 /** The spoken names GitHub uses in its own hover text, which is what a screen reader reads out. */
 const REACTION_NAME: Record<PullRequestReactionContent, string> = {
-  "thumbs-up": "thumbs up",
-  "thumbs-down": "thumbs down",
-  laugh: "laugh",
-  hooray: "hooray",
-  confused: "confused",
-  heart: "heart",
-  rocket: "rocket",
-  eyes: "eyes",
+  "thumbs-up": "Daumen hoch",
+  "thumbs-down": "Daumen runter",
+  laugh: "Lachen",
+  hooray: "Hurra",
+  confused: "Verwirrt",
+  heart: "Herz",
+  rocket: "Rakete",
+  eyes: "Augen",
 };
 
 export function pullRequestReactionEmoji(content: PullRequestReactionContent): string {
@@ -46,16 +46,19 @@ export function pullRequestReactionName(content: PullRequestReactionContent): st
 /** Past three names the sentence stops being readable and starts being a list. */
 const NAMED_ACTOR_LIMIT = 3;
 
+/** How the viewer is named in the reaction sentence. */
+const VIEWER_NAME = "Du";
+
 function joinNames(parts: ReadonlyArray<string>): string {
   if (parts.length <= 1) return parts[0] ?? "";
-  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
-  return `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
+  if (parts.length === 2) return `${parts[0]} und ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")} und ${parts.at(-1)}`;
 }
 
 /** "others" only alongside somebody named; on its own a count is people, not other people. */
 function countRemainder(count: number, named: boolean): string {
-  if (named) return `${count} ${count === 1 ? "other" : "others"}`;
-  return `${count} ${count === 1 ? "person" : "people"}`;
+  if (named) return `${count} ${count === 1 ? "weitere Person" : "weitere Personen"}`;
+  return `${count} ${count === 1 ? "Person" : "Personen"}`;
 }
 
 /**
@@ -73,11 +76,14 @@ function countRemainder(count: number, named: boolean): string {
 export function pullRequestReactionTooltip(reaction: PullRequestReaction): string {
   const viewerHasRoom = reaction.actors.length < reaction.count;
   const names =
-    reaction.viewerHasReacted && viewerHasRoom ? ["You", ...reaction.actors] : [...reaction.actors];
+    reaction.viewerHasReacted && viewerHasRoom
+      ? [VIEWER_NAME, ...reaction.actors]
+      : [...reaction.actors];
   const shown = names.slice(0, Math.min(NAMED_ACTOR_LIMIT, reaction.count));
   const others = Math.max(0, reaction.count - shown.length);
   const parts = [...shown, ...(others > 0 ? [countRemainder(others, shown.length > 0)] : [])];
-  return `${joinNames(parts)} reacted with ${pullRequestReactionName(reaction.content)} emoji`;
+  const verb = reaction.count > 1 ? "haben" : parts[0] === VIEWER_NAME ? "hast" : "hat";
+  return `${joinNames(parts)} ${verb} mit ${pullRequestReactionName(reaction.content)} reagiert`;
 }
 
 /**

@@ -25,7 +25,7 @@ import { canActivateCtoxInstance, useCtoxMode } from "./CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 
 export function instanceHostLabel(instance: CtoxManagedInstance): string {
-  if (instance.source === "local_daemon") return "Dieser Computer";
+  if (instance.source === "local_daemon") return "Dieser Rechner";
   if (instance.domain) return instance.domain;
   if (instance.source === "ctox_dev") return "Verwaltet bei ctox.dev";
   if (instance.source === "ssh_managed") return "SSH-Rechner · Hostname noch nicht gemeldet";

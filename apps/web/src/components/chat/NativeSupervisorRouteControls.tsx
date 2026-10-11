@@ -141,13 +141,13 @@ export function NativeSupervisorRouteControls(props: {
   const status =
     error ??
     (saving
-      ? "Saving the Supervisor selection…"
+      ? "Wird gespeichert …"
       : !ready
         ? lumas.phase === "loading"
-          ? "Loading the instance configuration…"
-          : "The instance configuration is unavailable. Reconnect the instance to change this route."
+          ? "Wird geladen …"
+          : "Instanz-Konfiguration nicht verfügbar"
         : selectedId !== null && selected === null
-          ? "The saved Supervisor Luma is unavailable in this instance."
+          ? "Gespeicherte Supervisor-Luma nicht verfügbar"
           : null);
   useEffect(() => {
     props.onStatusChange?.(status);
@@ -172,9 +172,7 @@ export function NativeSupervisorRouteControls(props: {
       !snapshot ||
       !configuration
     ) {
-      setError(
-        "The instance configuration is unavailable. Reconnect the instance to change this route.",
-      );
+      setError("Instanz-Konfiguration nicht verfügbar");
       return;
     }
     const controller = new AbortController();
@@ -198,13 +196,13 @@ export function NativeSupervisorRouteControls(props: {
                 value ??
                 selected ??
                 (() => {
-                  throw new Error("Choose a configured harness before selecting Manual.");
+                  throw new Error("Zuerst Harness wählen");
                 })(),
               configuration,
               computers,
               models: catalog.data?.models ?? [],
             });
-      if (!prepared) throw new Error("The selected Luma is unavailable in this instance.");
+      if (!prepared) throw new Error("Luma nicht verfügbar");
       const profile = "profile" in prepared ? prepared.profile : prepared;
       const selectedConfiguration =
         "configuration" in prepared ? prepared.configuration : configuration;
@@ -220,16 +218,12 @@ export function NativeSupervisorRouteControls(props: {
             environmentId: environment.environmentId,
             input: { target, expectedRevision, configuration },
           });
-          if (result._tag !== "Success")
-            throw new Error(
-              "The instance refused the Supervisor configuration. Check its connection and permissions.",
-            );
+          if (result._tag !== "Success") throw new Error("Instanz hat die Konfiguration abgelehnt");
           return result.value.status;
         },
         readConfiguration: async () => {
           const result = await read({ environmentId: environment.environmentId, input: target });
-          if (result._tag !== "Success")
-            throw new Error("The instance configuration could not be read back.");
+          if (result._tag !== "Success") throw new Error("Konfiguration nicht lesbar");
           if (isCurrent() && !controller.signal.aborted)
             setVerified({ scopeKey, snapshot: result.value });
           return result.value;
@@ -241,11 +235,7 @@ export function NativeSupervisorRouteControls(props: {
       instance.refresh();
     } catch (failure) {
       if (isCurrent() && !controller.signal.aborted) {
-        setError(
-          failure instanceof Error
-            ? failure.message
-            : "The Supervisor selection could not be saved.",
-        );
+        setError(failure instanceof Error ? failure.message : "Speichern fehlgeschlagen");
         instance.refresh();
         refreshWorkjetProjectRegistry(scope.instanceId);
       }
@@ -299,11 +289,11 @@ export function NativeSupervisorRouteControls(props: {
                   ? "Online"
                   : connection?.phase === "offline"
                     ? "Offline"
-                    : "Not connected",
+                    : "Getrennt",
               reason:
                 !profiles.some((entry) => entry.computerId === computer.id) &&
                 connection?.phase !== "connected"
-                  ? (connection?.error ?? "This computer is offline.")
+                  ? (connection?.error ?? "Rechner offline")
                   : null,
             },
           ];
@@ -371,7 +361,7 @@ export function NativeSupervisorRouteControlsView(props: {
           <ComposerManualTargetControls
             configuredInstanceIds={harnesses}
             selectedHarness={selected?.harness ?? null}
-            unavailableHint="No configured model is available for this harness on the instance."
+            unavailableHint="Kein Modell verfügbar"
             onSelectHarness={(harness) => {
               try {
                 change(
@@ -388,21 +378,19 @@ export function NativeSupervisorRouteControlsView(props: {
                 );
               } catch (failure) {
                 props.onError(
-                  failure instanceof Error ? failure.message : "The harness is unavailable.",
+                  failure instanceof Error ? failure.message : "Harness nicht verfügbar",
                 );
               }
             }}
-            disabledReason={props.disabled ? "Wait until the current operation finishes." : null}
+            disabledReason={props.disabled ? "Vorgang läuft noch" : null}
             modelSource="configured"
             configuredModelsHint={null}
             models={props.models}
-            modelsUnavailableReason={
-              props.unavailableReason ?? "No models are configured on the instance."
-            }
+            modelsUnavailableReason={props.unavailableReason ?? "Keine Modelle konfiguriert"}
             selectedModelId={selected?.modelId ?? ""}
             onSelectModel={(modelId) => {
               if (!selected) {
-                props.onError("Choose a harness before selecting a model.");
+                props.onError("Zuerst Harness wählen");
                 return;
               }
               change({ ...selected, modelId });
@@ -416,16 +404,12 @@ export function NativeSupervisorRouteControlsView(props: {
               selectedComputerId={props.selectedComputerId}
               activeEnvironmentId={props.environmentId}
               selectableEnvironmentIds={props.computers.map((entry) => entry.environmentId)}
-              disabledReason={
-                props.disabled
-                  ? "Wait until the current operation finishes."
-                  : props.unavailableReason
-              }
+              disabledReason={props.disabled ? "Vorgang läuft noch" : props.unavailableReason}
               mismatchNote={null}
               onAddComputer={props.onAddComputer}
               onSelectComputer={(id) => {
                 if (!selected) {
-                  props.onError("Choose a harness before selecting a computer.");
+                  props.onError("Zuerst Harness wählen");
                   return;
                 }
                 const computer = props.computers.find((entry) => entry.id === id);

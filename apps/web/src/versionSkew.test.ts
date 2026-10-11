@@ -22,7 +22,7 @@ describe("versionSkew", () => {
     expect(resolveVersionMismatch("9.9.9")).toEqual({
       clientVersion: APP_VERSION,
       serverVersion: "9.9.9",
-      hint: "Version mismatch. Try syncing the client and server to the same CTOX version.",
+      hint: "Client- und Server-Version weichen ab.",
     });
   });
 
@@ -74,7 +74,7 @@ describe("versionSkew", () => {
     const mismatch = resolveVersionMismatch("9.9.9");
 
     expect(appendVersionMismatchHint("Socket closed.", mismatch)).toBe(
-      "Socket closed. Hint: Version mismatch. Try syncing the client and server to the same CTOX version.",
+      "Socket closed. Hinweis: Client- und Server-Version weichen ab.",
     );
   });
 
@@ -97,14 +97,12 @@ describe("versionSkew", () => {
   });
 
   it("matches version-drift guidance to the advertised update path", () => {
-    expect(serverUpdateGuidance("respawn", "Remote server")).toBe(
-      "Update the Remote server so they stay in sync.",
-    );
+    expect(serverUpdateGuidance("respawn", "Remote server")).toBe("Remote server aktualisieren.");
     expect(serverUpdateGuidance("desktop-managed", "Desktop server")).toBe(
-      "Update the desktop app that runs the Desktop server.",
+      "Desktop-App für Desktop server aktualisieren.",
     );
     expect(serverUpdateGuidance(null, "Local server")).toBe(
-      "Relaunch the Local server with the copied command to sync them.",
+      "Local server mit kopiertem Befehl neu starten.",
     );
   });
 });

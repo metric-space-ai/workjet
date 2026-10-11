@@ -55,10 +55,10 @@ const TIMELINE_SOURCE: Pick<
 
 describe("pull request state description", () => {
   it("keeps draft and conflicts orthogonal to the terminal states", () => {
-    expect(describePullRequestState("open", true)).toBe("Draft");
-    expect(describePullRequestState("open", false)).toBe("Ready for review");
-    expect(describePullRequestState("merged", true)).toBe("Merged");
-    expect(describePullRequestState("closed", false)).toBe("Closed");
+    expect(describePullRequestState("open", true)).toBe("Entwurf");
+    expect(describePullRequestState("open", false)).toBe("Bereit zur Prüfung");
+    expect(describePullRequestState("merged", true)).toBe("Gemergt");
+    expect(describePullRequestState("closed", false)).toBe("Geschlossen");
   });
 });
 

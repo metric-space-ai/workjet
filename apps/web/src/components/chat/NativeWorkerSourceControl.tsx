@@ -83,7 +83,7 @@ export function NativeWorkerSourceControl(props: {
       (entry) =>
         entry.status === "ready" && workerSourceConnectionForInstance([entry], props.instanceId),
     ).length > 1
-      ? "Multiple authorized worker connections match this instance. Remove the unused connection in Settings before reconnecting."
+      ? "Mehrere Luma-Verbindungen passen zur Instanz"
       : source?.status === "ready"
         ? workerSourceBindingError(props.config, props.instanceId, source)
         : null);
@@ -118,7 +118,7 @@ export function NativeWorkerSourceControl(props: {
     )
       return;
     if (!selected && (!ready || renew) && !provision) {
-      setError({ scope, message: "Open Workjet desktop to connect this project's workers." });
+      setError({ scope, message: "Lumas nur in Workjet Desktop verbindbar" });
       return;
     }
     const requestedScope = scope;
@@ -136,9 +136,7 @@ export function NativeWorkerSourceControl(props: {
             scope: requestedScope,
             authenticationRequired: result.code === "signed_out",
             message:
-              result.code === "signed_out"
-                ? "Sign in to Business OS to connect workers."
-                : "Could not connect workers. Check Business OS permissions and try again.",
+              result.code === "signed_out" ? "Bei Business OS anmelden" : "Lumas nicht verbunden",
           });
           return;
         }
@@ -147,7 +145,7 @@ export function NativeWorkerSourceControl(props: {
       if (!accepted || accepted.status !== "ready") {
         setError({
           scope: requestedScope,
-          message: "The worker connection is not ready for the selected Business OS.",
+          message: "Luma-Verbindung nicht bereit",
         });
         return;
       }
@@ -171,7 +169,7 @@ export function NativeWorkerSourceControl(props: {
       if (currentContext.current.scope === requestedScope) {
         setError({
           scope: requestedScope,
-          message: "Could not connect workers. Check Business OS permissions and try again.",
+          message: "Lumas nicht verbunden",
         });
       }
     } finally {
@@ -195,7 +193,7 @@ export function NativeWorkerSourceControl(props: {
       return;
     autoAttempted.current = scope;
     if (request === null) {
-      setError({ scope, message: "Select a managed instance to connect workers." });
+      setError({ scope, message: "Keine verwaltete Instanz gewählt" });
       return;
     }
     void connectRef.current();
@@ -210,15 +208,15 @@ export function NativeWorkerSourceControl(props: {
           (error?.scope === scope ? error.message : null) ??
           (!query.isPending && source !== undefined && !ready
             ? source.status === "needs_auth"
-              ? "Worker connection needs authorization. Reconnect project workers."
-              : "The worker connection is unavailable. Reconnect project workers."
+              ? "Luma-Verbindung braucht Freigabe"
+              : "Luma-Verbindung nicht verfügbar"
             : !query.isPending &&
                 ready &&
                 props.config.schemaVersion === 2 &&
                 props.config.capabilityBindings.some(
                   (binding) => binding.capabilityId === "ctox-business-os",
                 )
-              ? "A replacement worker connection is ready. Reconnect this thread to use it."
+              ? "Neue Luma-Verbindung bereit"
               : null));
   const canRetry = !selectionError && !(error?.scope === scope && error.retryable === false);
   useEffect(() => {
@@ -228,7 +226,7 @@ export function NativeWorkerSourceControl(props: {
             message: chooseConnection
               ? error?.scope === scope
                 ? error.message
-                : "Choose worker access for this Supervisor."
+                : "Luma-Zugang wählen"
               : currentError!,
             authenticationRequired:
               !chooseConnection &&
@@ -286,7 +284,7 @@ export function NativeWorkerSourceControl(props: {
       ) : currentError ? (
         <button
           type="button"
-          aria-label="Reconnect project workers"
+          aria-label="Lumas neu verbinden"
           title={currentError}
           className="rounded border px-2 py-1 text-amber-500 disabled:opacity-50"
           disabled={props.unavailable || busy || query.isPending || request === null}

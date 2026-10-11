@@ -95,10 +95,10 @@ function groupCommandItems(
 
   const groups: ComposerCommandGroup[] = [];
   if (builtInItems.length > 0) {
-    groups.push({ id: "built-in", label: "Built-in", items: builtInItems });
+    groups.push({ id: "built-in", label: "Integriert", items: builtInItems });
   }
   if (providerItems.length > 0) {
-    groups.push({ id: "provider", label: "Provider", items: providerItems });
+    groups.push({ id: "provider", label: "Anbieter", items: providerItems });
   }
   return groups;
 }
@@ -177,19 +177,16 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                 </CommandGroupLabel>
                 <p className="text-secondary-label text-xs">
                   {props.isLoading
-                    ? "Searching workspace skills..."
-                    : (props.emptyStateText ??
-                      "No skills found. Try / to browse provider commands.")}
+                    ? "Suche Skills …"
+                    : (props.emptyStateText ?? "Keine Skills gefunden")}
                 </p>
               </CommandGroup>
             ) : (
               <p className="text-secondary-label text-xs">
                 {props.isLoading
-                  ? "Searching workspace files..."
+                  ? "Suche Dateien …"
                   : (props.emptyStateText ??
-                    (props.triggerKind === "path"
-                      ? "No matching files or folders."
-                      : "No matching command."))}
+                    (props.triggerKind === "path" ? "Keine Treffer" : "Kein passender Befehl"))}
               </p>
             )}
           </div>

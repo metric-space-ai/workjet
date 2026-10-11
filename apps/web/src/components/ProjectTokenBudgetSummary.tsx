@@ -30,16 +30,16 @@ export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectToke
     <Tooltip>
       <TooltipTrigger
         render={<span tabIndex={0} />}
-        aria-label={`Token-Verbrauch: ${label}${partial ? ", Usage teilweise unbekannt" : ""}`}
+        aria-label={`Token-Verbrauch: ${label}${partial ? ", Verbrauch teilweise unbekannt" : ""}`}
         data-workjet-token-budget=""
         title={
-          partial ? `Usage unbekannt: ${view.unknown.join(", ")}` : "Token-Verbrauch je Zyklus"
+          partial ? `Verbrauch unbekannt: ${view.unknown.join(", ")}` : "Token-Verbrauch je Zyklus"
         }
         className={`inline-flex max-w-full flex-wrap items-center gap-1 rounded px-1.5 py-0.5 text-xs tabular-nums ${percent !== null && percent >= 80 ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
       >
         {label}
         {partial ? (
-          <span aria-hidden="true" title="Usage teilweise unbekannt">
+          <span aria-hidden="true" title="Verbrauch teilweise unbekannt">
             {" "}
             · ?
           </span>
@@ -54,9 +54,9 @@ export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectToke
           </span>
           {view.totals ? (
             <span>
-              Input {count(view.totals.uncachedInputTokens)} · Cached input{" "}
-              {count(view.totals.cachedInputTokens)} · Cache creation{" "}
-              {count(view.totals.cacheCreationTokens)} · Output {count(view.totals.outputTokens)}
+              Eingabe {count(view.totals.uncachedInputTokens)} · Cache-Eingabe{" "}
+              {count(view.totals.cachedInputTokens)} · Cache-Aufbau{" "}
+              {count(view.totals.cacheCreationTokens)} · Ausgabe {count(view.totals.outputTokens)}
             </span>
           ) : null}
           {view.threads.map((thread, index) => (
@@ -66,7 +66,7 @@ export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectToke
           ))}
           {partial ? (
             <span className="text-amber-700 dark:text-amber-300">
-              Usage unbekannt: {view.unknown.join(", ")}. Angezeigt ist nur bekannter Verbrauch.
+              Verbrauch unbekannt: {view.unknown.join(", ")}
             </span>
           ) : null}
           <span>Kein automatischer Abbruch bei Überschreitung.</span>

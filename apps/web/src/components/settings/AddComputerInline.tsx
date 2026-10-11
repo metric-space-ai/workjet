@@ -106,7 +106,7 @@ type Phase =
     };
 
 const SEGMENTS: ReadonlyArray<{ readonly value: AddComputerKind; readonly label: string }> = [
-  { value: "local", label: "Local" },
+  { value: "local", label: "Lokal" },
   { value: "ssh", label: "SSH" },
   { value: "tailscale", label: "Tailscale" },
 ];

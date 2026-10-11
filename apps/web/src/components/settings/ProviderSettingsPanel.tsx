@@ -1053,7 +1053,7 @@ export function EnvironmentProviderSettings({
             const headerAction =
               row.isDefault && row.isDirty ? (
                 <SettingResetButton
-                  label={`${resetLabel} provider settings`}
+                  label={`${resetLabel}-Einstellungen`}
                   onClick={() => resetDefaultInstance(row.driver)}
                 />
               ) : null;

@@ -46,7 +46,7 @@ export const ComposerAttachmentMenu = memo(function ComposerAttachmentMenu(
             <ComposerControl
               type="button"
               className="size-7 shrink-0 justify-center px-0"
-              aria-label="Add images or project files"
+              aria-label="Anhang hinzufügen"
             />
           }
         >
@@ -55,11 +55,11 @@ export const ComposerAttachmentMenu = memo(function ComposerAttachmentMenu(
         <MenuPopup align="start" side="top" className="w-52">
           <MenuItem onClick={() => imageInputRef.current?.click()}>
             <ImagePlusIcon />
-            Upload images
+            Bilder hochladen
           </MenuItem>
           <MenuItem onClick={props.onAddProjectFile}>
             <FileSearchIcon />
-            Add project file
+            Projektdatei hinzufügen
           </MenuItem>
         </MenuPopup>
       </Menu>

@@ -155,25 +155,25 @@ describe("RightPanelTabs surface launcher", () => {
   it("omits the Browser card and its shortcut when the capability is disabled", () => {
     const html = renderEmptyLauncher(false);
     expect(html).not.toContain("Browser");
-    expect(html).not.toContain("Open a local app or URL.");
-    expect(html).toContain("Files");
-    expect(html).toContain("Pull request");
+    expect(html).not.toContain("Nur in der Desktop-App");
+    expect(html).toContain("Dateien");
+    expect(html).toContain("Pull Request");
   });
 
   it("explains runtime unavailability only after the capability is enabled", () => {
     const html = renderEmptyLauncher(true, false);
     expect(html).toContain("Browser");
-    expect(html).toContain("Only available in the desktop app.");
-    expect(renderEmptyLauncher(false, false)).not.toContain("Only available in the desktop app.");
+    expect(html).toContain("Nur in der Desktop-App");
+    expect(renderEmptyLauncher(false, false)).not.toContain("Nur in der Desktop-App");
   });
 
   it("keeps terminal and workers out of the generic right-panel launcher", () => {
     const html = renderEmptyLauncher();
 
     expect(html).toContain("Browser");
-    expect(html).toContain("Files");
-    expect(html).toContain("Diff");
-    expect(html).toContain("Pull request");
+    expect(html).toContain("Dateien");
+    expect(html).toContain("Änderungen");
+    expect(html).toContain("Pull Request");
     expect(html).not.toContain("Terminal");
     expect(html).not.toContain("Agents");
     expect(html).not.toContain("Follow subagents and workflows");

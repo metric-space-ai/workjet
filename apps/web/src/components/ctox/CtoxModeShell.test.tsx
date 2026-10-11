@@ -474,7 +474,7 @@ describe("CTOX instance presentation", () => {
     expect(markup).toContain("Nicht bei ctox.dev angemeldet");
     expect(markup).toContain("Anmelden");
     expect(markup).toContain("Invited Office");
-    expect(markup).toContain("Settings");
+    expect(markup).toContain("Einstellungen");
     expect(markup).not.toContain("Abmelden");
   });
 
@@ -1481,7 +1481,7 @@ describe("CTOX sidebar footer", () => {
       </CtoxModeProvider>,
     );
     expect(markup).toContain('data-ctox-sidebar-footer=""');
-    expect(markup).toContain("Settings");
+    expect(markup).toContain("Einstellungen");
     expect(markup).not.toContain("Business OS-Einstellungen");
     expect(markup).not.toContain('aria-label="Backends aktualisieren"');
     expect(markup).not.toContain("Check for updates");

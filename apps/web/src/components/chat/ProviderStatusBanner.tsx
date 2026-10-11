@@ -32,15 +32,13 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
 
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
-  const title = isUnauthenticated
-    ? `${providerName} is unauthenticated`
-    : `${providerName} provider status`;
+  const title = isUnauthenticated ? `${providerName} nicht angemeldet` : `${providerName}-Zustand`;
   const message = isUnauthenticated
-    ? "Sign in via the CLI to authenticate again."
+    ? "Per CLI neu anmelden"
     : (status.message ??
       (status.status === "error"
-        ? `${providerName} provider is unavailable.`
-        : `${providerName} provider has limited availability.`));
+        ? `${providerName} nicht verfügbar`
+        : `${providerName} eingeschränkt verfügbar`));
 
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
@@ -68,7 +66,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
         </div>
         <button
           type="button"
-          aria-label={`Dismiss ${providerName} provider ${status.status}`}
+          aria-label={`${providerName}-${status.status === "warning" ? "Warnung" : "Fehler"} schließen`}
           className="absolute top-2 right-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           onClick={onDismiss}
         >

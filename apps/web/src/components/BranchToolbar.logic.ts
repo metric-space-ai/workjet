@@ -16,7 +16,7 @@ export interface EnvironmentOption {
 export const EnvMode = Schema.Literals(["local", "worktree"]);
 export type EnvMode = typeof EnvMode.Type;
 
-const GENERIC_LOCAL_ENVIRONMENT_LABELS = new Set(["local", "local environment"]);
+const GENERIC_LOCAL_ENVIRONMENT_LABELS = new Set(["local", "local environment", "dieser rechner"]);
 
 function normalizeDisplayLabel(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -37,7 +37,7 @@ export function resolveEnvironmentOptionLabel(input: {
       if (!label) return false;
       return !GENERIC_LOCAL_ENVIRONMENT_LABELS.has(label.toLowerCase());
     });
-    return preferredLocalLabel ?? "This device";
+    return preferredLocalLabel ?? "Dieser Rechner";
   }
 
   return runtimeLabel ?? savedLabel ?? input.environmentId;
@@ -63,15 +63,15 @@ export function shouldShowComposerContextStrip(input: {
 }
 
 export function resolveEnvModeLabel(mode: EnvMode): string {
-  return mode === "worktree" ? "New worktree" : "Current checkout";
+  return mode === "worktree" ? "Neuer Worktree" : "Aktueller Checkout";
 }
 
 export function resolveCurrentWorkspaceLabel(activeWorktreePath: string | null): string {
-  return activeWorktreePath ? "Current worktree" : resolveEnvModeLabel("local");
+  return activeWorktreePath ? "Aktueller Worktree" : resolveEnvModeLabel("local");
 }
 
 export function resolveLockedWorkspaceLabel(activeWorktreePath: string | null): string {
-  return activeWorktreePath ? "Worktree" : "Local checkout";
+  return activeWorktreePath ? "Worktree" : "Lokaler Checkout";
 }
 
 export interface PreviousWorktreeSeed {
@@ -118,7 +118,7 @@ export function resolvePreviousWorktreeSeed(input: {
 }
 
 export function resolvePreviousWorktreeLabel(seed: PreviousWorktreeSeed): string {
-  return seed.branch ? `Previous worktree (${seed.branch})` : "Previous worktree";
+  return seed.branch ? `Vorheriger Worktree (${seed.branch})` : "Vorheriger Worktree";
 }
 
 export function resolveEffectiveEnvMode(input: {
@@ -179,14 +179,14 @@ export function resolveBranchTriggerLabel(input: {
     startFromOrigin,
   } = input;
   if (!resolvedActiveBranch) {
-    return "Select ref";
+    return "Ref wählen";
   }
   if (effectiveEnvMode === "worktree" && !activeWorktreePath) {
     const baseRef =
       startFromOrigin && resolvedActiveBranchIsRemote === false
         ? `origin/${resolvedActiveBranch}`
         : resolvedActiveBranch;
-    return `From ${baseRef}`;
+    return `Von ${baseRef}`;
   }
   return resolvedActiveBranch;
 }

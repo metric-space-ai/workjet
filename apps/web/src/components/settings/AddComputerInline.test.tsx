@@ -45,7 +45,7 @@ describe("Rechner hinzufügen (inline)", () => {
     expect(markup).toContain('data-slot="inline-panel"');
     expect(markup).not.toContain('role="dialog"');
     const segments = [...markup.matchAll(/role="radio"[^>]*>([^<]+)</g)].map((m) => m[1]);
-    expect(segments).toEqual(["Local", "SSH", "Tailscale"]);
+    expect(segments).toEqual(["Lokal", "SSH", "Tailscale"]);
     expect(markup).not.toContain("Coding computer");
     expect(markup).not.toContain("Build, GPU, or storage computer");
   });

@@ -8,6 +8,8 @@
  * je als EINE Zeile im selben Panel. Kein Dialog, kein Zurückspringen.
  */
 import type {
+  ComputerFacts,
+  ComputerSshKeyInfo,
   DesktopDiscoveredSshHost,
   DesktopSshEnvironmentTarget,
   DesktopTailscalePeers,
@@ -25,6 +27,9 @@ import { Spinner } from "../ui/spinner";
 import {
   ComputerRoleCheckboxes,
   DEFAULT_COMPUTER_ROLES,
+  gibOf,
+  gpuDetected,
+  shortGpuModel,
   type ComputerRoles,
 } from "./ComputerCapabilitiesEditor";
 import { formatDesktopSshTarget, parseManualDesktopSshTarget } from "./ConnectionsSettings";
@@ -39,6 +44,39 @@ export interface AddComputerRequest {
   readonly roles: ComputerRoles;
   /** Bestätigter Host-Schlüssel, wenn Build oder Speicher ihn brauchen. */
   readonly hostKey: { readonly algorithm: string; readonly fingerprint: string } | null;
+  /** Gewählter SSH-Schlüssel (Pfad ohne `.pub`), null bei Local. */
+  readonly identityFile: string | null;
+  /** true, wenn die GPU schon erkannt war und der Haken bewusst steht. */
+  readonly gpuDecided: boolean;
+}
+
+/** Was Workjet über das Ziel schon weiß (aus einer früheren Erkennung). */
+export interface KnownComputerFacts {
+  readonly facts: ComputerFacts | null;
+  readonly identityFiles: ReadonlyArray<string>;
+}
+
+export function gpuSummary(facts: ComputerFacts | null | undefined): string | null {
+  const gpu = facts?.gpus[0];
+  if (!facts || !gpu) return null;
+  const bytes = gpu.vramBytes ?? (gpu.unifiedMemory ? facts.ramBytes : null);
+  return [shortGpuModel(gpu.model), bytes ? `${gibOf(bytes)} GB` : null]
+    .filter((part): part is string => !!part)
+    .join(" · ");
+}
+
+function keyName(path: string): string {
+  return path.split(/[\\/]/).at(-1) ?? path;
+}
+
+/** Befehl, der den gewählten öffentlichen Schlüssel auf dem Ziel einträgt. */
+export function sshCopyIdCommand(
+  identityFile: string,
+  target: Pick<DesktopSshEnvironmentTarget, "hostname" | "username" | "port">,
+): string {
+  const where = target.username ? `${target.username}@${target.hostname}` : target.hostname;
+  const port = target.port && target.port !== 22 ? ` -p ${target.port}` : "";
+  return `ssh-copy-id -i ${identityFile}.pub${port} ${where}`;
 }
 
 export type AddComputerOutcome =
@@ -187,7 +225,18 @@ export interface AddComputerInlineProps {
   readonly inspectHostKey?: (
     target: WorkjetProvisioningTarget,
   ) => Promise<WorkjetSshHostKeyInspectResult>;
-  readonly onAdd: (request: AddComputerRequest) => Promise<AddComputerOutcome>;
+  /** Öffentliche Schlüssel aus ~/.ssh (nur Pfad und Fingerprint). */
+  readonly sshKeys?: ReadonlyArray<ComputerSshKeyInfo>;
+  readonly sshKeysLoading?: boolean;
+  /** Schon erkannte Fakten für Local bzw. eine Adresse. */
+  readonly knownComputer?: (
+    kind: AddComputerKind,
+    hostname: string | null,
+  ) => KnownComputerFacts | null;
+  readonly onAdd: (
+    request: AddComputerRequest,
+    progress?: (step: string) => void,
+  ) => Promise<AddComputerOutcome>;
   readonly onDone?: () => void;
 }
 
@@ -210,6 +259,9 @@ export function AddComputerInline({
   rolesStatus,
   discoverTailscalePeers,
   inspectHostKey,
+  sshKeys = [],
+  sshKeysLoading = false,
+  knownComputer,
   onAdd,
   onDone,
 }: AddComputerInlineProps) {
@@ -220,6 +272,9 @@ export function AddComputerInline({
   const [port, setPort] = useState("");
   const [alias, setAlias] = useState<DesktopDiscoveredSshHost | null>(null);
   const [roles, setRoles] = useState<ComputerRoles>(DEFAULT_COMPUTER_ROLES);
+  // null = unberührt: eine erkannte GPU ist dann vorab angehakt.
+  const [gpuChoice, setGpuChoice] = useState<boolean | null>(null);
+  const [keyChoice, setKeyChoice] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const [step, setStep] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -228,11 +283,22 @@ export function AddComputerInline({
   const [lastRequest, setLastRequest] = useState<AddComputerRequest | null>(null);
   const remote = segment !== "local";
   const endpointAvailable = remote && rolesAvailable;
+  const known = knownComputer?.(segment, remote ? alias?.hostname || address.trim() || null : null);
+  const gpuKnown = gpuDetected(known?.facts);
+  const gpuAvailable = rolesAvailable && gpuKnown;
   const effectiveRoles: ComputerRoles = {
     build: endpointAvailable && roles.build,
     storage: endpointAvailable && roles.storage,
-    gpu: false,
+    gpu: gpuAvailable && (gpuChoice ?? true),
   };
+  const knownKey = sshKeys.find((key) => known?.identityFiles.includes(key.path));
+  const selectedKey = remote
+    ? (keyChoice ??
+      knownKey?.path ??
+      sshKeys.find((key) => /id_ed25519$/.test(key.path))?.path ??
+      sshKeys[0]?.path ??
+      null)
+    : null;
   const busy = phase.kind === "running";
 
   const reset = () => {
@@ -242,6 +308,8 @@ export function AddComputerInline({
     setPort("");
     setAlias(null);
     setRoles(DEFAULT_COMPUTER_ROLES);
+    setGpuChoice(null);
+    setKeyChoice(null);
     setPhase({ kind: "form" });
     setStep(null);
     setFehler(null);
@@ -279,7 +347,7 @@ export function AddComputerInline({
     setFehler(null);
     setStep(remote ? "Verbindet…" : "Prüft Werkzeuge…");
     try {
-      const outcome = await onAdd(request);
+      const outcome = await onAdd(request, setStep);
       if (outcome.status === "error") {
         setPhase({ kind: "form" });
         setFehler(outcome.message);
@@ -333,6 +401,8 @@ export function AddComputerInline({
       label: name.trim(),
       roles: effectiveRoles,
       hostKey: null,
+      identityFile: selectedKey,
+      gpuDecided: gpuAvailable,
     };
     const needsEndpoint = effectiveRoles.build || effectiveRoles.storage;
     if (target && needsEndpoint) {
@@ -437,6 +507,18 @@ export function AddComputerInline({
     </label>
   );
 
+  // Bei „Permission denied (publickey)“: der Befehl, der den gewählten Schlüssel einträgt.
+  let copyIdCommand: string | null = null;
+  if (fehler && selectedKey && remote && /publickey|permission denied/i.test(fehler)) {
+    try {
+      const target = lastRequest?.target ?? resolveTarget();
+      if (target)
+        copyIdCommand = sshCopyIdCommand(lastRequest?.identityFile ?? selectedKey, target);
+    } catch {
+      copyIdCommand = null;
+    }
+  }
+
   const statusLine =
     phase.kind === "running" ? (
       <span className="flex items-center gap-1.5">
@@ -446,6 +528,24 @@ export function AddComputerInline({
     ) : fehler ? (
       <span className="flex flex-wrap items-center gap-2" data-slot="add-computer-error">
         <span className="min-w-0">{fehler}</span>
+        {copyIdCommand ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            title={copyIdCommand}
+            data-slot="add-computer-copy-id"
+            onClick={() => {
+              void navigator.clipboard?.writeText(copyIdCommand).then(
+                () => setCopied(true),
+                () => setCopied(false),
+              );
+            }}
+          >
+            <CopyIcon />
+            {copied ? "Kopiert" : "Befehl kopieren"}
+          </Button>
+        ) : null}
         {catalogRecoveryAvailable && onRecoverCatalog ? (
           <Button type="button" size="xs" variant="outline" onClick={onRecoverCatalog}>
             Verbindungen zurücksetzen
@@ -590,14 +690,50 @@ export function AddComputerInline({
               <option key={host} value={host} />
             ))}
           </datalist>
+          <div className="flex flex-wrap items-center gap-1.5" data-slot="ssh-keys">
+            <span className="text-xs text-muted-foreground">Schlüssel</span>
+            {sshKeys.map((key) => {
+              const selected = selectedKey === key.path;
+              return (
+                <Button
+                  key={key.path}
+                  type="button"
+                  size="xs"
+                  variant={selected ? "default" : "outline"}
+                  aria-pressed={selected}
+                  title={key.publicKeyFingerprint ?? key.path}
+                  disabled={formDisabled}
+                  data-ssh-key={key.path}
+                  onClick={() => setKeyChoice(key.path)}
+                >
+                  {keyName(key.path)}
+                </Button>
+              );
+            })}
+            {sshKeysLoading ? (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Spinner className="size-3" /> ~/.ssh…
+              </span>
+            ) : sshKeys.length === 0 ? (
+              <span className="text-xs text-muted-foreground">Keine Schlüssel</span>
+            ) : null}
+          </div>
         </>
       )}
       <ComputerRoleCheckboxes
-        value={{ ...roles, gpu: false }}
-        onChange={setRoles}
+        value={effectiveRoles}
+        onChange={(next) => {
+          setRoles({
+            build: endpointAvailable ? next.build : roles.build,
+            storage: endpointAvailable ? next.storage : roles.storage,
+            gpu: false,
+          });
+          if (next.gpu !== effectiveRoles.gpu) setGpuChoice(next.gpu);
+        }}
         disabled={formDisabled}
         endpointAvailable={endpointAvailable}
-        gpuAvailable={false}
+        gpuAvailable={gpuAvailable}
+        gpuDetail={gpuSummary(known?.facts)}
       />
       {phase.kind === "hostkey" ? (
         <div className="flex min-w-0 items-center gap-2 text-[13.5px]" data-slot="host-key-confirm">

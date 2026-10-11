@@ -231,7 +231,10 @@ it.effect(
       yield* h.client.execute(scope, parentRequest, binding, "revoke", "permit", "execution");
       for (const call of h.calls) {
         assert.deepEqual(call.binding, binding);
-        assert.equal(binding.sourceSupervisorThreadId, ThreadId.make(nativeParentReference.thread_id));
+        assert.equal(
+          binding.sourceSupervisorThreadId,
+          ThreadId.make(nativeParentReference.thread_id),
+        );
       }
       assert.notEqual(
         yield* remoteWorkerRequestDigest(parentRequest),

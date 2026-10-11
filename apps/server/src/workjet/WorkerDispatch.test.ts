@@ -775,7 +775,7 @@ const makeHarness = (input?: {
       if (input?.queryFails) {
         return Effect.fail({ _tag: "QueryTestError", message: "sensitive SQL text" } as const);
       }
-      if (threadId !== parentThreadId) {
+      if (threadId !== (input?.currentParent?.id ?? parentThreadId)) {
         if (!input?.workerProjection) return Effect.succeed(Option.none());
         const workerRef = `${WORKER_REF_PREFIX}${threadId}`;
         return Effect.succeed(

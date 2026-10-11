@@ -4,6 +4,19 @@ const Uuid = Schema.String.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
 );
 const Text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
+const GrokUpstreamFailure = Schema.NullOr(
+  Schema.Struct({
+    status: Schema.Int.check(Schema.isGreaterThanOrEqualTo(300), Schema.isLessThanOrEqualTo(599)),
+    stage: Schema.Literals(["catalog", "inference"]),
+  }),
+);
+const GrokErrorCode = Schema.Literals([
+  "timeout",
+  "missing_credential",
+  "model_unavailable",
+  "invalid_response",
+  "request_failed",
+]);
 const base = { version: Schema.Literal(1), operationId: Uuid };
 export const WorkjetInstanceGrokRequests = [
   Schema.Struct({ ...base, action: Schema.Literal("instance.grok.read") }),
@@ -41,16 +54,17 @@ export const WorkjetInstanceGrokResponse = Schema.Struct({
       status: Schema.Literals(["ok", "error"]),
       checkedAt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
       latencyMs: Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
-      errorCode: Schema.NullOr(
-        Schema.Literals([
-          "timeout",
-          "missing_credential",
-          "model_unavailable",
-          "invalid_response",
-          "request_failed",
-        ]),
-      ),
+      errorCode: Schema.NullOr(GrokErrorCode),
+      upstream: Schema.optionalKey(GrokUpstreamFailure),
     }),
+  ),
+  catalogError: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        errorCode: Schema.Literals(["timeout", "request_failed"]),
+        upstream: Schema.optionalKey(GrokUpstreamFailure),
+      }),
+    ),
   ),
 });
 export type WorkjetInstanceGrokResponse = typeof WorkjetInstanceGrokResponse.Type;

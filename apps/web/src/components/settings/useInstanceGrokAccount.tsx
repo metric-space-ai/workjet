@@ -11,6 +11,7 @@ import type { WorkjetInstanceGrokResponse } from "@workjet/contracts";
 import {
   requestInstanceGrok,
   grokVerificationLink,
+  describeInstanceGrokFailure,
   type InstanceGrokInput,
 } from "../../lib/workjetInstanceGrok";
 import type { InstanceGrokAccountPresentation } from "./WorkjetModelsProviders";
@@ -24,14 +25,6 @@ import { Button } from "../ui/button";
 type Check = NonNullable<WorkjetInstanceGrokResponse["check"]>;
 const columns =
   "grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-3";
-const remedies: Readonly<Record<NonNullable<Check["errorCode"]>, string>> = {
-  timeout: "The model did not answer within 20 seconds. Retry the check.",
-  missing_credential: "Sign in with your Grok Build subscription.",
-  model_unavailable: "This model is absent from the account's live catalog. Refresh the models.",
-  invalid_response: "The gateway returned no usable answer. Retry the check.",
-  request_failed:
-    "The gateway request failed. Retry; a failed request does not prove an expired login.",
-};
 
 /** Instance-owned subscription; computer gateway accounts remain separate rows. */
 export function useInstanceGrokAccount(
@@ -182,7 +175,8 @@ export function useInstanceGrokAccount(
   const Icon = WORKJET_GATEWAY_PROVIDER_ICONS.xai;
   const login = state?.login;
   const link = login && grokVerificationLink(login.verificationUri);
-  const lastProblem = state?.check?.status === "error" ? state.check.errorCode : null;
+  const lastProblem =
+    state?.catalogError ?? (state?.check?.status === "error" ? state.check : null);
   const row = (
     <div role="rowgroup" data-account-id="ctox-instance-grok" className="border-b border-border/50">
       <div role="row" className={columns + " min-h-14 py-1.5"}>
@@ -229,8 +223,8 @@ export function useInstanceGrokAccount(
                     ? "Checking…"
                     : check?.status === "ok"
                       ? `Hi check passed · ${check.latencyMs} ms · ${new Date(check.checkedAt).toLocaleString()}`
-                      : check?.errorCode
-                        ? remedies[check.errorCode]
+                      : check?.status === "error"
+                        ? describeInstanceGrokFailure(check)
                         : "Not checked. Click to check."
                 }
               >
@@ -381,7 +375,7 @@ export function useInstanceGrokAccount(
       )}
       {(error || lastProblem) && (
         <p role="alert" className="py-1 text-xs text-destructive">
-          {error ?? (lastProblem && remedies[lastProblem])}
+          {error ?? (lastProblem && describeInstanceGrokFailure(lastProblem))}
         </p>
       )}
     </div>

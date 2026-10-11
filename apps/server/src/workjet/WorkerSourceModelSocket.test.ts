@@ -3,12 +3,15 @@ import * as NodeHttp from "node:http";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
-import { afterEach, expect, it } from "vite-plus/test";
+import { afterEach, expect } from "vite-plus/test";
+import { it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { makeWorkerSourceModelSocket } from "./WorkerSourceModelSocket.ts";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  for (const cleanup of cleanups.splice(0).toReversed()) await cleanup();
 });
 
 async function fixture() {
@@ -33,9 +36,23 @@ function request(path: string) {
   });
 }
 
-it.skipIf(NodeOS.platform() !== "linux")(
-  "binds a private socket, records actual identities and closes it idempotently",
-  async () => {
+function onSupportedHost(verify: () => Promise<void>) {
+  return Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    if (platform !== "linux") {
+      yield* Effect.promise(() =>
+        expect(
+          makeWorkerSourceModelSocket("unsupported", (_request, response) => response.end()),
+        ).rejects.toThrow("unavailable"),
+      );
+      return;
+    }
+    yield* Effect.promise(verify);
+  });
+}
+
+it.effect("binds a private socket, records actual identities and closes it idempotently", () =>
+  onSupportedHost(async () => {
     const { socket } = await fixture();
     const description = socket.description;
     expect((await NodeFSP.stat(description.directory)).mode & 0o077).toBe(0);
@@ -50,12 +67,11 @@ it.skipIf(NodeOS.platform() !== "linux")(
     await Promise.all([socket.close(), socket.close()]);
     await expect(request(description.path)).rejects.toThrow();
     expect(await NodeFSP.lstat(description.directory).catch(() => undefined)).toBeUndefined();
-  },
+  }),
 );
 
-it.skipIf(NodeOS.platform() !== "linux")(
-  "keeps the original endpoint and preserves a replacement directory during shutdown",
-  async () => {
+it.effect("keeps the original endpoint and preserves a replacement directory during shutdown", () =>
+  onSupportedHost(async () => {
     const { root, socket } = await fixture();
     const directory = socket.description.directory;
     const moved = NodePath.join(root, "retained");
@@ -67,12 +83,11 @@ it.skipIf(NodeOS.platform() !== "linux")(
     await socket.close();
     expect(await NodeFSP.readFile(replacement, "utf8")).toBe("retain replacement");
     expect(await NodeFSP.readdir(moved)).toEqual([]);
-  },
+  }),
 );
 
-it.skipIf(NodeOS.platform() !== "linux")(
-  "rejects non-private and symbolic-link roots before allocating an endpoint",
-  async () => {
+it.effect("rejects non-private and symbolic-link roots before allocating an endpoint", () =>
+  onSupportedHost(async () => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "wj-model-"));
     cleanups.push(() => NodeFSP.rm(root, { recursive: true, force: true }));
     const link = NodePath.join(root, "link");
@@ -86,5 +101,5 @@ it.skipIf(NodeOS.platform() !== "linux")(
       makeWorkerSourceModelSocket(root, (_request, response) => response.end()),
     ).rejects.toThrow("private directory");
     expect(await NodeFSP.readdir(root)).toEqual([]);
-  },
+  }),
 );

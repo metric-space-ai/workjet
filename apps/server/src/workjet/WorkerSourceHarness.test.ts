@@ -477,15 +477,21 @@ async function verifySourceOnlyLoopback(
     expect(await NodeFSP.lstat(socket.path).catch(() => undefined)).toBeUndefined();
   }
 }
-it("uses private IPC with the same pinned model and fresh source admission", async () => {
-  if (NodeOS.platform() !== "linux") {
-    await expect(
-      makeWorkerSourceModelSocket("unsupported", (_request, response) => response.end()),
-    ).rejects.toThrow("unavailable");
-    return;
-  }
-  await verifySourceOnlyLoopback(NodeOS.platform(), undefined, "unix");
-});
+it.effect("uses private IPC with the same pinned model and fresh source admission", () =>
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const environment = yield* HostProcessEnvironment;
+    if (platform !== "linux") {
+      yield* Effect.promise(() =>
+        expect(
+          makeWorkerSourceModelSocket("unsupported", (_request, response) => response.end()),
+        ).rejects.toThrow("unavailable"),
+      );
+      return;
+    }
+    yield* Effect.promise(() => verifySourceOnlyLoopback(platform, environment.TMPDIR, "unix"));
+  }),
+);
 
 it.effect(
   "admits a source-only catalog and native API-key requests before forwarding unchanged SSE",

@@ -1,24 +1,28 @@
-import * as ChildProcess from "node:child_process";
-import * as FS from "node:fs/promises";
-import * as Path from "node:path";
-import { pathToFileURL } from "node:url";
-import assert from "node:assert/strict";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+import * as NodeAssert from "node:assert/strict";
 
 // Isolated component profile: real native account rows, synthetic metadata, no credentials.
 const root = process.cwd();
-const output = Path.resolve(process.env.WORKJET_LIMITS_OUTPUT ?? "output/playwright/native-limits");
-const fixture = Path.join(root, "apps/web/.workjet/native-limits-review");
-const settings = Path.join(root, "apps/web/src/components/settings");
+const output = NodePath.resolve(
+  process.env.WORKJET_LIMITS_OUTPUT ?? "output/playwright/native-limits",
+);
+const fixture = NodePath.join(root, "apps/web/.workjet/native-limits-review");
+const settings = NodePath.join(root, "apps/web/src/components/settings");
 const port = 5841;
 const origin = `http://127.0.0.1:${port}`;
-const { chromium } = await import(pathToFileURL(process.env.WORKJET_LIMITS_PLAYWRIGHT_MODULE).href);
-await FS.mkdir(output, { recursive: true });
-await FS.mkdir(fixture, { recursive: true });
+const { chromium } = await import(
+  NodeURL.pathToFileURL(process.env.WORKJET_LIMITS_PLAYWRIGHT_MODULE).href
+);
+await NodeFSP.mkdir(output, { recursive: true });
+await NodeFSP.mkdir(fixture, { recursive: true });
 const beforePaths = ["NativeProviderLimits", "NativeProviderRows"].map((name) =>
-  Path.join(settings, `${name}.before.tsx`),
+  NodePath.join(settings, `${name}.before.tsx`),
 );
 for (const [index, name] of ["NativeProviderLimits", "NativeProviderRows"].entries()) {
-  const source = ChildProcess.execFileSync(
+  const source = NodeChildProcess.execFileSync(
     "git",
     [
       "show",
@@ -26,19 +30,19 @@ for (const [index, name] of ["NativeProviderLimits", "NativeProviderRows"].entri
     ],
     { encoding: "utf8" },
   );
-  await FS.writeFile(
+  await NodeFSP.writeFile(
     beforePaths[index],
     index === 1
       ? source.replace('"./NativeProviderLimits"', '"./NativeProviderLimits.before"')
       : source,
   );
 }
-await FS.writeFile(
-  Path.join(fixture, "index.html"),
+await NodeFSP.writeFile(
+  NodePath.join(fixture, "index.html"),
   '<!doctype html><html lang="de" class="dark"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native limits review profile</title></head><body><div id="root"></div><script type="module" src="./fixture.tsx"></script></body></html>',
 );
-await FS.writeFile(
-  Path.join(fixture, "fixture.tsx"),
+await NodeFSP.writeFile(
+  NodePath.join(fixture, "fixture.tsx"),
   `
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -75,7 +79,7 @@ createRoot(document.getElementById("root")).render(
 );
 let browser;
 let log = "";
-const server = ChildProcess.spawn(
+const server = NodeChildProcess.spawn(
   "pnpm",
   [
     "--dir",
@@ -105,7 +109,7 @@ const stopServer = (signal) => {
 };
 const receipt = {
   schema: "workjet.native-limits.synthetic-browser.v1",
-  head: ChildProcess.execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+  head: NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   fixture: "real NativeProviderRowsView; synthetic metadata, empty model lists, no account secrets",
   owner: process.env.WORKJET_LIMITS_OWNER,
   serverPid: server.pid,
@@ -176,20 +180,20 @@ try {
           ["exhausted", 0, "bg-red-500"],
         ]) {
           const meter = row(id).getByRole("meter", { name: "Short-term verbleibend" });
-          assert.equal(await meter.getAttribute("aria-valuenow"), String(rest));
-          assert.equal(await meter.locator("span").getAttribute("style"), `width: ${rest}%;`);
-          assert.ok((await meter.locator("span").getAttribute("class")).includes(color));
-          assert.equal(
+          NodeAssert.equal(await meter.getAttribute("aria-valuenow"), String(rest));
+          NodeAssert.equal(await meter.locator("span").getAttribute("style"), `width: ${rest}%;`);
+          NodeAssert.ok((await meter.locator("span").getAttribute("class")).includes(color));
+          NodeAssert.equal(
             await row(id).getByText("Limit reached", { exact: true }).count(),
             rest === 0 ? 1 : 0,
           );
-          assert.equal(await row(id).locator('[title*="5 h"]').count(), 1);
-          assert.equal(await row(id).getByText("7 Tage", { exact: true }).count(), 1);
+          NodeAssert.equal(await row(id).locator('[title*="5 h"]').count(), 1);
+          NodeAssert.equal(await row(id).getByText("7 Tage", { exact: true }).count(), 1);
         }
         for (const id of ["missing", "direction"]) {
-          assert.ok((await row(id).getByText("unbekannt", { exact: true }).count()) > 0);
-          assert.equal(await row(id).getByText("Limit reached", { exact: true }).count(), 0);
-          assert.equal(
+          NodeAssert.ok((await row(id).getByText("unbekannt", { exact: true }).count()) > 0);
+          NodeAssert.equal(await row(id).getByText("Limit reached", { exact: true }).count(), 0);
+          NodeAssert.equal(
             await row(id).getByRole("meter", { name: "Short-term verbleibend" }).count(),
             0,
           );
@@ -207,7 +211,7 @@ try {
       await table.waitFor();
       await verify();
       const screenshot = `native-limits-${mode}-${width}.png`;
-      await page.screenshot({ path: Path.join(output, screenshot), fullPage: true });
+      await page.screenshot({ path: NodePath.join(output, screenshot), fullPage: true });
       receipt.stories.push({
         width,
         mode,
@@ -219,8 +223,8 @@ try {
       await context.close();
     }
   }
-  assert.deepEqual(receipt.consoleErrors, []);
-  assert.deepEqual(receipt.failedRequests, []);
+  NodeAssert.deepEqual(receipt.consoleErrors, []);
+  NodeAssert.deepEqual(receipt.failedRequests, []);
   receipt.pass = true;
 } catch (error) {
   receipt.pass = false;
@@ -238,9 +242,12 @@ try {
       resolve();
     }, 5000).unref();
   });
-  await FS.writeFile(Path.join(output, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n");
-  await FS.writeFile(Path.join(output, "vite.log"), log);
-  await FS.rm(fixture, { recursive: true, force: true });
-  for (const path of beforePaths) await FS.rm(path, { force: true });
+  await NodeFSP.writeFile(
+    NodePath.join(output, "receipt.json"),
+    JSON.stringify(receipt, null, 2) + "\n",
+  );
+  await NodeFSP.writeFile(NodePath.join(output, "vite.log"), log);
+  await NodeFSP.rm(fixture, { recursive: true, force: true });
+  for (const path of beforePaths) await NodeFSP.rm(path, { force: true });
 }
 console.log(`Native provider limits review passed at 1440/420 px, including reload; ${output}`);

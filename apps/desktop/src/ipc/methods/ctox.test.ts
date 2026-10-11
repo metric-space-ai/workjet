@@ -32,6 +32,8 @@ import {
   requestSessionControl,
   registerSessionTransferEvents,
   refresh,
+  deviceStatus,
+  resetDevice,
   resolveInstanceAuthority,
   removePairedInstance,
   addSshManagedInstance,
@@ -43,6 +45,55 @@ import { DesktopKeyRecovery } from "../../app/DesktopKeyRecovery.ts";
 import type { Session } from "electron";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+describe("device-key metadata IPC", () => {
+  it.effect("returns only public metadata, excluding credential material", () => {
+    const metadata = {
+      state: "active" as const,
+      createdAt: "2026-10-11T17:00:00Z",
+      lastUsedAt: null,
+      expiresAt: "2026-11-10T17:00:00Z",
+      privateKey: "must-not-cross-ipc",
+      thumbprint: "must-not-cross-ipc",
+    };
+    const auth = CtoxDevAuth.CtoxDevAuth.of({
+      refresh: Effect.die("unused"),
+      login: Effect.die("unused"),
+      logout: Effect.die("unused"),
+      deviceStatus: Effect.succeed(metadata),
+    });
+    return Effect.gen(function* () {
+      const result = yield* deviceStatus.handler(undefined);
+      assert.deepEqual(result, {
+        state: metadata.state,
+        createdAt: metadata.createdAt,
+        lastUsedAt: metadata.lastUsedAt,
+        expiresAt: metadata.expiresAt,
+      });
+    }).pipe(Effect.provideService(CtoxDevAuth.CtoxDevAuth, auth));
+  });
+
+  it.effect("awaits replacement and returns its inline status without starting login", () => {
+    const events: string[] = [];
+    const auth = CtoxDevAuth.CtoxDevAuth.of({
+      refresh: Effect.die("unused"),
+      login: Effect.die("replacement must not start login"),
+      logout: Effect.die("unused"),
+      resetDevice: Effect.sync(() => void events.push("replace")),
+      deviceStatus: Effect.sync(() => {
+        events.push("status");
+        return { state: "not_configured" as const, notice: "DEVICE_KEY_LIMIT_REACHED" };
+      }),
+    });
+    return Effect.gen(function* () {
+      assert.deepEqual(yield* resetDevice.handler(undefined), {
+        state: "not_configured",
+        notice: "DEVICE_KEY_LIMIT_REACHED",
+      });
+      assert.deepEqual(events, ["replace", "status"]);
+    }).pipe(Effect.provideService(CtoxDevAuth.CtoxDevAuth, auth));
+  });
+});
 
 const pairedInstance = {
   id: "paired:manual_pairing:abcdefghijklmnopqrstuv",
@@ -282,6 +333,69 @@ function accountCleanupLayer(
 }
 
 describe("CTOX IPC methods", () => {
+  for (const revoked of [false, true]) {
+    it.effect(`finishes device recovery without sign-in, revoked=${revoked}`, () => {
+      let pendingLogin = true;
+      let exchanges = 0;
+      const managed = {
+        ...pairedInstance,
+        id: "managed:11111111-1111-4111-8111-111111111111",
+        source: "ctox_dev",
+        status: "available",
+      } as const;
+      const recovery = DesktopKeyRecovery.of({
+        inspect: Effect.sync(() => ({
+          version: 1,
+          generation: "1-11111111-1111-4111-8111-111111111111",
+          pendingLogin,
+          unreadableStores: ["session", "catalog"],
+        })),
+        completeLogin: Effect.sync(() => {
+          pendingLogin = false;
+        }),
+      });
+      const auth = CtoxDevAuth.CtoxDevAuth.of({
+        refresh: Effect.succeed(
+          revoked
+            ? { _tag: "signed_out" as const }
+            : { _tag: "ready" as const, instances: [managed] },
+        ),
+        login: Effect.die("Device recovery must never open a login window."),
+        logout: Effect.void,
+      });
+      const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
+        account: Effect.die("No cookie required."),
+        instance: () => Effect.succeed({} as Session),
+        clearInstance: () => Effect.die("Never delete old storage."),
+      });
+      const launch = CtoxManagedLaunch.CtoxManagedLaunch.of({
+        launch: () =>
+          Effect.sync(() => {
+            exchanges++;
+            return {
+              launchUrl: "https://fixture.ctox.dev/",
+              launchOrigin: "https://fixture.ctox.dev",
+            };
+          }),
+        resolveBusinessOsInstanceId: () => Effect.die("unused"),
+      });
+      return Effect.gen(function* () {
+        yield* refresh.handler(undefined);
+        assert.equal(pendingLogin, revoked);
+        assert.equal(exchanges, revoked ? 0 : 1);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
+            registryLayer(),
+            Layer.succeed(DesktopKeyRecovery, recovery),
+            Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
+            Layer.succeed(CtoxManagedLaunch.CtoxManagedLaunch, launch),
+          ),
+        ),
+      );
+    });
+  }
   for (const workjetState of ["enabled", "disabled", "removed"] as const)
     it.effect(
       "respects " + workjetState + " during managed key recovery after one identity check",

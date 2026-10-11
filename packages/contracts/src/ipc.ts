@@ -1238,6 +1238,8 @@ export interface DesktopBridge {
 }
 
 export interface DesktopCtoxBridge {
+  deviceStatus?: () => Promise<import("./ctoxControlDevice.ts").CtoxControlDeviceStatus>;
+  resetDevice?: () => Promise<import("./ctoxControlDevice.ts").CtoxControlDeviceStatus>;
   refresh: () => Promise<CtoxDiscoveryResult>;
   setInstanceState?: (input: CtoxInstancePreferenceInput) => Promise<CtoxInstancePreferenceResult>;
   login: () => Promise<CtoxManagedLoginResult>;

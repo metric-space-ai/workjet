@@ -13,6 +13,8 @@ vi.mock("electron", () => ({ session: {} }));
 
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
+import { CtoxControlDevice } from "./CtoxControlDevice.ts";
+import { makeControlDeviceClient } from "./CtoxControlDeviceClient.ts";
 
 const UnknownJson = Schema.fromJsonString(Schema.Unknown);
 const decodeUnknownJson = Schema.decodeUnknownSync(UnknownJson);
@@ -54,6 +56,7 @@ function harness(
   fetchImpl: ReturnType<typeof vi.fn>,
   baseUrl = "https://ctox.dev",
   requestTimeoutMs?: number,
+  device?: CtoxControlDevice["Service"],
 ) {
   const accountSession = { fetch: fetchImpl } as unknown as Session;
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
@@ -64,10 +67,62 @@ function harness(
   return CtoxManagedLaunch.layer({
     baseUrl,
     ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
-  }).pipe(Layer.provide(Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions)));
+  }).pipe(
+    Layer.provide(
+      Layer.merge(
+        Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
+        device === undefined ? Layer.empty : Layer.succeed(CtoxControlDevice, device),
+      ),
+    ),
+  );
 }
 
 describe("CtoxManagedLaunch", () => {
+  it.effect("activates a recovered tenant through device auth and the one-use exchange", () => {
+    const engine = makeControlDeviceClient({
+      baseUrl: "https://ctox.dev",
+      read: async () => undefined,
+      write: async () => undefined,
+      fetch: async () => new Response(),
+    });
+    const proofRequest = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            launchConfigUrl: "https://ctox.dev/api/desktop/launch/device-token",
+          }),
+        ),
+    );
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/desktop/launch-token"))
+        return response({ error: "AUTH_REQUIRED" }, 401);
+      assert.equal(url, "https://ctox.dev/api/desktop/launch/device-token");
+      return response({
+        launchUrl: "https://skf.ctox.dev/",
+        pairingConfig: { transport: "webrtc", http_bridge_available: false },
+      });
+    });
+    return Effect.gen(function* () {
+      const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+      const result = yield* launches.launch(descriptor);
+      assert.equal(result.launchOrigin, "https://skf.ctox.dev");
+      assert.deepEqual(proofRequest.mock.calls, [
+        [
+          "/api/desktop/launch-token",
+          {
+            method: "POST",
+            body: encodeUnknownJson({ tenantId: "tenant_skf" }),
+          },
+        ],
+      ]);
+      assert.equal(fetchImpl.mock.calls.length, 2);
+    }).pipe(
+      Effect.provide(
+        harness(fetchImpl, "https://ctox.dev", undefined, { ...engine, request: proofRequest }),
+      ),
+    );
+  });
+
   it.effect("posts the tenant launch handshake and loads the tenant URL the server names", () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {

@@ -11,6 +11,8 @@ import type { Session } from "electron";
 import { normalizeCtoxManagedBaseUrl } from "./CtoxManagedDiscovery.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
+import * as Option from "effect/Option";
+import { CtoxControlDevice } from "./CtoxControlDevice.ts";
 
 const DEFAULT_CTOX_DEV_BASE_URL = "https://ctox.dev";
 const DESKTOP_CLIENT = "ctox-business-os-desktop";
@@ -236,6 +238,7 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
     }
     const controlOrigin = new URL(baseUrl).origin;
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+    const device = Option.getOrUndefined(yield* Effect.serviceOption(CtoxControlDevice));
     const requestTimeoutMs =
       options.requestTimeoutMs !== undefined &&
       Number.isSafeInteger(options.requestTimeoutMs) &&
@@ -269,7 +272,7 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
           Effect.mapError(() => new CtoxManagedLaunchError({ operation })),
         );
 
-      const token = yield* request(
+      let token = yield* request(
         `${baseUrl}/api/desktop/launch-token`,
         {
           method: "POST",
@@ -283,6 +286,24 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         },
         "launch-token",
       );
+      if (
+        device !== undefined &&
+        token !== undefined &&
+        !token.response.ok &&
+        (token.response.status === 401 ||
+          (isRecord(token.payload) && token.payload.error === "AUTH_REQUIRED"))
+      ) {
+        token = yield* Effect.tryPromise({
+          try: async () => {
+            const response = await device.request("/api/desktop/launch-token", {
+              method: "POST",
+              body: encodeUnknownJson({ tenantId }),
+            });
+            return { response, payload: await response.json() };
+          },
+          catch: () => new CtoxManagedLaunchError({ operation: "launch-token" }),
+        });
+      }
       if (token === undefined || !token.response.ok || !isRecord(token.payload)) {
         return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
       }

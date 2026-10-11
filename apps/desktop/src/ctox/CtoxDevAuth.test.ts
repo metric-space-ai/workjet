@@ -17,6 +17,8 @@ vi.mock("electron", () => ({}));
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
+import { CtoxControlDevice } from "./CtoxControlDevice.ts";
+import { makeControlDeviceClient } from "./CtoxControlDeviceClient.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 
 function response(status: number, payload?: unknown) {
@@ -94,6 +96,7 @@ function makeLoginWindow(): FakeLoginWindow {
 }
 
 interface HarnessOptions extends CtoxDevAuth.CtoxDevAuthOptions {
+  readonly device?: CtoxControlDevice["Service"];
   readonly fetchImpl?: ReturnType<typeof vi.fn>;
   readonly cookies?: readonly Cookie[];
   readonly loadURL?: () => Promise<void>;
@@ -156,7 +159,16 @@ function makeHarness(options: HarnessOptions = {}) {
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
     loginPollIntervalMs: options.loginPollIntervalMs ?? 50,
     loginTimeoutMs: options.loginTimeoutMs ?? 5_000,
-  }).pipe(Layer.provide(dependencies));
+  }).pipe(
+    Layer.provide(
+      Layer.merge(
+        dependencies,
+        options.device === undefined
+          ? Layer.empty
+          : Layer.succeed(CtoxControlDevice, options.device),
+      ),
+    ),
+  );
 
   return {
     accountSession,
@@ -205,6 +217,38 @@ afterEach(() => {
 });
 
 describe("CtoxDevAuth", () => {
+  it.effect("recovers signed-out managed discovery without opening a login window", () => {
+    const device = makeControlDeviceClient({
+      baseUrl: "https://ctox.dev",
+      read: async () => undefined,
+      write: async () => undefined,
+      fetch: async () => new Response(),
+    });
+    const recover = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            account: {
+              tenants: [
+                {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  businessName: "Recovered",
+                  status: "active",
+                },
+              ],
+            },
+          }),
+        ),
+    );
+    const h = makeHarness({ device: { ...device, recoverOnce: recover } });
+    return Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      const result = yield* auth.refresh;
+      assert.equal(result._tag, "ready");
+      assert.equal(h.created.length, 0);
+      assert.equal(recover.mock.calls.length, 1);
+    }).pipe(Effect.provide(h.layer));
+  });
   it.effect(
     "refreshes through the account session fetch and preserves redacted discovery states",
     () => {

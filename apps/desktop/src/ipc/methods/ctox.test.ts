@@ -282,6 +282,69 @@ function accountCleanupLayer(
 }
 
 describe("CTOX IPC methods", () => {
+  for (const revoked of [false, true]) {
+    it.effect(`finishes device recovery without sign-in, revoked=${revoked}`, () => {
+      let pendingLogin = true;
+      let exchanges = 0;
+      const managed = {
+        ...pairedInstance,
+        id: "managed:11111111-1111-4111-8111-111111111111",
+        source: "ctox_dev",
+        status: "available",
+      } as const;
+      const recovery = DesktopKeyRecovery.of({
+        inspect: Effect.sync(() => ({
+          version: 1,
+          generation: "1-11111111-1111-4111-8111-111111111111",
+          pendingLogin,
+          unreadableStores: ["session", "catalog"],
+        })),
+        completeLogin: Effect.sync(() => {
+          pendingLogin = false;
+        }),
+      });
+      const auth = CtoxDevAuth.CtoxDevAuth.of({
+        refresh: Effect.succeed(
+          revoked
+            ? { _tag: "signed_out" as const }
+            : { _tag: "ready" as const, instances: [managed] },
+        ),
+        login: Effect.die("Device recovery must never open a login window."),
+        logout: Effect.void,
+      });
+      const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
+        account: Effect.die("No cookie required."),
+        instance: () => Effect.succeed({} as Session),
+        clearInstance: () => Effect.die("Never delete old storage."),
+      });
+      const launch = CtoxManagedLaunch.CtoxManagedLaunch.of({
+        launch: () =>
+          Effect.sync(() => {
+            exchanges++;
+            return {
+              launchUrl: "https://fixture.ctox.dev/",
+              launchOrigin: "https://fixture.ctox.dev",
+            };
+          }),
+        resolveBusinessOsInstanceId: () => Effect.die("unused"),
+      });
+      return Effect.gen(function* () {
+        yield* refresh.handler(undefined);
+        assert.equal(pendingLogin, revoked);
+        assert.equal(exchanges, revoked ? 0 : 1);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
+            registryLayer(),
+            Layer.succeed(DesktopKeyRecovery, recovery),
+            Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
+            Layer.succeed(CtoxManagedLaunch.CtoxManagedLaunch, launch),
+          ),
+        ),
+      );
+    });
+  }
   for (const workjetState of ["enabled", "disabled", "removed"] as const)
     it.effect(
       "respects " + workjetState + " during managed key recovery after one identity check",

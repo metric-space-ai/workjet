@@ -10,6 +10,8 @@ import {
   ElectronSafeStorageDecryptError,
 } from "../electron/ElectronSafeStorage.ts";
 import { makeRecovery } from "./DesktopKeyRecovery.ts";
+import { makeWithDirectory } from "../../../server/src/auth/ServerSecretStore.ts";
+import { makeControlDeviceClient, DEVICE_SECRET_NAME } from "../ctox/CtoxControlDeviceClient.ts";
 vi.mock("electron", () => ({ safeStorage: {} }));
 const encodeFixture = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -71,6 +73,59 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "key-recovery-" });
         const stateDir = `${baseDir}/userdata`;
+        const deviceStore = yield* makeWithDirectory(`${stateDir}/secrets`);
+        let deviceBytes: Uint8Array | undefined;
+        const controlDevice = makeControlDeviceClient({
+          baseUrl: "http://127.0.0.1:3107",
+          read: async () => deviceBytes,
+          write: async (bytes) => {
+            deviceBytes = bytes;
+          },
+          fetch: async (_url) => {
+            if (String(_url).endsWith("/challenge"))
+              return new Response(
+                JSON.stringify({
+                  nonce: Buffer.alloc(32, 7).toString("base64url"),
+                  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                }),
+              );
+            return new Response(
+              JSON.stringify({
+                authentication: "device-key",
+                account: {
+                  tenants: [
+                    {
+                      id: "11111111-1111-4111-8111-111111111111",
+                      businessName: "Fixture instance",
+                      status: "active",
+                    },
+                  ],
+                },
+              }),
+            );
+          },
+        });
+        yield* Effect.promise(() =>
+          controlDevice.enroll(async (_url, init) => {
+            const jwk = JSON.parse(String(init.body)).public_jwk;
+            const thumbprint = (await import("node:crypto"))
+              .createHash("sha256")
+              .update(JSON.stringify(jwk))
+              .digest("base64url");
+            return new Response(
+              JSON.stringify({
+                device: { id: "fixture-device", thumbprint, created_at: new Date().toISOString() },
+              }),
+              { status: 201 },
+            );
+          }),
+        );
+        assert.isDefined(deviceBytes);
+        yield* deviceStore.set(DEVICE_SECRET_NAME, deviceBytes!);
+        const storedDevice = yield* deviceStore.get(DEVICE_SECRET_NAME);
+        const privateFile = yield* fs.stat(`${stateDir}/secrets/${DEVICE_SECRET_NAME}.bin`);
+        assert.equal(privateFile.mode & 0o777, 0o600);
+        assert.equal((yield* fs.stat(`${stateDir}/secrets`)).mode & 0o777, 0o700);
         let key = "first";
         let available = true;
         const storage = ElectronSafeStorage.of({
@@ -135,6 +190,13 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
           `first:${session}`,
         );
         assert.notInclude(yield* fs.readFileString(`${stateDir}/key-recovery.json`), "fake-token");
+        const persistedDevice = yield* deviceStore.get(DEVICE_SECRET_NAME);
+        assert.deepEqual(persistedDevice, storedDevice);
+        deviceBytes = Option.getOrUndefined(persistedDevice);
+        const restored = yield* Effect.promise(() => controlDevice.recoverOnce());
+        assert.isDefined(restored);
+        const payload = yield* Effect.promise(() => restored!.clone().json());
+        assert.equal(payload.authentication, "device-key");
       }),
     );
   }

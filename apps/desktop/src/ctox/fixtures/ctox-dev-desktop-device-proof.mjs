@@ -1,6 +1,6 @@
 // Generated from the adjacent exact ctox-dev source fixture, commit 7e758a20ad9ed31c4e291f999fd37b9246d44f14.
 // Types stripped; constructor parameter properties expanded. Verifier logic unchanged.
-import crypto from "node:crypto";
+import * as crypto from "node:crypto";
 
 export class DeviceKeyError extends Error {
   constructor(code        , status = 401) {

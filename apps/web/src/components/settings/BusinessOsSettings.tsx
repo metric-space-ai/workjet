@@ -1,4 +1,5 @@
 import { InstancesTable } from "./InstancesTable";
+import { CtoxDeviceKeySettings } from "./CtoxDeviceKeyRow";
 import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { openInstanceSetup } from "../../instanceSetup";
 import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
@@ -49,7 +50,7 @@ import {
   revokeBusinessOsDeviceInvite,
 } from "./businessOsDeviceControl";
 import { formatMobileInviteExpiry } from "./businessOsPairing";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
 const EMPTY_DEVICES: readonly WorkjetDeviceBindingSummary[] = [];
@@ -390,6 +391,11 @@ export function BusinessOsSettingsView({
   const navigate = useNavigate();
   return (
     <SettingsPageContainer className="gap-6">
+      {typeof window !== "undefined" && window.desktopBridge?.ctox?.deviceStatus !== undefined && (
+        <SettingsSection title="Konto · ctox.dev">
+          <CtoxDeviceKeySettings bridge={window.desktopBridge.ctox} />
+        </SettingsSection>
+      )}
       <SettingsSection
         title={language === "de" ? "Instanzen" : "Instances"}
         headerAction={

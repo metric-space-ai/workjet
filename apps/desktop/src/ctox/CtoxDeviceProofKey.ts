@@ -71,7 +71,13 @@ function wrapKey(key: NodeCrypto.KeyObject): CtoxDeviceProofKey {
     thumbprint,
     exportForStorage: () =>
       Redacted.make(key.export({ format: "der", type: "pkcs8" }).toString("base64")),
-    signRequest: ({ nonce, method, baseUrl, pathname, body }) => {
+    signRequest: ({
+      nonce,
+      method,
+      baseUrl,
+      pathname,
+      body,
+    }: Parameters<CtoxDeviceProofKey["signRequest"]>[0]) => {
       if (!base64url32.test(nonce)) throw new CtoxDeviceProofKeyError();
       const host = new URL(baseUrl).host.toLowerCase();
       const bodyHash = NodeCrypto.createHash("sha256").update(body, "utf8").digest("hex");

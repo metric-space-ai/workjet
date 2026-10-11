@@ -64,6 +64,7 @@ import { recoverManagedAfterLogin } from "../../ctox/CtoxKeyRecovery.ts";
 import * as Option from "effect/Option";
 import * as CtoxShellFleet from "../../ctox/CtoxShellFleet.ts";
 import * as IpcChannels from "../channels.ts";
+import { CtoxControlDeviceStatus } from "@workjet/contracts";
 import type * as DesktopIpc from "../DesktopIpc.ts";
 
 function encodeSafe<A, I>(schema: Schema.Codec<A, I>, value: A): Effect.Effect<I> {
@@ -164,6 +165,27 @@ export const setInstanceState: DesktopIpc.DesktopIpcMethod<
       return yield* Result.isFailure(result)
         ? failure("persistence_failed")
         : encodeSafe(CtoxInstancePreferenceResult, { _tag: "completed" });
+    }),
+};
+
+export const deviceStatus: DesktopIpc.DesktopIpcMethod<never, CtoxDevAuth.CtoxDevAuth> = {
+  channel: IpcChannels.CTOX_DEVICE_STATUS_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      return yield* encodeSafe(
+        CtoxControlDeviceStatus,
+        yield* auth.deviceStatus ?? Effect.succeed({ state: "not_configured" as const }),
+      );
+    }),
+};
+export const resetDevice: DesktopIpc.DesktopIpcMethod<never, CtoxDevAuth.CtoxDevAuth> = {
+  channel: IpcChannels.CTOX_DEVICE_RESET_CHANNEL,
+  handler: () =>
+    Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      yield* auth.resetDevice ?? Effect.void;
+      return yield* deviceStatus.handler(undefined);
     }),
 };
 
@@ -1078,6 +1100,8 @@ type CtoxIpcServices =
 
 export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcServices>[] = [
   refresh,
+  deviceStatus,
+  resetDevice,
   setInstanceState,
   login,
   logout,

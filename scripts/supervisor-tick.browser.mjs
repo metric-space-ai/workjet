@@ -205,7 +205,7 @@ try {
 } finally {
   await browser?.close();
   if (server && server.exitCode === null) {
-    server.kill("SIGINT");
+    process.kill(-server.pid, "SIGINT");
     await new Promise((resolve) => {
       const timeout = setTimeout(resolve, 10000);
       server.once("exit", () => {

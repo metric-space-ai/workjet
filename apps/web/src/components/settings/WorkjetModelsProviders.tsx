@@ -303,7 +303,9 @@ function AccountLimits({
             className="flex flex-wrap items-center gap-1.5"
             title={`${window.tooltip ?? window.label}${window.resetsAtMs === null ? "" : ` · resets ${resetLabel(window.resetsAtMs)}`}${health.observedAtMs === null ? "" : ` · observed ${new Date(health.observedAtMs).toLocaleString()}`}${health.quotaError ? " · Refresh failed" : ""}`}
           >
-            <span className="min-w-0 flex-1 text-muted-foreground">{window.label}</span>
+            <span className="shrink-0 flex-1 whitespace-nowrap text-muted-foreground">
+              {window.label}
+            </span>
             {reported && (
               <span
                 role="meter"
@@ -344,7 +346,9 @@ function AccountLimits({
                     ? "unbekannt"
                     : `${remaining > 0 && remaining < 1 ? "<1" : Math.floor(remaining)}%`}
             </span>
-            {reported && remaining === 0 && <span className="text-red-500">Limit reached</span>}
+            {reported && remaining === 0 && (
+              <span className="basis-full whitespace-nowrap text-red-500">Limit reached</span>
+            )}
           </span>
         );
       })}
@@ -477,7 +481,7 @@ export function WorkjetModelsKeyForm({
 }
 
 const MODELS_TABLE_COLUMNS =
-  "grid grid-cols-[minmax(0,1fr)_minmax(7rem,1fr)_2rem_3rem] sm:grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-2 sm:gap-x-3";
+  "grid grid-cols-[minmax(0,1fr)_minmax(8.5rem,1fr)_2rem_4rem] sm:grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_4rem] items-center gap-x-2 sm:gap-x-3";
 
 function AccountRow({
   account,

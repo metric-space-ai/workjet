@@ -69,6 +69,13 @@ export const ComputerControlInput = Schema.Union([
   }),
 ]);
 export type ComputerControlInput = typeof ComputerControlInput.Type;
+export const ComputerDerivedCapacity = Schema.Struct({
+  concurrentBuilds: Schema.Literal(1),
+  workersPerBuild: Schema.Int.check(Schema.isGreaterThan(0)),
+  useGpu: Schema.Boolean,
+  directory: Text,
+  enoughFreeSpace: Schema.Boolean,
+});
 export const ComputerControlResult = Schema.Struct({
   computers: Schema.Array(
     Schema.Struct({
@@ -76,6 +83,7 @@ export const ComputerControlResult = Schema.Struct({
       label: Text,
       environmentId: Text,
       metadata: ComputerMetadata,
+      capacity: Schema.NullOr(ComputerDerivedCapacity),
     }),
   ),
   removedPaths: Schema.Array(

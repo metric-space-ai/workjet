@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Bounded host probe process boundary.
 // @effect-diagnostics globalDate:off -- Snapshot timestamp, not scheduling.
 // @effect-diagnostics preferSchemaOverJson:off -- system_profiler's external JSON boundary.
-import type { ComputerFacts } from "@workjet/contracts";
+import type { ComputerFacts, WorkjetComputer } from "@workjet/contracts";
 
 /** Each command owns a bounded child; no package installs or network catalog requests. */
 export const COMPUTER_PROBE_SCRIPT = String.raw`set -eu
@@ -133,10 +133,34 @@ export function parseComputerProbe(
   };
 }
 
+const CODING_TOOL_HARNESSES = [
+  ["claude", "claude-code"],
+  ["codex", "codex-cli"],
+  ["opencode", "opencode"],
+  ["grok", "grok-cli"],
+  ["cursor-agent", "cursor-agent"],
+  ["greppy", "greppy"],
+  ["minimax", "minimax-code"],
+  ["pi", "pi-code"],
+] as const;
+export function detectedComputerHarnesses(
+  saved: WorkjetComputer["harnesses"],
+  facts: ComputerFacts,
+): WorkjetComputer["harnesses"] {
+  return CODING_TOOL_HARNESSES.map(([tool, harness]) => {
+    const existing = saved.find((row) => row.harness === harness);
+    return {
+      ...existing,
+      harness,
+      available: existing?.executableOverride ? existing.available : !!facts.codingTools[tool],
+    };
+  });
+}
+
 export const MINIMUM_COMPUTER_FREE_BYTES = 20 * 1024 ** 3;
 export function deriveComputerCapacity(facts: ComputerFacts) {
   return {
-    concurrentBuilds: 1,
+    concurrentBuilds: 1 as const,
     workersPerBuild: facts.cpuCores,
     useGpu: facts.gpus.length > 0,
     directory: facts.workDirectory,

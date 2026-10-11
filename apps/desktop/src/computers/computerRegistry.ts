@@ -75,15 +75,26 @@ export function reconcileComputer(
     ],
     metadata: {
       ...metadata,
+      facts: metadata.facts ?? canonical.metadata?.facts ?? null,
+      hostKeyFingerprint:
+        metadata.hostKeyFingerprint ?? canonical.metadata?.hostKeyFingerprint ?? null,
+      identityFiles: metadata.identityFiles.length
+        ? metadata.identityFiles
+        : (canonical.metadata?.identityFiles ?? []),
       active: matches.some((row) => row.metadata?.active === false) ? false : metadata.active,
-      roles: {
+      roles: (matches.length === 1 ? matches[0]?.metadata?.roles : undefined) ?? {
         build: canonical.metadata?.roles.build ?? metadata.roles.build,
         storage: matches.some((row) => row.metadata?.roles.storage) || metadata.roles.storage,
       },
       previousIds,
       legacyRecords: [
-        ...metadata.legacyRecords,
-        ...matches.filter((row) => row.id !== canonical.id).map((row) => row),
+        ...new Map(
+          [
+            ...metadata.legacyRecords,
+            ...matches.flatMap((row) => row.metadata?.legacyRecords ?? []),
+            ...matches.filter((row) => row.id !== canonical.id).map((row) => row),
+          ].map((row) => [JSON.stringify(row), row] as const),
+        ).values(),
       ],
     },
   };

@@ -1,9 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Desktop's bounded OS connection boundary.
 // @effect-diagnostics globalDate:off globalDateInEffect:off -- Snapshot timestamps only.
 // @effect-diagnostics anyUnknownInErrorContext:off -- External SSH errors are reduced at the IPC boundary.
-import * as Fsp from "node:fs/promises";
-import * as Path from "node:path";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
 import type { RpcSession } from "@workjet/client-runtime/rpc";
+import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
 import {
   EnvironmentId,
   WorkjetComputerId,
@@ -20,6 +21,7 @@ import {
 } from "@workjet/contracts";
 import { runSshCommand, parseSshResolveOutput, buildSshHostSpec } from "@workjet/ssh/command";
 import * as Context from "effect/Context";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -35,7 +37,12 @@ import { DesktopEnvironment } from "../app/DesktopEnvironment.ts";
 import { CtoxGuestManager } from "../ctox/CtoxGuestManager.ts";
 import * as Crypto from "effect/Crypto";
 import { runLocalCommand } from "../provisioning/LocalProvisioningCommand.ts";
-import { COMPUTER_PROBE_SCRIPT, parseComputerProbe } from "./ComputerProbe.ts";
+import {
+  COMPUTER_PROBE_SCRIPT,
+  parseComputerProbe,
+  detectedComputerHarnesses,
+  deriveComputerCapacity,
+} from "./ComputerProbe.ts";
 import { computerCleanupScript, computerCleanupPaths } from "./ComputerCleanup.ts";
 import {
   defaultComputerMetadata,
@@ -46,7 +53,12 @@ import {
 export class ComputerBackendError extends Schema.TaggedErrorClass<ComputerBackendError>()(
   "ComputerBackendError",
   { operation: Schema.String },
-) {}
+) {
+  override get message() {
+    return this.operation;
+  }
+}
+const isComputerBackendError = Schema.is(ComputerBackendError);
 export class DesktopComputers extends Context.Service<
   DesktopComputers,
   {
@@ -56,6 +68,11 @@ export class DesktopComputers extends Context.Service<
     readonly onConnected: (
       input: Extract<ComputerControlInput, { _tag: "add" }>,
     ) => Effect.Effect<void>;
+    readonly discoverConnected: (input: {
+      httpBaseUrl: string;
+      label: string;
+      connection: ComputerConnection;
+    }) => Effect.Effect<void>;
     readonly assign: (
       id: string,
       instanceId: string,
@@ -74,7 +91,7 @@ export const make = Effect.gen(function* () {
   const scope = yield* Scope.Scope;
   const crypto = yield* Crypto.Crypto;
   const guests = yield* CtoxGuestManager;
-  const mutex = yield* Semaphore.make(1);
+  const probeMutex = yield* Semaphore.make(1);
   const running = new Set<string>();
   const withSession = <A, E, R>(use: (session: RpcSession) => Effect.Effect<A, E, R>) =>
     Effect.scoped(
@@ -120,7 +137,11 @@ export const make = Effect.gen(function* () {
       let fingerprint = metadata.hostKeyFingerprint;
       if (connection._tag !== "local") {
         const destination = connection.target.alias.trim() || connection.target.hostname.trim();
-        if (!destination || destination.startsWith("-") || /[\r\n\u0000]/u.test(destination))
+        if (
+          !destination ||
+          destination.startsWith("-") ||
+          [0, 10, 13].some((code) => destination.includes(String.fromCharCode(code)))
+        )
           return yield* new ComputerBackendError({ operation: "invalid SSH destination" });
         const resolved = yield* local("ssh", [
           "-G",
@@ -163,6 +184,7 @@ export const make = Effect.gen(function* () {
       const facts = parseComputerProbe(output.stdout, output.stderr);
       return {
         ...computer,
+        harnesses: detectedComputerHarnesses(computer.harnesses, facts),
         metadata: {
           ...metadata,
           connection,
@@ -179,6 +201,7 @@ export const make = Effect.gen(function* () {
       id: computer.id,
       label: computer.label,
       environmentId: computer.environmentId,
+      capacity: computer.metadata?.facts ? deriveComputerCapacity(computer.metadata.facts) : null,
       metadata:
         computer.metadata ??
         defaultComputerMetadata(computer.presentationKind === "local" ? { _tag: "local" } : null),
@@ -216,6 +239,7 @@ export const make = Effect.gen(function* () {
               );
         if (!computer) return yield* new ComputerBackendError({ operation: "computer not found" });
         const result = yield* detect(computer).pipe(
+          probeMutex.withPermits(1),
           Effect.catch(() =>
             Effect.succeed({
               ...computer,
@@ -307,26 +331,25 @@ export const make = Effect.gen(function* () {
       if (input._tag !== "list" || needsMigration) yield* write(configuration, expectedWorkjet);
       return { computers: rows(configuration), removedPaths };
     }).pipe(
-      mutex.withPermits(1),
       Effect.mapError((error) =>
-        Schema.is(ComputerBackendError)(error)
+        isComputerBackendError(error)
           ? error
           : new ComputerBackendError({ operation: "computer control failed; reload and retry" }),
       ),
     );
   const sshKeys = Effect.tryPromise(async () => {
-    const directory = Path.join(environment.homeDirectory, ".ssh");
+    const directory = NodePath.join(environment.homeDirectory, ".ssh");
     let names: string[];
     try {
-      names = await Fsp.readdir(directory);
+      names = await NodeFSP.readdir(directory);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
     const keys: ComputerSshKeyInfo[] = [];
     for (const name of names.filter((name) => name.endsWith(".pub")).slice(0, 100)) {
-      const path = Path.join(directory, name);
-      const info = await Fsp.lstat(path);
+      const path = NodePath.join(directory, name);
+      const info = await NodeFSP.lstat(path);
       if (!info.isFile() || info.isSymbolicLink()) continue;
       const result = await runLocalCommand(
         "ssh-keygen",
@@ -378,12 +401,44 @@ export const make = Effect.gen(function* () {
           agentless: false,
           selfHostedColocation: false,
         };
-        return yield* guests.requestComputerControl(instanceId, request);
+        const result = yield* guests.requestComputerControl(instanceId, request);
+        if (result._tag === "completed" && result.response.action === "computer.assign") {
+          const confirmed = result.response.computer;
+          if (
+            confirmed.active !== metadata.active ||
+            confirmed.roles?.build !== metadata.roles.build ||
+            confirmed.roles?.storage !== metadata.roles.storage ||
+            confirmed.detectedFacts?.checkedAt !== metadata.facts!.checkedAt
+          )
+            return { _tag: "failed" as const, code: "unsupported" as const };
+        }
+        return result;
       }).pipe(
         Effect.mapError(
           () => new ComputerBackendError({ operation: "detected computer assignment failed" }),
         ),
       ),
+    discoverConnected: (input) =>
+      Effect.gen(function* () {
+        if (running.has(input.httpBaseUrl)) return;
+        running.add(input.httpBaseUrl);
+        yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl: input.httpBaseUrl }).pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.timeout(8_000),
+          Effect.flatMap((descriptor) =>
+            control({
+              _tag: "add",
+              id: descriptor.environmentId,
+              environmentId: descriptor.environmentId,
+              label: input.label,
+              connection: input.connection,
+            }),
+          ),
+          Effect.catch(() => Effect.logWarning("Connected computer discovery failed.")),
+          Effect.ensuring(Effect.sync(() => running.delete(input.httpBaseUrl))),
+          Effect.forkIn(scope),
+        );
+      }),
     onConnected: (input) =>
       Effect.gen(function* () {
         if (running.has(input.environmentId)) return;

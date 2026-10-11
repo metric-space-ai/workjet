@@ -11,6 +11,7 @@ import {
   reconcileComputer,
   computerJobAllowed,
 } from "./computerRegistry.ts";
+const decodeComputerConfiguration = Schema.decodeUnknownSync(WorkjetConfiguration);
 const row = (id: string, environment: string, fingerprint: string): WorkjetComputer => ({
   id: WorkjetComputerId.make(id),
   label: id,
@@ -26,10 +27,34 @@ const row = (id: string, environment: string, fingerprint: string): WorkjetCompu
   },
 });
 describe("computer identity and admission", () => {
+  it("keeps original legacy records and current roles when a failed recheck finishes", () => {
+    const original = row("original", "env-a", "SHA256:a");
+    const previous = {
+      ...original,
+      metadata: {
+        ...original.metadata!,
+        roles: { build: false, storage: false },
+        legacyRecords: [{ id: "original-public-config" }],
+      },
+    };
+    const config = decodeComputerConfiguration({ computers: [previous] });
+    const stale = {
+      ...original,
+      metadata: {
+        ...original.metadata!,
+        roles: { build: true, storage: true },
+        status: "unreachable" as const,
+      },
+    };
+    const once = reconcileComputer(config, stale);
+    const twice = reconcileComputer(once, once.computers[0]!);
+    expect(twice.computers[0]?.metadata?.roles).toEqual({ build: false, storage: false });
+    expect(twice.computers[0]?.metadata?.legacyRecords).toEqual([{ id: "original-public-config" }]);
+  });
   it("merges Business OS and SSH rows by fingerprint without losing data", () => {
     const native = row("gpu3", "native-env", "SHA256:same");
     const ssh = row("gpu3-a4500", "ssh-env", "SHA256:same");
-    const config = Schema.decodeUnknownSync(WorkjetConfiguration)({
+    const config = decodeComputerConfiguration({
       computers: [native, ssh],
       selectedComputerId: ssh.id,
     });
@@ -42,13 +67,13 @@ describe("computer identity and admission", () => {
   it("does not conflate equal names or different physical identities", () => {
     const a = row("first", "env-a", "SHA256:a"),
       b = row("second", "env-b", "SHA256:b");
-    const config = Schema.decodeUnknownSync(WorkjetConfiguration)({ computers: [a] });
+    const config = decodeComputerConfiguration({ computers: [a] });
     expect(reconcileComputer(config, b).computers).toHaveLength(2);
   });
   it("refuses every new job on an inactive computer and preserves that state while merging", () => {
     const inactive = row("inactive", "env-a", "SHA256:a");
     const disabled = { ...inactive, metadata: { ...inactive.metadata!, active: false } };
-    const config = Schema.decodeUnknownSync(WorkjetConfiguration)({ computers: [disabled] });
+    const config = decodeComputerConfiguration({ computers: [disabled] });
     const merged = reconcileComputer(config, row("alias", "env-b", "SHA256:a")).computers[0]!;
     for (const job of ["worker", "build", "storage"] as const)
       expect(computerJobAllowed(merged, job)).toBe(false);
@@ -78,8 +103,7 @@ it("preserves separate computers with cloned SSH keys but conflicting machine ID
   const a = { ...first, metadata: { ...first.metadata!, facts: facts("machine-a") } };
   const b = { ...second, metadata: { ...second.metadata!, facts: facts("machine-b") } };
   expect(
-    reconcileComputer(Schema.decodeUnknownSync(WorkjetConfiguration)({ computers: [a] }), b)
-      .computers,
+    reconcileComputer(decodeComputerConfiguration({ computers: [a] }), b).computers,
   ).toHaveLength(2);
 });
 it("merges different aliases by machine ID even when the host key changed", () => {
@@ -103,7 +127,6 @@ it("merges different aliases by machine ID even when the host key changed", () =
   const a = { ...first, metadata: { ...first.metadata!, facts } };
   const b = { ...second, metadata: { ...second.metadata!, facts } };
   expect(
-    reconcileComputer(Schema.decodeUnknownSync(WorkjetConfiguration)({ computers: [a] }), b)
-      .computers,
+    reconcileComputer(decodeComputerConfiguration({ computers: [a] }), b).computers,
   ).toHaveLength(1);
 });

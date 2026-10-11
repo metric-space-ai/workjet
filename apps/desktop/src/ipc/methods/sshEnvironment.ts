@@ -140,18 +140,11 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
     if ("target" in bootstrap) {
       const computers = yield* Effect.serviceOption(DesktopComputers);
       if (computers._tag === "Some") {
-        const descriptor = yield* withLoopbackSshApi(
-          "fetch-environment-descriptor",
-          (httpBaseUrl) => fetchRemoteEnvironmentDescriptor({ httpBaseUrl }),
-        )(bootstrap.httpBaseUrl).pipe(Effect.option);
-        if (descriptor._tag === "Some")
-          yield* computers.value.onConnected({
-            _tag: "add",
-            id: descriptor.value.environmentId,
-            environmentId: descriptor.value.environmentId,
-            label: target.alias || target.hostname,
-            connection: { _tag: "ssh", target: bootstrap.target },
-          });
+        yield* computers.value.discoverConnected({
+          httpBaseUrl: bootstrap.httpBaseUrl,
+          label: target.alias || target.hostname,
+          connection: { _tag: "ssh", target: bootstrap.target },
+        });
       }
     }
     return bootstrap;

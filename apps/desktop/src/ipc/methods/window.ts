@@ -10,7 +10,6 @@ import {
   type PickedThemeFile,
 } from "@workjet/contracts";
 import * as NodeOS from "node:os";
-import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
 import { DesktopComputers } from "../../computers/DesktopComputers.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -158,17 +157,11 @@ export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
       const primary = yield* pool.primary;
       const config = yield* primary.currentConfig;
       if (config._tag === "Some") {
-        const descriptor = yield* fetchRemoteEnvironmentDescriptor({
+        yield* computers.value.discoverConnected({
           httpBaseUrl: config.value.httpBaseUrl.href,
-        }).pipe(Effect.option);
-        if (descriptor._tag === "Some")
-          yield* computers.value.onConnected({
-            _tag: "add",
-            id: descriptor.value.environmentId,
-            label: NodeOS.hostname(),
-            environmentId: descriptor.value.environmentId,
-            connection: { _tag: "local" },
-          });
+          label: NodeOS.hostname(),
+          connection: { _tag: "local" },
+        });
       }
     }
     return token;

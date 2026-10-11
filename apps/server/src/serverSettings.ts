@@ -11,7 +11,7 @@
  * @module ServerSettings
  */
 // @effect-diagnostics nodeBuiltinImport:off -- Structural CAS comparison at the settings persistence boundary.
-import { isDeepStrictEqual } from "node:util";
+import * as NodeUtil from "node:util";
 import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
@@ -197,7 +197,7 @@ const checkExpectedWorkjet = (
   expected: WorkjetConfiguration | undefined,
   settingsPath: string,
 ) =>
-  expected === undefined || isDeepStrictEqual(current, expected)
+  expected === undefined || NodeUtil.isDeepStrictEqual(current, expected)
     ? Effect.void
     : Effect.fail(
         new ServerSettingsError({

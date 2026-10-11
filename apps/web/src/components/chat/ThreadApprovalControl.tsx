@@ -5,26 +5,34 @@ import { useState } from "react";
 export function ThreadApprovalControl({
   runtimeMode,
   projectRuntimeMode = DEFAULT_RUNTIME_MODE,
+  hasOwnWorktree = false,
   disabled = false,
   onChange,
 }: {
   readonly runtimeMode: RuntimeMode;
   readonly projectRuntimeMode?: RuntimeMode;
+  readonly hasOwnWorktree?: boolean;
   readonly disabled?: boolean;
   readonly onChange: (mode: RuntimeMode) => Promise<boolean>;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
+  const projectPolicy = hasOwnWorktree
+    ? projectRuntimeMode
+    : projectRuntimeMode === "approval-required"
+      ? "approval-required"
+      : "auto-accept-edits";
   return (
     <span className="no-drag inline-flex items-center gap-2 text-xs text-secondary-label">
       <select
         aria-label="Thread approval policy"
         className="rounded border border-border bg-background px-1 py-0.5"
-        value={runtimeMode === projectRuntimeMode ? "project" : runtimeMode}
+        value={runtimeMode === projectPolicy ? "project" : runtimeMode}
         disabled={disabled || saving}
         onChange={async (event) => {
           const value = event.currentTarget.value;
-          const mode = value === "project" ? projectRuntimeMode : (value as RuntimeMode);
+          const mode = value === "project" ? projectPolicy : (value as RuntimeMode);
+          if (!hasOwnWorktree && (mode === "full-access" || mode === "auto")) return;
           setSaving(true);
           setError(false);
           try {
@@ -38,9 +46,13 @@ export function ThreadApprovalControl({
       >
         <option value="project">Project policy</option>
         <option value="approval-required">Require approvals</option>
-        <option value="auto">Workspace autonomy</option>
+        <option value="auto" disabled={!hasOwnWorktree}>
+          Workspace autonomy
+        </option>
         <option value="auto-accept-edits">Accept workspace edits</option>
-        <option value="full-access">Full access</option>
+        <option value="full-access" disabled={!hasOwnWorktree}>
+          Full access
+        </option>
       </select>
       {error ? <span role="status">Policy could not be saved.</span> : null}
     </span>

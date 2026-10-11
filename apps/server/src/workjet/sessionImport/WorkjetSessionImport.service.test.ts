@@ -7,7 +7,6 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   DEFAULT_SERVER_SETTINGS,
-  DEFAULT_RUNTIME_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   ProjectId,
@@ -460,7 +459,7 @@ describe("project-directed static session imports", () => {
         const first = commands.find((command) => command.type === "thread.history.import");
         expect(
           first?.type === "thread.history.import" && first.bootstrap?.createThread.runtimeMode,
-        ).toBe(DEFAULT_RUNTIME_MODE);
+        ).toBe("auto-accept-edits");
         const supervisorId = ThreadId.make("project-b-supervisor");
         const executionPolicy = {
           mode: "autonomous-worktree" as const,
@@ -493,7 +492,7 @@ describe("project-directed static session imports", () => {
         });
         const second = commands.filter((command) => command.type === "thread.history.import")[1];
         if (second?.type !== "thread.history.import") throw new Error("import command");
-        expect(second.bootstrap?.createThread.runtimeMode).toBe("auto");
+        expect(second.bootstrap?.createThread.runtimeMode).toBe("auto-accept-edits");
         expect(second.bootstrap?.createThread.workjetConfig).toEqual({
           ...DEFAULT_WORKJET_THREAD_CONFIG,
           executionPolicy,
@@ -508,6 +507,60 @@ describe("project-directed static session imports", () => {
       }),
     ),
   );
+
+  for (const [mode, expected] of [
+    ["full-access", "auto-accept-edits"],
+    ["auto-accept-edits", "auto-accept-edits"],
+    ["approval-required", "approval-required"],
+  ] as const) {
+    it.effect(`caps an unisolated import from ${mode} to ${expected}`, () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(root, "sessions", "bounded-policy.jsonl"),
+              transcript("Bounded policy"),
+            ),
+          );
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          yield* service.importSessions({
+            projectId: ProjectId.make("project-a"),
+            candidateIds: [candidateId],
+          });
+          const supervisorId = ThreadId.make("bounded-supervisor");
+          threads.set(supervisorId, {
+            ...threads.values().next().value!,
+            id: supervisorId,
+            projectId: ProjectId.make("project-b"),
+            runtimeMode: mode,
+            archivedAt: null,
+            deletedAt: null,
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              team: {
+                role: "supervisor",
+                threadId: supervisorId,
+                projectId: ProjectId.make("project-b"),
+                parentThreadId: null,
+                goal: "Own project",
+                createdAt: NOW,
+              },
+            },
+          });
+          yield* service.importSessions({
+            projectId: ProjectId.make("project-b"),
+            candidateIds: [candidateId],
+          });
+          const imported = commands.filter(
+            (command) => command.type === "thread.history.import",
+          )[1];
+          if (imported?.type !== "thread.history.import") throw new Error("import command");
+          expect(imported.bootstrap?.createThread.runtimeMode).toBe(expected);
+          expect(imported.bootstrap?.createThread.worktreePath).toBeNull();
+        }),
+      ),
+    );
+  }
 
   it.effect("assigns a source cwd below an existing project without creating a project", () =>
     withFixture(({ root, service, projects, commands }) =>

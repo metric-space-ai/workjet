@@ -7176,6 +7176,10 @@ function ChatViewContent(props: ChatViewProps) {
                   key={activeThreadKey}
                   runtimeMode={runtimeMode}
                   projectRuntimeMode={projectRuntimeMode}
+                  hasOwnWorktree={
+                    activeServerThread.worktreePath !== null &&
+                    activeServerThread.worktreePath !== activeProject?.workspaceRoot
+                  }
                   disabled={activeEnvironmentUnavailable || threadDetailLoading || isWorking}
                   onChange={handleThreadApprovalPolicyChange}
                 />

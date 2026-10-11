@@ -253,7 +253,7 @@ export function ProjectExitModelReport({
               <caption className="sr-only">Scenario enterprise value, cash and financing</caption>
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-2 pr-3 font-medium">Scenario</th>
+                  <th className="py-2 pr-3 font-medium">Szenario</th>
                   <th className="px-2 font-medium">Unternehmenswert</th>
                   <th className="px-2 font-medium">Überschuss-Cash</th>
                   <th className="px-2 font-medium">Finanzierung</th>

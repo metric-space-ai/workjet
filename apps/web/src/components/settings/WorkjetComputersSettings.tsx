@@ -547,10 +547,13 @@ export function WorkjetComputersSettingsView({
                 ? "Dieser Rechner"
                 : (target?.detail ?? (computer.presentationKind === "local" ? "Local" : "—"));
             if (snapshot) {
-              const tools = computer.harnesses.filter((declared) =>
-                snapshot.harnesses.some(
-                  (live) => live.harness === declared.harness && live.availability === "available",
-                ),
+              const tools = computer.harnesses.filter(
+                (declared) =>
+                  declared.available &&
+                  snapshot.harnesses.some(
+                    (live) =>
+                      live.harness === declared.harness && live.availability === "available",
+                  ),
               );
               for (const declared of tools.slice(0, 3)) {
                 const live = snapshot.harnesses.find((entry) => entry.harness === declared.harness);
@@ -636,7 +639,7 @@ export function WorkjetComputersSettingsView({
                 className={cn(!active && "opacity-55")}
               >
                 <Row
-                  className="flex-wrap sm:flex-nowrap"
+                  className="flex-wrap sm:flex-nowrap max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap"
                   status={status}
                   statusLabel={statusLabel}
                   name={label}
@@ -942,12 +945,17 @@ export function WorkjetComputersSettings({
         : { status: "done" };
     }
     const native = snapshot.computers.find((entry) => entry.id === computer.id) ?? null;
+    // Eine schon gespeicherte GPU gilt als erkannt und bleibt beim erneuten Hinzufügen.
+    const roles = {
+      ...request.roles,
+      gpu: request.roles.gpu || (native?.capabilities.includes("gpu") ?? false),
+    };
     let enrollment: OperationalComputerEnrollment;
     try {
       enrollment = buildRoleEnrollment({
         computerId: computer.id,
         displayName: request.label || computer.label,
-        roles: request.roles,
+        roles,
         agentCapabilities: computer.harnesses
           .filter((entry) => entry.available)
           .map((entry) => entry.harness),
@@ -958,6 +966,19 @@ export function WorkjetComputersSettings({
             ? navigator.hardwareConcurrency
             : null,
       });
+      // „Local“ hat keine Haken für Build und Speicher: Gespeichertes bleibt.
+      if (
+        request.kind === "local" &&
+        native?.capabilityConfig?.length &&
+        !roles.build &&
+        !roles.storage
+      )
+        enrollment = {
+          ...enrollment,
+          capabilityConfig: [],
+          endpoint: null,
+          preserveOperationalCapabilities: true,
+        };
     } catch (failure) {
       return {
         status: "error",

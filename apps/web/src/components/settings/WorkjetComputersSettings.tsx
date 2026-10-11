@@ -660,14 +660,16 @@ export function WorkjetComputersSettingsView({
                 className={cn(!active && "opacity-55")}
               >
                 <Row
-                  className="flex-wrap sm:flex-nowrap max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap"
+                  className="flex-wrap sm:flex-nowrap max-sm:[&>div:has(>[data-slot=row-name])]:basis-[calc(100%-1.25rem)] max-sm:[&>[data-slot=row-chips]]:flex-1 max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap max-sm:[&>[data-slot=row-chips]]:pl-5"
                   status={status}
                   statusLabel={statusLabel}
                   name={label}
                   meta={meta}
                   chips={
                     <>
-                      <span className="flex flex-wrap items-center gap-1">{chips}</span>
+                      <span className="flex min-w-0 flex-wrap items-center gap-1 max-sm:flex-1">
+                        {chips}
+                      </span>
                       {onActiveChange ? (
                         <Switch
                           aria-label={`${label} aktiv`}

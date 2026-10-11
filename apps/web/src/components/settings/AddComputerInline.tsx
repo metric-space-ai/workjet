@@ -224,6 +224,8 @@ export function AddComputerInline({
   const [step, setStep] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // „Erneut versuchen“ wiederholt genau den letzten Lauf, samt bestätigtem Host-Schlüssel.
+  const [lastRequest, setLastRequest] = useState<AddComputerRequest | null>(null);
   const remote = segment !== "local";
   const endpointAvailable = remote && rolesAvailable;
   const effectiveRoles: ComputerRoles = {
@@ -244,6 +246,7 @@ export function AddComputerInline({
     setStep(null);
     setFehler(null);
     setCopied(false);
+    setLastRequest(null);
   };
   const close = () => {
     if (busy) return;
@@ -271,6 +274,7 @@ export function AddComputerInline({
   };
 
   const run = async (request: AddComputerRequest) => {
+    setLastRequest(request);
     setPhase({ kind: "running" });
     setFehler(null);
     setStep(remote ? "Verbindet…" : "Prüft Werkzeuge…");
@@ -447,7 +451,12 @@ export function AddComputerInline({
             Verbindungen zurücksetzen
           </Button>
         ) : null}
-        <Button type="button" size="xs" variant="outline" onClick={() => void submit()}>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onClick={() => void (lastRequest ? run(lastRequest) : submit())}
+        >
           Erneut versuchen
         </Button>
       </span>
@@ -550,7 +559,7 @@ export function AddComputerInline({
               }}
             />
           )}
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_5rem_minmax(0,0.8fr)]">
+          <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_5rem_minmax(0,0.8fr)]">
             {field(
               "Adresse",
               address,
@@ -561,6 +570,7 @@ export function AddComputerInline({
               {
                 placeholder: segment === "tailscale" ? "100.x.x.x" : "192.168.1.10",
                 list: `${listId}-hosts`,
+                className: "col-span-2 sm:col-span-1",
               },
             )}
             {field("Benutzer", username, setUsername, {
@@ -570,7 +580,10 @@ export function AddComputerInline({
               placeholder: String(alias?.port ?? 22),
               inputMode: "numeric",
             })}
-            {field("Name", name, setName, { placeholder: alias?.alias ?? "optional" })}
+            {field("Name", name, setName, {
+              placeholder: alias?.alias ?? "optional",
+              className: "col-span-2 sm:col-span-1",
+            })}
           </div>
           <datalist id={`${listId}-hosts`}>
             {knownHosts.map((host) => (

@@ -10,6 +10,7 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { ProviderAdapterValidationError } from "../provider/Errors.ts";
 import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
 import { workerSourceDriver, workerSourceNativeProfile } from "./WorkerSourceNativeProfile.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
 
 /** Foreign native workers must use the admitted source account and their private profile. */
 export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNativeProfile")(
@@ -48,6 +49,8 @@ export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNative
     )
       return yield* failure("Foreign worker source harness profile is unavailable or mismatched.");
     const directory = native.directory;
+    const baseUrl =
+      source.modelSocket === undefined ? source.baseUrl : WORKER_MODEL_NAMESPACE_BASE_URL;
     const harness = yield* Schema.decodeUnknownEffect(WorkjetHarness)(native.harness).pipe(
       Effect.mapError(() =>
         failure("Foreign worker source harness profile is unavailable or mismatched."),
@@ -63,7 +66,7 @@ export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNative
         workerSourceNativeProfile({
           harness,
           model: source.model,
-          baseUrl: source.baseUrl,
+          baseUrl,
           apiKey: source.apiKey,
           directory,
         }),
@@ -92,7 +95,7 @@ export const admitWorkerSourceNativeProfile = Effect.fn("admitWorkerSourceNative
     const environment: NodeJS.ProcessEnv = {
       ...runtime,
       ...profile.environment,
-      WORKJET_WORKER_SOURCE_URL: source.baseUrl,
+      WORKJET_WORKER_SOURCE_URL: baseUrl,
       WORKJET_WORKER_SOURCE_KEY: source.apiKey,
     };
     return { ...profile, environment };

@@ -20,6 +20,7 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 import { admitWorkerSourceNativeProfile } from "./WorkerSourceNativeAdmission.ts";
 import { workerSourceDriver } from "./WorkerSourceNativeProfile.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -62,6 +63,7 @@ async function fixture(
   harness: "grok-cli" | "opencode" | "minimax-code" | "greppy" | "pi-code",
   platform: NodeJS.Platform,
   tmpdir: string | undefined,
+  privateModelSocket = false,
 ) {
   let allowed = true;
   let admitted = 0;
@@ -88,7 +90,7 @@ async function fixture(
     ),
   );
   cleanups.push(() => NodeFSP.rm(directory, { recursive: true, force: true }));
-  const thread = "admission-" + harness;
+  const thread = "admission-" + harness + (privateModelSocket ? "-private" : "-loopback");
   const route = await installWorkerSourceRoute(
     thread,
     {
@@ -104,6 +106,7 @@ async function fixture(
       requestDigest: "digest-" + harness,
       modelId: "gpt-6.1-sol",
       harness,
+      ...(privateModelSocket ? { modelSocketRoot: NodePath.join(directory, "model-ipc") } : {}),
       nativeProfile: { harness, directory },
     },
   );
@@ -118,6 +121,39 @@ async function fixture(
   };
 }
 for (const harness of ["grok-cli", "opencode", "minimax-code", "greppy", "pi-code"] as const) {
+  it.effect(`keeps ${harness} on its private model endpoint during start and recovery`, () =>
+    Effect.gen(function* () {
+      const platform = yield* HostProcessPlatform;
+      const environment = yield* HostProcessEnvironment;
+      if (platform !== "linux") {
+        yield* Effect.promise(() =>
+          expect(fixture(harness, platform, environment.TMPDIR, true)).rejects.toThrow(
+            "unavailable",
+          ),
+        );
+        return;
+      }
+      const f = yield* Effect.promise(() => fixture(harness, platform, environment.TMPDIR, true));
+      const before = f.admitted();
+      for (let index = 0; index < 2; index++) {
+        const profile = yield* run(f.value, workerSourceDriver(harness)!);
+        expect(profile?.environment.WORKJET_WORKER_SOURCE_URL).toBe(
+          WORKER_MODEL_NAMESPACE_BASE_URL,
+        );
+        expect(profile?.environment).toMatchObject(f.route.nativeProfile!.environment);
+        expect(profile?.files).toEqual(f.route.nativeProfile!.files);
+        expect(profile?.model).toBe(f.route.nativeProfile!.model);
+        const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(profile);
+        expect(encoded).not.toContain(f.route.baseUrl);
+        expect(encoded).not.toContain(f.route.baseUrl.slice(0, -3));
+      }
+      expect(f.admitted() - before).toBe(2);
+      f.deny();
+      yield* rejects(run(f.value, workerSourceDriver(harness)!), "admission failed");
+      yield* Effect.promise(() => f.route.revoke());
+      yield* rejects(run(f.value, workerSourceDriver(harness)!), "route is revoked");
+    }),
+  );
   it.effect(`admits ${harness} repeatedly without inheriting target accounts`, () =>
     Effect.gen(function* () {
       vi.stubEnv("ANTHROPIC_API_KEY", "target-anthropic-secret");

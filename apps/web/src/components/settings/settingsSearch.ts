@@ -206,11 +206,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
-    id: "legacy-sidebar",
-    title: "Alte Seitenleiste",
-    to: "/settings/general",
-  },
-  {
     id: "harnesses",
     title: "Harnesses",
     to: "/settings/harnesses",

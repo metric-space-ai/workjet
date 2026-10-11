@@ -30,7 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
@@ -905,23 +905,21 @@ interface TerminalActionButtonProps {
 
 function TerminalActionButton({ label, className, onClick, children }: TerminalActionButtonProps) {
   return (
-    <Popover>
-      <PopoverTrigger
-        openOnHover
+    <Tooltip>
+      <TooltipTrigger
         render={<button type="button" className={className} onClick={onClick} aria-label={label} />}
       >
         {children}
-      </PopoverTrigger>
-      <PopoverPopup
-        tooltipStyle
+      </TooltipTrigger>
+      <TooltipPopup
         side="bottom"
         sideOffset={6}
         align="center"
         className="pointer-events-none select-none"
       >
         {label}
-      </PopoverPopup>
-    </Popover>
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -1547,9 +1545,8 @@ export default function ThreadTerminalDrawer({
                                 </span>
                               </button>
                               {normalizedTerminalIds.length > 1 && (
-                                <Popover>
-                                  <PopoverTrigger
-                                    openOnHover
+                                <Tooltip>
+                                  <TooltipTrigger
                                     render={
                                       <button
                                         type="button"
@@ -1560,17 +1557,16 @@ export default function ThreadTerminalDrawer({
                                     }
                                   >
                                     <XIcon className="size-2.5" />
-                                  </PopoverTrigger>
-                                  <PopoverPopup
-                                    tooltipStyle
+                                  </TooltipTrigger>
+                                  <TooltipPopup
                                     side="bottom"
                                     sideOffset={6}
                                     align="center"
                                     className="pointer-events-none select-none"
                                   >
                                     {closeTerminalLabel}
-                                  </PopoverPopup>
-                                </Popover>
+                                  </TooltipPopup>
+                                </Tooltip>
                               )}
                             </div>
                           );

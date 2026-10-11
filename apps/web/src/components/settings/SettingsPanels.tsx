@@ -1524,18 +1524,6 @@ function LegacyFeaturesSection() {
           )
         }
       />
-      <SettingsRow
-        {...searchableSetting("legacy-sidebar")}
-        control={
-          <Switch
-            checked={settings.legacySidebarEnabled}
-            onCheckedChange={(checked) =>
-              updateSettings({ legacySidebarEnabled: Boolean(checked) })
-            }
-            aria-label={searchableSetting("legacy-sidebar").title}
-          />
-        }
-      />
     </SettingsSection>
   );
 }

@@ -24,9 +24,7 @@ import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentIdentificationMode,
-  useLegacySidebarEnabled,
 } from "../hooks/useSettings";
-import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -172,7 +170,6 @@ export function resolveAppSidebarSurface({
 
 function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const legacySidebarEnabled = useLegacySidebarEnabled();
   const configuredProductMode = useClientSettings((settings) => settings.workjetProductMode);
   const productMode = resolveWorkjetProductMode({
     configuredMode: configuredProductMode,
@@ -300,7 +297,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
                   </>
                 ) : (
                   <InstanceNavigationBoundary>
-                    {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
+                    <ThreadSidebar />
                   </InstanceNavigationBoundary>
                 )}
                 <SidebarRail onDoubleClick={resetSidebarWidth} />

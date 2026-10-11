@@ -60,6 +60,7 @@ const thread = (id: string, role: "supervisor" | "specialist") =>
       ...DEFAULT_WORKJET_THREAD_CONFIG,
       team: {
         role,
+        ...(role === "specialist" ? {domain:"autonomy-review"} : {}),
         projectId: ProjectId.make("autonomy-review"),
         threadId: ThreadId.make(id),
         parentThreadId: role === "supervisor" ? null : ThreadId.make("autonomy-supervisor"),

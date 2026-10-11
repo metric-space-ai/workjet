@@ -1,20 +1,20 @@
 import * as NodeAssert from "node:assert/strict";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
-import * as ChildProcess from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 const repo = NodePath.resolve(import.meta.dirname, "..");
 const desktopRequire = NodeModule.createRequire(NodePath.join(repo, "apps/desktop/package.json"));
 const { chromium } = desktopRequire("playwright-core");
 const output = process.env.AUTONOMY_UI_OUTPUT,
   profile = process.env.AUTONOMY_UI_PROFILE;
 NodeAssert.ok(output && profile, "Owned profile/output required");
-await NodeFS.mkdir(output, { recursive: true });
+await NodeFSP.mkdir(output, { recursive: true });
 let browser,
   server,
   log = "";
 try {
-  server = ChildProcess.spawn(
+  server = NodeChildProcess.spawn(
     process.execPath,
     [
       "apps/server/src/bin.ts",
@@ -99,7 +99,7 @@ try {
       fullPage: true,
     });
   }
-  await NodeFS.writeFile(
+  await NodeFSP.writeFile(
     NodePath.join(output, "browser-evidence.json"),
     JSON.stringify(
       { pass: true, widths: [1440, 420], profile: "isolated", actualRouting: true, errors },
@@ -124,7 +124,7 @@ try {
       });
     });
   }
-  await NodeFS.writeFile(
+  await NodeFSP.writeFile(
     NodePath.join(output, "server-redacted.log"),
     log.replace(/token=[^&\s]+/g, "token=REDACTED"),
   );

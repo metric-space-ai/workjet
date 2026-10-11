@@ -516,22 +516,66 @@ it.effect("an unsupported One-Shot question callback ends the run with an open-p
     yield* setup;
     let stopped = 0;
     const commands: OrchestrationCommand[] = [];
-    const providers = {respondToUserInput:() => Effect.fail(new WorkerSupervisorDecisionError({message:"Native callback unavailable"})),stopSession:() => Effect.sync(() => {stopped++})} as unknown as ProviderService["Service"];
-    yield* routeWorkerDecision(thread(workerId,"worker"),request("unsupported")).pipe(
-      Effect.provideService(ProviderService,providers),
-      Effect.provideService(OrchestrationEngineService,{dispatch:(command:OrchestrationCommand)=>Effect.sync(()=>{commands.push(command);return {sequence:1}})} as unknown as OrchestrationEngineService["Service"]));
+    const providers = {
+      respondToUserInput: () =>
+        Effect.fail(new WorkerSupervisorDecisionError({ message: "Native callback unavailable" })),
+      stopSession: () =>
+        Effect.sync(() => {
+          stopped++;
+        }),
+    } as unknown as ProviderService["Service"];
+    yield* routeWorkerDecision(thread(workerId, "worker"), request("unsupported")).pipe(
+      Effect.provideService(ProviderService, providers),
+      Effect.provideService(OrchestrationEngineService, {
+        dispatch: (command: OrchestrationCommand) =>
+          Effect.sync(() => {
+            commands.push(command);
+            return { sequence: 1 };
+          }),
+      } as unknown as OrchestrationEngineService["Service"]),
+    );
     expect(stopped).toBe(1);
-    expect(commands.some(command=>command.type==="thread.activity.append" && command.activity.kind==="worker.result")).toBe(true);
-    expect((yield* (yield* SqlClient.SqlClient)`SELECT count(*) AS n FROM workjet_worker_supervisor_decisions`)[0]?.n).toBe(0);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory()))
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "thread.activity.append" && command.activity.kind === "worker.result",
+      ),
+    ).toBe(true);
+    expect(
+      (yield* (yield* SqlClient.SqlClient)`SELECT count(*) AS n FROM workjet_worker_supervisor_decisions`)[0]
+        ?.n,
+    ).toBe(0);
+  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );
 it.effect("a repeated terminal One-Shot question finishes instead of asking or looping", () =>
   Effect.gen(function* () {
     yield* setup;
     let stopped = 0;
-    const oneShot=thread(workerId,"worker");
-    expect(yield* routeWorkerTerminalQuestion(oneShot,"Proceed?","first").pipe(Effect.provideService(ProviderService,{stopSession:()=>Effect.sync(()=>{stopped++})} as unknown as ProviderService["Service"]))).toBe(true);
-    expect(yield* routeWorkerTerminalQuestion(oneShot,"Weiter?","second").pipe(Effect.provideService(ProviderService,{stopSession:()=>Effect.sync(()=>{stopped++})} as unknown as ProviderService["Service"]))).toBe(true);
+    const oneShot = thread(workerId, "worker");
+    expect(
+      yield* routeWorkerTerminalQuestion(oneShot, "Proceed?", "first").pipe(
+        Effect.provideService(ProviderService, {
+          stopSession: () =>
+            Effect.sync(() => {
+              stopped++;
+            }),
+        } as unknown as ProviderService["Service"]),
+      ),
+    ).toBe(true);
+    expect(
+      yield* routeWorkerTerminalQuestion(oneShot, "Weiter?", "second").pipe(
+        Effect.provideService(ProviderService, {
+          stopSession: () =>
+            Effect.sync(() => {
+              stopped++;
+            }),
+        } as unknown as ProviderService["Service"]),
+      ),
+    ).toBe(true);
     expect(stopped).toBe(1);
-  }).pipe(Effect.provideService(OrchestrationEngineService,defaultEngine),Effect.provideService(ProjectionSnapshotQuery,query),Effect.provide(NodeSqliteClient.layerMemory()))
+  }).pipe(
+    Effect.provideService(OrchestrationEngineService, defaultEngine),
+    Effect.provideService(ProjectionSnapshotQuery, query),
+    Effect.provide(NodeSqliteClient.layerMemory()),
+  ),
 );

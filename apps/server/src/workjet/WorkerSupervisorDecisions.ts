@@ -448,13 +448,7 @@ export const routeWorkerTerminalQuestion = Effect.fn("workjet.routeWorkerTermina
         .split(/\n\s*\n/)
         .at(-1)
         ?.trim() ?? "";
-    if (
-      !/[?？]\s*$/.test(tail) ||
-      !/(?:\byou\b|\byour\b|\bshould I\b|\bshall I\b|\bmay I\b|\bwhich\b|\bkann ich\b|\bsoll ich\b|\bdu\b|\bSie\b|\bwelche\b)/i.test(
-        tail,
-      )
-    )
-      return false;
+    if (!/[?？]\s*$/.test(tail)) return false;
     if (team.role === "worker") {
       const sql = yield* SqlClient.SqlClient;
       const createdAt = DateTime.formatIso(yield* DateTime.now);

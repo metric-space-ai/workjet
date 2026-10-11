@@ -1566,12 +1566,15 @@ export default function GitActionsControl({
         </InlinePanel>
       ) : null}
 
-      <PublishRepositoryPanel
-        open={isPublishDialogOpen}
-        onOpenChange={setIsPublishDialogOpen}
-        environmentId={activeEnvironmentId}
-        gitCwd={gitCwd}
-      />
+      {/* Ohne Remote steht „Repository veröffentlichen“ direkt im Git-Bereich. */}
+      {canPublishRepository || isPublishDialogOpen ? (
+        <PublishRepositoryPanel
+          open={isPublishDialogOpen}
+          onOpenChange={setIsPublishDialogOpen}
+          environmentId={activeEnvironmentId}
+          gitCwd={gitCwd}
+        />
+      ) : null}
 
       {/* Bestätigung für den Standard-Branch inline, nie als Dialog. */}
       {pendingDefaultBranchAction !== null ? (

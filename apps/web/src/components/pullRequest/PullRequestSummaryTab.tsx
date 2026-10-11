@@ -531,8 +531,8 @@ export function PullRequestSummaryTab({
               : activityError
                 ? "Nicht verfügbar"
                 : detail.commentCount === 1
-                  ? "1 comment"
-                  : `${detail.commentCount} comments`}
+                  ? "1 Kommentar"
+                  : `${detail.commentCount} Kommentare`}
           </MetaRow>
         </div>
       </section>
@@ -681,8 +681,8 @@ export function PullRequestSummaryTab({
                       setShown({ url: detail.url, count: shownComments + COMMENT_PAGE })
                     }
                   >
-                    Show {Math.min(hiddenCommentCount, COMMENT_PAGE)} earlier{" "}
-                    {hiddenCommentCount === 1 ? "comment" : "comments"}
+                    {Math.min(hiddenCommentCount, COMMENT_PAGE)} frühere{" "}
+                    {hiddenCommentCount === 1 ? "Kommentar" : "Kommentare"}
                   </Button>
                 ) : null}
                 {visibleComments.map((comment) => {

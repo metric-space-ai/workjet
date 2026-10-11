@@ -174,8 +174,8 @@ const UPDATE_BRANCH_REBASE_FAILURE_HINT =
   "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.";
 
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
-  { value: "summary", label: "Summary" },
-  { value: "timeline", label: "Timeline" },
+  { value: "summary", label: "Übersicht" },
+  { value: "timeline", label: "Verlauf" },
   { value: "code", label: "Code" },
 ];
 

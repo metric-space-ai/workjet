@@ -298,7 +298,7 @@ function ConversationGroup({
           >
             <span className="min-w-0 flex-1">
               <span className="block text-xs font-semibold">
-                {events.length.toLocaleString()} {events.length === 1 ? "comment" : "comments"}
+                {events.length.toLocaleString()} {events.length === 1 ? "Kommentar" : "Kommentare"}
               </span>
               <span className="block truncate text-[10px] text-muted-foreground">
                 {actors.length.toLocaleString()} {actors.length === 1 ? "author" : "authors"} ·{" "}

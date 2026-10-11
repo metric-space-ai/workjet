@@ -176,7 +176,7 @@ export function ReviewThreadCard({
           onClick={() => setExpanded((current) => !current)}
         >
           {thread.isResolved ? "Erledigt" : "Offen"} · {thread.comments.length}{" "}
-          {thread.comments.length === 1 ? "comment" : "comments"}
+          {thread.comments.length === 1 ? "Kommentar" : "Kommentare"}
         </button>
         {thread.isOutdated ? <span>outdated</span> : null}
         {onFix ? (

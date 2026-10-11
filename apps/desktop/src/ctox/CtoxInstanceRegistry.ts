@@ -15,6 +15,7 @@ import {
   type CtoxPairedInstanceMutationFailureCode as CtoxPairedInstanceMutationFailureCodeType,
   type CtoxSshManagedInstanceAddInput,
 } from "@workjet/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -1045,7 +1046,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       ? DateTime.now.pipe(Effect.map(DateTime.toEpochMillis))
       : Effect.sync(options.nowEpochMs);
   const backupUnreadableRegistry = Effect.gen(function* () {
-    const suffix = `${Date.now()}-${yield* crypto.randomUUIDv4}`;
+    const suffix = `${yield* Clock.currentTimeMillis}-${yield* crypto.randomUUIDv4}`;
     for (const filePath of [secretRegistryPath, publicRegistryPath]) {
       if (!(yield* fileSystem.exists(filePath))) continue;
       const backup = `${filePath}.recovery-${suffix}.bak`;

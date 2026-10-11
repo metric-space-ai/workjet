@@ -2,6 +2,7 @@ import { AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as NodeSqlite from "node:sqlite";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -385,7 +386,7 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
           path.join(
             baseDir,
             "runtime",
-            `desktop-auth-retired-${Date.now()}-${NodeCrypto.randomUUID()}`,
+            `desktop-auth-retired-${yield* Clock.currentTimeMillis}-${NodeCrypto.randomUUID()}`,
           ),
         );
         if (platform !== "win32")

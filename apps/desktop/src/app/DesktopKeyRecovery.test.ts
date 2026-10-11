@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
@@ -10,6 +11,7 @@ import {
 } from "../electron/ElectronSafeStorage.ts";
 import { makeRecovery } from "./DesktopKeyRecovery.ts";
 vi.mock("electron", () => ({ safeStorage: {} }));
+const encodeFixture = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 it.layer(NodeServices.layer)("local key loss detection", (it) => {
   it.effect(
@@ -30,7 +32,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
         yield* fs.writeFileString(`${baseDir}/runtime/desktop-auth/session.enc`, "corrupt session");
         yield* fs.writeFileString(
           `${stateDir}/connection-catalog.json`,
-          JSON.stringify({
+          yield* encodeFixture({
             version: 1,
             encryptedCatalog: Buffer.from(
               '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":[],"remoteDpopTokens":[]}',
@@ -39,7 +41,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
         );
         yield* fs.writeFileString(
           `${stateDir}/ctox/secrets.json`,
-          JSON.stringify({
+          yield* encodeFixture({
             version: 1,
             records: [],
             deviceKeys: [
@@ -88,7 +90,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
           makeRecovery({ baseDir, stateDir }).pipe(
             Effect.provideService(ElectronSafeStorage, storage),
           );
-        const session = JSON.stringify({
+        const session = yield* encodeFixture({
           version: 1,
           baseDir,
           environmentId: "environment",
@@ -104,7 +106,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
         );
         const first = yield* open();
         assert.isUndefined(yield* first.inspect);
-        const catalog = JSON.stringify({
+        const catalog = yield* encodeFixture({
           schemaVersion: 1,
           targets: [],
           profiles: [],
@@ -113,7 +115,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
         });
         yield* fs.writeFileString(
           `${stateDir}/connection-catalog.json`,
-          JSON.stringify({
+          yield* encodeFixture({
             version: 1,
             encryptedCatalog: Buffer.from(yield* storage.encryptString(catalog)).toString("base64"),
           }),

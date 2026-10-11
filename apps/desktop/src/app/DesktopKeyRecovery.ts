@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import { ConnectionCatalogDocument } from "@workjet/client-runtime/platform";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -177,7 +178,7 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
       if (failures.length >= 2) {
         record = {
           version: 1,
-          generation: `${Date.now()}-${NodeCrypto.randomUUID()}`,
+          generation: `${yield* Clock.currentTimeMillis}-${NodeCrypto.randomUUID()}`,
           pendingLogin: true,
           unreadableStores: failures,
         };

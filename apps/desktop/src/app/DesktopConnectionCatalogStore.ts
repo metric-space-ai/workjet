@@ -13,6 +13,7 @@ import {
 import type { PersistedSavedEnvironmentRecord } from "@workjet/contracts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { fromLenientJson } from "@workjet/shared/schemaJson";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -590,7 +591,7 @@ export const make = Effect.gen(function* () {
             }),
         ),
       )).replace(/-/g, "");
-      const backupPath = `${catalogPath}.recovery-${Date.now()}-${suffix}.bak`;
+      const backupPath = `${catalogPath}.recovery-${yield* Clock.currentTimeMillis}-${suffix}.bak`;
       yield* fileSystem.copyFile(catalogPath, backupPath).pipe(
         Effect.mapError(
           (cause) =>

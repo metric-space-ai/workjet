@@ -295,11 +295,11 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopLinuxUrlHandler.layer,
   DesktopDeepLinkRouter.layer,
   DesktopShellEnvironment.layer,
-  desktopCtoxLayer,
-  desktopCtoxFleetLayer,
-  desktopSshLayer,
-  desktopProvisioningLayer,
 ).pipe(
+  Layer.provideMerge(desktopCtoxLayer),
+  Layer.provideMerge(desktopCtoxFleetLayer),
+  Layer.provideMerge(desktopSshLayer),
+  Layer.provideMerge(desktopProvisioningLayer),
   // provideMerge, not mergeAll: the application menu resolves the bundle
   // service, and the IPC handler resolves the same instance from the
   // re-exported context.

@@ -53,11 +53,7 @@ export async function makeWorkerSourceModelSocket(
       });
       await handle?.close();
       const current = await NodeFSP.lstat(directory, { bigint: true }).catch(() => undefined);
-      if (
-        current?.isDirectory() &&
-        current.dev === original.dev &&
-        current.ino === original.ino
-      )
+      if (current?.isDirectory() && current.dev === original.dev && current.ino === original.ino)
         await NodeFSP.rmdir(directory).catch(() => undefined);
       // Never recursively delete a directory or a replacement at its old pathname.
     })());

@@ -23,10 +23,14 @@ const RecoveryRecord = Schema.Struct({
   clerkRetired: Schema.optionalKey(Schema.Boolean),
   ctoxRetired: Schema.optionalKey(Schema.Boolean),
   managedRepairStarted: Schema.optionalKey(Schema.Boolean),
-  instanceRepairs: Schema.optionalKey(Schema.Array(Schema.Struct({
-    instanceId: Schema.String,
-    state: Schema.Literals(["repairing", "repaired", "repair_failed"]),
-  }))),
+  instanceRepairs: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        instanceId: Schema.String,
+        state: Schema.Literals(["repairing", "repaired", "repair_failed"]),
+      }),
+    ),
+  ),
 });
 type RecoveryRecord = typeof RecoveryRecord.Type;
 const RecordJson = Schema.fromJsonString(RecoveryRecord);
@@ -70,8 +74,13 @@ export class DesktopKeyRecovery extends Context.Service<
     readonly completeLogin: Effect.Effect<void, DesktopKeyRecoveryError>;
     readonly retirePartition?: (partition: string) => Effect.Effect<void, DesktopKeyRecoveryError>;
     readonly markCatalogReset?: Effect.Effect<void, DesktopKeyRecoveryError>;
-    readonly beginManagedRepair?: (instanceIds: readonly string[]) => Effect.Effect<boolean, DesktopKeyRecoveryError>;
-    readonly recordInstanceRepair?: (instanceId: string, state: "repaired" | "repair_failed") => Effect.Effect<void, DesktopKeyRecoveryError>;
+    readonly beginManagedRepair?: (
+      instanceIds: readonly string[],
+    ) => Effect.Effect<boolean, DesktopKeyRecoveryError>;
+    readonly recordInstanceRepair?: (
+      instanceId: string,
+      state: "repaired" | "repair_failed",
+    ) => Effect.Effect<void, DesktopKeyRecoveryError>;
   }
 >()("@workjet/desktop/app/DesktopKeyRecovery") {}
 
@@ -136,8 +145,12 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           Effect.mapError(() => fail("read recovery state")),
         );
         if (record.instanceRepairs?.some((entry) => entry.state === "repairing")) {
-          record = { ...record, instanceRepairs: record.instanceRepairs.map((entry) =>
-            entry.state === "repairing" ? { ...entry, state: "repair_failed" as const } : entry) };
+          record = {
+            ...record,
+            instanceRepairs: record.instanceRepairs.map((entry) =>
+              entry.state === "repairing" ? { ...entry, state: "repair_failed" as const } : entry,
+            ),
+          };
           yield* persist(record);
         }
       }
@@ -175,7 +188,7 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
             }
           }
           if (!failed)
-            for (const entry of (envelope.value.deviceKeys ?? [])) {
+            for (const entry of envelope.value.deviceKeys ?? []) {
               const bytes = Encoding.decodeBase64(entry.ciphertext);
               if (
                 bytes._tag === "Failure" ||
@@ -188,8 +201,10 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           if (failed) failures.push("ctox");
         } else failures.push("ctox");
       }
-      if ((failures.length >= 2 || failures.includes("ctox")) &&
-          (record === undefined || (record.ctoxRetired === true && failures.includes("ctox")))) {
+      if (
+        (failures.length >= 2 || failures.includes("ctox")) &&
+        (record === undefined || (record.ctoxRetired === true && failures.includes("ctox")))
+      ) {
         record = {
           version: 1,
           generation: `${yield* Clock.currentTimeMillis}-${NodeCrypto.randomUUID()}`,
@@ -216,8 +231,11 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
         yield* persist(updated);
         record = updated;
       }
-      if (record !== undefined && !record.clerkRetired &&
-          record.unreadableStores.some((store) => store !== "ctox")) {
+      if (
+        record !== undefined &&
+        !record.clerkRetired &&
+        record.unreadableStores.some((store) => store !== "ctox")
+      ) {
         const original = `${input.stateDir}/clerk-tokens.json`;
         const retired = `${original}.recovery-${record.generation}.bak`;
         if (!(yield* fs.exists(retired)) && (yield* fs.exists(original)))
@@ -236,21 +254,44 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
   );
   return DesktopKeyRecovery.of({
     inspect,
-    beginManagedRepair: (instanceIds) => Effect.andThen(inspect, lock.withPermit(Effect.gen(function* () {
-      if (record === undefined || record.managedRepairStarted) return false;
-      const updated = { ...record, pendingLogin: false, managedRepairStarted: true,
-        instanceRepairs: instanceIds.map((instanceId) => ({ instanceId, state: "repairing" as const })) };
-      yield* persist(updated);
-      record = updated;
-      return true;
-    }))),
-    recordInstanceRepair: (instanceId, state) => Effect.andThen(inspect, lock.withPermit(Effect.gen(function* () {
-      if (record === undefined || !record.managedRepairStarted) return;
-      const updated = { ...record, instanceRepairs: (record.instanceRepairs ?? []).map((entry) =>
-        entry.instanceId === instanceId ? { instanceId, state } : entry) };
-      yield* persist(updated);
-      record = updated;
-    }))),
+    beginManagedRepair: (instanceIds) =>
+      Effect.andThen(
+        inspect,
+        lock.withPermit(
+          Effect.gen(function* () {
+            if (record === undefined || record.managedRepairStarted) return false;
+            const updated = {
+              ...record,
+              pendingLogin: false,
+              managedRepairStarted: true,
+              instanceRepairs: instanceIds.map((instanceId) => ({
+                instanceId,
+                state: "repairing" as const,
+              })),
+            };
+            yield* persist(updated);
+            record = updated;
+            return true;
+          }),
+        ),
+      ),
+    recordInstanceRepair: (instanceId, state) =>
+      Effect.andThen(
+        inspect,
+        lock.withPermit(
+          Effect.gen(function* () {
+            if (record === undefined || !record.managedRepairStarted) return;
+            const updated = {
+              ...record,
+              instanceRepairs: (record.instanceRepairs ?? []).map((entry) =>
+                entry.instanceId === instanceId ? { instanceId, state } : entry,
+              ),
+            };
+            yield* persist(updated);
+            record = updated;
+          }),
+        ),
+      ),
     markCatalogReset: Effect.andThen(
       inspect,
       lock.withPermit(
@@ -269,8 +310,11 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           .withPermit(
             Effect.gen(function* () {
               if (record === undefined || input.userDataDir === undefined) return;
-              if (partition === "persist:workjet-ctox-control-plane" &&
-                  record.unreadableStores.every((store) => store === "ctox")) return;
+              if (
+                partition === "persist:workjet-ctox-control-plane" &&
+                record.unreadableStores.every((store) => store === "ctox")
+              )
+                return;
               if (!/^persist:workjet-ctox-[a-zA-Z0-9_-]+$/.test(partition))
                 return yield* fail("validate recovery partition");
               if (record.retiredPartitions?.includes(partition)) return;

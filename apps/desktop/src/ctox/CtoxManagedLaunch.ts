@@ -13,6 +13,7 @@ import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as Option from "effect/Option";
 import { CtoxControlDevice } from "./CtoxControlDevice.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 
 const DEFAULT_CTOX_DEV_BASE_URL = "https://ctox.dev";
 const DESKTOP_CLIENT = "ctox-business-os-desktop";
@@ -238,6 +239,7 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
     }
     const controlOrigin = new URL(baseUrl).origin;
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+    const keyRecovery = Option.getOrUndefined(yield* Effect.serviceOption(DesktopKeyRecovery));
     const device = Option.getOrUndefined(yield* Effect.serviceOption(CtoxControlDevice));
     const requestTimeoutMs =
       options.requestTimeoutMs !== undefined &&
@@ -249,6 +251,15 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
     const launch = Effect.fn("CtoxManagedLaunch.launch")(function* (
       descriptor: CtoxManagedInstance,
     ) {
+      const recovery = yield* (keyRecovery?.inspect ?? Effect.succeed(undefined)).pipe(
+        Effect.mapError(() => new CtoxManagedLaunchError({ operation: "launch-contract" })),
+      );
+      if (
+        recovery?.instanceRepairs?.some(
+          (entry) => entry.instanceId === descriptor.id && entry.state === "repair_failed",
+        )
+      )
+        return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
       if ((yield* accessState(descriptor.id)) !== "enabled")
         return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
       const tenantId = tenantIdOf(descriptor);

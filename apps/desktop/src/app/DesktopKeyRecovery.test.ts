@@ -27,15 +27,29 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
         isEncryptionAvailable: Effect.succeed(true),
         selectedStorageBackend: Effect.succeed(Option.none()),
         encryptString: (value) => Effect.sync(() => Buffer.from(`${key}:${value}`)),
-        decryptString: (bytes) => Effect.suspend(() => {
-          const value = Buffer.from(bytes).toString();
-          return value.startsWith(`${key}:`) ? Effect.succeed(value.slice(key.length + 1)) :
-            Effect.fail(new ElectronSafeStorageDecryptError({ cause: "fixture key changed" }));
-        }),
+        decryptString: (bytes) =>
+          Effect.suspend(() => {
+            const value = Buffer.from(bytes).toString();
+            return value.startsWith(`${key}:`)
+              ? Effect.succeed(value.slice(key.length + 1))
+              : Effect.fail(new ElectronSafeStorageDecryptError({ cause: "fixture key changed" }));
+          }),
       });
       yield* fs.makeDirectory(`${stateDir}/ctox`, { recursive: true });
-      const secrets = yield* encodeFixture({ version: 1, records: [], deviceKeys: [{ id: "fixture",
-        ciphertext: Buffer.from(yield* storage.encryptString('{"scope":{"instanceId":"native","userId":"owner"},"pkcs8":"fixture"}')).toString("base64") }] });
+      const secrets = yield* encodeFixture({
+        version: 1,
+        records: [],
+        deviceKeys: [
+          {
+            id: "fixture",
+            ciphertext: Buffer.from(
+              yield* storage.encryptString(
+                '{"scope":{"instanceId":"native","userId":"owner"},"pkcs8":"fixture"}',
+              ),
+            ).toString("base64"),
+          },
+        ],
+      });
       yield* fs.writeFileString(`${stateDir}/ctox/secrets.json`, secrets);
       const bindings = '{"version":1,"instances":[]}';
       yield* fs.writeFileString(`${stateDir}/ctox/instances.json`, bindings);
@@ -45,29 +59,55 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
       yield* fs.makeDirectory(directory, { recursive: true });
       yield* fs.writeFileString(`${directory}/Cookies`, "valid cookie fixture");
       key = "new";
-      const open = () => makeRecovery({ baseDir, stateDir, userDataDir, platform: "darwin" }).pipe(
-        Effect.provideService(ElectronSafeStorage, storage));
+      const open = () =>
+        makeRecovery({ baseDir, stateDir, userDataDir, platform: "darwin" }).pipe(
+          Effect.provideService(ElectronSafeStorage, storage),
+        );
       const owner = yield* open();
       const state = yield* owner.inspect;
       assert.deepEqual(state?.unreadableStores, ["ctox"]);
       assert.isTrue(state?.pendingLogin);
       assert.isTrue(state?.ctoxRetired);
-      assert.equal(yield* fs.readFileString(`${stateDir}/ctox/secrets.json.recovery-${state?.generation}.bak`), secrets);
-      assert.equal(yield* fs.readFileString(`${stateDir}/ctox/instances.json.recovery-${state?.generation}.bak`), bindings);
+      assert.equal(
+        yield* fs.readFileString(`${stateDir}/ctox/secrets.json.recovery-${state?.generation}.bak`),
+        secrets,
+      );
+      assert.equal(
+        yield* fs.readFileString(
+          `${stateDir}/ctox/instances.json.recovery-${state?.generation}.bak`,
+        ),
+        bindings,
+      );
       assert.equal(yield* fs.readFileString(`${stateDir}/ctox/instances.json`), bindings);
       assert.isFalse(yield* fs.exists(`${stateDir}/ctox/secrets.json`));
       yield* owner.retirePartition!(partition);
       assert.equal(yield* fs.readFileString(`${directory}/Cookies`), "valid cookie fixture");
-      assert.equal(yield* fs.readFileString(`${stateDir}/clerk-tokens.json`), "valid sign-in fixture");
-      const claims = yield* Effect.all([owner.beginManagedRepair!(["managed:fixture"]), owner.beginManagedRepair!(["managed:fixture"])], { concurrency: 2 });
+      assert.equal(
+        yield* fs.readFileString(`${stateDir}/clerk-tokens.json`),
+        "valid sign-in fixture",
+      );
+      const claims = yield* Effect.all(
+        [
+          owner.beginManagedRepair!(["managed:fixture"]),
+          owner.beginManagedRepair!(["managed:fixture"]),
+        ],
+        { concurrency: 2 },
+      );
       assert.deepEqual(claims.sort(), [false, true]);
       assert.isFalse((yield* owner.inspect)?.pendingLogin);
       const restarted = yield* open();
       assert.equal((yield* restarted.inspect)?.generation, state?.generation);
-      assert.deepEqual((yield* restarted.inspect)?.instanceRepairs, [{ instanceId: "managed:fixture", state: "repair_failed" }]);
+      assert.deepEqual((yield* restarted.inspect)?.instanceRepairs, [
+        { instanceId: "managed:fixture", state: "repair_failed" },
+      ]);
       assert.isFalse(yield* restarted.beginManagedRepair!(["managed:fixture"]));
-      assert.equal((yield* fs.readDirectory(`${stateDir}/ctox`)).filter((name) => name.endsWith(".bak")).length, 2);
-    }));
+      assert.equal(
+        (yield* fs.readDirectory(`${stateDir}/ctox`)).filter((name) => name.endsWith(".bak"))
+          .length,
+        2,
+      );
+    }),
+  );
   it.effect(
     "does not reset for one corrupt store when catalog and device key remain readable",
     () =>

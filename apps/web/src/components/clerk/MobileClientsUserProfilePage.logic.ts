@@ -6,10 +6,10 @@ const mobileClientUpdatedAtFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 const NOTIFICATION_PREFERENCES = [
-  ["notifyOnApproval", "approvals"],
-  ["notifyOnInput", "input requests"],
-  ["notifyOnCompletion", "completions"],
-  ["notifyOnFailure", "failures"],
+  ["notifyOnApproval", "Freigaben"],
+  ["notifyOnInput", "Rückfragen"],
+  ["notifyOnCompletion", "Abschlüsse"],
+  ["notifyOnFailure", "Fehler"],
 ] as const satisfies ReadonlyArray<
   readonly [keyof RelayClientDeviceRecord["notifications"], string]
 >;
@@ -20,20 +20,20 @@ export function mobileClientPlatformLabel(device: RelayClientDeviceRecord): stri
 
 export function mobileClientNotificationDetail(device: RelayClientDeviceRecord): string {
   if (!device.notifications.enabled) {
-    return "Push notifications are disabled on this device.";
+    return "Mitteilungen aus";
   }
 
   const enabledPreferences = NOTIFICATION_PREFERENCES.flatMap(([preference, label]) =>
     device.notifications[preference] ? [label] : [],
   );
   return enabledPreferences.length > 0
-    ? `Alerts enabled for ${enabledPreferences.join(", ")}.`
-    : "Push notifications are enabled, but no alert types are selected.";
+    ? `Mitteilungen: ${enabledPreferences.join(", ")}`
+    : "Mitteilungen an, keine Arten gewählt";
 }
 
 export function mobileClientUpdatedAtLabel(updatedAt: string): string {
   const date = new Date(updatedAt);
   return Number.isNaN(date.getTime())
-    ? "Update time unavailable"
-    : `Updated ${mobileClientUpdatedAtFormatter.format(date)}`;
+    ? "—"
+    : `Aktualisiert ${mobileClientUpdatedAtFormatter.format(date)}`;
 }

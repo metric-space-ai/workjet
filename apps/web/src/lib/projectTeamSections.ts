@@ -6,13 +6,9 @@ export type ProjectTeamSection = "supervisor" | "parents" | "workers";
 
 /** Sidebar order for an opened project: its supervisor, the long-lived parents, then one-time PR workers. */
 export const PROJECT_TEAM_SECTIONS = [
-  {
-    section: "supervisor",
-    label: "Supervisor",
-    empty: "Opening the project creates its supervisor.",
-  },
-  { section: "parents", label: "Persistent Worker", empty: "No persistent workers yet." },
-  { section: "workers", label: "One-Shot Worker", empty: "No one-shot workers yet." },
+  { section: "supervisor", label: "Supervisor", empty: "Noch kein Supervisor" },
+  { section: "parents", label: "Feste Lumas", empty: "Noch keine festen Lumas" },
+  { section: "workers", label: "Einmal-Lumas", empty: "Noch keine Einmal-Lumas" },
 ] as const satisfies ReadonlyArray<{
   readonly section: ProjectTeamSection;
   readonly label: string;
@@ -79,19 +75,18 @@ export function projectTeamStatus(thread: {
   readonly backgroundLiveness?: string | null | undefined;
   readonly waitingOnSupervisor?: boolean | undefined;
 }) {
-  if (thread.waitingOnSupervisor) return { label: "Waiting for Supervisor", dot: "bg-indigo-400" };
+  if (thread.waitingOnSupervisor) return { label: "Wartet auf Supervisor", dot: "bg-indigo-400" };
   if (thread.hasPendingApprovals || thread.hasPendingUserInput)
-    return { label: "Needs attention", dot: "bg-rose-400" };
-  if (thread.session?.status === "error") return { label: "Error", dot: "bg-red-400" };
+    return { label: "Braucht Aufmerksamkeit", dot: "bg-rose-400" };
+  if (thread.session?.status === "error") return { label: "Fehler", dot: "bg-red-400" };
   if (
     thread.session?.status === "running" ||
     thread.session?.status === "starting" ||
     thread.backgroundLiveness === "working"
   )
-    return { label: "Working", dot: "bg-amber-400" };
-  if (thread.backgroundLiveness === "monitoring")
-    return { label: "Monitoring", dot: "bg-blue-400" };
-  return { label: "Idle", dot: "bg-muted-foreground/50" };
+    return { label: "Arbeitet", dot: "bg-amber-400" };
+  if (thread.backgroundLiveness === "monitoring") return { label: "Überwacht", dot: "bg-blue-400" };
+  return { label: "Bereit", dot: "bg-muted-foreground/50" };
 }
 
 export function projectTeamProgressPreview(thread: {

@@ -169,6 +169,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           ...(cwd ? { cwd } : {}),
           activeWorkjetMcpCapabilityIds,
           compiledManagedPrompt: request.threadCapabilityContext.compiledManagedPrompt,
+          requiredWorkjetToolNames: Object.freeze(["workjet_worker_kanban", "workjet_update_goal", "workjet_answer_worker"]),
         }),
       };
     },

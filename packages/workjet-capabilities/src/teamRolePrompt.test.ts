@@ -54,7 +54,9 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("Perform substantive work yourself");
     expect(prompt).toContain("before any other work");
     expect(prompt).toContain("workjet_worker_kanban with action update exactly once");
-    expect(prompt).toContain("as a slide-engine document");
+    expect(prompt).toContain("worker mini-kanban");
+    expect(prompt).not.toContain("slide-engine");
+    expect(prompt).toContain("Never treat a missing tool as a precondition or blocker");
     expect(prompt).toContain("owner, evidence, commit/PR link and next trigger");
     expect(prompt).toContain("registry and open PRs");
     expect(prompt).toContain("Compaction is not completion");

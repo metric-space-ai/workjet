@@ -235,8 +235,8 @@ describe("persistent goal reactor", () => {
           for (const [index, command] of h.starts.entries()) {
             expect(command.type).toBe("thread.turn.start");
             if (command.type !== "thread.turn.start") throw new Error("missing continuation");
-            expect(command.message.text).toContain(`Iteration ${index + 1}: before any other work`);
-            expect(command.message.text).toContain("slide-engine mini-kanban exactly once");
+            expect(command.message.text).toContain(`Iteration ${index + 1}: If workjet_worker_kanban is available`);
+            expect(command.message.text).toContain("worker mini-kanban exactly once");
             expect(command.message.text.match(/workjet_worker_kanban/g)).toHaveLength(1);
           }
           const cfg = h.read().workjetConfig;

@@ -89,7 +89,7 @@ import { ComposerWorkerControl, providerInstanceIdForHarness } from "./ComposerW
 import { workerReasoningSelections } from "./workerReasoning";
 import { getMiniMaxManualModelCatalog } from "./minimaxManualModels";
 import { getProviderModelCapabilities } from "../../providerModels";
-import { resolveAppModelSelectionForInstance } from "../../modelSelection";
+import { resolveHarnessSwitchModelSelection } from "../../modelSelection";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
@@ -1766,11 +1766,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const driver = providerInstanceIdForHarness(harness);
       const instanceId = driver === null ? undefined : manualHarnessInstances.get(driver);
       if (instanceId === undefined) return;
-      const model = resolveAppModelSelectionForInstance(
+      setHarnessModelNotice(null);
+      const model = resolveHarnessSwitchModelSelection(
         instanceId,
         settings,
         providerStatuses,
         selectedModel,
+        workjetGatewayCatalogQuery,
         manualGatewayModels,
       );
       if (model === null) {
@@ -1797,6 +1799,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       settings,
       providerStatuses,
       manualGatewayModels,
+      workjetGatewayCatalogQuery,
       composerDraftTarget,
     ],
   );

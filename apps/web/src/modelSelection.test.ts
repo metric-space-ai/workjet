@@ -5,6 +5,7 @@ import { deriveProviderInstanceEntries } from "./providerInstances";
 import {
   getAppModelOptionsForInstance,
   resolveAppModelSelectionForInstance,
+  resolveHarnessSwitchModelSelection,
   resolveAppModelSelectionState,
 } from "./modelSelection";
 
@@ -55,6 +56,38 @@ function settingsWithProviderInstances(): UnifiedSettings {
 }
 
 describe("instance-scoped model selection", () => {
+  it.each([
+    ["loading", { data: null, error: null, isPending: true }],
+    ["failed", { data: null, error: "Offline fixture", isPending: false }],
+    ["offline", { data: null, error: null, isPending: false }],
+    ["failed refresh", { data: {}, error: "Offline fixture", isPending: false }],
+    ["pending refresh", { data: {}, error: null, isPending: true }],
+  ] as const)("keeps the model unchanged while the gateway catalog is %s", (_name, catalog) => {
+    expect(
+      resolveHarnessSwitchModelSelection(
+        ProviderInstanceId.make("codex"),
+        DEFAULT_UNIFIED_SETTINGS,
+        [provider({ instanceId: "codex", models: ["gpt-5.5"] })],
+        "claude-sonnet-4-6",
+        catalog,
+        [],
+      ),
+    ).toBe("claude-sonnet-4-6");
+  });
+
+  it("validates a harness switch after a successful empty catalog response", () => {
+    expect(
+      resolveHarnessSwitchModelSelection(
+        ProviderInstanceId.make("codex"),
+        DEFAULT_UNIFIED_SETTINGS,
+        [provider({ instanceId: "codex", models: ["gpt-5.5"] })],
+        "claude-sonnet-4-6",
+        { data: {}, error: null, isPending: false },
+        [],
+      ),
+    ).toBe("gpt-5.5");
+  });
+
   it("does not treat an untested custom model setting as a checked target default", () => {
     const settings = settingsWithProviderInstances();
     expect(

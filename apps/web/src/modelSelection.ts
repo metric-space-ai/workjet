@@ -16,6 +16,7 @@ import { getComposerProviderState } from "./components/chat/composerProviderStat
 import { UnifiedSettings } from "@workjet/contracts/settings";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
+import type { EnvironmentQueryView } from "./state/query";
 import {
   getDefaultServerModel,
   getProviderModels,
@@ -238,6 +239,29 @@ export function resolveAppModelSelection(
   return (
     resolveSelectableModel(resolvedProvider, selectedModel, options) ??
     getDefaultServerModel(providers, resolvedProvider)
+  );
+}
+
+/** A loading, failed or offline catalog cannot invalidate a saved model. */
+export function resolveHarnessSwitchModelSelection(
+  instanceId: ProviderInstanceId,
+  settings: UnifiedSettings,
+  providers: ReadonlyArray<ServerProvider>,
+  selectedModel: string,
+  catalog: Pick<EnvironmentQueryView<unknown>, "data" | "error" | "isPending">,
+  gatewayModels: ReadonlyArray<{ readonly id: string }>,
+): string | null {
+  const checkedCatalog =
+    catalog.data !== null && catalog.error === null && !catalog.isPending
+      ? gatewayModels
+      : undefined;
+  if (checkedCatalog === undefined) return selectedModel;
+  return resolveAppModelSelectionForInstance(
+    instanceId,
+    settings,
+    providers,
+    selectedModel,
+    checkedCatalog,
   );
 }
 

@@ -144,16 +144,19 @@ export const setInstanceState: DesktopIpc.DesktopIpcMethod<
         yield* store.set(descriptor, state);
         const guests = yield* CtoxGuestManager.CtoxGuestManager;
         if (state === "enabled") yield* guests.ensurePooled(instanceId);
-        if (state !== "enabled") {
+        const pairedRemoval =
+          state === "removed" &&
+          (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing");
+        if (state !== "enabled" && !pairedRemoval) {
           const stopped = yield* guests.deactivateInstance(instanceId);
           if (stopped._tag !== "completed") return yield* Effect.fail(undefined);
         }
         if (state === "removed") {
           if (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") {
-            const removed = yield* registry.removePairedInstance(instanceId);
-            const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
-            yield* sessions.clearInstance(descriptor);
-            if (!removed.secretRecordRemoved) return yield* Effect.fail(undefined);
+            const removed = yield* removePairedInstance
+              .handler({ instanceId })
+              .pipe(Effect.flatMap(Schema.decodeUnknownEffect(CtoxPairedInstanceRemoveResult)));
+            if (removed._tag !== "completed") return yield* Effect.fail(undefined);
           } else if (descriptor.source === "ssh_managed")
             yield* registry.removeSshManagedInstance(instanceId);
         }
@@ -334,12 +337,14 @@ export const importInvite: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry.importInvite(input.value.invite, input.value.replacesInstanceId).pipe(
-        Effect.flatMap((instance) =>
-          CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
-        ),
-        Effect.result,
-      );
+      const result = yield* registry
+        .importInvite(input.value.invite, input.value.replacesInstanceId)
+        .pipe(
+          Effect.flatMap((instance) =>
+            CtoxInstancePreferences.restorePreference(instance).pipe(Effect.as(instance)),
+          ),
+          Effect.result,
+        );
       return yield* encodeSafe(
         CtoxPairedInstanceImportResult,
         Result.isSuccess(result)

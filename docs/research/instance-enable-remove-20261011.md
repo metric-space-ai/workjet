@@ -10,7 +10,7 @@ The Instances table uses the shared switch, separate Selected label, quiet state
 
 The selected-instance guard is checked in the UI against the live selection and in IPC against its submitted selection snapshot. Activity state is persisted by the desktop; it is not a React-only setting.
 
-Registry overlap with `codex/safe-storage-key-loss-recovery`: the import of preferences, local/SSH probe options, launch-resolution admission checks and final discovery merge are touched. Pairing document formats, encryption, damaged-secret recovery, and `removePairedInstance` are unchanged.
+Rebased on main `496692d68` with #414. Discovery retains both the key-recovery status and the local activity markers. Managed login recovery checks the persisted preference before creating a session or requesting managed launch credentials, so disabled and locally removed instances remain disconnected. The trash action delegates to the existing paired removal handler, including partial-removal cleanup. Settings and the instance sidebar share the same pairing action and pass the saved identity to #414’s in-place repair path. Explicit re-pairing restores the enabled preference; automatic recovery never changes it. Pairing document formats and encryption remain unchanged.
 
 The isolated UI run `workjet-instance-enable-remove-20261011T085916Z` passed at 1440 and 420 px: selection lock, no local trash, inline confirmation, no horizontal overflow, disable/reload/enable, managed removal/reload and paired removal. The shared switch now keeps its instance-specific accessible name; a wrapping implicit label previously replaced that name with only “Aktiv”. The retained-project status is tested in German and English. Earlier regression coverage passed 218 desktop, 121 web and 36 contract tests. The final-head commands and receipt are reported in PR #415. Installed-product acceptance remains with the supervisor after merge.
 
@@ -23,8 +23,8 @@ Verification commands on gpu3, with two workers:
 ```sh
 pnpm exec vp check
 pnpm exec vp run typecheck
-(cd apps/desktop && pnpm exec vp test run --maxWorkers 2 src/ctox/CtoxShellFleet.test.ts src/ctox/CtoxManagedLaunch.test.ts src/ctox/CtoxInstancePreferences.test.ts src/ctox/CtoxGuestManager.test.ts src/ctox/CtoxInstanceRegistry.test.ts src/ctox/CtoxSshManagedSource.test.ts src/ctox/CtoxLocalDaemonSource.test.ts src/ipc/methods/ctox.test.ts)
-(cd apps/web && pnpm exec vp test run --project unit --maxWorkers 2 src/components/settings/InstancesTable.test.tsx src/components/settings/BusinessOsSettings.test.tsx src/components/ctox/CtoxModeShell.test.tsx src/localProjectRegistration.test.tsx src/workjetProjectCreation.test.ts src/workjetSupervisorControl.test.ts src/workjetProjectControl.test.ts)
+(cd apps/desktop && pnpm exec vp test run --maxWorkers 2 src/app/DesktopKeyRecovery.integration.test.ts src/ctox/CtoxShellFleet.test.ts src/ctox/CtoxManagedLaunch.test.ts src/ctox/CtoxInstancePreferences.test.ts src/ctox/CtoxGuestManager.test.ts src/ctox/CtoxInstanceRegistry.test.ts src/ctox/CtoxSshManagedSource.test.ts src/ctox/CtoxLocalDaemonSource.test.ts src/ipc/methods/ctox.test.ts)
+(cd apps/web && pnpm exec vp test run --project unit --maxWorkers 2 src/instanceSetup.test.ts src/components/ctox/InstanceOnboarding.test.tsx src/components/settings/InstancesTable.test.tsx src/components/settings/BusinessOsSettings.test.tsx src/components/ctox/CtoxModeShell.test.tsx src/localProjectRegistration.test.tsx src/workjetProjectCreation.test.ts src/workjetSupervisorControl.test.ts src/workjetProjectControl.test.ts)
 (cd packages/contracts && pnpm exec vp test run --maxWorkers 2 src/ctox.test.ts src/ctoxProjectDiagnostic.test.ts src/workjetSupervisor.test.ts)
 node scripts/audit-workjet-content.mjs
 ```

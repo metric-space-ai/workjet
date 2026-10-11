@@ -1,4 +1,4 @@
-import { openInstanceSetup } from "../../instanceSetup";
+import { openInstanceSetup, openInstanceRePair } from "../../instanceSetup";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { InstanceSetupDialog } from "./InstanceSetupDialog";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
@@ -1705,7 +1705,7 @@ function CtoxInstanceCard({
           <button
             type="button"
             className="px-2 py-1 text-xs text-sidebar-foreground"
-            onClick={() => openInstanceSetup("link", instance.id)}
+            onClick={() => openInstanceRePair(instance)}
           >
             Neu koppeln
           </button>

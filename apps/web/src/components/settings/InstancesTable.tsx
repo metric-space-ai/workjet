@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { canActivateCtoxInstance } from "../ctox/CtoxModeShell";
-import { openInstanceSetup } from "../../instanceSetup";
+import { openInstanceRePair } from "../../instanceSetup";
 
 export const INSTANCE_LIST_TEXT = {
   de: {
@@ -200,7 +200,7 @@ export function InstancesTable({
                     <button
                       type="button"
                       className="ml-2 underline underline-offset-2"
-                      onClick={() => openInstanceSetup()}
+                      onClick={() => openInstanceRePair(instance)}
                     >
                       {text.pair}
                     </button>

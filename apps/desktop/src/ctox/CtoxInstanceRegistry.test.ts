@@ -30,6 +30,7 @@ import {
   parseCtoxPairingInvite,
 } from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
+import * as Preferences from "./CtoxInstancePreferences.ts";
 import * as CtoxSshManagedSource from "./CtoxSshManagedSource.ts";
 
 const NOW = 1_800_000_000_000;
@@ -259,6 +260,70 @@ function failureCode(
 }
 
 describe("CtoxInstanceRegistry", () => {
+  for (const workjetState of ["enabled", "disabled", "removed"] as const)
+    it.effect("preserves recovery status and " + workjetState + " activity in discovery", () => {
+      const { memory, registry } = registryHarness();
+      const recovery = DesktopKeyRecovery.of({
+        inspect: Effect.succeed({
+          version: 1,
+          generation: "1-11111111-1111-4111-8111-111111111111",
+          pendingLogin: true,
+          catalogReset: true,
+          unreadableStores: ["session", "ctox"],
+        }),
+        completeLogin: Effect.die("Discovery must not complete identity recovery."),
+      });
+      return Effect.gen(function* () {
+        const original = yield* (yield* registry).importManualPairing(manualPairing);
+        const managed: CtoxManagedInstance = {
+          ...original,
+          id: "managed:fixture",
+          source: "ctox_dev",
+          status: "available",
+        };
+        const preferences = Preferences.CtoxInstancePreferences.of({
+          read: Effect.succeed([
+            { ...original, workjetState },
+            { ...managed, workjetState },
+          ]),
+          remember: () => Effect.void,
+          set: () => Effect.die("Discovery must not change activity."),
+        });
+        const changed = yield* registryHarness({
+          fileSystem: memory,
+          storage: safeStorage({ failDecrypt: true }),
+          recovery,
+        }).registry;
+        const discovery = yield* changed
+          .merge({ _tag: "ready", instances: [managed] })
+          .pipe(Effect.provideService(Preferences.CtoxInstancePreferences, preferences));
+        assert.equal(discovery._tag, "ready");
+        if (discovery._tag !== "ready") return;
+        assert.deepEqual(discovery.keyRecovery, {
+          pendingLogin: true,
+          connectionCatalogReset: true,
+        });
+        assert.equal(
+          discovery.instances.find((row) => row.id === managed.id)?.workjetState,
+          workjetState,
+        );
+        assert.equal(
+          discovery.instances.find((row) => row.id === original.id)?.workjetState,
+          workjetState,
+        );
+        assert.equal(discovery.instances.find((row) => row.id === original.id)?.status, "error");
+        if (workjetState !== "enabled") {
+          const launch = yield* changed
+            .resolvePairedLaunch(original.id)
+            .pipe(
+              Effect.result,
+              Effect.provideService(Preferences.CtoxInstancePreferences, preferences),
+            );
+          assert.equal(failureCode(launch), "not_found");
+        }
+      });
+    });
+
   it.effect("re-pairs an unreadable entry in place and preserves both prior documents", () => {
     const { memory, registry } = registryHarness();
     return Effect.gen(function* () {

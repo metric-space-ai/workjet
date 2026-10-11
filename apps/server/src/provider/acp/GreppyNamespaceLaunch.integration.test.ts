@@ -148,8 +148,7 @@ const fixture = async (
         harness: "greppy",
         modelSocketRoot: NodePath.join(root, "model-ipc"),
         captureRuntime: async (capture) => {
-          if (variant === "runtime-denied")
-            throw new Error("Original runtime custody rejected");
+          if (variant === "runtime-denied") throw new Error("Original runtime custody rejected");
           await persistence.captureRuntime(capture);
         },
         nativeProfile: {
@@ -226,183 +225,185 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
         Effect.gen(function* () {
           const store = yield* WorkerSourceCustodyStore;
           const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-          return yield*
-        Effect.acquireUseRelease(
-          Effect.tryPromise(() =>
-            fixture(variant, (intent) =>
-              runPromise(
-                Effect.gen(function* () {
-                  const receipt = yield* store.reserve(intent);
-                  return yield* makeWorkerSourceCustodyPersistence(store, receipt);
-                }),
+          return yield* Effect.acquireUseRelease(
+            Effect.tryPromise(() =>
+              fixture(variant, (intent) =>
+                runPromise(
+                  Effect.gen(function* () {
+                    const receipt = yield* store.reserve(intent);
+                    return yield* makeWorkerSourceCustodyPersistence(store, receipt);
+                  }),
+                ),
               ),
             ),
-          ),
-          (owned) =>
-            Effect.gen(function* () {
-              const twoTurns = variant === "two-turns" || variant === "node-runtime-two-turns";
-              const originalSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-              const children: ChildProcessSpawner.ChildProcessHandle[] = [];
-              const spawner = ChildProcessSpawner.make((command) =>
-                originalSpawner.spawn(command).pipe(
-                  Effect.tap((child) =>
-                    Effect.sync(() => {
-                      children.push(child);
-                    }),
+            (owned) =>
+              Effect.gen(function* () {
+                const twoTurns = variant === "two-turns" || variant === "node-runtime-two-turns";
+                const originalSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+                const children: ChildProcessSpawner.ChildProcessHandle[] = [];
+                const spawner = ChildProcessSpawner.make((command) =>
+                  originalSpawner.spawn(command).pipe(
+                    Effect.tap((child) =>
+                      Effect.sync(() => {
+                        children.push(child);
+                      }),
+                    ),
                   ),
-                ),
-              );
-              if (variant === "replaced-root") {
-                yield* Effect.tryPromise(async () => {
-                  await NodeFSP.rename(owned.workspace, owned.workspace + "-held");
-                  await NodeFSP.mkdir(owned.workspace, { mode: 0o700 });
-                  NodeChildProcess.execFileSync("/usr/bin/git", ["init", owned.workspace], {
-                    timeout: 5000,
-                    stdio: "pipe",
+                );
+                if (variant === "replaced-root") {
+                  yield* Effect.tryPromise(async () => {
+                    await NodeFSP.rename(owned.workspace, owned.workspace + "-held");
+                    await NodeFSP.mkdir(owned.workspace, { mode: 0o700 });
+                    NodeChildProcess.execFileSync("/usr/bin/git", ["init", owned.workspace], {
+                      timeout: 5000,
+                      stdio: "pipe",
+                    });
                   });
-                });
-              }
-              yield* Effect.gen(function* () {
-                const adapter = yield* makeGreppyAdapter(
-                  {
-                    ...DEFAULT_SERVER_SETTINGS.providers.greppy,
-                    enabled: true,
-                    binaryPath: owned.script,
-                    model: "gpt-6.1-sol",
-                    endpoint: "http://127.0.0.1:23197",
-                  },
-                  {
-                    instanceId: ProviderInstanceId.make("greppy"),
-                    resolveSessionEnvironment: () =>
-                      Effect.die("Source worker must not read target model/account environment"),
-                  },
-                );
-                const started = yield* adapter.startSession(owned.input).pipe(Effect.result);
-                if (
-                  variant === "missing-receipt" ||
-                  variant === "changed-digest" ||
-                  variant === "runtime-denied" ||
-                  variant === "replaced-root"
-                ) {
-                  expect(started._tag).toBe("Failure");
-                  if (variant !== "replaced-root") expect(children).toHaveLength(0);
-                  return;
                 }
-                expect(started._tag).toBe("Success");
-                const journal = Option.getOrThrow(yield* store.get(owned.input.threadId));
-                expect(journal.runtime).not.toBeNull();
-                expect(journal.runtime?.command).toBe(journal.runtime?.runtimeFiles[0]?.path);
-                expect(journal.runtime?.runtimeFiles.map(({ path }) => path)).toContain(
-                  owned.script,
-                );
-                if (variant === "runtime-replaced" || variant === "node-runtime-replaced") {
+                yield* Effect.gen(function* () {
+                  const adapter = yield* makeGreppyAdapter(
+                    {
+                      ...DEFAULT_SERVER_SETTINGS.providers.greppy,
+                      enabled: true,
+                      binaryPath: owned.script,
+                      model: "gpt-6.1-sol",
+                      endpoint: "http://127.0.0.1:23197",
+                    },
+                    {
+                      instanceId: ProviderInstanceId.make("greppy"),
+                      resolveSessionEnvironment: () =>
+                        Effect.die("Source worker must not read target model/account environment"),
+                    },
+                  );
+                  const started = yield* adapter.startSession(owned.input).pipe(Effect.result);
+                  if (
+                    variant === "missing-receipt" ||
+                    variant === "changed-digest" ||
+                    variant === "runtime-denied" ||
+                    variant === "replaced-root"
+                  ) {
+                    expect(started._tag).toBe("Failure");
+                    if (variant !== "replaced-root") expect(children).toHaveLength(0);
+                    return;
+                  }
+                  expect(started._tag).toBe("Success");
+                  const journal = Option.getOrThrow(yield* store.get(owned.input.threadId));
+                  expect(journal.runtime).not.toBeNull();
+                  expect(journal.runtime?.command).toBe(journal.runtime?.runtimeFiles[0]?.path);
+                  expect(journal.runtime?.runtimeFiles.map(({ path }) => path)).toContain(
+                    owned.script,
+                  );
+                  if (variant === "runtime-replaced" || variant === "node-runtime-replaced") {
+                    const stopped = yield* adapter.stopSession(owned.input.threadId);
+                    expect(stopped?.terminated).toBe(true);
+                    const before = children.length;
+                    yield* Effect.promise(async () => {
+                      await NodeFSP.rename(owned.script, owned.script + "-original");
+                      await NodeFSP.copyFile(owned.script + "-original", owned.script);
+                      await NodeFSP.chmod(owned.script, 0o700);
+                    });
+                    expect(
+                      (yield* adapter.startSession(owned.input).pipe(Effect.result))._tag,
+                    ).toBe("Failure");
+                    expect(children.length).toBe(before);
+                    return;
+                  }
+                  yield* adapter.sendTurn({
+                    threadId: owned.input.threadId,
+                    input: twoTurns ? "first" : "hold-terminal",
+                  });
+                  if (twoTurns) {
+                    yield* adapter.sendTurn({ threadId: owned.input.threadId, input: "follow-up" });
+                    expect(
+                      yield* Effect.tryPromise(() =>
+                        NodeFSP.readFile(NodePath.join(owned.home, "acp-turns"), "utf8"),
+                      ),
+                    ).toBe("2");
+                  } else {
+                    const held = children.at(-1)!;
+                    expect(yield* held.isRunning).toBe(true);
+                    const before = owned.admissions();
+                    if (variant === "revoked-source-tools")
+                      yield* Effect.promise(owned.revokeSource);
+                    else yield* Effect.sync(owned.denySource);
+                    if (variant === "expired-source-running") {
+                      yield* TestClock.adjust("10 seconds");
+                      yield* held.exitCode.pipe(Effect.result);
+                      yield* children[0]!.exitCode.pipe(Effect.result);
+                      expect(yield* children[0]!.isRunning).toBe(false);
+                    } else {
+                      const result = yield* adapter
+                        .sendTurn({
+                          threadId: owned.input.threadId,
+                          input:
+                            variant === "expired-source-cleanup" ? "cleanup-only" : "source-denied",
+                        })
+                        .pipe(Effect.result);
+                      expect(result._tag).toBe(
+                        variant === "expired-source-cleanup" ? "Success" : "Failure",
+                      );
+                    }
+                    expect(yield* held.isRunning).toBe(false);
+                    expect(owned.admissions() - before).toBe(
+                      variant === "revoked-source-tools" || variant === "expired-source-cleanup"
+                        ? 0
+                        : 1,
+                    );
+                    expect(
+                      yield* Effect.tryPromise(() =>
+                        NodeFSP.readFile(NodePath.join(owned.workspace, "main.c"), "utf8"),
+                      ),
+                    ).toBe("int main(void) { return 0; }\n");
+                    expect(
+                      (yield* Effect.tryPromise(() =>
+                        NodeFSP.access(NodePath.join(owned.workspace, "denied-effect")),
+                      ).pipe(Effect.result))._tag,
+                    ).toBe("Failure");
+                  }
+                  expect(
+                    NodeChildProcess.execFileSync(
+                      "/usr/bin/git",
+                      ["-C", owned.workspace, "rev-list", "--count", "HEAD"],
+                      { timeout: 5000, encoding: "utf8" },
+                    ).trim(),
+                  ).toBe(twoTurns ? "2" : "1");
                   const stopped = yield* adapter.stopSession(owned.input.threadId);
                   expect(stopped?.terminated).toBe(true);
-                  const before = children.length;
-                  yield* Effect.promise(async () => {
-                    await NodeFSP.rename(owned.script, owned.script + "-original");
-                    await NodeFSP.copyFile(owned.script + "-original", owned.script);
-                    await NodeFSP.chmod(owned.script, 0o700);
-                  });
-                  expect((yield* adapter.startSession(owned.input).pipe(Effect.result))._tag).toBe(
-                    "Failure",
-                  );
-                  expect(children.length).toBe(before);
-                  return;
-                }
-                yield* adapter.sendTurn({
-                  threadId: owned.input.threadId,
-                  input: twoTurns ? "first" : "hold-terminal",
-                });
-                if (twoTurns) {
-                  yield* adapter.sendTurn({ threadId: owned.input.threadId, input: "follow-up" });
-                  expect(
-                    yield* Effect.tryPromise(() =>
-                      NodeFSP.readFile(NodePath.join(owned.home, "acp-turns"), "utf8"),
-                    ),
-                  ).toBe("2");
-                } else {
-                  const held = children.at(-1)!;
-                  expect(yield* held.isRunning).toBe(true);
-                  const before = owned.admissions();
-                  if (variant === "revoked-source-tools") yield* Effect.promise(owned.revokeSource);
-                  else yield* Effect.sync(owned.denySource);
-                  if (variant === "expired-source-running") {
-                    yield* TestClock.adjust("10 seconds");
-                    yield* held.exitCode.pipe(Effect.result);
-                    yield* children[0]!.exitCode.pipe(Effect.result);
-                    expect(yield* children[0]!.isRunning).toBe(false);
-                  } else {
-                    const result = yield* adapter
-                      .sendTurn({
-                        threadId: owned.input.threadId,
-                        input:
-                          variant === "expired-source-cleanup" ? "cleanup-only" : "source-denied",
-                      })
-                      .pipe(Effect.result);
-                    expect(result._tag).toBe(
-                      variant === "expired-source-cleanup" ? "Success" : "Failure",
-                    );
-                  }
-                  expect(yield* held.isRunning).toBe(false);
-                  expect(owned.admissions() - before).toBe(
-                    variant === "revoked-source-tools" || variant === "expired-source-cleanup"
-                      ? 0
-                      : 1,
-                  );
-                  expect(
-                    yield* Effect.tryPromise(() =>
-                      NodeFSP.readFile(NodePath.join(owned.workspace, "main.c"), "utf8"),
-                    ),
-                  ).toBe("int main(void) { return 0; }\n");
-                  expect(
-                    (yield* Effect.tryPromise(() =>
-                      NodeFSP.access(NodePath.join(owned.workspace, "denied-effect")),
-                    ).pipe(Effect.result))._tag,
-                  ).toBe("Failure");
-                }
-                expect(
-                  NodeChildProcess.execFileSync(
-                    "/usr/bin/git",
-                    ["-C", owned.workspace, "rev-list", "--count", "HEAD"],
-                    { timeout: 5000, encoding: "utf8" },
-                  ).trim(),
-                ).toBe(twoTurns ? "2" : "1");
-                const stopped = yield* adapter.stopSession(owned.input.threadId);
-                expect(stopped?.terminated).toBe(true);
-              }).pipe(
-                Effect.scoped,
-                Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-                Effect.provideService(ServerEnvironment, {
-                  getEnvironmentId: Effect.succeed(EnvironmentId.make("target")),
-                  getDescriptor: Effect.die("unused"),
-                }),
-                Effect.provideService(ResourceMonitorBinary, { resolve: Effect.succeed(helper!) }),
-                Effect.provideService(IsolatedWorkerWorktreeStore, {
-                  get: () =>
-                    Effect.succeed(
-                      variant === "missing-receipt"
-                        ? Option.none()
-                        : Option.some(
-                            variant === "changed-digest"
-                              ? {
-                                  ...owned.receipt,
-                                  intent: {
-                                    ...owned.receipt.intent,
-                                    authorityDigest: "e".repeat(64),
-                                  },
-                                }
-                              : owned.receipt,
-                          ),
-                    ),
-                  reserve: () => Effect.die("Provider must not create a new allocation"),
-                  capture: () => Effect.die("Provider must not recapture or adopt a replacement"),
-                }),
-              );
-              for (const child of children) expect(yield* child.isRunning).toBe(false);
-            }),
-          (owned) => Effect.promise(owned.close),
-        );
+                }).pipe(
+                  Effect.scoped,
+                  Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                  Effect.provideService(ServerEnvironment, {
+                    getEnvironmentId: Effect.succeed(EnvironmentId.make("target")),
+                    getDescriptor: Effect.die("unused"),
+                  }),
+                  Effect.provideService(ResourceMonitorBinary, {
+                    resolve: Effect.succeed(helper!),
+                  }),
+                  Effect.provideService(IsolatedWorkerWorktreeStore, {
+                    get: () =>
+                      Effect.succeed(
+                        variant === "missing-receipt"
+                          ? Option.none()
+                          : Option.some(
+                              variant === "changed-digest"
+                                ? {
+                                    ...owned.receipt,
+                                    intent: {
+                                      ...owned.receipt.intent,
+                                      authorityDigest: "e".repeat(64),
+                                    },
+                                  }
+                                : owned.receipt,
+                            ),
+                      ),
+                    reserve: () => Effect.die("Provider must not create a new allocation"),
+                    capture: () => Effect.die("Provider must not recapture or adopt a replacement"),
+                  }),
+                );
+                for (const child of children) expect(yield* child.isRunning).toBe(false);
+              }),
+            (owned) => Effect.promise(owned.close),
+          );
         }).pipe(
           Effect.provide(
             WorkerSourceCustodyLayer.pipe(Layer.provideMerge(SqlitePersistenceMemory)),

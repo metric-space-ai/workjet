@@ -1,46 +1,73 @@
 import type {
   WorkjetProvisioningPreflight,
+  WorkjetProvisioningPreflightResult,
   WorkjetProvisioningSnapshot,
-  WorkjetProvisioningListResult,
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
 } from "@workjet/contracts";
-import {
-  CheckCircle2Icon,
-  LaptopIcon,
-  RefreshCwIcon,
-  ServerCogIcon,
-  ShieldCheckIcon,
-} from "lucide-react";
+import { CheckCircle2Icon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
-import { toastManager } from "../ui/toast";
-import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 type Stage = "target" | "fingerprint" | "preflight" | "components" | "operation";
+type RetryStep = "inspect" | "preflight" | "start" | "start-backend";
 
 function errorText(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
-    : "The provisioning request failed.";
+    : "Einrichtung fehlgeschlagen.";
 }
 
 function stageLabel(snapshot: WorkjetProvisioningSnapshot): string {
-  return snapshot.events.at(-1)?.message ?? "Preparing operation";
+  return snapshot.events.at(-1)?.message ?? "Wird vorbereitet";
 }
 
+/**
+ * Befund 3 (11.10.2026): Ein Preflight-Ergebnis darf nie still auf die
+ * Fingerprint-Bestätigung zurückspringen. Nur Host-Key-Codes führen dorthin,
+ * und auch dann mit Fehlerzeile; alles andere bleibt als Fehlerzeile mit
+ * „Erneut versuchen“ stehen. Erfolg führt immer zum nächsten Schritt.
+ */
+export function preflightOutcome(
+  result: WorkjetProvisioningPreflightResult,
+):
+  | { readonly next: "components"; readonly preflight: WorkjetProvisioningPreflight }
+  | { readonly next: "fingerprint" | "error"; readonly message: string } {
+  if (result._tag === "ready") return { next: "components", preflight: result.preflight };
+  return {
+    next:
+      result.code === "host_key_confirmation_required" || result.code === "host_key_changed"
+        ? "fingerprint"
+        : "error",
+    message: result.message.trim() || "Prüfung fehlgeschlagen.",
+  };
+}
+
+export interface ProvisioningSshTargetInput {
+  readonly host: string;
+  readonly username: string | null;
+  readonly port: number | null;
+}
+
+/**
+ * Laufzeit auf einem Rechner prüfen und installieren (Reparieren in der
+ * Rechner-Zeile, Instanz einrichten). Alles inline, ohne Dialog.
+ */
 export function ComputerProvisioningSection({
   initialKind = "local",
   fixedTargetKind = false,
+  initialTarget,
   onCompleted,
   onBusyChange,
 }: {
   readonly initialKind?: "local" | "ssh";
   readonly fixedTargetKind?: boolean;
+  /** Bekannte Verbindung der Zeile: Adresse, Benutzer, Port werden übernommen. */
+  readonly initialTarget?: ProvisioningSshTargetInput;
   readonly onCompleted?: () => void;
   readonly onBusyChange?: (busy: boolean) => void;
 } = {}) {
@@ -51,41 +78,16 @@ export function ComputerProvisioningSection({
     bridge.startProvisioningOperation !== undefined &&
     bridge.getProvisioningOperation !== undefined;
   const [kind, setKind] = useState<"local" | "ssh">(initialKind);
-  const [host, setHost] = useState("");
-  const [username, setUsername] = useState("");
-  const [port, setPort] = useState("22");
+  const [host, setHost] = useState(initialTarget?.host ?? "");
+  const [username, setUsername] = useState(initialTarget?.username ?? "");
+  const [port, setPort] = useState(String(initialTarget?.port ?? 22));
   const [stage, setStage] = useState<Stage>("target");
   const [hostKey, setHostKey] = useState<WorkjetSshHostKeyInspectResult | null>(null);
-  const [hostKeyConfirmed, setHostKeyConfirmed] = useState(false);
   const [preflight, setPreflight] = useState<WorkjetProvisioningPreflight | null>(null);
   const [installWorkjet, setInstallWorkjet] = useState(false);
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<WorkjetProvisioningSnapshot | null>(null);
-  const [saved, setSaved] = useState<
-    Extract<WorkjetProvisioningListResult, { _tag: "found" }>["operations"]
-  >([]);
-  const [journalError, setJournalError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!bridge?.listProvisioningOperations) return;
-    void bridge
-      .listProvisioningOperations()
-      .then((result) => {
-        if (cancelled) return;
-        if (result._tag === "found") setSaved(result.operations);
-        else setJournalError(result.message);
-      })
-      .catch(() => {
-        if (!cancelled)
-          setJournalError(
-            "Saved installations could not be loaded. Check the target before starting again.",
-          );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
+  const [fehler, setFehler] = useState<{ message: string; retry: RetryStep } | null>(null);
 
   const target = useMemo<WorkjetProvisioningTarget>(() => {
     if (kind === "local") return { _tag: "local" };
@@ -101,6 +103,32 @@ export function ComputerProvisioningSection({
     };
   }, [host, kind, port, username]);
 
+  // Eine laufende Installation für dasselbe Ziel wird gezeigt, nie neu gestartet.
+  useEffect(() => {
+    let cancelled = false;
+    if (!bridge?.listProvisioningOperations) return;
+    void bridge
+      .listProvisioningOperations()
+      .then((result) => {
+        if (cancelled || result._tag !== "found") return;
+        const running = result.operations.find(
+          (entry) =>
+            (entry.operation.state === "queued" || entry.operation.state === "running") &&
+            (entry.target._tag === "local"
+              ? initialKind === "local"
+              : entry.target.ssh.hostname === (initialTarget?.host ?? "")),
+        );
+        if (running) {
+          setOperation(running.operation);
+          setStage("operation");
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, initialKind, initialTarget?.host]);
+
   useEffect(() => {
     if (!operation || (operation.state !== "queued" && operation.state !== "running")) return;
     const timer = window.setInterval(() => {
@@ -111,27 +139,15 @@ export function ComputerProvisioningSection({
         .then((result) => {
           if (result._tag === "found") {
             setOperation(result.operation);
-            setSaved((entries) =>
-              entries.map((entry) =>
-                entry.operation.operationId === result.operation.operationId
-                  ? { ...entry, operation: result.operation }
-                  : entry,
-              ),
-            );
-            setJournalError(null);
+            setFehler(null);
           } else {
-            setJournalError(
-              result._tag === "failed"
-                ? result.message
-                : "The saved operation is missing. Check the target before starting again.",
-            );
+            setFehler({
+              message: result._tag === "failed" ? result.message : "Vorgang nicht gefunden.",
+              retry: "preflight",
+            });
           }
         })
-        .catch(() =>
-          setJournalError(
-            "The installation status is unavailable. The operation has not been restarted.",
-          ),
-        );
+        .catch(() => setFehler({ message: "Status nicht abrufbar.", retry: "preflight" }));
     }, 500);
     return () => window.clearInterval(timer);
   }, [operation]);
@@ -151,30 +167,10 @@ export function ComputerProvisioningSection({
 
   if (!supported)
     return fixedTargetKind ? (
-      <p role="alert" className="text-sm">
-        Zum Einrichten dieser Instanz wird die aktuelle Workjet-Desktop-App benötigt.
+      <p role="alert" className="text-xs text-destructive">
+        Nur mit der Desktop-App.
       </p>
     ) : null;
-
-  const inspect = async () => {
-    if (kind === "ssh" && host.trim() === "") return;
-    setBusy(true);
-    try {
-      const result = await bridge.inspectProvisioningHostKey!(target);
-      setHostKey(result);
-      if (result._tag === "failed") throw new Error(result.message);
-      setStage(result._tag === "not_required" ? "preflight" : "fingerprint");
-      if (result._tag === "not_required") await runPreflight(target, undefined);
-    } catch (error) {
-      toastManager.add({
-        type: "error",
-        title: "Could not inspect computer",
-        description: errorText(error),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const runPreflight = async (
     selectedTarget = target,
@@ -182,18 +178,52 @@ export function ComputerProvisioningSection({
   ) => {
     setBusy(true);
     setStage("preflight");
+    setFehler(null);
     try {
       const result = await bridge.preflightProvisioningTarget!({
         target: selectedTarget,
         ...(confirmedHostKeyFingerprint === undefined ? {} : { confirmedHostKeyFingerprint }),
       });
-      if (result._tag === "failed") throw new Error(result.message);
-      setPreflight(result.preflight);
-      setInstallWorkjet(result.preflight.graphicalSession);
-      setStage("components");
-    } catch (error) {
-      toastManager.add({ type: "error", title: "Preflight failed", description: errorText(error) });
-      setStage(kind === "ssh" ? "fingerprint" : "target");
+      const outcome = preflightOutcome(result);
+      if (outcome.next === "components") {
+        setPreflight(outcome.preflight);
+        setInstallWorkjet(outcome.preflight.graphicalSession);
+        setStage("components");
+        return;
+      }
+      setStage(outcome.next === "fingerprint" && hostKey?._tag === "ready" ? "fingerprint" : "preflight");
+      setFehler({
+        message: outcome.message,
+        retry: outcome.next === "fingerprint" ? "inspect" : "preflight",
+      });
+    } catch (failure) {
+      // Ein abgelaufener IPC-Aufruf ist kein Grund, zur Bestätigung zurückzuspringen.
+      setFehler({ message: errorText(failure), retry: "preflight" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inspect = async () => {
+    if (kind === "ssh" && host.trim() === "") return;
+    setBusy(true);
+    setFehler(null);
+    try {
+      const result = await bridge.inspectProvisioningHostKey!(target);
+      setHostKey(result);
+      if (result._tag === "failed") {
+        setStage("target");
+        setFehler({ message: result.message, retry: "inspect" });
+        return;
+      }
+      if (result._tag === "not_required") {
+        await runPreflight(target, undefined);
+        return;
+      }
+      setStage("fingerprint");
+    } catch (failure) {
+      setStage("target");
+      setFehler({ message: errorText(failure), retry: "inspect" });
     } finally {
       setBusy(false);
     }
@@ -202,6 +232,7 @@ export function ComputerProvisioningSection({
   const start = async (action: "install" | "start" = "install") => {
     if (!preflight) return;
     setBusy(true);
+    setFehler(null);
     try {
       const result = await bridge.startProvisioningOperation!({
         preflightId: preflight.preflightId,
@@ -210,300 +241,238 @@ export function ComputerProvisioningSection({
           action === "install" && installWorkjet ? ["ctox-backend", "workjet"] : ["ctox-backend"],
         channel: "stable",
       });
-      if (result._tag === "failed") throw new Error(result.message);
+      if (result._tag === "failed") {
+        setFehler({
+          message: result.message,
+          retry: action === "start" ? "start-backend" : "start",
+        });
+        return;
+      }
       setOperation(result.operation);
-      setSaved((entries) =>
-        [
-          { target: preflight.target, operation: result.operation },
-          ...entries.filter(
-            (entry) => entry.operation.operationId !== result.operation.operationId,
-          ),
-        ].slice(0, 50),
-      );
       setStage("operation");
-    } catch (error) {
-      toastManager.add({
-        type: "error",
-        title: action === "start" ? "Could not start backend" : "Could not start installation",
-        description: errorText(error),
-      });
+    } catch (failure) {
+      setFehler({ message: errorText(failure), retry: action === "start" ? "start-backend" : "start" });
     } finally {
       setBusy(false);
     }
   };
 
+  const retry = () => {
+    if (!fehler) return;
+    if (fehler.retry === "inspect") void inspect();
+    else if (fehler.retry === "preflight") void runPreflight();
+    else void start(fehler.retry === "start-backend" ? "start" : "install");
+  };
+
   const reset = () => {
     setStage("target");
     setHostKey(null);
-    setHostKeyConfirmed(false);
     setPreflight(null);
     setOperation(null);
+    setFehler(null);
   };
 
   return (
-    <SettingsSection title="Install on a computer">
-      <SettingsRow
-        title="Provision CTOX and Workjet"
-        description="Install a CTOX backend on this computer or an SSH target. Workjet can also be installed when a graphical session is available. Downloads happen on the target and are checksum-verified against the official signed release manifest."
-      >
-        <div className="max-w-2xl space-y-4 pb-4 pt-2">
-          {journalError ? (
-            <p role="alert" className="text-sm text-destructive">
-              {journalError}
-            </p>
+    <div className="space-y-3 text-[13.5px]" data-slot="computer-provisioning">
+      {stage === "target" ? (
+        <div className="flex flex-wrap items-end gap-2">
+          {!fixedTargetKind ? (
+            <div className="flex gap-1" role="radiogroup" aria-label="Ziel">
+              {(
+                [
+                  ["local", "Local"],
+                  ["ssh", "SSH"],
+                ] as const
+              ).map(([value, label]) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  role="radio"
+                  aria-checked={kind === value}
+                  variant={kind === value ? "default" : "outline"}
+                  onClick={() => setKind(value)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
           ) : null}
-          {stage === "target" ? (
+          {kind === "ssh" ? (
             <>
-              {saved.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Saved installations</p>
-                  {saved.map((entry) => (
-                    <Button
-                      key={entry.operation.operationId}
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setOperation(entry.operation);
-                        setStage("operation");
-                      }}
-                    >
-                      {entry.target._tag === "local" ? "This computer" : entry.target.ssh.hostname}
-                      {" · "}
-                      {entry.operation.state === "interrupted"
-                        ? "Result unknown — review target"
-                        : entry.operation.state}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
-              {!fixedTargetKind ? (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Button
-                    type="button"
-                    variant={kind === "local" ? "default" : "outline"}
-                    onClick={() => setKind("local")}
-                  >
-                    <LaptopIcon className="size-4" /> This computer
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={kind === "ssh" ? "default" : "outline"}
-                    onClick={() => setKind("ssh")}
-                  >
-                    <ServerCogIcon className="size-4" /> Remote over SSH
-                  </Button>
-                </div>
-              ) : null}
-              {kind === "ssh" ? (
-                <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-3">
-                  <label className="space-y-1 text-xs font-medium sm:col-span-3">
-                    Host or IP address
-                    <Input
-                      nativeInput
-                      value={host}
-                      onChange={(event) => setHost(event.target.value)}
-                      placeholder="gpu3.example.net"
-                      autoComplete="off"
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs font-medium sm:col-span-2">
-                    User
-                    <Input
-                      nativeInput
-                      value={username}
-                      onChange={(event) => setUsername(event.target.value)}
-                      placeholder="operator"
-                      autoComplete="username"
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs font-medium">
-                    Port
-                    <Input
-                      nativeInput
-                      value={port}
-                      onChange={(event) => setPort(event.target.value)}
-                      inputMode="numeric"
-                    />
-                  </label>
-                  <p className="text-xs text-muted-foreground sm:col-span-3">
-                    Passwords and SSH passphrases are requested by the desktop main process only and
-                    are never stored.
-                  </p>
-                </div>
-              ) : null}
-              <Button
-                type="button"
-                onClick={() => void inspect()}
-                disabled={busy || (kind === "ssh" && host.trim() === "")}
-              >
-                {busy ? <Spinner className="size-4" /> : <ShieldCheckIcon className="size-4" />}
-                {kind === "ssh" ? "Inspect host key" : "Run preflight"}
-              </Button>
+              <label className="grid min-w-40 flex-1 gap-1 text-xs text-muted-foreground">
+                Adresse
+                <Input
+                  nativeInput
+                  size="sm"
+                  value={host}
+                  onChange={(event) => setHost(event.target.value)}
+                  placeholder="gpu3 oder 100.x.x.x"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="grid w-32 gap-1 text-xs text-muted-foreground">
+                Benutzer
+                <Input
+                  nativeInput
+                  size="sm"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                />
+              </label>
+              <label className="grid w-20 gap-1 text-xs text-muted-foreground">
+                Port
+                <Input
+                  nativeInput
+                  size="sm"
+                  value={port}
+                  onChange={(event) => setPort(event.target.value)}
+                  inputMode="numeric"
+                />
+              </label>
             </>
           ) : null}
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void inspect()}
+            disabled={busy || (kind === "ssh" && host.trim() === "")}
+          >
+            {busy ? <Spinner className="size-3.5" /> : null}
+            Prüfen
+          </Button>
+        </div>
+      ) : null}
 
-          {stage === "fingerprint" && hostKey?._tag === "ready" ? (
-            <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-              <div>
-                <p className="text-sm font-medium">Confirm SSH host fingerprint</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Compare this fingerprint with a trusted source for the target before continuing.
-                </p>
-              </div>
-              <code className="block select-all break-all rounded bg-muted p-3 text-xs">
-                {hostKey.algorithm} · {hostKey.fingerprint}
-              </code>
-              <label className="flex items-start gap-2 text-sm">
-                <Checkbox
-                  checked={hostKeyConfirmed}
-                  onCheckedChange={(checked) => setHostKeyConfirmed(checked === true)}
-                />
-                I independently verified this exact fingerprint.
-              </label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  onClick={() => void runPreflight()}
-                  disabled={!hostKeyConfirmed || busy}
-                >
-                  {busy ? <Spinner className="size-4" /> : <ShieldCheckIcon className="size-4" />}{" "}
-                  Confirm and connect
-                </Button>
-                <Button type="button" variant="outline" disabled={busy} onClick={reset}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : null}
+      {stage === "fingerprint" && hostKey?._tag === "ready" ? (
+        <div className="flex flex-wrap items-center gap-2" data-slot="host-key-confirm">
+          <span className="text-muted-foreground">Host-Schlüssel</span>
+          <code className="min-w-0 select-all truncate rounded bg-muted px-1.5 py-0.5 text-xs">
+            {hostKey.algorithm} {hostKey.fingerprint}
+          </code>
+          <Button type="button" size="xs" disabled={busy} onClick={() => void runPreflight()}>
+            {busy ? <Spinner className="size-3" /> : null}
+            Bestätigen
+          </Button>
+          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={reset}>
+            Abbrechen
+          </Button>
+        </div>
+      ) : null}
 
-          {stage === "preflight" ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner className="size-4" /> Checking platform, internet, administrator rights and
-              graphical session…
-            </div>
-          ) : null}
+      {stage === "preflight" && busy ? (
+        <div className="flex items-center gap-2 text-muted-foreground" role="status">
+          <Spinner className="size-3.5" /> Prüft Plattform, Internet, Rechte…
+        </div>
+      ) : null}
 
-          {stage === "components" && preflight ? (
-            <div className="space-y-4">
-              {preflight.ctoxInstalledVersion !== null ? (
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-sm font-medium">CTOX is already installed</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Start the existing backend to reconnect projects on this computer.
-                  </p>
-                  <Button
-                    type="button"
-                    className="mt-3"
-                    disabled={busy}
-                    onClick={() => void start("start")}
-                  >
-                    Start backend
-                  </Button>
-                </div>
-              ) : null}
-              <div className="rounded-lg border border-border p-3 text-sm">
-                <p className="font-medium">
-                  {preflight.platform} · {preflight.architecture}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Internet ready · Administrator ready ·{" "}
-                  {preflight.graphicalSession ? "Graphical session detected" : "Headless target"}
-                </p>
-                {preflight.warnings.map((warning) => (
-                  <p key={warning} className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                    {warning}
-                  </p>
-                ))}
-              </div>
-              <label className="flex items-start gap-2 text-sm">
-                <Checkbox checked disabled />
-                <span>
-                  <span className="font-medium">CTOX backend</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Required for Business OS sync on this computer.
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 text-sm">
-                <Checkbox
-                  checked={installWorkjet}
-                  disabled={!preflight.graphicalSession}
-                  onCheckedChange={(checked) => setInstallWorkjet(checked === true)}
-                />
-                <span>
-                  <span className="font-medium">Workjet desktop app</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Optional; installed without launching it. Unavailable on headless computers.
-                  </span>
-                </span>
-              </label>
-              <div className="flex gap-2">
-                <Button type="button" onClick={() => void start()} disabled={busy}>
-                  {busy ? <Spinner className="size-4" /> : <ServerCogIcon className="size-4" />}{" "}
-                  Install selected components
-                </Button>
-                <Button type="button" variant="outline" disabled={busy} onClick={reset}>
-                  Back
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {stage === "operation" && operation ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                {operation.state === "completed" ? (
-                  <CheckCircle2Icon className="size-4 text-emerald-500" />
-                ) : operation.state !== "running" && operation.state !== "queued" ? (
-                  <span className="size-2 rounded-full bg-destructive" />
-                ) : (
-                  <Spinner className="size-4" />
-                )}
-                {stageLabel(operation)}
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{ width: `${operation.events.at(-1)?.percent ?? 0}%` }}
-                />
-              </div>
-              <div
-                className="max-h-48 space-y-1 overflow-auto rounded-lg border border-border p-3"
-                aria-live="polite"
+      {stage === "components" && preflight ? (
+        <div className="space-y-2" data-slot="provisioning-components">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="rounded bg-muted px-1.5 py-0.5">
+              {preflight.platform} · {preflight.architecture}
+            </span>
+            <span className="rounded bg-muted px-1.5 py-0.5">
+              {preflight.graphicalSession ? "Desktop" : "Headless"}
+            </span>
+            {preflight.ctoxInstalledVersion !== null ? (
+              <span className="rounded bg-muted px-1.5 py-0.5">
+                CTOX {preflight.ctoxInstalledVersion}
+              </span>
+            ) : null}
+          </div>
+          {preflight.warnings.map((warning) => (
+            <p key={warning} className="text-xs text-amber-600 dark:text-amber-400">
+              {warning}
+            </p>
+          ))}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <label className="flex items-center gap-2">
+              <Checkbox checked disabled />
+              CTOX
+            </label>
+            <label className="flex items-center gap-2 has-disabled:opacity-60">
+              <Checkbox
+                checked={installWorkjet}
+                disabled={!preflight.graphicalSession}
+                onCheckedChange={(checked) => setInstallWorkjet(checked === true)}
+              />
+              Workjet
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={() => void start()} disabled={busy}>
+              {busy ? <Spinner className="size-3.5" /> : null}
+              Installieren
+            </Button>
+            {preflight.ctoxInstalledVersion !== null ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void start("start")}
               >
-                {operation.events.map((event) => (
-                  <p key={event.sequence} className="text-xs">
-                    <span className="mr-2 text-muted-foreground">{event.percent}%</span>
-                    {event.message}
-                  </p>
-                ))}
-              </div>
-              {operation.state === "completed" ? (
-                <p className="text-xs text-muted-foreground">
-                  {operation.action === "start"
-                    ? "The backend has started. Select it in Business OS settings to connect."
-                    : "CTOX is installed and paired with this Workjet profile. Select the backend in Business OS settings to connect."}
-                </p>
-              ) : null}
-              {operation.state === "interrupted" ? (
-                <p role="alert" className="text-sm text-destructive">
-                  The target may already have changed. Verify its installation and service state
-                  before running a new preflight. This operation will not be repeated automatically.
-                </p>
-              ) : null}
-              {operation.state !== "running" && operation.state !== "queued" ? (
-                <Button type="button" variant="outline" onClick={reset}>
-                  <RefreshCwIcon className="size-4" /> Provision another computer
-                </Button>
-              ) : null}
-            </div>
+                CTOX starten
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={reset}>
+              Abbrechen
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {stage === "operation" && operation ? (
+        <div className="space-y-2" data-slot="provisioning-operation">
+          <div className="flex items-center gap-2 font-medium">
+            {operation.state === "completed" ? (
+              <CheckCircle2Icon className="size-4 text-emerald-500" />
+            ) : operation.state !== "running" && operation.state !== "queued" ? (
+              <span className="size-2 rounded-full bg-destructive" />
+            ) : (
+              <Spinner className="size-4" />
+            )}
+            {stageLabel(operation)}
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{ width: `${operation.events.at(-1)?.percent ?? 0}%` }}
+            />
+          </div>
+          <ol className="max-h-40 space-y-0.5 overflow-auto text-xs" aria-live="polite">
+            {operation.events.map((event) => (
+              <li key={event.sequence}>
+                <span className="mr-2 text-muted-foreground">{event.percent}%</span>
+                {event.message}
+              </li>
+            ))}
+          </ol>
+          {operation.state === "interrupted" ? (
+            <p role="alert" className="text-xs text-destructive">
+              Ergebnis unbekannt. Zustand auf dem Rechner prüfen.
+            </p>
+          ) : null}
+          {operation.state !== "running" && operation.state !== "queued" ? (
+            <Button type="button" size="sm" variant="outline" onClick={reset}>
+              Neu prüfen
+            </Button>
           ) : null}
         </div>
-      </SettingsRow>
-      <SettingsRow
-        title="Business data stays in sync"
-        description="Provisioning uses HTTP only for signed release metadata, health and pairing control. Business OS records are never proxied over HTTP."
-      />
-    </SettingsSection>
+      ) : null}
+
+      {fehler ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs" data-slot="provisioning-error">
+          <span role="alert" className="min-w-0 text-destructive">
+            {fehler.message}
+          </span>
+          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={retry}>
+            Erneut versuchen
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

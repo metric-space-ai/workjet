@@ -40,11 +40,15 @@ export function normalizeModelsQuota(
       if (provider === "minimax" && direct && source?.status === 2) remaining = 0;
       if (remaining !== null && (!Number.isFinite(remaining) || remaining < 0)) remaining = null;
       // Undo the pinned host's separate weekly boost scaling, keeping 100% = unused.
-      if (!source && provider === "minimax" && remaining !== null && window.boostPermille !== null) {
-        remaining = window.boostPermille > 0 ? remaining * 1000 / window.boostPermille : null;
+      if (
+        !source &&
+        provider === "minimax" &&
+        remaining !== null &&
+        window.boostPermille !== null
+      ) {
+        remaining = window.boostPermille > 0 ? (remaining * 1000) / window.boostPermille : null;
       }
       if (remaining !== null && remaining > 100) remaining = null;
-
 
       let seconds = source?.windowSeconds ?? null;
       // Qualified Z.ai response pairs; unknown encodings never use reset proximity.

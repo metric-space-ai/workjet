@@ -250,8 +250,13 @@ function resetLabel(at: number | null) {
       });
 }
 
-function AccountLimits({ health, provider }: { readonly health: ModelsAccountHealth | undefined; readonly provider: WorkjetGatewayProvider }) {
-
+function AccountLimits({
+  health,
+  provider,
+}: {
+  readonly health: ModelsAccountHealth | undefined;
+  readonly provider: WorkjetGatewayProvider;
+}) {
   if (health?.balance) {
     const balance = health.balance;
     return (
@@ -278,11 +283,10 @@ function AccountLimits({ health, provider }: { readonly health: ModelsAccountHea
           provider === "xai" || provider === "kimi"
             ? "Anbieter meldet kein Limit"
             : health?.quotaRefreshing
-
-            ? "Checking provider limits"
-            : health?.quotaError
-              ? "Provider limits could not be refreshed"
-              : "Anbieter meldet kein Limit"
+              ? "Checking provider limits"
+              : health?.quotaError
+                ? "Provider limits could not be refreshed"
+                : "Anbieter meldet kein Limit"
         }
       >
         —
@@ -322,7 +326,16 @@ function AccountLimits({ health, provider }: { readonly health: ModelsAccountHea
                 />
               </span>
             )}
-            <span className={cn("shrink-0", window.tone === "red" ? "text-red-500" : window.tone === "yellow" ? "text-amber-500" : null)}>
+            <span
+              className={cn(
+                "shrink-0",
+                window.tone === "red"
+                  ? "text-red-500"
+                  : window.tone === "yellow"
+                    ? "text-amber-500"
+                    : null,
+              )}
+            >
               {window.notInPlan
                 ? "No plan"
                 : window.unlimited

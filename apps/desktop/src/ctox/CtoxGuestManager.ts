@@ -36,6 +36,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { sanitizeProjectCommandTiming } from "./projectCommandTiming.ts";
 import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
@@ -477,9 +478,12 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
     }
     return { status: "unsupported" };
   }
+  const sanitizeTiming = (${sanitizeProjectCommandTiming.toString()});
+  let commandTiming;
+  const observeTiming = (sample) => { commandTiming = sanitizeTiming(sample); };
   try {
-    const result = await control(${JSON.stringify(request)});
-    return { status: "completed", result };
+    const result = await control(${JSON.stringify(request)}, { onCommandTiming: observeTiming });
+    return { status: "completed", result, ...(commandTiming ? { commandTiming } : {}) };
   } catch (error) {
     // Electron erases a rejected renderer promise's error details.
     // Only fixed reasons cross this boundary, never messages or request data.
@@ -507,6 +511,7 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
         ? "native_request" : undefined;
     return {
       status: "failed",
+      ...(commandTiming ? { commandTiming } : {}),
       ...(reason === undefined ? {} : { diagnostic: {
         stage: "execute", reason, ...(projectPhase === undefined ? {} : { phase: projectPhase }),
       } }),
@@ -2151,6 +2156,28 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "not_active" };
         }
         const raw = pending.value;
+        const commandTiming = sanitizeProjectCommandTiming(
+          typeof raw === "object" && raw !== null
+            ? (raw as { readonly commandTiming?: unknown }).commandTiming
+            : undefined,
+        );
+        if (commandTiming) {
+          yield* Effect.annotateCurrentSpan({
+            guestCommandId: commandTiming.commandId,
+            ...(commandTiming.pendingStage
+              ? {
+                  "command.pending.stage": commandTiming.pendingStage,
+                  "command.pending.ms": commandTiming.pendingMs,
+                }
+              : {}),
+            ...Object.fromEntries(
+              Object.entries(commandTiming.stagesMs).map(([stage, duration]) => [
+                `command.stage.${stage}.ms`,
+                duration,
+              ]),
+            ),
+          });
+        }
         const status =
           typeof raw === "object" && raw !== null
             ? (raw as { readonly status?: unknown }).status

@@ -36,7 +36,7 @@ describe("compact project gallery", () => {
     expect(markup).not.toContain("Hide preview");
     expect(markup).not.toContain("Open website");
     expect(markup).not.toContain("If the website blocks");
-    expect(markup).not.toContain("Not configured");
+    expect(markup).not.toContain("Nicht eingerichtet");
     expect(markup).toContain("Users");
     expect(markup).toContain("Queries");
     expect(markup).toContain("Latency");

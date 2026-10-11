@@ -86,10 +86,10 @@ export interface PullRequestTabStatus {
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: "Browser previews are only available in the Workjet desktop app.",
-  files: "Files are only available when a project is open.",
-  diff: "Diff is only available for server threads in Git repositories.",
-  pullRequest: "This thread's branch has no pull request yet.",
+  browser: "Nur in der Desktop-App",
+  files: "Nur mit offenem Projekt",
+  diff: "Nur für Git-Repositorys",
+  pullRequest: "Noch kein Pull Request",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -106,10 +106,10 @@ const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
 
 /** One-line unavailability hints for the empty-state cards. */
 const SURFACE_UNAVAILABLE_HINTS = {
-  browser: "Only available in the desktop app.",
-  files: "Available when a project is open.",
-  diff: "Available for Git repositories.",
-  pullRequest: "No pull request on this branch yet.",
+  browser: "Nur in der Desktop-App",
+  files: "Nur mit offenem Projekt",
+  diff: "Nur für Git-Repositorys",
+  pullRequest: "Noch kein Pull Request",
 } as const;
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
@@ -167,7 +167,6 @@ function RightPanelEmptyState(props: {
     [
       {
         label: "Browser",
-        description: "Open a local app or URL.",
         icon: Globe2,
         shortcut: "B",
         available: props.browserAvailable,
@@ -176,8 +175,7 @@ function RightPanelEmptyState(props: {
         badgeCount: 0,
       },
       {
-        label: "Files",
-        description: "Browse and read workspace files.",
+        label: "Dateien",
         icon: Files,
         shortcut: "F",
         available: props.filesAvailable,
@@ -186,8 +184,7 @@ function RightPanelEmptyState(props: {
         badgeCount: 0,
       },
       {
-        label: "Diff",
-        description: "Review changes in this thread.",
+        label: "Änderungen",
         icon: FileDiff,
         shortcut: "D",
         available: props.diffAvailable,
@@ -196,8 +193,7 @@ function RightPanelEmptyState(props: {
         badgeCount: 0,
       },
       {
-        label: "Pull request",
-        description: "Open this branch's pull request.",
+        label: "Pull Request",
         icon: GitPullRequest,
         shortcut: "P",
         available: props.pullRequestAvailable,
@@ -310,7 +306,7 @@ function RightPanelEmptyState(props: {
       ref={focusOnMount}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      aria-label="Open a surface"
+      aria-label="Bereich öffnen"
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
         "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 pt-6 outline-none",
@@ -321,10 +317,7 @@ function RightPanelEmptyState(props: {
     >
       <div className="relative w-full max-w-lg">
         <div className="absolute inset-x-0 bottom-full mb-5 text-center">
-          <h3 className="font-medium text-foreground text-sm">Open a surface</h3>
-          <p className="mt-1 text-muted-foreground text-xs">
-            Choose what to show in the right panel.
-          </p>
+          <h3 className="font-medium text-foreground text-sm">Bereich öffnen</h3>
         </div>
         <div className="grid grid-cols-2 gap-2">
           {actions.map((action) =>
@@ -349,9 +342,6 @@ function RightPanelEmptyState(props: {
                 <span className="flex items-center gap-2 pe-8">
                   {actionIcon(action)}
                   <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.description}
                 </span>
               </button>
             ) : (
@@ -506,23 +496,23 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
       if (surface.kind === "file") {
-        items.push({ id: "copy-path", label: "Copy path" });
+        items.push({ id: "copy-path", label: "Pfad kopieren" });
       }
       items.push(
-        { id: "close", label: "Close" },
+        { id: "close", label: "Schließen" },
         {
           id: "close-others",
-          label: "Close others",
+          label: "Andere schließen",
           disabled: props.surfaces.length <= 1,
         },
         {
           id: "close-to-right",
-          label: "Close to the right",
+          label: "Rechts schließen",
           disabled: surfaceIndex >= props.surfaces.length - 1,
         },
         {
           id: "close-all",
-          label: "Close all",
+          label: "Alle schließen",
           disabled: props.surfaces.length === 0,
         },
       );
@@ -615,7 +605,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <button
                     type="button"
                     className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
-                    aria-label={`Close ${title}`}
+                    aria-label={`${title} schließen`}
                     onClick={() => props.onCloseSurface(surface)}
                   >
                     <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
@@ -656,7 +646,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
               <Menu>
                 <MenuTrigger
                   className="cursor-pointer relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label="Add panel surface"
+                  aria-label="Bereich hinzufügen"
                 >
                   <Plus className="size-3.5" />
                 </MenuTrigger>
@@ -677,7 +667,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     onClick={props.onAddFiles}
                   >
                     <Files />
-                    Files
+                    Dateien
                   </SurfaceMenuItem>
                   <SurfaceMenuItem
                     available={props.diffAvailable}
@@ -685,7 +675,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     onClick={props.onAddDiff}
                   >
                     <FileDiff />
-                    Diff
+                    Änderungen
                   </SurfaceMenuItem>
                   <SurfaceMenuItem
                     available={props.pullRequestAvailable}
@@ -693,7 +683,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     onClick={props.onAddPullRequest}
                   >
                     <GitPullRequest />
-                    Pull request
+                    Pull Request
                   </SurfaceMenuItem>
                 </MenuPopup>
               </Menu>

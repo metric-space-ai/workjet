@@ -209,9 +209,7 @@ export function ProjectExitModelReport({
           </dl>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <caption className="sr-only">
-                Scenario contributions to expected exit proceeds
-              </caption>
+              <caption className="sr-only">Szenariobeiträge zum Exit-Erlös</caption>
               <thead className="text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Szenario</th>
@@ -250,7 +248,7 @@ export function ProjectExitModelReport({
           </summary>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <caption className="sr-only">Scenario enterprise value, cash and financing</caption>
+              <caption className="sr-only">Szenarien: Wert, Cash, Finanzierung</caption>
               <thead className="text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Szenario</th>
@@ -272,9 +270,7 @@ export function ProjectExitModelReport({
                     </td>
                     <td className="px-2 whitespace-nowrap">{formatExitEur(item.funding_eur)}</td>
                     <td className="pl-2 whitespace-nowrap">
-                      {item.cash_failure_month === null
-                        ? "None"
-                        : "Month " + item.cash_failure_month}
+                      {item.cash_failure_month === null ? "—" : "Monat " + item.cash_failure_month}
                     </td>
                   </tr>
                 ))}
@@ -301,7 +297,7 @@ export function ProjectExitModelReport({
                   label="Vergleich"
                   value={
                     proposal.comparison_mode === "equal_resources"
-                      ? "Equal resources"
+                      ? "Gleiche Ressourcen"
                       : "Projektspezifisch"
                   }
                 />
@@ -321,7 +317,7 @@ export function ProjectExitModelReport({
                   label="Vergleich"
                   value={
                     plan.comparison_mode === "equal_resources"
-                      ? "Equal resources"
+                      ? "Gleiche Ressourcen"
                       : "Projektspezifisch"
                   }
                 />
@@ -355,13 +351,13 @@ export function ProjectExitModelReport({
                     )}
                     <span className="mt-0.5 block text-xs text-muted-foreground">
                       {source.kind === "assumed"
-                        ? "Assumption"
+                        ? "Annahme"
                         : source.kind === "derived"
-                          ? "Derived"
-                          : "Observed"}
+                          ? "Abgeleitet"
+                          : "Beobachtet"}
                       {" · " +
                         formatExitDate(source.observed_at) +
-                        " · valid through " +
+                        " · gültig bis " +
                         formatExitDate(source.valid_until)}
                     </span>
                   </li>
@@ -375,19 +371,17 @@ export function ProjectExitModelReport({
       {current?.history.length ? (
         <details className="mt-4 border-t border-border pt-3">
           <summary className="cursor-pointer text-sm font-medium">
-            Assessment history · {current.history.length}
+            Bewertungsverlauf · {current.history.length}
           </summary>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <caption className="sr-only">
-                Retained assessments with their original five-year horizons
-              </caption>
+              <caption className="sr-only">Frühere Bewertungen</caption>
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-2 pr-3 font-medium">Assessed</th>
-                  <th className="px-2 font-medium">Exit date</th>
-                  <th className="px-2 font-medium">Status</th>
-                  <th className="pl-2 font-medium">Expected proceeds</th>
+                  <th className="py-2 pr-3 font-medium">Bewertet</th>
+                  <th className="px-2 font-medium">Exit-Datum</th>
+                  <th className="px-2 font-medium">Zustand</th>
+                  <th className="pl-2 font-medium">Erwarteter Erlös</th>
                 </tr>
               </thead>
               <tbody>

@@ -342,7 +342,7 @@ export const VENDORED_NATIVE_COMPONENTS: readonly VendoredComponent[] = [
   {
     path: "native/provider-gateway-workjet-host",
     component: "workjet-provider-gateway-host",
-    version: "0.1.0",
+    version: "0.1.3",
     license: "MIT OR AGPL-3.0-only",
     licenseFiles: [
       "native/provider-gateway/LICENSE.MIT",

@@ -184,8 +184,7 @@ function LoadingStatusRow({
   }, []);
   return (
     <SettingsRow
-      title={title}
-      {...(slow ? { status: slowStatus } : {})}
+      title={slow ? slowStatus : title}
       control={
         slow ? (
           <Button size="sm" variant="outline" onClick={onRetry}>

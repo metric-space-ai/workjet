@@ -485,6 +485,17 @@ export function applyCtoxGuestStateEvent(
   return next;
 }
 
+export function useCtoxInstanceState(
+  instanceId: string | null,
+): CtoxManagedInstance["workjetState"] {
+  const mode = useContext(CtoxModeContext);
+  return mode?.discovery !== undefined &&
+    mode.discovery !== "loading" &&
+    mode.discovery._tag === "ready"
+    ? mode.discovery.instances.find((instance) => instance.id === instanceId)?.workjetState
+    : undefined;
+}
+
 export function useCtoxMode(): CtoxModeContextValue {
   const value = useContext(CtoxModeContext);
   if (value === null) throw new Error("CTOX mode shell must be rendered inside CtoxModeProvider.");

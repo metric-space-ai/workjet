@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 import { vi } from "vite-plus/test";
 vi.mock("electron", () => ({}));
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -35,7 +35,7 @@ describe("instance preferences", () => {
         const directory = yield* fs.makeTempDirectoryScoped({ prefix: "instance-preferences-" });
         const projects = path.join(directory, "state.sqlite");
         yield* Effect.sync(() => {
-          const database = new DatabaseSync(projects);
+          const database = new NodeSqlite.DatabaseSync(projects);
           try {
             database.exec(
               "CREATE TABLE projection_projects (id TEXT PRIMARY KEY); CREATE TABLE projection_threads (id TEXT PRIMARY KEY, project_id TEXT); INSERT INTO projection_projects VALUES ('fixture-project'); INSERT INTO projection_threads VALUES ('fixture-thread', 'fixture-project');",
@@ -69,7 +69,7 @@ describe("instance preferences", () => {
         assert.equal((yield* restored.read)[0]?.workjetState, "enabled");
         assert.deepEqual(yield* fs.readFile(projects), before);
         yield* Effect.sync(() => {
-          const database = new DatabaseSync(projects, { readOnly: true });
+          const database = new NodeSqlite.DatabaseSync(projects, { readOnly: true });
           try {
             assert.equal(
               database.prepare("SELECT id FROM projection_projects").get()?.id,

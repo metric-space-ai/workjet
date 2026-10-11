@@ -7,6 +7,7 @@ const Document = Schema.Struct({
   instances: Schema.Array(CtoxManagedInstance).check(Schema.isMaxLength(1000)),
 });
 const Json = Schema.fromJsonString(Document);
+const encodeDocument = Schema.encodeEffect(Json);
 export class PreferenceError extends Schema.TaggedErrorClass<PreferenceError>()(
   "CtoxInstancePreferenceError",
   { code: Schema.Literal("persistence_failed") },
@@ -44,7 +45,7 @@ export const make = Effect.gen(function* () {
   );
   const write = Effect.fn("CtoxInstancePreferences.write")(
     function* (instances: readonly Instance[]) {
-      const contents = yield* Schema.encodeEffect(Json)({ version: 1, instances });
+      const contents = yield* encodeDocument({ version: 1, instances });
       const temporary = file + "." + process.pid + ".tmp";
       yield* fs.makeDirectory(directory, { recursive: true });
       yield* fs.writeFileString(temporary, contents + "\n", { mode: 0o600 });
@@ -65,11 +66,11 @@ export const make = Effect.gen(function* () {
               workjetState: rows.get(instance.id)?.workjetState ?? "enabled",
             });
           const next = [...rows.values()];
-          const previousJson = yield* Schema.encodeEffect(Json)({
+          const previousJson = yield* encodeDocument({
             version: 1,
             instances: previous,
           }).pipe(Effect.mapError(() => new PreferenceError({ code: "persistence_failed" })));
-          const nextJson = yield* Schema.encodeEffect(Json)({ version: 1, instances: next }).pipe(
+          const nextJson = yield* encodeDocument({ version: 1, instances: next }).pipe(
             Effect.mapError(() => new PreferenceError({ code: "persistence_failed" })),
           );
           if (previousJson !== nextJson) yield* write(next);

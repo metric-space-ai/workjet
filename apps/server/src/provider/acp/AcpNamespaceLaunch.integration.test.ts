@@ -32,7 +32,10 @@ const fixture = async () => {
     await NodeFSP.mkdir(home, { mode: 0o700 });
     const script = NodePath.join(runtime, "agent.py");
     await NodeFSP.copyFile(agent, script);
-    NodeChildProcess.execFileSync("/usr/bin/git", ["init", workspace], { timeout: 5000, stdio: "pipe" });
+    NodeChildProcess.execFileSync("/usr/bin/git", ["init", workspace], {
+      timeout: 5000,
+      stdio: "pipe",
+    });
     const identity = async (path: string) => {
       const stat = await NodeFSP.stat(path, { bigint: true });
       return { device: String(stat.dev), inode: String(stat.ino) };
@@ -75,79 +78,84 @@ const fixture = async () => {
   }
 };
 
-describe("ACP Linux namespace execution", () => {
-  // CI without the Linux helper does not assert the kernel boundary. The gpu3 qualification builds it.
-  it.runIf(hostPlatform === "linux" && helper !== undefined).effect(
-    "starts the captured process and rejects daemon file/terminal callbacks across two turns",
-    () =>
-      Effect.acquireUseRelease(
-        Effect.tryPromise(fixture),
-        (owned) =>
-          Effect.gen(function* () {
-            let callbacks = 0;
-            return yield* Effect.gen(function* () {
-              const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
-              yield* runtime.handleReadTextFile(() =>
-                Effect.sync(() => {
-                  callbacks++;
-                  return { content: "host-secret" };
-                }),
-              );
-              yield* runtime.handleWriteTextFile(() =>
-                Effect.sync(() => {
-                  callbacks++;
-                  return {};
-                }),
-              );
-              yield* runtime.handleCreateTerminal(() =>
-                Effect.sync(() => {
-                  callbacks++;
-                  return { terminalId: "host-terminal" };
-                }),
-              );
-              expect((yield* runtime.start()).sessionId).toBe("namespace-session");
-              for (const text of ["first", "follow-up"]) {
-                expect(yield* runtime.prompt({ prompt: [{ type: "text", text }] })).toMatchObject({
-                  stopReason: "end_turn",
-                });
-              }
-              expect(callbacks).toBe(0);
-              expect(
-                yield* Effect.tryPromise(() =>
-                  NodeFSP.readFile(NodePath.join(owned.home, "acp-turns"), "utf8"),
-                ),
-              ).toBe("2");
-            }).pipe(
-              Effect.provide(
-                AcpSessionRuntime.layer({
-                  spawn: {
-                    command: "/usr/bin/python3",
-                    args: [owned.script],
-                    cwd: owned.workspace,
-                    env: {
-                      WORKJET_SOURCE_ISOLATED: "true",
-                      PATH: "/usr/bin:/bin",
-                      HOME: owned.home,
+describe.runIf(hostPlatform === "linux" && helper !== undefined)(
+  "ACP Linux namespace execution",
+  () => {
+    // CI without the Linux helper does not assert the kernel boundary. The gpu3 qualification builds it.
+    it.effect(
+      "starts the captured process and rejects daemon file/terminal callbacks across two turns",
+      () =>
+        Effect.acquireUseRelease(
+          Effect.tryPromise(fixture),
+          (owned) =>
+            Effect.gen(function* () {
+              let callbacks = 0;
+              return yield* Effect.gen(function* () {
+                const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+                yield* runtime.handleReadTextFile(() =>
+                  Effect.sync(() => {
+                    callbacks++;
+                    return { content: "host-secret" };
+                  }),
+                );
+                yield* runtime.handleWriteTextFile(() =>
+                  Effect.sync(() => {
+                    callbacks++;
+                    return {};
+                  }),
+                );
+                yield* runtime.handleCreateTerminal(() =>
+                  Effect.sync(() => {
+                    callbacks++;
+                    return { terminalId: "host-terminal" };
+                  }),
+                );
+                expect((yield* runtime.start()).sessionId).toBe("namespace-session");
+                for (const text of ["first", "follow-up"]) {
+                  expect(yield* runtime.prompt({ prompt: [{ type: "text", text }] })).toMatchObject(
+                    {
+                      stopReason: "end_turn",
                     },
-                  },
-                  namespaceCapture: owned.capture,
-                  cwd: owned.workspace,
-                  clientInfo: { name: "workjet-test", version: "0" },
-                  authMethodId: "test",
-                  clientCapabilities: {
-                    fs: { readTextFile: true, writeTextFile: true },
-                    terminal: true,
-                  },
-                }),
-              ),
-              Effect.scoped,
-            );
-          }),
-        (owned) => Effect.promise(owned.close),
-      ).pipe(
-        Effect.provideService(HostProcessPlatform, hostPlatform),
-        Effect.provide(NodeServices.layer),
-      ),
-    { timeout: 15000 },
-  );
-});
+                  );
+                }
+                expect(callbacks).toBe(0);
+                expect(
+                  yield* Effect.tryPromise(() =>
+                    NodeFSP.readFile(NodePath.join(owned.home, "acp-turns"), "utf8"),
+                  ),
+                ).toBe("2");
+              }).pipe(
+                Effect.provide(
+                  AcpSessionRuntime.layer({
+                    spawn: {
+                      command: "/usr/bin/python3",
+                      args: [owned.script],
+                      cwd: owned.workspace,
+                      env: {
+                        WORKJET_SOURCE_ISOLATED: "true",
+                        PATH: "/usr/bin:/bin",
+                        HOME: owned.home,
+                      },
+                    },
+                    namespaceCapture: owned.capture,
+                    cwd: owned.workspace,
+                    clientInfo: { name: "workjet-test", version: "0" },
+                    authMethodId: "test",
+                    clientCapabilities: {
+                      fs: { readTextFile: true, writeTextFile: true },
+                      terminal: true,
+                    },
+                  }),
+                ),
+                Effect.scoped,
+              );
+            }),
+          (owned) => Effect.promise(owned.close),
+        ).pipe(
+          Effect.provideService(HostProcessPlatform, hostPlatform),
+          Effect.provide(NodeServices.layer),
+        ),
+      { timeout: 15000 },
+    );
+  },
+);

@@ -46,7 +46,14 @@ it("rejects linked metadata and a foreign cwd before starting a process", () => 
   expect(() =>
     workerNamespaceSpawnInput(spawn, {
       ...capture,
-      worktree: { ...capture.worktree, kind: undefined },
+      worktree: {
+        worktreePath: capture.worktree.worktreePath,
+        worktreeDev: capture.worktree.worktreeDev,
+        worktreeIno: capture.worktree.worktreeIno,
+        adminPath: capture.worktree.adminPath,
+        adminDev: capture.worktree.adminDev,
+        adminIno: capture.worktree.adminIno,
+      },
     }),
   ).toThrow("custody");
   expect(() => workerNamespaceSpawnInput({ ...spawn, cwd: "/foreign" }, capture)).toThrow(

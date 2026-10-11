@@ -1,9 +1,14 @@
+import type { ProjectContentMatch } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import commandPaletteSource from "../CommandPalette.tsx?raw";
 import sidebarSource from "../Sidebar.tsx?raw";
-import { SidebarSearchModeSegment, sidebarSearchPlaceholder } from "./SidebarProjectSearch";
+import {
+  SidebarSearchModeSegment,
+  sidebarSearchPlaceholder,
+  withoutIndentation,
+} from "./SidebarProjectSearch";
 
 describe("inline file and content search in the sidebar", () => {
   it("names each mode in German and keeps the thread placeholder", () => {
@@ -29,5 +34,20 @@ describe("inline file and content search in the sidebar", () => {
     expect(commandPaletteSource).not.toContain("ProjectContentSearchDialog");
     expect(sidebarSource).toContain("<SidebarProjectSearchResults");
     expect(sidebarSource).toContain("onSidebarSearchMode(setSearchMode)");
+  });
+});
+
+describe("content results in the narrow sidebar", () => {
+  it("drops indentation and shifts the match ranges with it", () => {
+    const match = {
+      path: "a.ts",
+      lineNumber: 3,
+      lineContent: "    const x = 1;",
+      matchRanges: [{ start: 10, end: 11 }],
+    } as unknown as ProjectContentMatch;
+    const trimmed = withoutIndentation(match);
+    expect(trimmed.lineContent).toBe("const x = 1;");
+    expect(trimmed.matchRanges).toEqual([{ start: 6, end: 7 }]);
+    expect(trimmed.lineContent.slice(6, 7)).toBe("x");
   });
 });

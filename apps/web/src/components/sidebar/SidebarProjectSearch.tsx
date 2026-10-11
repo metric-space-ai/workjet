@@ -50,7 +50,7 @@ export function SidebarSearchModeSegment(props: {
   return (
     <ToggleGroup
       aria-label="Suchbereich"
-      className="w-full px-1"
+      className="w-full"
       size="xs"
       variant="outline"
       value={[props.mode]}
@@ -64,7 +64,7 @@ export function SidebarSearchModeSegment(props: {
           key={entry.value}
           value={entry.value}
           data-sidebar-search-mode={entry.value}
-          className="flex-1 text-xs text-sidebar-muted-foreground data-pressed:bg-primary/15 data-pressed:text-sidebar-foreground"
+          className="min-w-0 flex-1 px-1 text-xs text-sidebar-muted-foreground data-pressed:bg-primary/15 data-pressed:text-sidebar-foreground"
         >
           {entry.label}
         </Toggle>
@@ -126,6 +126,22 @@ function useResultKeyboard(
   return [activeIndex, setActiveIndex] as const;
 }
 
+/** Drops the line's indentation so the sidebar shows the match, ranges shifted. */
+export function withoutIndentation(match: ProjectContentMatch): ProjectContentMatch {
+  const content = match.lineContent.trimStart();
+  const indent = match.lineContent.length - content.length;
+  if (indent === 0) return match;
+  return {
+    ...match,
+    lineContent: content,
+    matchRanges: match.matchRanges.map((range) => ({
+      ...range,
+      start: Math.max(0, range.start - indent),
+      end: Math.max(0, range.end - indent),
+    })),
+  };
+}
+
 function splitPath(path: string): { readonly name: string; readonly directory: string } {
   const separator = path.lastIndexOf("/");
   return separator === -1
@@ -167,23 +183,42 @@ function FileResults(props: {
   if (matches.length === 0)
     return <StatusLine>{result.isPending ? "Suche läuft …" : "Keine Dateien"}</StatusLine>;
   return (
+    <SidebarFileResultList
+      matches={matches}
+      activeIndex={activeIndex}
+      theme={resolvedTheme}
+      onHighlight={setActiveIndex}
+      onOpen={open}
+    />
+  );
+}
+
+/** Datei-Treffer: Name und Ordner, ein Klick öffnet die Datei. */
+export function SidebarFileResultList(props: {
+  readonly matches: ReadonlyArray<{ readonly name: string; readonly path: string }>;
+  readonly activeIndex: number;
+  readonly theme: "light" | "dark";
+  readonly onHighlight: (index: number) => void;
+  readonly onOpen: (index: number) => void;
+}) {
+  return (
     <ul role="listbox" aria-label="Dateien" className="flex flex-col gap-px">
-      {matches.map((match, index) => (
-        <li key={match.path} role="option" aria-selected={index === activeIndex}>
+      {props.matches.map((match, index) => (
+        <li key={match.path} role="option" aria-selected={index === props.activeIndex}>
           <button
             type="button"
             data-sidebar-file-result={match.path}
             className={cn(
               "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-row-hover",
-              index === activeIndex && "bg-sidebar-row-hover",
+              index === props.activeIndex && "bg-sidebar-row-hover",
             )}
-            onMouseEnter={() => setActiveIndex(index)}
-            onClick={() => open(index)}
+            onMouseEnter={() => props.onHighlight(index)}
+            onClick={() => props.onOpen(index)}
           >
             <PierreEntryIcon
               pathValue={match.path}
               kind="file"
-              theme={resolvedTheme}
+              theme={props.theme}
               className="size-3.5 shrink-0"
             />
             <span className="shrink-0 truncate">{match.name}</span>
@@ -227,32 +262,54 @@ function ContentResults(props: {
   if (matches.length === 0)
     return <StatusLine>{search.isPending ? "Suche läuft …" : "Keine Treffer"}</StatusLine>;
   return (
+    <SidebarContentResultList
+      matches={matches}
+      activeIndex={activeIndex}
+      theme={resolvedTheme}
+      disabled={search.isPending}
+      onHighlight={setActiveIndex}
+      onOpen={open}
+    />
+  );
+}
+
+/** Inhalts-Treffer: Datei, Zeile und die hervorgehobene Fundstelle. */
+export function SidebarContentResultList(props: {
+  readonly matches: ReadonlyArray<ProjectContentMatch>;
+  readonly activeIndex: number;
+  readonly theme: "light" | "dark";
+  readonly disabled?: boolean;
+  readonly onHighlight: (index: number) => void;
+  readonly onOpen: (index: number) => void;
+}) {
+  const displayMatches = useMemo(() => props.matches.map(withoutIndentation), [props.matches]);
+  return (
     <ul role="listbox" aria-label="Treffer" className="flex flex-col gap-px">
-      {matches.map((match, index) => {
+      {displayMatches.map((match, index) => {
         const path = splitPath(match.path);
         return (
           <li
             key={`${match.path}:${match.lineNumber}:${index}`}
             role="option"
-            aria-selected={index === activeIndex}
+            aria-selected={index === props.activeIndex}
           >
             <button
               type="button"
               data-sidebar-content-result={index}
-              disabled={search.isPending}
+              disabled={props.disabled}
               className={cn(
                 "flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-sidebar-row-hover disabled:opacity-60",
-                index === activeIndex && "bg-sidebar-row-hover",
+                index === props.activeIndex && "bg-sidebar-row-hover",
               )}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => open(index)}
+              onMouseEnter={() => props.onHighlight(index)}
+              onClick={() => props.onOpen(index)}
             >
               <span className="flex min-w-0 items-center gap-1 text-xs text-sidebar-muted-foreground">
                 <span className="truncate text-sidebar-foreground">{path.name}</span>
                 <span className="shrink-0 tabular-nums">:{match.lineNumber}</span>
               </span>
               <span className="truncate whitespace-pre font-mono text-xs text-sidebar-foreground/90">
-                <HighlightedSearchLine match={match} path={match.path} theme={resolvedTheme} />
+                <HighlightedSearchLine match={match} path={match.path} theme={props.theme} />
               </span>
             </button>
           </li>

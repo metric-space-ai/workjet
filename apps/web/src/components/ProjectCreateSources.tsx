@@ -115,7 +115,6 @@ export function ProjectFolderFields(props: {
             {props.onPick ? (
               <Button
                 type="button"
-                size="sm"
                 variant="outline"
                 disabled={props.picking}
                 data-workjet-action="project.add.folder.pick"

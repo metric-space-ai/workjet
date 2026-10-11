@@ -1,6 +1,6 @@
-import { DownloadIcon, PlusIcon } from "lucide-react";
-import type { ChangeEvent, DragEvent, UIEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileUpIcon } from "lucide-react";
+import type { ChangeEvent, ClipboardEvent, DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
 import {
   getCustomThemes,
@@ -18,16 +18,8 @@ import {
   parseVsCodeThemeFile,
   resolveThemeLabelCollisions,
 } from "../../vscodeThemeImport";
-import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
+import { InlinePanel } from "../ui/inline-panel";
 import { ThemeSearchSection } from "./ThemeSearchSection";
 
 /**
@@ -38,113 +30,16 @@ import { ThemeSearchSection } from "./ThemeSearchSection";
  */
 export const MAX_THEME_FILE_BYTES = 256 * 1024;
 
-/** Highlighting rebuilds the whole markup on every keystroke, so oversized
- *  pastes fall back to plain text instead of freezing the editor. */
-const MAX_HIGHLIGHTED_JSON_LENGTH = 20_000;
-
 function formatByteSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} bytes`;
+  return `${bytes} Byte`;
 }
 
-/** Returns the error to show for a file too large to be a theme, else null. */
+/** Fehlerzeile für eine Datei, die zu groß für ein Theme ist, sonst null. */
 export function describeOversizedThemeFile(bytes: number): string | null {
   if (bytes <= MAX_THEME_FILE_BYTES) return null;
-  return `That file is ${formatByteSize(bytes)}. Theme files are only a few KB, so this one was not read (limit ${formatByteSize(MAX_THEME_FILE_BYTES)}).`;
-}
-
-function escapeJsonHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[character] ?? character,
-  );
-}
-
-function highlightJson(value: string): string {
-  const tokenPattern =
-    /"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g;
-  let highlighted = "";
-  let cursor = 0;
-
-  for (const match of value.matchAll(tokenPattern)) {
-    const token = match[0];
-    const index = match.index ?? 0;
-    highlighted += escapeJsonHtml(value.slice(cursor, index));
-
-    let tokenClass = "theme-json-number";
-    if (token.startsWith('"')) {
-      tokenClass = /^\s*:/.test(value.slice(index + token.length))
-        ? "theme-json-key"
-        : "theme-json-string";
-    } else if (token === "true" || token === "false" || token === "null") {
-      tokenClass = "theme-json-constant";
-    }
-    highlighted += `<span class="${tokenClass}">${escapeJsonHtml(token)}</span>`;
-    cursor = index + token.length;
-  }
-
-  return highlighted + escapeJsonHtml(value.slice(cursor));
-}
-
-function ThemeJsonEditor({
-  id,
-  value,
-  onChange,
-}: {
-  id: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const highlightRef = useRef<HTMLPreElement>(null);
-  const isPlainText = value.length > MAX_HIGHLIGHTED_JSON_LENGTH;
-  const highlightedJson = useMemo(
-    () => (value.length > MAX_HIGHLIGHTED_JSON_LENGTH ? "" : highlightJson(value)),
-    [value],
-  );
-
-  const syncScroll = useCallback((event: UIEvent<HTMLTextAreaElement>) => {
-    const highlightElement = highlightRef.current;
-    if (!highlightElement) return;
-    highlightElement.scrollTop = event.currentTarget.scrollTop;
-    highlightElement.scrollLeft = event.currentTarget.scrollLeft;
-  }, []);
-
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-input bg-background shadow-xs/5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24">
-      {isPlainText ? null : (
-        <pre
-          ref={highlightRef}
-          aria-hidden
-          className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words p-3 font-mono text-[12px] leading-5 text-foreground"
-        >
-          <code dangerouslySetInnerHTML={{ __html: highlightedJson }} />
-        </pre>
-      )}
-      <textarea
-        aria-label="Theme JSON"
-        className={cn(
-          "relative z-10 block min-h-72 w-full resize-y overflow-auto bg-transparent p-3 font-mono text-[12px] leading-5 caret-foreground outline-none placeholder:text-muted-foreground selection:bg-accent/30",
-          isPlainText ? "text-foreground" : "text-transparent selection:text-transparent",
-        )}
-        id={id}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        onScroll={syncScroll}
-        placeholder={
-          '{\n  "version": 1,\n  "name": "Aurora",\n  "appearance": "light",\n  "colors": { ... }\n}'
-        }
-        spellCheck={false}
-        value={value}
-      />
-    </div>
-  );
+  return `Datei zu groß: ${formatByteSize(bytes)} (Grenze ${formatByteSize(MAX_THEME_FILE_BYTES)}).`;
 }
 
 /** What the import pipeline needs from a file; DOM File satisfies it. */
@@ -162,6 +57,7 @@ export function ThemeImportDialog({
   /** Batch imports install without activating; the caller reports them. */
   onImportedMany: (themes: ReadonlyArray<ThemeDefinition>, context: { updated: boolean }) => void;
 }) {
+  const [isPasted, setIsPasted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [json, setJson] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -181,6 +77,7 @@ export function ThemeImportDialog({
     if (!open) return;
     setJson("");
     setFileName(null);
+    setIsPasted(false);
     setError(null);
     setIsReading(false);
     setConflicts(null);
@@ -202,10 +99,12 @@ export function ThemeImportDialog({
       if (requestId !== importRequestRef.current) return;
       setJson(fileText);
       setFileName(file.name);
+      setIsPasted(false);
       setError(null);
+      setConflicts(null);
     } catch {
       if (requestId !== importRequestRef.current) return;
-      setError("Could not read that file. Paste the JSON below instead.");
+      setError("Datei nicht lesbar.");
     } finally {
       if (requestId === importRequestRef.current) setIsReading(false);
     }
@@ -224,7 +123,7 @@ export function ThemeImportDialog({
         for (const file of files) {
           const oversized = describeOversizedThemeFile(file.size);
           if (oversized) {
-            failures.push(`${file.name}: too large`);
+            failures.push(`${file.name}: zu groß`);
             continue;
           }
           try {
@@ -234,9 +133,7 @@ export function ThemeImportDialog({
               theme: isVsCodeThemeFile(value) ? parseVsCodeThemeFile(value) : parseThemeFile(value),
             });
           } catch (cause) {
-            failures.push(
-              `${file.name}: ${cause instanceof Error ? cause.message : "not a theme file"}`,
-            );
+            failures.push(`${file.name}: ${cause instanceof Error ? cause.message : "kein Theme"}`);
           }
         }
         if (requestId !== importRequestRef.current) return;
@@ -251,7 +148,7 @@ export function ThemeImportDialog({
             installed.push(installCustomTheme(theme));
           } catch (cause) {
             failures.push(
-              `${theme.label}: ${cause instanceof Error ? cause.message : "could not install"}`,
+              `${theme.label}: ${cause instanceof Error ? cause.message : "nicht installiert"}`,
             );
           }
         }
@@ -347,7 +244,7 @@ export function ThemeImportDialog({
       if (getCustomThemes().some((existing) => existing.id === candidate.id)) continue;
       return candidate;
     }
-    throw new Error(`Too many copies of "${theme.label}".`);
+    throw new Error(`Zu viele Kopien von „${theme.label}“.`);
   };
 
   const resolveConflicts = useCallback(
@@ -374,7 +271,9 @@ export function ThemeImportDialog({
               : installCustomTheme(versionedCopy(theme, preferredName)),
           );
         } catch (cause) {
-          failures.push(`${theme.label}: ${cause instanceof Error ? cause.message : "failed"}`);
+          failures.push(
+            `${theme.label}: ${cause instanceof Error ? cause.message : "fehlgeschlagen"}`,
+          );
         }
       }
       if (resolved.length > 0) onImportedMany(resolved, { updated: mode === "update" });
@@ -413,149 +312,126 @@ export function ThemeImportDialog({
         } catch {
           // Storage is failing wholesale; the error below covers it.
         }
-        setError("Theme added, but it could not be selected. Try again.");
+        setError("Hinzugefügt, aber nicht aktiviert. Erneut versuchen.");
         return;
       }
       onOpenChange(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "That theme file is invalid.");
+      setError(cause instanceof Error ? cause.message : "Ungültige Theme-Datei.");
     }
   }, [json, onImported, onOpenChange]);
 
+  // Eingefügter Text läuft durch dieselbe Prüfung wie eine Datei, ohne den
+  // Quelltext anzuzeigen.
+  const handlePaste = useCallback((event: ClipboardEvent<HTMLDivElement>) => {
+    const text = event.clipboardData.getData("text");
+    if (!text.trim()) return;
+    event.preventDefault();
+    importRequestRef.current += 1;
+    setIsReading(false);
+    setJson(text);
+    setFileName(null);
+    setIsPasted(true);
+    setError(null);
+    setConflicts(null);
+  }, []);
+
+  if (!open) return null;
+
+  const dropHandlers = {
+    onDragEnter: (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setIsDropTarget(true);
+    },
+    onDragOver: (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setIsDropTarget(true);
+    },
+    onDragLeave: (event: DragEvent<HTMLDivElement>) => {
+      // Wechsel zwischen Kindelementen der Ablagefläche ignorieren.
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      setIsDropTarget(false);
+    },
+    onDrop: handleDrop,
+  };
+
   return (
-    <Dialog
-      open={open}
+    <InlinePanel
+      busy={isReading}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) setError(null);
         onOpenChange(nextOpen);
       }}
+      onSubmit={handleSubmit}
+      open
+      status={error}
+      statusTone="error"
+      submitDisabled={!json.trim() || conflicts !== null}
+      submitLabel="Importieren"
+      triggerLabel="Theme importieren"
     >
-      <DialogPopup className="max-w-3xl overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Add a theme</DialogTitle>
-        </DialogHeader>
-        <DialogPanel className="space-y-5">
-          <ThemeSearchSection
-            onInstalled={(themes, context) => {
-              onImportedMany(themes, context);
-              onOpenChange(false);
-            }}
-            open={open}
-          />
-
-          <div className="flex items-center gap-3" aria-hidden>
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-muted-foreground text-[11px] uppercase tracking-wider">
-              or import a file
-            </span>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
-          {(() => {
-            const dropHandlers = {
-              onDragEnter: (event: DragEvent<HTMLDivElement>) => {
-                event.preventDefault();
-                setIsDropTarget(true);
-              },
-              onDragOver: (event: DragEvent<HTMLDivElement>) => {
-                event.preventDefault();
-                setIsDropTarget(true);
-              },
-              onDragLeave: (event: DragEvent<HTMLDivElement>) => {
-                // Ignore moves between children of the drop zone.
-                if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-                setIsDropTarget(false);
-              },
-              onDrop: handleDrop,
-            };
-            const fileInput = (
-              <input
-                ref={fileInputRef}
-                accept=".json,application/json"
-                className="sr-only"
-                onChange={handleFileChange}
-                multiple
-                type="file"
-              />
-            );
-            const chooseButton = (label = "Choose files") => (
-              <Button disabled={isReading} size="sm" variant="outline" onClick={openFilePicker}>
-                <DownloadIcon />
-                {isReading ? "Reading…" : label}
-              </Button>
-            );
-            const editorSection = () => (
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between gap-3">
-                  <label className="text-sm font-medium" htmlFor="theme-json-editor">
-                    Theme JSON
-                  </label>
-                </div>
-                <ThemeJsonEditor id="theme-json-editor" onChange={setJson} value={json} />
-              </div>
-            );
-            if (conflicts) {
-              return (
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-                    <p className="text-sm font-medium">Already installed</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {conflicts.map((theme) => theme.label).join(", ")}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button size="sm" onClick={() => resolveConflicts("update")}>
-                      Update existing
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => resolveConflicts("copy")}>
-                      Keep both
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setConflicts(null)}>
-                      Back
-                    </Button>
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div className="space-y-4">
-                <div
-                  className={cn(
-                    "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-3 transition-colors",
-                    isDropTarget ? "border-ring bg-accent/20" : "border-border/80 bg-muted/20",
-                  )}
-                  {...dropHandlers}
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">Theme file</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {fileName ?? "Drop CTOX or VS Code .json files"}
-                    </p>
-                  </div>
-                  {chooseButton()}
-                  {fileInput}
-                </div>
-                {editorSection()}
-              </div>
-            );
-          })()}
-
-          {error ? (
-            <Alert aria-live="polite" variant="error">
-              {error}
-            </Alert>
-          ) : null}
-        </DialogPanel>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+      <ThemeSearchSection
+        onInstalled={(themes, context) => {
+          onImportedMany(themes, context);
+          onOpenChange(false);
+        }}
+        open={open}
+      />
+      <div
+        aria-label="Theme-Datei"
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed px-3 py-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+          isDropTarget ? "border-ring bg-accent/20" : "border-border/80 bg-muted/20",
+        )}
+        onPaste={handlePaste}
+        role="group"
+        tabIndex={0}
+        {...dropHandlers}
+      >
+        <div className="flex min-w-0 items-center gap-2 text-[13.5px]">
+          <span className="font-medium">Datei</span>
+          <span className="truncate text-muted-foreground">
+            {fileName ?? (isPasted ? "Eingefügt" : "—")}
+          </span>
+        </div>
+        <Button
+          disabled={isReading}
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={openFilePicker}
+        >
+          <FileUpIcon />
+          {isReading ? "Liest…" : "Datei wählen"}
+        </Button>
+        <input
+          ref={fileInputRef}
+          accept=".json,application/json"
+          className="sr-only"
+          onChange={handleFileChange}
+          multiple
+          tabIndex={-1}
+          type="file"
+        />
+      </div>
+      {conflicts ? (
+        <div className="flex flex-wrap items-center gap-2" role="group">
+          <span className="min-w-0 flex-1 truncate text-[13.5px]">
+            Bereits installiert: {conflicts.map((theme) => theme.label).join(", ")}
+          </span>
+          <Button
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => resolveConflicts("copy")}
+          >
+            Beide behalten
           </Button>
-          <Button disabled={!json.trim() || isReading} onClick={handleSubmit}>
-            <PlusIcon />
-            Add theme
+          <Button size="sm" type="button" onClick={() => resolveConflicts("update")}>
+            Aktualisieren
           </Button>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
+        </div>
+      ) : null}
+    </InlinePanel>
   );
 }

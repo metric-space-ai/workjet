@@ -15,13 +15,10 @@ import { GhosttyTerminalSurface } from "~/terminal/ghostty/surface";
 const EMPTY_TERMINAL_CONTEXTS: ReadonlyArray<never> = [];
 const EMPTY_SKILLS: ReadonlyArray<never> = [];
 
-// Serialized the way the composer stores inline tokens: the $skill and the
-// markdown-style file links render as chips, so the preview shows prompt
-// text and pills exactly as the real composer draws them.
+// Neutraler Beispielsatz: keine Pfade, keine Arbeitsanweisung, dafür alle
+// Umlaute und die verwechselbaren Zeichen 0O 1lI.
 const PROMPT_PREVIEW_TEXT =
-  "Use $frontend-design to fix the flaky test in " +
-  "[surface.test.ts](apps/web/src/terminal/ghostty/surface.test.ts) and align the header with " +
-  "[SettingsPanels.tsx](apps/web/src/components/settings/SettingsPanels.tsx) before shipping.";
+  "Zwölf Boxkämpfer jagen Viktor quer über den großen Sylter Deich. 0O 1lI";
 
 function noop() {}
 
@@ -43,7 +40,7 @@ export function PromptFontPreview() {
         terminalContexts={EMPTY_TERMINAL_CONTEXTS}
         skills={EMPTY_SKILLS}
         disabled={false}
-        placeholder="Ask for follow-up changes or attach images"
+        placeholder="Nachricht"
         className="max-h-40 min-h-12"
         onRemoveTerminalContext={noop}
         onChange={onChange}
@@ -54,9 +51,9 @@ export function PromptFontPreview() {
 }
 
 const DIFF_PREVIEW_PATCH = [
-  "diff --git a/src/formatUser.ts b/src/formatUser.ts",
-  "--- a/src/formatUser.ts",
-  "+++ b/src/formatUser.ts",
+  "diff --git a/beispiel.ts b/beispiel.ts",
+  "--- a/beispiel.ts",
+  "+++ b/beispiel.ts",
   "@@ -1,3 +1,3 @@",
   " export function formatUser(user: User) {",
   "-  return user.name.toUpperCase();",
@@ -266,7 +263,7 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     <div
       ref={mountRef}
       className="relative mt-1 mb-2 h-52 overflow-hidden rounded-lg border border-border"
-      aria-label="Terminal font preview"
+      aria-label="Terminal-Schriftvorschau"
     />
   );
 }

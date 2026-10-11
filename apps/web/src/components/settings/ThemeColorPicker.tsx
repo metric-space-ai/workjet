@@ -3,27 +3,69 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { isThemeColor, themeColorToHex, type ThemeColorRole } from "../../themePalette";
 import { cn } from "../../lib/utils";
 import { Input } from "../ui/input";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+
+const THEME_ROLE_LABELS: Record<ThemeColorRole, string> = {
+  canvas: "Hintergrund",
+  chrome: "Fensterrahmen",
+  toolbar: "Werkzeugleiste",
+  toolbarForeground: "Werkzeugleiste Text",
+  toolbarBorder: "Werkzeugleiste Rand",
+  toolbarControl: "Werkzeugleiste Element",
+  toolbarControlForeground: "Werkzeugleiste Elementtext",
+  toolbarControlHover: "Werkzeugleiste Hover",
+  surface: "Fläche",
+  surfaceRaised: "Fläche erhöht",
+  surfaceOverlay: "Überlagerung",
+  text: "Text",
+  textMuted: "Text gedämpft",
+  border: "Rand",
+  input: "Eingabefeld",
+  focus: "Fokus",
+  accent: "Akzentfarbe",
+  accentForeground: "Akzent Text",
+  secondary: "Sekundär",
+  secondaryForeground: "Sekundär Text",
+  muted: "Gedämpft",
+  mutedForeground: "Gedämpft Text",
+  placeholder: "Platzhalter",
+  secondaryLabel: "Nebenbeschriftung",
+  iconMuted: "Icon gedämpft",
+  error: "Fehler",
+  errorForeground: "Fehler Text",
+  errorSurface: "Fehler Hintergrund",
+  warning: "Warnung",
+  warningForeground: "Warnung Text",
+  warningSurface: "Warnung Hintergrund",
+  update: "Aktualisierung",
+  updateForeground: "Aktualisierung Text",
+  updateSurface: "Aktualisierung Hintergrund",
+  accentSurface: "Akzentfläche",
+  accentSurfaceForeground: "Akzentfläche Text",
+  messageSurface: "Nachricht Fläche",
+  messageForeground: "Nachricht Text",
+  messageAction: "Nachricht Aktion",
+  messageActionForeground: "Nachricht Aktionstext",
+  messageActionHover: "Nachricht Aktion Hover",
+  codeBackground: "Code Hintergrund",
+  codeForeground: "Code Text",
+  sidebar: "Seitenleiste",
+  sidebarForeground: "Seitenleiste Text",
+  sidebarMutedForeground: "Seitenleiste gedämpft",
+  sidebarControlSurface: "Seitenleiste Element",
+  sidebarRowHover: "Seitenleiste Hover",
+  sidebarRowActive: "Seitenleiste aktiv",
+  sidebarRowSelected: "Seitenleiste ausgewählt",
+  sidebarBorder: "Seitenleiste Rand",
+  terminalBackground: "Terminal Hintergrund",
+  terminalForeground: "Terminal Text",
+  terminalCursor: "Terminal Cursor",
+  terminalSelection: "Terminal Auswahl",
+  terminalScrollbar: "Terminal Scrollleiste",
+  terminalScrollbarHover: "Terminal Scrollleiste Hover",
+};
+
 export function getThemeRoleLabel(role: ThemeColorRole): string {
-  const labels: Partial<Record<ThemeColorRole, string>> = {
-    canvas: "Background",
-    toolbar: "Toolbar background",
-    toolbarForeground: "Toolbar text",
-    toolbarBorder: "Toolbar border",
-    toolbarControl: "Toolbar control",
-    toolbarControlForeground: "Toolbar control text",
-    toolbarControlHover: "Toolbar control hover",
-    accent: "Accent color",
-    errorForeground: "Error text",
-    errorSurface: "Error background",
-    warningForeground: "Warning text",
-    warningSurface: "Warning background",
-    updateForeground: "Update text",
-    updateSurface: "Update background",
-  };
-  const label = labels[role];
-  if (label) return label;
-  return role.replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
+  return THEME_ROLE_LABELS[role];
 }
 
 type ThemeColorHsv = {
@@ -292,22 +334,12 @@ function ThemeColorPickerPanel({
   };
 
   return (
-    <div className="w-72 bg-popover">
-      <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-foreground">{label}</p>
-          <p className="text-[11px] text-muted-foreground">Choose a color</p>
-        </div>
-        <span
-          className="size-7 shrink-0 rounded-full shadow-sm"
-          style={{ backgroundColor: currentColor }}
-        />
-      </div>
-      <div className="grid gap-3 px-3 pb-3 pt-3">
+    <div className="w-full max-w-80">
+      <div className="grid gap-3 pb-1 pt-1">
         <div
-          aria-label={`${label} saturation and brightness`}
-          aria-valuetext={`saturation ${Math.round(hsv.s * 100)}%, brightness ${Math.round(hsv.v * 100)}%`}
-          className="relative h-32 cursor-crosshair touch-none overflow-hidden rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+          aria-label={`${label}: Sättigung und Helligkeit`}
+          aria-valuetext={`Sättigung ${Math.round(hsv.s * 100)} %, Helligkeit ${Math.round(hsv.v * 100)} %`}
+          className="relative h-32 cursor-crosshair touch-none overflow-hidden rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           role="slider"
           style={{
             backgroundColor: `hsl(${hsv.h} 100% 50%)`,
@@ -333,11 +365,11 @@ function ThemeColorPickerPanel({
           />
         </div>
         <div
-          aria-label={`${label} hue`}
+          aria-label={`${label}: Farbton`}
           aria-valuemax={360}
           aria-valuemin={0}
           aria-valuenow={Math.round(hsv.h)}
-          className="relative flex h-6 cursor-pointer touch-none items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+          className="relative flex h-6 cursor-pointer touch-none items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           role="slider"
           tabIndex={0}
           onKeyDown={handleHueKeyDown}
@@ -377,7 +409,7 @@ function ThemeColorPickerPanel({
                 style={{ backgroundColor: currentColor }}
               />
               <input
-                aria-label={`${label} picker hex value`}
+                aria-label={`${label}: Hex-Wert`}
                 className="h-8 min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none"
                 onBlur={() => {
                   isEditingTextRef.current = false;
@@ -399,7 +431,7 @@ function ThemeColorPickerPanel({
             </span>
             <span className="flex min-w-0 items-center rounded-lg border border-input bg-background px-2 focus-within:border-ring">
               <input
-                aria-label={`${label} picker RGB value`}
+                aria-label={`${label}: RGB-Wert`}
                 className="h-8 min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none"
                 onBlur={() => {
                   isEditingTextRef.current = false;
@@ -421,49 +453,6 @@ function ThemeColorPickerPanel({
   );
 }
 
-function ThemeColorPicker({
-  label,
-  value,
-  onChange,
-  onInteract,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onInteract?: () => void;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <button
-            aria-label={`Choose ${label} color`}
-            className="relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-foreground/30 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            onFocus={onInteract}
-            onPointerDown={onInteract}
-            title={`Choose ${label} color`}
-            type="button"
-          >
-            <span
-              className="absolute inset-0 rounded-full shadow-sm"
-              style={{ backgroundColor: value }}
-            />
-          </button>
-        }
-      />
-      <PopoverPopup
-        align="end"
-        className="overflow-hidden rounded-2xl border border-border/70 p-0 shadow-2xl [--viewport-inline-padding:0px] [&_[data-slot=popover-viewport]]:p-0"
-        data-theme-editor-panel=""
-        side="bottom"
-        sideOffset={10}
-      >
-        <ThemeColorPickerPanel label={label} onChange={onChange} value={value} />
-      </PopoverPopup>
-    </Popover>
-  );
-}
-
 export const ThemeColorField = memo(function ThemeColorField({
   role,
   value,
@@ -481,52 +470,69 @@ export const ThemeColorField = memo(function ThemeColorField({
   selected?: boolean;
   label?: string;
 }) {
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const label = customLabel ?? getThemeRoleLabel(role);
   const isColorValue = isThemeColor(value);
   const swatchValue = isColorValue ? value : "#000000";
   const editorValue = value.trim().toLowerCase().startsWith("oklch(")
     ? (themeColorToHex(value) ?? value)
     : value;
+  const handlePickerChange = useCallback(
+    (nextValue: string) => onChange(role, nextValue),
+    [onChange, role],
+  );
 
   return (
     <div
       className={cn(
-        "flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 transition-[background-color,box-shadow]",
+        "flex min-w-0 flex-col gap-2 rounded-lg px-2 py-1.5 transition-[background-color,box-shadow]",
         selected && "bg-accent/60 shadow-[inset_0_0_0_1px_var(--ring)]",
       )}
       data-theme-color-role={role}
     >
-      <button
-        aria-label={`${selected ? "Hide" : "Show"} ${label} usage`}
-        aria-pressed={selected}
-        className="flex min-w-0 flex-1 cursor-pointer items-center rounded-md text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => onToggleSelected?.(role)}
-        title={`${selected ? "Hide" : "Show"} where ${label} is used`}
-        type="button"
-      >
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-      </button>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <ThemeColorPicker
-          label={label}
-          onChange={(nextValue) => onChange(role, nextValue)}
-          onInteract={() => onSelect?.(role)}
-          value={swatchValue}
-        />
-        <Input
-          aria-invalid={!isColorValue}
-          aria-label={`${label} hex value`}
-          className="w-28 shrink-0 rounded-md border-0 bg-black/10 font-mono text-xs text-foreground shadow-none focus-within:bg-black/15 focus-within:ring-0 dark:bg-black/20 dark:focus-within:bg-black/25 [&_[data-slot=input]]:text-right"
-          id={`${role}-hex`}
-          nativeInput
-          onChange={(event) => onChange(role, event.currentTarget.value)}
-          onFocus={() => onSelect?.(role)}
-          onPointerDown={() => onSelect?.(role)}
-          size="sm"
-          unstyled
-          value={editorValue}
-        />
+      <div className="flex min-h-8 min-w-0 items-center gap-2">
+        <button
+          aria-label={`${label}: Verwendung ${selected ? "ausblenden" : "zeigen"}`}
+          aria-pressed={selected}
+          className="flex min-w-0 flex-1 cursor-pointer items-center rounded-md text-left text-[13.5px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onToggleSelected?.(role)}
+          type="button"
+        >
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+        </button>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <button
+            aria-expanded={isPickerOpen}
+            aria-label={`${label}: Farbe wählen`}
+            className="relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-foreground/30 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            onClick={() => setIsPickerOpen((current) => !current)}
+            onFocus={() => onSelect?.(role)}
+            onPointerDown={() => onSelect?.(role)}
+            type="button"
+          >
+            <span
+              className="absolute inset-0 rounded-full shadow-sm"
+              style={{ backgroundColor: swatchValue }}
+            />
+          </button>
+          <Input
+            aria-invalid={!isColorValue}
+            aria-label={`${label}: Hex`}
+            className="w-28 shrink-0 rounded-md border-0 bg-black/10 font-mono text-xs text-foreground shadow-none focus-within:bg-black/15 focus-within:ring-0 dark:bg-black/20 dark:focus-within:bg-black/25 [&_[data-slot=input]]:text-right"
+            id={`${role}-hex`}
+            nativeInput
+            onChange={(event) => onChange(role, event.currentTarget.value)}
+            onFocus={() => onSelect?.(role)}
+            onPointerDown={() => onSelect?.(role)}
+            size="sm"
+            unstyled
+            value={editorValue}
+          />
+        </div>
       </div>
+      {isPickerOpen ? (
+        <ThemeColorPickerPanel label={label} onChange={handlePickerChange} value={swatchValue} />
+      ) : null}
     </div>
   );
 });

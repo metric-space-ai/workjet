@@ -43,6 +43,15 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("Do not maintain your own mini-kanban");
     expect(prompt).toContain("Take times, counts and status from measurements or logs");
     expect(prompt).toContain("self-contained order");
+    expect(prompt).toContain("goal, acceptance criterion, boundaries and result format");
+    expect(prompt).toContain("code, research, deck or report creation, tests and data maintenance");
+    expect(prompt).toContain("more than a few minutes or require many tool calls, delegate it");
+    expect(prompt).toContain("Keep your own work to short reading and review steps");
+    expect(prompt).toContain("Owner-approved models and validated routes");
+    expect(prompt).toContain("Grok for regular-meeting preparation or Codex for code");
+    expect(prompt).toContain("Commission a one-shot worker to prepare the next regular meeting");
+    expect(prompt).toContain("Check each worker result against its assigned acceptance criterion");
+    expect(prompt).toContain("before reporting it as done");
     expect(prompt).toContain("Verify the installed/deployed result afterwards");
     expect(prompt).not.toContain("action update");
     expect(prompt).not.toContain("Stop after submission");

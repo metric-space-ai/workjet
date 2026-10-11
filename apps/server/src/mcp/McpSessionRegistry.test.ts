@@ -1,11 +1,18 @@
 import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { resolveThreadCapabilityContext } from "../workjet/ThreadCapabilityContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -330,4 +337,43 @@ it.effect(
         }
       }
     }),
+);
+
+it.effect("delivers the same supervisor delegation prompt to every harness", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1000);
+    const context = resolveThreadCapabilityContext({
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      schemaVersion: 2,
+      role: "orchestrator",
+      team: {
+        projectId: ProjectId.make("project"),
+        threadId: ThreadId.make("supervisor"),
+        role: "supervisor",
+        parentThreadId: null,
+        goal: "Deliver the approved weekly outcome.",
+        createdAt: "2026-10-11T15:00:00.000Z",
+      },
+    });
+    expect(context.compiledManagedPrompt).toMatchSnapshot();
+
+    for (const harness of [
+      "claudeAgent",
+      "codex",
+      "opencode",
+      "grok",
+      "pi",
+      "cursor",
+      "minimax",
+      "greppy",
+      "ctox",
+    ]) {
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make(harness + "-supervisor"),
+        providerInstanceId: ProviderInstanceId.make(harness),
+        threadCapabilityContext: context,
+      });
+      expect(issued.config.compiledManagedPrompt).toBe(context.compiledManagedPrompt);
+    }
+  }),
 );

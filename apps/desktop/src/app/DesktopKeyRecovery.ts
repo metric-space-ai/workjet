@@ -21,6 +21,12 @@ const RecoveryRecord = Schema.Struct({
   retiredPartitions: Schema.optionalKey(Schema.Array(Schema.String)),
   catalogReset: Schema.optionalKey(Schema.Boolean),
   clerkRetired: Schema.optionalKey(Schema.Boolean),
+  ctoxRetired: Schema.optionalKey(Schema.Boolean),
+  managedRepairStarted: Schema.optionalKey(Schema.Boolean),
+  instanceRepairs: Schema.optionalKey(Schema.Array(Schema.Struct({
+    instanceId: Schema.String,
+    state: Schema.Literals(["repairing", "repaired", "repair_failed"]),
+  }))),
 });
 type RecoveryRecord = typeof RecoveryRecord.Type;
 const RecordJson = Schema.fromJsonString(RecoveryRecord);
@@ -64,10 +70,12 @@ export class DesktopKeyRecovery extends Context.Service<
     readonly completeLogin: Effect.Effect<void, DesktopKeyRecoveryError>;
     readonly retirePartition?: (partition: string) => Effect.Effect<void, DesktopKeyRecoveryError>;
     readonly markCatalogReset?: Effect.Effect<void, DesktopKeyRecoveryError>;
+    readonly beginManagedRepair?: (instanceIds: readonly string[]) => Effect.Effect<boolean, DesktopKeyRecoveryError>;
+    readonly recordInstanceRepair?: (instanceId: string, state: "repaired" | "repair_failed") => Effect.Effect<void, DesktopKeyRecoveryError>;
   }
 >()("@workjet/desktop/app/DesktopKeyRecovery") {}
 
-/** Only independent protected stores count. A locked keychain or one damaged file cannot authorize reset. */
+/** CTOX can be repaired independently; broader key loss still requires independent stores. */
 export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (input: {
   readonly baseDir: string;
   readonly stateDir: string;
@@ -127,6 +135,11 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
         record = yield* decodeRecord(decodeText(previous.value)).pipe(
           Effect.mapError(() => fail("read recovery state")),
         );
+        if (record.instanceRepairs?.some((entry) => entry.state === "repairing")) {
+          record = { ...record, instanceRepairs: record.instanceRepairs.map((entry) =>
+            entry.state === "repairing" ? { ...entry, state: "repair_failed" as const } : entry) };
+          yield* persist(record);
+        }
       }
       const failures: Array<"session" | "catalog" | "ctox"> = [];
       const session = yield* readOptional(`${input.baseDir}/runtime/desktop-auth/session.enc`);
@@ -154,18 +167,18 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
         const envelope = yield* decodeSecretEnvelope(decodeText(secrets.value)).pipe(Effect.option);
         if (Option.isSome(envelope)) {
           let failed = false;
-          for (const entry of envelope.value.records.slice(0, 1)) {
+          for (const entry of envelope.value.records) {
             const bytes = Encoding.decodeBase64(entry.ciphertext);
-            if (bytes._tag === "Success" && (yield* unreadable(bytes.success, ProtectedJson))) {
+            if (bytes._tag === "Failure" || (yield* unreadable(bytes.success, ProtectedJson))) {
               failed = true;
               break;
             }
           }
           if (!failed)
-            for (const entry of (envelope.value.deviceKeys ?? []).slice(0, 1)) {
+            for (const entry of (envelope.value.deviceKeys ?? [])) {
               const bytes = Encoding.decodeBase64(entry.ciphertext);
               if (
-                bytes._tag === "Success" &&
+                bytes._tag === "Failure" ||
                 (yield* unreadable(bytes.success, ProtectedDeviceKeyJson))
               ) {
                 failed = true;
@@ -173,9 +186,10 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
               }
             }
           if (failed) failures.push("ctox");
-        }
+        } else failures.push("ctox");
       }
-      if (failures.length >= 2) {
+      if ((failures.length >= 2 || failures.includes("ctox")) &&
+          (record === undefined || (record.ctoxRetired === true && failures.includes("ctox")))) {
         record = {
           version: 1,
           generation: `${yield* Clock.currentTimeMillis}-${NodeCrypto.randomUUID()}`,
@@ -187,7 +201,23 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           unreadableStores: failures,
         });
       }
-      if (record !== undefined && !record.clerkRetired) {
+      if (record?.unreadableStores.includes("ctox") && !record.ctoxRetired) {
+        const original = `${input.stateDir}/ctox/secrets.json`;
+        const backup = `${original}.recovery-${record.generation}.bak`;
+        // Persist the generation before retiring anything, so interrupted startup resumes it.
+        if (!(yield* fs.exists(backup)) && (yield* fs.exists(original)))
+          yield* fs.rename(original, backup);
+        const bindings = `${input.stateDir}/ctox/instances.json`;
+        const bindingsBackup = `${bindings}.recovery-${record.generation}.bak`;
+        // Keep public IDs in place: manual pairings must remain visible and replaceable.
+        if (!(yield* fs.exists(bindingsBackup)) && (yield* fs.exists(bindings)))
+          yield* fs.copyFile(bindings, bindingsBackup);
+        const updated = { ...record, ctoxRetired: true };
+        yield* persist(updated);
+        record = updated;
+      }
+      if (record !== undefined && !record.clerkRetired &&
+          record.unreadableStores.some((store) => store !== "ctox")) {
         const original = `${input.stateDir}/clerk-tokens.json`;
         const retired = `${original}.recovery-${record.generation}.bak`;
         if (!(yield* fs.exists(retired)) && (yield* fs.exists(original)))
@@ -206,6 +236,21 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
   );
   return DesktopKeyRecovery.of({
     inspect,
+    beginManagedRepair: (instanceIds) => Effect.andThen(inspect, lock.withPermit(Effect.gen(function* () {
+      if (record === undefined || record.managedRepairStarted) return false;
+      const updated = { ...record, pendingLogin: false, managedRepairStarted: true,
+        instanceRepairs: instanceIds.map((instanceId) => ({ instanceId, state: "repairing" as const })) };
+      yield* persist(updated);
+      record = updated;
+      return true;
+    }))),
+    recordInstanceRepair: (instanceId, state) => Effect.andThen(inspect, lock.withPermit(Effect.gen(function* () {
+      if (record === undefined || !record.managedRepairStarted) return;
+      const updated = { ...record, instanceRepairs: (record.instanceRepairs ?? []).map((entry) =>
+        entry.instanceId === instanceId ? { instanceId, state } : entry) };
+      yield* persist(updated);
+      record = updated;
+    }))),
     markCatalogReset: Effect.andThen(
       inspect,
       lock.withPermit(
@@ -224,6 +269,8 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           .withPermit(
             Effect.gen(function* () {
               if (record === undefined || input.userDataDir === undefined) return;
+              if (partition === "persist:workjet-ctox-control-plane" &&
+                  record.unreadableStores.every((store) => store === "ctox")) return;
               if (!/^persist:workjet-ctox-[a-zA-Z0-9_-]+$/.test(partition))
                 return yield* fail("validate recovery partition");
               if (record.retiredPartitions?.includes(partition)) return;

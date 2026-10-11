@@ -11,5 +11,5 @@
   },
   "mockedNativeRpc": true,
   "realInstalledRouteNotMeasured": true,
-  "subsequentChange": "The native query target is now supplied by the authorized Luma connection hook. The pure rendered view and shared controls are unchanged."
+  "subsequentChange": "The native query target is now supplied by the authorized Luma connection hook, preserving strict rejection of incomplete/foreign bindings. The pure rendered view and shared controls are unchanged."
 }

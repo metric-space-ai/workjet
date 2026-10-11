@@ -6,55 +6,29 @@ import { ensureInlineNoticeSlot, InlineConfirmBar } from "./InlineNoticeSlot";
 
 describe("inline confirmation copy", () => {
   it.each([
+    ["Unterhaltung „Fix login“ löschen?", "Unterhaltung „Fix login“ löschen?", "Löschen"],
+    ["3 Unterhaltungen löschen?", "3 Unterhaltungen löschen?", "Löschen"],
+    ["2 Unterhaltungen archivieren?", "2 Unterhaltungen archivieren?", "Archivieren"],
+    ["Projekt „workjet“ entfernen?\nPfad: /repo", "Projekt „workjet“ entfernen?", "Entfernen"],
+    ["Worktree ebenfalls löschen?\n/tmp/wt", "Worktree ebenfalls löschen?", "Löschen"],
     [
-      'Delete thread "Fix login"?\nThis permanently clears conversation history for this thread.',
-      "Thread „Fix login“ löschen?",
-      "Löschen",
-    ],
-    [
-      "Delete 3 threads?\nThis permanently clears conversation history.",
-      "3 Threads löschen?",
-      "Löschen",
-    ],
-    ["Delete 1 thread?", "1 Thread löschen?", "Löschen"],
-    ["Archive 2 threads?", "2 Threads archivieren?", "Archivieren"],
-    [
-      'Remove project "workjet" and delete its 4 threads?\nPath: /repo',
-      "Projekt „workjet“ und 4 Threads löschen?",
-      "Löschen",
-    ],
-    ['Remove project "workjet"?\nPath: /repo', "Projekt „workjet“ entfernen?", "Entfernen"],
-    [
-      "This thread is the only one linked to this worktree:\n/tmp/wt\n\nDelete the worktree too?",
-      "Worktree auch löschen?",
-      "Löschen",
-    ],
-    [
-      "Revert this thread to checkpoint 3?\nThis will discard newer messages.",
-      "Thread auf Checkpoint 3 zurücksetzen?",
+      "Unterhaltung auf Checkpoint 3 zurücksetzen?\nNeuere Nachrichten und Diffs gehen verloren.",
+      "Unterhaltung auf Checkpoint 3 zurücksetzen?",
       "Zurücksetzen",
     ],
     [
-      "Restore default settings?\nThis will reset: Theme.",
-      "Standardeinstellungen wiederherstellen?",
+      "Standard wiederherstellen?\nZurückgesetzt wird: Theme.",
+      "Standard wiederherstellen?",
       "Wiederherstellen",
     ],
+    ["SIGKILL an Prozess 4711 senden?", "SIGKILL an Prozess 4711 senden?", "Senden"],
     [
-      "Send SIGKILL to process 4711? This cannot be handled by the process.",
-      "SIGKILL an Prozess 4711 senden?",
-      "Senden",
-    ],
-    [
-      "Install update 0.0.86 and restart Workjet?\n\nAny running tasks will be interrupted.",
-      "Update 0.0.86 installieren und neu starten?",
+      "Update 0.0.86 installieren und Workjet neu starten?\n\nLaufende Aufgaben werden unterbrochen.",
+      "Update 0.0.86 installieren und Workjet neu starten?",
       "Installieren",
     ],
-    [
-      "Turn on token-by-token output?\nIt is slower.",
-      "Token-für-Token-Ausgabe einschalten?",
-      "Einschalten",
-    ],
-  ])("shows only the German question for %j", (message, question, confirmLabel) => {
+    ["Token-für-Token-Ausgabe einschalten?", "Token-für-Token-Ausgabe einschalten?", "Einschalten"],
+  ])("shows only the question for %j and derives the action", (message, question, confirmLabel) => {
     expect(resolveConfirmDialogCopy(message)).toEqual({ question, confirmLabel });
   });
 
@@ -74,8 +48,8 @@ describe("inline confirmation copy", () => {
   });
 
   it("lets a caller choose the confirm label", () => {
-    expect(resolveConfirmDialogCopy("Delete 2 threads?", "Weg damit")).toEqual({
-      question: "2 Threads löschen?",
+    expect(resolveConfirmDialogCopy("2 Unterhaltungen löschen?", "Weg damit")).toEqual({
+      question: "2 Unterhaltungen löschen?",
       confirmLabel: "Weg damit",
     });
   });
@@ -90,7 +64,7 @@ describe("InlineConfirmBar", () => {
           confirm: "confirm-bar-confirm",
           cancel: "confirm-bar-cancel",
         }}
-        question="Thread „Fix login“ löschen?"
+        question="Unterhaltung „Fix login“ löschen?"
         confirmLabel="Löschen"
         variant="destructive"
         onCancel={() => undefined}
@@ -99,7 +73,7 @@ describe("InlineConfirmBar", () => {
     );
     expect(markup).toContain("data-confirm-bar");
     expect(markup).toContain('role="group"');
-    expect(markup).toContain("Thread „Fix login“ löschen?");
+    expect(markup).toContain("Unterhaltung „Fix login“ löschen?");
     expect(markup).toMatch(/data-confirm-bar-confirm[^>]*>Löschen</);
     expect(markup).toMatch(/data-confirm-bar-cancel[^>]*>Abbrechen</);
     expect(markup).not.toContain('role="dialog"');

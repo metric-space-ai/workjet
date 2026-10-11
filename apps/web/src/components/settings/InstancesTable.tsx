@@ -211,6 +211,7 @@ export function InstancesTable({
             instance.source === "pairing_invite" ||
             instance.source === "manual_pairing" ||
             instance.source === "ctox_dev";
+          const deletable = instance.source !== "local_daemon" && onStateChange !== undefined;
           const menuActions: RowMenuAction[] = [];
           if (
             !selected &&
@@ -260,11 +261,13 @@ export function InstancesTable({
                         void change(instance, checked === true ? "enabled" : "disabled")
                       }
                     />
+                    {deletable ? null : (
+                      // Platzhalter in Papierkorb-Breite: Schalter bleiben in einer Spalte.
+                      <span aria-hidden className="w-[30px] shrink-0 sm:w-[26px]" />
+                    )}
                   </>
                 }
-                {...(instance.source !== "local_daemon" && onStateChange !== undefined
-                  ? { onDelete: () => void change(instance, "removed") }
-                  : {})}
+                {...(deletable ? { onDelete: () => void change(instance, "removed") } : {})}
                 deleteLabel={text.remove}
                 deleteConfirmTitle={text.removeConfirm}
                 menuActions={menuActions}

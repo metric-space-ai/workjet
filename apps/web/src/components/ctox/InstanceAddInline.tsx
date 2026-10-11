@@ -38,6 +38,10 @@ export const INSTANCE_ADD_OPTIONS: ReadonlyArray<{
   { value: "manual", label: "Verbindungsdaten" },
 ];
 
+/** Segment: die gewählte Option ist deutlich hervorgehoben. */
+export const SEGMENT_TOGGLE_CLASS =
+  "text-muted-foreground data-pressed:bg-primary/15 data-pressed:text-foreground dark:data-pressed:bg-primary/20";
+
 export const INSTANCE_ADD_TRIGGER_LABEL = "Instanz hinzufügen";
 export const INSTANCE_REPAIR_LABEL = "Neu koppeln";
 
@@ -240,6 +244,7 @@ export function InstanceAddPanel({
               value={entry.value}
               disabled={submitting}
               data-workjet-instance-add-option={entry.value}
+              className={SEGMENT_TOGGLE_CLASS}
             >
               {entry.label}
             </Toggle>

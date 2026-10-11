@@ -25,7 +25,7 @@ import {
 } from "../../instanceSetup";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
-import { InstanceAddInline } from "../ctox/InstanceAddInline";
+import { InstanceAddInline, SEGMENT_TOGGLE_CLASS } from "../ctox/InstanceAddInline";
 import { InstanceNetworkOverview } from "../ctox/InstanceNetworkOverview";
 import { Banner } from "../ui/banner";
 import { Button } from "../ui/button";
@@ -284,8 +284,14 @@ function DeviceInvitePanel({
             }
           }}
         >
-          <Toggle value="qr">QR-Code</Toggle>
-          <Toggle value="manual" disabled={onLoadManualConnection === undefined}>
+          <Toggle className={SEGMENT_TOGGLE_CLASS} value="qr">
+            QR-Code
+          </Toggle>
+          <Toggle
+            className={SEGMENT_TOGGLE_CLASS}
+            value="manual"
+            disabled={onLoadManualConnection === undefined}
+          >
             Verbindungsdaten
           </Toggle>
         </ToggleGroup>

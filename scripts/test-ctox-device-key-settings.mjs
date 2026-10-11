@@ -65,10 +65,13 @@ const server = await createServer({
           }
           if (request.url === "/__device-key-fixture") {
             response.setHeader("content-type", "text/html");
-            void vite.transformIndexHtml(
+            void vite
+              .transformIndexHtml(
                 request.url,
-                '<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Workjet · isoliertes Geräteschlüssel-Prüfprofil</title></head><body><div id="root"></div><script type="module" src="/__device-key-fixture.tsx"></script></body></html>',
-              ).then((html) => response.end(html)).catch(next);
+                '<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Workjet · isoliertes Geräteschlüssel-Prüfprofil</title><link rel="icon" href="data:,"></head><body><div id="root"></div><script type="module" src="/__device-key-fixture.tsx"></script></body></html>',
+              )
+              .then((html) => response.end(html))
+              .catch(next);
             return;
           }
           next();
@@ -86,9 +89,17 @@ try {
   NodeAssert.ok(address && typeof address !== "string");
   const url = `http://127.0.0.1:${address.port}/__device-key-fixture`;
   browser = await chromium.launch({
-    executablePath: process.env.DEVICE_UI_BROWSER ?? "/usr/bin/google-chrome",
+    ...(process.env.DEVICE_UI_BROWSER === undefined
+      ? {}
+      : { executablePath: process.env.DEVICE_UI_BROWSER }),
     headless: true,
-    args: ["--no-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-gpu",
+      "--disable-software-rasterizer",
+      "--disable-crash-reporter",
+      "--enable-logging=stderr",
+    ],
   });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
@@ -113,7 +124,10 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       `overflow at ${width}`,
     );
-    await page.screenshot({ path: NodePath.join(output, `device-key-${width}.png`), fullPage: true });
+    await page.screenshot({
+      path: NodePath.join(output, `device-key-${width}.png`),
+      fullPage: true,
+    });
   }
   await page.getByRole("button", { name: "Geräteschlüssel-Menü" }).click();
   await page.getByRole("menuitem", { name: "Neu einrichten" }).click();
@@ -127,11 +141,19 @@ try {
   await page.reload();
   await page.getByText("Geräteschlüssel-Limit erreicht").waitFor();
   NodeAssert.equal(await page.getByRole("dialog").count(), 0);
-  await page.screenshot({ path: NodePath.join(output, "device-key-limit-420.png"), fullPage: true });
+  await page.screenshot({
+    path: NodePath.join(output, "device-key-limit-420.png"),
+    fullPage: true,
+  });
+  status = { state: "not_configured" };
   const fresh = await browser.newContext({ viewport: { width: 420, height: 900 } });
   const freshPage = await fresh.newPage();
   await freshPage.goto(url);
   await freshPage.getByText("Geräteschlüssel: nicht eingerichtet").waitFor();
+  await freshPage.screenshot({
+    path: NodePath.join(output, "device-key-not-configured-420.png"),
+    fullPage: true,
+  });
   await fresh.close();
   await context.close();
   NodeAssert.deepEqual(errors, []);

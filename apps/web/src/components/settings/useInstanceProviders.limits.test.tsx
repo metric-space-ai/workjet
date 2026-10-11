@@ -6,7 +6,12 @@ vi.mock("../../lib/workjetNativeProviders", () => ({ requestInstanceProviders: a
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   const { reactHookHarness } = await import("../../test/reactHookHarness");
-  return { ...actual, useCallback: reactHookHarness.useCallback, useEffect: reactHookHarness.useEffect,
+  return { ...actual, useCallback: <T,>(callback: T, deps: readonly unknown[]) => {
+    const memo = reactHookHarness.useRef({ callback, deps });
+    if (memo.current.deps.length !== deps.length || memo.current.deps.some((dep, index) => !Object.is(dep, deps[index])))
+      memo.current = { callback, deps };
+    return memo.current.callback;
+  }, useEffect: reactHookHarness.useEffect,
     useRef: reactHookHarness.useRef, useState: reactHookHarness.useState };
 });
 vi.mock("react/compiler-runtime", async () => {

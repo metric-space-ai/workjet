@@ -588,6 +588,7 @@ describe("CTOX instance presentation", () => {
     });
 
     expect(canActivateCtoxInstance(managed)).toBe(true);
+    expect(isRemovableCtoxInstance(managed)).toBe(false);
     expect(canActivateCtoxInstance({ ...managed, workjetState: "disabled" })).toBe(false);
     expect(canActivateCtoxInstance({ ...paired, workjetState: "removed" })).toBe(false);
     expect(

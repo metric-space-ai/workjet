@@ -224,7 +224,7 @@ export function isSshManagedCtoxInstance(instance: CtoxManagedInstance): boolean
 
 /** Instances the user configured themselves and may therefore remove again. */
 export function isRemovableCtoxInstance(instance: CtoxManagedInstance): boolean {
-  return instance.source !== "local_daemon";
+  return isPairedCtoxInstance(instance) || isSshManagedCtoxInstance(instance);
 }
 
 export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean {

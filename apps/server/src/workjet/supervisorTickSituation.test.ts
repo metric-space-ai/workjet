@@ -196,10 +196,10 @@ describe("supervisor situation", () => {
         updatedAt: base.updatedAt,
         deletedAt: null,
       },
-      threads: Array.from({ length: 500 }, (_, index) => ({
+      threads: [base, ...Array.from({ length: 499 }, (_, index) => ({
         ...base,
         id: ThreadId.make("worker-" + index),
-      })),
+      }))],
       since: base.createdAt,
       now,
       pullRequests: Array.from({ length: 100 }, () => pr),

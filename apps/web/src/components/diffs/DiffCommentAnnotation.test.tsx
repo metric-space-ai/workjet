@@ -21,9 +21,9 @@ describe("DiffCommentAnnotation", () => {
     expect(markup).not.toContain("font-mono");
     expect(markup).not.toContain("Local comment");
     expect(markup).not.toContain("on +78");
-    expect(markup).toContain("⌘/Ctrl Enter to send");
-    expect(markup).toContain("Add a comment…");
-    expect(markup).toContain(">Comment</button>");
+    expect(markup).toContain("⌘/Ctrl Enter zum Senden");
+    expect(markup).toContain("Kommentar hinzufügen …");
+    expect(markup).toContain(">Kommentieren</button>");
     expect(markup).toContain("autofocus");
     const textareaControl = markup.match(/<span[^>]*data-slot="textarea-control"[^>]*>/)?.[0];
     expect(textareaControl).toBeDefined();
@@ -48,7 +48,7 @@ describe("DiffCommentAnnotation", () => {
       />,
     );
 
-    expect(markup).toContain("Add a comment…");
+    expect(markup).toContain("Kommentar hinzufügen …");
     expect(markup).toContain(">Ask</button>");
     expect(markup).toContain(">Add to review</button>");
     expect(markup.match(/<button[^>]*disabled[^>]*>Add to review<\/button>/)).not.toBeNull();
@@ -71,7 +71,7 @@ describe("DiffCommentAnnotation", () => {
     expect(markup).not.toContain("chat-composer-glass");
     expect(markup).not.toContain("on +78");
     expect(markup).toContain("Please keep this branch explicit.");
-    expect(markup).toContain('aria-label="Delete comment"');
+    expect(markup).toContain('aria-label="Kommentar löschen"');
     expect(markup).toContain("border-s-2");
     expect(markup).toContain("bg-primary/[0.045]");
     expect(markup).toContain("lucide-message-circle");

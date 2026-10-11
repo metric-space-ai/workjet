@@ -34,7 +34,7 @@ function ConfiguredWorkjetConnectSidebarAvatar() {
       }}
     >
       <UserButton.UserProfilePage
-        label="Mobile clients"
+        label="Mobilgeräte"
         labelIcon={<SmartphoneIcon className="size-4" />}
         url="mobile-clients"
       >
@@ -63,7 +63,7 @@ function ConfiguredWorkjetConnectSidebarSignIn() {
         <SidebarMenuItem>
           <SidebarMenuButton onClick={openAuthPrompt}>
             <LogInIcon />
-            <span>Sign in to Workjet Connect</span>
+            <span>Bei Workjet Connect anmelden</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

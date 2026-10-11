@@ -99,8 +99,7 @@ export function CloudEnvironmentConnectRows({
     if (result._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: "Environment added",
-        description: `Connecting to ${environment.label} through Workjet Connect.`,
+        title: "Instanz hinzugefügt",
       });
       return;
     }
@@ -108,18 +107,17 @@ export function CloudEnvironmentConnectRows({
       return;
     }
     const cause = squashAtomCommandFailure(result);
-    const message =
-      cause instanceof Error ? cause.message : "Could not connect the Workjet Connect environment.";
+    const message = cause instanceof Error ? cause.message : "Verbindung fehlgeschlagen";
     const traceId = findErrorTraceId(cause);
     console.error("[workjet-connect] Could not connect environment", { message, traceId, cause });
     toastManager.add({
       type: "error",
-      title: "Could not connect environment",
+      title: "Instanz nicht verbunden",
       description: message,
       data: traceId
         ? {
             secondaryActionProps: {
-              children: "Copy trace ID",
+              children: "Trace-ID kopieren",
               onClick: () => void navigator.clipboard?.writeText(traceId),
             },
           }
@@ -148,14 +146,12 @@ export function CloudEnvironmentConnectRows({
     // A failed or offline discovery is not "no environments" — misreporting it
     // as empty would read as the user's devices having disappeared.
     const discoveryProblem = environmentsState.offline
-      ? "You appear to be offline."
+      ? "Offline"
       : (Option.getOrNull(environmentsState.error)?.message ?? null);
     if (discoveryProblem !== null && !environmentsState.refreshing) {
       return (
         <div className={ITEM_ROW_CLASSNAME}>
-          <p className="text-sm font-medium text-destructive">
-            Could not load Workjet Connect environments
-          </p>
+          <p className="text-sm font-medium text-destructive">Instanzen nicht geladen</p>
           <p className="mt-1 text-xs text-muted-foreground">{discoveryProblem}</p>
           <Button
             size="sm"
@@ -163,7 +159,7 @@ export function CloudEnvironmentConnectRows({
             className="mt-3"
             onClick={() => void refreshRelayEnvironments()}
           >
-            Try again
+            Erneut versuchen
           </Button>
         </div>
       );
@@ -194,12 +190,12 @@ export function CloudEnvironmentConnectRows({
     const statusText = savedConnection
       ? savedConnection.statusText
       : availability === "online"
-        ? "Available · Relay online"
+        ? "Verfügbar · Relay online"
         : availability === "offline"
-          ? "Available · Relay offline"
+          ? "Verfügbar · Relay offline"
           : availability === "checking"
-            ? "Available · Checking relay status…"
-            : (Option.getOrNull(error)?.message ?? "Available · Relay status unavailable");
+            ? "Verfügbar · Relay wird geprüft …"
+            : (Option.getOrNull(error)?.message ?? "Verfügbar · Relay unbekannt");
     return (
       <div key={environment.environmentId} className={ITEM_ROW_CLASSNAME}>
         <div className={ITEM_ROW_INNER_CLASSNAME}>
@@ -221,8 +217,8 @@ export function CloudEnvironmentConnectRows({
                       : availability === "offline"
                         ? "Relay offline"
                         : availability === "checking"
-                          ? "Checking relay status"
-                          : (Option.getOrNull(error)?.message ?? "Relay status unavailable")
+                          ? "Relay wird geprüft"
+                          : (Option.getOrNull(error)?.message ?? "Relay unbekannt")
                 }
               />
               <p className="truncate text-sm font-medium">{environment.label}</p>
@@ -250,7 +246,7 @@ export function CloudEnvironmentConnectRows({
               disabled={connectingEnvironmentId !== null}
               onClick={() => void connectEnvironment(environment)}
             >
-              {connectingEnvironmentId === environment.environmentId ? "Connecting…" : "Connect"}
+              {connectingEnvironmentId === environment.environmentId ? "Verbindet …" : "Verbinden"}
             </Button>
           )}
         </div>

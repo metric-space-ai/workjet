@@ -114,6 +114,7 @@ describe("Provider account table", () => {
             connectionFailure: failure,
             busy: false,
             run: async () => undefined,
+            check: async () => undefined,
             refresh: async () => undefined,
           }}
           grok={{

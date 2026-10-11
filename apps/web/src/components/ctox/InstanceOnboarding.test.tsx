@@ -8,6 +8,7 @@ import {
   InstanceNavigationBoundary,
   InstanceSidebarBoundary,
   InstanceWorkspaceBoundary,
+  WorkjetKeyRecoveryView,
 } from "./InstanceOnboarding";
 import { instanceAppsLabel, instanceHostLabel } from "./InstanceNetworkOverview";
 import { closeInstanceSetup, instanceSetupStore, openInstanceSetup } from "../../instanceSetup";
@@ -42,6 +43,27 @@ const alpha: CtoxManagedInstance = {
 };
 
 describe("instance-first network navigation", () => {
+  it("shows exactly one recovery action and blocks the old workspace until sign-in", () => {
+    const html = renderToStaticMarkup(
+      <WorkjetKeyRecoveryView onLogin={() => undefined} catalogReset />,
+    );
+    expect(html).toContain("Workjet hat seinen lokalen Schlüssel verloren.");
+    expect(html).toContain("Bei ctox.dev anmelden");
+    expect(html.match(/<button\b/g)).toHaveLength(1);
+    expect(html).not.toContain("Reconnect Workjet Desktop");
+    expect(html).not.toContain("Back up and reset");
+    expect(
+      resolveInstanceOnboardingState(
+        {
+          _tag: "ready",
+          instances: [alpha],
+          keyRecovery: { pendingLogin: true, connectionCatalogReset: true },
+        },
+        alpha.id,
+        "ready",
+      ),
+    ).toBe("create-or-connect");
+  });
   it("renders the selected Code workspace and project sidebar before an Ops guest exists", () => {
     const html = renderToStaticMarkup(
       <InstanceWorkspaceBoundary surface="code">

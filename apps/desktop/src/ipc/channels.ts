@@ -33,6 +33,7 @@ export const GET_CONNECTION_CATALOG_CHANNEL = "desktop:get-connection-catalog";
 export const SET_CONNECTION_CATALOG_CHANNEL = "desktop:set-connection-catalog";
 export const CLEAR_CONNECTION_CATALOG_CHANNEL = "desktop:clear-connection-catalog";
 export const RECOVER_CONNECTION_CATALOG_CHANNEL = "desktop:recover-connection-catalog";
+export const CONNECTION_CATALOG_WARNING_CHANNEL = "desktop:connection-catalog-warning";
 export const DISCOVER_SSH_HOSTS_CHANNEL = "desktop:discover-ssh-hosts";
 export const DISCOVER_TAILSCALE_PEERS_CHANNEL = "desktop:discover-tailscale-peers";
 export const ENSURE_SSH_ENVIRONMENT_CHANNEL = "desktop:ensure-ssh-environment";

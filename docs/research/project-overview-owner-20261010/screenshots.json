@@ -1,0 +1,33 @@
+{
+  "source": "real Molecularity SQLite projection; isolated component integration",
+  "nativeInstanceAvailable": false,
+  "connectedSidebarAvailable": false,
+  "sourceRevision": "ffce9e6ae6fe6f7d7c3e8c5ce9e99d0e70a8cf9c",
+  "observations": [
+    {
+      "viewport": 1440,
+      "height": 1032,
+      "scrollWidth": 1440,
+      "sections": ["decisions", "goals", "results", "history", "diagnosis"],
+      "kpis": 4,
+      "diagnosisOpen": false,
+      "lang": "de",
+      "title": "Molecularity",
+      "goals": 3,
+      "width": 1440
+    },
+    {
+      "viewport": 420,
+      "height": 1794,
+      "scrollWidth": 420,
+      "sections": ["decisions", "goals", "results", "history", "diagnosis"],
+      "kpis": 4,
+      "diagnosisOpen": false,
+      "lang": "de",
+      "title": "Molecularity",
+      "goals": 3,
+      "width": 420
+    }
+  ],
+  "errors": []
+}

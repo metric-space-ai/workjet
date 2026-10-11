@@ -160,10 +160,26 @@ function InstanceNode({
         <Button
           size="sm"
           variant="outline"
-          disabled={!available}
-          onClick={() => onSelect(instance)}
+          disabled={
+            !available &&
+            !(
+              (instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
+              instance.status === "error"
+            )
+          }
+          onClick={() =>
+            (instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
+            instance.status === "error"
+              ? openInstanceSetup("link", instance.id)
+              : onSelect(instance)
+          }
         >
-          {available ? "Instanz auswählen" : "Nicht erreichbar"}
+          {(instance.source === "pairing_invite" || instance.source === "manual_pairing") &&
+          instance.status === "error"
+            ? "Neu koppeln"
+            : available
+              ? "Instanz auswählen"
+              : "Nicht erreichbar"}
         </Button>
       </header>
       <div className="network-instance-body">

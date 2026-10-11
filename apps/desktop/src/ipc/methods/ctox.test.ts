@@ -37,6 +37,8 @@ import {
   setAppDocked,
 } from "./ctox.ts";
 import * as CtoxAppRail from "../../ctox/CtoxAppRail.ts";
+import { DesktopKeyRecovery } from "../../app/DesktopKeyRecovery.ts";
+import type { Session } from "electron";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -162,6 +164,90 @@ function accountCleanupLayer(
 }
 
 describe("CTOX IPC methods", () => {
+  it.effect(
+    "reconnects managed instances through the login handler after exactly one identity check",
+    () => {
+      let pendingLogin = true;
+      let signIns = 0;
+      const events: string[] = [];
+      const managed = {
+        ...pairedInstance,
+        id: "managed:tenant-fixture",
+        source: "ctox_dev",
+        status: "available",
+      } as const;
+      const recovery = DesktopKeyRecovery.of({
+        inspect: Effect.sync(() => ({
+          version: 1,
+          generation: "1-11111111-1111-4111-8111-111111111111",
+          pendingLogin,
+          unreadableStores: ["session", "catalog"],
+        })),
+        completeLogin: Effect.sync(() => {
+          events.push("complete");
+          pendingLogin = false;
+        }),
+      });
+      const auth = CtoxDevAuth.CtoxDevAuth.of({
+        login: Effect.sync(() => {
+          signIns++;
+          events.push("login");
+          return { _tag: "completed", via: "url" } as const;
+        }),
+        refresh: Effect.succeed({ _tag: "ready", instances: [managed] }),
+        logout: Effect.void,
+      });
+      const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
+        account: Effect.die("No extra account dialog."),
+        instance: (instance) =>
+          Effect.sync(() => {
+            events.push(`partition:${instance.id}`);
+            return {} as Session;
+          }),
+        clearInstance: () => Effect.die("Do not delete old storage."),
+      });
+      const launch = CtoxManagedLaunch.CtoxManagedLaunch.of({
+        launch: (instance) =>
+          Effect.sync(() => {
+            events.push(`pair:${instance.id}`);
+            return {
+              launchUrl: "https://tenant-fixture.ctox.dev/",
+              launchOrigin: "https://tenant-fixture.ctox.dev",
+            };
+          }),
+        resolveBusinessOsInstanceId: () => Effect.die("No old-secret identity lookup."),
+      });
+      return Effect.gen(function* () {
+        const result = yield* login
+          .handler(undefined)
+          .pipe(
+            Effect.provideService(DesktopKeyRecovery, recovery),
+            Effect.provideService(CtoxElectronSessions.CtoxElectronSessions, sessions),
+            Effect.provideService(CtoxManagedLaunch.CtoxManagedLaunch, launch),
+          );
+        assert.deepEqual(result, {
+          _tag: "completed",
+          discovery: { _tag: "ready", instances: [managed] },
+        });
+        assert.equal(signIns, 1);
+        assert.isFalse(pendingLogin);
+        assert.deepEqual(events, [
+          "login",
+          `partition:${managed.id}`,
+          `pair:${managed.id}`,
+          "complete",
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            accountCleanupLayer(),
+            Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
+            registryLayer(),
+          ),
+        ),
+      );
+    },
+  );
   it.effect("resolves only the canonical paired authority id without secret material", () => {
     const resolveBusinessOsInstanceId = vi.fn(() => Effect.succeed("office-1" as never));
     return Effect.gen(function* () {

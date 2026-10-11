@@ -6,7 +6,11 @@ import {
   ThreadId,
   type OrchestrationThreadShell,
 } from "@workjet/contracts";
-import { manualProjectWorkerConfig, manualProjectWorkerParent } from "./ManualProjectWorker.ts";
+import {
+  manualProjectWorkerConfig,
+  manualProjectWorkerParent,
+  canBypassManualWorkerPreparation,
+} from "./ManualProjectWorker.ts";
 import { validateManualWorkerSource } from "./ManualProjectWorkerSource.ts";
 import type { VcsStatusResult } from "@workjet/contracts";
 const projectId = ProjectId.make("project");
@@ -46,6 +50,29 @@ const commissioned = {
   },
 } as OrchestrationThreadShell;
 describe("manual project worker qualification", () => {
+  it("keeps concurrent first turns locked even after the worker config is saved", () => {
+    expect(canBypassManualWorkerPreparation(undefined)).toBe(false);
+    expect(canBypassManualWorkerPreparation(commissioned)).toBe(false);
+    const preparing = {
+      ...commissioned,
+      worktreePath: "/owned/worker",
+      workjetConfig: manualProjectWorkerConfig(
+        commissioned,
+        supervisor,
+        EnvironmentId.make("local"),
+        "First task",
+      ),
+    };
+    expect(canBypassManualWorkerPreparation(preparing)).toBe(false);
+    expect(
+      canBypassManualWorkerPreparation({
+        ...preparing,
+        latestTurn: {} as NonNullable<OrchestrationThreadShell["latestTurn"]>,
+      }),
+    ).toBe(true);
+    expect(canBypassManualWorkerPreparation(supervisor)).toBe(true);
+  });
+
   it("keeps ordinary project threads ordinary regardless of checkout or supervisor availability", () => {
     for (const checkout of [null, "/user/work"]) {
       const ordinary = { ...thread, worktreePath: checkout };
@@ -110,14 +137,35 @@ describe("manual project worker qualification", () => {
     ).toBeUndefined();
   });
   it("does not migrate historical explicit workers or reuse an unavailable parent", () => {
-    expect(() =>
-      manualProjectWorkerParent({ ...commissioned, latestTurn: {} } as OrchestrationThreadShell, [
-        supervisor,
-      ]),
-    ).toThrow("explicit isolated-worker migration");
+    const continued = { ...commissioned, latestTurn: {} } as OrchestrationThreadShell;
+    expect(manualProjectWorkerParent(continued, [supervisor])).toBeUndefined();
+    expect(manualProjectWorkerParent(continued, [])).toBeUndefined();
     expect(() =>
       manualProjectWorkerParent(commissioned, [{ ...supervisor, archivedAt: thread.createdAt }]),
     ).toThrow("parent is unavailable");
+  });
+  it("does not re-isolate a worker continued on another computer without a checkout", () => {
+    const moved = {
+      ...commissioned,
+      worktreePath: null,
+      latestTurn: null,
+      workjetConfig: manualProjectWorkerConfig(
+        commissioned,
+        supervisor,
+        EnvironmentId.make("source-computer"),
+        "Original goal",
+      ),
+    };
+    const original = structuredClone(moved);
+    expect(manualProjectWorkerParent(moved, [])).toBeUndefined();
+    expect(manualProjectWorkerParent(moved, [supervisor])).toBeUndefined();
+    expect(moved).toEqual(original);
+    const importedHistory = {
+      ...commissioned,
+      latestUserMessageAt: thread.createdAt,
+      latestTurn: null,
+    };
+    expect(manualProjectWorkerParent(importedHistory, [])).toBeUndefined();
   });
   it("retains capabilities and establishes retry-stable native worker ownership", () => {
     const original = {

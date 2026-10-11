@@ -51,6 +51,7 @@ import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
+import * as DesktopKeyRecovery from "./app/DesktopKeyRecovery.ts";
 import * as DesktopClerk from "./app/DesktopClerk.ts";
 import * as DesktopDeepLinkRouter from "./app/DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
@@ -171,7 +172,9 @@ const desktopFoundationLayer = Layer.mergeAll(
   DesktopConnectionCatalogStore.layer.pipe(Layer.provideMerge(DesktopSavedEnvironments.layer)),
   DesktopAssets.layer,
   DesktopObservability.layer,
-).pipe(Layer.provideMerge(desktopEnvironmentLayer));
+).pipe(
+  Layer.provideMerge(DesktopKeyRecovery.layer.pipe(Layer.provideMerge(desktopEnvironmentLayer))),
+);
 
 const desktopSshLayer = desktopSshEnvironmentLayer.pipe(
   Layer.provideMerge(DesktopSshPasswordPrompts.layer()),
@@ -200,6 +203,7 @@ const desktopServiceAttachmentLayer = DesktopLocalServiceAttachment.layer.pipe(
   Layer.provideMerge(
     DesktopLocalServiceSession.layer.pipe(Layer.provideMerge(desktopRpcSessionLayer)),
   ),
+  Layer.provideMerge(desktopFoundationLayer),
 );
 
 // Pool layer instantiates the backend factory once for the Windows
@@ -258,6 +262,7 @@ const desktopCtoxControlLayer = Layer.mergeAll(
     }),
   ),
   Layer.provideMerge(CtoxElectronSessions.layer),
+  Layer.provideMerge(desktopFoundationLayer),
 );
 
 const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
@@ -290,11 +295,11 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopLinuxUrlHandler.layer,
   DesktopDeepLinkRouter.layer,
   DesktopShellEnvironment.layer,
-  desktopCtoxLayer,
-  desktopCtoxFleetLayer,
-  desktopSshLayer,
-  desktopProvisioningLayer,
 ).pipe(
+  Layer.provideMerge(desktopCtoxLayer),
+  Layer.provideMerge(desktopCtoxFleetLayer),
+  Layer.provideMerge(desktopSshLayer),
+  Layer.provideMerge(desktopProvisioningLayer),
   // provideMerge, not mergeAll: the application menu resolves the bundle
   // service, and the IPC handler resolves the same instance from the
   // re-exported context.

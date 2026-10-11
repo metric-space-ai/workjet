@@ -1208,6 +1208,43 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("retains command timing on success and timeout without exporting guest secrets", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      for (const fails of [false, true]) {
+        const context = NodeVM.createContext({ fails });
+        NodeVM.runInContext(
+          `globalThis.workjetProjectControl = async (_request, diagnostics) => {
+            diagnostics.onCommandTiming({ commandId: "cmd_workjet_project_list_123",
+              stagesMs: { sync_readiness: 21000, secret: "private-value" },
+              token: "private-value" });
+            if (fails) throw Object.assign(new Error(
+              "Workjet project list did not finish command before its deadline."),
+              { code: "WORKJET_PROJECT_TIMEOUT" });
+            return { action: "project.list", projects: [], count: 0, truncated: false };
+          };`,
+          context,
+        );
+        harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
+          const raw = await NodeVM.runInContext(expression, context);
+          expect(JSON.stringify(raw)).not.toContain("private-value");
+          expect(JSON.parse(JSON.stringify(raw.commandTiming))).toEqual({
+            commandId: "cmd_workjet_project_list_123",
+            stagesMs: { sync_readiness: 21000 },
+          });
+          return raw;
+        });
+        const result = yield* manager.requestProjectControl(descriptor.id, {
+          action: "project.list",
+        });
+        expect(result._tag).toBe(fails ? "failed" : "completed");
+        expect(result).not.toHaveProperty("commandTiming");
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("preserves a classified native request timeout through the project bridge", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {
@@ -1238,11 +1275,13 @@ describe("CtoxGuestManager", () => {
         ["Workjet supervisor control is not ready.", "supervisor_control_not_ready"],
         ["Native WebRTC peer is not connected", "peer_unavailable"],
         ["Native request ctox.workjet.project.v1 exceeded 28000ms", "request_timeout"],
+        ["projection delayed", "request_timeout"],
+        ["Workjet project list did not finish collections before its deadline.", "request_timeout"],
         ["Failed to fetch", "network_unavailable"],
       ] as const) {
         const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
+          "globalThis.workjetProjectControl = async () => { const error = new Error(fixtureMessage); if (fixtureMessage === 'projection delayed') error.code = 'projection_delayed'; if (fixtureMessage === 'Workjet project list did not finish collections before its deadline.') error.code = 'WORKJET_PROJECT_TIMEOUT'; throw error; };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
@@ -1254,11 +1293,67 @@ describe("CtoxGuestManager", () => {
         });
         assert.deepEqual(
           yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
-          { _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason } },
+          {
+            _tag: "failed",
+            code: "guest_failed",
+            diagnostic: {
+              stage: "execute",
+              reason,
+              ...(message === "Workjet project list did not finish collections before its deadline."
+                ? { phase: "collections" }
+                : message.startsWith("Native request ")
+                  ? { phase: "native_request" }
+                  : {}),
+            },
+          },
         );
       }
     }).pipe(Effect.provide(harness.layer));
   });
+
+  it.effect(
+    "retains only fixed project-list timeout phases without exposing renderer error text",
+    () => {
+      const harness = makeGuestHarness();
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.ensurePooled(descriptor.id);
+        for (const [label, phase] of [
+          ["collections", "collections"],
+          ["command", "command"],
+          ["bridge", "bridge"],
+          ["query readiness", "query_readiness"],
+          ["native projection", "native_projection"],
+          ["private-instance?token=private-value", undefined],
+        ] as const) {
+          const context = NodeVM.createContext({
+            fixtureMessage: `Workjet project list did not finish ${label} before its deadline.`,
+          });
+          NodeVM.runInContext(
+            "globalThis.workjetProjectControl = async () => { throw Object.assign(new Error(fixtureMessage), { code: 'WORKJET_PROJECT_TIMEOUT' }); };",
+            context,
+          );
+          harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) =>
+            NodeVM.runInContext(expression, context),
+          );
+          const result = yield* manager.requestProjectControl(descriptor.id, {
+            action: "project.list",
+          });
+          assert.deepEqual(result, {
+            _tag: "failed",
+            code: "guest_failed",
+            diagnostic: {
+              stage: "execute",
+              reason: "request_timeout",
+              ...(phase === undefined ? {} : { phase }),
+            },
+          });
+          expect(result).not.toHaveProperty("message");
+          expect(result).not.toHaveProperty("diagnostic.message");
+        }
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
 
   it.effect("keeps unsupported and private renderer exceptions distinct", () => {
     const harness = makeGuestHarness();
@@ -1271,7 +1366,7 @@ describe("CtoxGuestManager", () => {
       ] as const) {
         const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
+          "globalThis.workjetProjectControl = async () => { const error = new Error(fixtureMessage); if (fixtureMessage === 'projection delayed') error.code = 'projection_delayed'; if (fixtureMessage === 'Workjet project list did not finish collections before its deadline.') error.code = 'WORKJET_PROJECT_TIMEOUT'; throw error; };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {

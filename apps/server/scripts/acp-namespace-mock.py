@@ -94,11 +94,15 @@ for line in sys.stdin:
         stopped = call("terminal/wait_for_exit", {"terminalId": sleeping})
         assert stopped.get("exitCode", 0) != 0 or stopped.get("signal") in ("SIGTERM", "SIGKILL"), stopped
         call("terminal/release", {"terminalId": sleeping})
-        if turns == 2 or "hold-terminal" in text:
+        if turns == 2 or "hold-terminal" in text or "hold-turn" in text:
             # Deliberately leave an owned terminal alive for runtime-scope teardown or revocation.
             held_terminal = call("terminal/create", {"command": "/usr/bin/sleep", "args": ["30"]})["terminalId"]
         pathlib.Path(os.environ["HOME"]).joinpath("acp-turns").write_text(str(turns))
         write({"method": "session/update", "params": {
             "sessionId": session, "update": {"sessionUpdate": "agent_message_chunk",
             "content": {"type": "text", "text": "Confined read/edit/build/git and terminal lifecycle completed"}}}})
+        if "hold-turn" in text:
+            # Keep the actual prompt and an owned terminal pending until Source revocation.
+            sys.stdin.readline()
+            raise AssertionError("Source revocation should terminate this fixture process")
         write({"id": message["id"], "result": {"stopReason": "end_turn"}})

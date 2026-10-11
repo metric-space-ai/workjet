@@ -6,6 +6,7 @@ import { makeWorkerNamespaceTools } from "../../workjet/WorkerNamespaceTools.ts"
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -344,21 +345,42 @@ export const make = (
       );
 
     const originalAdmission = options.namespaceAdmission;
+    const admissionMutex = yield* Semaphore.make(1);
+    let namespaceFailure: EffectAcpErrors.AcpTransportError | undefined;
     const admissionError = (cause: unknown) =>
       new EffectAcpErrors.AcpTransportError({
         detail: "Confined worker Source admission failed or expired",
         cause,
       });
     const namespaceAdmission = options.namespaceCapture
-      ? Effect.tryPromise({
-          try: (signal) =>
-            originalAdmission
-              ? originalAdmission(signal)
-              : Promise.reject(new Error("Missing original Source admission")),
-          catch: admissionError,
-        }).pipe(Effect.timeout("10 seconds"), Effect.mapError(admissionError))
+      ? admissionMutex.withPermit(
+          Effect.suspend(() =>
+            namespaceFailure
+              ? Effect.fail(namespaceFailure)
+              : Effect.tryPromise({
+                  try: (signal) =>
+                    originalAdmission
+                      ? originalAdmission(signal)
+                      : Promise.reject(new Error("Missing original Source admission")),
+                  catch: admissionError,
+                }).pipe(
+                  Effect.timeout("10 seconds"),
+                  Effect.mapError(admissionError),
+                  Effect.catch((error) =>
+                    Effect.sync(() => {
+                      namespaceFailure = error;
+                    }).pipe(Effect.andThen(Effect.fail(error))),
+                  ),
+                ),
+          ),
+        )
       : Effect.void;
     yield* namespaceAdmission;
+    // The lifetime guard stays outside this scope so revocation can close the
+    // owned CLI, transport and tool children without interrupting itself.
+    const processScope = options.namespaceCapture
+      ? yield* Scope.fork(runtimeScope, "sequential")
+      : runtimeScope;
 
     const spawn = yield* Effect.try({
       try: () =>
@@ -392,7 +414,7 @@ export const make = (
         }),
       )
       .pipe(
-        Effect.provideService(Scope.Scope, runtimeScope),
+        Effect.provideService(Scope.Scope, processScope),
         Effect.mapError(
           (cause) =>
             new EffectAcpErrors.AcpSpawnError({
@@ -414,7 +436,7 @@ export const make = (
           : {}),
         ...(options.protocolLogging?.logger ? { logger: options.protocolLogging.logger } : {}),
       }),
-    ).pipe(Effect.provideService(Scope.Scope, runtimeScope));
+    ).pipe(Effect.provideService(Scope.Scope, processScope));
 
     const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
     const namespaceTools = options.namespaceCapture
@@ -435,7 +457,7 @@ export const make = (
               ),
             ),
           namespaceAdmission,
-        )
+        ).pipe(Effect.provideService(Scope.Scope, processScope))
       : undefined;
     if (namespaceTools) {
       yield* acp.handleReadTextFile(namespaceTools.readTextFile);
@@ -445,6 +467,19 @@ export const make = (
       yield* acp.handleTerminalWaitForExit(namespaceTools.terminalWaitForExit);
       yield* acp.handleTerminalKill(namespaceTools.terminalKill);
       yield* acp.handleTerminalRelease(namespaceTools.terminalRelease);
+    }
+
+    if (options.namespaceCapture) {
+      yield* Effect.gen(function* () {
+        while (yield* child.isRunning) {
+          yield* Effect.race(Effect.sleep("10 seconds"), child.exitCode.pipe(Effect.ignore));
+          if (yield* child.isRunning) yield* namespaceAdmission;
+        }
+      }).pipe(
+        Effect.onError(() => Scope.close(processScope, Exit.void)),
+        Effect.ignore,
+        Effect.forkIn(runtimeScope),
+      );
     }
 
     yield* acp.handleSessionUpdate((notification) =>
@@ -498,6 +533,7 @@ export const make = (
     } satisfies NonNullable<EffectAcpSchema.InitializeRequest["clientCapabilities"]>;
 
     const getStartedState = Effect.gen(function* () {
+      if (namespaceFailure) return yield* namespaceFailure;
       const state = yield* Ref.get(startStateRef);
       if (state._tag === "Started") {
         return state.result;
@@ -743,6 +779,7 @@ export const make = (
     });
 
     const start = Effect.gen(function* () {
+      if (namespaceFailure) return yield* namespaceFailure;
       const deferred = yield* Deferred.make<
         AcpSessionRuntimeStartResult,
         EffectAcpErrors.AcpError

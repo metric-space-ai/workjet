@@ -6,6 +6,10 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as Scope from "effect/Scope";
+import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
@@ -95,6 +99,133 @@ const fixture = async () => {
 };
 
 describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
+  for (const variant of ["expired-idle", "expired-turn", "timeout-turn", "healthy"] as const) {
+    it.effect(
+      `supervises the actual confined CLI lifetime: ${variant}`,
+      () =>
+        Effect.acquireUseRelease(
+          Effect.tryPromise(fixture),
+          (owned) =>
+            Effect.gen(function* () {
+              let checks = 0;
+              let sourceAvailable = true;
+              let watchArmed = false;
+              let checkObserved!: () => void;
+              const checking = new Promise<void>((resolve) => {
+                checkObserved = resolve;
+              });
+              let abortObserved!: () => void;
+              const aborted = new Promise<void>((resolve) => {
+                abortObserved = resolve;
+              });
+              const children: ChildProcessSpawner.ChildProcessHandle[] = [];
+              const original = yield* ChildProcessSpawner.ChildProcessSpawner;
+              yield* Effect.gen(function* () {
+                const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+                const promptEntered = yield* Deferred.make<void>();
+                yield* runtime.handleSessionUpdate(() =>
+                  Deferred.succeed(promptEntered, undefined).pipe(Effect.asVoid),
+                );
+                yield* runtime.start();
+                const main = children[0]!;
+                expect(yield* main.isRunning).toBe(true);
+                let pending:
+                  | Fiber.Fiber<unknown, unknown>
+                  | undefined;
+                if (variant.endsWith("turn")) {
+                  pending = yield* runtime
+                    .prompt({ prompt: [{ type: "text", text: "hold-turn" }] })
+                    .pipe(Effect.forkIn(yield* Scope.Scope));
+                  yield* Deferred.await(promptEntered);
+                  expect(yield* children.at(-1)!.isRunning).toBe(true);
+                } else {
+                  yield* runtime.prompt({ prompt: [{ type: "text", text: "first" }] });
+                }
+                // The next check has no concurrent tool action; it belongs to the CLI guard.
+                const before = checks;
+                watchArmed = true;
+                if (variant !== "healthy") sourceAvailable = false;
+                yield* TestClock.adjust("10 seconds");
+                yield* Effect.promise(() => checking);
+                if (variant === "timeout-turn") {
+                  yield* TestClock.adjust("10 seconds");
+                  yield* Effect.promise(() => aborted);
+                }
+                if (variant === "healthy") {
+                  expect(checks).toBe(before + 1);
+                  expect(yield* main.isRunning).toBe(true);
+                  yield* runtime.prompt({ prompt: [{ type: "text", text: "follow-up" }] });
+                  expect(
+                    NodeChildProcess.execFileSync(
+                      "/usr/bin/git",
+                      ["-C", owned.workspace, "rev-list", "--count", "HEAD"],
+                      { timeout: 5000, encoding: "utf8" },
+                    ).trim(),
+                  ).toBe("2");
+                } else {
+                  yield* main.exitCode.pipe(Effect.result);
+                  for (const child of children) expect(yield* child.isRunning).toBe(false);
+                  if (pending)
+                    expect((yield* Fiber.join(pending).pipe(Effect.result))._tag).toBe("Failure");
+                  expect(
+                    (yield* runtime
+                      .prompt({ prompt: [{ type: "text", text: "after-expiry" }] })
+                      .pipe(Effect.result))._tag,
+                  ).toBe("Failure");
+                  expect(checks).toBe(before + 1);
+                }
+              }).pipe(
+                Effect.provide(
+                  AcpSessionRuntime.layer({
+                    spawn: {
+                      command: "/usr/bin/python3",
+                      args: [owned.script],
+                      cwd: owned.workspace,
+                      env: { ...owned.environment, PATH: "/usr/bin:/bin" },
+                    },
+                    namespaceCapture: owned.capture,
+                    namespaceAdmission: async (signal) => {
+                      await owned.verify();
+                      checks++;
+                      if (watchArmed) checkObserved();
+                      if (sourceAvailable) return;
+                      if (variant !== "timeout-turn") throw new Error("Source expired");
+                      await new Promise<void>((_resolve, reject) => {
+                        const abort = () => {
+                          abortObserved();
+                          reject(new Error("Source admission aborted"));
+                        };
+                        if (signal.aborted) abort();
+                        else signal.addEventListener("abort", abort, { once: true });
+                      });
+                    },
+                    cwd: owned.workspace,
+                    clientInfo: { name: "workjet-test", version: "0" },
+                    authMethodId: "test",
+                  }),
+                ),
+                Effect.scoped,
+                Effect.provideService(
+                  ChildProcessSpawner.ChildProcessSpawner,
+                  ChildProcessSpawner.make((command) =>
+                    original.spawn(command).pipe(
+                      Effect.tap((child) =>
+                        Effect.sync(() => {
+                          children.push(child);
+                        }),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+              for (const child of children) expect(yield* child.isRunning).toBe(false);
+            }),
+          (owned) => Effect.promise(owned.close),
+        ).pipe(Effect.provide(NodeServices.layer)),
+      { timeout: 45000 },
+    );
+  }
+
   it.effect(
     "rejects a namespace without its original admission callback before spawning",
     () =>

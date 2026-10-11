@@ -284,3 +284,19 @@ running-terminal revalidation and cleanup after expiry through the actual Greppy
 adapter/factory. They use no real native Owner/account/model. Native Parent/team
 enrollment, complete MCP/runtime enforcement and installed multi-harness acceptance
 remain open; public supported autonomous-worktree modes remain empty.
+
+### Source admission during the CLI lifetime
+
+The captured ACP CLI additionally revalidates its original Source every ten
+seconds even while a prompt is pending or the CLI is idle. A failed check closes
+the dedicated process scope, including the CLI, ACP transport and owned tool
+children. The check retains its ten-second timeout and aborts the original
+request on timeout or teardown. The guard runs outside that scope, so closing
+the process cannot interrupt its own cleanup. It stops when the original CLI
+exits and never restarts or adopts another process.
+
+Checks are serialized and the first failure is retained for the session.
+Subsequent starts and prompts fail with that Source-admission error; concurrent
+tool/terminal checks cannot extend a rejected admission. Ordinary sessions have
+no lifetime guard. This does not enable autonomous-worktree, enroll a native
+Parent or supply confined MCP or other harness runtime bundles.

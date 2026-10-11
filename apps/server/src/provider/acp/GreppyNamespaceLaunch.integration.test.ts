@@ -245,6 +245,8 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                   if (variant === "expired-source-running") {
                     yield* TestClock.adjust("10 seconds");
                     yield* held.exitCode.pipe(Effect.result);
+                    yield* children[0]!.exitCode.pipe(Effect.result);
+                    expect(yield* children[0]!.isRunning).toBe(false);
                   } else {
                     yield* adapter.sendTurn({
                       threadId: owned.input.threadId,

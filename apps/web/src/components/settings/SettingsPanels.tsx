@@ -2,7 +2,6 @@ import { ArchiveIcon, ArchiveX, ChevronRightIcon, LoaderIcon, SettingsIcon } fro
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { WorkjetModesIntroDialog } from "../WorkjetModesIntro";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type BackgroundActivityProfile,
@@ -1758,7 +1757,6 @@ export function GeneralSettingsPanel() {
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
-  const [modesIntroDialogOpen, setModesIntroDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
@@ -1810,13 +1808,6 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <WorkjetModesIntroDialog
-        open={modesIntroDialogOpen}
-        onDismiss={() => {
-          setModesIntroDialogOpen(false);
-          updateClientSettings({ workjetModesIntroSeen: true });
-        }}
-      />
       <SettingsSection title="General">
         <SettingsRow
           title={projectLanguage === "en" ? "Project language" : "Projektsprache"}
@@ -1858,17 +1849,6 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        {isElectron ? (
-          <SettingsRow
-            title="Dev and Ops introduction"
-            description="Explains the Dev and Ops modes and the CTOX engine under both, the same as on first start."
-            control={
-              <Button size="sm" variant="outline" onClick={() => setModesIntroDialogOpen(true)}>
-                Show again
-              </Button>
-            }
-          />
-        ) : null}
         <SettingsRow
           {...searchableSetting("project-grouping")}
           description="Combine matching repositories across environments."

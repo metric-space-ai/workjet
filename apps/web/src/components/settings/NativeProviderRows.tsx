@@ -8,6 +8,8 @@ import type {
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { useInstanceProviders } from "./useInstanceProviders";
+import { NativeProviderLimits } from "./NativeProviderLimits";
+
 import {
   WORKJET_GATEWAY_PROVIDERS,
   WORKJET_GATEWAY_PROVIDER_ICONS,
@@ -241,13 +243,7 @@ function NativeAccountRow({
             </span>
           )}
         </div>
-        <div
-          role="cell"
-          title="This instance account has not reported limits."
-          className="text-xs text-muted-foreground"
-        >
-          —
-        </div>
+        <NativeProviderLimits quota={account.reportedQuota} />
         <div role="cell" className="flex justify-center">
           {canEnable ? (
             <label

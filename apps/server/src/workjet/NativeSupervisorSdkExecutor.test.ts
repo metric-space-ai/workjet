@@ -25,7 +25,10 @@ afterEach(async () => {
   );
   vi.clearAllMocks();
 });
-async function fixture(change?: (operation: Record<string, unknown>) => unknown) {
+async function fixture(
+  change?: (operation: Record<string, unknown>) => unknown,
+  nativeTools?: readonly string[],
+) {
   const directory = await NodeFSP.mkdtemp(
     NodePath.join(process.env.TMPDIR ?? NodeOS.tmpdir(), "sdk-executor-"),
   );
@@ -79,7 +82,12 @@ async function fixture(change?: (operation: Record<string, unknown>) => unknown)
           execution_key: "fixture-native-execution",
           prompt: "Original fixture assignment",
           deadline_ms: deadline,
-          native_tools: [{ name: "worker_dispatch", description: "fixture", inputSchema: {} }],
+          native_tools: (
+            nativeTools ??
+            (operation.include_confirmed_goal_read === true
+              ? ["worker_dispatch", "confirmed_goal_read"]
+              : ["worker_dispatch"])
+          ).map((name) => ({ name, description: "fixture", inputSchema: {} })),
           execution_ready: false,
         };
       if (operation.action === "sdk_observe") {
@@ -219,6 +227,42 @@ function sdkFixture(
   });
   return startedPromise;
 }
+
+it("requests the fixed confirmed-goal reader only with a private qualified native opt-in", async () => {
+  const { options, operations, offerId } = await fixture();
+  sdkFixture();
+  await runNextNativeSupervisorSdkTurn({ ...options, includeConfirmedGoalRead: true });
+  expect(operations[1]).toEqual({
+    version: 1,
+    action: "claim",
+    offer_id: offerId,
+    include_confirmed_goal_read: true,
+  });
+  expect(vi.mocked(query).mock.calls[0]?.[0].options?.systemPrompt).toContain(
+    "mcp__workjet_native__confirmed_goal_read with empty arguments before acting",
+  );
+});
+it.each([
+  { tools: ["worker_dispatch", "confirmed_goal_read"], optIn: false },
+  { tools: ["worker_dispatch"], optIn: true },
+  { tools: ["confirmed_goal_read"], optIn: true },
+  { tools: ["worker_dispatch", "worker_dispatch"], optIn: false },
+  { tools: ["worker_dispatch", "unsupported"], optIn: true },
+])(
+  "rejects an unadmitted or malformed native tool set before SDK startup: %o",
+  async ({ tools, optIn }) => {
+    const { options, directory, operations } = await fixture(undefined, tools);
+    await expect(
+      runNextNativeSupervisorSdkTurn({ ...options, includeConfirmedGoalRead: optIn }),
+    ).rejects.toThrow();
+    await expect(
+      runNextNativeSupervisorSdkTurn({ ...options, includeConfirmedGoalRead: optIn }),
+    ).rejects.toThrow("no claim replay");
+    expect(query).not.toHaveBeenCalled();
+    expect(operations.filter((operation) => operation.action === "claim")).toHaveLength(1);
+    expect(await NodeFSP.readdir(directory)).toEqual([]);
+  },
+);
 it("reads and claims the same native offer and joins actual SDK child/query/journal drains", async () => {
   const { options, operations, offerId, controllerId, directory } = await fixture();
   sdkFixture();
@@ -232,6 +276,7 @@ it("reads and claims the same native offer and joins actual SDK child/query/jour
     executionReady: false,
   });
   expect(operations.slice(0, 2).map((op) => op.action)).toEqual(["poll", "claim"]);
+  expect(operations[1]).toEqual({ version: 1, action: "claim", offer_id: offerId });
   const observations = operations
     .filter((op) => op.action === "sdk_observe")
     .map((op) => op.sdk_observation as { kind: string; sequence: number });

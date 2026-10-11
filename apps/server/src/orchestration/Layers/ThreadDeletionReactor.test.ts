@@ -21,6 +21,7 @@ import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import { WORKER_REF_PREFIX } from "../../workjet/WorkerDispatch.ts";
+import { IsolatedWorkerWorktreeStore } from "../../workjet/IsolatedWorkerWorktreeStore.ts";
 import {
   WorkerCleanupReceiptStore,
   type WorkerCleanupReceipt,
@@ -380,6 +381,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           sourceControlLayer,
           gitDriverLayer,
           receiptLayer,
+          Layer.mock(IsolatedWorkerWorktreeStore)({ get: () => Effect.succeed(Option.none()) }),
           nativeRemoverLayer,
           worktreeStorageLayerTest({ trustedRoots: [worktreeRoot] }),
           fixtureServicesLayer,

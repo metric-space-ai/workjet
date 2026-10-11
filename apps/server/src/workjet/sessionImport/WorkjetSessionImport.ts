@@ -25,6 +25,7 @@ import {
   WorkjetSessionImportError,
   type OrchestrationCommand,
   type OrchestrationProjectShell,
+  type OrchestrationShellSnapshot,
   type ServerSettings,
   type WorkjetSessionImportCandidate,
   type WorkjetSessionImportInput,
@@ -897,6 +898,7 @@ export const make = Effect.gen(function* () {
   const importOne = (
     candidateId: string,
     file: SourceFile | undefined,
+    snapshot: OrchestrationShellSnapshot,
     destinationProjectId?: ProjectId,
     destinationProject?: OrchestrationProjectShell,
   ) =>
@@ -929,7 +931,6 @@ export const make = Effect.gen(function* () {
       const parsed = archive.session;
       let project = destinationProjectId ? destinationProject : undefined;
       if (!destinationProjectId) {
-        const snapshot = yield* query.getShellSnapshot();
         project = matchSessionProject(parsed, snapshot.projects);
         if (!project && !parsed.repositoryUrl && parsed.workspaceRoot) {
           const remote = yield* Effect.promise(async () => {
@@ -994,6 +995,18 @@ export const make = Effect.gen(function* () {
           subject: candidateId,
         });
       }
+      const projectSupervisor = snapshot.threads.find(
+        (candidate) =>
+          candidate.projectId === project.id &&
+          candidate.deletedAt == null &&
+          candidate.archivedAt === null &&
+          candidate.workjetConfig?.schemaVersion === 2 &&
+          candidate.workjetConfig.team?.role === "supervisor",
+      );
+      const projectPolicy =
+        projectSupervisor?.workjetConfig.schemaVersion === 2
+          ? projectSupervisor.workjetConfig.executionPolicy
+          : undefined;
       const createThread = thread
         ? undefined
         : {
@@ -1003,9 +1016,17 @@ export const make = Effect.gen(function* () {
               instanceId: file.providerInstanceId,
               model: parsed.model ?? "unknown",
             },
-            runtimeMode: "approval-required" as const,
+            // Imports have no isolated checkout. Never inherit bypass/full access
+            // or automatic approval of commands outside the project directory.
+            runtimeMode:
+              projectSupervisor?.runtimeMode === "approval-required"
+                ? ("approval-required" as const)
+                : ("auto-accept-edits" as const),
             interactionMode: "default" as const,
-            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              ...(projectPolicy === undefined ? {} : { executionPolicy: projectPolicy }),
+            },
             branch: null,
             worktreePath: null,
             createdAt: parsed.createdAt,
@@ -1154,15 +1175,20 @@ export const make = Effect.gen(function* () {
         rememberFiles(locations, files);
       }
       const byId = indexedFiles;
+      const snapshot = yield* query.getShellSnapshot();
       // Resolve the explicitly chosen destination once per bounded request. The
       // engine checks active thread/project state again before every saved chunk.
       const destinationProject = input.projectId
         ? Option.getOrUndefined(yield* query.getProjectShellById(input.projectId))
         : undefined;
       const items = yield* Effect.forEach([...new Set(input.candidateIds)], (candidateId) =>
-        importOne(candidateId, byId.get(candidateId), input.projectId, destinationProject).pipe(
-          Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),
-        ),
+        importOne(
+          candidateId,
+          byId.get(candidateId),
+          snapshot,
+          input.projectId,
+          destinationProject,
+        ).pipe(Effect.catch((error) => Effect.succeed(toFailure(candidateId, error)))),
       );
       return { items };
     }).pipe(

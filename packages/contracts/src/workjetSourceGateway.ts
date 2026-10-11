@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 import { ModelSelection } from "./orchestration.ts";
 import { RemoteWorkerRequest } from "./remoteWorker.ts";
+import { WorkjetExecutionPolicy } from "./workjetExecutionPolicy.ts";
+import { WorkjetParentTeamBinding } from "./workjetParentTeamBinding.ts";
 import { EnvironmentId, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   WorkjetConnectionId,
@@ -43,6 +45,8 @@ export const WorkjetRemoteWorkerBinding = Schema.Struct({
   repositoryUrl: Identifier,
   repositoryHead: Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)),
   workspaceKey: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/)),
+  executionPolicy: Schema.optionalKey(WorkjetExecutionPolicy),
+  parentTeamBinding: Schema.optionalKey(WorkjetParentTeamBinding),
   credentialRef: WorkjetGatewayCredentialRef,
   providerRef: WorkjetGatewayProviderRef,
   modelRef: WorkjetGatewayModelRef,

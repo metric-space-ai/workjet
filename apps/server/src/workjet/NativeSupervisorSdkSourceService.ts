@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
+  type NativeSupervisorManagedRuntime,
   type NativeSupervisorSourceEnrollment,
   type NativeSupervisorSourceSelection,
 } from "./NativeSupervisorSourceEnrollment.ts";
@@ -27,10 +28,16 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
 )(function* (options: {
   readonly enrollment: NativeSupervisorSourceEnrollment["Service"];
   readonly selection: NativeSupervisorSourceSelection;
+  /** Supplied only by the protected managed-runtime locator on first start. */
+  readonly managedRuntime?: NativeSupervisorManagedRuntime;
   readonly privateServiceDirectory: string;
   readonly sdkExecutable: string;
+  /** Enabled only by the protected producer after qualifying the native reader. */
+  readonly includeConfirmedGoalRead?: boolean;
 }) {
-  const plan = yield* options.enrollment.resolve(options.selection);
+  const plan = yield* options.managedRuntime === undefined
+    ? options.enrollment.resolve(options.selection)
+    : options.enrollment.prepare(options.selection, options.managedRuntime);
   const source = yield* acquireNativeSupervisorSourceTransport({
     executable: plan.runtime.ctoxExecutable,
     originalNativeRoot: plan.runtime.nativeRoot,
@@ -59,6 +66,7 @@ export const openSelectedNativeSupervisorSdkSourceService = Effect.fn(
       sdkExecutable: options.sdkExecutable,
       privateStateDirectory: NodePath.join(options.privateServiceDirectory, "sdk"),
       serviceSignal: lifetime.signal,
+      ...(options.includeConfirmedGoalRead === true ? { includeConfirmedGoalRead: true } : {}),
     });
     active = running;
     // Caller cancellation cannot clear custody of a still-running private query.

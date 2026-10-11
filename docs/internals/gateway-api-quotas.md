@@ -17,9 +17,10 @@ it does not establish a pay-as-you-go inference failure.
 
 Z.ai uses the raw key in Authorization at `/api/monitor/usage/quota/limit`.
 TOKENS_LIMIT percentage is used percentage; TIME_LIMIT is MCP/tool quota.
-Only TOKENS_LIMIT affects LLM selection. Reset semantics and CREDIT_LIMIT scope
-are not established by the inspected vendor contract, so reset stays unknown
-and unrecognized scopes do not block inference.
+Only TOKENS_LIMIT affects LLM selection. Raw unit/number and the qualified
+nextResetTime epoch-millisecond reset are retained. The renderer owns window
+qualification; unknown unit encodings stay unknown. CREDIT_LIMIT scope remains
+unestablished, so unrecognized scopes do not block inference.
 
 Probe and parse failures report quota errors without rejecting inference
 authentication. Positive readings expire for display; known exhausted windows
@@ -32,3 +33,16 @@ Primary contracts:
 - https://github.com/MiniMax-AI/cli/blob/main/src/utils/quota.ts
 - https://github.com/MiniMax-AI/cli/blob/main/src/output/quota-table.ts
 - https://github.com/zai-org/zai-coding-plugins/blob/main/plugins/glm-plan-usage/skills/usage-query-skill/scripts/query-usage.mjs
+
+## Z.ai reset unit evidence
+
+The reset unit is qualified from a published dashboard response, not a
+versioned provider specification. The captured `TOKENS_LIMIT.nextResetTime`
+is `1784643970777` in [api-to-use.md:42](https://github.com/shafi-/ext-zai-reset-timer/blob/1e7c03d07305ba29baa745036012cfc26c809f0e/docs/api-to-use.md#L42).
+The same capture has `TIME_LIMIT.nextResetTime = 1785166359997` on line 21.
+The original dashboard extension compares that raw value with `Date.now()`
+at [content.js:17](https://github.com/shafi-/ext-zai-reset-timer/blob/1e7c03d07305ba29baa745036012cfc26c809f0e/content.js#L17)
+and passes it directly to `new Date(ts)` at [content.js:70](https://github.com/shafi-/ext-zai-reset-timer/blob/1e7c03d07305ba29baa745036012cfc26c809f0e/content.js#L70).
+Both use epoch milliseconds. `1784643970777` therefore means
+`2026-07-21T14:26:10.777Z`; the focused parser fixture preserves it unchanged.
+This reset timestamp does not establish window duration or percent direction.

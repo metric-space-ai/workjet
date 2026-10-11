@@ -58,6 +58,9 @@ import * as RemoteWorkerBroker from "./workjet/RemoteWorkerBroker.ts";
 import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
 import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnectionBootstrap.ts";
 import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
+import * as IsolatedWorkerWorktree from "./workjet/IsolatedWorkerWorktree.ts";
+import * as IsolatedWorkerWorktreeStore from "./workjet/IsolatedWorkerWorktreeStore.ts";
+import * as LocalWorkerWorktree from "./workjet/LocalWorkerWorktree.ts";
 import * as RemoteWorkerAuthorityStore from "./workjet/RemoteWorkerAuthorityStore.ts";
 import * as RemoteWorkerComputerEnrollmentLive from "./workjet/RemoteWorkerComputerEnrollmentLive.ts";
 import * as RemoteWorkerSourceOperationsLive from "./workjet/RemoteWorkerSourceOperationsLive.ts";
@@ -66,6 +69,7 @@ import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHu
 import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
 import * as DecisionHubMcpClient from "./workjet/decisionHub/DecisionHubMcpClient.ts";
 import * as DecisionHubReconciler from "./workjet/decisionHub/DecisionHubReconciler.ts";
+import * as CtoxWorkerSourceRotation from "./workjet/ctox/CtoxWorkerSourceRotation.ts";
 import * as WorkjetDelegationExecutor from "./workjet/mailbox/WorkjetDelegationExecutor.ts";
 import * as WorkjetMailboxAuditEmitter from "./workjet/mailbox/WorkjetMailboxAuditEmitter.ts";
 import * as WorkjetMailboxDelivery from "./workjet/mailbox/WorkjetMailboxDelivery.ts";
@@ -325,6 +329,7 @@ const ReactorLayerLive = Layer.empty.pipe(
     ThreadDeletionReactorLive.pipe(
       Layer.provide(
         WorkerWorktreeCleanup.layer.pipe(
+          Layer.provide(IsolatedWorkerWorktreeStore.layer),
           Layer.provide(
             NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer)),
           ),
@@ -454,8 +459,15 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive.pipe(Layer.provide(RemoteWorkerTargetAdmission.layer))),
 );
 
+const NativeWorkerWorktreeRemoverLayerLive = NativeWorkerWorktreeRemover.layer.pipe(
+  Layer.provide(ResourceMonitorBinary.layer),
+);
 const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
-  Layer.provide(NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer))),
+  Layer.provide(NativeWorkerWorktreeRemoverLayerLive),
+);
+const IsolatedWorkerWorktreeLayerLive = IsolatedWorkerWorktree.layer.pipe(
+  Layer.provide(IsolatedWorkerWorktreeStore.layer),
+  Layer.provide(NativeWorkerWorktreeRemoverLayerLive),
 );
 const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
@@ -482,6 +494,7 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
   Layer.provide(ServerSecretStore.layer),
 );
 const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
+  Layer.provide(IsolatedWorkerWorktreeLayerLive),
   Layer.provide(RemoteWorkerTargetAdmission.layer),
   Layer.provide(RemoteWorkerStore.layer),
   Layer.provide(WorktreeStorageLayerLive),
@@ -492,6 +505,12 @@ const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
 // A single service instance owns the stable native intent IDs and the normal
 // MCP dispatch path. Both entries share its durable broker and first-use lock.
 const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
+  Layer.provide(
+    LocalWorkerWorktree.layer.pipe(
+      Layer.provide(IsolatedWorkerWorktreeLayerLive),
+      Layer.provide(WorktreeStorageLayerLive),
+    ),
+  ),
   Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(WorkerDispatchRollbackLayerLive),
@@ -533,7 +552,12 @@ const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydrationLive.pipe(
+      Layer.provide(IsolatedWorkerWorktreeStore.layer),
+      Layer.provide(ResourceMonitorBinary.layer),
+    ),
+  ),
   // The CTOX driver resolves each thread's native scope instead of spawning a
   // process. It takes these optionally — a build without them reports the
   // instance unavailable rather than dragging the session-directory chain into
@@ -581,7 +605,7 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
   Layer.provideMerge(UsageLayerLive),
   Layer.provideMerge(TraceDiagnostics.layer),
-  Layer.provideMerge(AnalyticsService.layer),
+  Layer.provideMerge(AnalyticsService.layer.pipe(Layer.provide(ServerSettingsLayerLive))),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
   Layer.provide(NetService.layer),
@@ -714,6 +738,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   WorkjetDelegationExecutorLive,
   NativeSupervisorWorkerDispatchLive,
   DecisionHubReconcilerLive,
+  CtoxWorkerSourceRotation.layer.pipe(Layer.provide(DecisionHubConnectionRegistryLive)),
 ).pipe(
   // One shared, server-lifetime redacted mailbox audit emitter. It is provided
   // ONCE here so the delivery, transport, and executor services and the

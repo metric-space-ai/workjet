@@ -8,9 +8,59 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
+import { makeWorkerSourceModelSocket } from "./WorkerSourceModelSocket.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+it("cancels a pending source admission with its caller and rejects an already aborted caller", async () => {
+  let onRequest = () => {};
+  let onClose = () => {};
+  let calls = 0;
+  const requested = new Promise<void>((resolve) => {
+    onRequest = () => resolve();
+  });
+  const closed = new Promise<void>((resolve) => {
+    onClose = () => resolve();
+  });
+  const server = NodeHttp.createServer((req, res) => {
+    calls++;
+    req.resume();
+    res.on("close", onClose);
+    onRequest();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  cleanups.push(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("fixture listener");
+  const harness = await installWorkerSourceRoute(
+    "cancel-admission",
+    {
+      sourceEnvironmentId: "source",
+      targetEnvironmentId: "target",
+      requestId: "cancel-admission",
+      requestDigest: "immutable-digest",
+      capability: "fixture-capability",
+      port: address.port,
+    },
+    { targetEnvironmentId: "target", requestDigest: "immutable-digest", modelId: "gpt-6.1-sol" },
+  );
+  cleanups.push(harness.revoke);
+  const already = new AbortController();
+  already.abort();
+  await expect(harness.admit(already.signal)).rejects.toThrow("interrupted");
+  expect(calls).toBe(0);
+  const current = new AbortController();
+  const pending = harness.admit(current.signal);
+  await requested;
+  current.abort();
+  await expect(pending).rejects.toThrow();
+  await closed;
+  expect(calls).toBe(1);
 });
 it("sends verified submission details and retains the source route after a failed retirement", async () => {
   const notices: unknown[] = [];
@@ -342,7 +392,11 @@ it("runs Claude Messages tool round trips through the same pinned source route",
     installWorkerSourceRoute(route.requestId, route, { ...pin, harness: "codex-cli" }),
   ).rejects.toThrow("substitution");
 });
-async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: string | undefined) {
+async function verifySourceOnlyLoopback(
+  platform: NodeJS.Platform,
+  tmpdir: string | undefined,
+  transport: "tcp" | "unix" = "tcp",
+) {
   const directory = await NodeFSP.mkdtemp(
     NodePath.join(
       tmpdir ?? (platform === "darwin" ? "/Volumes/tmp" : NodeOS.tmpdir()),
@@ -383,7 +437,7 @@ async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: strin
   const route = {
     sourceEnvironmentId: "source",
     targetEnvironmentId: "target",
-    requestId: "native-profile-worker",
+    requestId: transport === "tcp" ? "native-profile-worker" : "native-profile-worker-unix",
     requestDigest: "native-profile-digest",
     capability: "native-source-capability",
     port: address.port,
@@ -393,28 +447,61 @@ async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: strin
     requestDigest: route.requestDigest,
     modelId: "gpt-6.1-sol",
     nativeProfile: { harness: "minimax-code" as const, directory },
+    ...(transport === "unix" ? { modelSocketRoot: NodePath.join(directory, "ipc") } : {}),
   };
   const harness = await installWorkerSourceRoute(route.requestId, route, pin);
   cleanups.push(harness.revoke);
+  const preparedProfile = JSON.parse(harness.nativeProfile!.files[0]!.content);
+  expect(preparedProfile.custom_provider["workjet-source"].options.baseURL).toBe(
+    (transport === "unix" ? WORKER_MODEL_NAMESPACE_BASE_URL : harness.baseUrl).slice(0, -3),
+  );
+  const invoke = (
+    path: string,
+    options: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ): Promise<Response> => {
+    if (transport === "tcp") return fetch(harness.baseUrl + path, options);
+    const socket = harness.modelSocket;
+    if (!socket) throw new Error("Missing private model socket");
+    return new Promise((resolve, reject) => {
+      const request = NodeHttp.request(
+        { socketPath: socket.path, path: "/v1" + path, ...options },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.once("error", reject);
+          response.once("end", () =>
+            resolve(
+              new Response(Buffer.concat(chunks).toString("utf8"), {
+                status: response.statusCode ?? 500,
+                headers: { "content-type": response.headers["content-type"] ?? "" },
+              }),
+            ),
+          );
+        },
+      );
+      request.once("error", reject);
+      request.end(options.body);
+    });
+  };
+  expect(harness.modelSocket === undefined).toBe(transport === "tcp");
   const profile = JSON.parse(
-    await NodeFSP.readFile(NodePath.join(directory, "config.yaml"), "utf8"),
+    await NodeFSP.readFile(NodePath.join(harness.nativeProfile!.directory, "config.yaml"), "utf8"),
   );
   expect(profile.custom_provider["workjet-source"].options.apiKey).toBe(harness.apiKey);
   expect(Object.keys(profile.custom_provider["workjet-source"].models)).toEqual(["gpt-6.1-sol"]);
   if (platform !== "win32")
-    expect((await NodeFSP.stat(NodePath.join(directory, "config.yaml"))).mode & 0o077).toBe(0);
-  expect(
-    (await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": "wrong-key" } })).status,
-  ).toBe(403);
-  const catalog = await fetch(harness.baseUrl + "/models", {
-    headers: { "x-api-key": harness.apiKey },
-  });
+    expect(
+      (await NodeFSP.stat(NodePath.join(harness.nativeProfile!.directory, "config.yaml"))).mode &
+        0o077,
+    ).toBe(0);
+  expect((await invoke("/models", { headers: { "x-api-key": "wrong-key" } })).status).toBe(403);
+  const catalog = await invoke("/models", { headers: { "x-api-key": harness.apiKey } });
   expect(await catalog.json()).toEqual({
     object: "list",
     data: [{ id: "gpt-6.1-sol", object: "model", owned_by: "workjet-source" }],
   });
   for (let n = 1; n <= 20; n++) {
-    const response = await fetch(harness.baseUrl + "/messages?beta=true", {
+    const response = await invoke("/messages?beta=true", {
       method: "POST",
       headers: { "x-api-key": harness.apiKey, "content-type": "application/json" },
       body: JSON.stringify({ model: harness.model, stream: true }),
@@ -433,10 +520,35 @@ async function verifySourceOnlyLoopback(platform: NodeJS.Platform, tmpdir: strin
     }),
   ).rejects.toThrow("substitution");
   admitted = false;
-  expect(
-    (await fetch(harness.baseUrl + "/models", { headers: { "x-api-key": harness.apiKey } })).status,
-  ).toBe(502);
+  expect((await invoke("/models", { headers: { "x-api-key": harness.apiKey } })).status).toBe(502);
+  if (harness.modelSocket) {
+    const socket = harness.modelSocket;
+    await expect(
+      installWorkerSourceRoute(route.requestId, route, {
+        ...pin,
+        modelSocketRoot: NodePath.join(directory, "replacement"),
+      }),
+    ).rejects.toThrow("substitution");
+    await harness.revoke();
+    expect(await NodeFSP.lstat(socket.path).catch(() => undefined)).toBeUndefined();
+  }
 }
+it.effect("uses private IPC with the same pinned model and fresh source admission", () =>
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const environment = yield* HostProcessEnvironment;
+    if (platform !== "linux") {
+      yield* Effect.promise(() =>
+        expect(
+          makeWorkerSourceModelSocket("unsupported", (_request, response) => response.end()),
+        ).rejects.toThrow("unavailable"),
+      );
+      return;
+    }
+    yield* Effect.promise(() => verifySourceOnlyLoopback(platform, environment.TMPDIR, "unix"));
+  }),
+);
+
 it.effect(
   "admits a source-only catalog and native API-key requests before forwarding unchanged SSE",
   () =>
@@ -445,4 +557,63 @@ it.effect(
       const environment = yield* HostProcessEnvironment;
       yield* Effect.promise(() => verifySourceOnlyLoopback(platform, environment.TMPDIR));
     }),
+);
+
+it.effect("a failed fresh Source admission cannot create or capture a recovery profile", () =>
+  Effect.gen(function* () {
+    const environment = yield* HostProcessEnvironment;
+    const platform = yield* HostProcessPlatform;
+    if (platform !== "linux") return;
+    yield* Effect.promise(async () => {
+      const root = await NodeFSP.mkdtemp(
+        NodePath.join(environment.TMPDIR ?? NodeOS.tmpdir(), "source-profile-denied-"),
+      );
+      cleanups.push(() => NodeFSP.rm(root, { recursive: true, force: true }));
+      const server = NodeHttp.createServer((req, res) => {
+        req.resume();
+        res.writeHead(403, { "content-type": "application/json" }).end("{}");
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      cleanups.push(async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("fixture listener");
+      let captures = 0;
+      const profileRoot = NodePath.join(root, "profiles");
+      await expect(
+        installWorkerSourceRoute(
+          NodePath.basename(root),
+          {
+            sourceEnvironmentId: "source",
+            targetEnvironmentId: "target",
+            requestId: NodePath.basename(root),
+            requestDigest: "immutable-digest",
+            capability: "fixture-capability",
+            port: address.port,
+          },
+          {
+            targetEnvironmentId: "target",
+            requestDigest: "immutable-digest",
+            modelId: "gpt-6.1-sol",
+            harness: "greppy",
+            modelSocketRoot: NodePath.join(root, "model-ipc"),
+            nativeProfile: {
+              harness: "greppy",
+              directory: profileRoot,
+              persistence: {
+                original: null,
+                capture: async () => {
+                  captures++;
+                },
+              },
+            },
+          },
+        ),
+      ).rejects.toThrow("could not be prepared");
+      expect(captures).toBe(0);
+      expect(await NodeFSP.readdir(root)).toEqual([]);
+    });
+  }),
 );

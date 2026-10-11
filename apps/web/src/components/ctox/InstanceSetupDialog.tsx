@@ -45,6 +45,7 @@ export function InstanceSetupDialog() {
             <InstanceSetupContent
               key={request.revision}
               initialIntent={request.intent}
+              replacesInstanceId={request.replacesInstanceId}
               onBusyChange={setBusy}
               busy={busy}
             />
@@ -59,10 +60,12 @@ function InstanceSetupContent({
   initialIntent,
   onBusyChange,
   busy,
+  replacesInstanceId,
 }: {
   readonly initialIntent: InstanceSetupIntent;
   readonly onBusyChange: (busy: boolean) => void;
   readonly busy: boolean;
+  readonly replacesInstanceId?: string | undefined;
 }) {
   const mode = useCtoxMode();
   const [step, setStep] = useState<
@@ -91,17 +94,28 @@ function InstanceSetupContent({
         </p>
       ) : null}
       {instances
-        .filter((instance) => step !== "managed" || instance.source === "ctox_dev")
+        .filter(
+          (instance) =>
+            (instance.workjetState !== "removed" || instance.source === "ctox_dev") &&
+            (step !== "managed" || instance.source === "ctox_dev"),
+        )
         .map((instance) => (
           <Button
             key={instance.id}
             variant="outline"
             className="w-full justify-start"
-            disabled={busy || !canActivateCtoxInstance(instance)}
+            disabled={
+              busy || (instance.workjetState !== "removed" && !canActivateCtoxInstance(instance))
+            }
             onClick={async () => {
               onBusyChange(true);
               setSelectionError(null);
               try {
+                if (instance.workjetState === "removed" && instance.source === "ctox_dev") {
+                  const restored = await mode.setInstanceState(instance, "enabled");
+                  if (!restored.ok) setSelectionError(restored.message);
+                  return;
+                }
                 if (await mode.select(instance)) closeInstanceSetup();
                 else setSelectionError("Instanzwechsel nicht bestätigt. Bitte erneut versuchen.");
               } catch {
@@ -112,7 +126,11 @@ function InstanceSetupContent({
             }}
           >
             {ctoxInstanceDisplayTitle(instance)}
-            {!canActivateCtoxInstance(instance) ? " · Nicht erreichbar" : ""}
+            {instance.workjetState === "removed"
+              ? " · Wieder hinzufügen"
+              : !canActivateCtoxInstance(instance)
+                ? " · Nicht erreichbar"
+                : ""}
           </Button>
         ))}
       {selectionError && (
@@ -262,6 +280,7 @@ function InstanceSetupContent({
               initialInvite={scannedInvite}
               initialChoice={connectMethod === "manual" ? "manual" : "invite"}
               existingOnly
+              replacesInstanceId={replacesInstanceId}
               onClose={() => setStep("choose")}
               onImported={chooseDiscovered}
               onBusyChange={onBusyChange}

@@ -31,14 +31,14 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import { ServerConfig } from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveClaudeHomePath } from "../provider/Drivers/ClaudeHome.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
-import { parseRateTable, type RateTable } from "./usagePricing.ts";
+import { parseRateTable } from "./usagePricing.ts";
+import bundledRates from "./catalog/model-rates.json" with { type: "json" };
 import {
   listTranscriptFiles,
   readDirectoryVolumeId,
@@ -53,11 +53,8 @@ import {
 } from "./usageScanCache.ts";
 import type { UsageRecord } from "./usageTranscripts.ts";
 
-const LITELLM_RATES_URL =
-  "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
-
-/** Rates move rarely; a day-old table keeps the page working offline. */
-const RATES_TTL_MS = 24 * 60 * 60 * 1000;
+const RATES_SOURCE = `bundled:${bundledRates.version}`;
+const BUNDLED_RATES = parseRateTable(bundledRates.document);
 
 /**
  * Files are filtered by mtime before opening. The slack covers a session whose
@@ -68,18 +65,6 @@ const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Longest window the UI offers, plus slack. Older entries are pruned. */
 const CACHE_RETENTION_DAYS = 90;
-
-/** On-disk shape of the rate snapshot. */
-const RatesCacheFile = Schema.Struct({
-  fetchedAtMs: Schema.Number,
-  document: Schema.Unknown,
-});
-const decodeRatesCache = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(RatesCacheFile as unknown as Schema.Codec<typeof RatesCacheFile.Type>),
-);
-const encodeRatesCache = Schema.encodeEffect(
-  Schema.fromJsonString(RatesCacheFile as unknown as Schema.Codec<typeof RatesCacheFile.Type>),
-);
 
 /** The scan cache is narrowed by hand in `usageScanCache`, so JSON is enough here. */
 const ScanCacheJson = Schema.fromJsonString(Schema.Unknown as unknown as Schema.Codec<unknown>);
@@ -108,7 +93,7 @@ export const layerTest = Layer.succeed(
         sources: [],
         pricing: {
           status: "unavailable",
-          source: LITELLM_RATES_URL,
+          source: RATES_SOURCE,
           fetchedAt: null,
           knownModels: 0,
         },
@@ -122,67 +107,12 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig;
   const settingsService = yield* ServerSettings.ServerSettingsService;
-  const httpClient = yield* HttpClient.HttpClient;
 
   const fileCache: ScanCache = new Map();
   let cacheDirty = false;
 
-  const ratesCachePath = path.join(config.stateDir, "usage-model-rates.json");
   const scanCachePath = path.join(config.stateDir, "usage-scan-cache.json");
-  let rates: RateTable = new Map();
-  let ratesFetchedAtMs: number | null = null;
-  let ratesStatus: UsageSummary["pricing"]["status"] = "unavailable";
-
-  /**
-   * Loads the LiteLLM rate table, preferring a fresh copy and falling back to
-   * the on-disk snapshot. With neither, every model reports as unpriced rather
-   * than the page failing.
-   */
-  const ensureRates = Effect.fn("UsageService.ensureRates")(function* () {
-    const now = yield* Clock.currentTimeMillis;
-    if (ratesFetchedAtMs !== null && now - ratesFetchedAtMs < RATES_TTL_MS) return;
-
-    if (ratesFetchedAtMs === null) {
-      const fromDisk = yield* fileSystem.readFileString(ratesCachePath).pipe(
-        Effect.flatMap((raw) => decodeRatesCache(raw)),
-        Effect.catchCause(() => Effect.succeed(null)),
-      );
-      if (fromDisk !== null) {
-        const parsed = parseRateTable(fromDisk.document);
-        if (parsed.size > 0) {
-          rates = parsed;
-          ratesFetchedAtMs = fromDisk.fetchedAtMs;
-          ratesStatus = "cached";
-          if (now - fromDisk.fetchedAtMs < RATES_TTL_MS) return;
-        }
-      }
-    }
-
-    const fetched = yield* httpClient.get(LITELLM_RATES_URL).pipe(
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-      Effect.flatMap((response) => response.json),
-      Effect.timeout(10_000),
-      Effect.catchCause(() => Effect.succeed(null)),
-    );
-    if (fetched === null) {
-      // The refresh failed; whatever we are serving is now past its TTL and
-      // must not keep claiming to be fresh.
-      if (rates.size > 0) ratesStatus = "cached";
-      return;
-    }
-
-    const parsed = parseRateTable(fetched);
-    if (parsed.size === 0) return;
-
-    rates = parsed;
-    ratesFetchedAtMs = now;
-    ratesStatus = "fresh";
-
-    yield* encodeRatesCache({ fetchedAtMs: now, document: fetched }).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(ratesCachePath, serialized)),
-      Effect.catchCause(() => Effect.void),
-    );
-  });
+  const rates = BUNDLED_RATES;
 
   /**
    * Claude's config dir is the home itself when overridden, but a default
@@ -323,7 +253,7 @@ export const make = Effect.gen(function* () {
     }
 
     const startedAtMs = yield* Clock.currentTimeMillis;
-    yield* ensureRates();
+
     yield* ensureScanCacheLoaded;
 
     const hostId = NodeOS.hostname();
@@ -430,12 +360,9 @@ export const make = Effect.gen(function* () {
       buckets: aggregated.buckets,
       sources,
       pricing: {
-        status: ratesStatus,
-        source: LITELLM_RATES_URL,
-        fetchedAt:
-          ratesFetchedAtMs === null
-            ? null
-            : DateTime.formatIso(DateTime.makeUnsafe(ratesFetchedAtMs)),
+        status: rates.size > 0 ? "cached" : "unavailable",
+        source: RATES_SOURCE,
+        fetchedAt: bundledRates.checkedAt,
         knownModels: rates.size,
       },
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),

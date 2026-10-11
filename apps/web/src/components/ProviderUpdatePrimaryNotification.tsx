@@ -288,7 +288,7 @@ export function ProviderUpdatePrimaryNotification() {
         type: initialView.type,
         title: initialView.title,
         description: initialView.description,
-        timeout: 0,
+        timeout: 8_000,
         actionProps:
           oneClickProviders.length > 0
             ? {

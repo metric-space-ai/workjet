@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkjetNativeProviderRegistry } from "@workjet/contracts";
 import {
+  WorkjetProjectControlError,
+  type WorkjetProjectControlFailure,
+} from "../../workjetProjectControl";
+import {
   requestInstanceProviders,
+  checkInstanceModel,
   type NativeProviderInput,
 } from "../../lib/workjetNativeProviders";
 
@@ -10,13 +15,18 @@ export function useInstanceProviders(instanceId: string | null) {
     instanceId: string;
     registry: WorkjetNativeProviderRegistry;
   }>();
-  const [error, setError] = useState<{ accountId: string | null; message: string }>();
+  const [error, setError] = useState<{
+    accountId: string | null;
+    message: string;
+    failure?: WorkjetProjectControlFailure;
+  }>();
   const [busy, setBusy] = useState(false);
   const alive = useRef(false);
+  const scope = useRef<string | null>(instanceId);
   const controller = useRef<AbortController | undefined>(undefined);
   const run = useCallback(
     async (input: NativeProviderInput) => {
-      if (!instanceId || !alive.current) return undefined;
+      if (!instanceId || !alive.current || scope.current !== instanceId) return undefined;
       controller.current?.abort();
       const active = new AbortController();
       controller.current = active;
@@ -31,7 +41,13 @@ export function useInstanceProviders(instanceId: string | null) {
       } catch (failure) {
         if (!active.signal.aborted && alive.current)
           setError({
-            accountId: "accountId" in input ? input.accountId : null,
+            accountId:
+              failure instanceof WorkjetProjectControlError
+                ? null
+                : "accountId" in input
+                  ? input.accountId
+                  : null,
+            ...(failure instanceof WorkjetProjectControlError ? { failure: failure.failure } : {}),
             message:
               failure instanceof Error ? failure.message : "Instance accounts could not be read.",
           });
@@ -43,14 +59,72 @@ export function useInstanceProviders(instanceId: string | null) {
     },
     [instanceId],
   );
+  const check = useCallback(
+    async (accountId: string, accountRevision: number, modelId: string) => {
+      if (!instanceId || !alive.current || scope.current !== instanceId) return undefined;
+      controller.current?.abort();
+      const active = new AbortController();
+      controller.current = active;
+      setError(undefined);
+      setBusy(true);
+      try {
+        const probe = await checkInstanceModel(
+          instanceId,
+          accountId,
+          accountRevision,
+          modelId,
+          active.signal,
+        );
+        if (!active.signal.aborted && alive.current) {
+          setSnapshot((current) => {
+            if (current?.instanceId !== instanceId) return current;
+            return {
+              ...current,
+              registry: {
+                ...current.registry,
+                accounts: current.registry.accounts.map((account) =>
+                  account.id === accountId && account.revision === accountRevision
+                    ? {
+                        ...account,
+                        modelChecks: [
+                          ...(account.modelChecks ?? []).filter(
+                            (saved) => saved.modelId !== modelId,
+                          ),
+                          probe,
+                        ],
+                      }
+                    : account,
+                ),
+              },
+            };
+          });
+          return probe;
+        }
+      } catch (failure) {
+        if (!active.signal.aborted && alive.current)
+          setError({
+            accountId,
+            ...(failure instanceof WorkjetProjectControlError ? { failure: failure.failure } : {}),
+            message: failure instanceof Error ? failure.message : "Model check unavailable.",
+          });
+      } finally {
+        if (controller.current === active && !active.signal.aborted && alive.current)
+          setBusy(false);
+      }
+      return undefined;
+    },
+    [instanceId],
+  );
   useEffect(() => {
     alive.current = true;
+    scope.current = instanceId;
     setSnapshot(undefined);
     setError(undefined);
     setBusy(false);
     if (instanceId) void run({ action: "instance.providers.read" });
     return () => {
       alive.current = false;
+      scope.current = null;
       controller.current?.abort();
     };
   }, [instanceId, run]);
@@ -59,8 +133,10 @@ export function useInstanceProviders(instanceId: string | null) {
     registry: snapshot?.instanceId === instanceId ? snapshot.registry : undefined,
     error: error?.message,
     errorAccountId: error?.accountId,
+    ...(error?.failure ? { connectionFailure: error.failure } : {}),
     busy,
     run,
+    check,
     refresh,
   };
 }

@@ -173,6 +173,7 @@ import * as WorkjetHarnessAvailability from "./workjet/WorkjetHarnessAvailabilit
 import * as WorktreeStorage from "./worktree/WorktreeStorage.ts";
 import {
   manualProjectWorkerParent,
+  canBypassManualWorkerPreparation,
   ManualProjectWorkerSetupError,
   manualProjectWorkerConfig,
 } from "./workjet/ManualProjectWorker.ts";
@@ -1473,10 +1474,8 @@ const makeWsRpcLayer = (
           normalizedCommand.type === "thread.turn.start"
             ? projectionSnapshotQuery.getThreadShellById(normalizedCommand.threadId).pipe(
                 Effect.flatMap((existing) => {
-                  const config = Option.isSome(existing) ? existing.value.workjetConfig : undefined;
-                  const preparedTeam = config?.schemaVersion === 2 && config.team !== undefined;
-                  // Existing team threads never wait for an unrelated manual checkout.
-                  return preparedTeam
+                  // Materializing worker config must not unlock a concurrent first turn.
+                  return canBypassManualWorkerPreparation(Option.getOrUndefined(existing))
                     ? dispatchBootstrapTurnStart(normalizedCommand)
                     : manualWorkerPreparation.withPermit(
                         dispatchBootstrapTurnStart(normalizedCommand),

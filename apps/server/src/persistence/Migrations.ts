@@ -90,6 +90,8 @@ import Migration0075 from "./Migrations/075_WorkjetWorkerPullRequests.ts";
 import Migration0076 from "./Migrations/076_RemoteWorkerReceipts.ts";
 import Migration0078 from "./Migrations/078_RemoteWorkerAuthority.ts";
 import Migration0079 from "./Migrations/079_WorkjetOneShotLifecycle.ts";
+import Migration0080 from "./Migrations/080_IsolatedWorkerWorktrees.ts";
+import Migration0081 from "./Migrations/081_WorkerSourceCustody.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -181,6 +183,8 @@ export const migrationEntries = [
   // 77 is reserved for worker connection persistence.
   [78, "RemoteWorkerAuthority", Migration0078],
   [79, "WorkjetOneShotLifecycle", Migration0079],
+  [80, "IsolatedWorkerWorktrees", Migration0080],
+  [81, "WorkerSourceCustody", Migration0081],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

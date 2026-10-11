@@ -3196,6 +3196,51 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.providerInstanceId).toBe(ProviderInstanceId.make("codex_work"));
   });
 
+  it("persists the selected harness/model before sending and uses it for the first turn", async () => {
+    const harness = await createHarness();
+    const threadId = ThreadId.make("thread-1");
+    const modelSelection = { instanceId: ProviderInstanceId.make("grok"), model: "grok-4.7" };
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("save-route-without-send"),
+        threadId,
+        modelSelection,
+      }),
+    );
+    await harness.drain();
+    expect(harness.startSession).not.toHaveBeenCalled();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    // Read a fresh persisted projection, not the composer's local draft.
+    const reloaded = (await harness.readModel()).threads.find((thread) => thread.id === threadId);
+    expect(reloaded?.modelSelection).toEqual(modelSelection);
+    expect(reloaded?.messages).toHaveLength(0);
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("first-turn-after-route-reload"),
+        threadId,
+        message: {
+          messageId: asMessageId("route-first-message"),
+          role: "user",
+          text: "Continue with the saved route.",
+          attachments: [],
+        },
+        // Deliberately omit modelSelection: the persisted choice must drive execution.
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      provider: ProviderDriverKind.make("grok"),
+      providerInstanceId: modelSelection.instanceId,
+      modelSelection,
+    });
+  });
+
   it("restarts the provider session when the thread workspace changes", async () => {
     const harness = await createHarness({
       threadModelSelection: {

@@ -7,7 +7,11 @@ import {
 } from "@workjet/contracts";
 import jourFixeFixture from "../../../../packages/contracts/src/workjetJourFixeMeeting.fixture.json" with { type: "json" };
 import * as NodeVM from "node:vm";
-import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
+import type {
+  CtoxManagedDiscoveryResult,
+  CtoxManagedInstance,
+  WorkjetExitModelAssessment,
+} from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -36,6 +40,7 @@ import * as CtoxGuestManager from "./CtoxGuestManager.ts";
 import * as CtoxGuestWindows from "./CtoxGuestWindows.ts";
 import { DesktopIpcInvocation } from "../ipc/DesktopIpc.ts";
 import * as DesktopIpc from "../ipc/DesktopIpc.ts";
+import * as CtoxInstancePreferences from "./CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
@@ -539,6 +544,36 @@ function makeHostWindow() {
   };
 }
 
+describe("disabled instance guest admission", () => {
+  for (const state of ["disabled", "removed"] as const) {
+    it.effect("does not connect or create a guest when " + state, () => {
+      const harness = makeGuestHarness();
+      const store = CtoxInstancePreferences.CtoxInstancePreferences.of({
+        read: Effect.succeed([{ ...descriptor, workjetState: state }]),
+        remember: () => Effect.void,
+        set: () => Effect.void,
+      });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(yield* manager.ensurePooled(descriptor.id), {
+          _tag: "failed",
+          code: state === "disabled" ? "instance_disabled" : "instance_removed",
+        });
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          { _tag: "failed", code: state === "disabled" ? "instance_disabled" : "instance_removed" },
+        );
+        expect(harness.refreshAccount).not.toHaveBeenCalled();
+        expect(harness.launch).not.toHaveBeenCalled();
+        expect(harness.views).toHaveLength(0);
+      }).pipe(
+        Effect.provide(harness.layer),
+        Effect.provideService(CtoxInstancePreferences.CtoxInstancePreferences, store),
+      );
+    });
+  }
+});
+
 describe("CtoxGuestWindows", () => {
   const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
   const unavailable = { _tag: "failed", code: "not_active" } as const;
@@ -782,6 +817,7 @@ describe("CtoxGuestWindows", () => {
         assert.deepEqual(yield* hosts[4]!.invoke(manager.activate(descriptor.id, bounds)), {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "renderer_budget", reason: "unknown" },
         });
         expect(harness.views).toHaveLength(4);
         yield* hosts[1]!.invoke(manager.exitBusinessOsMode);
@@ -895,6 +931,7 @@ describe("CtoxGuestWindows admission and native destruction", () => {
           assert.deepEqual(yield* a.invoke(manager.ensurePooled(instances[4]!.id)), {
             _tag: "failed",
             code: "guest_failed",
+            preparation: { stage: "renderer_budget", reason: "unknown" },
           });
           expect(old.close).toHaveBeenCalledOnce();
           expect(harness.views).toHaveLength(4);
@@ -1030,6 +1067,7 @@ describe("CtoxGuestManager", () => {
         {
           _tag: "failed",
           code: "authentication_required",
+          preparation: { stage: "discovery", reason: "unknown" },
         },
       );
       expect(harness.views).toHaveLength(0);
@@ -1057,6 +1095,7 @@ describe("CtoxGuestManager", () => {
             _tag: "failed",
             code: "guest_failed",
             discovery: { code: "http_error", httpStatus: 503 },
+            preparation: { stage: "discovery", reason: "unknown", httpStatus: 503 },
           },
         );
         expect(harness.views).toHaveLength(0);
@@ -1170,6 +1209,7 @@ describe("CtoxGuestManager", () => {
         {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "navigation_commit", reason: "did_fail_load", errorCode: -105 },
         },
       );
       expect(harness.views[0]?.close).toHaveBeenCalledOnce();
@@ -1196,6 +1236,43 @@ describe("CtoxGuestManager", () => {
         { _tag: "failed", code: "guest_failed" },
       );
       expect(harness.createView).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("retains command timing on success and timeout without exporting guest secrets", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      for (const fails of [false, true]) {
+        const context = NodeVM.createContext({ fails });
+        NodeVM.runInContext(
+          `globalThis.workjetProjectControl = async (_request, diagnostics) => {
+            diagnostics.onCommandTiming({ commandId: "cmd_workjet_project_list_123",
+              stagesMs: { sync_readiness: 21000, secret: "private-value" },
+              token: "private-value" });
+            if (fails) throw Object.assign(new Error(
+              "Workjet project list did not finish command before its deadline."),
+              { code: "WORKJET_PROJECT_TIMEOUT" });
+            return { action: "project.list", projects: [], count: 0, truncated: false };
+          };`,
+          context,
+        );
+        harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
+          const raw = await NodeVM.runInContext(expression, context);
+          expect(JSON.stringify(raw)).not.toContain("private-value");
+          expect(JSON.parse(JSON.stringify(raw.commandTiming))).toEqual({
+            commandId: "cmd_workjet_project_list_123",
+            stagesMs: { sync_readiness: 21000 },
+          });
+          return raw;
+        });
+        const result = yield* manager.requestProjectControl(descriptor.id, {
+          action: "project.list",
+        });
+        expect(result._tag).toBe(fails ? "failed" : "completed");
+        expect(result).not.toHaveProperty("commandTiming");
+      }
     }).pipe(Effect.provide(harness.layer));
   });
 
@@ -1229,11 +1306,13 @@ describe("CtoxGuestManager", () => {
         ["Workjet supervisor control is not ready.", "supervisor_control_not_ready"],
         ["Native WebRTC peer is not connected", "peer_unavailable"],
         ["Native request ctox.workjet.project.v1 exceeded 28000ms", "request_timeout"],
+        ["projection delayed", "request_timeout"],
+        ["Workjet project list did not finish collections before its deadline.", "request_timeout"],
         ["Failed to fetch", "network_unavailable"],
       ] as const) {
         const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
+          "globalThis.workjetProjectControl = async () => { const error = new Error(fixtureMessage); if (fixtureMessage === 'projection delayed') error.code = 'projection_delayed'; if (fixtureMessage === 'Workjet project list did not finish collections before its deadline.') error.code = 'WORKJET_PROJECT_TIMEOUT'; throw error; };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
@@ -1245,11 +1324,67 @@ describe("CtoxGuestManager", () => {
         });
         assert.deepEqual(
           yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
-          { _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason } },
+          {
+            _tag: "failed",
+            code: "guest_failed",
+            diagnostic: {
+              stage: "execute",
+              reason,
+              ...(message === "Workjet project list did not finish collections before its deadline."
+                ? { phase: "collections" }
+                : message.startsWith("Native request ")
+                  ? { phase: "native_request" }
+                  : {}),
+            },
+          },
         );
       }
     }).pipe(Effect.provide(harness.layer));
   });
+
+  it.effect(
+    "retains only fixed project-list timeout phases without exposing renderer error text",
+    () => {
+      const harness = makeGuestHarness();
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.ensurePooled(descriptor.id);
+        for (const [label, phase] of [
+          ["collections", "collections"],
+          ["command", "command"],
+          ["bridge", "bridge"],
+          ["query readiness", "query_readiness"],
+          ["native projection", "native_projection"],
+          ["private-instance?token=private-value", undefined],
+        ] as const) {
+          const context = NodeVM.createContext({
+            fixtureMessage: `Workjet project list did not finish ${label} before its deadline.`,
+          });
+          NodeVM.runInContext(
+            "globalThis.workjetProjectControl = async () => { throw Object.assign(new Error(fixtureMessage), { code: 'WORKJET_PROJECT_TIMEOUT' }); };",
+            context,
+          );
+          harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) =>
+            NodeVM.runInContext(expression, context),
+          );
+          const result = yield* manager.requestProjectControl(descriptor.id, {
+            action: "project.list",
+          });
+          assert.deepEqual(result, {
+            _tag: "failed",
+            code: "guest_failed",
+            diagnostic: {
+              stage: "execute",
+              reason: "request_timeout",
+              ...(phase === undefined ? {} : { phase }),
+            },
+          });
+          expect(result).not.toHaveProperty("message");
+          expect(result).not.toHaveProperty("diagnostic.message");
+        }
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
 
   it.effect("keeps unsupported and private renderer exceptions distinct", () => {
     const harness = makeGuestHarness();
@@ -1262,7 +1397,7 @@ describe("CtoxGuestManager", () => {
       ] as const) {
         const context = NodeVM.createContext({ fixtureMessage: message });
         NodeVM.runInContext(
-          "globalThis.workjetProjectControl = async () => { throw new Error(fixtureMessage); };",
+          "globalThis.workjetProjectControl = async () => { const error = new Error(fixtureMessage); if (fixtureMessage === 'projection delayed') error.code = 'projection_delayed'; if (fixtureMessage === 'Workjet project list did not finish collections before its deadline.') error.code = 'WORKJET_PROJECT_TIMEOUT'; throw error; };",
           context,
         );
         harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
@@ -1467,6 +1602,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "did_fail_load", errorCode: -102 },
       });
       expect(harness.views[0]?.close).toHaveBeenCalledOnce();
       expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
@@ -1493,6 +1629,7 @@ describe("CtoxGuestManager", () => {
         assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
           _tag: "failed",
           code: "guest_failed",
+          preparation: { stage: "navigation_commit", reason: "load_url" },
         });
         yield* Effect.promise(() => new Promise((resolve) => setImmediate(resolve)));
         expect(unhandled).toEqual([]);
@@ -1521,6 +1658,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "navigation_setup" },
       });
       expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
       expect(harness.views[0]?.close).toHaveBeenCalledOnce();
@@ -1548,6 +1686,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* Fiber.join(activation), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "destroyed" },
       });
       expect(harness.views[0]?.close).not.toHaveBeenCalled();
       expect(harness.removeChildView).toHaveBeenCalledExactlyOnceWith(harness.views[0]?.view);
@@ -1845,6 +1984,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* manager.activate(descriptor.id, bounds), {
         _tag: "failed",
         code: "guest_failed",
+        preparation: { stage: "navigation_commit", reason: "load_url" },
       });
       yield* Effect.promise(() =>
         vi.waitFor(() =>
@@ -2097,6 +2237,7 @@ describe("CtoxGuestManager", () => {
       assert.deepEqual(yield* manager.activate(sshDescriptor.id, bounds), {
         _tag: "failed",
         code: "launch_failed",
+        preparation: { stage: "launch", reason: "unknown" },
       });
       // No half-open state: the tunnels opened for this attempt are gone.
       expect(harness.closeForwards).toHaveBeenCalledTimes(1);
@@ -3045,6 +3186,68 @@ describe("CtoxGuestManager", () => {
         { ...response, commandId: "other-command" },
         { ...response, project: { ...response.project, id: "other-project" } },
         { ...response, project: { ...response.project, title: "other-title" } },
+      ]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
+      }
+      harness.views[0]?.executeJavaScript.mockResolvedValue({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("correlates an exit assessment and rejects stale or foreign receipts", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
+      const request = {
+        action: "project.exit_model.refresh" as const,
+        commandId: CommandId.make("refresh-exit"),
+        projectId: ProjectId.make("project-one"),
+        resources: {
+          hoursPerWeek: 20,
+          monthlyBudgetEur: 300,
+          comparisonMode: "project_specific" as const,
+        },
+      };
+      const assessment: WorkjetExitModelAssessment = {
+        contract: "ctox.workjet.exit_model.v1",
+        project_id: request.projectId,
+        run_id: "blocked-run",
+        as_of: "2026-10-08",
+        exit_date: "2031-10-08",
+        refresh_due: "2026-11-08",
+        status: "blocked",
+        missing_inputs: ["confirmed_resource_plan"],
+        findings: [],
+        sources: [],
+        plan_summary: null,
+        result: null,
+        scenarios: [],
+        history: [],
+      };
+      const response = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        assessment,
+      };
+      for (const result of [
+        { ...response, commandId: "another-command" },
+        { ...response, projectId: "foreign-project" },
+        { ...response, action: "project.exit_model.read" },
+        { ...response, assessment: { ...assessment, project_id: "foreign-project" } },
+        { ...response, assessment: { ...assessment, status: "provisional" } },
       ]) {
         harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result });
         assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {

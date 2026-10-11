@@ -132,6 +132,89 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("rejects stale automatic config saves without overwriting concurrent settings", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("rotation-project"),
+          projectId: ProjectId.make("rotation-project"),
+          title: "Rotation",
+          workspaceRoot: "/fixture/rotation",
+          createdAt: now(),
+        }),
+      );
+      const thread = (await system.readModel()).threads[0]!;
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("retained-history"),
+          threadId: thread.id,
+          message: {
+            messageId: MessageId.make("retained-message"),
+            role: "user",
+            text: "Existing conversation",
+            attachments: [],
+          },
+          runtimeMode: thread.runtimeMode,
+          interactionMode: thread.interactionMode,
+          createdAt: now(),
+        }),
+      );
+      const messages = (await system.readModel()).threads[0]!.messages;
+      const updated = { ...thread.workjetConfig, managedInstructions: "New owner settings" };
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("owner-update"),
+          threadId: thread.id,
+          workjetConfig: updated,
+          createdAt: now(),
+        }),
+      );
+      const stale = await system.run(
+        system.engine
+          .dispatch(
+            {
+              type: "thread.workjet-config.set",
+              commandId: CommandId.make("stale-rotation"),
+              threadId: thread.id,
+              workjetConfig: thread.workjetConfig,
+              createdAt: now(),
+            },
+            { expectedWorkjetConfig: thread.workjetConfig },
+          )
+          .pipe(Effect.flip),
+      );
+      expect(stale).toMatchObject({
+        _tag: "OrchestrationCommandInvariantError",
+        detail: expect.stringContaining("settings changed"),
+      });
+      expect((await system.readModel()).threads[0]?.workjetConfig.managedInstructions).toBe(
+        "New owner settings",
+      );
+      await system.run(
+        system.engine.dispatch(
+          {
+            type: "thread.workjet-config.set",
+            commandId: CommandId.make("current-rotation"),
+            threadId: thread.id,
+            workjetConfig: { ...updated, managedInstructions: "Saved current settings" },
+            createdAt: now(),
+          },
+          { expectedWorkjetConfig: updated },
+        ),
+      );
+      expect((await system.readModel()).threads[0]?.workjetConfig.managedInstructions).toBe(
+        "Saved current settings",
+      );
+      expect((await system.readModel()).threads[0]?.messages).toEqual(messages);
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("archives a submitted open PR while retaining worker source and fencing later starts", async () => {
     const environmentId = EnvironmentId.make("worker-pr-environment");
     const system = await createOrchestrationSystem(environmentId);

@@ -4,9 +4,23 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import {
+  makeWorkerSourceModelSocket,
+  type WorkerSourceModelSocketDescription,
+} from "./WorkerSourceModelSocket.ts";
+import {
   workerSourceNativeProfile,
   type WorkerSourceNativeProfile,
 } from "./WorkerSourceNativeProfile.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
+import {
+  makeWorkerSourcePrivateProfile,
+  type WorkerSourcePrivateProfile,
+} from "./WorkerSourcePrivateProfile.ts";
+import type { WorkerNamespaceFileCapture } from "./WorkerNamespaceSpawn.ts";
+import type {
+  WorkerSourceProfileCustody,
+  WorkerSourceRuntimeCustody,
+} from "./WorkerSourceCustodyStore.ts";
 import { Schema } from "effect";
 import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
 import type { WorkerSubmission } from "./WorkerSubmission.ts";
@@ -94,6 +108,9 @@ function writeMessagesStream(res: NodeHttp.ServerResponse, body: unknown): void 
 
 export interface WorkerSourceHarness {
   readonly nativeProfile?: WorkerSourceNativeProfile;
+  readonly nativeProfileCapture?: WorkerNamespaceFileCapture;
+  readonly captureRuntime?: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
+  readonly modelSocket?: WorkerSourceModelSocketDescription;
   readonly isRevoked: () => boolean;
   readonly identity: Readonly<
     Pick<
@@ -101,7 +118,7 @@ export interface WorkerSourceHarness {
       "sourceEnvironmentId" | "targetEnvironmentId" | "requestId" | "requestDigest"
     >
   >;
-  readonly admit: () => Promise<void>;
+  readonly admit: (signal?: AbortSignal) => Promise<void>;
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
@@ -114,6 +131,7 @@ export interface WorkerSourceHarness {
 }
 const workers = new Map<string, WorkerSourceHarness>();
 const installedRoutes = new Map<string, WorkerSourceHarnessRoute>();
+const installedProfileRoots = new Map<string, string>();
 export const readWorkerSourceHarness = (threadId: string) => workers.get(threadId);
 
 /** Install before starting the owned worker; revoke with its source connection. */
@@ -124,10 +142,16 @@ export async function installWorkerSourceRoute(
     readonly targetEnvironmentId: string;
     readonly requestDigest: string;
     readonly modelId: string;
+    readonly modelSocketRoot?: string;
     readonly harness?: RemoteWorkerHarness;
+    readonly captureRuntime?: (capture: WorkerSourceRuntimeCustody) => Promise<void>;
     readonly nativeProfile?: {
       readonly harness: WorkerSourceNativeProfile["harness"];
       readonly directory: string;
+      readonly persistence?: {
+        readonly original: WorkerSourceProfileCustody | null;
+        readonly capture: (custody: WorkerSourceProfileCustody) => Promise<void>;
+      };
     };
   },
 ): Promise<WorkerSourceHarness> {
@@ -164,8 +188,9 @@ export async function installWorkerSourceRoute(
       original.port !== route.port ||
       existing.model !== pin.modelId ||
       existing.harness !== pin.harness ||
+      existing.modelSocket?.root !== pin.modelSocketRoot ||
       existing.nativeProfile?.harness !== pin.nativeProfile?.harness ||
-      existing.nativeProfile?.directory !== pin.nativeProfile?.directory
+      installedProfileRoots.get(threadId) !== pin.nativeProfile?.directory
     )
       throw new Error("Worker source route substitution or revocation");
     await existing.admit();
@@ -175,11 +200,13 @@ export async function installWorkerSourceRoute(
   const active = new Set<AbortController>();
   let revoked = false;
   let busy = false;
+  let privateProfile: WorkerSourcePrivateProfile | undefined;
   const source = async (
     operation: "admit" | "infer" | "retire" | "retirementAck" | "computers",
     payload: unknown,
     signal: AbortSignal,
   ) => {
+    if (operation === "admit") await privateProfile?.verify();
     const response = await fetch(`http://127.0.0.1:${route.port}/worker-source`, {
       method: "POST",
       signal,
@@ -194,9 +221,11 @@ export async function installWorkerSourceRoute(
       }),
     });
     if (!response.ok) throw new Error("Source worker authority rejected request");
-    return response.json() as Promise<unknown>;
+    const result: unknown = await response.json();
+    if (operation === "admit") await privateProfile?.verify();
+    return result;
   };
-  const server: NodeHttp.Server = NodeHttp.createServer(async (req, res) => {
+  const onRequest: NodeHttp.RequestListener = async (req, res) => {
     const messages = pin.harness === "claude-code";
     const authenticated =
       req.headers.authorization !== undefined
@@ -328,7 +357,8 @@ export async function installWorkerSourceRoute(
       busy = false;
       res.off("close", disconnect);
     }
-  });
+  };
+  const server = NodeHttp.createServer(onRequest);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -340,37 +370,66 @@ export async function installWorkerSourceRoute(
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
   const baseUrl = `http://127.0.0.1:${address.port}/v1`;
   let nativeProfile: WorkerSourceNativeProfile | undefined;
+  let modelSocket: Awaited<ReturnType<typeof makeWorkerSourceModelSocket>> | undefined;
   try {
-    if (pin.nativeProfile) {
-      nativeProfile = workerSourceNativeProfile({
-        ...pin.nativeProfile,
-        model: pin.modelId,
-        baseUrl,
-        apiKey,
-      });
-      await NodeFSP.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });
-      for (const directory of [
-        nativeProfile.environment.HOME,
-        nativeProfile.environment.XDG_CONFIG_HOME,
-        nativeProfile.environment.XDG_DATA_HOME,
-        nativeProfile.environment.XDG_CACHE_HOME,
-        NodePath.join(nativeProfile.directory, "sessions"),
-      ]) {
-        await NodeFSP.mkdir(directory!, { recursive: true, mode: 0o700 });
+    if (pin.nativeProfile?.persistence) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        await source("admit", {}, controller.signal);
+      } finally {
+        clearTimeout(timeout);
       }
-      for (const file of nativeProfile.files) {
-        const destination = NodePath.join(nativeProfile.directory, file.name);
-        await NodeFSP.writeFile(destination + ".stage", file.content, { mode: 0o600 });
-        await NodeFSP.rename(destination + ".stage", destination);
+    }
+    if (pin.modelSocketRoot !== undefined)
+      modelSocket = await makeWorkerSourceModelSocket(pin.modelSocketRoot, onRequest);
+    if (pin.nativeProfile) {
+      const create = (directory: string) =>
+        workerSourceNativeProfile({
+          harness: pin.nativeProfile!.harness,
+          directory,
+          model: pin.modelId,
+          baseUrl: modelSocket === undefined ? baseUrl : WORKER_MODEL_NAMESPACE_BASE_URL,
+          apiKey,
+        });
+      if (modelSocket !== undefined) {
+        privateProfile = await makeWorkerSourcePrivateProfile(
+          pin.nativeProfile.directory,
+          create,
+          pin.nativeProfile.persistence,
+        );
+        nativeProfile = privateProfile.profile;
+      } else {
+        nativeProfile = create(pin.nativeProfile.directory);
+        await NodeFSP.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });
+        for (const directory of [
+          nativeProfile.environment.HOME,
+          nativeProfile.environment.XDG_CONFIG_HOME,
+          nativeProfile.environment.XDG_DATA_HOME,
+          nativeProfile.environment.XDG_CACHE_HOME,
+          NodePath.join(nativeProfile.directory, "sessions"),
+        ]) {
+          await NodeFSP.mkdir(directory!, { recursive: true, mode: 0o700 });
+        }
+        for (const file of nativeProfile.files) {
+          const destination = NodePath.join(nativeProfile.directory, file.name);
+          await NodeFSP.writeFile(destination + ".stage", file.content, { mode: 0o600 });
+          await NodeFSP.rename(destination + ".stage", destination);
+        }
       }
     }
   } catch {
+    await privateProfile?.close();
+    await modelSocket?.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     throw new Error("Worker source native profile could not be prepared");
   }
   const harness: WorkerSourceHarness = {
     ...(nativeProfile ? { nativeProfile } : {}),
+    ...(privateProfile ? { nativeProfileCapture: privateProfile.capture } : {}),
+    ...(pin.captureRuntime ? { captureRuntime: pin.captureRuntime } : {}),
+    ...(modelSocket ? { modelSocket: modelSocket.description } : {}),
     isRevoked: () => revoked,
     identity: Object.freeze({
       sourceEnvironmentId: route.sourceEnvironmentId,
@@ -378,15 +437,19 @@ export async function installWorkerSourceRoute(
       requestId: route.requestId,
       requestDigest: route.requestDigest,
     }),
-    admit: async () => {
+    admit: async (signal) => {
       if (revoked) throw new Error("Worker route revoked");
+      if (signal?.aborted) throw new Error("Worker source admission interrupted");
       const controller = new AbortController();
+      const abort = () => controller.abort();
+      signal?.addEventListener("abort", abort, { once: true });
       active.add(controller);
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
         await source("admit", {}, controller.signal);
       } finally {
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
         active.delete(controller);
       }
     },
@@ -418,11 +481,13 @@ export async function installWorkerSourceRoute(
       for (const controller of active) controller.abort();
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
-      await closed;
+      await Promise.all([closed, modelSocket?.close(), privateProfile?.close()]);
       // Keep the revoked tombstone: restart must fail closed, never use target auth.
     },
   };
   workers.set(threadId, harness);
   installedRoutes.set(threadId, route);
+  if (pin.nativeProfile !== undefined)
+    installedProfileRoots.set(threadId, pin.nativeProfile.directory);
   return harness;
 }

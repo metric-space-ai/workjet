@@ -11,6 +11,7 @@
  */
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  rotateWorkjetCtoxWorkerSource,
   ModelSelection,
   NonNegativeInt,
   ThreadId,
@@ -295,7 +296,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ),
       });
       let threadCapabilityContext = resolveThreadCapabilityContext(
-        crewBinding ? { ...workjetConfig, managedInstructions: "" } : workjetConfig,
+        rotateWorkjetCtoxWorkerSource(
+          crewBinding ? { ...workjetConfig, managedInstructions: "" } : workjetConfig,
+          summaries,
+        ).config,
         undefined,
         requiresCtoxConnection
           ? {

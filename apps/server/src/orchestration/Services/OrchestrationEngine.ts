@@ -17,6 +17,7 @@ import type {
   WorkjetRoutingEnvelope,
   ThreadId,
   RemoteWorkerRequest,
+  WorkjetThreadConfig,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -34,6 +35,8 @@ export interface OrchestrationDispatchOptions {
   /** A target mirror retains the source supervisor rather than creating another. */
   readonly remoteProjectMirror?: true;
   readonly deferWhileBusy?: true;
+  /** Internal config reconciliation must not overwrite a concurrent user/receipt update. */
+  readonly expectedWorkjetConfig?: WorkjetThreadConfig;
   /** Internal only: commit a prepared team-worker delegation with thread creation. */
   readonly workerDelegation?: {
     readonly envelope: WorkjetRoutingEnvelope;

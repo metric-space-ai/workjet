@@ -28,6 +28,7 @@ export const WorkjetSupervisorExecutionPageRequest = Schema.Struct({
   cursor: Schema.optionalKey(WorkjetSupervisorEventCursor),
   limit: Schema.optionalKey(safeInteger(1).check(Schema.isLessThanOrEqualTo(50))),
   include_public_text: Schema.optionalKey(Schema.Boolean),
+  include_native_message_text: Schema.optionalKey(Schema.Boolean),
 });
 export type WorkjetSupervisorExecutionPageRequest =
   typeof WorkjetSupervisorExecutionPageRequest.Type;
@@ -55,6 +56,22 @@ export const WorkjetSupervisorPublicAssistantText = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type WorkjetSupervisorPublicAssistantText = typeof WorkjetSupervisorPublicAssistantText.Type;
+export const WorkjetSupervisorNativeMessageText = Schema.Struct({
+  execution_key: safeText(256),
+  model_operation_id: safeText(256),
+  native_message_id: safeText(256),
+  model: safeText(256),
+  upstream_request_id: safeText(256),
+  offset: safeInteger(0).check(Schema.isLessThanOrEqualTo(65536)),
+  text: Schema.String.check(
+    Schema.makeFilter(
+      (text) =>
+        Array.from(text).length <= 4096 || "A native text chunk exceeds 4096 Unicode characters.",
+    ),
+  ),
+  completed: Schema.Boolean,
+});
+export type WorkjetSupervisorNativeMessageText = typeof WorkjetSupervisorNativeMessageText.Type;
 
 export const WorkjetSupervisorExecutionEvent = Schema.Struct({
   id: safeText(128),
@@ -66,6 +83,7 @@ export const WorkjetSupervisorExecutionEvent = Schema.Struct({
   call_id: Schema.optionalKey(safeText(128)),
   success: Schema.optionalKey(Schema.Boolean),
   public_text: Schema.optionalKey(WorkjetSupervisorPublicAssistantText),
+  native_message_text: Schema.optionalKey(WorkjetSupervisorNativeMessageText),
 }).check(
   Schema.makeFilter(
     (event) =>
@@ -73,6 +91,13 @@ export const WorkjetSupervisorExecutionEvent = Schema.Struct({
         ? event.public_text !== undefined
         : event.public_text === undefined) ||
       "Public assistant text belongs only to an actual assistant-text event.",
+  ),
+  Schema.makeFilter(
+    (event) =>
+      (event.kind === "worker.native_message_text"
+        ? event.native_message_text !== undefined
+        : event.native_message_text === undefined) ||
+      "Native message text belongs only to an actual native-message-text event.",
   ),
 );
 export type WorkjetSupervisorExecutionEvent = typeof WorkjetSupervisorExecutionEvent.Type;
@@ -84,6 +109,7 @@ export const WorkjetSupervisorExecutionPage = Schema.Struct({
   next_cursor: Schema.optionalKey(WorkjetSupervisorEventCursor),
   has_more: Schema.Boolean,
   public_text_supported: Schema.optionalKey(Schema.Boolean),
+  native_message_text_supported: Schema.optionalKey(Schema.Boolean),
 }).check(
   Schema.makeFilter((page) => {
     if (page.events.length === 0)
@@ -94,6 +120,8 @@ export const WorkjetSupervisorExecutionPage = Schema.Struct({
     for (const event of page.events) {
       if (event.public_text !== undefined && page.public_text_supported !== true)
         return "Assistant text requires explicit native public-text support.";
+      if (event.native_message_text !== undefined && page.native_message_text_supported !== true)
+        return "Native message text requires explicit native message-text support.";
       if (event.sequence <= previous || ids.has(event.id))
         return "Native events must have unique IDs and increasing sequences.";
       previous = event.sequence;
@@ -117,6 +145,8 @@ export function isWorkjetSupervisorExecutionPageForRequest(
 ): boolean {
   if (
     (request.include_public_text !== true && page.public_text_supported !== undefined) ||
+    (request.include_native_message_text !== true &&
+      page.native_message_text_supported !== undefined) ||
     page.command_id !== turn.commandId ||
     page.task_id !== turn.taskId ||
     page.events.length > (request.limit ?? 25) ||
@@ -152,5 +182,8 @@ export function nextWorkjetSupervisorExecutionPageRequest(
     ...(page.next_cursor ? { cursor: page.next_cursor } : {}),
     limit: 25,
     ...(page.public_text_supported !== undefined ? { include_public_text: true } : {}),
+    ...(page.native_message_text_supported !== undefined
+      ? { include_native_message_text: true }
+      : {}),
   };
 }

@@ -6,6 +6,7 @@ import {
 } from "@workjet/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { createProjectRegistryRefresh } from "./projectRegistryRefresh";
 import {
   __resetWorkjetProjectRegistryForTests,
   applyWorkjetProjectRegistryResult,
@@ -23,6 +24,7 @@ import {
 afterEach(() => {
   __resetWorkjetProjectRegistryForTests();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
@@ -49,6 +51,50 @@ const project = {
 };
 
 describe("Workjet project registry", () => {
+  it("recovers a failed registry without a click, retains history and updates the saved timestamp", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T13:00:00Z"));
+    __resetWorkjetProjectRegistryForTests(loadingWorkjetProjectRegistry("managed:welsch"));
+    const response = {
+      action: "project.list" as const,
+      projects: [project],
+      count: 1,
+      truncated: false as const,
+    };
+    applyWorkjetProjectRegistryResult("managed:welsch", { _tag: "completed", response });
+    const confirmedAt = readWorkjetProjectRegistry("managed:welsch").lastUpdatedAt;
+    let online = false;
+    const controller = createProjectRegistryRefresh(async () => {
+      applyWorkjetProjectRegistryResult(
+        "managed:welsch",
+        online
+          ? {
+              _tag: "completed",
+              response: { ...response, projects: [{ ...project, title: "Updated" }] },
+            }
+          : {
+              _tag: "failed",
+              code: "guest_failed",
+              preparation: { stage: "navigation_commit", reason: "did_fail_load", errorCode: -102 },
+            },
+      );
+      return online;
+    });
+    await controller.refresh();
+    expect(readWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      projects: [project],
+      refreshFailed: true,
+      lastUpdatedAt: confirmedAt,
+    });
+    online = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(readWorkjetProjectRegistry("managed:welsch").projects[0]?.title).toBe("Updated");
+    expect(readWorkjetProjectRegistry("managed:welsch").refreshFailed).toBeUndefined();
+    expect(readWorkjetProjectRegistry("managed:welsch").lastUpdatedAt).toBe(confirmedAt! + 1_000);
+    controller.cancel();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("keeps saved selected history usable on failure and restores it after reopen", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", {

@@ -4,7 +4,7 @@ import type {
   WorkjetConnectionSummary,
   WorkjetThreadConfig,
 } from "@workjet/contracts";
-import { normalizeWorkjetThreadConfig } from "@workjet/contracts";
+import { normalizeWorkjetThreadConfig, retainWorkjetCtoxBinding } from "@workjet/contracts";
 import { ctoxConnectionMatchesSelectedInstance } from "./workjetCtoxConnections";
 
 export function workerSourceProvisionRequest(
@@ -28,7 +28,8 @@ export function workerSourceConnectionForInstance(
       connection.connectionId.startsWith(prefix) &&
       ctoxConnectionMatchesSelectedInstance(connection, selectedInstanceId),
   );
-  return matching.find((connection) => connection.status === "ready") ?? matching[0];
+  const ready = matching.filter((connection) => connection.status === "ready");
+  return ready.length === 1 ? ready[0] : ready.length > 1 ? undefined : matching[0];
 }
 
 /** Enrollment carries the native pin of one existing ready source, never the desktop tenant ID. */
@@ -75,7 +76,7 @@ export function withWorkerSourceConnection(
   )
     return null;
   const normalized = normalizeWorkjetThreadConfig(config);
-  return {
+  const next: WorkjetThreadConfig = {
     ...normalized,
     schemaVersion: 2,
     enabledCapabilityIds: normalized.enabledCapabilityIds.includes("ctox-business-os")
@@ -94,5 +95,46 @@ export function withWorkerSourceConnection(
         },
       },
     ],
+    ...(normalized.ctoxCrewChat &&
+    normalized.ctoxCrewChat.connectionId ===
+      normalized.capabilityBindings.find((binding) => binding.capabilityId === "ctox-business-os")
+        ?.target.connectionId
+      ? { ctoxCrewChat: { ...normalized.ctoxCrewChat, connectionId: connection.connectionId } }
+      : {}),
   };
+  return next;
+}
+
+export function workerSourceBindingFailure(error: unknown): {
+  readonly message: string;
+  readonly retryable: boolean;
+} {
+  if (error && typeof error === "object") {
+    if ("_tag" in error && error._tag === "OrchestrationDispatchCommandError" && "cause" in error)
+      return workerSourceBindingFailure(error.cause);
+    if (
+      "_tag" in error &&
+      (error._tag === "OrchestrationCommandInvariantError" ||
+        error._tag === "OrchestrationCommandPreviouslyRejectedError") &&
+      "detail" in error &&
+      typeof error.detail === "string"
+    )
+      return { message: error.detail, retryable: false };
+  }
+  return {
+    message:
+      "The server could not save the worker connection. Check the server connection and try again.",
+    retryable: true,
+  };
+}
+
+export function workerSourceBindingError(
+  config: WorkjetThreadConfig,
+  selectedInstanceId: string | null,
+  connection: WorkjetConnectionSummary,
+): string | null {
+  const next = withWorkerSourceConnection(config, selectedInstanceId, connection);
+  return next
+    ? retainWorkjetCtoxBinding(config, next).error
+    : "Select an authorized worker connection for this project's instance.";
 }

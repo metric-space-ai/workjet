@@ -833,6 +833,18 @@ export const ThreadGoalSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadGoalAssignCommand = Schema.Struct({
+  type: Schema.Literal("thread.goal.assign"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  supervisorThreadId: ThreadId,
+  status: Schema.Literals(["active", "paused", "blocked", "complete"]),
+  objective: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  reason: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(8000))),
+  expectedRevision: Schema.optional(NonNegativeInt),
+  createdAt: IsoDateTime,
+});
+
 const ThreadWorkerKanbanSetCommand = Schema.Struct({
   type: Schema.Literal("thread.worker-kanban.set"),
   commandId: CommandId,
@@ -1165,6 +1177,7 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadGoalAssignCommand,
   ThreadGoalExecutionObservedCommand,
   ThreadGoalExecutorObservedCommand,
   ThreadGoalAdvanceCommand,

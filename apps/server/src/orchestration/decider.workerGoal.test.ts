@@ -131,6 +131,72 @@ const apply = Effect.fn("test.applyGoalCommand")(function* (
 
 it.layer(NodeServices.layer)("persistent goal journal", (it) => {
   it.effect(
+    "fences Supervisor assignments against the serialized current Parent binding and Owner stops",
+    () =>
+      Effect.gen(function* () {
+        const root = {
+          ...snapshot.threads[0]!,
+          id: ThreadId.make("supervisor"),
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            team: {
+              role: "supervisor" as const,
+              threadId: ThreadId.make("supervisor"),
+              projectId,
+              parentThreadId: null,
+              goal: "Deliver the project",
+              createdAt: NOW,
+            },
+          },
+        };
+        const model = { ...snapshot, threads: [root, snapshot.threads[0]!] };
+        const assign = {
+          type: "thread.goal.assign" as const,
+          threadId: id,
+          supervisorThreadId: root.id,
+          commandId: CommandId.make("supervisor-assign"),
+          status: "active" as const,
+          objective: "Deliver the revised outcome",
+          createdAt: NOW,
+        };
+        expect(isClientCommand(assign)).toBe(false);
+        const started = yield* apply(model, assign);
+        const cfg = started.threads[1]!.workjetConfig;
+        if (cfg.schemaVersion !== 2 || !cfg.goal) throw new Error("Missing assigned goal");
+        expect(cfg.goal.objective).toBe(assign.objective);
+        expect(cfg.goal.pendingContinuation).not.toBeNull();
+        const stopped = yield* apply(started, control("paused"));
+        expect(
+          (yield* apply(stopped, { ...assign, expectedRevision: 0 }).pipe(Effect.result))._tag,
+        ).toBe("Failure");
+        const preserved = yield* apply(stopped, {
+          ...assign,
+          status: "paused",
+          expectedRevision: 1,
+        });
+        const updated = preserved.threads[1]!.workjetConfig;
+        expect(updated.schemaVersion === 2 && updated.goal?.status).toBe("paused");
+        expect(updated.schemaVersion === 2 && updated.goal?.pendingContinuation).toBeNull();
+        if (config.schemaVersion !== 2 || config.team?.role !== "specialist")
+          throw new Error("Missing fixture team");
+        const moved = {
+          ...model,
+          threads: [
+            root,
+            {
+              ...snapshot.threads[0]!,
+              workjetConfig: {
+                ...config,
+                team: { ...config.team, parentThreadId: ThreadId.make("other-supervisor") },
+              },
+            },
+          ],
+        };
+        expect((yield* apply(moved, assign).pipe(Effect.result))._tag).toBe("Failure");
+      }),
+  );
+
+  it.effect(
     "persists provider witnesses without changing goal status or inventing verified progress",
     () =>
       Effect.gen(function* () {

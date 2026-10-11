@@ -96,6 +96,8 @@ import type { ClientSettings } from "./settings.ts";
 import type {
   CtoxAppActionResult,
   CtoxDiscoveryResult,
+  CtoxInstancePreferenceInput,
+  CtoxInstancePreferenceResult,
   CtoxDecisionHubDisconnectInput,
   CtoxDecisionHubDisconnectResult,
   CtoxDecisionHubProvisionInput,
@@ -1187,6 +1189,8 @@ export interface DesktopBridge {
    * be delivered twice by racing the push against the drain.
    */
   onDeepLinkPending?: (listener: () => void) => () => void;
+  /** A saved connection catalog could not be read; local provisioning continues. */
+  onConnectionCatalogWarning?: (listener: () => void) => () => void;
   getWslState: () => Promise<DesktopWslState>;
   setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;
@@ -1235,6 +1239,7 @@ export interface DesktopBridge {
 
 export interface DesktopCtoxBridge {
   refresh: () => Promise<CtoxDiscoveryResult>;
+  setInstanceState?: (input: CtoxInstancePreferenceInput) => Promise<CtoxInstancePreferenceResult>;
   login: () => Promise<CtoxManagedLoginResult>;
   logout: () => Promise<CtoxManagedActionResult>;
   provisionDecisionHub?: (
@@ -1243,7 +1248,10 @@ export interface DesktopCtoxBridge {
   disconnectDecisionHub?: (
     input: CtoxDecisionHubDisconnectInput,
   ) => Promise<CtoxDecisionHubDisconnectResult>;
-  importInvite: (invite: string) => Promise<CtoxPairedInstanceImportResult>;
+  importInvite: (
+    invite: string,
+    replacesInstanceId?: string,
+  ) => Promise<CtoxPairedInstanceImportResult>;
   importManualPairing: (
     input: CtoxManualPairingImportInput,
   ) => Promise<CtoxPairedInstanceImportResult>;

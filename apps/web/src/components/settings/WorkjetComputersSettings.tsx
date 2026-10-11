@@ -732,7 +732,31 @@ export function WorkjetComputersSettingsView({
             <DialogDescription>Reconnect or disconnect this computer.</DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            {connectionComputer ? renderConnection?.(connectionComputer.environmentId) : null}
+            {connectionComputer
+              ? (renderConnection?.(connectionComputer.environmentId) ?? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground" role="status">
+                      {!environmentsReady
+                        ? "Loading connection details…"
+                        : connectionComputer.environmentId === environmentId
+                          ? "This is the local Workjet connection."
+                          : `The saved connection for ${connectionComputer.label} is unavailable. Set up its connection again to reconnect.`}
+                    </p>
+                    {environmentsReady &&
+                    connectionComputer.environmentId !== environmentId &&
+                    onAdd ? (
+                      <Button
+                        onClick={() => {
+                          setConnectionComputerId(null);
+                          onAdd();
+                        }}
+                      >
+                        Set up connection
+                      </Button>
+                    ) : null}
+                  </div>
+                ))
+              : null}
           </DialogPanel>
         </DialogPopup>
       </Dialog>

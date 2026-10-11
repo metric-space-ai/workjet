@@ -59,17 +59,151 @@ function html(
   busy = false,
   error?: string,
 ) {
-  vi.mocked(useInstanceProviders).mockReturnValue({
-    registry: { ...registry, accounts: [account] },
+  return registryHtml(
+    { ...registry, accounts: [account] },
+    busy,
     error,
-    errorAccountId: error ? accountId : undefined,
+    error ? accountId : undefined,
+  );
+}
+function registryHtml(
+  current: WorkjetNativeProviderRegistry,
+  busy = false,
+  error?: string,
+  errorAccountId?: string,
+) {
+  vi.mocked(useInstanceProviders).mockReturnValue({
+    registry: current,
+    error,
+    errorAccountId,
     busy,
     run: vi.fn(async (): Promise<WorkjetNativeProviderRegistry | undefined> => undefined),
+    check: vi.fn(async () => undefined),
     refresh: vi.fn(async (): Promise<WorkjetNativeProviderRegistry | undefined> => undefined),
   });
   return renderToStaticMarkup(<NativeProviderRows instanceId="managed:welsch" label="Welsch" />);
 }
 describe("Native provider account rows", () => {
+  const apiAccount: WorkjetNativeProviderAccount = {
+    ...registry.accounts[0]!,
+    id: "native-api-fixture",
+    provider: "zai",
+    controls: { canEnable: false, canRemove: false },
+    nativeAccountReference: {
+      accountId: "native-api-fixture",
+      holderInstanceId,
+      accountRevision: 3,
+    },
+    modelCatalog: { ...registry.accounts[0]!.modelCatalog, models: ["glm-5.3-flash"] },
+    effectiveModels: ["glm-5.3-flash"],
+  };
+  const apiSelection = { provider: "zai", selection: ["glm-5.3-flash"] };
+
+  it("shows a real non-Claude account with its own shared live models and holder controls", () => {
+    const rendered = registryHtml({
+      ...registry,
+      providers: [apiSelection],
+      accounts: [apiAccount],
+    });
+    expect(rendered).toContain("Z.ai (GLM) · Welsch");
+    expect(rendered).toContain("glm-5.3-flash");
+    expect(rendered).toContain('aria-label="Models for zai on CTOX"');
+    expect(rendered).not.toContain("OAuth");
+    expect(rendered).not.toContain('role="switch"');
+    expect(control(rendered, "Check glm-5.3-flash")).toContain("disabled");
+    expect(rendered).toContain(
+      "Hi checks are not yet available for this provider on this CTOX instance",
+    );
+    expect(rendered).not.toContain("Model check passed");
+    expect(control(rendered, "Permanently remove instance account native-api-fixture")).toContain(
+      "disabled",
+    );
+    expect(rendered).toContain("Removal is not available for this account.");
+    expect(rendered).not.toContain("Update CTOX");
+  });
+  it("keeps provider model fields separate and shows a shared refresh failure once", () => {
+    const rendered = registryHtml(
+      {
+        ...registry,
+        accounts: [registry.accounts[0]!, apiAccount],
+        providers: [...registry.providers, apiSelection],
+      },
+      false,
+      "The instance refresh failed.",
+    );
+    expect(rendered).toContain('aria-label="Models for claude on CTOX"');
+    expect(rendered).toContain('aria-label="Models for zai on CTOX"');
+    expect(rendered).toContain("claude-opus-5-5");
+    expect(rendered).toContain("glm-5.3-flash");
+    expect(rendered.match(/role="alert"/g)).toHaveLength(1);
+    expect(rendered).toContain("The instance refresh failed.");
+  });
+  it("retains an unfamiliar native provider using its real public identity", () => {
+    const account = { ...apiAccount, provider: "ctox_proxy" };
+    const rendered = registryHtml({
+      ...registry,
+      accounts: [account],
+      providers: [{ ...apiSelection, provider: "ctox_proxy" }],
+    });
+    expect(rendered).toContain("ctox_proxy · Welsch");
+    expect(rendered).toContain('aria-label="Models for ctox_proxy on CTOX"');
+    expect(rendered).toContain("glm-5.3-flash");
+  });
+
+  it("shows an actual green Hi status and measured latency instead of a catalog-derived claim", () => {
+    const rendered = html({
+      ...registry.accounts[0]!,
+      modelChecks: [
+        {
+          modelId: "claude-opus-5-5",
+          checkedAtMs: 1000,
+          elapsedMs: 123,
+          status: "ok",
+          source: "upstream",
+          failure: null,
+          httpStatus: 200,
+          retryAtMs: null,
+        },
+      ],
+    });
+    expect(rendered).toContain("Model check passed");
+    expect(rendered).toContain("123 ms");
+    expect(rendered).toContain("Check all");
+    expect(rendered).not.toContain("Inference not checked");
+  });
+  it("shows real model failure with a fix and local cooldown as a separate unavailable state", () => {
+    const base = {
+      modelId: "claude-opus-5-5",
+      checkedAtMs: 1000,
+      elapsedMs: 123,
+      httpStatus: 404,
+      retryAtMs: null,
+    } as const;
+    const red = html({
+      ...registry.accounts[0]!,
+      modelChecks: [{ ...base, status: "failed", source: "upstream", failure: "model_not_found" }],
+    });
+    expect(red).toContain("Model check failed: model_not_found");
+    expect(red).toContain("Refresh the live model list");
+    const local = html({
+      ...registry.accounts[0]!,
+      modelChecks: [
+        {
+          ...base,
+          status: "unavailable",
+          source: "gateway",
+          failure: "gateway_cooldown",
+          httpStatus: 503,
+          retryAtMs: 2000,
+        },
+      ],
+    });
+    expect(local).toContain("Model check unavailable: gateway_cooldown");
+    expect(local).toContain("Gateway retry after");
+    expect(local).not.toContain("Model check failed");
+    expect(local).not.toContain("Credentials rejected");
+  });
+
   it.each([undefined, "guest_failed"])(
     "does not claim an empty account list before a successful read (error: %s)",
     (error) => {
@@ -79,6 +213,7 @@ describe("Native provider account rows", () => {
         errorAccountId: undefined,
         busy: !error,
         run: vi.fn(async () => undefined),
+        check: vi.fn(async () => undefined),
         refresh: vi.fn(async () => undefined),
       });
       const rendered = renderToStaticMarkup(
@@ -96,6 +231,7 @@ describe("Native provider account rows", () => {
       errorAccountId: undefined,
       busy: false,
       run: vi.fn(async () => undefined),
+      check: vi.fn(async () => undefined),
       refresh: vi.fn(async () => undefined),
     });
     const rendered = renderToStaticMarkup(

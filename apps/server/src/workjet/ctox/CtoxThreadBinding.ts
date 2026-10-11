@@ -24,6 +24,7 @@
  */
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  rotateWorkjetCtoxWorkerSource,
   WorkjetThreadConfig,
   type EnvironmentId,
   type ThreadId,
@@ -95,20 +96,24 @@ export const make = Effect.gen(function* () {
         onNone: () => Effect.succeed([]),
         onSome: (registry) => registry.list.pipe(Effect.orElseSucceed(() => [])),
       });
-      const context = resolveThreadCapabilityContext(workjetConfig, undefined, {
-        knownConnectionIds: new Set(summaries.map(({ connectionId }) => connectionId)),
-        // "Ready" is the only state that may authorize a native start. A
-        // configured-but-unreachable instance must stay visible as unavailable
-        // rather than silently start work.
-        reachableConnectionIds: new Set(
-          summaries
-            .filter(({ status }) => status === "ready")
-            .map(({ connectionId }) => connectionId),
-        ),
-        connectionInstances: new Map(
-          summaries.map(({ connectionId, instanceId }) => [connectionId, instanceId]),
-        ),
-      });
+      const context = resolveThreadCapabilityContext(
+        rotateWorkjetCtoxWorkerSource(workjetConfig, summaries).config,
+        undefined,
+        {
+          knownConnectionIds: new Set(summaries.map(({ connectionId }) => connectionId)),
+          // "Ready" is the only state that may authorize a native start. A
+          // configured-but-unreachable instance must stay visible as unavailable
+          // rather than silently start work.
+          reachableConnectionIds: new Set(
+            summaries
+              .filter(({ status }) => status === "ready")
+              .map(({ connectionId }) => connectionId),
+          ),
+          connectionInstances: new Map(
+            summaries.map(({ connectionId, instanceId }) => [connectionId, instanceId]),
+          ),
+        },
+      );
 
       return {
         environmentId,

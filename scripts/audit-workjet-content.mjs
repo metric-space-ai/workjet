@@ -323,6 +323,16 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
     reason: "Launch configuration transport is an internal sync value.",
   },
   {
+    path: "apps/web/src/components/PersistentWorkerKanban.tsx",
+    context: /learnordie-dark-room/u,
+    reason: "The slide-engine theme identifier is an internal stylesheet name.",
+  },
+  {
+    path: "apps/web/src/fixtures/persistent-worker-goal.fixture.tsx",
+    context: /learnordie-dark-room/u,
+    reason: "The fixture selects the slide-engine theme by its internal identifier.",
+  },
+  {
     path: "apps/desktop/src/ctox/CtoxBusinessOsShell.ts",
     context: /(?:\/rxdb\/|transport:\s*["']?webrtc)/iu,
     reason: "The packaged shell loader uses an internal sync asset contract.",
@@ -376,6 +386,11 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
     path: "apps/desktop/src/window/DesktopWindow.ts",
     context: /ctox-guest/iu,
     reason: "The window target name is an internal host symbol.",
+  },
+  {
+    path: "apps/desktop/src/ctox/CtoxGuestDiagnostics.ts",
+    context: /withSpan\(["'`]?ctox\.guest\.preparation\.failed/u,
+    reason: "The trace span name is internal telemetry; the UI renders the typed reason instead.",
   },
   {
     path: "apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts",

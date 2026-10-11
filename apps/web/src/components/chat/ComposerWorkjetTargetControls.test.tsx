@@ -395,6 +395,26 @@ describe("the manual target controls", () => {
     expect(markup).toContain("GPT 5.6 Sol");
   });
 
+  it("displays a native-managed route with disabled Harness and Model controls", () => {
+    const reason = "This route is managed by the project's instance.";
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        disabledReason={reason}
+        configuredInstanceIds={new Set(["codex"])}
+        selectedHarness="codex-cli"
+        onSelectHarness={vi.fn()}
+        models={[]}
+        modelsUnavailableReason={null}
+        selectedModelId="gpt-6.1-sol"
+        onSelectModel={vi.fn()}
+      />,
+    );
+    expect(markup).toMatch(/<button[^>]*aria-label="Harness"[^>]*(?:disabled|data-disabled)/);
+    expect(markup).toMatch(/<button[^>]*aria-label="Model"[^>]*disabled/);
+    expect(markup).toContain("gpt-6.1-sol");
+    expect(markup).toContain("This route is managed");
+  });
+
   it("presents the native MiniMax catalog without claiming gateway service", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView

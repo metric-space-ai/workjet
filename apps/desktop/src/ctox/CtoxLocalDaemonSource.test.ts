@@ -28,6 +28,26 @@ interface Descriptor {
   readonly contents: string;
 }
 
+describe("disabled local health probing", () => {
+  it.effect("keeps the local row without requesting health", () => {
+    const probe = vi.fn(async () => ({ ok: true }));
+    return withStateRoot(
+      [
+        {
+          path: "instance.json",
+          contents: descriptor("fixture", { healthUrl: "http://127.0.0.1:41700/health" }),
+        },
+      ],
+      ({ discover }) =>
+        Effect.gen(function* () {
+          const rows = yield* discover({ probe, shouldProbe: () => Effect.succeed(false) });
+          assert.equal(rows.length, 1);
+          assert.equal(probe.mock.calls.length, 0);
+        }),
+    );
+  });
+});
+
 function descriptor(instanceId: string, overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     version: 1,

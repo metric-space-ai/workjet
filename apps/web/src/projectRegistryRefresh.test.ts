@@ -1,5 +1,5 @@
 import type { CtoxGuestStateEvent, DesktopCtoxBridge } from "@workjet/contracts";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   createProjectRegistryRefresh,
   subscribeProjectRegistryWarmGuest,
@@ -13,7 +13,31 @@ function deferred() {
   return { promise, resolve };
 }
 
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
 describe("project registry recovery", () => {
+  it("backs off repeated failures up to one minute and cancels background recovery", async () => {
+    const run = vi.fn(async () => false);
+    const controller = createProjectRegistryRefresh(run);
+    await controller.refresh();
+    for (const delay of [1_000, 2_000, 5_000, 10_000, 30_000, 60_000, 60_000]) {
+      const calls = run.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(run).toHaveBeenCalledTimes(calls);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(run).toHaveBeenCalledTimes(calls + 1);
+      expect(vi.getTimerCount()).toBe(1);
+    }
+    controller.cancel();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(run).toHaveBeenCalledTimes(8);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("retains a readiness refresh arriving during a failed startup query", async () => {
     const initial = deferred();
     const results: string[] = [];

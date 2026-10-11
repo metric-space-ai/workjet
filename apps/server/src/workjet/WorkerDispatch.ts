@@ -1,6 +1,7 @@
 import * as NodeUtil from "node:util";
 import {
   canCoordinateWorkjet,
+  workjetParentBindingMatchesTeam,
   CommandId,
   MessageId,
   ThreadId,
@@ -48,6 +49,8 @@ import { WorkerDispatchRollback, type WorkerDispatchRecovery } from "./WorkerDis
 import { workerSourceDriver } from "./WorkerSourceNativeProfile.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
 import { makeWorkerOrdinal } from "./WorkerOrdinal.ts";
+import { LocalWorkerWorktree } from "./LocalWorkerWorktree.ts";
+import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
 
 export interface WorkerDispatchInput {
   readonly task: string;
@@ -77,6 +80,7 @@ export interface WorkerDispatchResult {
 
 export type WorkerDispatchFailureReason =
   | "role-not-authorized"
+  | "execution-policy-invalid"
   | "parent-unavailable"
   | "parent-not-orchestrator"
   | "duplicate-capabilities"
@@ -96,6 +100,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
   {
     reason: Schema.Literals([
       "role-not-authorized",
+      "execution-policy-invalid",
       "parent-unavailable",
       "parent-not-orchestrator",
       "duplicate-capabilities",
@@ -123,6 +128,8 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
     switch (this.reason) {
       case "role-not-authorized":
         return "Worker dispatch is not authorized for this provider session.";
+      case "execution-policy-invalid":
+        return "The execution policy must reference the parent thread's project and saved team membership.";
       case "parent-unavailable":
         return "The parent thread is unavailable for worker dispatch.";
       case "parent-not-orchestrator":
@@ -207,6 +214,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const meshIdentity = yield* Effect.serviceOption(WorkjetMeshIdentity);
   const mailbox = yield* Effect.serviceOption(WorkjetMailboxStore);
   const rollback = yield* WorkerDispatchRollback;
+  const localWorktrees = yield* Effect.serviceOption(LocalWorkerWorktree);
   const settings = yield* Effect.serviceOption(ServerSettingsService);
   const lumaConnections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
   const remoteBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
@@ -234,6 +242,24 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
     if (parentTeam && parentTeam.role !== "specialist" && parentTeam.role !== "supervisor") {
       return yield* failure("role-not-authorized");
+    }
+    const parentTeamBinding =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.parentTeamBinding : undefined;
+    if (
+      !workjetParentBindingMatchesTeam(parentTeamBinding, parentTeam, parent.projectId, parent.id)
+    ) {
+      return yield* failure("role-not-authorized");
+    }
+    const executionPolicy =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.executionPolicy : undefined;
+    if (
+      executionPolicy !== undefined &&
+      (executionPolicy.projectId !== parent.projectId ||
+        parentTeam === undefined ||
+        parentTeam.projectId !== parent.projectId ||
+        parentTeam.threadId !== parent.id)
+    ) {
+      return yield* failure("execution-policy-invalid");
     }
 
     const requestedCapabilityIds = input.enabledCapabilityIds
@@ -364,6 +390,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           (saved.value.request.harness ?? "codex-cli") !== profile.harness ||
           saved.value.request.llmRouteId !== profile.llmRouteId ||
           saved.value.request.modelSelection.model !== profile.modelId ||
+          !NodeUtil.isDeepStrictEqual(saved.value.request.executionPolicy, executionPolicy) ||
+          !NodeUtil.isDeepStrictEqual(saved.value.request.parentTeamBinding, parentTeamBinding) ||
           saved.value.request.enabledCapabilityIds.some(
             (id) => !profile.capabilityIds.includes(id),
           ) ||
@@ -433,6 +461,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           llmRouteId: profile.llmRouteId,
           parent: { environmentId: invocation.environmentId, threadId: parent.id },
           ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
+          ...(executionPolicy === undefined ? {} : { executionPolicy }),
+          ...(parentTeamBinding === undefined ? {} : { parentTeamBinding }),
           parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
           managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
             .filter(Boolean)
@@ -582,19 +612,65 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       return yield* failure("worktree-failed");
     }
     const workerRefName = `${WORKER_REF_PREFIX}${workerThreadId}`;
-    const workerWorktree = yield* gitWorkflow
-      .createWorktree({
-        cwd: gitCwd,
-        // `path: null` routes the location through WorktreeStorage, keeping the
-        // worker checkout beneath the operator-selected storage root.
-        path: null,
-        refName: parent.branch ?? "HEAD",
-        newRefName: workerRefName,
-      })
-      .pipe(
-        Effect.map((created) => created.worktree),
-        Effect.mapError(() => failure("worktree-failed")),
-      );
+    let workerWorktree: { readonly path: string; readonly refName: string };
+    let custody: CapturedWorkerWorktree | undefined;
+    if (executionPolicy !== undefined) {
+      if (
+        Option.isNone(localWorktrees) ||
+        parentTeam === undefined ||
+        preparedDelegation === undefined
+      )
+        return yield* failure("worktree-failed");
+      const project = yield* query
+        .getProjectShellById(parent.projectId)
+        .pipe(Effect.mapError(() => failure("worktree-failed")));
+      if (
+        Option.isNone(project) ||
+        project.value.repositoryIdentity === undefined ||
+        project.value.repositoryIdentity === null
+      )
+        return yield* failure("worktree-failed");
+      const allocated = yield* localWorktrees.value
+        .allocate({
+          cwd: gitCwd,
+          refName: parent.branch ?? "HEAD",
+          repository: project.value.repositoryIdentity,
+          context: {
+            schemaVersion: 1,
+            environmentId: invocation.environmentId,
+            ...(computerId === undefined ? {} : { computerId }),
+            parentThreadId: parent.id,
+            projectId: parent.projectId,
+            workerThreadId,
+            teamRole: parentTeam.role,
+            teamParentThreadId: parentTeam.parentThreadId,
+            taskDigest: preparedDelegation.delegation.prompt.digest,
+            modelSelection,
+            enabledCapabilityIds,
+            runtimeMode: parent.runtimeMode,
+            interactionMode: parent.interactionMode,
+            executionPolicy,
+          },
+        })
+        .pipe(Effect.mapError(() => failure("worktree-failed")));
+      workerWorktree = allocated;
+      custody = allocated.custody;
+      if (workerWorktree.refName !== workerRefName || custody.kind !== "isolated")
+        return yield* failure("worktree-failed");
+    } else {
+      workerWorktree = yield* gitWorkflow
+        .createWorktree({
+          cwd: gitCwd,
+          // Absence of the policy preserves the existing linked checkout.
+          path: null,
+          refName: parent.branch ?? "HEAD",
+          newRefName: workerRefName,
+        })
+        .pipe(
+          Effect.map((created) => created.worktree),
+          Effect.mapError(() => failure("worktree-failed")),
+        );
+    }
     const dispatchedResult = {
       schemaVersion: 1,
       status: "dispatched",
@@ -612,8 +688,11 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         cwd: gitCwd,
         worktreePath: workerWorktree.path,
         branchRef: workerRefName,
+        ...(custody === undefined ? {} : { custody }),
       })
       .pipe(Effect.option);
+    if (custody !== undefined && Option.isNone(preparedRollback))
+      return yield* failure("worktree-failed");
     const requireRejected = Effect.fn("WorkerDispatch.requireRejected")(function* (
       commandId: CommandId,
     ) {
@@ -678,6 +757,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         managedInstructions: parent.workjetConfig.managedInstructions,
         enabledCapabilityIds,
         capabilityBindings: [],
+        ...(executionPolicy === undefined ? {} : { executionPolicy }),
         ...(parentTeam
           ? {
               team: {
@@ -762,6 +842,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                   worker.branch === workerRefName &&
                   worker.worktreePath === workerWorktree.path &&
                   worker.workjetConfig.schemaVersion === 2 &&
+                  NodeUtil.isDeepStrictEqual(
+                    worker.workjetConfig.executionPolicy,
+                    executionPolicy,
+                  ) &&
                   worker.workjetConfig.role === "worker" &&
                   worker.workjetConfig.parent?.environmentId === invocation.environmentId &&
                   worker.workjetConfig.parent?.threadId === parent.id &&

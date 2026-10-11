@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
   canCoordinateWorkjet,
+  sameWorkjetParentTeamBinding,
+  workjetParentBindingMatchesTeam,
   RemoteWorkerDispatchError,
   WorkjetGatewayAdmissionInput,
   WorkjetGatewayInferenceInput,
@@ -93,6 +95,21 @@ export const make = Effect.gen(function* () {
       )
     )
       return yield* failure();
+    const currentParentBinding =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.parentTeamBinding : undefined;
+    const currentTeam =
+      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+    if (
+      !sameWorkjetParentTeamBinding(currentParentBinding, request.parentTeamBinding) ||
+      !workjetParentBindingMatchesTeam(
+        currentParentBinding,
+        currentTeam,
+        parent.projectId,
+        parent.id,
+      ) ||
+      (currentParentBinding !== undefined && request.parentTeamRole !== "specialist")
+    )
+      return yield* failure();
     const source = yield* bindings.fromStartConfig(parent.workjetConfig);
     if (source.environmentId !== environmentId || source.binding === undefined)
       return yield* failure();
@@ -161,6 +178,12 @@ export const make = Effect.gen(function* () {
             repositoryUrl: request.project.repository.locator.remoteUrl,
             repositoryHead: request.revision,
             workspaceKey: request.requestId,
+            ...(request.executionPolicy === undefined
+              ? {}
+              : { executionPolicy: request.executionPolicy }),
+            ...(request.parentTeamBinding === undefined
+              ? {}
+              : { parentTeamBinding: request.parentTeamBinding }),
             credentialRef: selected.credentialRef,
             providerRef: selected.providerRef,
             modelRef: selected.modelRef,

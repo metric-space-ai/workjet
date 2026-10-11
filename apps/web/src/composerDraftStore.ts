@@ -1062,6 +1062,8 @@ export function deriveEffectiveComposerModelState(input: {
    */
   selectedInstanceId?: ProviderInstanceId | null | undefined;
   threadModelSelection: ModelSelection | null | undefined;
+  /** Existing threads use server metadata; local model drafts only supply matching options. */
+  preferThreadModelSelection?: boolean | undefined;
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
@@ -1097,22 +1099,28 @@ export function deriveEffectiveComposerModelState(input: {
   const activeSelectionInstanceId = instanceSelection
     ? (input.selectedInstanceId ?? ProviderInstanceId.make(input.selectedProvider))
     : ProviderInstanceId.make(input.selectedProvider);
-  const selectedModel = activeSelection?.model
-    ? (resolveAppModelSelectionForInstance(
-        activeSelectionInstanceId,
-        input.settings,
-        input.providers,
-        activeSelection.model,
-      ) ??
-      resolveAppModelSelection(
-        input.selectedProvider,
-        input.settings,
-        input.providers,
-        activeSelection.model,
-      ))
-    : baseModel;
+  const selectedModel =
+    input.preferThreadModelSelection && input.threadModelSelection
+      ? input.threadModelSelection.model
+      : activeSelection?.model
+        ? (resolveAppModelSelectionForInstance(
+            activeSelectionInstanceId,
+            input.settings,
+            input.providers,
+            activeSelection.model,
+          ) ??
+          resolveAppModelSelection(
+            input.selectedProvider,
+            input.settings,
+            input.providers,
+            activeSelection.model,
+          ))
+        : baseModel;
   const modelOptions =
-    modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider) ??
+    (input.preferThreadModelSelection &&
+    activeSelection?.model !== input.threadModelSelection?.model
+      ? null
+      : modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider)) ??
     providerSelectionsFromModelSelection(input.threadModelSelection) ??
     providerSelectionsFromModelSelection(input.projectModelSelection) ??
     null;
@@ -3879,6 +3887,8 @@ export function useEffectiveComposerModelState(input: {
    */
   selectedInstanceId?: ProviderInstanceId | null | undefined;
   threadModelSelection: ModelSelection | null | undefined;
+  /** Existing threads use server metadata; local model drafts only supply matching options. */
+  preferThreadModelSelection?: boolean | undefined;
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
@@ -3892,6 +3902,7 @@ export function useEffectiveComposerModelState(input: {
         selectedProvider: input.selectedProvider,
         selectedInstanceId: input.selectedInstanceId,
         threadModelSelection: input.threadModelSelection,
+        preferThreadModelSelection: input.preferThreadModelSelection,
         projectModelSelection: input.projectModelSelection,
         settings: input.settings,
       }),
@@ -3903,6 +3914,7 @@ export function useEffectiveComposerModelState(input: {
       input.selectedInstanceId,
       input.selectedProvider,
       input.threadModelSelection,
+      input.preferThreadModelSelection,
     ],
   );
 }

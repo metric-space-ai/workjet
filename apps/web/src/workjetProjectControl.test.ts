@@ -9,6 +9,22 @@ import {
 } from "./workjetProjectControl";
 
 describe("project instance failure display", () => {
+  it.each(["instance_disabled", "instance_removed"] as const)(
+    "keeps %s as a quiet state and never falls back to another query",
+    async (code) => {
+      const failure = { _tag: "failed", code } as const;
+      const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+      await expect(listWorkjetProjects("managed:fixture", request)).resolves.toEqual(failure);
+      expect(request).toHaveBeenCalledOnce();
+      expect(describeWorkjetProjectControlFailure(failure, null, "de")).toBe(
+        code === "instance_disabled" ? "Instanz deaktiviert." : "Instanz entfernt.",
+      );
+      expect(describeWorkjetProjectControlFailure(failure, null, "en")).toBe(
+        code === "instance_disabled" ? "Instance disabled." : "Instance removed.",
+      );
+    },
+  );
+
   it("distinguishes hosted sign-in from accountless paired authentication", () => {
     const failure = { _tag: "failed", code: "authentication_required" } as const;
     expect(describeWorkjetProjectControlFailure(failure, "managed:tenant")).toContain(
@@ -18,18 +34,18 @@ describe("project instance failure display", () => {
       "ctox.dev",
     );
   });
-  it("shows fixed discovery error and HTTP status", () => {
+  it("explains discovery failure without exposing its raw code", () => {
     expect(
       describeWorkjetProjectControlFailure({
         _tag: "failed",
         code: "guest_failed",
         discovery: { code: "http_error", httpStatus: 503 },
       }),
-    ).toContain("http_error (HTTP 503)");
+    ).toBe("The instance could not be reached.");
   });
   it("asks for the connected shell update when its action is unsupported", () => {
     expect(describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" })).toBe(
-      "The connected CTOX instance does not support this action. Update its Business OS shell.",
+      "The connected instance does not support this action. Update its Business OS shell.",
     );
   });
   it("explains a classified data-plane timeout without showing guest exception text", () => {
@@ -39,7 +55,7 @@ describe("project instance failure display", () => {
         code: "guest_failed",
         diagnostic: { stage: "execute", reason: "request_timeout" },
       }),
-    ).toBe("The CTOX data request timed out. Retry connection.");
+    ).toBe("The instance data request timed out.");
   });
 });
 
@@ -106,6 +122,21 @@ describe("listWorkjetProjects", () => {
 });
 
 describe("classified project list failures", () => {
+  it("preserves preparation facts and avoids legacy retries for a failed guest", async () => {
+    const failure = {
+      _tag: "failed",
+      code: "guest_failed",
+      preparation: { stage: "session", reason: "exception" },
+    } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
+    expect(request).toHaveBeenCalledOnce();
+    expect(describeWorkjetProjectControlFailure(failure, null, "de")).toContain(
+      "Sitzung vorbereiten",
+    );
+    expect(describeWorkjetProjectControlFailure(failure, null, "en")).not.toContain("guest_failed");
+  });
+
   it("does not repeat a known peer failure as two legacy queries", async () => {
     const failure = {
       _tag: "failed",

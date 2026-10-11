@@ -4,7 +4,7 @@ import type {
   ProjectId,
   ThreadId,
 } from "@workjet/contracts";
-import { OrchestrationCommand, RemoteWorkerRequest } from "@workjet/contracts";
+import { OrchestrationCommand, RemoteWorkerRequest, WorkjetThreadConfig } from "@workjet/contracts";
 import { make as makeRemoteWorkerStore } from "../../workjet/RemoteWorkerStore.ts";
 import { RemoteWorkerAdmission } from "../../workjet/RemoteWorkerAdmission.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
@@ -63,12 +63,14 @@ const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
   OrchestrationCommandPreviouslyRejectedError,
 );
 const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
+const sameWorkjetConfig = Schema.toEquivalence(WorkjetThreadConfig);
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
   deferWhileBusy?: boolean | undefined;
+  expectedWorkjetConfig?: OrchestrationDispatchOptions["expectedWorkjetConfig"] | undefined;
   workerDelegation?: OrchestrationDispatchOptions["workerDelegation"] | undefined;
   remoteWorkerRequest?: RemoteWorkerRequest | undefined;
   remoteProjectMirror?: true | undefined;
@@ -372,6 +374,18 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           environmentId !== undefined &&
           existingThread?.workjetConfig.role === "worker" &&
           existingThread.workjetConfig.parent.environmentId !== environmentId;
+        if (
+          envelope.expectedWorkjetConfig &&
+          (command.type !== "thread.workjet-config.set" ||
+            !existingThread ||
+            !sameWorkjetConfig(existingThread.workjetConfig, envelope.expectedWorkjetConfig))
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Thread settings changed while reconnecting workers. Reopen the thread to use its current settings.",
+          });
+        }
         if (envelope.remoteWorkerRequest || isRemoteWorker) {
           const requestId = envelope.remoteWorkerRequest?.requestId ?? existingThread!.id;
           const bound = yield* remoteWorkerStore.get("inbound", requestId).pipe(
@@ -685,6 +699,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         result,
         startedAtMs: yield* Clock.currentTimeMillis,
         deferWhileBusy: options?.deferWhileBusy,
+        expectedWorkjetConfig: options?.expectedWorkjetConfig,
         workerDelegation: options?.workerDelegation,
         remoteWorkerRequest: options?.remoteWorkerRequest,
         remoteProjectMirror: options?.remoteProjectMirror,

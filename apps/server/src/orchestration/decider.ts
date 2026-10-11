@@ -1,3 +1,4 @@
+import * as NodeUtil from "node:util";
 import {
   EventId,
   CommandId,
@@ -9,6 +10,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
   retainWorkjetCtoxBinding,
+  withoutInheritedWorkjetSupervisorJournals,
   retainWorkjetWorkerPullRequest,
   type OrchestrationCommand,
   type OrchestrationEvent,
@@ -42,6 +44,7 @@ import {
   withoutGoalObservations,
 } from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
+import { withoutForeignSupervisorStateAtCreation } from "../workjet/workjetSupervisorState.ts";
 import {
   requireProjectTeamLifecycle,
   requireProjectTeamOwnership,
@@ -536,7 +539,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           modelSelection: command.modelSelection,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
-          workjetConfig: withoutGoalObservations(command.workjetConfig),
+          workjetConfig: withoutGoalObservations(
+            withoutForeignSupervisorStateAtCreation(command.workjetConfig, command.threadId),
+          ),
           branch: command.branch,
           worktreePath: command.worktreePath,
           createdAt: command.createdAt,
@@ -1279,9 +1284,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.goal.set":
+    case "thread.goal.assign":
     case "thread.goal.advance": {
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
-      const config = thread.workjetConfig;
+      const config = withoutInheritedWorkjetSupervisorJournals(thread.workjetConfig);
       if (
         config.schemaVersion !== 2 ||
         config.team?.role !== "specialist" ||
@@ -1294,6 +1300,33 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         });
       }
       const previous = config.goal;
+      if (command.type === "thread.goal.assign") {
+        const supervisor = yield* requireThread({
+          readModel,
+          command,
+          threadId: command.supervisorThreadId,
+        });
+        const team =
+          supervisor.workjetConfig.schemaVersion === 2 ? supervisor.workjetConfig.team : undefined;
+        if (
+          supervisor.archivedAt !== null ||
+          supervisor.deletedAt !== null ||
+          team?.role !== "supervisor" ||
+          team.threadId !== supervisor.id ||
+          team.projectId !== supervisor.projectId ||
+          supervisor.projectId !== thread.projectId ||
+          config.team.threadId !== thread.id ||
+          config.team.projectId !== thread.projectId ||
+          config.team.parentThreadId !== supervisor.id ||
+          command.status !== (previous?.status ?? "active")
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail:
+              "Supervisor assignment requires the current project/Parent binding and preserves Owner-stopped goals.",
+          });
+        }
+      }
       if (
         command.expectedRevision !== undefined &&
         command.expectedRevision !== previous?.revision
@@ -1378,10 +1411,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const previousConfig = withoutInheritedWorkjetSupervisorJournals(thread.workjetConfig);
+      let requestedConfig = command.workjetConfig;
+      // Migrate only a parent's receipt already copied into this child. A new
+      // foreign receipt still reaches the ownership guard below.
       if (
-        command.workjetConfig.schemaVersion === 2 &&
-        command.workjetConfig.ctoxSupervisorTurn &&
-        command.workjetConfig.ctoxSupervisorTurn.intent.threadId !== command.threadId
+        previousConfig !== thread.workjetConfig &&
+        thread.workjetConfig.schemaVersion === 2 &&
+        requestedConfig.schemaVersion === 2 &&
+        NodeUtil.isDeepStrictEqual(
+          requestedConfig.ctoxSupervisorTurn,
+          thread.workjetConfig.ctoxSupervisorTurn,
+        ) &&
+        NodeUtil.isDeepStrictEqual(
+          requestedConfig.ctoxSupervisorPreviousTurns,
+          thread.workjetConfig.ctoxSupervisorPreviousTurns,
+        )
+      )
+        requestedConfig = withoutInheritedWorkjetSupervisorJournals(requestedConfig);
+      if (
+        requestedConfig.schemaVersion === 2 &&
+        requestedConfig.ctoxSupervisorTurn &&
+        requestedConfig.ctoxSupervisorTurn.intent.threadId !== command.threadId
       ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -1398,17 +1449,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: "Persistent goal state cannot be discarded by a legacy settings update.",
         });
       }
-      const retainedPr = retainWorkjetWorkerPullRequest(
-        thread.workjetConfig,
-        command.workjetConfig,
-      );
+      const retainedPr = retainWorkjetWorkerPullRequest(thread.workjetConfig, requestedConfig);
       if (retainedPr.error !== null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
           detail: retainedPr.error,
         });
       }
-      const retained = retainWorkjetCtoxBinding(thread.workjetConfig, retainedPr.config);
+      const retained = retainWorkjetCtoxBinding(previousConfig, retainedPr.config);
       if (retained.error !== null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,

@@ -1,13 +1,21 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import fixture from "../../../../../packages/contracts/src/fixtures/workjet-supervisor-route-computation-v2.json" with { type: "json" };
+import * as Schema from "effect/Schema";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   ProjectId,
   ThreadId,
   CommandId,
+  SupervisorRouteDisplayV2,
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { NativeSupervisorComposer } from "./NativeSupervisorComposer";
+import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
+vi.mock("./useSupervisorRouteDisplay", () => ({
+  useSupervisorRouteDisplay: vi.fn(() => null),
+}));
+afterEach(() => vi.mocked(useSupervisorRouteDisplay).mockReset());
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("../ProjectSupervisorLumaField", () => ({
   useProjectSupervisorLumas: () => ({
@@ -60,6 +68,34 @@ const config: WorkjetThreadConfig = {
 const saveConfig = async () => ({ _tag: "Success" });
 
 describe("native supervisor receipt display", () => {
+  it("keeps the observed answering model in the status line below the normal bar", () => {
+    const route = Schema.decodeUnknownSync(SupervisorRouteDisplayV2)(
+      fixture.valid_cases.find((item) => item.type === "SupervisorRouteDisplay")?.value,
+    );
+    vi.mocked(useSupervisorRouteDisplay).mockReturnValue({ phase: "ready", route });
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={config}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain(`Last execution · Claude Code · ${route.actual?.model}`);
+    expect(html.indexOf("Last execution")).toBeGreaterThan(html.indexOf('data-composer-bar="true"'));
+    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Harness"');
+    expect(html).toContain('aria-label="Model"');
+    expect(html.match(/<textarea/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Send to Supervisor"/g)).toHaveLength(1);
+    expect(html).not.toContain('aria-label="Last execution"');
+    if (route.actual) {
+      expect(html).not.toContain(route.actual.account_id);
+      expect(html).not.toContain(route.actual.sdk_session_id);
+    }
+  });
   it("places the full-width editor above the same attachment, route, gear, mic and send bar", () => {
     const html = renderToStaticMarkup(
       <NativeSupervisorComposer
@@ -75,7 +111,13 @@ describe("native supervisor receipt display", () => {
     expect(html).toContain('data-composer-bar="true"');
     expect(html).toContain('aria-label="Advanced settings"');
     expect(html).toContain('aria-label="Dictate message"');
-    expect(html).toContain('aria-label="Supervisor message type"');
+    expect(html).not.toContain('aria-label="Supervisor message type"');
+    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Harness"');
+    expect(html).toContain('aria-label="Model"');
+    expect(html).not.toContain("Project instance");
+    expect(html).not.toContain("Configure Workers");
+    expect(html).not.toContain("Refresh task");
     expect(html).not.toContain(">CTOX</span>");
     expect(html).not.toContain(">Send</button>");
   });
@@ -148,7 +190,7 @@ describe("native supervisor receipt display", () => {
     expect(html).toContain("Waiting for CTOX receipt");
     expect(html).not.toContain("Awaiting confirmation");
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
-    expect(html).toContain("Refresh task");
+    expect(html).not.toContain("Refresh task");
   });
   it("keeps drafting available for a confirmed running task with an explicit separate-message action", () => {
     const html = renderToStaticMarkup(
@@ -177,7 +219,7 @@ describe("native supervisor receipt display", () => {
     expect(html).toContain("Same-task context is unavailable on this connection.");
     expect(html).toContain("starts a separate request");
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
-    expect(html).toContain("Refresh task");
+    expect(html).not.toContain("Refresh task");
     expect(html).toContain("Cancel");
     expect(html).not.toContain("Approve");
   });
@@ -236,7 +278,9 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Not sent");
-    expect(html).toContain("authentication_required");
+    expect(html).toContain("Sign in to ctox.dev</button>");
+    expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
+    expect(html.match(/Sign in to ctox.dev<\/button>/g)).toHaveLength(1);
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
   });
   it("keeps send unavailable without confirmed native project scope", () => {

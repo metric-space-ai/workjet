@@ -255,6 +255,7 @@ import {
   WorkjetSealedPayloadRef,
   ProjectId,
   ProviderInstanceId,
+  ProviderDriverKind,
   ThreadId,
   type ModelSelection,
   type OrchestrationCommand,
@@ -290,6 +291,291 @@ import {
   WORKER_REF_PREFIX,
   type WorkerDispatchSources,
 } from "./WorkerDispatch.ts";
+import { requireEnforcedExecutionPolicy } from "../provider/executionPolicy.ts";
+import {
+  LocalWorkerWorktree,
+  LocalWorkerWorktreeError,
+  type LocalWorkerWorktreeInput,
+} from "./LocalWorkerWorktree.ts";
+import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
+import { remoteWorkerRequestDigest } from "./ctox/CtoxRemoteWorkerAdmission.ts";
+
+it.effect("preserves the project policy at the local worker's provider boundary", () =>
+  Effect.gen(function* () {
+    const executionPolicy = {
+      mode: "autonomous-worktree" as const,
+      projectId: parent.projectId,
+      revision: 7,
+    };
+    for (const role of ["supervisor", "specialist"] as const) {
+      const h = makeHarness({
+        currentParent: {
+          ...teamParent,
+          workjetConfig: {
+            ...teamConfig,
+            team:
+              role === "supervisor"
+                ? { ...teamConfig.team, role, parentThreadId: null }
+                : teamConfig.team,
+            executionPolicy,
+          },
+        },
+      });
+      const service = yield* h.service;
+      const input = {
+        task: "Fix documentation",
+        executionPolicy: { ...executionPolicy, revision: 999 },
+      };
+      // A caller cannot replace the reference derived from the saved parent.
+      yield* service.dispatch(invocation, input);
+      const create = h.commands.find((command) => command.type === "thread.create");
+      expect(create?.workjetConfig).toMatchObject({ schemaVersion: 2, executionPolicy });
+      expect(create?.runtimeMode).toBe(parent.runtimeMode);
+      expect(h.worktreeCreates).toEqual([]);
+      expect(h.localAllocations).toHaveLength(1);
+      expect(h.localAllocations[0]?.context).toMatchObject({
+        executionPolicy,
+        teamRole: role,
+        parentThreadId: parent.id,
+      });
+      expect(h.rollbackCaptures[0]).toMatchObject({
+        kind: "isolated",
+        worktreePath: workerPathFor(ids[0]),
+        adminPath: workerPathFor(ids[0]) + "/.git",
+      });
+      const rejected = yield* Effect.flip(
+        requireEnforcedExecutionPolicy(
+          "startSession",
+          ProviderDriverKind.make("codex"),
+          create?.workjetConfig,
+        ),
+      );
+      expect(rejected.issue).toContain("unsupported");
+    }
+  }),
+);
+
+it.effect(
+  "fails before creating a policy worker when allocation or original rollback custody is unavailable",
+  () =>
+    Effect.gen(function* () {
+      const currentParent = {
+        ...teamParent,
+        workjetConfig: {
+          ...teamConfig,
+          executionPolicy: {
+            mode: "autonomous-worktree" as const,
+            projectId: parent.projectId,
+            revision: 7,
+          },
+        },
+      };
+      for (const options of [
+        { missingLocalAllocator: true },
+        { failLocalAllocate: true },
+        { badLocalCapture: true },
+        { failRollbackPrepare: true },
+        { missingLocalRepository: "null" as const },
+        { missingLocalRepository: "missing" as const },
+      ]) {
+        const h = makeHarness({ currentParent, ...options });
+        const service = yield* h.service;
+        const error = yield* Effect.flip(
+          service.dispatch(invocation, { task: "Fix documentation" }),
+        );
+        expect(error.reason).toBe("worktree-failed");
+        expect(h.commands).toEqual([]);
+        expect(h.worktreeCreates).toEqual([]);
+        expect(h.worktreeRemovals).toEqual([]);
+      }
+    }),
+);
+
+it.effect(
+  "rejects policy references outside the saved parent project and team before side effects",
+  () =>
+    Effect.gen(function* () {
+      const executionPolicy = {
+        mode: "autonomous-worktree" as const,
+        projectId: parent.projectId,
+        revision: 7,
+      };
+      const { team: _team, ...withoutTeam } = teamConfig;
+      for (const config of [
+        {
+          ...teamConfig,
+          executionPolicy: { ...executionPolicy, projectId: ProjectId.make("foreign-project") },
+        },
+        { ...withoutTeam, executionPolicy },
+        {
+          ...teamConfig,
+          executionPolicy,
+          team: { ...teamConfig.team, threadId: ThreadId.make("foreign-thread") },
+        },
+      ]) {
+        const h = makeHarness({ currentParent: { ...teamParent, workjetConfig: config } });
+        const service = yield* h.service;
+        const rejected = yield* Effect.flip(
+          service.dispatch(invocation, { task: "Fix documentation" }),
+        );
+        expect(rejected.reason).toBe(
+          "team" in config ? "execution-policy-invalid" : "parent-not-orchestrator",
+        );
+        expect(h.commands).toEqual([]);
+        expect(h.worktreeCreates).toEqual([]);
+        expect(h.remoteRequests).toEqual([]);
+      }
+    }),
+);
+
+it.effect("does not recover an unscoped worker from matching team metadata alone", () =>
+  Effect.gen(function* () {
+    const h = makeHarness({
+      currentParent: {
+        ...teamParent,
+        workjetConfig: {
+          ...teamConfig,
+          executionPolicy: {
+            mode: "autonomous-worktree",
+            projectId: parent.projectId,
+            revision: 7,
+          },
+        },
+      },
+      failCreateAttempts: 2,
+      createReceiptStatus: "unavailable",
+      committedDelegation: true,
+      workerProjection: "matching",
+    });
+    const service = yield* h.service;
+    expect(
+      (yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation" }))).reason,
+    ).toBe("rollback-failed");
+    expect(h.worktreeCreates).toHaveLength(0);
+    expect(h.localAllocations).toHaveLength(1);
+    expect(h.worktreeRemovals).toEqual([]);
+  }),
+);
+
+it.effect(
+  "reconciles only the exact parent policy revision across a lost remote acknowledgement",
+  () =>
+    Effect.gen(function* () {
+      const executionPolicy = {
+        mode: "autonomous-worktree" as const,
+        projectId: parent.projectId,
+        revision: 7,
+      };
+      for (const original of [undefined, executionPolicy]) {
+        const savedParent: OrchestrationThread = {
+          ...teamParent,
+          workjetConfig: {
+            ...teamConfig,
+            ...(original === undefined ? {} : { executionPolicy: original }),
+          },
+        };
+        const input = { currentParent: savedParent, remoteSource: true, remoteReplyLost: true };
+        const h = makeHarness(input);
+        const service = yield* h.service.pipe(Effect.provide(computerCatalogLayer));
+        const task = { task: "Fix documentation", computerId: remoteComputer.id };
+        const pending = yield* Effect.flip(service.dispatch(invocation, task));
+        expect(pending.reason).toBe("remote-dispatch-pending");
+        const request = h.remoteRequests[0]!;
+        expect(request.executionPolicy).toEqual(original);
+        expect(Object.hasOwn(request, "executionPolicy")).toBe(original !== undefined);
+        const changed = { ...executionPolicy, revision: 8 };
+        expect(yield* remoteWorkerRequestDigest({ ...request, executionPolicy: changed })).not.toBe(
+          yield* remoteWorkerRequestDigest(request),
+        );
+        for (const replacement of [changed, ...(original === undefined ? [] : [undefined])]) {
+          input.currentParent = {
+            ...savedParent,
+            workjetConfig: {
+              ...teamConfig,
+              ...(replacement === undefined ? {} : { executionPolicy: replacement }),
+            },
+          };
+          const rejected = yield* Effect.flip(
+            service.dispatch(invocation, { ...task, remoteRequestId: pending.remoteRequestId! }),
+          );
+          expect(rejected.reason).toBe("remote-dispatch-failed");
+        }
+        input.currentParent = savedParent;
+        expect(
+          (yield* service.dispatch(invocation, {
+            ...task,
+            remoteRequestId: pending.remoteRequestId!,
+          })).workerThreadId,
+        ).toBe(request.requestId);
+        expect(h.remoteRequests).toHaveLength(1);
+        expect(h.commands).toEqual([]);
+        expect(h.worktreeCreates).toEqual([]);
+      }
+    }),
+);
+
+it.effect(
+  "pins the complete native Parent reference across lost remote ACKs and forbids rebind or omission",
+  () =>
+    Effect.gen(function* () {
+      const reference = {
+        contract: "ctox.workjet.persistent-worker-binding.v1" as const,
+        owner_user_id: "owner",
+        project_id: teamParent.projectId,
+        supervisor_thread_id: "b2cd2661-181e-41fd-a54e-ea5642ccf0dc",
+        thread_id: "21a77758-8723-431b-bbeb-3aa9f0507c4d",
+        role: "persistent_worker" as const,
+        revision: 1,
+        state: "active" as const,
+      };
+      const nativeThreadId = ThreadId.make(reference.thread_id);
+      const savedParent: OrchestrationThread = {
+        ...teamParent,
+        id: nativeThreadId,
+        workjetConfig: {
+          ...teamConfig,
+          team: {
+            ...teamConfig.team,
+            threadId: nativeThreadId,
+            parentThreadId: ThreadId.make(reference.supervisor_thread_id),
+          },
+          parentTeamBinding: reference,
+        },
+      };
+      const options = { currentParent: savedParent, remoteSource: true, remoteReplyLost: true };
+      const h = makeHarness(options);
+      const service = yield* h.service.pipe(Effect.provide(computerCatalogLayer));
+      const scope = { ...invocation, threadId: nativeThreadId };
+      const task = { task: "Fix documentation", computerId: remoteComputer.id };
+      const pending = yield* Effect.flip(service.dispatch(scope, task));
+      expect(pending.reason).toBe("remote-dispatch-pending");
+      const request = h.remoteRequests[0]!;
+      expect(request.parentTeamBinding).toEqual(reference);
+      expect(request.parent.threadId).toBe(nativeThreadId);
+      const configured = savedParent.workjetConfig;
+      if (configured.schemaVersion !== 2) throw new Error("V2 fixture required");
+      const { parentTeamBinding: _reference, ...withoutReference } = configured;
+      for (const config of [
+        withoutReference,
+        { ...configured, parentTeamBinding: { ...reference, revision: 2 } },
+        { ...configured, parentTeamBinding: { ...reference, owner_user_id: "foreign-owner" } },
+      ]) {
+        options.currentParent = { ...savedParent, workjetConfig: config };
+        expect(
+          (yield* Effect.flip(
+            service.dispatch(scope, { ...task, remoteRequestId: pending.remoteRequestId! }),
+          )).reason,
+        ).toBe("remote-dispatch-failed");
+      }
+      options.currentParent = savedParent;
+      expect(
+        (yield* service.dispatch(scope, { ...task, remoteRequestId: pending.remoteRequestId! }))
+          .workerThreadId,
+      ).toBe(request.requestId);
+      expect(h.remoteRequests).toHaveLength(1);
+      expect(h.commands).toEqual([]);
+    }),
+);
 
 const environmentId = EnvironmentId.make("environment-local");
 const parentThreadId = ThreadId.make("thread-parent");
@@ -439,12 +725,19 @@ const makeHarness = (input?: {
   readonly failWorktreeRemove?: boolean;
   readonly failBranchDelete?: boolean;
   readonly missingDelegationStorage?: boolean;
+  readonly missingLocalAllocator?: boolean;
+  readonly failLocalAllocate?: boolean;
+  readonly badLocalCapture?: boolean;
+  readonly failRollbackPrepare?: boolean;
+  readonly missingLocalRepository?: "null" | "missing";
 }) => {
   const commands: Array<OrchestrationCommand> = [];
   const remoteRequests: RemoteWorkerRequest[] = [];
   let loseRemoteReply = input?.remoteReplyLost ?? false;
   const dispatchOptions: Array<OrchestrationDispatchOptions | undefined> = [];
   const worktreeCreates: Array<WorktreeCreateRecord> = [];
+  const localAllocations: LocalWorkerWorktreeInput[] = [];
+  const rollbackCaptures: Array<CapturedWorkerWorktree | undefined> = [];
   const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
   const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
   let idIndex = 0;
@@ -482,7 +775,7 @@ const makeHarness = (input?: {
       if (input?.queryFails) {
         return Effect.fail({ _tag: "QueryTestError", message: "sensitive SQL text" } as const);
       }
-      if (threadId !== parentThreadId) {
+      if (threadId !== (input?.currentParent?.id ?? parentThreadId)) {
         if (!input?.workerProjection) return Effect.succeed(Option.none());
         const workerRef = `${WORKER_REF_PREFIX}${threadId}`;
         return Effect.succeed(
@@ -521,15 +814,20 @@ const makeHarness = (input?: {
           id: parent.projectId,
           title: "Project",
           workspaceRoot,
-          repositoryIdentity: {
-            canonicalKey: "github:example/project",
-            rootPath: workspaceRoot,
-            locator: {
-              source: "git-remote",
-              remoteName: "origin",
-              remoteUrl: "git@github.com:example/project.git",
-            },
-          },
+          repositoryIdentity:
+            input?.missingLocalRepository === "null"
+              ? null
+              : input?.missingLocalRepository === "missing"
+                ? undefined
+                : {
+                    canonicalKey: "github:example/project",
+                    rootPath: workspaceRoot,
+                    locator: {
+                      source: "git-remote",
+                      remoteName: "origin",
+                      remoteUrl: "git@github.com:example/project.git",
+                    },
+                  },
         }),
       ),
   } as unknown as ProjectionSnapshotQuery["Service"];
@@ -699,7 +997,36 @@ const makeHarness = (input?: {
               ),
             ),
           );
+    const localSources = (effect: ReturnType<typeof makeWorkerDispatchWithSources>) =>
+      input?.missingLocalAllocator
+        ? effect
+        : effect.pipe(
+            Effect.provideService(LocalWorkerWorktree, {
+              allocate: (allocation) =>
+                Effect.gen(function* () {
+                  localAllocations.push(allocation);
+                  if (input?.failLocalAllocate)
+                    return yield* new LocalWorkerWorktreeError({ reason: "allocation" });
+                  const refName = "workjet/worker/" + allocation.context.workerThreadId;
+                  const path = workerPathFor(allocation.context.workerThreadId);
+                  return {
+                    path,
+                    refName,
+                    custody: {
+                      kind: "isolated" as const,
+                      worktreePath: path,
+                      adminPath: path + "/.git",
+                      worktreeDev: "1",
+                      worktreeIno: input?.badLocalCapture ? "foreign" : "2",
+                      adminDev: "1",
+                      adminIno: "3",
+                    },
+                  };
+                }),
+            }),
+          );
     return yield* makeWorkerDispatchWithSources(sources).pipe(
+      localSources,
       remoteSources,
       delegationSources,
       Effect.provideService(OrchestrationEngineService, engine),
@@ -708,14 +1035,18 @@ const makeHarness = (input?: {
       Effect.provideService(ProjectionSnapshotQuery, query),
       Effect.provideService(GitWorkflowService, gitWorkflow),
       Effect.provideService(WorkerDispatchRollback, {
-        prepare: (prepared) =>
-          Effect.succeed(
+        prepare: (prepared) => {
+          rollbackCaptures.push(prepared.custody);
+          if (input?.failRollbackPrepare || prepared.custody?.worktreeIno === "foreign")
+            return Effect.fail(new WorkerDispatchRollbackError({ reason: "changed" }));
+          return Effect.succeed(
             Effect.gen(function* () {
               worktreeRemovals.push({ cwd: prepared.cwd, path: prepared.worktreePath });
               if (input?.failWorktreeRemove) {
                 return yield* new WorkerDispatchRollbackError({ reason: "changed" });
               }
-              branchDeletions.push({ cwd: prepared.cwd, refName: prepared.branchRef });
+              if (prepared.custody?.kind !== "isolated")
+                branchDeletions.push({ cwd: prepared.cwd, refName: prepared.branchRef });
               if (input?.failBranchDelete) {
                 return yield* new WorkerDispatchRollbackError({ reason: "unavailable" });
               }
@@ -727,7 +1058,8 @@ const makeHarness = (input?: {
                 recoveryAdminPath: "/repo/.git/workjet-rejected/worker-3",
               };
             }),
-          ),
+          );
+        },
       }),
     );
   }).pipe(Effect.provide(worktreeStorageLayer));
@@ -737,6 +1069,8 @@ const makeHarness = (input?: {
     service,
     remoteRequests,
     worktreeCreates,
+    localAllocations,
+    rollbackCaptures,
     worktreeRemovals,
     branchDeletions,
   };
@@ -1428,6 +1762,44 @@ for (const stage of ["create"] as const) {
     }),
   );
 }
+
+it.effect(
+  "quarantines a rejected isolated worker using original custody without deleting a source ref",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        currentParent: {
+          ...teamParent,
+          workjetConfig: {
+            ...teamConfig,
+            executionPolicy: {
+              mode: "autonomous-worktree",
+              projectId: parent.projectId,
+              revision: 7,
+            },
+          },
+        },
+        failCommandTypes: ["thread.create"],
+        createReceiptStatus: "rejected",
+      });
+      const service = yield* harness.service;
+      const error = yield* Effect.flip(
+        service.dispatch(invocation, { task: "Rejected private worker." }),
+      );
+      expect(error.reason).toBe("create-failed");
+      expect(harness.localAllocations).toHaveLength(1);
+      expect(harness.rollbackCaptures[0]).toMatchObject({
+        kind: "isolated",
+        worktreePath: workerPathFor(ids[0]),
+        adminPath: workerPathFor(ids[0]) + "/.git",
+      });
+      expect(harness.worktreeCreates).toEqual([]);
+      expect(harness.worktreeRemovals).toEqual([
+        { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
+      ]);
+      expect(harness.branchDeletions).toEqual([]);
+    }),
+);
 
 it.effect("keeps an accepted atomic worker create after its acknowledgement is lost", () =>
   Effect.gen(function* () {

@@ -4,7 +4,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
-import { NativeWorkerWorktreeRemover } from "./NativeWorkerWorktreeRemover.ts";
+import {
+  NativeWorkerWorktreeRemover,
+  type CapturedWorkerWorktree,
+} from "./NativeWorkerWorktreeRemover.ts";
 
 export class WorkerDispatchRollbackError extends Schema.TaggedErrorClass<WorkerDispatchRollbackError>()(
   "WorkerDispatchRollbackError",
@@ -34,6 +37,7 @@ export class WorkerDispatchRollback extends Context.Service<
       readonly cwd: string;
       readonly worktreePath: string;
       readonly branchRef: string;
+      readonly custody?: CapturedWorkerWorktree;
     }) => Effect.Effect<
       Effect.Effect<WorkerDispatchRecovery, WorkerDispatchRollbackError>,
       WorkerDispatchRollbackError
@@ -50,14 +54,21 @@ export const make = Effect.fn("WorkerDispatchRollback.make")(function* () {
   const prepare: WorkerDispatchRollback["Service"]["prepare"] = Effect.fn(
     "WorkerDispatchRollback.prepare",
   )(function* (input) {
-    const captured = yield* remover.capture(input.worktreePath).pipe(Effect.mapError(unavailable));
+    if (input.custody !== undefined && input.custody.worktreePath !== input.worktreePath)
+      return yield* changed();
+    const captured =
+      input.custody ??
+      (yield* remover.capture(input.worktreePath).pipe(Effect.mapError(unavailable)));
     const head = yield* git
       .resolveCommit({ cwd: input.worktreePath, revision: "HEAD" })
       .pipe(Effect.mapError(unavailable));
 
     const verifyCheckout = Effect.gen(function* () {
-      const current = yield* remover.capture(input.worktreePath).pipe(Effect.mapError(unavailable));
+      const current = yield* remover
+        .capture(input.worktreePath, captured.kind)
+        .pipe(Effect.mapError(unavailable));
       if (
+        current.kind !== captured.kind ||
         current.worktreeDev !== captured.worktreeDev ||
         current.worktreeIno !== captured.worktreeIno ||
         current.adminPath !== captured.adminPath ||
@@ -121,17 +132,20 @@ export const make = Effect.fn("WorkerDispatchRollback.make")(function* () {
               }),
           ),
         );
-      yield* git
-        .deleteBranchAtCommit({
-          cwd: input.cwd,
-          refName: input.branchRef,
-          expectedCommitSha: head.commitSha,
-        })
-        .pipe(
-          Effect.mapError(
-            () => new WorkerDispatchRollbackError({ reason: "unavailable", ...recovery }),
-          ),
-        );
+      // An isolated checkout owns its ref in the quarantined .git directory.
+      // There is no branch to remove from the source project's repository.
+      if (captured.kind !== "isolated")
+        yield* git
+          .deleteBranchAtCommit({
+            cwd: input.cwd,
+            refName: input.branchRef,
+            expectedCommitSha: head.commitSha,
+          })
+          .pipe(
+            Effect.mapError(
+              () => new WorkerDispatchRollbackError({ reason: "unavailable", ...recovery }),
+            ),
+          );
       return recovery;
     });
   });

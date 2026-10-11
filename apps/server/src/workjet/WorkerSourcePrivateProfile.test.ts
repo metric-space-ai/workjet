@@ -201,3 +201,24 @@ it.effect("persists custody before publishing a scoped key and can recover inter
     });
   }),
 );
+
+it.effect("a missing journal capture cannot adopt or supersede an old profile", () =>
+  Effect.gen(function* () {
+    const { base, platform } = yield* baseDirectory;
+    if (platform !== "linux") return;
+    yield* Effect.promise(async () => {
+      const root = NodePath.join(base, "profiles");
+      const previous = await makeWorkerSourcePrivateProfile(root, create);
+      const directory = previous.profile.directory;
+      await previous.close();
+      let recorded = false;
+      await expect(makeWorkerSourcePrivateProfile(root, create, {
+        original: null, capture: async () => { recorded = true; },
+      })).rejects.toThrow("custody");
+      expect(recorded).toBe(false);
+      expect(await NodeFSP.readdir(root)).toEqual([NodePath.basename(directory)]);
+      expect(await NodeFSP.readFile(NodePath.join(directory, "config.yaml"), "utf8"))
+        .toContain("scoped-profile-fixture");
+    });
+  }),
+);

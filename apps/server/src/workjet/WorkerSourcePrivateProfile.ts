@@ -59,6 +59,8 @@ export async function makeWorkerSourcePrivateProfile(
   try {
     if (!sameIdentity(await rootHandle.stat({ bigint: true }), originalRoot)) throw failure();
     const rootFdPath = `/proc/${NodeProcess.pid}/fd/${rootHandle.fd}`;
+    if (persistence && !restored && (await NodeFSP.readdir(rootFdPath)).length !== 0)
+      throw failure();
     const created = restored
       ? NodePath.join(rootFdPath, NodePath.basename(restored.profile.path))
       : await NodeFSP.mkdtemp(NodePath.join(rootFdPath, "profile-"));

@@ -129,11 +129,12 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                 yield* runtime.start();
                 const main = children[0]!;
                 expect(yield* main.isRunning).toBe(true);
-                let pending: Fiber.Fiber<unknown, unknown> | undefined;
-                if (variant.endsWith("turn")) {
-                  pending = yield* runtime
-                    .prompt({ prompt: [{ type: "text", text: "hold-turn" }] })
-                    .pipe(Effect.forkIn(yield* Scope.Scope));
+                const pending = variant.endsWith("turn")
+                  ? yield* runtime
+                      .prompt({ prompt: [{ type: "text", text: "hold-turn" }] })
+                      .pipe(Effect.forkIn(yield* Scope.Scope))
+                  : undefined;
+                if (pending) {
                   yield* Deferred.await(promptEntered);
                   expect(yield* children.at(-1)!.isRunning).toBe(true);
                 } else {

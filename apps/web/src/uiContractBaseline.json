@@ -4,7 +4,6 @@
   "verstoesse": [
     "a|components/clerk/MobileClientsUserProfilePage.tsx|Sign in to CTOX on your iPhone to register it for push notifications and Live Activities.",
     "a|components/clerk/WorkjetConnectUserProfilePage.tsx|Link an environment from its local Settings to make it available through Workjet Connect.",
-    "a|components/preview/PreviewEmptyState.tsx|Type a URL above, or run a dev script. Browser-ready localhost servers will show up here automatically.",
     "b|components/JourFixeRoom.tsx|<button type=\"button\" onClick={onBack} className=\"truncate hover:underline\">",
     "b|components/JourFixeRoom.tsx|className=\"block w-full text-left text-sm hover:underline\"",
     "b|components/ProjectOverviewCard.tsx|className=\"block truncate text-[11px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline focus-",

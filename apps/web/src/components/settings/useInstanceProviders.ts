@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { WorkjetNativeProviderRegistry } from "@workjet/contracts";
+import type { WorkjetNativeModelProbe, WorkjetNativeProviderRegistry } from "@workjet/contracts";
 import {
   WorkjetProjectControlError,
   type WorkjetProjectControlFailure,
@@ -9,6 +9,40 @@ import {
   checkInstanceModel,
   type NativeProviderInput,
 } from "../../lib/workjetNativeProviders";
+
+// Quota refresh failures never replace a genuine model-check result or classify provider auth.
+async function readReportedLimits(instanceId: string, signal: AbortSignal) {
+  try {
+    return await requestInstanceProviders(instanceId, { action: "instance.providers.read" }, signal);
+  } catch {
+    return undefined;
+  }
+}
+function withReportedLimits(
+  registry: WorkjetNativeProviderRegistry,
+  receipt: WorkjetNativeProviderRegistry | undefined,
+): WorkjetNativeProviderRegistry {
+  if (receipt === undefined) return {
+    ...registry,
+    accounts: registry.accounts.map((account) => ({
+      ...account, reportedQuota: { state: "unavailable", errorClass: "quota_read_failed" } as const,
+    })),
+  };
+  return { ...receipt, accounts: receipt.accounts.map((account) => {
+    const previous = registry.accounts.find((entry) =>
+      entry.id === account.id && entry.provider === account.provider &&
+      entry.holder.id === account.holder.id && entry.revision === account.revision,
+    );
+    const checks = new Map<string, WorkjetNativeModelProbe>();
+    for (const probe of [...(previous?.modelChecks ?? []), ...(account.modelChecks ?? [])]) {
+      if (!account.effectiveModels.includes(probe.modelId)) continue;
+      const saved = checks.get(probe.modelId);
+      if (!saved || saved.checkedAtMs <= probe.checkedAtMs) checks.set(probe.modelId, probe);
+    }
+    return { ...account, reportedQuota: account.reportedQuota ?? { state: "unknown" } as const,
+      ...(checks.size ? { modelChecks: [...checks.values()].slice(0, 256) } : {}) };
+  }) };
+}
 
 export function useInstanceProviders(instanceId: string | null) {
   const [snapshot, setSnapshot] = useState<{
@@ -34,9 +68,13 @@ export function useInstanceProviders(instanceId: string | null) {
       setBusy(true);
       try {
         const result = await requestInstanceProviders(instanceId, input, active.signal);
-        if (!active.signal.aborted && alive.current) {
-          setSnapshot({ instanceId, registry: result });
-          return result;
+        const receipt = input.action === "instance.providers.read"
+          ? result
+          : await readReportedLimits(instanceId, active.signal);
+        if (!active.signal.aborted && alive.current && scope.current === instanceId) {
+          const registry = withReportedLimits(result, receipt);
+          setSnapshot({ instanceId, registry });
+          return registry;
         }
       } catch (failure) {
         if (!active.signal.aborted && alive.current)
@@ -98,7 +136,13 @@ export function useInstanceProviders(instanceId: string | null) {
               },
             };
           });
-          return probe;
+          const receipt = await readReportedLimits(instanceId, active.signal);
+          if (!active.signal.aborted && alive.current && scope.current === instanceId) {
+            setSnapshot((current) => current?.instanceId === instanceId
+              ? { ...current, registry: withReportedLimits(current.registry, receipt) }
+              : current);
+            return probe;
+          }
         }
       } catch (failure) {
         if (!active.signal.aborted && alive.current)

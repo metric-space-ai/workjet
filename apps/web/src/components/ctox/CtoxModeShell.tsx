@@ -1986,7 +1986,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            CTOX-Datenordner auf diesem Host (optional)
+            CTOX-Datenordner
             <input
               className={fieldClassName}
               value={sshStateRoot}
@@ -1997,10 +1997,6 @@ export function PairingAddSurface({
               maxLength={1_024}
             />
           </label>
-          <p className="text-[11px] leading-snug text-sidebar-muted-foreground">
-            Deine SSH-Konfiguration und Schlüssel werden verwendet. Es werden keine Zugangsdaten
-            gespeichert.
-          </p>
           <button
             type="submit"
             className="rounded-md bg-sidebar-primary px-3 py-1.5 text-xs font-medium text-sidebar-primary-foreground disabled:opacity-50"
@@ -2035,7 +2031,7 @@ export function PairingAddSurface({
       ) : (
         <form className="mt-3 space-y-2" onSubmit={submitManual}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Name (optional)
+            Name
             <input
               className={fieldClassName}
               value={displayName}
@@ -2056,7 +2052,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Signaling-Server
+            Server
             <textarea
               className={cn(fieldClassName, "min-h-16 resize-y")}
               value={signalingUrls}

@@ -392,8 +392,8 @@ describe("CTOX instance presentation", () => {
       ctoxModeShellSource.indexOf(') : choice === "invite" ? ('),
     );
     expect(sshForm).toContain("SSH-Host oder Alias");
-    expect(sshForm).toContain("CTOX-Datenordner auf diesem Host (optional)");
-    expect(sshForm).toContain("Es werden keine Zugangsdaten");
+    expect(sshForm).toContain("CTOX-Datenordner");
+    expect(sshForm).not.toContain("Es werden keine Zugangsdaten");
     expect(sshForm).not.toContain('type="password"');
     expect(sshForm).not.toMatch(/secret|token|credential.{0,20}=/iu);
   });

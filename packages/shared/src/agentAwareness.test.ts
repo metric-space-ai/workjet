@@ -69,7 +69,11 @@ function thread(
 
 describe("projectThreadAwareness", () => {
   it("labels an unattended worker as waiting for Supervisor, never as an Owner question", () => {
-    const state = projectThreadAwareness({ environmentId: "env-1" as EnvironmentId, project, thread: { ...thread(), waitingOnSupervisor: true, hasPendingUserInput: true } });
+    const state = projectThreadAwareness({
+      environmentId: "env-1" as EnvironmentId,
+      project,
+      thread: { ...thread(), waitingOnSupervisor: true, hasPendingUserInput: true },
+    });
     expect(state?.phase).toBe("waiting_for_supervisor");
     expect(state?.headline).toBe("Waiting for Supervisor");
   });

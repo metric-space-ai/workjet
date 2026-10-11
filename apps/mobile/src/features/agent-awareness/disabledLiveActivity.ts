@@ -3,6 +3,7 @@ export type AgentActivityPhase =
   | "running"
   | "waiting_for_approval"
   | "waiting_for_input"
+  | "waiting_for_supervisor"
   | "completed"
   | "failed"
   | "stale";

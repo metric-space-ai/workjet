@@ -235,7 +235,9 @@ describe("persistent goal reactor", () => {
           for (const [index, command] of h.starts.entries()) {
             expect(command.type).toBe("thread.turn.start");
             if (command.type !== "thread.turn.start") throw new Error("missing continuation");
-            expect(command.message.text).toContain(`Iteration ${index + 1}: If workjet_worker_kanban is available`);
+            expect(command.message.text).toContain(
+              `Iteration ${index + 1}: If workjet_worker_kanban is available`,
+            );
             expect(command.message.text).toContain("worker mini-kanban exactly once");
             expect(command.message.text.match(/workjet_worker_kanban/g)).toHaveLength(1);
           }
@@ -370,7 +372,7 @@ describe("persistent goal reactor", () => {
       ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("records an unsupported native control as a blocker instead of emulating success", () =>
+  it.effect("continues with a retained Workjet goal when the native goal protocol is explicitly unsupported", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const h = yield* harness({
@@ -383,10 +385,12 @@ describe("persistent goal reactor", () => {
         } as unknown as ProviderService["Service"]["nativeGoal"]);
         yield* h.reactor.start();
         yield* h.completeTurn("unsupported-native");
+        yield* Deferred.await(h.signals[0]!);
         yield* h.reactor.drain;
         const config = h.read().workjetConfig;
-        expect(config.schemaVersion === 2 && config.goal?.status).toBe("blocked");
-        expect(h.starts).toHaveLength(0);
+        expect(config.schemaVersion === 2 && config.goal?.status).toBe("active");
+        expect(config.schemaVersion === 2 && config.goal?.kanban?.cards[0]?.evidence).toContain("unverified");
+        expect(h.starts).toHaveLength(1);
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );

@@ -2095,8 +2095,17 @@ const make = Effect.gen(function* () {
       }
 
       const supervisorDecision = yield* routeWorkerDecision(thread, event);
-      const activities = runtimeEventToActivities(event, taskTitle).map(activity =>
-        supervisorDecision ? { ...activity, summary: "Worker wartet auf Supervisor", payload: { ...activity.payload as Record<string, unknown>, recipient: "supervisor" } } : activity,
+      const activities = runtimeEventToActivities(event, taskTitle).map((activity) =>
+        supervisorDecision
+          ? {
+              ...activity,
+              summary: "Worker wartet auf Supervisor",
+              payload: {
+                ...(activity.payload as Record<string, unknown>),
+                recipient: "supervisor",
+              },
+            }
+          : activity,
       );
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(

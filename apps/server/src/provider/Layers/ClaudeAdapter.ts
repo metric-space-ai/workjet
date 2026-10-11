@@ -4482,7 +4482,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
         systemPrompt: claudeSystemPrompt(mcpSession?.compiledManagedPrompt),
-        ...(mcpSession ? { allowedTools: (mcpSession.requiredWorkjetToolNames ?? ["workjet_worker_kanban", "workjet_update_goal", "workjet_answer_worker"]).map(name => `mcp__workjet__${name}`) } : {}),
+        ...(mcpSession
+          ? {
+              allowedTools: (
+                mcpSession.requiredWorkjetToolNames ?? [
+                  "workjet_worker_kanban",
+                  "workjet_update_goal",
+                  "workjet_answer_worker",
+                ]
+              ).map((name) => `mcp__workjet__${name}`),
+            }
+          : {}),
         settingSources: workerSource ? [] : [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.

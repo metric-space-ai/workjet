@@ -118,7 +118,9 @@ describe("owner project overview", () => {
   it("shows only Supervisor escalations in Needs you and marks workers waiting for Supervisor", () => {
     const waiting = { ...specialist, waitingOnSupervisor: true, hasPendingUserInput: false };
     const escalation = { ...supervisor, hasPendingUserInput: true };
-    expect(overview([escalation, waiting, { ...worker, hasPendingApprovals: true }]).decisions).toEqual([escalation]);
+    expect(
+      overview([escalation, waiting, { ...worker, hasPendingApprovals: true }]).decisions,
+    ).toEqual([escalation]);
     expect(projectOverviewWorkerState(waiting)).toBe("waitingSupervisor");
     expect(markup([supervisor, waiting])).toContain("wartet auf Supervisor");
   });

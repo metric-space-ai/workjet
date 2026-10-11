@@ -26,12 +26,33 @@ import {
 
 it("hides Supervisor-routed worker questions and approvals from user controls", () => {
   const routed = [
-    makeActivity({ kind: "approval.requested", payload: { recipient: "supervisor", requestId: "approval", requestKind: "command" } }),
-    makeActivity({ kind: "user-input.requested", payload: { recipient: "supervisor", requestId: "question", questions: [{ id: "choice", header: "Choice", question: "Which path?", options: [], multiSelect: false }] } }),
+    makeActivity({
+      kind: "approval.requested",
+      payload: { recipient: "supervisor", requestId: "approval", requestKind: "command" },
+    }),
+    makeActivity({
+      kind: "user-input.requested",
+      payload: {
+        recipient: "supervisor",
+        requestId: "question",
+        questions: [
+          {
+            id: "choice",
+            header: "Choice",
+            question: "Which path?",
+            options: [{ label: "Continue", description: "Use the approved path" }],
+            multiSelect: false,
+          },
+        ],
+      },
+    }),
   ];
   expect(derivePendingApprovals(routed)).toEqual([]);
   expect(derivePendingUserInputs(routed)).toEqual([]);
-  const direct = routed.map(activity => ({ ...activity, payload: { ...activity.payload as Record<string, unknown>, recipient: "user" } }));
+  const direct = routed.map((activity) => ({
+    ...activity,
+    payload: { ...(activity.payload as Record<string, unknown>), recipient: "user" },
+  }));
   expect(derivePendingApprovals(direct)).toHaveLength(1);
   expect(derivePendingUserInputs(direct)).toHaveLength(1);
 });

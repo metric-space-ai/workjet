@@ -108,7 +108,11 @@ describe("threadLastActivityAt", () => {
 
 describe("effectiveSettled", () => {
   it("keeps a worker waiting for Supervisor visible even after an explicit settle", () => {
-    const shell = { ...makeShell({ activityAt: null }), waitingOnSupervisor: true, settledOverride: "settled" as const };
+    const shell = {
+      ...makeShell({ activityAt: null }),
+      waitingOnSupervisor: true,
+      settledOverride: "settled" as const,
+    };
     expect(effectiveSettled(shell, { now: NOW, autoSettleAfterDays: null })).toBe(false);
     expect(canSettle(shell, { now: NOW })).toBe(false);
   });

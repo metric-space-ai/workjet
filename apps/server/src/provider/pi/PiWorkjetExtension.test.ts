@@ -71,7 +71,11 @@ describe("Pi Workjet MCP extension", () => {
                 description: "Echo the original object or array",
                 inputSchema: unionSchema,
               },
-              ...["workjet_worker_kanban", "workjet_update_goal"].map(name => ({ name, description: name, inputSchema: schema })),
+              ...["workjet_worker_kanban", "workjet_update_goal"].map((name) => ({
+                name,
+                description: name,
+                inputSchema: schema,
+              })),
             ],
           },
         });
@@ -128,7 +132,7 @@ describe("Pi Workjet MCP extension", () => {
     }
     expect(cancelled).toBe(40);
     for (const name of ["workjet_worker_kanban", "workjet_update_goal"]) {
-      const coreTool = registered.find(item => item.name === name);
+      const coreTool = registered.find((item) => item.name === name);
       expect(coreTool).toBeDefined();
       await coreTool!.execute(name, { command: "current-turn" });
       expect(calls.at(-1)).toEqual({ name, arguments: { command: "current-turn" } });

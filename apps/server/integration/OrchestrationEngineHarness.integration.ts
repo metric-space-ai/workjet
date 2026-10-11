@@ -368,7 +368,12 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(VcsProcess.layer),
     );
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
-      Layer.provideMerge(Layer.succeed(WorkerSupervisorDecisionReactor, { start: () => Effect.void, drain: Effect.void })),
+      Layer.provideMerge(
+        Layer.succeed(WorkerSupervisorDecisionReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
+        }),
+      ),
       Layer.provideMerge(PersistentGoalReactorLive.pipe(Layer.provideMerge(runtimeServicesLayer))),
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),

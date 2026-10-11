@@ -15,7 +15,7 @@ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { workerGoalContinuationText } from "../../workjet/workerGoal.ts";
-import { workerTurnKanbanFallback } from "../../workjet/workerToolFallback.ts";
+import { isUnsupportedNativeGoal, workerTurnKanbanFallback } from "../../workjet/workerToolFallback.ts";
 
 export class PersistentGoalReactor extends Context.Service<
   PersistentGoalReactor,
@@ -115,6 +115,7 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
                   .pipe(Effect.timeout("10 seconds"), Effect.as(native));
               return Effect.succeed(native);
             }),
+            Effect.catch(error => isUnsupportedNativeGoal(error) ? Effect.succeed(undefined) : Effect.fail(error)),
             Effect.result,
           );
         }),
@@ -192,12 +193,21 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
       latest.completedAt !== null &&
       latest.turnId !== goal.lastCompletedTurnId
     ) {
-      const fallback = workerTurnKanbanFallback(goal, latest.turnId, thread.latestAssistantMessagePreview, now);
+      const fallback = workerTurnKanbanFallback(
+        goal,
+        latest.turnId,
+        thread.latestAssistantMessagePreview,
+        now,
+      );
       if (fallback) {
         yield* engine.dispatch({
           type: "thread.worker-kanban.set",
-          commandId: CommandId.make(`server:worker-kanban-fallback:${thread.id}:${goal.revision}:${latest.turnId}`),
-          threadId: thread.id, kanban: fallback, createdAt: now,
+          commandId: CommandId.make(
+            `server:worker-kanban-fallback:${thread.id}:${goal.revision}:${latest.turnId}`,
+          ),
+          threadId: thread.id,
+          kanban: fallback,
+          createdAt: now,
         });
         return;
       }

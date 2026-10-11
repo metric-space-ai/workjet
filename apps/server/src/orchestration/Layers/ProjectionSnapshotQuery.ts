@@ -2235,9 +2235,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       titleRegeneration: mapTitleRegeneration(row),
                       session: sessionByThread.get(row.threadId) ?? null,
                       latestUserMessageAt: row.latestUserMessageAt,
-                      hasPendingApprovals: row.pendingApprovalCount > 0 && row.waitingOnSupervisor !== 1,
-                      hasPendingUserInput: row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
-                  waitingOnSupervisor: row.waitingOnSupervisor === 1,
+                      hasPendingApprovals:
+                        row.pendingApprovalCount > 0 && row.waitingOnSupervisor !== 1,
+                      hasPendingUserInput:
+                        row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
+                      ...(row.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
                       hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                       backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
                         row.threadId,
@@ -2384,9 +2386,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   titleRegeneration: mapTitleRegeneration(row),
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
-                  hasPendingApprovals: row.pendingApprovalCount > 0 && row.waitingOnSupervisor !== 1,
-                  hasPendingUserInput: row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
-                  waitingOnSupervisor: row.waitingOnSupervisor === 1,
+                  hasPendingApprovals:
+                    row.pendingApprovalCount > 0 && row.waitingOnSupervisor !== 1,
+                  hasPendingUserInput:
+                    row.pendingUserInputCount > 0 && row.waitingOnSupervisor !== 1,
+                  ...(row.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
                   hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                   backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
                     row.threadId,
@@ -2709,9 +2713,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
-        hasPendingApprovals: threadRow.value.pendingApprovalCount > 0 && threadRow.value.waitingOnSupervisor !== 1,
-        hasPendingUserInput: threadRow.value.pendingUserInputCount > 0 && threadRow.value.waitingOnSupervisor !== 1,
-        waitingOnSupervisor: threadRow.value.waitingOnSupervisor === 1,
+        hasPendingApprovals:
+          threadRow.value.pendingApprovalCount > 0 && threadRow.value.waitingOnSupervisor !== 1,
+        hasPendingUserInput:
+          threadRow.value.pendingUserInputCount > 0 && threadRow.value.waitingOnSupervisor !== 1,
+        ...(threadRow.value.waitingOnSupervisor === 1 ? { waitingOnSupervisor: true } : {}),
         hasActionableProposedPlan: threadRow.value.hasActionableProposedPlan > 0,
         backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
           threadRow.value.threadId,

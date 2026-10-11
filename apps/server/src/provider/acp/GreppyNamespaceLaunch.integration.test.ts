@@ -398,9 +398,11 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
         }).pipe(
           Effect.scoped,
           Effect.provide(
-            WorkerSourceCustodyLayer.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+            Layer.mergeAll(
+              WorkerSourceCustodyLayer.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+              NodeServices.layer,
+            ),
           ),
-          Effect.provide(NodeServices.layer),
         ),
       { timeout: 45000 },
     );

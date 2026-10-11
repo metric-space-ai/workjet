@@ -1,10 +1,8 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { RefreshCwIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
-import { openInstanceSetup } from "../../instanceSetup";
 import { canActivateCtoxInstance, useCtoxMode } from "./CtoxModeShell";
-import { InstanceNetworkOverview } from "./InstanceNetworkOverview";
 import { Button } from "../ui/button";
 import { SidebarContent, SidebarFooter } from "../ui/sidebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
@@ -52,84 +50,87 @@ export function canMountSelectedInstance(
   return state === "ready" || state === "connecting";
 }
 
+/**
+ * Drei Orte (Dev, Ops, Einstellungen): Kann die gewählte Instanz nicht
+ * geöffnet werden, zeigt der Arbeitsbereich einen ruhigen Zustand mit einer
+ * klaren Aktion, nie die Netzwerkansicht. Die Netzwerkansicht lebt in
+ * Einstellungen › Instanzen.
+ */
 export function InstanceOnboardingView({
   state,
   instances,
+  selectedId,
   onSelect,
-  onRefresh,
-  network,
+  onRetry,
 }: {
   readonly state: Exclude<InstanceOnboardingState, "ready">;
   readonly instances: readonly CtoxManagedInstance[];
+  readonly selectedId?: string | null;
   readonly onSelect: (instance: CtoxManagedInstance) => void;
-  readonly onRefresh: () => void;
-  readonly network?: ReactNode;
+  readonly onRetry: () => void;
 }) {
+  const selected = instances.find((instance) => instance.id === selectedId);
+  const manage = (
+    <Button variant="outline" size="sm" render={<Link to="/settings/business-os" />}>
+      Instanzen verwalten
+    </Button>
+  );
+  let title: string;
+  let actions: ReactNode;
+  if (state === "loading") {
+    title = "Instanzen werden geladen …";
+    actions = null;
+  } else if (state === "connecting") {
+    title = `${selected?.displayName ?? "Instanz"} wird verbunden …`;
+    actions = null;
+  } else if (state === "failed") {
+    title = `${selected?.displayName ?? "Instanz"} ist nicht erreichbar`;
+    actions = (
+      <>
+        <Button size="sm" onClick={onRetry}>
+          <RefreshCwIcon />
+          Erneut verbinden
+        </Button>
+        {manage}
+      </>
+    );
+  } else if (state === "select") {
+    title = "Instanz wählen";
+    actions = null;
+  } else {
+    title = "Instanz verbinden";
+    actions = (
+      <Button size="sm" render={<Link to="/settings/business-os" />}>
+        Instanz hinzufügen
+      </Button>
+    );
+  }
   return (
-    <div className="network-home" data-workjet-onboarding="instance">
-      <main className="network-home-main">
-        <div className="network-overview">
-          <header className="network-overview-toolbar">
-            <div>
-              <h1>Netzwerk</h1>
-              <p>
-                {instances.length === 0
-                  ? "Verbinde eine Instanz oder erstelle dein erstes Netzwerk."
-                  : "Wähle eine Instanz für Dev & Ops. Klicke auf einen Rechner für Details."}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Netzwerk erneut prüfen"
-              onClick={onRefresh}
-            >
-              <RefreshCwIcon size={16} />
-            </Button>
-          </header>
-          {state === "loading" && (
-            <p className="network-home-status" role="status">
-              Instanzen werden geladen…
-            </p>
-          )}
-          {state === "connecting" && (
-            <p className="network-home-status" role="status">
-              Die ausgewählte Instanz wird verbunden…
-            </p>
-          )}
-          {state === "failed" && (
-            <p className="network-home-status" role="alert">
-              Verbindung nicht bestätigt. Bitte erneut prüfen.
-            </p>
-          )}
-          {network ?? <InstanceNetworkOverview instances={instances} onSelect={onSelect} />}
-          {instances.length === 0 && (
-            <nav className="network-first-actions" aria-label="Instanz einrichten oder verbinden">
-              <button type="button" onClick={() => openInstanceSetup("local")}>
-                Dieser Computer
+    <div
+      className="flex min-h-0 flex-1 items-start justify-center overflow-auto px-6 py-16"
+      data-workjet-onboarding="instance"
+      data-state={state}
+    >
+      <div className="flex w-full max-w-md flex-col gap-4">
+        <h1 className="font-semibold text-[22px]" role={state === "failed" ? "alert" : "status"}>
+          {title}
+        </h1>
+        {state === "select" ? (
+          <div className="flex flex-col divide-y rounded-lg border">
+            {instances.map((instance) => (
+              <button
+                key={instance.id}
+                type="button"
+                className="flex items-center gap-3 px-3 py-2 text-left text-[13.5px] hover:bg-accent"
+                onClick={() => onSelect(instance)}
+              >
+                <span className="font-medium">{instance.displayName}</span>
               </button>
-              <button type="button" onClick={() => openInstanceSetup("ssh")}>
-                SSH-Rechner
-              </button>
-              <button type="button" onClick={() => openInstanceSetup("tailscale")}>
-                Tailscale-Rechner
-              </button>
-              <button type="button" onClick={() => openInstanceSetup("managed")}>
-                ctox.dev
-              </button>
-              <button type="button" onClick={() => openInstanceSetup("qr")}>
-                QR-Code scannen
-              </button>
-              <button type="button" onClick={() => openInstanceSetup("link")}>
-                Link eingeben
-              </button>
-              <button type="button" onClick={() => openInstanceSetup("manual")}>
-                Server, Raum und Passwort
-              </button>
-            </nav>
-          )}
-        </div>
-      </main>
+            ))}
+          </div>
+        ) : null}
+        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      </div>
     </div>
   );
 }
@@ -137,34 +138,31 @@ export function InstanceOnboardingView({
 export function WorkjetKeyRecoveryView({
   onLogin,
   busy = false,
-  catalogReset = false,
 }: {
   readonly onLogin: () => void;
   readonly busy?: boolean;
   readonly catalogReset?: boolean;
 }) {
   return (
-    <div className="network-home" data-workjet-onboarding="key-recovery">
-      <main className="network-home-main">
-        <div className="network-overview space-y-4">
-          <p role="status">
-            Workjet hat seinen lokalen Schlüssel verloren. Bitte einmal anmelden, den Rest stellt
-            Workjet selbst wieder her.
-          </p>
-          <Button onClick={onLogin} disabled={busy}>
+    <div
+      className="flex min-h-0 flex-1 items-start justify-center px-6 py-16"
+      data-workjet-onboarding="key-recovery"
+    >
+      <div className="flex w-full max-w-md flex-col gap-4">
+        <h1 className="font-semibold text-[22px]" role="status">
+          Neu anmelden
+        </h1>
+        <div>
+          <Button size="sm" onClick={onLogin} disabled={busy}>
             Bei ctox.dev anmelden
           </Button>
-          {catalogReset ? (
-            <p className="text-sm text-muted-foreground">
-              Gespeicherte Direkt-, SSH- und Relay-Verbindungen sind gesichert. Falls du sie nutzt,
-              füge sie später neu hinzu.
-            </p>
-          ) : null}
         </div>
-      </main>
+      </div>
     </div>
   );
 }
+
+const RETRY_DELAYS_MS = [15_000, 30_000, 60_000, 120_000, 300_000] as const;
 
 export function InstanceOnboarding({
   state,
@@ -172,25 +170,39 @@ export function InstanceOnboarding({
   readonly state: Exclude<InstanceOnboardingState, "ready">;
 }) {
   const mode = useCtoxMode();
-  if (mode.discovery !== "loading" && mode.discovery.keyRecovery?.pendingLogin)
-    return (
-      <WorkjetKeyRecoveryView
-        onLogin={mode.login}
-        busy={mode.refreshing}
-        catalogReset={mode.discovery.keyRecovery.connectionCatalogReset}
-      />
-    );
   const instances =
     mode.discovery !== "loading" && mode.discovery._tag === "ready" ? mode.discovery.instances : [];
+  const selected = instances.find((instance) => instance.id === mode.selectedId);
+  const retry = () => {
+    if (selected) void mode.select(selected);
+    else mode.refresh();
+  };
+  // Ein Verbindungsfehler bleibt sonst stehen, bis jemand neu auswählt.
+  // Workjet versucht es deshalb selbst erneut, mit wachsendem Abstand.
+  const attemptRef = useRef(0);
+  useEffect(() => {
+    if (state !== "failed" || selected === undefined) {
+      attemptRef.current = 0;
+      return;
+    }
+    const delay =
+      RETRY_DELAYS_MS[Math.min(attemptRef.current, RETRY_DELAYS_MS.length - 1)] ?? 300_000;
+    const timer = window.setTimeout(() => {
+      attemptRef.current += 1;
+      void mode.select(selected);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [state, selected, mode]);
+  if (mode.discovery !== "loading" && mode.discovery.keyRecovery?.pendingLogin)
+    return <WorkjetKeyRecoveryView onLogin={mode.login} busy={mode.refreshing} />;
   return (
-    <div className="network-home">
-      <InstanceOnboardingView
-        state={state}
-        instances={instances}
-        onSelect={mode.select}
-        onRefresh={mode.refresh}
-      />
-    </div>
+    <InstanceOnboardingView
+      state={state}
+      instances={instances}
+      selectedId={mode.selectedId}
+      onSelect={(instance) => void mode.select(instance)}
+      onRetry={retry}
+    />
   );
 }
 
@@ -201,7 +213,7 @@ export function InstanceNavigationBoundary({ children }: { readonly children: Re
     <>
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarContent className="px-4 pt-6 text-sm text-muted-foreground">
-        <p>Wähle auf der Netzwerkübersicht eine Instanz. Danach erscheinen ihre Projekte hier.</p>
+        <p>Keine Instanz geöffnet</p>
       </SidebarContent>
       <SidebarFooter>
         <Button variant="ghost" render={<Link to="/settings/business-os" />}>
@@ -224,15 +236,15 @@ export function InstanceWorkspaceBoundary({
   return <InstanceOnboarding state={state} />;
 }
 
-/** The network is a workspace of its own; a project sidebar has no scope here. */
+/**
+ * Die Seitenleiste bleibt immer stehen, damit die App gleich aussieht;
+ * ohne geöffnete Instanz zeigt InstanceNavigationBoundary eine kurze Zeile.
+ */
 export function InstanceSidebarBoundary({
   children,
-  surface,
 }: {
   readonly children: ReactNode;
   readonly surface: "settings" | "code" | "business-os";
 }) {
-  const state = useInstanceOnboardingState();
-  const show = surface === "settings" || canMountSelectedInstance(state);
-  return show ? children : null;
+  return children;
 }

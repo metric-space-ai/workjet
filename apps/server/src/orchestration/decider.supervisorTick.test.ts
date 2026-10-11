@@ -112,7 +112,7 @@ it.layer(NodeServices.layer)("supervisor control round admission", (it) => {
         );
         let replayed = model;
         for (const event of first.events)
-          replayed = yield* projectEvent(replayed, Schema.decodeUnknownSync(OrchestrationEvent)({
+          replayed = yield* projectEvent(replayed, yield* Schema.decodeUnknownEffect(OrchestrationEvent)({
             ...event,
             sequence: replayed.snapshotSequence + 1,
           }));

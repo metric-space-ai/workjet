@@ -148,6 +148,8 @@ describe("persisted supervisor tick reactor", () => {
                 ]),
                 stderr: "",
                 exitCode: 0,
+                stdoutTruncated: false,
+                stderrTruncated: false,
               });
             },
           })),

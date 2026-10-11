@@ -73,6 +73,68 @@ describe.runIf(helper !== undefined)("Linux worker runtime capture", () => {
         yield* expectRefusal({ command: "./provider", args: [], env: { PATH: "." } });
       }).pipe(Effect.provideService(HostProcessPlatform, "linux")),
   );
+  it.effect("captures a self-contained env Node CLI and its managed ELF interpreter", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.tryPromise(fixture);
+      const managedNode = NodePath.join(root, "node");
+      const script = NodePath.join(root, "provider");
+      yield* Effect.tryPromise(async () => {
+        await NodeFSP.copyFile("/usr/bin/node", managedNode);
+        await NodeFSP.chmod(managedNode, 0o700);
+        await NodeFSP.writeFile(script, "#!/usr/bin/env node\nconsole.log('fixture');\n", {
+          mode: 0o700,
+        });
+      });
+      const result = yield* captureWorkerNamespaceRuntime({
+        command: script,
+        args: ["agent", "stdio"],
+        env: { PATH: root },
+      });
+      expect(result.spawn).toMatchObject({
+        command: managedNode,
+        args: [script, "agent", "stdio"],
+      });
+      expect(result.runtimeFiles.map(({ path }) => path)).toEqual([managedNode, script]);
+    }).pipe(Effect.provideService(HostProcessPlatform, "linux")),
+  );
+  it.effect("captures an explicit readable Node entry without exposing its package directory", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.tryPromise(fixture);
+      const script = NodePath.join(root, "cli.mjs");
+      const alias = NodePath.join(root, "alias.mjs");
+      yield* Effect.tryPromise(async () => {
+        await NodeFSP.writeFile(script, "console.log('fixture');\n", { mode: 0o600 });
+        await NodeFSP.symlink(script, alias);
+      });
+      const result = yield* captureWorkerNamespaceRuntime({
+        command: "/usr/bin/node",
+        args: [alias, "--fixture"],
+      });
+      const interpreter = yield* Effect.tryPromise(() => NodeFSP.realpath("/usr/bin/node"));
+      expect(result.spawn).toMatchObject({ command: interpreter, args: [script, "--fixture"] });
+      expect(result.runtimeFiles.map(({ path }) => path)).toEqual([interpreter, script]);
+    }).pipe(Effect.provideService(HostProcessPlatform, "linux")),
+  );
+  it.effect(
+    "rejects Node eval, relative entries, flagged env shebangs and interpreter chains",
+    () =>
+      Effect.gen(function* () {
+        const root = yield* Effect.tryPromise(fixture);
+        const script = NodePath.join(root, "provider");
+        const node = NodePath.join(root, "node");
+        yield* expectRefusal({ command: "/usr/bin/node", args: ["-e", "console.log('fixture')"] });
+        yield* expectRefusal({ command: "/usr/bin/node", args: ["./cli.mjs"] });
+        yield* Effect.tryPromise(() =>
+          NodeFSP.writeFile(script, "#!/usr/bin/env -S node\n", { mode: 0o700 }),
+        );
+        yield* expectRefusal({ command: script, args: [] });
+        yield* Effect.tryPromise(async () => {
+          await NodeFSP.writeFile(script, "#!/usr/bin/env node\n", { mode: 0o700 });
+          await NodeFSP.writeFile(node, "#!/usr/bin/python3\n", { mode: 0o700 });
+        });
+        yield* expectRefusal({ command: script, args: [], env: { PATH: root } });
+      }).pipe(Effect.provideService(HostProcessPlatform, "linux")),
+  );
   it.effect("does not capture a non-executable file or a privileged executable", () =>
     Effect.gen(function* () {
       const root = yield* Effect.tryPromise(fixture);

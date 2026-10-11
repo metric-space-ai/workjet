@@ -288,11 +288,19 @@ context for later session starts and hot reload.
 The actual Greppy ACP factory resolves the configured executable through absolute
 server PATH entries, captures the canonical regular executable and runs that path
 through the namespace launcher. ELF executables and single-file scripts with a
-direct system ELF interpreter are supported. Package bundles, env-based shebangs,
-relative command paths and privileged executables report unsupported capture;
-there is no host-spawn fallback. Only those files are mounted, never their host
-profile or parent package directory. The kernel rechecks their original inode
-identities before execution.
+direct system ELF interpreter are supported. A self-contained Node CLI using
+`#!/usr/bin/env node` resolves and captures the server-selected ELF interpreter,
+then invokes that interpreter with the original script and unchanged CLI arguments.
+An explicit `node /absolute/cli.mjs` invocation additionally captures the readable
+entry file. Both file identities are retained in the original runtime journal.
+Only the registered files are mounted, never their host profile or parent package
+directory. The kernel rechecks those original inode identities before execution.
+
+This is single-file runtime production, not a multi-file package installer.
+Relative entries, eval/module-loader flags, flagged env shebangs, interpreter
+chains and privileged runtime files are rejected. Multi-file package dependencies,
+other env interpreters and confined MCP still require their own verified producers.
+There is no host-spawn fallback or runtime fetch from npm/GitHub.
 
 The Linux integration uses the real Greppy adapter and factory with a protocol
 fixture: two turns read/edit/build and create two Git commits through confined

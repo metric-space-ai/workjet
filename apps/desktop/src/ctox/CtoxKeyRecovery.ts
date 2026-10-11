@@ -2,6 +2,7 @@ import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/c
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { DesktopKeyRecoveryError, type DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 import type {
   CtoxElectronSessionDescriptorError,
@@ -64,7 +65,7 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
           .pipe(Effect.timeout(Duration.seconds(30)), Effect.result);
         const outcome = Result.isSuccess(result)
           ? "repaired"
-          : result.failure instanceof CtoxManagedLaunchError &&
+          : Schema.is(CtoxManagedLaunchError)(result.failure) &&
               result.failure.reason === "login_required"
             ? "login_required"
             : "repair_failed";

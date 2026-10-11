@@ -4,6 +4,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import type { Session } from "electron";
 import { vi } from "vite-plus/test";
 import { DesktopKeyRecovery, makeRecovery } from "../app/DesktopKeyRecovery.ts";
@@ -17,12 +18,14 @@ import { make as makeLaunch } from "./CtoxManagedLaunch.ts";
 import { recoverManagedAfterLogin } from "./CtoxKeyRecovery.ts";
 vi.mock("electron", () => ({}));
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
 const fixture = Effect.fn("test.recoveryLogin.fixture")(function* (failureStatus = 401) {
   const fs = yield* FileSystem.FileSystem;
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "ctox-repair-login-" });
   const stateDir = `${root}/userdata`;
   yield* fs.makeDirectory(`${stateDir}/ctox`, { recursive: true });
-  const secrets = JSON.stringify({
+  const secrets = encodeJson({
     version: 1,
     records: [{ id: "fixture", ciphertext: Buffer.from('old:{"version":2}').toString("base64") }],
   });

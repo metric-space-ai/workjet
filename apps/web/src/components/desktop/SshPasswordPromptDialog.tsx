@@ -1,16 +1,10 @@
 import type { DesktopSshPasswordPromptRequest } from "@workjet/contracts";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { KeyRoundIcon, TriangleAlertIcon } from "lucide-react";
+
+import { InlineNoticePortal, InlineNoticeRow, useEscapeToCancel } from "../InlineNoticeSlot";
 import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
 import { Input } from "../ui/input";
 
 function describeSshTarget(request: DesktopSshPasswordPromptRequest): string {
@@ -21,13 +15,24 @@ function formatRemainingSeconds(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+const EXPIRED_MESSAGE = "Abgelaufen, bitte neu verbinden";
+
 function getPromptErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : "SSH password prompt failed.";
+  const message = error instanceof Error ? error.message : "SSH-Anmeldung fehlgeschlagen";
   return message.includes("expired") || message.includes("no longer pending")
-    ? "This SSH password prompt expired. Try connecting again."
+    ? EXPIRED_MESSAGE
     : message;
 }
 
+/**
+ * SSH-Passwortabfrage ohne Modal: eine sichere Eingabezeile direkt unter dem
+ * Kopf („SSH-Passwort · nutzer@host [••••] [Verbinden] [Abbrechen]“). Sie
+ * erscheint dort, wo die Verbindung angestoßen wurde, typischerweise in
+ * Einstellungen › Rechner. Der Bridge-Vertrag bleibt unverändert:
+ * `onSshPasswordPrompt` liefert Anfragen, `resolveSshPasswordPrompt`
+ * beantwortet sie (Passwort oder `null` für Abbruch). Das Passwort wird nie
+ * protokolliert und nur an den lokalen SSH-Prozess weitergereicht.
+ */
 export function SshPasswordPromptDialog() {
   const [queue, setQueue] = useState<readonly DesktopSshPasswordPromptRequest[]>([]);
   const currentRequest = queue[0] ?? null;
@@ -60,7 +65,7 @@ export function SshPasswordPromptDialog() {
   );
 }
 
-function ActiveSshPasswordPrompt({
+export function ActiveSshPasswordPrompt({
   request,
   onRemove,
 }: {
@@ -100,9 +105,7 @@ function ActiveSshPasswordPrompt({
   const remainingSeconds = remainingMs === null ? null : Math.ceil(remainingMs / 1_000);
   const remainingLabel =
     remainingSeconds === null ? null : formatRemainingSeconds(remainingSeconds);
-  const visibleResponseError = isExpired
-    ? "This SSH password prompt expired. Try connecting again."
-    : responseError;
+  const visibleResponseError = isExpired ? EXPIRED_MESSAGE : responseError;
 
   const respond = async (nextPassword: string | null) => {
     if (isRespondingRef.current) {
@@ -111,7 +114,7 @@ function ActiveSshPasswordPrompt({
 
     const requestId = request.requestId;
     if (nextPassword !== null && isExpired) {
-      setResponseError("This SSH password prompt expired. Try connecting again.");
+      setResponseError(EXPIRED_MESSAGE);
       return;
     }
 
@@ -145,78 +148,83 @@ function ActiveSshPasswordPrompt({
     void respond(null);
   };
 
+  useEscapeToCancel(cancelPrompt, !isResponding);
+
   const target = describeSshTarget(request);
+  const hasError = visibleResponseError !== null;
 
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) {
-          cancelPrompt();
+    <InlineNoticePortal>
+      <InlineNoticeRow
+        data-ssh-password-prompt=""
+        actions={
+          <>
+            <Button
+              data-ssh-password-submit=""
+              disabled={isResponding || isExpired}
+              form={formId}
+              size="sm"
+              type="submit"
+            >
+              Verbinden
+            </Button>
+            <Button
+              data-ssh-password-cancel=""
+              disabled={isResponding}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={cancelPrompt}
+            >
+              {isExpired ? "Schließen" : "Abbrechen"}
+            </Button>
+          </>
         }
-      }}
-    >
-      <DialogPopup className="max-w-md" showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>SSH Password Required</DialogTitle>
-          <DialogDescription>
-            Workjet needs your SSH password to connect to <code>{target}</code>. The password is
-            passed to the local SSH process for this connection attempt and is not saved by Workjet.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogPanel className="space-y-3" scrollFade={false}>
-          <form
-            className="space-y-3"
-            id={formId}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void respond(password);
-            }}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-foreground">{request.prompt}</p>
-                {remainingLabel ? (
-                  <span
-                    className={
-                      isExpired
-                        ? "shrink-0 text-xs font-medium text-destructive"
-                        : "shrink-0 text-xs text-muted-foreground"
-                    }
-                  >
-                    {isExpired ? "Expired" : remainingLabel}
-                  </span>
-                ) : null}
-              </div>
-              <Input
-                ref={inputRef}
-                aria-label="SSH password"
-                autoComplete="current-password"
-                disabled={isResponding || isExpired}
-                name="ssh-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </div>
-            {visibleResponseError ? (
-              <p className="text-sm text-destructive">{visibleResponseError}</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Use SSH keys to avoid repeated password prompts on new SSH sessions.
-              </p>
-            )}
-          </form>
-        </DialogPanel>
-        <DialogFooter>
-          <Button disabled={isResponding} type="button" variant="outline" onClick={cancelPrompt}>
-            {isExpired ? "Dismiss" : "Cancel"}
-          </Button>
-          <Button disabled={isResponding || isExpired} form={formId} type="submit">
-            Continue
-          </Button>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
+        bodyClassName="min-w-[min(100%,18rem)]"
+        className="flex-wrap"
+        icon={hasError ? TriangleAlertIcon : KeyRoundIcon}
+        label={`SSH-Passwort für ${target}`}
+        tone={hasError ? "destructive" : "neutral"}
+      >
+        <form
+          className="flex min-w-0 flex-1 items-center gap-2"
+          id={formId}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void respond(password);
+          }}
+        >
+          <span className="min-w-0 shrink truncate" title={target}>
+            <span className="font-medium">SSH-Passwort</span>
+            <span className="text-muted-foreground"> · {target}</span>
+          </span>
+          <Input
+            ref={inputRef}
+            aria-label="SSH-Passwort"
+            autoComplete="current-password"
+            className="w-auto min-w-24 flex-1 sm:max-w-56"
+            disabled={isResponding || isExpired}
+            name="ssh-password"
+            size="sm"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          {hasError ? (
+            <span
+              className="min-w-0 shrink truncate text-xs text-destructive"
+              role="alert"
+              title={visibleResponseError ?? undefined}
+            >
+              {visibleResponseError}
+            </span>
+          ) : remainingLabel ? (
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {remainingLabel}
+            </span>
+          ) : null}
+        </form>
+      </InlineNoticeRow>
+    </InlineNoticePortal>
   );
 }

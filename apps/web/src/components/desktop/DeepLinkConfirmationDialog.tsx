@@ -1,16 +1,7 @@
 import type { DesktopPendingDeepLink } from "@workjet/contracts";
 import { useEffect, useState } from "react";
 
-import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
+import { InlineConfirmBar, InlineNoticePortal } from "../InlineNoticeSlot";
 
 /**
  * Explicit confirmation for an OS-delivered deep link (docs/workjet-plan.md
@@ -18,8 +9,8 @@ import {
  *
  * A `ctox-desktop://` link can be triggered by any web page or document on the
  * machine, so the main process never acts on one: `DesktopDeepLinkRouter`
- * parses and queues it, and this dialog is the only thing that can turn it
- * into a navigation. Links clicked *inside* the app are a different case and
+ * parses and queues it, and this inline bar under the header (no modal) is
+ * the only thing that can turn it into a navigation. Links clicked *inside* the app are a different case and
  * do not appear here — those are redirected in place by the `will-navigate`
  * handler in DesktopWindow, because the user's click already was the consent.
  *
@@ -77,23 +68,26 @@ export function DeepLinkConfirmationDialog({
   };
 
   return (
-    <DeepLinkConfirmationPrompt
-      key={current.linkId}
-      link={current}
-      onConfirm={() => {
-        resolve(current.linkId);
-        navigate(current.canonicalUrl);
-      }}
-      onDismiss={() => {
-        resolve(current.linkId);
-      }}
-    />
+    <InlineNoticePortal>
+      <DeepLinkConfirmationPrompt
+        key={current.linkId}
+        link={current}
+        onConfirm={() => {
+          resolve(current.linkId);
+          navigate(current.canonicalUrl);
+        }}
+        onDismiss={() => {
+          resolve(current.linkId);
+        }}
+      />
+    </InlineNoticePortal>
   );
 }
 
 /**
- * Presentational half: shows the canonical target and nothing else. It never
- * navigates on its own — the caller's `onConfirm` does.
+ * Presentational half: an inline bar under the header (no modal) with the
+ * canonical target and nothing else. It never navigates on its own — the
+ * caller's `onConfirm` does.
  */
 export function DeepLinkConfirmationPrompt({
   link,
@@ -105,37 +99,18 @@ export function DeepLinkConfirmationPrompt({
   readonly onDismiss: () => void;
 }) {
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onDismiss();
+    <InlineConfirmBar
+      confirmLabel="Öffnen"
+      markers={{
+        row: "deep-link-confirmation",
+        target: "deep-link-target",
+        confirm: "deep-link-confirm",
+        cancel: "deep-link-dismiss",
       }}
-    >
-      <DialogPopup className="max-w-md" data-deep-link-confirmation-dialog showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Open this link in Workjet?</DialogTitle>
-          <DialogDescription>
-            A <code>{link.scheme}</code> link was opened from outside the app. Nothing happens
-            unless you choose Open.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogPanel scrollFade={false}>
-          <p
-            className="max-h-24 overflow-y-auto break-all font-mono text-sm text-foreground"
-            data-deep-link-target
-          >
-            {link.canonicalUrl}
-          </p>
-        </DialogPanel>
-        <DialogFooter>
-          <Button data-deep-link-dismiss type="button" variant="outline" onClick={onDismiss}>
-            Dismiss
-          </Button>
-          <Button data-deep-link-confirm type="button" onClick={onConfirm}>
-            Open
-          </Button>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
+      question="Externen Link öffnen?"
+      target={link.canonicalUrl}
+      onCancel={onDismiss}
+      onConfirm={onConfirm}
+    />
   );
 }

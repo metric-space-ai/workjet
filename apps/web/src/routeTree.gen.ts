@@ -9,14 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PairRouteImport } from './routes/pair'
-import { Route as MachinesRouteImport } from './routes/machines'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsWorkjetRouteImport } from './routes/settings.workjet'
+import { Route as SettingsUsageRouteImport } from './routes/settings.usage'
 import { Route as SettingsSpeechRouteImport } from './routes/settings.speech'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
@@ -36,11 +35,6 @@ import { Route as SettingsProjectsProjectKeyRouteImport } from './routes/setting
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
-const UsageRoute = UsageRouteImport.update({
-  id: '/usage',
-  path: '/usage',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -49,11 +43,6 @@ const SettingsRoute = SettingsRouteImport.update({
 const PairRoute = PairRouteImport.update({
   id: '/pair',
   path: '/pair',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MachinesRoute = MachinesRouteImport.update({
-  id: '/machines',
-  path: '/machines',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectRoute = ConnectRouteImport.update({
@@ -73,6 +62,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
 const SettingsWorkjetRoute = SettingsWorkjetRouteImport.update({
   id: '/workjet',
   path: '/workjet',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsUsageRoute = SettingsUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsSpeechRoute = SettingsSpeechRouteImport.update({
@@ -171,10 +165,8 @@ const ChatEnvironmentIdThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect': typeof ConnectRoute
-  '/machines': typeof MachinesRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
-  '/usage': typeof UsageRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -190,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -197,10 +190,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
-  '/machines': typeof MachinesRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
-  '/usage': typeof UsageRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -216,6 +207,7 @@ export interface FileRoutesByTo {
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -226,10 +218,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect': typeof ConnectRoute
-  '/machines': typeof MachinesRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
-  '/usage': typeof UsageRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/connect_/callback': typeof ConnectCallbackRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -245,6 +235,7 @@ export interface FileRoutesById {
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -256,10 +247,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/connect'
-    | '/machines'
     | '/pair'
     | '/settings'
-    | '/usage'
     | '/pull-requests'
     | '/connect/callback'
     | '/settings/appearance'
@@ -275,6 +264,7 @@ export interface FileRouteTypes {
     | '/settings/projects'
     | '/settings/source-control'
     | '/settings/speech'
+    | '/settings/usage'
     | '/settings/workjet'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -282,10 +272,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
-    | '/machines'
     | '/pair'
     | '/settings'
-    | '/usage'
     | '/pull-requests'
     | '/connect/callback'
     | '/settings/appearance'
@@ -301,6 +289,7 @@ export interface FileRouteTypes {
     | '/settings/projects'
     | '/settings/source-control'
     | '/settings/speech'
+    | '/settings/usage'
     | '/settings/workjet'
     | '/'
     | '/$environmentId/$threadId'
@@ -310,10 +299,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_chat'
     | '/connect'
-    | '/machines'
     | '/pair'
     | '/settings'
-    | '/usage'
     | '/_chat/pull-requests'
     | '/connect_/callback'
     | '/settings/appearance'
@@ -329,6 +316,7 @@ export interface FileRouteTypes {
     | '/settings/projects'
     | '/settings/source-control'
     | '/settings/speech'
+    | '/settings/usage'
     | '/settings/workjet'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
@@ -339,22 +327,13 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectRoute: typeof ConnectRoute
-  MachinesRoute: typeof MachinesRoute
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRouteWithChildren
-  UsageRoute: typeof UsageRoute
   ConnectCallbackRoute: typeof ConnectCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/usage': {
-      id: '/usage'
-      path: '/usage'
-      fullPath: '/usage'
-      preLoaderRoute: typeof UsageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -367,13 +346,6 @@ declare module '@tanstack/react-router' {
       path: '/pair'
       fullPath: '/pair'
       preLoaderRoute: typeof PairRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/machines': {
-      id: '/machines'
-      path: '/machines'
-      fullPath: '/machines'
-      preLoaderRoute: typeof MachinesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connect': {
@@ -402,6 +374,13 @@ declare module '@tanstack/react-router' {
       path: '/workjet'
       fullPath: '/settings/workjet'
       preLoaderRoute: typeof SettingsWorkjetRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/usage': {
+      id: '/settings/usage'
+      path: '/usage'
+      fullPath: '/settings/usage'
+      preLoaderRoute: typeof SettingsUsageRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/speech': {
@@ -574,6 +553,7 @@ interface SettingsRouteChildren {
   SettingsProjectsRoute: typeof SettingsProjectsRouteWithChildren
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsSpeechRoute: typeof SettingsSpeechRoute
+  SettingsUsageRoute: typeof SettingsUsageRoute
   SettingsWorkjetRoute: typeof SettingsWorkjetRoute
 }
 
@@ -591,6 +571,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsProjectsRoute: SettingsProjectsRouteWithChildren,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsSpeechRoute: SettingsSpeechRoute,
+  SettingsUsageRoute: SettingsUsageRoute,
   SettingsWorkjetRoute: SettingsWorkjetRoute,
 }
 
@@ -601,10 +582,8 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectRoute: ConnectRoute,
-  MachinesRoute: MachinesRoute,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRouteWithChildren,
-  UsageRoute: UsageRoute,
   ConnectCallbackRoute: ConnectCallbackRoute,
 }
 export const routeTree = rootRouteImport

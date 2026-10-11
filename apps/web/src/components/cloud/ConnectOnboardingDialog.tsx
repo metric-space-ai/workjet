@@ -1,6 +1,5 @@
 import { useAuth } from "@clerk/react";
 import { AuthAdministrativeScopes, AuthRelayWriteScope } from "@workjet/contracts";
-import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -12,39 +11,31 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { usePrimarySessionState } from "~/environments/primary";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
-import { cn } from "~/lib/utils";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { CloudEnvironmentConnectRows } from "./CloudEnvironmentConnectList";
+import { InlineNoticePortal, useEscapeToCancel } from "../InlineNoticeSlot";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 
 /**
- * Post-sign-in onboarding wizard for Workjet Connect. Opens on every in-session
- * sign-in — sign-out removes the connected relay environments, so each new
- * session starts with no devices to reach. It first prompts to publish this
- * environment (managed tunnel + agent activity, both defaulting on) when the
- * current session is authorized to manage the relay link, then lists the
- * account's Workjet Connect environments so every device can be connected right
- * away. A cold load with a restored session does not count as a sign-in.
+ * Post-sign-in onboarding for Workjet Connect, inline (no modal, no wizard
+ * steps): one section under the header with the publish switches (only when
+ * the session may manage the relay link) and the account's devices in one
+ * list. Opens on every in-session sign-in — sign-out removes the connected
+ * relay environments, so each new session starts with no devices to reach. A
+ * cold load with a restored session does not count as a sign-in.
+ *
+ * Self-contained: today it is mounted in `__root.tsx` and renders into the
+ * notice slot under the header. Target mount (handover): the Workjet Connect
+ * section of Settings › Instanzen, as `<ConnectOnboardingDialog />` there.
  */
 export function ConnectOnboardingDialog() {
   if (!hasCloudPublicConfig()) return null;
 
   return <ConfiguredConnectOnboardingDialog />;
 }
-
-type OnboardingStep = "publish" | "devices";
 
 function ConfiguredConnectOnboardingDialog() {
   // Mirrors ManagedRelayAuthProvider: a pending Clerk session must not read as
@@ -74,14 +65,10 @@ function ConfiguredConnectOnboardingDialog() {
     primarySessionState.error !== null;
 
   const controller = useCloudLinkController();
-  const showPublishStep = canManageRelay && controller.linkState.target !== null;
-  const steps: ReadonlyArray<OnboardingStep> = showPublishStep
-    ? ["publish", "devices"]
-    : ["devices"];
 
   const [requestedAccount, setRequestedAccount] = useState<string | null>(null);
   const [openForAccount, setOpenForAccount] = useState<string | null>(null);
-  const [step, setStep] = useState<OnboardingStep>("devices");
+  const [showPublish, setShowPublish] = useState(false);
   const [exposeEnvironment, setExposeEnvironment] = useState(true);
   const [publishAgentActivity, setPublishAgentActivity] = useState(true);
   const [dontShowAgain, setDontShowAgain] = useState(false);
@@ -129,7 +116,7 @@ function ConfiguredConnectOnboardingDialog() {
     setExposeEnvironment(true);
     setPublishAgentActivity(true);
     setDontShowAgain(false);
-    setStep(canManageRelay && controller.linkState.target !== null ? "publish" : "devices");
+    setShowPublish(canManageRelay && controller.linkState.target !== null);
     setOpenForAccount(requestedAccount);
   }, [
     canManageRelay,
@@ -185,10 +172,10 @@ function ConfiguredConnectOnboardingDialog() {
   };
 
   const applyPublishSelection = async () => {
-    // The wizard only ever enables — with both toggles off there is nothing to
-    // apply, and an existing link must not be torn down from onboarding.
+    // Onboarding only ever enables — with both switches off there is nothing
+    // to apply, and an existing link must not be torn down from here.
     if (!exposeEnvironment && !publishAgentActivity) {
-      setStep("devices");
+      complete();
       return;
     }
     setIsApplying(true);
@@ -198,206 +185,139 @@ function ConfiguredConnectOnboardingDialog() {
     });
     setIsApplying(false);
     if (!ok) return;
-    toastManager.add({
-      type: "success",
-      title: "Workjet Connect enabled",
-      description: exposeEnvironment
-        ? "This environment is available to your other devices through Workjet Connect."
-        : "This environment publishes Luma activity to your mobile clients.",
-    });
-    setStep("devices");
+    toastManager.add({ type: "success", title: "Workjet Connect aktiv" });
+    setShowPublish(false);
   };
 
+  if (openForAccount === null) return null;
+
   return (
-    <Dialog
-      open={openForAccount !== null}
-      onOpenChange={(open) => {
-        // Keep the dialog up while a link request is in flight so its outcome
-        // (and any failure) stays visible.
-        if (!open && !isApplying) complete();
-      }}
-    >
-      <DialogPopup className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Set up Workjet Connect</DialogTitle>
-          <DialogDescription>
-            Mesh your devices together — publish this environment and connect the rest, all in one
-            place.
-          </DialogDescription>
-          {steps.length > 1 ? (
-            <OnboardingStepper
-              steps={steps}
-              currentStep={step}
-              disabled={isApplying}
-              onStepSelect={setStep}
-            />
-          ) : null}
-        </DialogHeader>
-        <DialogPanel>
-          {step === "publish" ? (
-            <PublishStep
-              exposeEnvironment={exposeEnvironment}
-              publishAgentActivity={publishAgentActivity}
-              disabled={isApplying}
-              operationError={controller.operationError}
-              onExposeEnvironmentChange={setExposeEnvironment}
-              onPublishAgentActivityChange={setPublishAgentActivity}
-            />
-          ) : (
-            <DevicesStep />
-          )}
-        </DialogPanel>
-        <DialogFooter variant="bare" className="sm:justify-between">
-          <label className="flex cursor-pointer items-center gap-2 self-start text-xs text-muted-foreground sm:self-center">
-            <Checkbox
-              checked={dontShowAgain}
-              onCheckedChange={(checked) => setDontShowAgain(checked === true)}
-            />
-            Don&apos;t show this again
-          </label>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            {step === "publish" ? (
-              <>
-                <Button variant="ghost" disabled={isApplying} onClick={() => setStep("devices")}>
-                  Not now
-                </Button>
-                <Button
-                  disabled={
-                    isApplying || (controller.linkState.isPending && linkStateData === null)
-                  }
-                  onClick={() => void applyPublishSelection()}
-                >
-                  {isApplying ? "Enabling…" : "Continue"}
-                </Button>
-              </>
-            ) : (
-              <Button disabled={isApplying} onClick={complete}>
-                Done
-              </Button>
-            )}
-          </div>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
+    <InlineNoticePortal>
+      <ConnectOnboardingSection
+        dontShowAgain={dontShowAgain}
+        exposeEnvironment={exposeEnvironment}
+        isApplying={isApplying}
+        operationError={controller.operationError}
+        publishAgentActivity={publishAgentActivity}
+        publishPending={controller.linkState.isPending && linkStateData === null}
+        showPublish={showPublish}
+        onApply={() => void applyPublishSelection()}
+        onClose={complete}
+        onDontShowAgainChange={setDontShowAgain}
+        onExposeEnvironmentChange={setExposeEnvironment}
+        onPublishAgentActivityChange={setPublishAgentActivity}
+      />
+    </InlineNoticePortal>
   );
 }
 
-const STEP_LABELS: Record<OnboardingStep, string> = {
-  publish: "Publish",
-  devices: "Connect devices",
-};
+/** Produktname, kein übersetzbarer Text. */
+const CONNECT_PRODUCT_NAME = "Workjet Connect";
 
-function OnboardingStepper({
-  steps,
-  currentStep,
-  disabled,
-  onStepSelect,
-}: {
-  readonly steps: ReadonlyArray<OnboardingStep>;
-  readonly currentStep: OnboardingStep;
-  readonly disabled: boolean;
-  readonly onStepSelect: (step: OnboardingStep) => void;
-}) {
-  const currentIndex = steps.indexOf(currentStep);
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {steps.map((step, index) => (
-        <button
-          key={step}
-          type="button"
-          disabled={disabled}
-          className={cn(
-            "grid min-w-0 grid-cols-[1rem_minmax(0,1fr)] gap-x-2 rounded-lg border px-3 py-2 text-left",
-            index === currentIndex
-              ? "border-primary bg-primary/10 ring-1 ring-primary/25"
-              : index < currentIndex
-                ? "border-border bg-background"
-                : "border-border bg-muted/40",
-          )}
-          onClick={() => onStepSelect(step)}
-        >
-          <span
-            className={cn(
-              "row-span-2 mt-0.5 grid size-4 place-items-center rounded-full border",
-              index < currentIndex
-                ? "border-primary bg-primary text-primary-foreground"
-                : index === currentIndex
-                  ? "border-primary bg-background"
-                  : "border-muted-foreground/35 bg-background",
-            )}
-            aria-hidden
-          >
-            {index < currentIndex ? <CheckIcon className="size-3" /> : null}
-          </span>
-          <span className="text-[10px] font-medium uppercase text-muted-foreground">
-            Step {index + 1}
-          </span>
-          <span className="truncate text-xs font-semibold text-foreground">
-            {STEP_LABELS[step]}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function PublishStep({
+/**
+ * Presentational half: one inline section, no steps. Title row, the publish
+ * switches when allowed, the device list, footer with „Nicht mehr anzeigen“,
+ * „Später“ and the primary action.
+ */
+export function ConnectOnboardingSection({
+  showPublish,
   exposeEnvironment,
   publishAgentActivity,
-  disabled,
+  dontShowAgain,
+  isApplying,
+  publishPending,
   operationError,
   onExposeEnvironmentChange,
   onPublishAgentActivityChange,
+  onDontShowAgainChange,
+  onApply,
+  onClose,
 }: {
+  readonly showPublish: boolean;
   readonly exposeEnvironment: boolean;
   readonly publishAgentActivity: boolean;
-  readonly disabled: boolean;
+  readonly dontShowAgain: boolean;
+  readonly isApplying: boolean;
+  readonly publishPending: boolean;
   readonly operationError: string | null;
   readonly onExposeEnvironmentChange: (enabled: boolean) => void;
   readonly onPublishAgentActivityChange: (enabled: boolean) => void;
+  readonly onDontShowAgainChange: (enabled: boolean) => void;
+  readonly onApply: () => void;
+  readonly onClose: () => void;
 }) {
+  useEscapeToCancel(onClose, !isApplying);
+
   return (
-    <div className="space-y-3">
-      <div className="rounded-lg border">
-        <OnboardingToggleRow
-          title="Publish this environment"
-          description="Make this environment available to your other devices through Workjet Connect."
-          checked={exposeEnvironment}
-          disabled={disabled}
-          onCheckedChange={onExposeEnvironmentChange}
-        />
-        <OnboardingToggleRow
-          title="Publish Luma activity"
-          description="Send activity from this environment to your mobile clients for push notifications and Live Activities."
-          checked={publishAgentActivity}
-          disabled={disabled}
-          onCheckedChange={onPublishAgentActivityChange}
-        />
+    <section
+      aria-label={CONNECT_PRODUCT_NAME}
+      className="flex max-h-[min(28rem,60dvh)] w-full flex-col gap-3 overflow-y-auto border-b border-border bg-card px-3 py-3 text-[13.5px] sm:px-5"
+      data-connect-onboarding=""
+    >
+      <div className="font-medium">{`${CONNECT_PRODUCT_NAME} einrichten`}</div>
+      {showPublish ? (
+        <div className="overflow-hidden rounded-lg border">
+          <OnboardingToggleRow
+            title="Umgebung veröffentlichen"
+            checked={exposeEnvironment}
+            disabled={isApplying}
+            onCheckedChange={onExposeEnvironmentChange}
+          />
+          <OnboardingToggleRow
+            title="Luma-Aktivität senden"
+            checked={publishAgentActivity}
+            disabled={isApplying}
+            onCheckedChange={onPublishAgentActivityChange}
+          />
+        </div>
+      ) : null}
+      {operationError ? (
+        <p className="text-xs text-destructive" role="alert">
+          {operationError}
+        </p>
+      ) : null}
+      <DevicesList />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={dontShowAgain}
+            onCheckedChange={(checked) => onDontShowAgainChange(checked === true)}
+          />
+          Nicht mehr anzeigen
+        </label>
+        <div className="flex items-center gap-2">
+          <Button disabled={isApplying} size="sm" variant="outline" onClick={onClose}>
+            Später
+          </Button>
+          {showPublish ? (
+            <Button disabled={isApplying || publishPending} size="sm" onClick={onApply}>
+              {isApplying ? "Aktiviere…" : "Aktivieren"}
+            </Button>
+          ) : (
+            <Button disabled={isApplying} size="sm" onClick={onClose}>
+              Fertig
+            </Button>
+          )}
+        </div>
       </div>
-      {operationError ? <p className="text-xs text-destructive">{operationError}</p> : null}
-    </div>
+    </section>
   );
 }
 
 function OnboardingToggleRow({
   title,
-  description,
   checked,
   disabled,
   onCheckedChange,
 }: {
   readonly title: string;
-  readonly description: string;
   readonly checked: boolean;
   readonly disabled: boolean;
   readonly onCheckedChange: (enabled: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-t border-border/60 px-4 py-3 first:border-t-0">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </div>
+    <div className="flex items-center justify-between gap-4 border-t border-border/60 px-3 py-2 first:border-t-0">
+      <span className="min-w-0 truncate">{title}</span>
       <Switch
         aria-label={title}
         checked={checked}
@@ -408,7 +328,7 @@ function OnboardingToggleRow({
   );
 }
 
-function DevicesStep() {
+function DevicesList() {
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const savedEnvironments = environments.filter(
@@ -421,12 +341,7 @@ function DevicesStep() {
         primaryEnvironmentId={primaryEnvironment?.environmentId ?? null}
         savedEnvironments={savedEnvironments}
         showSavedEnvironments
-        empty={
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            No other environments are published to your account yet. Publish one from another device
-            and it will show up here.
-          </p>
-        }
+        empty={<p className="px-3 py-3 text-muted-foreground">Keine weiteren Geräte</p>}
       />
     </div>
   );

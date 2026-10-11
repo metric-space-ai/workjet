@@ -5,6 +5,7 @@ import {
   ArchiveIcon,
   CpuIcon,
   FolderKanbanIcon,
+  GaugeIcon,
   GitBranchIcon,
   KeyboardIcon,
   MonitorIcon,
@@ -32,6 +33,7 @@ export const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/source-control": GitBranchIcon,
   "/settings/diagnostics": ActivityIcon,
   "/settings/archived": ArchiveIcon,
+  "/settings/usage": GaugeIcon,
 };
 
 export const SETTINGS_NAV_ITEMS = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])

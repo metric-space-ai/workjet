@@ -1,24 +1,17 @@
 import type { DesktopUserDataMigrationOffer } from "@workjet/contracts";
+import { FolderInputIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { InlineNoticePortal, InlineNoticeRow } from "../InlineNoticeSlot";
 import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
 
 /**
  * One-time first-launch offer to import a compatible previous profile into the
  * historical user-data directory (docs/workjet-plan.md Wave 6).
  *
  * The decision itself lives in the main process (`DesktopUserDataMigration`):
- * this dialog only surfaces the offer the bridge reports and forwards the
- * user's answer. Accepting relaunches the app so the copy can run before the
+ * this inline banner under the header (start view, no modal) only surfaces
+ * the offer the bridge reports and forwards the user's answer. Accepting relaunches the app so the copy can run before the
  * Chromium profile is opened; declining is recorded durably and the offer is
  * never shown again. Without this prompt an upgraded install would boot into
  * an empty profile with no visible way to bring the paired CTOX instances
@@ -55,53 +48,80 @@ export function UserDataMigrationDialog() {
     void method()
       .then(() => {
         // Accept relaunches the app from the main process; decline just ends
-        // the offer. Either way the dialog is done.
+        // the offer. Either way the banner is done.
         setOffer(null);
       })
       .catch((error: unknown) => {
         setIsResponding(false);
-        setResponseError(error instanceof Error ? error.message : "The migration request failed.");
+        setResponseError(error instanceof Error ? error.message : "unbekannter Fehler");
       });
   };
 
   return (
-    <Dialog open onOpenChange={() => undefined}>
-      <DialogPopup data-user-data-migration-dialog>
-        <DialogPanel>
-          <DialogHeader>
-            <DialogTitle>
-              {offer.previousAttemptFailed
-                ? "Profile import could not finish"
-                : "Import your existing profile?"}
-            </DialogTitle>
-            <DialogDescription>
-              A compatible previous profile was found. Importing copies your settings and the
-              pairings for connected CTOX instances into Workjet; the app restarts once to apply it.
-              The old profile is left untouched. If you skip this, you start with an empty profile
-              and this offer will not appear again.
-            </DialogDescription>
-          </DialogHeader>
-          {responseError || offer.previousAttemptFailed ? (
-            <p className="text-destructive text-sm" role="alert">
-              {responseError ??
-                "Your previous profile could not be fully copied. Check available disk space and file access, then retry the import."}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={isResponding}
-              onClick={() => respond(false)}
-            >
-              Start fresh
-            </Button>
-            <Button type="button" disabled={isResponding} onClick={() => respond(true)}>
-              {offer.previousAttemptFailed ? "Retry import and restart" : "Import and restart"}
-            </Button>
-          </DialogFooter>
-        </DialogPanel>
-      </DialogPopup>
-    </Dialog>
+    <InlineNoticePortal>
+      <UserDataMigrationBanner
+        isResponding={isResponding}
+        offer={offer}
+        responseError={responseError}
+        onRespond={respond}
+      />
+    </InlineNoticePortal>
+  );
+}
+
+/** Presentational half: one line under the header, „Überspringen“ and „Importieren“. */
+export function UserDataMigrationBanner({
+  offer,
+  isResponding,
+  responseError,
+  onRespond,
+}: {
+  readonly offer: Pick<DesktopUserDataMigrationOffer, "previousAttemptFailed">;
+  readonly isResponding: boolean;
+  readonly responseError: string | null;
+  readonly onRespond: (accept: boolean) => void;
+}) {
+  const failed = responseError !== null || offer.previousAttemptFailed;
+  const line =
+    responseError !== null
+      ? `Import fehlgeschlagen: ${responseError}`
+      : offer.previousAttemptFailed
+        ? "Profilimport unvollständig"
+        : "Früheres Profil gefunden";
+
+  return (
+    <InlineNoticeRow
+      data-user-data-migration-banner=""
+      actions={
+        <>
+          <Button
+            data-user-data-migration-decline=""
+            disabled={isResponding}
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => onRespond(false)}
+          >
+            Überspringen
+          </Button>
+          <Button
+            data-user-data-migration-accept=""
+            disabled={isResponding}
+            size="sm"
+            type="button"
+            onClick={() => onRespond(true)}
+          >
+            {failed ? "Erneut importieren" : "Importieren"}
+          </Button>
+        </>
+      }
+      icon={failed ? TriangleAlertIcon : FolderInputIcon}
+      label={line}
+      tone={failed ? "destructive" : "neutral"}
+    >
+      <span className="min-w-0 truncate" role={failed ? "alert" : undefined} title={line}>
+        {line}
+      </span>
+    </InlineNoticeRow>
   );
 }

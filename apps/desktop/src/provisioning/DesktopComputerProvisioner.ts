@@ -25,6 +25,7 @@ import type {
 } from "@workjet/contracts";
 import { isSshAuthFailure } from "@workjet/ssh/auth";
 import { runSshCommand, targetConnectionKey } from "@workjet/ssh/command";
+import { SshCommandError } from "@workjet/ssh/errors";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -41,6 +42,7 @@ import { reuseHealthyCtox } from "./ctoxBootstrap.ts";
 import { runLocalCommand, type CommandResult } from "./LocalProvisioningCommand.ts";
 
 const PREFLIGHT_TTL_MS = 10 * 60 * 1_000;
+const PREFLIGHT_COMMAND_TIMEOUT_MS = 20_000;
 
 const CTOX_MANIFEST_URL =
   "https://github.com/metric-space-ai/ctox/releases/download/ctox-install-bootstrap-v1/ctox-install-manifest-v1.json";
@@ -131,6 +133,23 @@ ${LINUX_DESKTOP_ENTRY}WORKJET_DESKTOP_ENTRY
 fi`;
 
 const POSIX_PREFLIGHT_SCRIPT = `set -eu
+# Version commands can wait on an existing service. Bound the probe, including
+# its owned descendants, without requiring the GNU timeout command on macOS.
+bounded_command() {
+  python3 - "$@" <<'WORKJET_PREFLIGHT_PYTHON'
+import os, signal, subprocess, sys
+process = subprocess.Popen(sys.argv[1:], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+try:
+    output, _ = process.communicate(timeout=3)
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGKILL)
+    process.communicate()
+    print("Preflight command timed out after 3 seconds: " + sys.argv[1], file=sys.stderr)
+    sys.exit(124)
+sys.stdout.buffer.write(output)
+sys.exit(process.returncode)
+WORKJET_PREFLIGHT_PYTHON
+}
 platform="$(uname -s 2>/dev/null || true)"
 arch="$(uname -m 2>/dev/null || true)"
 tools=true
@@ -145,7 +164,7 @@ admin=false
 admin_password=false
 if [ "$(id -u)" = "0" ]; then admin=true
 elif command -v sudo >/dev/null 2>&1; then
-  if sudo -n true >/dev/null 2>&1; then admin=true
+  if bounded_command sudo -n true >/dev/null 2>&1; then admin=true
   elif id -Gn 2>/dev/null | tr ' ' '\n' | grep -Eq '^(sudo|wheel|admin)$'; then admin=true; admin_password=true
   fi
 fi
@@ -155,21 +174,46 @@ case "$platform" in
   Linux) if [ -n "\${DISPLAY:-}\${WAYLAND_DISPLAY:-}" ] || pgrep -f 'Xorg|Xwayland|wayland|gnome-shell|plasmashell' >/dev/null 2>&1; then gui=true; fi ;;
 esac
 ctox_version=none
-if command -v ctox >/dev/null 2>&1; then ctox_version="$(ctox version 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version", "none"))' 2>/dev/null || true)"; fi
+if command -v ctox >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  ctox_output="$(bounded_command ctox version)"
+  ctox_version="$(printf '%s' "$ctox_output" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version", "none"))' 2>/dev/null || true)"
+fi
 workjet_version=none
-if [ -f /Applications/Workjet.app/Contents/Info.plist ]; then
-  workjet_version="$(defaults read /Applications/Workjet.app/Contents/Info CFBundleShortVersionString 2>/dev/null || true)"
-elif command -v workjet >/dev/null 2>&1; then workjet_version="$(workjet --version 2>/dev/null | head -n 1 || true)"; fi
+if [ -f /Applications/Workjet.app/Contents/Info.plist ] && command -v python3 >/dev/null 2>&1; then
+  workjet_version="$(bounded_command defaults read /Applications/Workjet.app/Contents/Info CFBundleShortVersionString)"
+elif command -v workjet >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  workjet_output="$(bounded_command workjet --version)"
+  workjet_version="$(printf '%s' "$workjet_output" | head -n 1)"
+fi
 printf 'platform=%s\narch=%s\ntools=%s\nmissing_tools=%s\ninternet=%s\nadmin=%s\nadmin_member=%s\nadmin_password=%s\ngui=%s\nctox_version=%s\nworkjet_version=%s\n' "$platform" "$arch" "$tools" "$missing_tools" "$internet" "$admin" "$admin" "$admin_password" "$gui" "$ctox_version" "$workjet_version"
 `;
 
 const WINDOWS_PREFLIGHT_SCRIPT = `$ErrorActionPreference='Stop'
+function Invoke-BoundedCommand([string]$FileName, [string]$Arguments) {
+  $info = New-Object System.Diagnostics.ProcessStartInfo
+  $info.FileName = $FileName; $info.Arguments = $Arguments
+  $info.UseShellExecute = $false; $info.CreateNoWindow = $true
+  $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $info
+  try {
+    if (-not $process.Start()) { throw 'Could not start preflight command.' }
+    $output = $process.StandardOutput.ReadToEndAsync()
+    $diagnostics = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit(3000)) {
+      $process.Kill()
+      throw ('Preflight command timed out after 3 seconds: ' + $FileName)
+    }
+    if ($process.ExitCode -ne 0) { throw ('Preflight command failed: ' + $FileName) }
+    return $output.GetAwaiter().GetResult()
+  } finally { $process.Dispose() }
+}
 $isAdmin = ([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $isAdminMember = $isAdmin
-if (-not $isAdminMember) { try { $isAdminMember = ((& (Join-Path $env:SystemRoot 'System32\\whoami.exe') /groups /fo csv /nh | Out-String) -match 'S-1-5-32-544') } catch {} }
+if (-not $isAdminMember) { try { $isAdminMember = ((Invoke-BoundedCommand (Join-Path $env:SystemRoot 'System32\\whoami.exe') '/groups /fo csv /nh') -match 'S-1-5-32-544') } catch {} }
 $internet = $false
 try { Invoke-WebRequest -UseBasicParsing -Method Head -TimeoutSec 8 -Uri '${CTOX_MANIFEST_URL}' | Out-Null; $internet = $true } catch {}
-$ctox = 'none'; $ctoxPath = Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; if (Test-Path $ctoxPath) { try { $ctox = ((& $ctoxPath version | ConvertFrom-Json).version) } catch {} }
+$ctox = 'none'; $ctoxPath = Join-Path $env:ProgramFiles 'CTOX\\current\\bin\\ctox.exe'; if (Test-Path $ctoxPath) { $ctox = ((Invoke-BoundedCommand $ctoxPath 'version' | ConvertFrom-Json).version) }
 $workjet = 'none'; $workjetPath = Join-Path $env:ProgramFiles 'Workjet\\Workjet.exe'; if (Test-Path $workjetPath) { $workjet = (Get-Item $workjetPath).VersionInfo.ProductVersion }
 $gui = @(Get-Process explorer -ErrorAction SilentlyContinue).Count -gt 0
 Write-Output 'platform=windows'; Write-Output ('arch=' + [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()); Write-Output 'tools=true'; Write-Output 'missing_tools='; Write-Output ('internet=' + $internet.ToString().ToLowerInvariant()); Write-Output ('admin=' + $isAdmin.ToString().ToLowerInvariant()); Write-Output ('admin_member=' + $isAdminMember.ToString().ToLowerInvariant()); Write-Output 'admin_password=false'; Write-Output ('gui=' + $gui.ToString().ToLowerInvariant()); Write-Output ('ctox_version=' + $ctox); Write-Output ('workjet_version=' + $workjet)
@@ -195,6 +239,12 @@ function sshManagedInputFromPreflight(
     architecture: preflight.architecture,
     knownHostsLine,
   };
+}
+
+function isPosixShellUnavailable(error: unknown): boolean {
+  if (!(error instanceof SshCommandError)) return false;
+  if (error.exitCode !== 1 && error.exitCode !== 127) return false;
+  return /(?:^|\n)(?:[^\n]*?:\s*)?['"]?sh['"]?\s*(?:: (?:command )?not found| is not recognized as an internal or external command|: The term ['"]sh['"] is not recognized)/iu.test(error.stderr);
 }
 
 function safeMessage(error: unknown, fallback: string): string {
@@ -303,6 +353,7 @@ export const make = Effect.gen(function* () {
         "ssh-keygen",
         ["-lf", "-", "-E", "sha256"],
         `${knownHostsLine}\n`,
+        3_000,
       );
       const fingerprint = fingerprintOutput.stdout.trim().split(/\s+/u)[1];
       if (!fingerprint?.startsWith("SHA256:"))
@@ -401,16 +452,25 @@ export const make = Effect.gen(function* () {
 
   const inspectRemote = (target: DesktopSshEnvironmentTarget, knownHostsLine: string) =>
     runRemoteAuthenticated(target, knownHostsLine, (knownHostsPath, authSecret) =>
-      sshCommand(target, knownHostsPath, authSecret, ["sh", "-s"], POSIX_PREFLIGHT_SCRIPT).pipe(
-        Effect.catch(() =>
-          sshCommand(
+      sshCommand(
+        target,
+        knownHostsPath,
+        authSecret,
+        ["sh", "-s"],
+        POSIX_PREFLIGHT_SCRIPT,
+        PREFLIGHT_COMMAND_TIMEOUT_MS,
+      ).pipe(
+        Effect.catch((error) => {
+          if (!isPosixShellUnavailable(error)) return Effect.fail(error);
+          return sshCommand(
             target,
             knownHostsPath,
             authSecret,
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
             WINDOWS_PREFLIGHT_SCRIPT,
-          ),
-        ),
+            PREFLIGHT_COMMAND_TIMEOUT_MS,
+          );
+        }),
       ),
     );
 
@@ -423,8 +483,9 @@ export const make = Effect.gen(function* () {
             "powershell.exe",
             ["-NoProfile", "-NonInteractive", "-Command", "-"],
             script,
+            PREFLIGHT_COMMAND_TIMEOUT_MS,
           )
-        : runLocalCommand("sh", ["-s"], script),
+        : runLocalCommand("sh", ["-s"], script, PREFLIGHT_COMMAND_TIMEOUT_MS),
     );
   };
 
@@ -872,6 +933,7 @@ export const layer = Layer.effect(DesktopComputerProvisioner, make);
 export const testing = {
   normalizePlatform,
   normalizeArchitecture,
+  isPosixShellUnavailable,
   parseKeyValueOutput,
   administratorCapability,
   posixPreflightScript: POSIX_PREFLIGHT_SCRIPT,

@@ -48,6 +48,36 @@ type TraitsPersistence =
 
 const ULTRATHINK_PROMPT_PREFIX = "Ultrathink:\n";
 
+/**
+ * Deutsche Anzeige für die englischen Bezeichnungen, die die Anbieter für
+ * ihre Optionen liefern („Reasoning“, „High“, „Fast Mode“). Unbekannte
+ * Bezeichnungen und Eigennamen (Ultrathink, 200k, 1M) bleiben unverändert.
+ */
+const TRAIT_LABELS_DE: Readonly<Record<string, string>> = {
+  reasoning: "Denken",
+  thinking: "Denken",
+  "thinking effort": "Denkaufwand",
+  effort: "Aufwand",
+  "fast mode": "Schnellmodus",
+  "context window": "Kontextfenster",
+  "service tier": "Stufe",
+  fast: "Schnell",
+  none: "Keins",
+  minimal: "Minimal",
+  low: "Niedrig",
+  medium: "Mittel",
+  high: "Hoch",
+  "extra high": "Sehr hoch",
+  xhigh: "Sehr hoch",
+  max: "Maximal",
+  on: "An",
+  off: "Aus",
+};
+
+export function traitDisplayLabel(label: string): string {
+  return TRAIT_LABELS_DE[label.trim().toLowerCase()] ?? label;
+}
+
 function DefaultBadge() {
   return (
     <Badge
@@ -306,7 +336,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
             {index > 0 ? <MenuDivider /> : null}
             <MenuGroup>
               <div className="px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs">
-                {descriptor.label}
+                {traitDisplayLabel(descriptor.label)}
               </div>
               <MenuRadioGroup
                 value={selectedValue}
@@ -324,7 +354,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                   >
                     <span className="flex w-full min-w-0 items-center justify-between gap-3">
                       <span className="min-w-0 truncate">
-                        {option.label}
+                        {traitDisplayLabel(option.label)}
                         {option.isDefault ? (
                           <>
                             {" "}
@@ -348,7 +378,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
             {index > 0 || selectDescriptors.length > 0 ? <MenuDivider /> : null}
             <MenuGroup>
               <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-                {descriptor.label}
+                {traitDisplayLabel(descriptor.label)}
               </div>
               <MenuRadioGroup
                 value={selectedValue}
@@ -413,16 +443,20 @@ export function buildTraitsTriggerDisplay(input: {
       input.ultrathinkPromptControlled && descriptor.id === input.primarySelectDescriptorId
         ? "Ultrathink"
         : descriptor.type === "boolean"
-          ? `${descriptor.label} ${descriptor.currentValue === true ? "An" : "Aus"}`
+          ? `${traitDisplayLabel(descriptor.label)} ${descriptor.currentValue === true ? "An" : "Aus"}`
           : getProviderOptionCurrentLabel(descriptor);
+    const shownOptionLabel =
+      typeof optionLabel === "string" && descriptor.type !== "boolean"
+        ? traitDisplayLabel(optionLabel)
+        : optionLabel;
     const label =
-      typeof optionLabel !== "string" || optionLabel.length === 0
-        ? optionLabel
+      typeof shownOptionLabel !== "string" || shownOptionLabel.length === 0
+        ? shownOptionLabel
         : descriptor.id === "reasoningEffort" || descriptor.id === "effort"
-          ? `Aufwand ${optionLabel}`
+          ? `Aufwand ${shownOptionLabel}`
           : descriptor.id === "contextWindow"
-            ? `Kontext ${optionLabel}`
-            : optionLabel;
+            ? `Kontext ${shownOptionLabel}`
+            : shownOptionLabel;
     if (typeof label === "string" && label.length > 0) {
       labels.push(label);
     }

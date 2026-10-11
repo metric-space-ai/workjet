@@ -24,7 +24,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
         disabled={isResponding}
         onClick={() => void onRespondToApproval(requestId, "cancel")}
       >
-        Turn abbrechen
+        Zug abbrechen
       </Button>
       <Button
         size="sm"

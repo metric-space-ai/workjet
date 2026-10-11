@@ -1208,6 +1208,43 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("retains command timing on success and timeout without exporting guest secrets", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      for (const fails of [false, true]) {
+        const context = NodeVM.createContext({ fails });
+        NodeVM.runInContext(
+          `globalThis.workjetProjectControl = async (_request, diagnostics) => {
+            diagnostics.onCommandTiming({ commandId: "cmd_workjet_project_list_123",
+              stagesMs: { sync_readiness: 21000, secret: "private-value" },
+              token: "private-value" });
+            if (fails) throw Object.assign(new Error(
+              "Workjet project list did not finish command before its deadline."),
+              { code: "WORKJET_PROJECT_TIMEOUT" });
+            return { action: "project.list", projects: [], count: 0, truncated: false };
+          };`,
+          context,
+        );
+        harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
+          const raw = await NodeVM.runInContext(expression, context);
+          expect(JSON.stringify(raw)).not.toContain("private-value");
+          expect(JSON.parse(JSON.stringify(raw.commandTiming))).toEqual({
+            commandId: "cmd_workjet_project_list_123",
+            stagesMs: { sync_readiness: 21000 },
+          });
+          return raw;
+        });
+        const result = yield* manager.requestProjectControl(descriptor.id, {
+          action: "project.list",
+        });
+        expect(result._tag).toBe(fails ? "failed" : "completed");
+        expect(result).not.toHaveProperty("commandTiming");
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("preserves a classified native request timeout through the project bridge", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {

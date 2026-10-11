@@ -156,7 +156,10 @@ describe("supervisor situation", () => {
       workjetConfig: {
         ...DEFAULT_WORKJET_THREAD_CONFIG,
         role: "worker",
-        parent: { environmentId: EnvironmentId.make("local"), threadId: ThreadId.make("supervisor") },
+        parent: {
+          environmentId: EnvironmentId.make("local"),
+          threadId: ThreadId.make("supervisor"),
+        },
       },
     });
     const threads = [
@@ -168,21 +171,50 @@ describe("supervisor situation", () => {
       { ...base, id: ThreadId.make("archived-persistent"), archivedAt: base.updatedAt },
       { ...oneShot("foreign", null), projectId: ProjectId.make("other") },
     ];
-    const snapshot = JSON.parse(supervisorTickSituation({
-      project: {
-        id: projectId, title: "Control", workspaceRoot: null, defaultModelSelection: null,
-        scripts: [], createdAt: base.createdAt, updatedAt: base.updatedAt, deletedAt: null,
-      },
-      threads, since: base.createdAt, now, pullRequests: [], sourceErrors: [],
-      meetingMinutes: null, changes: [],
-      errors: threads.map((thread) => ({ threadId: thread.id, kind: "provider.timeout", summary: "Timeout", createdAt: base.updatedAt })),
-      escalations: threads.map((thread) => ({ threadId: thread.id, decisionKey: "access", createdAtMs: now })),
-    }));
-    expect(snapshot.oneShotWorkers.map((worker: { thread: string }) => worker.thread)).toEqual(["active", "recent"]);
+    const snapshot = JSON.parse(
+      supervisorTickSituation({
+        project: {
+          id: projectId,
+          title: "Control",
+          workspaceRoot: null,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: base.createdAt,
+          updatedAt: base.updatedAt,
+          deletedAt: null,
+        },
+        threads,
+        since: base.createdAt,
+        now,
+        pullRequests: [],
+        sourceErrors: [],
+        meetingMinutes: null,
+        changes: [],
+        errors: threads.map((thread) => ({
+          threadId: thread.id,
+          kind: "provider.timeout",
+          summary: "Timeout",
+          createdAt: base.updatedAt,
+        })),
+        escalations: threads.map((thread) => ({
+          threadId: thread.id,
+          decisionKey: "access",
+          createdAtMs: now,
+        })),
+      }),
+    );
+    expect(snapshot.oneShotWorkers.map((worker: { thread: string }) => worker.thread)).toEqual([
+      "active",
+      "recent",
+    ]);
     expect(snapshot.oneShotWorkers[1].status).toBe("finished");
     expect(snapshot.persistentWorkers).toHaveLength(1);
     expect(snapshot.collectedCounts).toMatchObject({ workers: 3, errors: 3, escalations: 3 });
-    expect(snapshot.errorsAndTimeouts.some((error: { threadId: string }) => error.threadId === "expired")).toBe(false);
+    expect(
+      snapshot.errorsAndTimeouts.some(
+        (error: { threadId: string }) => error.threadId === "expired",
+      ),
+    ).toBe(false);
   });
   it("keeps large rounds compact with valid JSON and every source category", () => {
     const text = supervisorTickSituation({
@@ -196,10 +228,13 @@ describe("supervisor situation", () => {
         updatedAt: base.updatedAt,
         deletedAt: null,
       },
-      threads: [base, ...Array.from({ length: 499 }, (_, index) => ({
-        ...base,
-        id: ThreadId.make("worker-" + index),
-      }))],
+      threads: [
+        base,
+        ...Array.from({ length: 499 }, (_, index) => ({
+          ...base,
+          id: ThreadId.make("worker-" + index),
+        })),
+      ],
       since: base.createdAt,
       now,
       pullRequests: Array.from({ length: 100 }, () => pr),

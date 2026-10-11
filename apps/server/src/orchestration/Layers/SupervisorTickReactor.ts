@@ -42,24 +42,33 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
     for (const supervisor of model.threads) {
       const config = supervisor.workjetConfig;
       const project = model.projects.find((p) => p.id === supervisor.projectId);
-      if (config.schemaVersion !== 2 || !project || !isSupervisorTickEligible(supervisor, project)) continue;
+      if (config.schemaVersion !== 2 || !project || !isSupervisorTickEligible(supervisor, project))
+        continue;
       const now = DateTime.toEpochMillis(yield* DateTime.now);
       if (!config.supervisorTick) {
         const firstTickAt = supervisorFirstTickAt(now, project.overview?.supervisorTick);
         if (firstTickAt !== null) {
-          yield* engine.dispatch({
-            type: "thread.supervisor.tick.schedule",
-            commandId: CommandId.make(`server:supervisor-tick:${supervisor.id}:initial:${firstTickAt}`),
-            threadId: supervisor.id,
-            firstTickAt: DateTime.formatIso(DateTime.makeUnsafe(firstTickAt)),
-            createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
-          }).pipe(
-            Effect.catch((error) =>
-              error._tag === "OrchestrationCommandInvariantError" && error.detail === "Command produced no events."
-                ? Effect.void
-                : Effect.logWarning("Supervisor initial control scheduling failed", { threadId: supervisor.id, error }),
-            ),
-          );
+          yield* engine
+            .dispatch({
+              type: "thread.supervisor.tick.schedule",
+              commandId: CommandId.make(
+                `server:supervisor-tick:${supervisor.id}:initial:${firstTickAt}`,
+              ),
+              threadId: supervisor.id,
+              firstTickAt: DateTime.formatIso(DateTime.makeUnsafe(firstTickAt)),
+              createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+            })
+            .pipe(
+              Effect.catch((error) =>
+                error._tag === "OrchestrationCommandInvariantError" &&
+                error.detail === "Command produced no events."
+                  ? Effect.void
+                  : Effect.logWarning("Supervisor initial control scheduling failed", {
+                      threadId: supervisor.id,
+                      error,
+                    }),
+              ),
+            );
         }
         continue;
       }

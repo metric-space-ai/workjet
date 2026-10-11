@@ -1508,7 +1508,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
       const config = thread.workjetConfig;
       const project = readModel.projects.find((item) => item.id === thread.projectId);
-      if (config.schemaVersion !== 2 || !isSupervisorTickEligible(thread, project) || config.supervisorTick)
+      if (
+        config.schemaVersion !== 2 ||
+        !isSupervisorTickEligible(thread, project) ||
+        config.supervisorTick
+      )
         return [];
       const cadence = project?.overview?.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION;
       const now = Date.parse(command.createdAt);
@@ -1543,11 +1547,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
       const config = thread.workjetConfig;
       const project = readModel.projects.find((item) => item.id === thread.projectId);
-      if (
-        config.schemaVersion !== 2 ||
-        !isSupervisorTickEligible(thread, project)
-      )
-        return [];
+      if (config.schemaVersion !== 2 || !isSupervisorTickEligible(thread, project)) return [];
       const dueAt = supervisorTickDueAt(
         thread.createdAt,
         project?.overview?.supervisorTick,

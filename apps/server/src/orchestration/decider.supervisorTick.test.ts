@@ -89,34 +89,76 @@ it.layer(NodeServices.layer)("supervisor control round admission", (it) => {
       expect(scheduled.events[0]?.type).toBe("thread.workjet-config-set");
       expect(scheduled.model.threads[0]?.messages).toHaveLength(0);
       const config = scheduled.model.threads[0]!.workjetConfig;
-      expect(supervisorTickDueAt(start, undefined, config.schemaVersion === 2 ? config.supervisorTick : undefined)).toBe(Date.parse(schedule.firstTickAt));
-      expect((yield* apply(scheduled.model, { ...schedule, commandId: CommandId.make("different-sample"), firstTickAt: "2026-10-11T12:25:00.000Z" })).events).toEqual([]);
-      expect((yield* apply(scheduled.model, tick(scheduled.model, schedule.firstTickAt, afterDowntime))).events).toEqual([]);
-      expect((yield* apply(scheduled.model, tick(scheduled.model, schedule.firstTickAt, "2026-10-11T12:08:00.000Z"))).events.filter((event) => event.type === "thread.turn-start-requested")).toHaveLength(1);
+      expect(
+        supervisorTickDueAt(
+          start,
+          undefined,
+          config.schemaVersion === 2 ? config.supervisorTick : undefined,
+        ),
+      ).toBe(Date.parse(schedule.firstTickAt));
+      expect(
+        (yield* apply(scheduled.model, {
+          ...schedule,
+          commandId: CommandId.make("different-sample"),
+          firstTickAt: "2026-10-11T12:25:00.000Z",
+        })).events,
+      ).toEqual([]);
+      expect(
+        (yield* apply(scheduled.model, tick(scheduled.model, schedule.firstTickAt, afterDowntime)))
+          .events,
+      ).toEqual([]);
+      expect(
+        (yield* apply(
+          scheduled.model,
+          tick(scheduled.model, schedule.firstTickAt, "2026-10-11T12:08:00.000Z"),
+        )).events.filter((event) => event.type === "thread.turn-start-requested"),
+      ).toHaveLength(1);
     }),
   );
-  it.effect("collection eligibility matches admission for malformed bindings and inactive threads", () =>
-    Effect.gen(function* () {
-      const { model } = yield* initial();
-      const thread = model.threads[0]!;
-      const config = thread.workjetConfig;
-      if (config.schemaVersion !== 2 || !config.team) throw new Error("Expected project supervisor");
-      expect(isSupervisorTickEligible(thread, model.projects[0])).toBe(true);
-      const invalid = [
-        { ...thread, deletedAt: start },
-        { ...thread, archivedAt: start },
-        { ...thread, workjetConfig: { ...config, team: { ...config.team, threadId: ThreadId.make("foreign") } } },
-        { ...thread, workjetConfig: { ...config, team: { ...config.team, projectId: ProjectId.make("foreign") } } },
-      ];
-      for (const candidate of invalid) {
-        const changed = { ...model, threads: [candidate] };
-        expect(isSupervisorTickEligible(candidate, model.projects[0])).toBe(false);
-        expect((yield* apply(changed, tick(changed))).events).toEqual([]);
-      }
-      expect(isSupervisorTickEligible(thread, undefined)).toBe(false);
-      expect(isSupervisorTickEligible(thread, { ...model.projects[0]!, deletedAt: start })).toBe(false);
-      expect(isSupervisorTickEligible(thread, { ...model.projects[0]!, overview: { websiteUrl: null, slots: [null, null, null], archived: true } })).toBe(false);
-    }),
+  it.effect(
+    "collection eligibility matches admission for malformed bindings and inactive threads",
+    () =>
+      Effect.gen(function* () {
+        const { model } = yield* initial();
+        const thread = model.threads[0]!;
+        const config = thread.workjetConfig;
+        if (config.schemaVersion !== 2 || !config.team)
+          throw new Error("Expected project supervisor");
+        expect(isSupervisorTickEligible(thread, model.projects[0])).toBe(true);
+        const invalid = [
+          { ...thread, deletedAt: start },
+          { ...thread, archivedAt: start },
+          {
+            ...thread,
+            workjetConfig: {
+              ...config,
+              team: { ...config.team, threadId: ThreadId.make("foreign") },
+            },
+          },
+          {
+            ...thread,
+            workjetConfig: {
+              ...config,
+              team: { ...config.team, projectId: ProjectId.make("foreign") },
+            },
+          },
+        ];
+        for (const candidate of invalid) {
+          const changed = { ...model, threads: [candidate] };
+          expect(isSupervisorTickEligible(candidate, model.projects[0])).toBe(false);
+          expect((yield* apply(changed, tick(changed))).events).toEqual([]);
+        }
+        expect(isSupervisorTickEligible(thread, undefined)).toBe(false);
+        expect(isSupervisorTickEligible(thread, { ...model.projects[0]!, deletedAt: start })).toBe(
+          false,
+        );
+        expect(
+          isSupervisorTickEligible(thread, {
+            ...model.projects[0]!,
+            overview: { websiteUrl: null, slots: [null, null, null], archived: true },
+          }),
+        ).toBe(false);
+      }),
   );
   it.effect("persists disabled and configurable cadence through event projection", () =>
     Effect.gen(function* () {

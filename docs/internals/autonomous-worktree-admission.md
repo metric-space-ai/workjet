@@ -143,3 +143,21 @@ No provider is switched to this endpoint yet: the namespace-side bridge, complet
 CLI/file/MCP enforcement and native team admission remain required before an
 autonomous-worktree mode can be supported. Non-Linux hosts reject private IPC
 explicitly. This transport component is not installed G2 acceptance.
+
+
+## Model bridge inside the worker network namespace
+
+The native helper's `--worker-model-bridge` command binds a loopback endpoint
+inside an already created Linux network namespace, forwards bytes to the
+captured Unix model socket, and supervises one CLI child. It rejects the original
+service network namespace and a changed, non-private or foreign socket before
+starting the CLI. HTTP headers and streaming bytes pass through without protocol
+translation or account selection. At most two connections and bounded relay
+buffers are retained. The bridge closes with its child and preserves its exit code.
+
+Private native profiles use the namespace loopback address; profiles without
+private IPC retain the host endpoint. The namespace launcher must mount the
+captured socket at the fixed private path and pass the captured parent network
+identity. The bridge is not that launcher, an Owner/team permit or a filesystem/
+MCP boundary. Drivers still reject autonomous-worktree; no support or installed
+G2 acceptance is claimed from this component alone.

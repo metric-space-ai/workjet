@@ -11,6 +11,7 @@ export interface WorkerSourceModelSocketDescription {
   readonly directory: string;
   readonly directoryIdentity: { readonly device: string; readonly inode: string };
   readonly socketIdentity: { readonly device: string; readonly inode: string };
+  readonly hostNetworkIdentity: { readonly device: string; readonly inode: string };
 }
 
 const identity = (stat: NodeFS.BigIntStats) => ({
@@ -77,6 +78,7 @@ export async function makeWorkerSourceModelSocket(
     await NodeFSP.chmod(ownedPath, 0o600);
     const socket = await NodeFSP.lstat(ownedPath, { bigint: true });
     if (!socket.isSocket()) throw new Error("Worker model IPC did not bind.");
+    const hostNetwork = await NodeFSP.stat("/proc/self/ns/net", { bigint: true });
     return {
       description: {
         root,
@@ -84,6 +86,7 @@ export async function makeWorkerSourceModelSocket(
         directory,
         directoryIdentity: identity(opened),
         socketIdentity: identity(socket),
+        hostNetworkIdentity: identity(hostNetwork),
       },
       close,
     };

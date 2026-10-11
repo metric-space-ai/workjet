@@ -11,6 +11,7 @@ import {
   workerSourceNativeProfile,
   type WorkerSourceNativeProfile,
 } from "./WorkerSourceNativeProfile.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
 import { Schema } from "effect";
 import { WorkjetComputerInventory, RemoteWorkerHarness } from "@workjet/contracts";
 import type { WorkerSubmission } from "./WorkerSubmission.ts";
@@ -356,7 +357,7 @@ export async function installWorkerSourceRoute(
       nativeProfile = workerSourceNativeProfile({
         ...pin.nativeProfile,
         model: pin.modelId,
-        baseUrl,
+        baseUrl: modelSocket === undefined ? baseUrl : WORKER_MODEL_NAMESPACE_BASE_URL,
         apiKey,
       });
       await NodeFSP.mkdir(nativeProfile.directory, { recursive: true, mode: 0o700 });

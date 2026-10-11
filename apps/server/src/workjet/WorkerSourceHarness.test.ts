@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 import { makeWorkerSourceModelSocket } from "./WorkerSourceModelSocket.ts";
+import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -402,6 +403,10 @@ async function verifySourceOnlyLoopback(
   };
   const harness = await installWorkerSourceRoute(route.requestId, route, pin);
   cleanups.push(harness.revoke);
+  const preparedProfile = JSON.parse(harness.nativeProfile!.files[0]!.content);
+  expect(preparedProfile.custom_provider["workjet-source"].options.baseURL).toBe(
+    (transport === "unix" ? WORKER_MODEL_NAMESPACE_BASE_URL : harness.baseUrl).slice(0, -3),
+  );
   const invoke = (
     path: string,
     options: { method?: string; headers?: Record<string, string>; body?: string } = {},

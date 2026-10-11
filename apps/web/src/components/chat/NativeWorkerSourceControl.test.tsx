@@ -77,7 +77,7 @@ describe("automatic supervisor worker connection", () => {
     };
     provision.mockResolvedValueOnce({ _tag: "completed", connection: replacement });
     const html = render({ config: boundConfig });
-    expect(html).toContain('aria-label="Renew worker access"');
+    expect(html).not.toContain('aria-label="Renew worker access"');
     state.effects.forEach((effect) => effect());
     expect(provision).not.toHaveBeenCalled();
     await state.connect!.current(true);

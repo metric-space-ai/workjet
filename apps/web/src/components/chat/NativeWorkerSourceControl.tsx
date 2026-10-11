@@ -15,6 +15,12 @@ import {
   workerSourceBindingFailure,
 } from "../../workjetWorkerSourceConnection";
 
+export interface WorkerSourceConnectionStatus {
+  readonly message: string;
+  readonly retry: (() => void) | null;
+  readonly disabled: boolean;
+}
+
 export function NativeWorkerSourceControl(props: {
   readonly environmentId: EnvironmentId;
   readonly instanceId: string | null;
@@ -23,6 +29,8 @@ export function NativeWorkerSourceControl(props: {
     connection: WorkjetConnectionSummary,
   ) => Promise<{ readonly _tag: "saved" } | { readonly _tag: "failed"; readonly error: unknown }>;
   readonly unavailable: boolean;
+  readonly headless?: boolean;
+  readonly onStatusChange?: (status: WorkerSourceConnectionStatus | null) => void;
 }) {
   const query = useEnvironmentQuery(
     serverEnvironment.workjetDecisionHubConnections({
@@ -186,6 +194,28 @@ export function NativeWorkerSourceControl(props: {
                 )
               ? "A replacement worker connection is ready. Reconnect this thread to use it."
               : null));
+  const canRetry = !selectionError && !(error?.scope === scope && error.retryable === false);
+  useEffect(() => {
+    props.onStatusChange?.(
+      currentError
+        ? {
+            message: currentError,
+            retry: canRetry ? () => void connectRef.current(bound) : null,
+            disabled: props.unavailable || busy || query.isPending || request === null,
+          }
+        : null,
+    );
+  }, [
+    currentError,
+    canRetry,
+    bound,
+    props.unavailable,
+    busy,
+    query.isPending,
+    request === null,
+    props.onStatusChange,
+  ]);
+  if (props.headless) return null;
   return (
     <span
       className="inline-flex shrink-0 items-center text-xs"
@@ -206,17 +236,6 @@ export function NativeWorkerSourceControl(props: {
           onClick={() => void connectRef.current(bound)}
         >
           Erneut verbinden
-        </button>
-      ) : bound && provision ? (
-        <button
-          type="button"
-          aria-label="Renew worker access"
-          title="Authorize the current worker tools through your Business OS account. Existing connections are retained."
-          className="rounded border px-2 py-1 disabled:opacity-50"
-          disabled={props.unavailable || busy || query.isPending || request === null}
-          onClick={() => void connectRef.current(true)}
-        >
-          {busy ? "Renewing worker access…" : "Renew worker access"}
         </button>
       ) : null}
     </span>

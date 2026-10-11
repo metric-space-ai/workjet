@@ -9,7 +9,15 @@ import {
   type WorkjetSupervisorTurnIntent,
   type WorkjetSupervisorTurnKind,
 } from "@workjet/contracts";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  cloneElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ComponentProps,
+} from "react";
 import { ArrowUpIcon, PlusIcon } from "lucide-react";
 import { ComposerBar } from "./ComposerBar";
 import { ComposerDictationButton } from "./ComposerDictationButton";
@@ -59,6 +67,10 @@ import type { WorkjetThreadConfig } from "@workjet/contracts";
 import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
 import { supervisorRouteLabel } from "../../workjetSupervisorRoute";
 import { NativeSupervisorRouteControls } from "./NativeSupervisorRouteControls";
+import type {
+  NativeWorkerSourceControl,
+  WorkerSourceConnectionStatus,
+} from "./NativeWorkerSourceControl";
 
 export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
@@ -68,13 +80,15 @@ export function NativeSupervisorComposer(props: {
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
   readonly conversationTarget?: HTMLElement | null;
-  readonly workerSourceControl?: ReactNode;
+  readonly workerSourceControl?: ReactElement<ComponentProps<typeof NativeWorkerSourceControl>>;
 }) {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
   const routeLabel = supervisorRouteLabel(useSupervisorRouteDisplay(props.scope));
   const [routeSaving, setRouteSaving] = useState(false);
+  const [routeStatus, setRouteStatus] = useState<string | null>(null);
+  const [workerStatus, setWorkerStatus] = useState<WorkerSourceConnectionStatus | null>(null);
   const [prompt, setPrompt] = useState("");
   const [turnKind, setTurnKind] = useState<WorkjetSupervisorTurnKind>("work");
   const [capabilityRetry, setCapabilityRetry] = useState(0);
@@ -432,6 +446,21 @@ export function NativeSupervisorComposer(props: {
     setNewMessageFor(null);
   }, [bindingInstanceId, bindingProjectId, bindingThreadId]);
   const bindingError = bindingMatches ? binding.error : null;
+  const authenticationRequired = Boolean(
+    props.instanceId?.startsWith("managed:") &&
+    ((bindingMatches && binding.authenticationRequired) ||
+      failureCode === "authentication_required" ||
+      journal?.submissionError === "authentication_required" ||
+      props.blockReason?.startsWith("Sign in to ctox.dev") ||
+      props.blockReason?.startsWith("Bei ctox.dev anmelden")),
+  );
+  const connectionStatus =
+    (disabled
+      ? (props.blockReason ?? (props.instanceId ? "The project connection is unavailable." : null))
+      : null) ??
+    bindingError ??
+    workerStatus?.message ??
+    routeStatus;
   useEffect(() => {
     if (
       disabled ||
@@ -671,43 +700,11 @@ export function NativeSupervisorComposer(props: {
           )}
         </div>
       )}
-      {disabled && (
-        <div
-          role="status"
-          className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-        >
-          <span>{props.blockReason ?? "Confirm the project and CTOX connection to send."}</span>
-          {props.instanceId !== null && (
-            <button
-              type="button"
-              className="underline underline-offset-2 hover:text-foreground"
-              onClick={() => {
-                refreshWorkjetProjectRegistry(props.instanceId);
-                requestLocalProjectRegistrationRetry();
-              }}
-            >
-              Retry connection
-            </button>
-          )}
-        </div>
-      )}
-      {bindingMatches && binding.error && (
-        <div role="alert" className="mb-2 flex items-center gap-2 text-xs text-destructive">
-          <span>{binding.error}</span>
-          <button
-            type="button"
-            className="underline underline-offset-2"
-            disabled={busy || bindingPending}
-            onClick={() => {
-              refreshWorkjetProjectRegistry(props.instanceId);
-              requestLocalProjectRegistrationRetry();
-              setBindingRetry((value) => value + 1);
-            }}
-          >
-            Retry connection
-          </button>
-        </div>
-      )}
+      {props.workerSourceControl &&
+        cloneElement(props.workerSourceControl, {
+          headless: true,
+          onStatusChange: setWorkerStatus,
+        })}
       {notice && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
           {notice}
@@ -718,40 +715,67 @@ export function NativeSupervisorComposer(props: {
           {error}
         </p>
       )}
-      {props.instanceId?.startsWith("managed:") &&
-        ((bindingMatches && binding.authenticationRequired) ||
-          failureCode === "authentication_required" ||
-          journal?.submissionError === "authentication_required" ||
-          props.blockReason?.startsWith("Sign in to ctox.dev")) && (
-          <button
-            type="button"
-            className="mb-2 text-xs underline underline-offset-2"
-            disabled={busy}
-            onClick={async () => {
-              const bridge = window.desktopBridge?.ctox;
-              if (!bridge || inFlight.current) return;
-              inFlight.current = true;
-              setBusy(true);
-              try {
-                const result = await bridge.login();
-                if (result._tag === "completed") {
-                  refreshWorkjetProjectRegistry(latestProps.current.instanceId);
-                  requestLocalProjectRegistrationRetry();
-                  setError(null);
-                  setFailureCode(null);
-                  setBindingRetry((value) => value + 1);
+      {(connectionStatus || authenticationRequired) && (
+        <div
+          role="status"
+          data-supervisor-connection-status="true"
+          className="mb-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground"
+        >
+          <span>{connectionStatus ?? "Sign in to connect this instance."}</span>
+          {authenticationRequired ? (
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              disabled={busy}
+              onClick={async () => {
+                const bridge = window.desktopBridge?.ctox;
+                if (!bridge || inFlight.current) return;
+                inFlight.current = true;
+                setBusy(true);
+                try {
+                  const result = await bridge.login();
+                  if (result._tag === "completed") {
+                    refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+                    requestLocalProjectRegistrationRetry();
+                    setError(null);
+                    setFailureCode(null);
+                    setBindingRetry((value) => value + 1);
+                  }
+                } catch {
+                  setError("Could not open CTOX sign-in. Retry connection.");
+                } finally {
+                  inFlight.current = false;
+                  setBusy(false);
                 }
-              } catch {
-                setError("Could not open CTOX sign-in. Retry connection.");
-              } finally {
-                inFlight.current = false;
-                setBusy(false);
-              }
-            }}
-          >
-            Sign in to ctox.dev
-          </button>
-        )}
+              }}
+            >
+              Sign in to ctox.dev
+            </button>
+          ) : workerStatus?.retry ? (
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              disabled={workerStatus.disabled}
+              onClick={workerStatus.retry}
+            >
+              Reconnect
+            </button>
+          ) : props.instanceId !== null && (disabled || bindingError) ? (
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              disabled={busy || bindingPending}
+              onClick={() => {
+                refreshWorkjetProjectRegistry(props.instanceId);
+                requestLocalProjectRegistrationRetry();
+                setBindingRetry((value) => value + 1);
+              }}
+            >
+              Retry connection
+            </button>
+          ) : null}
+        </div>
+      )}
       {previousTurns.length > 0 && journal && scopeMatches && (
         <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           Task history
@@ -920,23 +944,11 @@ export function NativeSupervisorComposer(props: {
                     )?.target
                   : undefined
               }
-              disabled={disabled || busy || inputting || pending}
+              disabled={busy || inputting || routeSaving}
               routeTitle={routeLabel.title}
               onSavingChange={setRouteSaving}
+              onStatusChange={setRouteStatus}
             />
-          }
-          status={
-            <>
-              <SupervisorTurnKindPicker
-                scope={scope}
-                capability={capability}
-                value={turnKind}
-                disabled={disabled || busy || inputting || (pending && !confirmedPending)}
-                onChange={setTurnKind}
-              />
-
-              {props.workerSourceControl}
-            </>
           }
           settings={
             <CompactComposerControlsMenu
@@ -944,10 +956,19 @@ export function NativeSupervisorComposer(props: {
               showInteractionModeToggle={false}
               onToggleInteractionMode={() => {}}
               extraMenuContent={
-                <p className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
-                  The supervisor's context, system prompt, tools and reasoning are managed by its
-                  instance.
-                </p>
+                <div className="max-w-64 space-y-2 px-2 py-1 text-xs text-muted-foreground">
+                  <p>
+                    The supervisor's context, system prompt, tools and reasoning are managed by its
+                    instance.
+                  </p>
+                  <SupervisorTurnKindPicker
+                    scope={scope}
+                    capability={capability}
+                    value={turnKind}
+                    disabled={disabled || busy || inputting || (pending && !confirmedPending)}
+                    onChange={setTurnKind}
+                  />
+                </div>
               }
             />
           }
@@ -1004,15 +1025,6 @@ export function NativeSupervisorComposer(props: {
       )}
       {journal && (
         <div className="mt-2 flex gap-3 text-xs">
-          <button
-            type="button"
-            disabled={disabled || busy}
-            onClick={() => {
-              void run("resume");
-            }}
-          >
-            Refresh task
-          </button>
           {pending && journal.turn && (
             <button
               type="button"

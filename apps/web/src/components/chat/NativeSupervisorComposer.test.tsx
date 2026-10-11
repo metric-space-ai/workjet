@@ -75,7 +75,13 @@ describe("native supervisor receipt display", () => {
     expect(html).toContain('data-composer-bar="true"');
     expect(html).toContain('aria-label="Advanced settings"');
     expect(html).toContain('aria-label="Dictate message"');
-    expect(html).toContain('aria-label="Supervisor message type"');
+    expect(html).not.toContain('aria-label="Supervisor message type"');
+    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Harness"');
+    expect(html).toContain('aria-label="Model"');
+    expect(html).not.toContain("Project instance");
+    expect(html).not.toContain("Configure Workers");
+    expect(html).not.toContain("Refresh task");
     expect(html).not.toContain(">CTOX</span>");
     expect(html).not.toContain(">Send</button>");
   });
@@ -148,7 +154,7 @@ describe("native supervisor receipt display", () => {
     expect(html).toContain("Waiting for CTOX receipt");
     expect(html).not.toContain("Awaiting confirmation");
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
-    expect(html).toContain("Refresh task");
+    expect(html).not.toContain("Refresh task");
   });
   it("keeps drafting available for a confirmed running task with an explicit separate-message action", () => {
     const html = renderToStaticMarkup(
@@ -177,7 +183,7 @@ describe("native supervisor receipt display", () => {
     expect(html).toContain("Same-task context is unavailable on this connection.");
     expect(html).toContain("starts a separate request");
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
-    expect(html).toContain("Refresh task");
+    expect(html).not.toContain("Refresh task");
     expect(html).toContain("Cancel");
     expect(html).not.toContain("Approve");
   });

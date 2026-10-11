@@ -5,14 +5,14 @@ in Web and the Desktop renderer. Percentage and warning state use its result;
 HTTP errors and gateway retry timestamps never establish a percentage.
 No installed account data or credentials are needed for its fixtures.
 
-| Provider | Raw field in provider response                                                           | Direction                               | Window evidence                                                                                                                              |
-| -------- | ---------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude   | `five_hour.utilization`, `seven_day*.utilization`                                        | consumed; `100 − utilization`           | Provider keys identify 5 hours and 7 days; model scope goes in the tooltip.                                                                  |
-| Codex    | `rate_limit.*_window.used_percent`                                                       | consumed; `100 − used_percent`          | `limit_window_seconds`; primary is Short-term, secondary without duration is unknown.                                                        |
-| Z.ai     | `data.limits[].percentage` for `TOKENS_LIMIT`                                            | consumed; `100 − percentage`            | Raw `unit` / `number` pairs (3/5 = 5 h, 6/1 = 7 days, 5/1 = month); unqualified pairs stay unknown. Never list position or reset proximity.  |
-| MiniMax  | `model_remains[].current_interval_remaining_percent`, `current_weekly_remaining_percent` | remaining; preserve, cap display at 100 | `start_time` / `end_time`, weekly counterparts, or the documented 5-hour/weekly bucket identity. Status 2 explicitly establishes exhaustion. |
-| xAI      | no quota reading in the account-health source                                            | unavailable                             | Em dash, “Anbieter meldet kein Limit”.                                                                                                       |
-| Kimi     | `data.available_balance` is money, no allowance percentage                               | unavailable                             | Em dash for no quota; a reported monetary balance remains separate.                                                                          |
+| Provider | Raw field in provider response                                                           | Direction                                   | Window evidence                                                                                                                              |
+| -------- | ---------------------------------------------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude   | `five_hour.utilization`, `seven_day*.utilization`                                        | consumed; `100 − utilization`               | Provider keys identify 5 hours and 7 days; model scope goes in the tooltip.                                                                  |
+| Codex    | `rate_limit.*_window.used_percent`                                                       | consumed; `100 − used_percent`              | `limit_window_seconds`; primary is Short-term, secondary without duration is unknown.                                                        |
+| Z.ai     | `data.limits[].percentage` for `TOKENS_LIMIT`                                            | consumed; `100 − percentage`                | Raw `unit` / `number` pairs (3/5 = 5 h, 6/1 = 7 days, 5/1 = month); unqualified pairs stay unknown. Never list position or reset proximity.  |
+| MiniMax  | `model_remains[].current_interval_remaining_percent`, `current_weekly_remaining_percent` | remaining; preserve, invalid values unknown | `start_time` / `end_time`, weekly counterparts, or the documented 5-hour/weekly bucket identity. Status 2 explicitly establishes exhaustion. |
+| xAI      | no quota reading in the account-health source                                            | unavailable                                 | Em dash, “Anbieter meldet kein Limit”.                                                                                                       |
+| Kimi     | `data.available_balance` is money, no allowance percentage                               | unavailable                                 | Em dash for no quota; a reported monetary balance remains separate.                                                                          |
 
 Code evidence: `native/provider-gateway-workjet-host/src/account_health.rs`
 (`parse_api_quota`, `parse_usage`, `api_quota_endpoint`, `parse_balance`), and
@@ -51,3 +51,12 @@ Verification uses only synthetic account names and empty model lists, with
 clean browser contexts at 1440 and 420 pixels. The component harness renders
 the real provider table and normalizer; account mutations, authentication,
 upstream calls and the installed product are outside this scoped UI check.
+
+## Synthetic review images
+
+| Width   | Before                                                        | Normalized raw metadata                                     | Current host compatibility                                    |
+| ------- | ------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------- |
+| 1440 px | [Before](assets/model-limits-20261011/limits-before-1440.png) | [After](assets/model-limits-20261011/limits-after-1440.png) | [Legacy](assets/model-limits-20261011/limits-legacy-1440.png) |
+| 420 px  | [Before](assets/model-limits-20261011/limits-before-420.png)  | [After](assets/model-limits-20261011/limits-after-420.png)  | [Legacy](assets/model-limits-20261011/limits-legacy-420.png)  |
+
+Captured from display source `50b2ffe2e939429d3b35bd328d1e25056e503c43`; six clean-context/reload cases passed.

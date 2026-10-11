@@ -47,6 +47,9 @@ export const ComputerMetadata = Schema.Struct({
   identityFiles: Schema.Array(Text),
   status: Schema.Literals(["ready", "unreachable", "unverified"]),
   error: Schema.NullOr(Text),
+  assignment: Schema.optionalKey(
+    Schema.Struct({ instanceId: Text, confirmation: Schema.Literals(["unverified", "confirmed"]) }),
+  ),
   previousIds: Schema.Array(Text),
   /** Retained public legacy rows/configurations; never credentials. */
   legacyRecords: Schema.Array(Schema.Unknown),

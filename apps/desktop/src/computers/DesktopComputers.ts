@@ -436,12 +436,42 @@ export const make = Effect.gen(function* () {
         if (result._tag === "completed" && result.response.action === "computer.assign") {
           const confirmed = result.response.computer;
           if (
-            confirmed.active !== metadata.active ||
-            confirmed.roles?.build !== metadata.roles.build ||
-            confirmed.roles?.storage !== metadata.roles.storage ||
-            confirmed.detectedFacts?.checkedAt !== metadata.facts!.checkedAt
+            (confirmed.active !== undefined && confirmed.active !== metadata.active) ||
+            (confirmed.roles !== undefined &&
+              (confirmed.roles.build !== metadata.roles.build ||
+                confirmed.roles.storage !== metadata.roles.storage)) ||
+            (confirmed.detectedFacts !== undefined &&
+              confirmed.detectedFacts.checkedAt !== metadata.facts!.checkedAt) ||
+            (confirmed.hostKeyFingerprint !== undefined &&
+              confirmed.hostKeyFingerprint !== metadata.hostKeyFingerprint)
           )
             return { _tag: "failed" as const, code: "unsupported" as const };
+          const confirmation =
+            confirmed.active !== undefined &&
+            confirmed.roles !== undefined &&
+            confirmed.detectedFacts !== undefined &&
+            confirmed.hostKeyFingerprint !== undefined
+              ? ("confirmed" as const)
+              : ("unverified" as const);
+          const current = yield* read();
+          yield* write(
+            {
+              ...current,
+              computers: current.computers.map((row) =>
+                row.id === computer.id && row.metadata
+                  ? {
+                      ...row,
+                      metadata: {
+                        ...row.metadata,
+                        assignment: { instanceId, confirmation },
+                        ...(confirmation === "unverified" ? { status: "unverified" as const } : {}),
+                      },
+                    }
+                  : row,
+              ),
+            },
+            current,
+          );
         }
         return result;
       }).pipe(

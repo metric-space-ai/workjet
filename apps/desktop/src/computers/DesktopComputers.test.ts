@@ -58,6 +58,7 @@ const fixture = Effect.gen(function* () {
   const writes = yield* Ref.make(0);
   const requests = yield* Ref.make<readonly CtoxWorkjetComputerControlRequest[]>([]);
   const supportsDetected = yield* Ref.make(true);
+  const wrongActive = yield* Ref.make(false);
   const session = {
     ready: Effect.void,
     client: {
@@ -93,6 +94,7 @@ const fixture = Effect.gen(function* () {
           if (request.action !== "computer.assign")
             return { _tag: "failed", code: "unsupported" } as const;
           const support = yield* Ref.get(supportsDetected);
+          const mismatch = yield* Ref.get(wrongActive);
           const response: CtoxWorkjetComputerControlResult = {
             _tag: "completed",
             response: {
@@ -106,9 +108,10 @@ const fixture = Effect.gen(function* () {
                 selfHostedColocation: false,
                 ...(support
                   ? {
-                      active: request.active,
+                      active: mismatch ? !request.active : request.active,
                       roles: request.roles,
                       detectedFacts: request.detectedFacts,
+                      hostKeyFingerprint: request.hostKeyFingerprint,
                     }
                   : {}),
               },
@@ -119,7 +122,7 @@ const fixture = Effect.gen(function* () {
     } as CtoxGuestManager["Service"]),
   );
   const service = yield* make.pipe(Effect.provide(dependencies));
-  return { service, state, writes, requests, supportsDetected, computer };
+  return { service, state, writes, requests, supportsDetected, wrongActive, computer };
 });
 it.effect(
   "lists without writes and persists activation and roles through the existing settings session",
@@ -160,7 +163,7 @@ it.effect("removes only the computer record without invoking remote cleanup", ()
   ),
 );
 it.effect(
-  "sends detected facts and flags and refuses to claim support when native ignores them",
+  "keeps legacy native assignments valid and marks their locally retained facts unconfirmed",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -175,11 +178,36 @@ it.effect(
           detectedFacts: facts,
         });
         expect((yield* Ref.get(test.requests))[0]).not.toHaveProperty("capabilityConfig");
+        expect((yield* Ref.get(test.state)).computers[0]?.metadata?.assignment).toEqual({
+          instanceId: "fixture-instance",
+          confirmation: "confirmed",
+        });
         yield* Ref.set(test.supportsDetected, false);
-        expect(yield* test.service.assign(test.computer.id, "fixture-instance")).toEqual({
-          _tag: "failed",
-          code: "unsupported",
+        expect((yield* test.service.assign(test.computer.id, "legacy-instance"))._tag).toBe(
+          "completed",
+        );
+        const listed = yield* test.service.control({ _tag: "list" });
+        expect(listed.computers[0]?.metadata).toMatchObject({
+          status: "unverified",
+          active: false,
+          roles: { build: true, storage: false },
+          facts,
+          assignment: { instanceId: "legacy-instance", confirmation: "unverified" },
         });
       }),
     ),
+);
+
+it.effect("rejects conflicting values from native instances that support detected fields", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      yield* Ref.set(test.wrongActive, true);
+      expect(yield* test.service.assign(test.computer.id, "fixture-instance")).toEqual({
+        _tag: "failed",
+        code: "unsupported",
+      });
+      expect(yield* Ref.get(test.writes)).toBe(0);
+    }),
+  ),
 );

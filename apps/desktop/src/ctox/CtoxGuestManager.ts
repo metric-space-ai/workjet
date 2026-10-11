@@ -59,6 +59,8 @@ import { accessState } from "./CtoxInstancePreferences.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import { isLaunchableCtoxLocalDaemon } from "./CtoxLocalDaemonSource.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
+import { recoverManagedAfterLogin } from "./CtoxKeyRecovery.ts";
 import * as CtoxSshManagedLaunch from "./CtoxSshManagedLaunch.ts";
 import { isLaunchableCtoxSshManagedInstance } from "./CtoxSshManagedSource.ts";
 import {
@@ -1018,6 +1020,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const localLaunch = yield* CtoxLocalDaemonLaunch.CtoxLocalDaemonLaunch;
     const sshLaunch = yield* CtoxSshManagedLaunch.CtoxSshManagedLaunch;
     const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+    const keyRecovery = Option.getOrUndefined(yield* Effect.serviceOption(DesktopKeyRecovery));
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const electronShell = yield* ElectronShell.ElectronShell;
     const context = yield* Effect.context<never>();
@@ -1230,6 +1233,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
             )
           : ({ _tag: "signed_out" } as const);
+        if (keyRecovery !== undefined)
+          yield* recoverManagedAfterLogin({
+            discovery: managed,
+            recovery: keyRecovery,
+            reconnect: (instance) =>
+              Effect.andThen(sessions.instance(instance), launches.launch(instance)),
+          }).pipe(Effect.orElseSucceed(() => undefined));
         const discovery = yield* registry.merge(managed);
         const descriptor =
           discovery._tag === "ready"

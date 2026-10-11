@@ -44,6 +44,7 @@ import * as CtoxInstancePreferences from "./CtoxInstancePreferences.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 import * as CtoxSshManagedLaunch from "./CtoxSshManagedLaunch.ts";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -155,7 +156,10 @@ const pairedConfig: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
   },
 };
 
-function makeGuestHarness(windowOwners?: readonly BrowserWindow[]) {
+function makeGuestHarness(
+  windowOwners?: readonly BrowserWindow[],
+  recovery?: DesktopKeyRecovery["Service"],
+) {
   const beforeRequest = vi.fn();
   const browserSession = {
     webRequest: { onBeforeRequest: beforeRequest },
@@ -393,6 +397,7 @@ function makeGuestHarness(windowOwners?: readonly BrowserWindow[]) {
     copyText: () => Effect.void,
   });
   const dependencies = Layer.mergeAll(
+    recovery === undefined ? Layer.empty : Layer.succeed(DesktopKeyRecovery, recovery),
     Layer.succeed(CtoxBusinessOsShell.CtoxBusinessOsShell, businessOsShell),
     Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
     Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
@@ -1053,6 +1058,68 @@ describe("CtoxGuestManager", () => {
           code: "not_active",
         });
         expect(harness.createView).toHaveBeenCalledOnce();
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "automatically repairs before project.list without opening login or retrying the generation",
+    () => {
+      let pendingLogin = true;
+      let claimed = false;
+      const completed: string[] = [];
+      const recovery = DesktopKeyRecovery.of({
+        inspect: Effect.sync(() => ({
+          version: 1,
+          generation: "1-11111111-1111-4111-8111-111111111111",
+          pendingLogin,
+          unreadableStores: ["ctox"],
+          ctoxRetired: true,
+        })),
+        beginManagedRepair: () =>
+          Effect.sync(() => {
+            if (claimed) return false;
+            claimed = true;
+            pendingLogin = false;
+            return true;
+          }),
+        recordInstanceRepair: (id, state) =>
+          Effect.sync(() => {
+            assert.equal(state, "repaired");
+            completed.push(id);
+          }),
+        completeLogin: Effect.sync(() => {
+          pendingLogin = false;
+        }),
+      });
+      const harness = makeGuestHarness(undefined, recovery);
+      const response = {
+        action: "project.list" as const,
+        projects: [],
+        count: 0,
+        truncated: false as const,
+      };
+      harness.setLoadURLImplementation(async (url, emit) => {
+        harness.views
+          .at(-1)
+          ?.executeJavaScript.mockResolvedValue({ status: "completed", result: response });
+        queueMicrotask(() => emit("did-frame-navigate", {}, url, 200, "OK", true, 1, 1));
+      });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          { _tag: "completed", response },
+        );
+        assert.deepEqual(completed, [descriptor.id]);
+        assert.isFalse(pendingLogin);
+        // The repair exchange and the normal guest launch each run once.
+        expect(harness.launch).toHaveBeenCalledTimes(2);
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          { _tag: "completed", response },
+        );
+        expect(harness.launch).toHaveBeenCalledTimes(2);
       }).pipe(Effect.provide(harness.layer));
     },
   );

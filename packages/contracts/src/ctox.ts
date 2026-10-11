@@ -404,6 +404,17 @@ export type CtoxManagedDiscoveryResult = typeof CtoxManagedDiscoveryResult.Type;
 const CtoxKeyRecoveryStatus = Schema.Struct({
   pendingLogin: Schema.Boolean,
   connectionCatalogReset: Schema.Boolean,
+  generation: Schema.optionalKey(Schema.String),
+  repairingInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
+  repairedInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
+  instanceIssues: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        instanceId: CtoxManagedInstanceId,
+        reason: Schema.Literals(["repair_failed", "login_required", "pairing_required"]),
+      }),
+    ),
+  ),
 });
 export const CtoxDiscoveryResult = Schema.Union([
   Schema.TaggedStruct("ready", {

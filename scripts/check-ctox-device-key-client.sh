@@ -3,6 +3,8 @@
 set -euo pipefail
 export RUST_TEST_THREADS=2
 files=(
+  docs/internals/ctox-device-keys.md
+  docs/user/ctox-device-keys.md
   apps/desktop/src/ctox/fixtures/ctox-dev-desktop-device-proof.mjs
   apps/desktop/src/ctox/fixtures/ctox-dev-desktop-device-proof.d.mts
   apps/desktop/tsconfig.json
@@ -14,6 +16,7 @@ files=(
   apps/desktop/src/ctox/CtoxDeviceProofKey.ts
   apps/desktop/src/ctox/CtoxDeviceRequestProof.test.ts
   apps/desktop/src/ctox/CtoxManagedLaunch.ts
+  apps/desktop/src/ctox/CtoxManagedLaunch.test.ts
   apps/desktop/src/app/DesktopKeyRecovery.test.ts
   apps/desktop/src/ipc/channels.ts
   apps/desktop/src/ipc/methods/ctox.ts

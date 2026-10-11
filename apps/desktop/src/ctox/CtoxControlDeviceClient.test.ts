@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 import { makeControlDeviceClient } from "./CtoxControlDeviceClient.ts";
 import {
@@ -30,9 +31,9 @@ function fixture() {
           devices: [
             {
               id: "key",
-              created_at: new Date(now).toISOString(),
+              created_at: DateTime.formatIso(DateTime.makeUnsafe(now)),
               last_used_at: null,
-              revoked_at: revoked ? new Date(now).toISOString() : null,
+              revoked_at: revoked ? DateTime.formatIso(DateTime.makeUnsafe(now)) : null,
               expired: false,
             },
           ],
@@ -50,7 +51,7 @@ function fixture() {
           device: {
             id: "key",
             thumbprint: deviceKeyThumbprint(body.public_jwk),
-            created_at: new Date(now).toISOString(),
+            created_at: DateTime.formatIso(DateTime.makeUnsafe(now)),
           },
         },
         201,
@@ -62,7 +63,7 @@ function fixture() {
       if (failures-- > 0) return json({ error: "DEVICE_SERVICE_UNAVAILABLE" }, 503);
       const nonce = Buffer.alloc(32, challenges).toString("base64url");
       nonces.add(nonce);
-      return json({ nonce, expiresAt: new Date(now + 60_000).toISOString() });
+      return json({ nonce, expiresAt: DateTime.formatIso(DateTime.makeUnsafe(now + 60_000)) });
     }
     const headers = new Headers(init.headers);
     const nonce = headers.get("x-ctox-device-nonce") ?? "";
@@ -187,6 +188,17 @@ describe("control-plane device client", () => {
     expect(saved.pkcs8).toBeTruthy();
     await client.enroll(f.fetcher);
     expect(f.enrollments).toHaveLength(2);
+  });
+  it("does not reuse cached discovery after the key becomes invalid", async () => {
+    const f = fixture();
+    const client = f.open();
+    await client.enroll(f.fetcher);
+    expect(await client.recoverOnce()).toBeDefined();
+    f.revoke();
+    await expect(client.request("/api/desktop/discovery", { method: "GET" })).rejects.toThrow(
+      "DEVICE_AUTH_REQUIRED",
+    );
+    expect(await client.recoverOnce()).toBeUndefined();
   });
   it("bounds startup retries and honors idle expiry", async () => {
     const f = fixture();

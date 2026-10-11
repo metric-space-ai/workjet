@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import * as DateTime from "effect/DateTime";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { createCtoxDeviceProofKey, restoreCtoxDeviceProofKey } from "./CtoxDeviceProofKey.ts";
@@ -73,7 +74,7 @@ export function makeControlDeviceClient(input: {
 }) {
   const baseUrl = normalizeCtoxManagedBaseUrl(input.baseUrl);
   if (baseUrl === undefined) throw new CtoxControlDeviceError("DEVICE_CONFIGURATION_INVALID");
-  const now = input.now ?? (() => Date.now());
+  const now = input.now ?? (() => DateTime.toEpochMillis(DateTime.nowUnsafe()));
   let notice: string | undefined;
   let recovery: Promise<Response | undefined> | undefined;
   let queue = Promise.resolve();
@@ -114,16 +115,14 @@ export function makeControlDeviceClient(input: {
         : {
             createdAt: record.createdAt,
             lastUsedAt: record.lastUsedAt,
-            expiresAt: new Date(expiry(record)).toISOString(),
+            expiresAt: DateTime.formatIso(DateTime.makeUnsafe(expiry(record))),
           }),
       ...(notice === undefined ? {} : { notice }),
     };
   };
   const checked = async (response: Response) => {
     if (response.ok) return response;
-    const decoded = decodeFailure(
-      await response.json().catch(() => undefined),
-    );
+    const decoded = decodeFailure(await response.json().catch(() => undefined));
     const code =
       decoded._tag === "Some"
         ? decoded.value.error === "AUTH_REQUIRED"
@@ -188,7 +187,7 @@ export function makeControlDeviceClient(input: {
             ...(init.method === "POST" ? { body } : {}),
           }),
         );
-        await save({ ...record, lastUsedAt: new Date(now()).toISOString() });
+        await save({ ...record, lastUsedAt: DateTime.formatIso(DateTime.makeUnsafe(now())) });
         notice = undefined;
         return result;
       } catch (error) {
@@ -244,9 +243,7 @@ export function makeControlDeviceClient(input: {
             body: JSON.stringify({ public_jwk: key.publicJwk, label: "Workjet Desktop" }),
           });
           try {
-            const row = decodeEnrollment(
-              await (await checked(response)).json(),
-            ).device;
+            const row = decodeEnrollment(await (await checked(response)).json()).device;
             if (row.thumbprint !== key.thumbprint || !Number.isFinite(Date.parse(row.created_at)))
               throw new CtoxControlDeviceError("DEVICE_SERVICE_UNAVAILABLE");
             await save({
@@ -311,7 +308,7 @@ export function makeControlDeviceClient(input: {
         }
         return undefined;
       })();
-      return recovery;
+      return recovery.then(async (response) => (active(await read()) ? response : undefined));
     },
     suspend: () =>
       exclusive(async () => {

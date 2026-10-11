@@ -217,6 +217,33 @@ afterEach(() => {
 });
 
 describe("CtoxDevAuth", () => {
+  it.effect("enrolls only after an ordinary login completes using the account session", () => {
+    const engine = makeControlDeviceClient({
+      baseUrl: "https://ctox.dev",
+      read: async () => undefined,
+      write: async () => undefined,
+      fetch: async () => new Response(),
+    });
+    const enroll = vi.fn(async (cookieFetch: Parameters<typeof engine.enroll>[0]) => {
+      await cookieFetch("https://ctox.dev/api/desktop/device-keys", { method: "POST" });
+    });
+    const h = makeHarness({ device: { ...engine, enroll } });
+    return Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      const login = yield* Effect.forkChild(auth.login);
+      const window = yield* waitForWindow(h);
+      yield* waitForLoginLoad(window);
+      assert.equal(enroll.mock.calls.length, 0);
+      window.emitWebContents("did-navigate", {}, "https://ctox.dev/desktop/auth/complete");
+      const completed = yield* Fiber.join(login);
+      assert.equal(completed._tag, "completed");
+      assert.equal(enroll.mock.calls.length, 1);
+      assert.isTrue(
+        h.fetchImpl.mock.calls.some(([url]) => url === "https://ctox.dev/api/desktop/device-keys"),
+      );
+    }).pipe(Effect.provide(h.layer), Effect.scoped);
+  });
+
   it.effect("recovers signed-out managed discovery without opening a login window", () => {
     const device = makeControlDeviceClient({
       baseUrl: "https://ctox.dev",

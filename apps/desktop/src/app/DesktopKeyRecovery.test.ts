@@ -77,6 +77,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
         let deviceBytes: Uint8Array | undefined;
         const controlDevice = makeControlDeviceClient({
           baseUrl: "http://127.0.0.1:3107",
+          now: () => Date.parse("2026-10-11T17:00:00Z"),
           read: async () => deviceBytes,
           write: async (bytes) => {
             deviceBytes = bytes;
@@ -86,7 +87,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
               return new Response(
                 JSON.stringify({
                   nonce: Buffer.alloc(32, 7).toString("base64url"),
-                  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                  expiresAt: "2026-10-11T17:01:00Z",
                 }),
               );
             return new Response(
@@ -114,7 +115,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
               .digest("base64url");
             return new Response(
               JSON.stringify({
-                device: { id: "fixture-device", thumbprint, created_at: new Date().toISOString() },
+                device: { id: "fixture-device", thumbprint, created_at: "2026-10-11T17:00:00Z" },
               }),
               { status: 201 },
             );

@@ -1,9 +1,12 @@
 import { ProviderInteractionMode } from "@workjet/contracts";
-import { memo, type ReactNode } from "react";
+import { createContext, memo, useContext, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { SettingsIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
+  MenuGroup,
+  MenuGroupLabel,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -11,7 +14,44 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 
-export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
+/** Sichtbarer und zugänglicher Name des Zahnrad-Menüs. */
+export const COMPOSER_OPTIONS_MENU_LABEL = "Optionen";
+
+/**
+ * Inline-Zeilen des Composers (Systemprompt): Ein Eintrag im Optionen-Menü
+ * öffnet sie, sie selbst stehen als Zeile unter der Composer-Leiste – nie als
+ * Popup. Dasselbe Element wird einmal im Menü (`placement: "menu"`) und
+ * einmal außerhalb (`placement: "row"`) gerendert; der Zustand lebt hier, weil
+ * das Menü beim Klick schließt und seinen Inhalt aushängt.
+ */
+export interface ComposerInlineRowContextValue {
+  readonly placement: "menu" | "row";
+  readonly openRow: string | null;
+  readonly setOpenRow: (row: string | null) => void;
+  /** Das Zahnrad; von dort aus wird der Fuß des Composers gefunden. */
+  readonly anchor: HTMLElement | null;
+}
+
+const ComposerInlineRowContext = createContext<ComposerInlineRowContextValue | null>(null);
+
+export function useComposerInlineRow(): ComposerInlineRowContextValue | null {
+  return useContext(ComposerInlineRowContext);
+}
+
+/** Wohin die Zeile gehört: ans Ende der Composer-Fläche, direkt unter den Fuß. */
+export function composerInlineRowHost(anchor: HTMLElement | null): HTMLElement | null {
+  const footer = anchor?.closest<HTMLElement>('[data-chat-composer-footer="true"]') ?? null;
+  return footer?.parentElement ?? null;
+}
+
+/** Hängt die Zeile unter den Composer-Fuß; ohne Composer bleibt sie an Ort und Stelle. */
+export function ComposerInlineRow({ children }: { readonly children: ReactNode }) {
+  const context = useComposerInlineRow();
+  const host = composerInlineRowHost(context?.anchor ?? null);
+  return host ? createPortal(children, host) : <>{children}</>;
+}
+
+export interface CompactComposerControlsMenuProps {
   interactionMode: ProviderInteractionMode;
   showInteractionModeToggle: boolean;
   /** Worker + Computer groups, so both choices exist below the breakpoint. */
@@ -24,78 +64,121 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   systemPromptMenuContent?: ReactNode;
   workjetMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
-}) {
+}
+
+export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(
+  props: CompactComposerControlsMenuProps,
+) {
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
-    <Menu>
-      <MenuTrigger
-        render={
-          <Button
-            size="sm"
-            variant="ghost"
-            className="shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80"
-            aria-label="Advanced settings"
-            title="Advanced settings"
-          />
-        }
-      >
-        <SettingsIcon aria-hidden="true" className="size-4" />
-      </MenuTrigger>
-      <MenuPopup align="start">
-        {props.extraMenuContent ? (
-          <>
-            {props.extraMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
-        {props.workerMenuContent ? (
-          <>
-            {props.workerMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
-        {props.traitsMenuContent ? (
-          <>
-            {props.traitsMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
-        {props.contextWindowMenuContent ? (
-          <>
-            {props.contextWindowMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
-        {props.systemPromptMenuContent ? (
-          <>
-            {props.systemPromptMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
-        {props.workjetMenuContent ? (
-          <>
-            {props.workjetMenuContent}
-            <MenuDivider />
-          </>
-        ) : null}
-        {props.showInteractionModeToggle ? (
-          <>
-            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Mode</div>
-            <MenuRadioGroup
-              value={props.interactionMode}
-              onValueChange={(value) => {
-                if (!value || value === props.interactionMode) return;
-                props.onToggleInteractionMode();
-              }}
-            >
-              <MenuRadioItem value="default">Build</MenuRadioItem>
-              <MenuRadioItem value="plan">Plan</MenuRadioItem>
-            </MenuRadioGroup>
-            <MenuDivider />
-          </>
-        ) : null}
-        {/* No Access group: permission is ALWAYS full by the operator's
-            rule, and DEFAULT_RUNTIME_MODE is "full-access" already. */}
-      </MenuPopup>
-    </Menu>
+    <CompactComposerControlsMenuView
+      {...props}
+      openRow={openRow}
+      setOpenRow={setOpenRow}
+      anchor={anchor}
+      setAnchor={setAnchor}
+    />
   );
 });
+
+/** Hook-frei, damit Tests den Menübaum direkt prüfen können. */
+export function CompactComposerControlsMenuView(
+  props: CompactComposerControlsMenuProps & {
+    readonly openRow: string | null;
+    readonly setOpenRow: (row: string | null) => void;
+    readonly anchor: HTMLElement | null;
+    readonly setAnchor: (anchor: HTMLElement | null) => void;
+  },
+) {
+  const { openRow, setOpenRow, anchor, setAnchor } = props;
+  const menuContext: ComposerInlineRowContextValue = {
+    placement: "menu",
+    openRow,
+    setOpenRow,
+    anchor,
+  };
+  const rowContext: ComposerInlineRowContextValue = { ...menuContext, placement: "row" };
+  return (
+    <>
+      <Menu>
+        <MenuTrigger
+          ref={setAnchor}
+          render={
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80"
+              aria-label={COMPOSER_OPTIONS_MENU_LABEL}
+              title={COMPOSER_OPTIONS_MENU_LABEL}
+            />
+          }
+        >
+          <SettingsIcon aria-hidden="true" className="size-4" />
+        </MenuTrigger>
+        <MenuPopup align="start" side="top" className="max-w-80">
+          <ComposerInlineRowContext.Provider value={menuContext}>
+            {props.extraMenuContent ? (
+              <>
+                {props.extraMenuContent}
+                <MenuDivider />
+              </>
+            ) : null}
+            {props.workerMenuContent ? (
+              <>
+                {props.workerMenuContent}
+                <MenuDivider />
+              </>
+            ) : null}
+            {props.traitsMenuContent ? (
+              <>
+                {props.traitsMenuContent}
+                <MenuDivider />
+              </>
+            ) : null}
+            {props.contextWindowMenuContent ? (
+              <>
+                {props.contextWindowMenuContent}
+                <MenuDivider />
+              </>
+            ) : null}
+            {props.systemPromptMenuContent ? (
+              <>
+                {props.systemPromptMenuContent}
+                <MenuDivider />
+              </>
+            ) : null}
+            {props.workjetMenuContent ? (
+              <>
+                {props.workjetMenuContent}
+                <MenuDivider />
+              </>
+            ) : null}
+            {props.showInteractionModeToggle ? (
+              <MenuGroup>
+                <MenuGroupLabel>Modus</MenuGroupLabel>
+                <MenuRadioGroup
+                  value={props.interactionMode}
+                  onValueChange={(value) => {
+                    if (!value || value === props.interactionMode) return;
+                    props.onToggleInteractionMode();
+                  }}
+                >
+                  <MenuRadioItem value="default">Bauen</MenuRadioItem>
+                  <MenuRadioItem value="plan">Planen</MenuRadioItem>
+                </MenuRadioGroup>
+              </MenuGroup>
+            ) : null}
+            {/* No Access group: permission is ALWAYS full by the operator's
+                rule, and DEFAULT_RUNTIME_MODE is "full-access" already. */}
+          </ComposerInlineRowContext.Provider>
+        </MenuPopup>
+      </Menu>
+      {openRow !== null && props.systemPromptMenuContent ? (
+        <ComposerInlineRowContext.Provider value={rowContext}>
+          {props.systemPromptMenuContent}
+        </ComposerInlineRowContext.Provider>
+      ) : null}
+    </>
+  );
+}

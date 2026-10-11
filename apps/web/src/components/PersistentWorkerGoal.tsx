@@ -1,5 +1,10 @@
 import { lazy, Suspense, useState } from "react";
 import type { WorkjetThreadConfig, WorkjetThreadGoal } from "@workjet/contracts";
+import { PauseIcon, PencilIcon, PlayIcon } from "lucide-react";
+
+import { Button } from "./ui/button";
+import { InlinePanel } from "./ui/inline-panel";
+import { Textarea } from "./ui/textarea";
 
 const WorkerKanban = lazy(() => import("./PersistentWorkerKanban"));
 
@@ -70,10 +75,10 @@ export function PersistentWorkerGoal({
         setEditing(false);
         setObjective(null);
       } else {
-        setError("Das Ziel konnte nicht gespeichert werden. Der Entwurf bleibt erhalten.");
+        setError("Ziel nicht gespeichert, Entwurf bleibt erhalten");
       }
     } catch {
-      setError("Das Ziel konnte nicht gespeichert werden. Der Entwurf bleibt erhalten.");
+      setError("Ziel nicht gespeichert, Entwurf bleibt erhalten");
     } finally {
       setBusy(false);
     }
@@ -97,23 +102,28 @@ export function PersistentWorkerGoal({
           </p>
         </div>
         {onChangeGoal ? (
-          <div className="flex shrink-0 flex-wrap gap-2 text-xs">
-            <button
-              type="button"
-              disabled={busy || disabled}
-              className="underline underline-offset-2"
-              onClick={() => {
-                setEditing(!editing);
-                setError(null);
-              }}
-            >
-              {editing ? "Abbrechen" : goal ? "Ziel ändern" : "Ziel festlegen"}
-            </button>
-            {goal ? (
-              <button
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {editing ? null : (
+              <Button
                 type="button"
+                size="sm"
+                variant="outline"
                 disabled={busy || disabled}
-                className="underline underline-offset-2"
+                onClick={() => {
+                  setEditing(true);
+                  setError(null);
+                }}
+              >
+                <PencilIcon aria-hidden="true" />
+                {goal ? "Ziel ändern" : "Ziel festlegen"}
+              </Button>
+            )}
+            {goal ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy || disabled}
                 onClick={() =>
                   void change({
                     status: goal.status === "active" ? "paused" : "active",
@@ -121,50 +131,50 @@ export function PersistentWorkerGoal({
                   })
                 }
               >
+                {goal.status === "active" ? (
+                  <PauseIcon aria-hidden="true" />
+                ) : (
+                  <PlayIcon aria-hidden="true" />
+                )}
                 {goal.status === "active" ? "Pausieren" : "Fortsetzen"}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}
       </div>
-      {editing ? (
-        <form
-          className="mt-2 grid gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
+      {editing && onChangeGoal ? (
+        <InlinePanel
+          className="mt-2"
+          triggerLabel={goal ? "Ziel ändern" : "Ziel festlegen"}
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditing(false);
+              setObjective(null);
+              setError(null);
+            }
+          }}
+          submitLabel={busy ? "Speichert…" : goal ? "Ziel speichern" : "Ziel setzen und starten"}
+          submitDisabled={disabled || !(objective ?? text).trim()}
+          busy={busy}
+          onSubmit={() =>
             void change({
               objective: (objective ?? text).trim(),
               status: goal?.status === "paused" ? "paused" : "active",
               ...(goal ? { expectedRevision: goal.revision } : {}),
-            });
-          }}
+            })
+          }
         >
-          <label className="text-xs">
-            Zieldefinition
-            <textarea
-              className="mt-1 block w-full rounded border border-border bg-background p-2 text-sm"
-              aria-label="Zieldefinition"
-              maxLength={4096}
-              required
-              rows={3}
-              disabled={busy || disabled}
-              value={objective ?? text}
-              onChange={(event) => setObjective(event.target.value)}
-            />
-          </label>
-          <div className="flex items-center gap-3 text-xs">
-            <button
-              type="submit"
-              className="rounded border border-border px-2 py-1"
-              disabled={busy || disabled || !(objective ?? text).trim()}
-            >
-              {busy ? "Wird gespeichert…" : goal ? "Ziel speichern" : "Ziel setzen und starten"}
-            </button>
-            <span className="text-muted-foreground">
-              Gespeichert für diesen Worker; kein Abschlussnachweis.
-            </span>
-          </div>
-        </form>
+          <Textarea
+            autoFocus
+            aria-label="Zieldefinition"
+            maxLength={4096}
+            rows={3}
+            disabled={busy || disabled}
+            value={objective ?? text}
+            onChange={(event) => setObjective(event.target.value)}
+          />
+        </InlinePanel>
       ) : null}
       {error ? (
         <p className="mt-2 text-xs text-destructive" role="alert">
@@ -184,10 +194,7 @@ export function PersistentWorkerGoal({
                 <WorkerKanban snapshot={goal.kanban.slideDocument} />
               </Suspense>
             ) : (
-              <p className="text-muted-foreground">
-                Für diesen Durchlauf liegt noch kein Mini-Kanban des Workers vor. Der Worker
-                aktualisiert es am Beginn des Durchlaufs.
-              </p>
+              <p className="text-muted-foreground">Noch kein Mini-Kanban des Workers</p>
             )}
             <p className="mt-2 text-muted-foreground">
               Ziel gespeichert · Revision {goal.revision} ·{" "}
@@ -202,9 +209,7 @@ export function PersistentWorkerGoal({
           </div>
         </details>
       ) : (
-        <p className="mt-1 text-xs text-muted-foreground">
-          Der gespeicherte Team-Auftrag startet noch keine Zielschleife.
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">Zielschleife nicht gestartet</p>
       )}
     </section>
   );

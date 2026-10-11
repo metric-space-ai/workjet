@@ -1,17 +1,18 @@
-import type { ReactNode } from "react";
+import { isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
-vi.mock("../ui/expandable-settings-popup", () => ({
-  ExpandableSettingsPopup: ({ trigger, list }: { trigger: ReactNode; list: ReactNode }) => (
-    <>
-      {trigger}
-      {list}
-    </>
-  ),
-}));
+import {
+  ComposerManualTargetControlsView,
+  ComposerModelMenuItems,
+} from "./ComposerWorkjetTargetControls";
 
-import { ComposerManualTargetControlsView } from "./ComposerWorkjetTargetControls";
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join(" ");
+  if (isValidElement<{ children?: ReactNode }>(node)) return textOf(node.props.children);
+  return "";
+}
 
 const base = {
   configuredInstanceIds: new Set(["greppy-fixture"]),
@@ -36,28 +37,41 @@ describe("Greppy configured model menu", () => {
     );
     expect(markup).toContain('data-model-catalog-source="configured"');
     expect(markup).toContain("Private Claude");
-    expect(markup).toContain("Configured models");
-    expect(markup).toContain("Availability is checked when a turn starts.");
-    expect(markup).toContain("Custom model ID");
-    expect(markup).not.toContain('aria-label="Claude"');
-    expect(markup).not.toContain("Served by the Workjet gateway");
-  });
-
-  it("keeps an unlisted current model and the custom-ID editor available", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerManualTargetControlsView
-        {...base}
-        modelSource="configured"
-        models={[]}
-        selectedModelId="company/private:v2"
-      />,
+    const entries = textOf(
+      ComposerModelMenuItems({
+        modelSource: "configured",
+        models: [
+          { id: "claude-local", displayName: "Private Claude", providers: [], accountIds: [] },
+        ],
+        modelsUnavailableReason: null,
+        selectedModelId: "claude-local",
+        onSelectModel: () => undefined,
+        onEditCustomModel: () => undefined,
+      }),
     );
-    expect(markup).toContain("company/private:v2");
-    expect(markup).toContain("Current custom model");
-    expect(markup).toContain("Custom model ID");
+    expect(entries).toContain("Private Claude");
+    expect(entries).toContain("Eigene Modell-ID");
+    // A configured profile has no provider grouping: "Claude" must not become a group label.
+    expect(entries.match(/Claude/g)?.length).toBe(1);
   });
 
-  it("retains the existing gateway catalog and provider rail for gateway routing", () => {
+  it("keeps an unlisted current model and the custom-ID entry available", () => {
+    const entries = textOf(
+      ComposerModelMenuItems({
+        modelSource: "configured",
+        models: [],
+        modelsUnavailableReason: null,
+        selectedModelId: "company/private:v2",
+        onSelectModel: () => undefined,
+        onEditCustomModel: () => undefined,
+      }),
+    );
+    expect(entries).toContain("company/private:v2");
+    expect(entries).toContain("eigene ID");
+    expect(entries).toContain("Eigene Modell-ID");
+  });
+
+  it("groups the gateway catalog by provider", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView
         {...base}
@@ -73,8 +87,23 @@ describe("Greppy configured model menu", () => {
       />,
     );
     expect(markup).toContain('data-model-catalog-source="gateway"');
-    expect(markup).toContain('aria-label="Claude"');
-    expect(markup).toContain("Served by the Workjet gateway");
     expect(markup).toContain("Gateway Claude");
+    const entries = textOf(
+      ComposerModelMenuItems({
+        models: [
+          {
+            id: "claude-gateway",
+            displayName: "Gateway Claude",
+            providers: ["claude"],
+            accountIds: [],
+          },
+        ],
+        modelsUnavailableReason: null,
+        selectedModelId: "claude-gateway",
+        onSelectModel: () => undefined,
+      }),
+    );
+    expect(entries).toContain("Claude");
+    expect(entries).toContain("Gateway Claude");
   });
 });

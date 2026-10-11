@@ -91,6 +91,12 @@ describe("persistent worker goal display", () => {
     expect(text).toContain("Ziel ändern");
     expect(text).toContain("Pausieren");
   });
+  it("renders goal actions as real buttons, never underlined text", () => {
+    const text = html();
+    expect(text).not.toContain("underline");
+    expect(text).toMatch(/<button[^>]*data-slot="button"[^>]*>.*Ziel ändern/s);
+    expect(text).not.toContain("kein Abschlussnachweis");
+  });
   it("shows the same objective and state compactly", () => {
     expect(html(config, true)).toContain("Läuft · Durchlauf 2");
     expect(html(config, true)).not.toContain("Mini-Kanban");
@@ -167,7 +173,7 @@ describe("persistent worker goal display", () => {
     expect(text).toContain("Mini-Kanban · Durchlauf 1");
     expect(text).toContain("vorheriger Stand");
     expect(text).not.toContain("Legacy card content");
-    expect(text).toContain("noch kein Mini-Kanban des Workers");
+    expect(text).toContain("Noch kein Mini-Kanban des Workers");
   });
   it("renders the retained canonical SlideDocument through the engine", () => {
     const text = renderToStaticMarkup(

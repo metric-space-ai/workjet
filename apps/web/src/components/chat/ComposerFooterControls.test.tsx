@@ -57,7 +57,7 @@ describe("ComposerFooterControls", () => {
     // Permission is ALWAYS full (operator rule): the picker is gone.
     expect(markup).not.toContain('aria-label="Runtime mode"');
 
-    expect(markup).toContain('aria-label="Thread tools"');
+    expect(markup).toContain('aria-label="Werkzeuge"');
     expect(markup).not.toContain('aria-label="Workjet thread role"');
     expect(markup).not.toContain('data-workjet-role-group="true"');
     expect(markup).not.toContain('data-workjet-settings-gear="true"');
@@ -68,7 +68,7 @@ describe("ComposerFooterControls", () => {
 
     expect(markup).toContain('aria-label="Plan mode — click to return to normal build mode"');
     expect(markup).toContain(">Plan<");
-    expect(markup).toContain('aria-label="Thread tools"');
+    expect(markup).toContain('aria-label="Werkzeuge"');
   });
 
   it("keeps thread settings for a provider that has no Plan/Build toggle", () => {
@@ -77,14 +77,14 @@ describe("ComposerFooterControls", () => {
     expect(markup).not.toContain(">Build<");
     // Permission is ALWAYS full (operator rule): the picker is gone.
     expect(markup).not.toContain('aria-label="Runtime mode"');
-    expect(markup).toContain('aria-label="Thread tools"');
+    expect(markup).toContain('aria-label="Werkzeuge"');
   });
 
   it("does not expose the read-only worker role in the main composer row", () => {
     const markup = render({ workjetRole: "worker" });
 
     expect(markup).toContain(">Build<");
-    expect(markup).toContain('aria-label="Thread tools"');
+    expect(markup).toContain('aria-label="Werkzeuge"');
     expect(markup).not.toContain('data-workjet-role="worker"');
     expect(markup).not.toContain('data-workjet-role="orchestrator"');
   });
@@ -94,7 +94,7 @@ describe("ComposerFooterControls", () => {
 
     expect(markup).not.toContain('aria-label="Workjet thread role"');
     expect(markup).not.toContain('data-workjet-settings-gear="true"');
-    expect(markup).not.toContain('aria-label="Thread tools"');
+    expect(markup).not.toContain('aria-label="Werkzeuge"');
     // The provider controls are unaffected by the absence of Workjet state.
     expect(markup).toContain(">Build<");
     // Permission is ALWAYS full (operator rule): the picker is gone.
@@ -130,7 +130,7 @@ describe("ComposerFooterControls", () => {
 
     expect(markup).toContain('aria-label="Luma"');
     expect(markup).toContain('data-test-computer="true"');
-    expect(markup).toContain('aria-label="Thread tools"');
+    expect(markup).toContain('aria-label="Werkzeuge"');
 
     expect(markup).not.toContain(">Build<");
     expect(markup).not.toContain('aria-label="Workjet thread role"');
@@ -160,7 +160,7 @@ describe("ComposerFooterControls", () => {
     expect(targetsIndex).toBeGreaterThan(providerIndex);
     // The manual bar keeps the full control set (second row).
     expect(markup).toContain(">Build<");
-    expect(markup).toContain('aria-label="Thread tools"');
+    expect(markup).toContain('aria-label="Werkzeuge"');
   });
 
   it("manual mode renders the system prompt affordance", () => {
@@ -194,7 +194,7 @@ describe("ComposerFooterControls", () => {
       'data-test-effort="true"',
       'data-test-context="true"',
       'data-test-system-prompt="true"',
-      'aria-label="Thread tools"',
+      'aria-label="Werkzeuge"',
       'data-test-upload="true"',
       'data-test-send="true"',
     ];

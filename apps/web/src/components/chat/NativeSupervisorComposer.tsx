@@ -64,8 +64,6 @@ import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
-import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
-import { supervisorRouteLabel } from "../../workjetSupervisorRoute";
 import { NativeSupervisorRouteControls } from "./NativeSupervisorRouteControls";
 import type {
   NativeWorkerSourceControl,
@@ -85,7 +83,7 @@ export function NativeSupervisorComposer(props: {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
-  const routeLabel = supervisorRouteLabel(useSupervisorRouteDisplay(props.scope));
+
   const [routeSaving, setRouteSaving] = useState(false);
   const [routeStatus, setRouteStatus] = useState<string | null>(null);
   const [workerStatus, setWorkerStatus] = useState<WorkerSourceConnectionStatus | null>(null);
@@ -946,7 +944,6 @@ export function NativeSupervisorComposer(props: {
                   : undefined
               }
               disabled={busy || inputting || routeSaving}
-              routeTitle={routeLabel.title}
               onSavingChange={setRouteSaving}
               onStatusChange={setRouteStatus}
             />

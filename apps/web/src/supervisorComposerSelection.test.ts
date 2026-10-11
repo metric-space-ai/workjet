@@ -5,6 +5,7 @@ import {
   WorkjetComputer,
   WorkjetLumaInstanceConfiguration,
   DEFAULT_WORKJET_CONFIGURATION,
+  type CtoxWorkjetProjectProjection,
 } from "@workjet/contracts";
 import { Schema } from "effect";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -44,7 +45,7 @@ const computers = [
     harnesses: [{ harness: profile.harness, available: true }],
   }),
 ];
-const project = {
+const project: CtoxWorkjetProjectProjection = {
   id: scope.projectId,
   title: "Molecularity",
   workingCopies: [],
@@ -99,7 +100,10 @@ describe("Supervisor composer selection persistence", () => {
           };
         }
         if (request.action === "project.list")
-          return { _tag: "completed", response: { action: request.action, projects: [persisted] } };
+          return {
+            _tag: "completed",
+            response: { action: request.action, projects: [persisted], count: 1, truncated: false },
+          };
         throw new Error("Must never send a turn");
       });
     const write = vi.fn(async (next: typeof configuration) => {

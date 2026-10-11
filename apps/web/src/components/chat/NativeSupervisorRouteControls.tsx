@@ -58,7 +58,7 @@ export function NativeSupervisorRouteControls(props: {
     | { readonly connectionId: string; readonly instanceId?: string }
     | undefined;
   readonly disabled: boolean;
-  readonly routeTitle: string;
+
   readonly onSavingChange: (saving: boolean) => void;
   readonly onStatusChange?: (status: string | null) => void;
 }) {
@@ -405,8 +405,8 @@ export function NativeSupervisorRouteControlsView(props: {
           {props.environmentId && (
             <ComposerComputerControl
               computers={props.computers}
-              registeredComputers={props.registeredComputers}
-              computerAvailability={props.computerAvailability}
+              registeredComputers={props.registeredComputers ?? []}
+              computerAvailability={props.computerAvailability ?? {}}
               selectedComputerId={props.selectedComputerId}
               activeEnvironmentId={props.environmentId}
               selectableEnvironmentIds={props.computers.map((entry) => entry.environmentId)}

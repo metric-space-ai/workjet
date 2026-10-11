@@ -675,6 +675,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   ctoxRegistration: Schema.optional(Schema.NullOr(CtoxProjectRegistration)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
+  expectedTokenBudgetRevision: Schema.optional(NonNegativeInt),
   // Absent = leave unchanged; null = clear the override.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),

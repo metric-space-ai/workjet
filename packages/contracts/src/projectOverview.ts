@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { SupervisorTickConfiguration } from "./supervisorTick.ts";
 import { CtoxWorkjetJourFixe } from "./ctox.ts";
+import { ProjectTokenBudgetSettings } from "./projectTokenBudget.ts";
 
 export const ProjectWebsiteUrl = TrimmedNonEmptyString.check(
   Schema.isMaxLength(2048),
@@ -45,6 +46,7 @@ const OptionalSlot = Schema.NullOr(ProjectOverviewSlot);
 export const ProjectOverview = Schema.Struct({
   supervisorTick: Schema.optionalKey(SupervisorTickConfiguration),
   regularMeeting: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
+  tokenBudget: Schema.optionalKey(ProjectTokenBudgetSettings),
   // Archiving changes gallery visibility while retaining the project and all histories.
   archived: Schema.optionalKey(Schema.Boolean),
   // Repository metadata is independent of a deployment website or local checkout.

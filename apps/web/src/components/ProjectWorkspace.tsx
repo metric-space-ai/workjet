@@ -4,6 +4,7 @@ import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { useProjectOverviewSources } from "../hooks/useProjectOverviewSources";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
+import { useSupervisorProjectMetadata } from "../hooks/useSupervisorProjectMetadata";
 import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOverviewModel";
 import type { GalleryProject } from "../projectOverview";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
@@ -48,6 +49,7 @@ function ProjectWorkspaceContent({
   ctoxInstanceId,
   openMeeting = false,
 }: Props) {
+  useSupervisorProjectMetadata(project);
   const language = useProjectOverviewLanguage();
   const text = PROJECT_OVERVIEW_TEXT[language];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;

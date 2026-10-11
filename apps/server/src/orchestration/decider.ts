@@ -12,6 +12,8 @@ import {
   retainWorkjetCtoxBinding,
   withoutInheritedWorkjetSupervisorJournals,
   retainWorkjetWorkerPullRequest,
+  supervisorTickDueAt,
+  DEFAULT_SUPERVISOR_TICK_CONFIGURATION,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -45,6 +47,7 @@ import {
 } from "../workjet/workerGoal.ts";
 import { createWorkerKanbanSlideDocument } from "../workjet/workerKanbanDocument.ts";
 import { withoutForeignSupervisorStateAtCreation } from "../workjet/workjetSupervisorState.ts";
+import { isSupervisorTickEligible } from "../workjet/supervisorTickEligibility.ts";
 import {
   requireProjectTeamLifecycle,
   requireProjectTeamOwnership,
@@ -134,7 +137,11 @@ function hasOpenBlockingRequest(thread: {
  */
 export function threadHasQueuedTurnStart(
   thread: {
-    readonly messages: ReadonlyArray<{ readonly role: string; readonly createdAt: string }>;
+    readonly messages: ReadonlyArray<{
+      readonly id?: string;
+      readonly role: string;
+      readonly createdAt: string;
+    }>;
     readonly latestTurn: {
       readonly requestedAt: string;
       readonly startedAt: string | null;
@@ -147,7 +154,10 @@ export function threadHasQueuedTurnStart(
 ): boolean {
   const latestUserMessageAtMs = thread.messages.reduce(
     (latest, message) =>
-      message.role === "user" ? Math.max(latest, Date.parse(message.createdAt)) : latest,
+      message.role === "user" ||
+      (message.role === "system" && message.id?.startsWith("server:supervisor-tick:"))
+        ? Math.max(latest, Date.parse(message.createdAt))
+        : latest,
     Number.NEGATIVE_INFINITY,
   );
   const latestTurnAtMs =
@@ -1492,6 +1502,161 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: occurredAt,
         },
       };
+    }
+
+    case "thread.supervisor.tick.schedule": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const config = thread.workjetConfig;
+      const project = readModel.projects.find((item) => item.id === thread.projectId);
+      if (
+        config.schemaVersion !== 2 ||
+        !isSupervisorTickEligible(thread, project) ||
+        config.supervisorTick
+      )
+        return [];
+      const cadence = project?.overview?.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION;
+      const now = Date.parse(command.createdAt);
+      const first = Date.parse(command.firstTickAt);
+      if (!cadence.enabled || first < now || first >= now + cadence.intervalMinutes * 60_000)
+        return [];
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: thread.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.workjet-config-set",
+        payload: {
+          threadId: thread.id,
+          workjetConfig: {
+            ...config,
+            supervisorTick: {
+              firstTickAt: command.firstTickAt,
+              lastTickAt: command.createdAt,
+              lastControlAt: null,
+              outcome: "scheduled",
+            },
+          },
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.supervisor.tick": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const config = thread.workjetConfig;
+      const project = readModel.projects.find((item) => item.id === thread.projectId);
+      if (config.schemaVersion !== 2 || !isSupervisorTickEligible(thread, project)) return [];
+      const dueAt = supervisorTickDueAt(
+        thread.createdAt,
+        project?.overview?.supervisorTick,
+        config.supervisorTick,
+      );
+      if (
+        dueAt === null ||
+        dueAt !== Date.parse(command.scheduledAt) ||
+        dueAt > Date.parse(command.createdAt)
+      )
+        return [];
+      const busy =
+        thread.latestTurn?.state === "running" ||
+        thread.session?.activeTurnId != null ||
+        thread.session?.status === "starting" ||
+        thread.session?.status === "running" ||
+        hasOpenBlockingRequest(thread) ||
+        (config.supervisorTick?.lastControlAt != null &&
+          thread.session?.status !== "error" &&
+          Date.parse(thread.latestTurn?.requestedAt ?? thread.createdAt) <
+            Date.parse(config.supervisorTick.lastControlAt)) ||
+        threadHasQueuedTurnStart(thread, command.createdAt, Number.POSITIVE_INFINITY);
+      const state = {
+        lastTickAt: command.createdAt,
+        lastControlAt: busy ? (config.supervisorTick?.lastControlAt ?? null) : command.createdAt,
+        outcome: busy ? ("skipped-busy" as const) : ("started" as const),
+      };
+      const base = yield* withEventBase({
+        aggregateKind: "thread",
+        aggregateId: thread.id,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+      });
+      const events: Array<Omit<OrchestrationEvent, "sequence">> = [
+        {
+          ...base,
+          type: "thread.workjet-config-set",
+          payload: {
+            threadId: thread.id,
+            workjetConfig: { ...config, supervisorTick: state },
+            updatedAt: command.createdAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.activity-appended",
+          payload: {
+            threadId: thread.id,
+            activity: {
+              id: EventId.make(command.commandId + ":activity"),
+              tone: "info",
+              kind: "supervisor.control-round",
+              summary: busy
+                ? "Kontrollrunde übersprungen: Supervisor beschäftigt"
+                : "Kontrollrunde gestartet",
+              payload: { ...state, scheduledAt: command.scheduledAt },
+              turnId: null,
+              createdAt: command.createdAt,
+            },
+            createdAt: command.createdAt,
+          },
+        },
+      ];
+      if (busy) return events;
+      const messageId = MessageId.make(command.commandId);
+      events.push(
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.message-sent",
+          payload: {
+            threadId: thread.id,
+            messageId,
+            role: "system",
+            text: command.text,
+            attachments: [],
+            turnId: null,
+            streaming: false,
+            createdAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: thread.id,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.turn-start-requested",
+          payload: {
+            threadId: thread.id,
+            messageId,
+            runtimeMode: thread.runtimeMode,
+            interactionMode: thread.interactionMode,
+            createdAt: command.createdAt,
+          },
+        },
+      );
+      return events;
     }
 
     case "thread.turn.start": {

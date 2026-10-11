@@ -79,7 +79,8 @@ describe("compact project configuration", () => {
     expect(markup).toContain("Count visits this week");
     expect(markup).toContain("analytics_not_connected");
     expect(markup).not.toContain("KPI prompts need");
-    expect(markup).not.toContain('type="number"');
+    expect(markup.match(/type="number"/g)).toHaveLength(1);
+    expect(markup).toContain("Supervisor-Takt in Minuten");
   });
   it("does not expose KPI configuration for a foreign project", () => {
     const markup = renderToStaticMarkup(

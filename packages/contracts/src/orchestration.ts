@@ -1178,7 +1178,26 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
 });
 
+const SupervisorTickScheduleCommand = Schema.Struct({
+  type: Schema.Literal("thread.supervisor.tick.schedule"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  firstTickAt: IsoDateTime,
+  createdAt: IsoDateTime,
+});
+
+const SupervisorTickCommand = Schema.Struct({
+  type: Schema.Literal("thread.supervisor.tick"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  scheduledAt: IsoDateTime,
+  text: Schema.String.check(Schema.isMaxLength(65536)),
+  createdAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
+  SupervisorTickScheduleCommand,
+  SupervisorTickCommand,
   ThreadGoalAssignCommand,
   ThreadGoalExecutionObservedCommand,
   ThreadGoalExecutorObservedCommand,

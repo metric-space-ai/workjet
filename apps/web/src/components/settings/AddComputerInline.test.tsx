@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Der Test liest die Quelldateien direkt.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +20,13 @@ const base: AddComputerInlineProps = {
   localAvailable: true,
   desktopAvailable: true,
   sshAliases: [
-    { alias: "lan-gpu3", hostname: "192.168.1.30", username: "metricspace", port: 22, source: "ssh-config" },
+    {
+      alias: "lan-gpu3",
+      hostname: "192.168.1.30",
+      username: "metricspace",
+      port: 22,
+      source: "ssh-config",
+    },
     { alias: "gpu4", hostname: "100.120.16.93", username: null, port: null, source: "ssh-config" },
   ],
   knownHosts: ["100.87.204.48"],
@@ -165,7 +172,9 @@ describe("role defaults (erkennen statt fragen)", () => {
       native,
     });
     expect(enrollment.endpoint).toBeNull();
-    expect(enrollment.capabilityConfig).toEqual([{ kind: "gpu", model: "RTX A4500", vram_gib: 20 }]);
+    expect(enrollment.capabilityConfig).toEqual([
+      { kind: "gpu", model: "RTX A4500", vram_gib: 20 },
+    ]);
   });
 
   it("refuses build without SSH access instead of inventing one", () => {

@@ -168,7 +168,21 @@ export interface ComputerMachineRow {
   readonly native: CtoxWorkjetComputerProjection | null;
 }
 
-const GENERIC_NAME_TOKENS = new Set(["ssh", "lan", "wan", "vpn", "tailnet", "ts", "local", "com", "net", "org", "de", "dev", "io"]);
+const GENERIC_NAME_TOKENS = new Set([
+  "ssh",
+  "lan",
+  "wan",
+  "vpn",
+  "tailnet",
+  "ts",
+  "local",
+  "com",
+  "net",
+  "org",
+  "de",
+  "dev",
+  "io",
+]);
 
 function nameTokens(...values: ReadonlyArray<string | undefined>): Set<string> {
   const tokens = new Set<string>();
@@ -310,9 +324,7 @@ function roleChips(native: CtoxWorkjetComputerProjection | null): ReactNode[] {
       <Chip
         key={kind}
         data-workjet-capability={kind}
-        title={
-          kind === "gpu" && gpu ? `${gpu.model} · ${gpu.vram_gib} GB` : undefined
-        }
+        title={kind === "gpu" && gpu ? `${gpu.model} · ${gpu.vram_gib} GB` : undefined}
       >
         {kind === "gpu" && gpu
           ? `GPU ${gpu.model.replace(/^(?:NVIDIA\s+)?(?:GeForce\s+)?(?:RTX\s+)?/i, "")}`
@@ -442,7 +454,7 @@ export function WorkjetComputersSettingsView({
   readonly onAssign?: ((computer: WorkjetComputer, assigned: boolean) => void) | undefined;
   readonly renderRepair?: (row: ComputerMachineRow, close: () => void) => ReactNode;
   readonly renderEdit?: (row: ComputerMachineRow, close: () => void) => ReactNode;
-  readonly onRetryMembership?: () => void;
+  readonly onRetryMembership?: (() => void) | undefined;
 }) {
   const [expansion, setExpansion] = useState<Expansion | null>(null);
   // Während die Instanz neu prüft, bleiben die zuletzt bestätigten Einträge
@@ -479,8 +491,8 @@ export function WorkjetComputersSettingsView({
   // zustände ändern die Reihenfolge nie (kein Springen beim Prüfen).
   const computers = [...configuration.computers].sort(
     (left, right) =>
-      Number(right.environmentId === environmentId) - Number(left.environmentId === environmentId) ||
-      left.label.localeCompare(right.label),
+      Number(right.environmentId === environmentId) -
+        Number(left.environmentId === environmentId) || left.label.localeCompare(right.label),
   );
   const rows = mergeComputerRows(computers, natives, environments).sort((left, right) => {
     if (left.computer && !right.computer) return -1;
@@ -518,7 +530,10 @@ export function WorkjetComputersSettingsView({
       title={searchableSetting("workjet-computers").title}
       headerAction={headerStatus}
     >
-      <div className="divide-y divide-border/60 border-y border-border/60" data-workjet-computers-table>
+      <div
+        className="divide-y divide-border/60 border-y border-border/60"
+        data-workjet-computers-table
+      >
         {rows.map((row) => {
           const { computer, native } = row;
           const active = isActive?.(row.key) ?? true;
@@ -715,9 +730,7 @@ export function WorkjetComputersSettingsView({
   );
 }
 
-function sshAccessFor(
-  request: AddComputerRequest,
-): ComputerSshAccess | null {
+function sshAccessFor(request: AddComputerRequest): ComputerSshAccess | null {
   if (!request.target || !request.hostKey || !request.target.username) return null;
   return {
     host: request.target.hostname,
@@ -852,7 +865,14 @@ export function WorkjetComputersSettings({
       pendingWaiter.current = null;
     }
     setPending(null);
-  }, [pending, pendingTarget, pendingInspection.data, settings.workjet, targetOptions, updateSettings]);
+  }, [
+    pending,
+    pendingTarget,
+    pendingInspection.data,
+    settings.workjet,
+    targetOptions,
+    updateSettings,
+  ]);
   useEffect(() => {
     if (!pending || !pendingInspection.error) return;
     if (pendingWaiter.current?.environmentId === pending.environmentId) {
@@ -988,13 +1008,13 @@ export function WorkjetComputersSettings({
     try {
       const build = enrollment.capabilityConfig.find((capability) => capability.kind === "build");
       if (build && build.kind === "build" && connected !== environmentId) {
-        if (!environmentId) return { status: "error", message: "Dieser Rechner ist nicht verbunden." };
+        if (!environmentId)
+          return { status: "error", message: "Dieser Rechner ist nicht verbunden." };
         const source = workerSourceConnectionForEnrollment(
           workerConnections.data?.connections ?? [],
           selectedInstanceId,
         );
-        if (!source)
-          return { status: "error", message: "Lumas der Instanz sind nicht verbunden." };
+        if (!source) return { status: "error", message: "Lumas der Instanz sind nicht verbunden." };
         const result = await enrollRemoteComputer({
           environmentId,
           targetEnvironmentId: connected,
@@ -1082,8 +1102,7 @@ export function WorkjetComputersSettings({
         row.native.id,
         window.desktopBridge?.ctox,
       );
-      if (!unassigned)
-        return membershipStore.getSnapshot().error ?? "Instanz hat nicht bestätigt.";
+      if (!unassigned) return membershipStore.getSnapshot().error ?? "Instanz hat nicht bestätigt.";
     }
     if (!row.computer) return null;
     const result = await removeComputerConnection({
@@ -1094,8 +1113,10 @@ export function WorkjetComputersSettings({
       savedEnvironmentIds,
       removeConnection: (target) => connections.removeConnection(target),
     });
-    if (result.status === "assigned") return "Noch in der Instanz eingetragen.";
-    if (result.status === "connection_failed") return "Verbindung nicht entfernbar.";
+    if (result.status !== "removed")
+      return result.status === "assigned"
+        ? "Noch in der Instanz eingetragen."
+        : "Verbindung nicht entfernbar.";
     updateSettings({ workjet: result.configuration });
     activeOverlay.setActive(row.key, true);
     return null;

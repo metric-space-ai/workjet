@@ -1028,9 +1028,7 @@ export function ResourceTelemetryDiagnostics() {
               icon={<MemoryStickIcon className="size-3.5" />}
               label="Speicher"
               value={allT3 ? formatBytes(allT3.currentRssBytes) : "..."}
-              detail={
-                allT3 ? `${formatBytes(allT3.peakRssBytes)} Spitzen gesamt` : undefined
-              }
+              detail={allT3 ? `${formatBytes(allT3.peakRssBytes)} Spitzen gesamt` : undefined}
             />
             <IconStat
               icon={<ActivityIcon className="size-3.5" />}
@@ -1062,9 +1060,7 @@ export function ResourceTelemetryDiagnostics() {
             <IconStat
               icon={<GaugeIcon className="size-3.5" />}
               label="CPU-Drossel"
-              value={
-                snapshot ? (speedLimit === null ? "—" : `${speedLimit.toFixed(0)}%`) : "..."
-              }
+              value={snapshot ? (speedLimit === null ? "—" : `${speedLimit.toFixed(0)}%`) : "..."}
               detail={snapshot ? `${snapshot.power.thermalState}` : undefined}
               tone={speedLimit !== null && speedLimit < 80 ? "warning" : "default"}
             />
@@ -1216,9 +1212,7 @@ export function ResourceTelemetryDiagnostics() {
                 <DetailRow label="Neustarts" value={String(snapshot.health.restartCount)} />
               </>
             ) : (
-              <div className="py-4 text-xs text-muted-foreground">
-                Wartet auf Erfassung …
-              </div>
+              <div className="py-4 text-xs text-muted-foreground">Wartet auf Erfassung …</div>
             )}
           </div>
         </div>

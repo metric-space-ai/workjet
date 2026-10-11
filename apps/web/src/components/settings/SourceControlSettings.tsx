@@ -451,9 +451,7 @@ function EmptySourceControlDiscovery({
           <GitPullRequestIcon />
         </EmptyMedia>
         <EmptyHeader>
-          <EmptyTitle>
-            {hasError ? "Scan fehlgeschlagen" : "Nichts gefunden"}
-          </EmptyTitle>
+          <EmptyTitle>{hasError ? "Scan fehlgeschlagen" : "Nichts gefunden"}</EmptyTitle>
           {hasError ? <EmptyDescription>{error}</EmptyDescription> : null}
         </EmptyHeader>
         <EmptyContent>
@@ -493,7 +491,11 @@ export function SourceControlSettingsPanel() {
         <SettingsSection title="Versionsverwaltung">
           <SettingsRow
             title={
-              resolving ? (resolvingSlow ? "Keine Instanz erreichbar" : "Instanz lädt …") : "Kein Code-Rechner"
+              resolving
+                ? resolvingSlow
+                  ? "Keine Instanz erreichbar"
+                  : "Instanz lädt …"
+                : "Kein Code-Rechner"
             }
             control={
               showInstanceAction ? (

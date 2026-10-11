@@ -301,8 +301,7 @@ function AboutVersionSection() {
             stackedThreadToast({
               type: "error",
               title: "Update-Prüfung fehlgeschlagen",
-              description:
-                result.state.message ?? undefined,
+              description: result.state.message ?? undefined,
             }),
           );
         }
@@ -356,19 +355,19 @@ function AboutVersionSection() {
               </Button>
             ) : null}
             <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="xs"
-                  variant={action === "install" ? "default" : "outline"}
-                  disabled={buttonDisabled || isUpdateActionPending}
-                  onClick={handleButtonClick}
-                >
-                  {buttonLabel}
-                </Button>
-              }
-            />
-            {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="xs"
+                    variant={action === "install" ? "default" : "outline"}
+                    disabled={buttonDisabled || isUpdateActionPending}
+                    onClick={handleButtonClick}
+                  >
+                    {buttonLabel}
+                  </Button>
+                }
+              />
+              {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
             </Tooltip>
           </>
         }
@@ -552,112 +551,116 @@ export function useSettingsRestore(onRestored?: () => void) {
    * bestätigt (drei Orte, keine Popups). Ohne Option bleibt die alte
    * Rückfrage nur für Aufrufer, die noch nicht umgestellt sind.
    */
-  const restoreDefaults = useCallback(async (options?: { readonly confirmed?: boolean }) => {
-    if (changedSettingLabels.length === 0) return;
-    if (options?.confirmed !== true) {
-      const api = readLocalApi();
-      const confirmed = await (api ?? ensureLocalApi()).dialogs.confirm(
-        ["Standard wiederherstellen?", `Zurückgesetzt wird: ${changedSettingLabels.join(", ")}.`].join(
-          "\n",
-        ),
-        { variant: "destructive" },
-      );
-      if (!confirmed) return;
-    }
+  const restoreDefaults = useCallback(
+    async (options?: { readonly confirmed?: boolean }) => {
+      if (changedSettingLabels.length === 0) return;
+      if (options?.confirmed !== true) {
+        const api = readLocalApi();
+        const confirmed = await (api ?? ensureLocalApi()).dialogs.confirm(
+          [
+            "Standard wiederherstellen?",
+            `Zurückgesetzt wird: ${changedSettingLabels.join(", ")}.`,
+          ].join("\n"),
+          { variant: "destructive" },
+        );
+        if (!confirmed) return;
+      }
 
-    // Only touch the theme keys that are actually dirty, so a theme-storage
-    // failure cannot block restoring unrelated settings. Preferences are
-    // re-read after the confirmation dialog: they may have changed (another
-    // tab, an OS flip) while it was open, and rollback must restore the live
-    // values rather than the ones captured at render time.
-    let previousTheme = theme;
-    try {
-      previousTheme = readThemePreference();
-    } catch {
-      // Storage is unreadable; the render-time value is the best rollback.
-    }
-    // The mix may have changed while the confirmation dialog was open; both
-    // the dirty check and the rollback must see the live value.
-    const liveHalves = readThemeHalves();
-    const needsThemeReset = previousTheme !== "system";
-    const needsMixReset = liveHalves !== null;
-    // Same for the appearance mode: trusting the render-time value would skip
-    // the reset and report success while a non-system mode stayed in storage.
-    const needsFollowSystemReset = readAppearanceModePreference(previousTheme) !== "system";
-    const notifyThemeRestoreFailure = () => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Theme nicht zurückgesetzt",
-        }),
-      );
-    };
-    // Rollback restores the base preference first (which clears any mix) and
-    // then re-applies the captured mix on top, so no failure path can leave
-    // the pair of keys half-restored.
-    const previousHalves = liveHalves;
-    const rollbackThemeState = () => {
-      if (needsThemeReset) setTheme(previousTheme);
-      if (previousHalves?.light) setThemeHalf("light", previousHalves.light);
-      if (previousHalves?.dark) setThemeHalf("dark", previousHalves.dark);
-    };
-    if (needsThemeReset && !setTheme("system")) {
-      notifyThemeRestoreFailure();
-      return;
-    }
-    if (needsMixReset && !clearThemeHalves()) {
-      rollbackThemeState();
-      notifyThemeRestoreFailure();
-      return;
-    }
-    if (needsFollowSystemReset && !setFollowSystem(true)) {
-      rollbackThemeState();
-      notifyThemeRestoreFailure();
-      return;
-    }
-    updateSettings({
-      timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-      wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
-      diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
-      environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
-      glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
-      sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
-      sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
-      sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
-      sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
-      enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
-      enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
-      backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
-      backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
-      automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
-      providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
-      defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
-      newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
-      addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-      confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
-      confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
-      textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-      fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
-      fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
-      fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
-      fontFamilyTerminal: DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal,
-      fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
-      fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-      fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
-      fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
-    });
-    onRestored?.();
-  }, [
-    changedSettingLabels,
-    clearThemeHalves,
-    onRestored,
-    setFollowSystem,
-    setTheme,
-    setThemeHalf,
-    theme,
-    themeHalves,
-    updateSettings,
-  ]);
+      // Only touch the theme keys that are actually dirty, so a theme-storage
+      // failure cannot block restoring unrelated settings. Preferences are
+      // re-read after the confirmation dialog: they may have changed (another
+      // tab, an OS flip) while it was open, and rollback must restore the live
+      // values rather than the ones captured at render time.
+      let previousTheme = theme;
+      try {
+        previousTheme = readThemePreference();
+      } catch {
+        // Storage is unreadable; the render-time value is the best rollback.
+      }
+      // The mix may have changed while the confirmation dialog was open; both
+      // the dirty check and the rollback must see the live value.
+      const liveHalves = readThemeHalves();
+      const needsThemeReset = previousTheme !== "system";
+      const needsMixReset = liveHalves !== null;
+      // Same for the appearance mode: trusting the render-time value would skip
+      // the reset and report success while a non-system mode stayed in storage.
+      const needsFollowSystemReset = readAppearanceModePreference(previousTheme) !== "system";
+      const notifyThemeRestoreFailure = () => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Theme nicht zurückgesetzt",
+          }),
+        );
+      };
+      // Rollback restores the base preference first (which clears any mix) and
+      // then re-applies the captured mix on top, so no failure path can leave
+      // the pair of keys half-restored.
+      const previousHalves = liveHalves;
+      const rollbackThemeState = () => {
+        if (needsThemeReset) setTheme(previousTheme);
+        if (previousHalves?.light) setThemeHalf("light", previousHalves.light);
+        if (previousHalves?.dark) setThemeHalf("dark", previousHalves.dark);
+      };
+      if (needsThemeReset && !setTheme("system")) {
+        notifyThemeRestoreFailure();
+        return;
+      }
+      if (needsMixReset && !clearThemeHalves()) {
+        rollbackThemeState();
+        notifyThemeRestoreFailure();
+        return;
+      }
+      if (needsFollowSystemReset && !setFollowSystem(true)) {
+        rollbackThemeState();
+        notifyThemeRestoreFailure();
+        return;
+      }
+      updateSettings({
+        timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+        wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
+        diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+        environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
+        glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+        sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
+        sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+        sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+        sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+        enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
+        enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+        backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
+        backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
+        automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
+        providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
+        defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
+        newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+        addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+        confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
+        confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+        textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+        fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
+        fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
+        fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
+        fontFamilyTerminal: DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal,
+        fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
+        fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
+        fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
+        fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
+      });
+      onRestored?.();
+    },
+    [
+      changedSettingLabels,
+      clearThemeHalves,
+      onRestored,
+      setFollowSystem,
+      setTheme,
+      setThemeHalf,
+      theme,
+      themeHalves,
+      updateSettings,
+    ],
+  );
 
   return {
     changedSettingLabels,
@@ -2116,7 +2119,8 @@ function formatGermanRelativeTime(isoDate: string): string {
   const match = /^(\d+)([mhd])$/.exec(relative.value);
   if (!match) return "gerade eben";
   const amount = Number(match[1]);
-  const unit = match[2] === "m" ? "Min." : match[2] === "h" ? "Std." : amount === 1 ? "Tag" : "Tagen";
+  const unit =
+    match[2] === "m" ? "Min." : match[2] === "h" ? "Std." : amount === 1 ? "Tag" : "Tagen";
   return `vor ${amount} ${unit}`;
 }
 

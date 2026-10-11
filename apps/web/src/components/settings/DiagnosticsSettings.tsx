@@ -1053,11 +1053,7 @@ export function DiagnosticsSettingsPanel() {
           processes={processData?.processes ?? []}
           signalingPid={signalingPid}
           onSignal={signalProcess}
-          emptyLabel={
-            isProcessInitialLoading
-              ? "Lädt …"
-              : "Keine Kindprozesse"
-          }
+          emptyLabel={isProcessInitialLoading ? "Lädt …" : "Keine Kindprozesse"}
         />
       </SettingsSection>
 
@@ -1118,9 +1114,7 @@ export function DiagnosticsSettingsPanel() {
         <ProcessResourceHistoryTable
           processes={resourceData?.topProcesses ?? []}
           emptyLabel={
-            isResourcePending && resourceData === null
-              ? "Sammelt Messpunkte …"
-              : "Keine Messpunkte"
+            isResourcePending && resourceData === null ? "Sammelt Messpunkte …" : "Keine Messpunkte"
           }
         />
       </SettingsSection>
@@ -1165,11 +1159,7 @@ export function DiagnosticsSettingsPanel() {
           <StatBlock
             label="Langsame Spans"
             value={data ? formatCount(data.slowSpanCount) : "..."}
-            tooltip={
-              data
-                ? `Ab ${formatDuration(data.slowSpanThresholdMs)}`
-                : undefined
-            }
+            tooltip={data ? `Ab ${formatDuration(data.slowSpanThresholdMs)}` : undefined}
             tone={data && data.slowSpanCount > 0 ? "warning" : "default"}
           />
           <StatBlock
@@ -1262,9 +1252,7 @@ export function DiagnosticsSettingsPanel() {
             ))}
           </DiagnosticsTable>
         ) : (
-          <EmptyRows
-            label={isInitialLoading ? "Lädt …" : "Keine wiederholten Fehler"}
-          />
+          <EmptyRows label={isInitialLoading ? "Lädt …" : "Keine wiederholten Fehler"} />
         )}
       </SettingsSection>
 
@@ -1355,9 +1343,7 @@ export function DiagnosticsSettingsPanel() {
             </table>
           </ScrollArea>
         ) : (
-          <EmptyRows
-            label={isInitialLoading ? "Lädt …" : "Keine Warnungen"}
-          />
+          <EmptyRows label={isInitialLoading ? "Lädt …" : "Keine Warnungen"} />
         )}
       </SettingsSection>
 

@@ -123,10 +123,7 @@ export function SupportBundleSectionView({
       ) : null}
 
       {state.status === "failed" && state.errorMessage ? (
-        <div
-          className="flex items-start gap-2 px-3 text-destructive text-xs sm:px-4"
-          role="alert"
-        >
+        <div className="flex items-start gap-2 px-3 text-destructive text-xs sm:px-4" role="alert">
           <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>{state.errorMessage}</span>
         </div>
@@ -154,8 +151,7 @@ export function SupportBundleSection() {
         setState({
           status: "failed",
           result: null,
-          errorMessage:
-            error instanceof Error ? error.message : "Nicht erstellt",
+          errorMessage: error instanceof Error ? error.message : "Nicht erstellt",
         });
       }
     })();

@@ -62,11 +62,7 @@ import {
   workjetHarnessAvailabilityWarning,
 } from "./WorkjetWorkerEditor";
 import { sanitizeWorkjetWorkerGraph, WorkjetWorkerOrganigram } from "./WorkjetWorkerOrganigram";
-import {
-  SettingsPageContainer,
-  SettingsRow,
-  SettingsSection,
-} from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   joinManagedPrompt,
@@ -1230,18 +1226,18 @@ export function WorkjetSettingsView({
             title="Prüf-Timeout"
             control={
               <div className="flex items-center gap-2">
-              <PositiveIntegerInput
-                ariaLabel="Prüf-Timeout (Sekunden)"
-                value={configuration.execution.probeTimeoutSeconds}
-                onCommit={(probeTimeoutSeconds) =>
-                  onChange({
-                    ...configuration,
-                    execution: { ...configuration.execution, probeTimeoutSeconds },
-                  })
-                }
-                className="w-28"
-              />
-              <span className="text-xs text-muted-foreground">Sek.</span>
+                <PositiveIntegerInput
+                  ariaLabel="Prüf-Timeout (Sekunden)"
+                  value={configuration.execution.probeTimeoutSeconds}
+                  onCommit={(probeTimeoutSeconds) =>
+                    onChange({
+                      ...configuration,
+                      execution: { ...configuration.execution, probeTimeoutSeconds },
+                    })
+                  }
+                  className="w-28"
+                />
+                <span className="text-xs text-muted-foreground">Sek.</span>
               </div>
             }
           />
@@ -1249,18 +1245,18 @@ export function WorkjetSettingsView({
             title="Turn-Timeout"
             control={
               <div className="flex items-center gap-2">
-              <PositiveIntegerInput
-                ariaLabel="Turn-Timeout (Sekunden)"
-                value={configuration.execution.turnTimeoutSeconds}
-                onCommit={(turnTimeoutSeconds) =>
-                  onChange({
-                    ...configuration,
-                    execution: { ...configuration.execution, turnTimeoutSeconds },
-                  })
-                }
-                className="w-28"
-              />
-              <span className="text-xs text-muted-foreground">Sek.</span>
+                <PositiveIntegerInput
+                  ariaLabel="Turn-Timeout (Sekunden)"
+                  value={configuration.execution.turnTimeoutSeconds}
+                  onCommit={(turnTimeoutSeconds) =>
+                    onChange({
+                      ...configuration,
+                      execution: { ...configuration.execution, turnTimeoutSeconds },
+                    })
+                  }
+                  className="w-28"
+                />
+                <span className="text-xs text-muted-foreground">Sek.</span>
               </div>
             }
           />
@@ -1396,8 +1392,7 @@ function ScopedWorkjetSettings({
       : applyLumaInstanceDocument(settings.workjet, instance.data.configuration);
   const persistInstanceConfiguration = useCallback(
     async (next: WorkjetConfiguration) => {
-      if (instance.data === null || instance.isPending)
-        throw new Error("Konfiguration lädt noch.");
+      if (instance.data === null || instance.isPending) throw new Error("Konfiguration lädt noch.");
       setSaveError(null);
       const result = await saveInstance({
         environmentId,

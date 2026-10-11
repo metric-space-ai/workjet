@@ -85,10 +85,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
       }
       return result;
     } catch {
-      if (!active.signal.aborted)
-        setError(
-          "Nicht geladen oder gespeichert",
-        );
+      if (!active.signal.aborted) setError("Nicht geladen oder gespeichert");
     } finally {
       if (controller.current === active && !active.signal.aborted) setBusy(undefined);
     }
@@ -258,9 +255,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               {!config && <option value="">{unloadedLabel}</option>}
               <option value="runtime">Lokale Laufzeit</option>
               <option value="mistral">Mistral API</option>
-              {config?.synthesis === "computer" && (
-                <option value="computer">Sprach-Rechner</option>
-              )}
+              {config?.synthesis === "computer" && <option value="computer">Sprach-Rechner</option>}
             </select>
           }
         />
@@ -355,8 +350,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           title="Stimmtest"
           status={
             check?.state === "error"
-              ? (remedies[check.errorClass ?? ""] ??
-                "Test fehlgeschlagen")
+              ? (remedies[check.errorClass ?? ""] ?? "Test fehlgeschlagen")
               : undefined
           }
           control={

@@ -447,10 +447,7 @@ export function WorkjetWorkerEditor({
   return (
     <form
       data-settings-inline-editor=""
-      className={cn(
-        "space-y-4",
-        !compact && "rounded-lg border bg-card/40 p-3",
-      )}
+      className={cn("space-y-4", !compact && "rounded-lg border bg-card/40 p-3")}
       aria-label={worker ? `Luma ${worker.name} bearbeiten` : "Luma hinzufügen"}
       onSubmit={(event) => {
         event.preventDefault();

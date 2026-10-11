@@ -1,13 +1,21 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import fixture from "../../../../../packages/contracts/src/fixtures/workjet-supervisor-route-computation-v2.json" with { type: "json" };
+import * as Schema from "effect/Schema";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   ProjectId,
   ThreadId,
   CommandId,
+  SupervisorRouteDisplayV2,
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { NativeSupervisorComposer } from "./NativeSupervisorComposer";
+import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
+vi.mock("./useSupervisorRouteDisplay", () => ({
+  useSupervisorRouteDisplay: vi.fn(() => null),
+}));
+afterEach(() => vi.mocked(useSupervisorRouteDisplay).mockReset());
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("../ProjectSupervisorLumaField", () => ({
   useProjectSupervisorLumas: () => ({
@@ -60,6 +68,36 @@ const config: WorkjetThreadConfig = {
 const saveConfig = async () => ({ _tag: "Success" });
 
 describe("native supervisor receipt display", () => {
+  it("keeps the observed answering model in the status line below the normal bar", () => {
+    const route = Schema.decodeUnknownSync(SupervisorRouteDisplayV2)(
+      fixture.valid_cases.find((item) => item.type === "SupervisorRouteDisplay")?.value,
+    );
+    vi.mocked(useSupervisorRouteDisplay).mockReturnValue({ phase: "ready", route });
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={config}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain(`Last execution · Claude Code · ${route.actual?.model}`);
+    expect(html.indexOf("Last execution")).toBeGreaterThan(
+      html.indexOf('data-composer-bar="true"'),
+    );
+    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Harness"');
+    expect(html).toContain('aria-label="Model"');
+    expect(html.match(/<textarea/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Send to Supervisor"/g)).toHaveLength(1);
+    expect(html).not.toContain('aria-label="Last execution"');
+    if (route.actual) {
+      expect(html).not.toContain(route.actual.account_id);
+      expect(html).not.toContain(route.actual.sdk_session_id);
+    }
+  });
   it("places the full-width editor above the same attachment, route, gear, mic and send bar", () => {
     const html = renderToStaticMarkup(
       <NativeSupervisorComposer

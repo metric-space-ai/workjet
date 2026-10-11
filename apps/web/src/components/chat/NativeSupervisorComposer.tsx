@@ -65,6 +65,8 @@ import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDet
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
 import { NativeSupervisorRouteControls } from "./NativeSupervisorRouteControls";
+import { NativeSupervisorActualRoute } from "./NativeSupervisorActualRoute";
+import { useSupervisorRouteDisplay } from "./useSupervisorRouteDisplay";
 import { NativeSupervisorConnectionStatus } from "./NativeSupervisorConnectionStatus";
 import type {
   NativeWorkerSourceControl,
@@ -84,8 +86,16 @@ export function NativeSupervisorComposer(props: {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
-
   const [routeSaving, setRouteSaving] = useState(false);
+  const routeState = useSupervisorRouteDisplay(
+    props.scope,
+    JSON.stringify([
+      journal?.turn?.commandId,
+      journal?.turn?.status,
+      journal?.turn?.attempt,
+      routeSaving,
+    ]),
+  );
   const [routeStatus, setRouteStatus] = useState<string | null>(null);
   const [workerStatus, setWorkerStatus] = useState<WorkerSourceConnectionStatus | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -1013,6 +1023,7 @@ export function NativeSupervisorComposer(props: {
           }
         />
       </form>
+      <NativeSupervisorActualRoute state={routeState} />
       {drafting && busy && (
         <p role="status" className="mt-1 text-xs text-muted-foreground">
           Checking the task receipt. You can edit your draft; Send becomes available when this read

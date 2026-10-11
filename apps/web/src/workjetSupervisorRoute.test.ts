@@ -23,6 +23,8 @@ function portWith(
   return async (instance, request) => {
     expect(instance).toBe(scope.instanceId);
     calls.push(request.action);
+    if (request.action === "project.supervisor.route.capabilities.v2")
+      return { _tag: "failed", code: "unsupported" };
     if (
       request.action !== "project.supervisor.route.capabilities.v1" &&
       request.action !== "project.supervisor.route.read.v1"
@@ -54,6 +56,7 @@ describe("Supervisor route reader", () => {
       portWith(undefined, calls),
     );
     expect(calls).toEqual([
+      "project.supervisor.route.capabilities.v2",
       "project.supervisor.route.capabilities.v1",
       "project.supervisor.route.read.v1",
     ]);
@@ -75,7 +78,7 @@ describe("Supervisor route reader", () => {
       phase: "unavailable",
       code: "unsupported",
     });
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
   });
   it("rejects another thread or operation even if the schema is valid", async () => {
     for (const mutation of [

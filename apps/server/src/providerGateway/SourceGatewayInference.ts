@@ -6,6 +6,7 @@ import {
   WorkjetGatewayAdmissionInput,
   WorkjetRemoteWorkerPermit,
   WorkjetExecutionPolicy,
+  sameWorkjetParentTeamBinding,
   type EnvironmentId,
   type WorkjetGatewayBindModelInput,
   type WorkjetGatewayModelBinding,
@@ -143,6 +144,18 @@ export function makeSourceGatewayInference(dependencies: {
       binding.targetEnvironmentId === environmentId ||
       binding.workspaceKey !== binding.requestId ||
       !sameExecutionPolicy(binding.executionPolicy, input.workerRequest.executionPolicy) ||
+      !sameWorkjetParentTeamBinding(
+        binding.parentTeamBinding,
+        input.workerRequest.parentTeamBinding,
+      ) ||
+      (binding.parentTeamBinding !== undefined &&
+        (input.workerRequest.parentTeamRole !== "specialist" ||
+          binding.parentTeamBinding.owner_user_id !== input.permit.ownerUserId ||
+          binding.parentTeamBinding.project_id !== binding.projectId ||
+          binding.projectId !== input.workerRequest.project.id ||
+          binding.parentTeamBinding.thread_id !== binding.sourceSupervisorThreadId ||
+          binding.sourceSupervisorThreadId !== input.workerRequest.parent.threadId ||
+          binding.parentTeamBinding.supervisor_thread_id === binding.sourceSupervisorThreadId)) ||
       (binding.executionPolicy !== undefined &&
         (binding.executionPolicy.projectId !== binding.projectId ||
           binding.projectId !== input.workerRequest.project.id))

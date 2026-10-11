@@ -79,6 +79,37 @@ Installed G2 acceptance remains open. This change prevents a premature project
 setting from silently turning into host-wide access; it does not claim that an
 autonomous worker has been accepted.
 
+## Complete native Parent enrollment
+
+A Persistent Worker stores the complete Owner-issued
+`ctox.workjet.persistent-worker-binding.v1` reference in optional v2 config
+`parentTeamBinding`: contract, owner_user_id, project_id, supervisor_thread_id,
+thread_id, role, revision and state. Workjet preserves the eight native fields
+rather than deriving authority from a team title or retaining only its revision.
+The reference requires an active persistent_worker and canonical non-nil native
+thread UUIDs. Extra fields, incomplete references and unsafe revisions are rejected.
+
+Dispatch checks the saved specialist/project/thread/Supervisor affiliation before
+side effects. It pins the same reference into the immutable remote request. A
+removed, replaced or rebound reference cannot retry an old request after a lost
+acknowledgment. New one-shot workers inherit settings without the Parent enrollment.
+
+Each source operation rereads the saved Parent and compares the full reference
+before admission. The native binding keeps the actual Parent UUID in the existing
+`sourceSupervisorThreadId` field; it never replaces it with the Root Supervisor
+UUID. Native private enrollment and current history remain authoritative at issue,
+claim, revalidation and renewal.
+
+The SQLite intent, native receipt and typed model permit preserve this same full
+reference. Request/binding disagreement and a receipt issued for a different Owner
+are rejected. Native renewal and revalidation after forwarding must return the
+unchanged complete binding before a model response can be published. Cleanup
+continues with the original exact receipt after retirement.
+
+Owner enrollment/revocation commands and installed acceptance remain separate.
+This consumer enables no autonomous-worktree harness policy mode and grants no
+host-secret access or unrestricted provider permissions.
+
 ## Isolated Git metadata custody
 
 An executor confined to its workspace cannot use a linked worktree's shared

@@ -58,7 +58,8 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar"
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { WorkjetHeaderContent } from "../WorkjetHeaderSlots";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Button } from "../ui/button";
+import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import {
@@ -106,38 +107,36 @@ export interface CtoxSshManagedFormValues {
   readonly stateRoot: string;
 }
 
-export const CTOX_IMPORT_SUCCESS_MESSAGE = "CTOX Backend hinzugefügt.";
-export const CTOX_IMPORT_ERROR_MESSAGE =
-  "CTOX Backend konnte nicht hinzugefügt werden. Eingaben prüfen und erneut versuchen.";
+export const CTOX_IMPORT_SUCCESS_MESSAGE = "Instanz hinzugefügt.";
+export const CTOX_IMPORT_ERROR_MESSAGE = "Instanz nicht hinzugefügt. Eingaben prüfen.";
 export const CTOX_REMOVE_SUCCESS_MESSAGE = "Verbindung entfernt.";
 export const CTOX_REMOVE_ERROR_MESSAGE =
   "Verbindung konnte nicht entfernt werden. Erneut versuchen.";
-export const CTOX_SSH_REMOVE_SUCCESS_MESSAGE = "SSH-Backend entfernt.";
-export const CTOX_SSH_REMOVE_ERROR_MESSAGE =
-  "SSH-Backend konnte nicht entfernt werden. Erneut versuchen.";
+export const CTOX_SSH_REMOVE_SUCCESS_MESSAGE = "SSH-Instanz entfernt.";
+export const CTOX_SSH_REMOVE_ERROR_MESSAGE = "SSH-Instanz nicht entfernt. Erneut versuchen.";
 /**
  * SSH-managed instances are discovered and listed, but not launchable: the
  * remote daemon's signaling endpoints live on the remote loopback interface,
  * which the desktop cannot reach without an SSH port forward.
  */
-export const CTOX_SSH_LAUNCH_PENDING_HINT = "Dieses SSH-Backend ist derzeit nicht erreichbar.";
+export const CTOX_SSH_LAUNCH_PENDING_HINT = "SSH-Instanz nicht erreichbar.";
 
 const SOURCE_GROUP_DEFINITIONS: readonly {
   readonly key: CtoxSourceGroupKey;
   readonly label: string;
 }[] = [
-  { key: "managed", label: "CTOX Backend" },
-  { key: "paired", label: "Verbundene Backends" },
-  { key: "local", label: "Lokale Backends" },
-  { key: "ssh", label: "SSH-Backends" },
+  { key: "managed", label: "ctox.dev" },
+  { key: "paired", label: "Verbundene Instanzen" },
+  { key: "local", label: "Lokale Instanzen" },
+  { key: "ssh", label: "SSH-Instanzen" },
 ];
 
 const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
-  ctox_dev: "CTOX Backend",
+  ctox_dev: "ctox.dev",
   pairing_invite: "Desktop-Einladung",
   manual_pairing: "Manuell verbunden",
-  local_daemon: "Lokales Backend",
-  ssh_managed: "SSH-Backend",
+  local_daemon: "Lokale Instanz",
+  ssh_managed: "SSH-Instanz",
 };
 
 /** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
@@ -1173,9 +1172,11 @@ function ConfirmingTextAction({
     return () => clearTimeout(id);
   }, [armed]);
   return (
-    <button
+    <Button
       type="button"
-      className={cn(className, armed && "visible font-medium text-destructive")}
+      size="xs"
+      variant={armed ? "destructive" : "outline"}
+      className={className}
       disabled={disabled}
       aria-busy={busy}
       aria-label={armed ? `Bestätigen: ${ariaLabel}` : ariaLabel}
@@ -1190,7 +1191,7 @@ function ConfirmingTextAction({
       }}
     >
       {armed ? confirmLabel : label}
-    </button>
+    </Button>
   );
 }
 
@@ -1390,7 +1391,7 @@ function CtoxAppRailRow({
         data-ctox-app-id={app.id}
         data-ctox-app-open={open}
         data-ctox-app-docked={app.docked}
-        title={launchable ? undefined : "Dieses Backend ist nicht verfügbar."}
+        title={launchable ? undefined : "Instanz nicht verfügbar."}
         onClick={() => onOpen(app.id)}
       >
         <span
@@ -1558,7 +1559,7 @@ export function CtoxAppRailList({
  * like any other instance.
  */
 export function unavailableHint(instance: CtoxManagedInstance): string | undefined {
-  if (instance.source === "local_daemon") return "Dieses lokale Backend läuft nicht.";
+  if (instance.source === "local_daemon") return "Lokale Instanz läuft nicht.";
   if (instance.source === "ssh_managed") {
     return instance.status === "available" ? undefined : CTOX_SSH_LAUNCH_PENDING_HINT;
   }
@@ -1776,7 +1777,7 @@ export function CtoxManagedInstanceList({
 }: {
   readonly instances: readonly CtoxManagedInstance[];
 }) {
-  return <CtoxInstanceList instances={instances} label="CTOX Backends" />;
+  return <CtoxInstanceList instances={instances} label="Instanzen" />;
 }
 
 const fieldClassName =
@@ -2006,7 +2007,7 @@ export function PairingAddSurface({
             disabled={submitting}
             aria-busy={submitting}
           >
-            SSH-Backend hinzufügen
+            SSH-Instanz hinzufügen
           </button>
         </form>
       ) : choice === "invite" ? (
@@ -2103,46 +2104,55 @@ export function PairingAddSurface({
   );
 }
 
-function ManagedAccountState({
-  state,
-  hasPairedInstances,
-}: {
-  readonly state: CtoxManagedState;
-  readonly hasPairedInstances: boolean;
-}) {
-  const { refreshing, login, logout } = useCtoxMode();
-  if (state === "loading") {
+/** Ein Laden endet nach 10 s (UI-Vertrag §1.3). */
+function useLoadingExpired(loading: boolean): boolean {
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    setExpired(false);
+    if (!loading) return;
+    const timer = setTimeout(() => setExpired(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+  return loading && expired;
+}
+
+function ManagedAccountState({ state }: { readonly state: CtoxManagedState }) {
+  const { refreshing, login, logout, refresh } = useCtoxMode();
+  const expired = useLoadingExpired(state === "loading");
+  if (state === "loading" && !expired) {
     return (
       <p className="text-sm text-sidebar-muted-foreground" role="status">
-        CTOX Backends werden geladen…
+        Instanzen werden geladen …
       </p>
     );
   }
   if (state === "signed_out") {
     return (
-      <div className="flex items-center justify-between gap-2 px-2 py-1">
-        <p className="truncate text-xs text-sidebar-muted-foreground">
-          Nicht bei ctox.dev angemeldet
-        </p>
-        <button
-          type="button"
-          className="shrink-0 text-xs font-medium text-sidebar-primary underline-offset-2 hover:underline disabled:opacity-50"
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
+        <p className="text-xs text-sidebar-muted-foreground">Nicht bei ctox.dev angemeldet</p>
+        <Button
+          size="xs"
+          variant="outline"
+          className="shrink-0"
           onClick={login}
           disabled={refreshing}
           aria-busy={refreshing}
         >
           Anmelden
-        </button>
+        </Button>
       </div>
     );
   }
-  if (state === "failed") {
+  if (state === "failed" || state === "loading") {
     return (
-      <p className="px-2 py-1 text-xs text-destructive" role="alert">
-        {hasPairedInstances
-          ? "CTOX Backend konnte nicht geladen werden. Verbundene Backends bleiben verfügbar."
-          : "CTOX Backend konnte nicht geladen werden. Bitte erneut versuchen."}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
+        <p className="text-xs text-destructive" role="alert">
+          Instanz nicht erreichbar
+        </p>
+        <Button size="xs" variant="outline" disabled={refreshing} onClick={refresh}>
+          Erneut versuchen
+        </Button>
+      </div>
     );
   }
   return (
@@ -2150,7 +2160,7 @@ function ManagedAccountState({
       label="Abmelden"
       confirmLabel="Abmelden?"
       ariaLabel="Abmelden"
-      className="text-xs text-sidebar-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
+      className="self-start"
       disabled={refreshing}
       onConfirm={logout}
     />
@@ -2199,13 +2209,13 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
       <SidebarContent className="gap-0" data-ctox-sidebar-shell="">
         <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-4">
           <div className="mb-4 flex items-center justify-between gap-2 px-1">
-            <p className="text-sm font-semibold text-sidebar-foreground">Aktives Backend</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">Aktive Instanz</p>
             <div className="flex items-center gap-1">
               {/* Refresh lives ONCE, in the footer strip — the second copy
                   fifteen lines away confused more than it helped (K-B10). */}
-              <button
-                type="button"
-                className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"
+              <Button
+                size="icon-xs"
+                variant="ghost"
                 onClick={() => {
                   setMutationFeedback(null);
                   openInstanceSetup();
@@ -2215,22 +2225,20 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
                 title="Instanz hinzufügen"
               >
                 <Plus className="size-3.5" aria-hidden />
-              </button>
+              </Button>
             </div>
           </div>
 
           {bridge === undefined ? (
             <p className="mb-3 text-xs text-sidebar-muted-foreground" role="status">
-              CTOX Backend-Dienste sind nicht verfügbar.
+              Nur in der Desktop-App
             </p>
           ) : null}
           {discovery !== "loading" &&
           discovery.pairedUnavailable === true &&
           discovery.keyRecovery === undefined ? (
             <p className="mb-3 text-xs text-destructive" role="alert">
-              Gespeicherte Backend-Verbindungen sind teilweise oder vollständig nicht lesbar. Die
-              gespeicherten Daten wurden nicht verändert. Bitte den Schlüsselbundzugriff prüfen und
-              die Backends erneut aktualisieren.
+              Gespeicherte Verbindungen nicht lesbar
             </p>
           ) : null}
 
@@ -2248,22 +2256,20 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
             </p>
           )}
           {discovery !== "loading" && discovery._tag === "failed" ? (
-            <p className="text-xs text-destructive" role="alert">
-              CTOX Backends konnten nicht geladen werden. Bitte aktualisieren.
-            </p>
+            <ManagedAccountState state="failed" />
           ) : activeInstance === undefined ? (
             <div className="space-y-3">
               <p className="text-xs text-sidebar-muted-foreground" role="status">
-                Wähle ein Backend im Dropdown oben aus.
+                Keine Instanz gewählt
               </p>
-              <ManagedAccountState state={managedState} hasPairedInstances={false} />
+              <ManagedAccountState state={managedState} />
             </div>
           ) : (
             <div className="space-y-3">
-              <ManagedAccountState state={managedState} hasPairedInstances={true} />
+              <ManagedAccountState state={managedState} />
               <CtoxInstanceList
                 instances={[activeInstance]}
-                label="Aktives Backend"
+                label="Aktive Instanz"
                 removingId={removingId}
                 onRemove={remove}
               />
@@ -2498,12 +2504,12 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 
   const fallback = {
     connecting: connectingTooLong
-      ? "Die Verbindung dauert länger als erwartet. Das Backend ist möglicherweise nicht erreichbar. Bitte erneut auswählen oder die Backends aktualisieren."
+      ? "Instanz antwortet nicht. Erneut auswählen."
       : "Business OS wird verbunden…",
     ready: "Business OS ist bereit.",
     error: "Business OS konnte nicht geöffnet werden.",
-    revoked: "Zugriff auf dieses Backend ist nicht mehr verfügbar.",
-    idle: "CTOX Backend auswählen, um Business OS zu öffnen.",
+    revoked: "Zugriff entzogen.",
+    idle: "Instanz auswählen",
   }[connection];
 
   return (
@@ -2535,13 +2541,9 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
               fallback
             )}
             {(connectingTooLong || connection === "error") && (
-              <button
-                type="button"
-                className="rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-muted"
-                onClick={() => void select(instance)}
-              >
-                Erneut verbinden
-              </button>
+              <Button size="sm" variant="outline" onClick={() => void select(instance)}>
+                Erneut versuchen
+              </Button>
             )}
           </span>
         </div>
@@ -2551,7 +2553,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 }
 
 export function CtoxMainShell() {
-  const { discovery, selectedId, connection } = useCtoxMode();
+  const { discovery, selectedId, connection, refresh } = useCtoxMode();
   const navigate = useNavigate();
   const knownSelected =
     discovery !== "loading" && discovery._tag === "ready"
@@ -2562,33 +2564,32 @@ export function CtoxMainShell() {
       ? knownSelected
       : undefined;
 
-  const emptyState =
+  const loadingExpired = useLoadingExpired(discovery === "loading");
+  const openSettings = () => void navigate({ to: "/settings/business-os" });
+  // Leerzustand: Titel und genau ein Knopf, kein Satz (UI-Vertrag §1.3).
+  const emptyState: { readonly title: string; readonly action?: ReactNode } =
     connection === "revoked"
       ? {
           title: "Zugriff entzogen",
-          description: "Zugriff auf das ausgewählte Backend ist nicht mehr verfügbar.",
+          action: <Button onClick={openSettings}>Einstellungen</Button>,
         }
-      : discovery !== "loading" && discovery._tag === "failed"
+      : (discovery !== "loading" && discovery._tag === "failed") ||
+          loadingExpired ||
+          knownSelected !== undefined
         ? {
-            title: "CTOX Backend nicht verfügbar",
-            description:
-              "Instanzen konnten nicht geladen werden. Öffnen Sie Einstellungen → Business OS, um die Verbindung zu aktualisieren.",
+            title: "Instanz nicht erreichbar",
+            action: (
+              <Button variant="outline" onClick={refresh}>
+                Erneut versuchen
+              </Button>
+            ),
           }
         : discovery === "loading"
-          ? {
-              title: "CTOX Backends werden geladen",
-              description: "Die Backends werden noch geladen.",
-            }
-          : knownSelected !== undefined
-            ? {
-                title: "Backend derzeit nicht verfügbar",
-                description:
-                  "Die ausgewählte Instanz bleibt gespeichert. Aktualisieren Sie die Backends und versuchen Sie es erneut.",
-              }
-            : {
-                title: "Kein Backend ausgewählt",
-                description: "Wählen Sie ein verfügbares Backend aus, um Business OS zu öffnen.",
-              };
+          ? { title: "Instanzen werden geladen …" }
+          : {
+              title: "Keine Instanz gewählt",
+              action: <Button onClick={openSettings}>Instanz auswählen</Button>,
+            };
 
   return (
     <SidebarInset
@@ -2632,11 +2633,13 @@ export function CtoxMainShell() {
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-xl text-foreground">{emptyState.title}</EmptyTitle>
-              <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                {emptyState.description}
-              </EmptyDescription>
+              <EmptyTitle className="text-xl text-foreground" role="status">
+                {emptyState.title}
+              </EmptyTitle>
             </EmptyHeader>
+            {emptyState.action === undefined ? null : (
+              <EmptyContent className="mx-auto mt-4">{emptyState.action}</EmptyContent>
+            )}
           </div>
         </Empty>
       ) : (

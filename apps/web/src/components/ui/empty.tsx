@@ -102,12 +102,13 @@ function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
 }
 
 /**
- * Ladezustand mit Ende (UI-Vertrag §1.3): nach 10 s eine Statuszeile mit
- * „Erneut versuchen“ statt endlosem Skeleton.
+ * Ladezustand mit Ende (UI-Vertrag §1.3): nach 10 s ersetzt eine Statuszeile
+ * mit „Erneut versuchen“ den Ladetitel, nie beides zugleich und nie ein
+ * endloses Skeleton.
  */
 function EmptyLoading({
   title = "Laden …",
-  slowMessage = "Das Laden dauert länger als erwartet.",
+  slowMessage = "Keine Antwort.",
   retryLabel = "Erneut versuchen",
   onRetry,
   timeoutMs = 10_000,
@@ -130,8 +131,7 @@ function EmptyLoading({
   return (
     <Empty className={className} data-slot="empty-loading">
       <EmptyHeader>
-        <EmptyTitle>{title}</EmptyTitle>
-        {slow ? <EmptyDescription>{slowMessage}</EmptyDescription> : null}
+        <EmptyTitle role="status">{slow ? slowMessage : title}</EmptyTitle>
       </EmptyHeader>
       {slow && onRetry ? (
         <EmptyContent>

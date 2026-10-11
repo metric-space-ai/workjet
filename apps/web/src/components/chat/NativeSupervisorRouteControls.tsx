@@ -243,12 +243,15 @@ export function NativeSupervisorRouteControls(props: {
       refreshWorkjetProjectRegistry(scope.instanceId);
       instance.refresh();
     } catch (failure) {
-      if (isCurrent() && !controller.signal.aborted)
+      if (isCurrent() && !controller.signal.aborted) {
         setError(
           failure instanceof Error
             ? failure.message
             : "The Supervisor selection could not be saved.",
         );
+        instance.refresh();
+        refreshWorkjetProjectRegistry(scope.instanceId);
+      }
     } finally {
       if (operation.current === controller) {
         operation.current = null;

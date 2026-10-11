@@ -144,7 +144,10 @@ describe("ACP Linux namespace execution", () => {
             );
           }),
         (owned) => Effect.promise(owned.close),
-      ).pipe(Effect.provideService(HostProcessPlatform, hostPlatform), Effect.provide(NodeServices.layer)),
+      ).pipe(
+        Effect.provideService(HostProcessPlatform, hostPlatform),
+        Effect.provide(NodeServices.layer),
+      ),
     { timeout: 15000 },
   );
 });

@@ -192,6 +192,7 @@ function makeGuestHarness(windowOwners?: readonly BrowserWindow[]) {
     assert.deepEqual(webPreferences, {
       session: browserSession,
       preload: webPreferences.preload,
+      backgroundThrottling: false,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,

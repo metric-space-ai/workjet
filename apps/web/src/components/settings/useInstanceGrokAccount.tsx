@@ -69,10 +69,7 @@ export function useInstanceGrokAccount(
       } catch (failure) {
         if (!active.signal.aborted && alive.current) {
           if (failure instanceof WorkjetProjectControlError) setConnectionFailure(failure.failure);
-          else
-            setError(
-              failure instanceof Error ? failure.message : "Grok control failed. Retry the action.",
-            );
+          else setError(failure instanceof Error ? failure.message : "Grok-Aktion fehlgeschlagen.");
         }
         return undefined;
       } finally {
@@ -118,7 +115,7 @@ export function useInstanceGrokAccount(
         apply(result);
         if (result.login?.phase === "pending") {
           if (Date.now() >= expiresAt) {
-            setError("The sign-in code expired. Start sign-in again.");
+            setError("Anmeldecode abgelaufen. Neu anmelden.");
             void run({ action: "instance.grok.cancel", loginId });
           } else
             timer = setTimeout(() => {
@@ -130,16 +127,12 @@ export function useInstanceGrokAccount(
           // instance must independently advertise it before any request is sent.
           if (result.models.includes("grok-4.7"))
             void run({ action: "instance.grok.check", modelId: "grok-4.7" });
-          else
-            setError(
-              "Sign-in succeeded, but grok-4.7 is absent from this subscription's live catalog. Refresh models.",
-            );
+          else setError("Angemeldet, aber grok-4.7 fehlt im Abo. Modelle neu laden.");
         } else if (result.login?.phase === "failed" || result.login?.phase === "expired") {
-          setError("Sign-in did not complete. Start sign-in again.");
+          setError("Anmeldung nicht abgeschlossen. Neu anmelden.");
         }
       } catch {
-        if (!active.signal.aborted)
-          setError("Could not follow the sign-in. Refresh this account to continue or cancel.");
+        if (!active.signal.aborted) setError("Anmeldung nicht verfolgbar. Konto neu laden.");
       }
     };
     timer = setTimeout(() => {
@@ -188,7 +181,7 @@ export function useInstanceGrokAccount(
               <Button
                 variant="ghost"
                 size="icon-xs"
-                aria-label={`Add Grok Build account on ${label}`}
+                aria-label={`Grok-Konto auf ${label} hinzufügen`}
                 data-workjet-action="models.instance.xai.add-account"
                 disabled={!!busy || phase === "pending"}
                 onClick={start}
@@ -199,7 +192,7 @@ export function useInstanceGrokAccount(
           </div>
           <span className="block break-words text-[11px] text-muted-foreground">
             {label} ·{" "}
-            {state ? (state.installed ? state.accountLabel : "OAuth subscription") : "Not loaded"}
+            {state ? (state.installed ? state.accountLabel : "OAuth-Abo") : "Nicht geladen"}
           </span>
         </div>
         <div role="cell" className="flex min-w-0 flex-wrap gap-1">
@@ -220,12 +213,12 @@ export function useInstanceGrokAccount(
                 data-workjet-action={`models.instance.xai.check.${modelId}`}
                 title={
                   running
-                    ? "Checking…"
+                    ? "Prüft …"
                     : check?.status === "ok"
-                      ? `Hi check passed · ${check.latencyMs} ms · ${new Date(check.checkedAt).toLocaleString()}`
+                      ? `Prüfung bestanden · ${check.latencyMs} ms · ${new Date(check.checkedAt).toLocaleString("de-DE")}`
                       : check?.status === "error"
                         ? describeInstanceGrokFailure(check)
-                        : "Not checked. Click to check."
+                        : "Nicht geprüft"
                 }
               >
                 <span className="min-w-0 whitespace-normal break-all">{modelId}</span>
@@ -240,21 +233,19 @@ export function useInstanceGrokAccount(
                   }
                   aria-label={
                     running
-                      ? "Checking"
+                      ? "Prüft"
                       : check?.status === "ok"
-                        ? "Check passed"
+                        ? "Prüfung bestanden"
                         : check?.status === "error"
-                          ? (check.errorCode ?? "Check failed")
-                          : "Not checked"
+                          ? (check.errorCode ?? "Prüfung fehlgeschlagen")
+                          : "Nicht geprüft"
                   }
                 />
               </button>
             );
           })}
           {state?.installed && state.models.length === 0 && (
-            <span className="text-xs text-muted-foreground">
-              Live models unavailable. Refresh to retry.
-            </span>
+            <span className="text-xs text-muted-foreground">Keine Modelle gemeldet</span>
           )}
           {!state?.installed && phase !== "pending" && (
             <Button
@@ -268,11 +259,7 @@ export function useInstanceGrokAccount(
             </Button>
           )}
         </div>
-        <span
-          role="cell"
-          title="This provider has not reported limits."
-          className="text-xs text-muted-foreground"
-        >
+        <span role="cell" title="Keine Limits gemeldet" className="text-xs text-muted-foreground">
           —
         </span>
         <span
@@ -280,11 +267,11 @@ export function useInstanceGrokAccount(
           title={
             state
               ? state.installed
-                ? "Subscription stored on this CTOX instance."
-                : "No subscription stored."
-              : "Account status unavailable. Refresh to retry."
+                ? "Abo gespeichert"
+                : "Kein Abo gespeichert"
+              : "Kontostatus nicht verfügbar"
           }
-          aria-label={state ? undefined : "Account status unavailable"}
+          aria-label={state ? undefined : "Kontostatus nicht verfügbar"}
           className="text-center text-xs text-muted-foreground"
         >
           {state ? (state.installed ? "✓" : "—") : "◌"}
@@ -294,7 +281,7 @@ export function useInstanceGrokAccount(
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label={`Remove Grok Build account from ${label}`}
+              aria-label={`Grok-Konto von ${label} entfernen`}
               disabled={!!busy}
               onClick={() => setConfirmRemove(true)}
               data-workjet-action="models.instance.xai.remove"
@@ -305,7 +292,7 @@ export function useInstanceGrokAccount(
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Refresh Grok account"
+              aria-label="Grok-Konto neu laden"
               disabled={!!busy}
               onClick={() => {
                 void run({ action: "instance.grok.read" });
@@ -319,37 +306,40 @@ export function useInstanceGrokAccount(
       {phase === "pending" && login && (
         <div role="status" className="flex flex-wrap items-center gap-3 py-2 text-xs">
           <span>
-            Enter code <strong className="font-mono select-all">{login.userCode}</strong> to sign in
-            on {label}.
+            Code <strong className="font-mono select-all">{login.userCode}</strong>
           </span>
           {link ? (
-            <a
-              href={link}
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-              data-workjet-action="models.instance.xai.open-login"
+            <Button
+              size="xs"
+              render={
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-workjet-action="models.instance.xai.open-login"
+                />
+              }
             >
-              Open Grok sign-in
-            </a>
+              Grok-Anmeldung öffnen
+            </Button>
           ) : (
-            <span role="alert">Invalid sign-in URL. Cancel and retry.</span>
+            <span role="alert">Anmeldelink ungültig. Abbrechen und neu starten.</span>
           )}
           <Button
             size="xs"
-            variant="ghost"
+            variant="outline"
             disabled={!!busy}
             onClick={() => {
               void run({ action: "instance.grok.cancel", loginId: login.loginId });
             }}
           >
-            Cancel sign-in
+            Anmeldung abbrechen
           </Button>
         </div>
       )}
       {confirmRemove && (
         <div role="alert" className="flex flex-wrap items-center gap-2 py-2 text-xs">
-          <span>Remove this subscription and its saved check from {label}?</span>
+          <span>Abo von {label} entfernen?</span>
           <Button
             size="xs"
             variant="destructive"
@@ -361,15 +351,15 @@ export function useInstanceGrokAccount(
               });
             }}
           >
-            Remove
+            Entfernen
           </Button>
           <Button
             size="xs"
-            variant="ghost"
+            variant="outline"
             disabled={!!busy}
             onClick={() => setConfirmRemove(false)}
           >
-            Cancel
+            Abbrechen
           </Button>
         </div>
       )}

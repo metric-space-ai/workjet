@@ -36,7 +36,7 @@ import { ProviderInstanceCard } from "./ProviderInstanceCard";
 
 const instanceId = ProviderInstanceId.make("codex_work");
 
-const ROUTE_TOGGLE_LABEL = "Route Codex Work via Workjet gateway";
+const ROUTE_TOGGLE_LABEL = "Codex Work über Gateway";
 
 function renderCard(
   instance: ProviderInstanceConfig,

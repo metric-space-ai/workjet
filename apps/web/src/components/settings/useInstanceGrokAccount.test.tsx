@@ -9,11 +9,11 @@ function AccountRow() {
 describe("Unloaded instance Grok account", () => {
   it("shows unknown status before any instance reply without claiming the subscription is absent", () => {
     const rendered = renderToStaticMarkup(<AccountRow />);
-    expect(rendered).toContain("Not loaded");
-    expect(rendered).toContain('aria-label="Account status unavailable"');
-    expect(rendered).toContain("Account status unavailable. Refresh to retry.");
-    expect(rendered).not.toContain("No subscription stored.");
-    expect(rendered).not.toContain("Subscription stored on this CTOX instance.");
-    expect(rendered).toContain('aria-label="Refresh Grok account"');
+    expect(rendered).toContain("Nicht geladen");
+    expect(rendered).toContain('aria-label="Kontostatus nicht verfügbar"');
+    expect(rendered).toContain('title="Kontostatus nicht verfügbar"');
+    expect(rendered).not.toContain("Kein Abo gespeichert");
+    expect(rendered).not.toContain("Abo gespeichert");
+    expect(rendered).toContain('aria-label="Grok-Konto neu laden"');
   });
 });

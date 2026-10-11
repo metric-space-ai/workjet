@@ -139,7 +139,7 @@ describe("Provider account table", () => {
       const rendered = html({ accountHealth: { [first.id]: health } });
       expect(rendered).toContain(`width:${remainingPercent}%`);
       expect(rendered).toContain(color);
-      expect(rendered.includes("Limit reached")).toBe(remainingPercent === 0);
+      expect(rendered.includes("Limit erreicht")).toBe(remainingPercent === 0);
       expect(rendered).toContain(`aria-valuenow="${remainingPercent}"`);
     }
     const health = modelsAccountHealth(
@@ -165,7 +165,7 @@ describe("Provider account table", () => {
     const rendered = html({ accountHealth: { [first.id]: health } });
     expect(rendered).toContain("unbekannt");
     expect(rendered).toContain("Richtung des Anbieterwerts ist nicht belegt");
-    expect(rendered).not.toContain("Limit reached");
+    expect(rendered).not.toContain("Limit erreicht");
     expect(rendered).not.toContain('role="meter"');
   });
   it("groups an instance outage once while local xAI remains active and verified", () => {
@@ -207,22 +207,19 @@ describe("Provider account table", () => {
       ),
     });
     expect(rendered.match(/data-workjet-instance-connection=/g)).toHaveLength(1);
-    expect(rendered).toContain("Instance Welsch");
-    expect(rendered).toContain("This computer");
-    expect(rendered).toContain("navigation_commit");
-    expect(rendered).toContain("The instance page could not be loaded.");
-    expect(rendered).toContain("Reconnect");
+    expect(rendered).toContain("Instanz Welsch");
+    expect(rendered).toContain("Dieser Rechner");
+    expect(rendered).toContain("Neu verbinden");
     expect(rendered).not.toContain("guest_failed");
     expect(rendered).not.toContain("Not loaded");
     expect(rendered).toContain("work@example.test");
     expect(rendered).toContain("grok-4.7");
     expect(rendered).toContain("200");
   });
-  it("shows a German instance status and safe diagnostic disclosure", () => {
+  it("shows a German instance status without raw diagnostics", () => {
     const rendered = renderToStaticMarkup(
       <InstanceConnectionStatus
         label="Welsch"
-        language="de"
         failure={{
           _tag: "failed",
           code: "guest_failed",
@@ -232,10 +229,9 @@ describe("Provider account table", () => {
         reconnect={() => {}}
       />,
     );
-    expect(rendered).toContain("Verbindung zur Instanz Welsch gestört");
+    expect(rendered).toContain("Welsch");
     expect(rendered).toContain("Neu verbinden");
-    expect(rendered).toContain("<details>");
-    expect(rendered).toContain("Sitzung vorbereiten");
+    expect(rendered).not.toContain("<details>");
     expect(rendered).not.toContain("guest_failed");
     expect(rendered).not.toContain("text-destructive");
   });
@@ -292,16 +288,17 @@ describe("Provider account table", () => {
     };
     const rendered = html({ modelChecks: [timeout] });
     expect(rendered).toContain('data-model-check="unavailable"');
-    expect(rendered).toContain("Check timed out");
-    expect(rendered).toContain(">Retry</button>");
-    expect(rendered).not.toContain("Re-login");
+    expect(rendered).toContain("Zeitüberschreitung");
+    expect(rendered).toContain(">Erneut prüfen</button>");
+    expect(rendered).not.toContain("Neu anmelden");
     expect(rendered).not.toContain('data-model-check="running"');
-    expect(modelCheckDescription(timeout, false)).toContain("Check timed out");
+    expect(modelCheckDescription(timeout, false)).toContain("Zeitüberschreitung");
   });
   it("shows stacked accounts with their own editable models and only their own check result", () => {
     const rendered = html();
-    expect(rendered).toContain('role="table"');
-    expect(rendered).toContain("Provider / account");
+    expect(rendered.match(/data-slot="row"/g)).toHaveLength(2);
+    expect(rendered).not.toContain('role="table"');
+    expect(rendered).not.toContain('data-slot="popover-trigger"');
     expect(rendered).toContain('value="work@example.test"');
     expect(rendered).toContain('value="backup@example.test"');
     expect(rendered).toContain('value="grok-4.7"');
@@ -310,13 +307,14 @@ describe("Provider account table", () => {
     expect(rendered.match(/data-model-check="unchecked"/g)).toHaveLength(1);
     expect(rendered).not.toContain("Gateway pools");
     expect(rendered).not.toContain("LLM routes");
-    expect(rendered).not.toContain("Re-login");
+    expect(rendered).not.toContain("Neu anmelden");
     expect(rendered).toContain("Anbieter meldet kein Limit");
-    expect(rendered).toContain("Add provider");
-    expect(rendered).toContain("Check all");
-    expect(rendered).toContain("Actions for work@example.test");
-    expect(rendered).toContain('aria-label="Permanently remove account work@example.test"');
-    expect(rendered).toContain('data-workjet-action="models.account.account-a.remove-start"');
+    expect(rendered).toContain("Hinzufügen");
+    expect(rendered).toContain("Alle prüfen");
+    expect(rendered).toContain("Aktionen für work@example.test");
+    expect(rendered).toContain('aria-label="Entfernen"');
+    expect(rendered).toContain('aria-label="Konto work@example.test verwenden"');
+    expect(rendered).toContain('data-workjet-action="models.add-provider"');
   });
   it("keeps the API key recognizer with its editable account identity", () => {
     const apiAccount: WorkjetGatewayAccountSummary = {
@@ -328,21 +326,21 @@ describe("Provider account table", () => {
       modelIds: ["glm-5.3-flash"],
     };
     const rendered = html({ catalog: { ...state.catalog!, accounts: [apiAccount] } });
-    expect(rendered).toContain('aria-label="Account name Production"');
-    expect(rendered).toContain('aria-label="Edit API key for Production"');
-    expect(rendered).toContain("API key ··mAzP");
-    expect(html()).not.toContain("API key");
+    expect(rendered).toContain('aria-label="Kontoname Production"');
+    expect(rendered).toContain("Aktionen für Production");
+    expect(rendered).toContain("API-Key ··mAzP");
+    expect(html()).not.toContain("API-Key");
   });
   it.each([
     {
       plan: "coding" as const,
       upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const,
-      title: "Coding plan",
+      title: "Coding-Plan",
     },
     {
       plan: "api" as const,
       upstreamBaseUrl: "https://api.moonshot.cn/v1" as const,
-      title: "API plan",
+      title: "API-Plan",
     },
   ])(
     "shows $title and its verified endpoint directly on the account",
@@ -359,36 +357,38 @@ describe("Provider account table", () => {
       const rendered = html({ catalog: { ...state.catalog!, accounts: [account] } });
       expect(rendered).toContain(title);
       expect(rendered).toContain(kimiConnection.upstreamBaseUrl);
-      expect(rendered).toContain("API key ··abcd");
+      expect(rendered).toContain("API-Key ··abcd");
+      // The verified endpoint is a tooltip, not visible text.
+      expect(rendered).toContain(`title="${kimiConnection.upstreamBaseUrl}"`);
       expect(rendered).not.toContain("<select");
     },
   );
   it("reveals re-login only when this enabled account has an authentication failure", () => {
     expect(
       html({ modelChecks: [{ ...check, status: "error", errorClass: "auth", httpStatus: 401 }] }),
-    ).toContain("Re-login");
+    ).toContain("Neu anmelden");
     expect(
       html({
         catalog: { ...state.catalog!, accounts: [{ ...first, enabled: false }] },
         modelChecks: [{ ...check, status: "error", errorClass: "auth" }],
       }),
-    ).not.toContain("Re-login");
+    ).not.toContain("Neu anmelden");
   });
   it("renders failed model checks as failures with an actionable model-specific class", () => {
     const rendered = html({
       modelChecks: [{ ...check, status: "error", errorClass: "unknown-model", httpStatus: 404 }],
     });
     expect(rendered).toContain('data-model-check="error"');
-    expect(rendered).toContain("Unknown model · edit this model ID");
+    expect(rendered).toContain("Unbekanntes Modell · Modell-ID prüfen");
     expect(rendered).not.toContain('data-model-check="ok"');
   });
   it("does not offer re-login for a provider permission denial", () => {
     const denied = { ...check, status: "error" as const, errorClass: "auth", httpStatus: 403 };
     const rendered = html({ modelChecks: [denied] });
-    expect(rendered).toContain("provider denied access (HTTP 403)");
-    expect(rendered).not.toContain("Re-login");
-    expect(modelCheckDescription(denied, false)).toContain("Access denied");
-    expect(modelCheckDescription(denied, false)).not.toContain("sign in again");
+    expect(rendered).toContain("Zugriff verweigert (HTTP 403)");
+    expect(rendered).not.toContain("Neu anmelden");
+    expect(modelCheckDescription(denied, false)).toContain("Zugriff verweigert");
+    expect(modelCheckDescription(denied, false)).not.toContain("neu anmelden");
   });
 
   it("shows gateway failures and old unverified errors as grey without a login demand", () => {
@@ -419,16 +419,16 @@ describe("Provider account table", () => {
       const rendered = html({ modelChecks: [unavailable] });
       expect(rendered).toContain('data-model-check="unavailable"');
       expect(rendered).not.toContain('data-model-check="error"');
-      expect(rendered).not.toContain("Re-login");
-      expect(modelCheckDescription(unavailable, false)).toContain("Not checked");
-      expect(modelCheckDescription(unavailable, false)).not.toContain("Authentication failed");
+      expect(rendered).not.toContain("Neu anmelden");
+      expect(modelCheckDescription(unavailable, false)).toContain("Nicht geprüft");
+      expect(modelCheckDescription(unavailable, false)).not.toContain("Anmeldung fehlgeschlagen");
     }
   });
   it("keeps timing and old results honest during a new check", () => {
-    expect(modelCheckDescription(undefined, false)).toBe("Not checked");
-    expect(modelCheckDescription(undefined, true)).toBe("Checking this model");
+    expect(modelCheckDescription(undefined, false)).toBe("Nicht geprüft");
+    expect(modelCheckDescription(undefined, true)).toBe("Prüft …");
     expect(modelCheckDescription(check, true)).toContain("354 ms");
-    expect(modelCheckDescription(check, true)).toContain("checking again");
+    expect(modelCheckDescription(check, true)).toContain("prüft erneut");
   });
   it("accepts direct comma-separated edits and rejects unsafe model IDs", () => {
     expect(parseModels("gpt-6.1-sol, gpt-6-luna, gpt-6.1-sol\nkimi-k3")).toEqual([
@@ -443,6 +443,24 @@ describe("Provider account table", () => {
 });
 
 describe("shared provider models", () => {
+  it("offers model suggestions as an inline toggle, never a popover", () => {
+    const rendered = html({
+      catalog: {
+        ...state.catalog!,
+        accounts: [{ ...first, provider: "kimi", modelIds: ["k3"] }],
+        providerModels: [{ provider: "kimi", modelIds: ["k3"] }],
+      },
+      onEditProviderModels: async () => true,
+      onExcludeModel: async () => true,
+      modelSuggestions: { kimi: ["k3", "kimi-for-coding"] },
+    });
+    expect(rendered).toContain('aria-label="Modellvorschläge für Kimi (Moonshot)"');
+    expect(rendered).toContain('aria-expanded="false"');
+    expect(rendered).not.toContain('data-slot="popover-trigger"');
+    expect(rendered).not.toContain('aria-haspopup="dialog"');
+    // Closed by default: the suggestion list expands below the field on click.
+    expect(rendered).not.toContain('role="group" aria-label="Modellvorschläge');
+  });
   it("edits models once per provider and offers only account exclusions", () => {
     const account = {
       ...first,
@@ -462,10 +480,10 @@ describe("shared provider models", () => {
     });
     expect(rendered).toContain('data-workjet-action="models.provider.kimi.models"');
     expect(rendered).toContain("k3, kimi-for-coding");
-    expect(rendered).toContain('aria-label="Use k3 for work@example.test"');
-    expect(rendered).toContain("Excluded for this account");
-    expect(rendered).not.toContain('aria-label="Add model for work@example.test"');
-    expect(rendered).not.toContain('aria-label="Model k3 for work@example.test"');
+    expect(rendered).toContain('aria-label="k3 für work@example.test verwenden"');
+    expect(rendered).toContain("Für dieses Konto ausgeschlossen");
+    expect(rendered).not.toContain('aria-label="Modell hinzufügen für work@example.test"');
+    expect(rendered).not.toContain('aria-label="Modell k3 für work@example.test"');
   });
   it("does not activate a model absent from this account's live list", () => {
     const rendered = html({
@@ -477,8 +495,8 @@ describe("shared provider models", () => {
       onEditProviderModels: async () => true,
       onExcludeModel: async () => true,
     });
-    expect(rendered).toContain("Not offered by this account&#x27;s live model list");
-    expect(rendered).toContain('aria-label="Use kimi-for-coding for work@example.test"');
+    expect(rendered).toContain("Nicht in der Live-Modellliste des Kontos");
+    expect(rendered).toContain('aria-label="kimi-for-coding für work@example.test verwenden"');
     expect(rendered).toContain('disabled=""');
   });
 });

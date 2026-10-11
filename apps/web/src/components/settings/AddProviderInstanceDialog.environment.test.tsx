@@ -28,11 +28,11 @@ vi.mock("../../hooks/useSettings", () => ({
   useUpdateEnvironmentSettings: settingsHooks.update,
 }));
 
-import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { AddProviderInstancePanel } from "./AddProviderInstanceDialog";
 
 const remoteEnvironmentId = EnvironmentId.make("remote-device");
 
-describe("AddProviderInstanceDialog environment routing", () => {
+describe("AddProviderInstancePanel environment routing", () => {
   beforeEach(() => {
     hooks.reset();
     settingsHooks.read.mockClear();
@@ -41,10 +41,9 @@ describe("AddProviderInstanceDialog environment routing", () => {
 
   it("reads and writes settings through the supplied environment", () => {
     hooks.beginRender();
-    AddProviderInstanceDialog({
+    AddProviderInstancePanel({
       open: true,
       environmentId: remoteEnvironmentId,
-      environmentLabel: "Remote device",
       onOpenChange: vi.fn(),
     });
 

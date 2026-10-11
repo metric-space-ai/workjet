@@ -98,6 +98,7 @@ vi.mock("../../state/session", () => ({
   useEnvironmentSessionState: () => ({ data: null, hasError: false, isPending: true }),
 }));
 
+import { AddProviderInstancePanel } from "./AddProviderInstanceDialog";
 import {
   EnvironmentProviderSettings,
   PROVIDER_AUTO_REFRESH_COOLDOWN_MS,
@@ -207,7 +208,7 @@ describe("EnvironmentProviderSettings routing", () => {
     const panel = renderPanel();
     const refreshButton = visitElements(
       panel,
-      (element) => element.props["aria-label"] === "Refresh provider status",
+      (element) => element.props["aria-label"] === "Neu prüfen",
     );
     expect(refreshButton).not.toBeNull();
     (refreshButton?.props.onClick as (() => void) | undefined)?.();
@@ -239,14 +240,12 @@ describe("EnvironmentProviderSettings routing", () => {
     const providerCard = visitElements(panel, (element) => element.props.instanceId === codexId);
     expect(providerCard).not.toBeNull();
 
-    const notice = visitElements(panel, (element) => element.props.title === "Limited permissions");
+    const notice = visitElements(panel, (element) => element.props.title === "Nur Ansicht");
     expect(notice).not.toBeNull();
 
+    expect(visitElements(panel, (element) => element.type === AddProviderInstancePanel)).toBeNull();
     expect(
-      visitElements(panel, (element) => element.props["aria-label"] === "Add provider instance"),
-    ).toBeNull();
-    expect(
-      visitElements(panel, (element) => element.props["aria-label"] === "Refresh provider status"),
+      visitElements(panel, (element) => element.props["aria-label"] === "Neu prüfen"),
     ).toBeNull();
   });
 
@@ -254,9 +253,11 @@ describe("EnvironmentProviderSettings routing", () => {
     atoms.providers = [provider()];
     const panel = renderPanel();
     expect(visitElements(panel, (element) => element.props.inert === true)).toBeNull();
-    expect(
-      visitElements(panel, (element) => element.props.title === "Limited permissions"),
-    ).toBeNull();
+    expect(visitElements(panel, (element) => element.props.title === "Nur Ansicht")).toBeNull();
+    // Adding a harness happens inline on the page, never in a dialog.
+    const addPanel = visitElements(panel, (element) => element.type === AddProviderInstancePanel);
+    expect(addPanel).not.toBeNull();
+    expect(addPanel?.props.environmentId).toBe(environmentId);
   });
 
   it("deletes and resets provider configuration without erasing shared preferences", () => {

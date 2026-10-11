@@ -69,7 +69,7 @@ describe("reported limit expiration while Models remains open", () => {
   it("cancels the old expiry timer when the receipt becomes unknown", () => {
     render(quota);
     expect(vi.getTimerCount()).toBe(1);
-    expect(render({ state: "unknown" })).toContain("has not reported limits");
+    expect(render({ state: "unknown" })).toContain("Keine Limits gemeldet");
     expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -41,23 +41,23 @@ export function modelsAccountHealth(
             : "unknown";
   const message =
     status === "auth-required"
-      ? "This account's credentials were rejected (HTTP 401)."
+      ? "Anmeldedaten abgelehnt (HTTP 401)."
       : status === "cooldown"
         ? exhausted
-          ? "Quota exhausted in the highlighted window. Available accounts handle new requests."
+          ? "Kontingent erschöpft. Andere Konten übernehmen."
           : generationStatus === 403
-            ? "This account is cooling down after an access denial (HTTP 403)."
-            : `This account is cooling down after its last failed request${generationStatus === null ? "" : ` (HTTP ${generationStatus})`}.`
+            ? "Pausiert nach Zugriffsverweigerung (HTTP 403)."
+            : `Pausiert nach Fehler${generationStatus === null ? "" : ` (HTTP ${generationStatus})`}.`
         : status === "unavailable"
           ? balanceExhausted
-            ? "Available API balance is exhausted. Add funds or check voucher validity."
+            ? "Guthaben aufgebraucht."
             : generationStatus === 402
-              ? "Check your subscription or balance."
+              ? "Abo oder Guthaben prüfen."
               : generationStatus === 403
-                ? "The provider denied access. Check this account and subscription."
+                ? "Zugriff verweigert. Konto und Abo prüfen."
                 : account.errorCode?.includes("model")
-                  ? "Model unavailable. Check the model names above."
-                  : "This account's last request failed. Re-check its models."
+                  ? "Modell nicht verfügbar."
+                  : "Letzte Anfrage fehlgeschlagen."
           : null;
   return {
     status,

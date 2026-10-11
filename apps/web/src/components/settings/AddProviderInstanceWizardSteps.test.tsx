@@ -1,65 +1,71 @@
-import { Children, isValidElement, type ReactElement } from "react";
+import type { ReactElement } from "react";
+import { ProviderDriverKind } from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { ADD_PROVIDER_WIZARD_STEPS } from "./AddProviderInstanceDialog.logic";
-import { AddProviderInstanceWizardSteps } from "./AddProviderInstanceWizardSteps";
+import { visitElements } from "../../test/reactElementTree";
+import {
+  AddProviderInstanceDriverSelect,
+  COMING_SOON_DRIVER_OPTIONS,
+} from "./AddProviderInstanceWizardSteps";
+import { DRIVER_OPTIONS } from "./providerDriverMeta";
 
-interface StepButtonProps {
-  readonly "aria-current"?: string;
-  readonly onClick: () => void;
+type Element = ReactElement<Record<string, unknown>>;
+
+function collectItems(tree: unknown): Element[] {
+  const items: Element[] = [];
+  visitElements(tree, (element) => {
+    if (typeof element.props["value"] === "string" && "hideIndicator" in element.props) {
+      items.push(element);
+    }
+    return false;
+  });
+  return items;
 }
 
-interface StepListItemProps {
-  readonly children: ReactElement<StepButtonProps>;
+function render(onDriverChange = vi.fn()) {
+  return AddProviderInstanceDriverSelect({
+    driver: ProviderDriverKind.make("codex"),
+    onDriverChange,
+  }) as Element;
 }
 
-function renderStepButtons(
-  currentStep: number,
-  instanceIdError: string | null,
-  onNavigation: Parameters<typeof AddProviderInstanceWizardSteps>[0]["onNavigation"],
-): ReactElement<StepButtonProps>[] {
-  const header = AddProviderInstanceWizardSteps({
-    currentStep,
-    summaries: ["Codex", "Codex Workspace", null],
-    instanceIdError,
-    onNavigation,
+describe("AddProviderInstanceDriverSelect (single-level add panel)", () => {
+  it("offers every shipped harness plus disabled upcoming ones in one selection", () => {
+    const items = collectItems(render());
+
+    expect(items).toHaveLength(DRIVER_OPTIONS.length + COMING_SOON_DRIVER_OPTIONS.length);
+    const disabled = items.filter((item) => item.props["disabled"] === true);
+    expect(disabled.map((item) => item.props["value"])).toEqual(
+      COMING_SOON_DRIVER_OPTIONS.map((option) => option.value),
+    );
   });
 
-  return Children.toArray(header.props.children)
-    .filter((child): child is ReactElement<StepListItemProps> => isValidElement(child))
-    .map((item) => item.props.children);
-}
+  it("switches the harness for a shipped driver", () => {
+    const onDriverChange = vi.fn();
+    const select = render(onDriverChange);
+    const onValueChange = select.props["onValueChange"] as (value: unknown) => void;
 
-describe("AddProviderInstanceWizardSteps", () => {
-  it("gates the actual Config header click through Identity validation", () => {
-    const onNavigation = vi.fn();
-    const buttons = renderStepButtons(0, "Instance ID is required.", onNavigation);
+    onValueChange("claudeAgent");
 
-    expect(buttons).toHaveLength(ADD_PROVIDER_WIZARD_STEPS.length);
-    buttons[2]!.props.onClick();
-
-    expect(onNavigation).toHaveBeenCalledOnce();
-    expect(onNavigation).toHaveBeenCalledWith({
-      kind: "blocked",
-      step: 1,
-      error: "Instance ID is required.",
-    });
+    expect(onDriverChange).toHaveBeenCalledWith("claudeAgent");
   });
 
-  it("marks the wizard step separately from the clicked button focus", () => {
-    const buttons = renderStepButtons(1, "Instance ID is required.", vi.fn());
+  it("ignores values that are not shipped drivers", () => {
+    const onDriverChange = vi.fn();
+    const select = render(onDriverChange);
+    const onValueChange = select.props["onValueChange"] as (value: unknown) => void;
 
-    expect(buttons[0]!.props["aria-current"]).toBeUndefined();
-    expect(buttons[1]!.props["aria-current"]).toBe("step");
-    expect(buttons[2]!.props["aria-current"]).toBeUndefined();
+    onValueChange("gemini");
+    onValueChange(null);
+
+    expect(onDriverChange).not.toHaveBeenCalled();
   });
 
-  it("preserves the actual backward header click", () => {
-    const onNavigation = vi.fn();
-    const buttons = renderStepButtons(2, "Instance ID is required.", onNavigation);
-
-    buttons[0]!.props.onClick();
-
-    expect(onNavigation).toHaveBeenCalledWith({ kind: "navigate", step: 0 });
+  it("labels the selection in German without wizard steps", () => {
+    const select = render();
+    const trigger = visitElements(select, (element) => element.props["aria-label"] === "Harness");
+    expect(trigger).not.toBeNull();
+    const stepButton = visitElements(select, (element) => element.props["aria-current"] === "step");
+    expect(stepButton).toBeNull();
   });
 });

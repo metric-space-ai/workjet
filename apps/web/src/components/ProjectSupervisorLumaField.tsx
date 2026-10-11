@@ -1,4 +1,4 @@
-import type { WorkjetWorkerProfile } from "@workjet/contracts";
+import type { WorkjetWorkerProfile, WorkjetLumaTarget } from "@workjet/contracts";
 import { useBusinessOsCodeScope } from "../businessOsCodeScope";
 import { usePrimaryEnvironment } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
@@ -20,6 +20,7 @@ export function useProjectSupervisorLumas(boundSource?: {
 }): {
   readonly instanceId: string | null;
   readonly instanceName: string | null;
+  readonly target: WorkjetLumaTarget | null;
   readonly phase: "loading" | "ready" | "unavailable";
   readonly profiles: readonly WorkjetWorkerProfile[];
 } {

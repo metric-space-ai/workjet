@@ -25,6 +25,8 @@ export class SupervisorTickReactor extends Context.Service<
   }
 >()("workjet/orchestration/Layers/SupervisorTickReactor") {}
 
+const decodePullRequests = Schema.decodeUnknownEffect(Schema.fromJsonString(SupervisorPullRequests));
+
 export const makeSupervisorTickReactor = Effect.gen(function* () {
   const query = yield* ProjectionSnapshotQuery;
   const engine = yield* OrchestrationEngineService;
@@ -135,9 +137,7 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
               timeoutMs: 15000,
               maxOutputBytes: 512000,
             });
-            return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(SupervisorPullRequests))(
-              result.stdout,
-            );
+            return yield* decodePullRequests(result.stdout);
           }),
         );
       } else sourceErrors.push("No project repository configured");

@@ -18,6 +18,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { OrchestrationLayerLive } from "../runtimeLayer.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -37,10 +38,10 @@ function runtimeLayer(db: string, dir: string) {
   );
 }
 it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
-  it.scoped(
+  it.effect(
     "collects SQL history, admits one concurrent tick, and retains state after restart",
     () =>
-      Effect.gen(function* () {
+      Effect.scoped(Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const dir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-supervisor-tick-" });
@@ -141,7 +142,7 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
                           },
                         ]),
                         stderr: "",
-                        exitCode: 0,
+                        exitCode: ChildProcessSpawner.ExitCode(0),
                         stdoutTruncated: false,
                         stderrTruncated: false,
                       });
@@ -204,6 +205,6 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
             });
           }).pipe(Effect.provide(runtimeLayer(db, dir))),
         );
-      }),
+      })),
   );
 });

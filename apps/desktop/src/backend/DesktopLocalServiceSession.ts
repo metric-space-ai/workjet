@@ -29,6 +29,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type * as Scope from "effect/Scope";
@@ -36,6 +37,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 import * as Credential from "./DesktopLocalServiceCredential.ts";
 import { ElectronDialog } from "../electron/ElectronDialog.ts";
+import { currentRecovery } from "../app/DesktopKeyRecovery.ts";
 
 const LocalCliCommandFailure = Schema.Struct({
   command: Schema.Literals([
@@ -87,6 +89,7 @@ const IssuedSession = Schema.Struct({
 });
 type Store = Effect.Success<ReturnType<typeof Credential.make>>;
 export interface LocalSessionDependencies {
+  readonly keyLossDetected?: Effect.Effect<boolean, LocalServiceSessionError>;
   readonly confirmRecovery: (
     target: LocalServiceTarget,
   ) => Effect.Effect<boolean, LocalServiceSessionError>;
@@ -325,8 +328,14 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
               )
                 return yield* fail("verify the recovery target for");
               yield* credentialStore.requireProtection;
+              const saved = yield* credentialStore.get.pipe(Effect.result);
+              const automatic =
+                Result.isFailure(saved) &&
+                ["decrypt", "decode"].includes(saved.failure.operation) &&
+                dependencies.keyLossDetected !== undefined &&
+                (yield* dependencies.keyLossDetected);
               recoveryRequested.add(target.baseDir);
-              if (!(yield* dependencies.confirmRecovery(target)))
+              if (!automatic && !(yield* dependencies.confirmRecovery(target)))
                 return yield* fail("recover after cancelling");
               const ids = new Set<string>(
                 recovery.sessionId === undefined ? [] : [recovery.sessionId],
@@ -558,6 +567,10 @@ export const make = Effect.gen(function* () {
       Effect.mapError(classifySessionConnectionFailure),
     );
   const access = yield* makeSessionAccess({
+    keyLossDetected: currentRecovery.pipe(
+      Effect.map((recovery) => recovery?.pendingLogin === true && recovery.unreadableStores.includes("session")),
+      Effect.mapError(() => fail("inspect local key recovery for")),
+    ),
     confirmRecovery: (target) => requestLocalSessionRecoveryConsent(dialog, target),
     listEnrollmentSessions: (config, target, attemptId) =>
       runCli(config, ["auth", "session", "list", ...identityArgs(target), "--json"]).pipe(

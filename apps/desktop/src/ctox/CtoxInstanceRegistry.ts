@@ -1282,12 +1282,22 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     }).pipe(Effect.mapError(() => registryError("persistence_failed")));
   });
 
+  const assertRecoverableConsistency = (
+    publicDocument: PublicRegistryDocument,
+    secretDocument: SecretRegistryDocument,
+  ) =>
+    Effect.gen(function* () {
+      const recovery = Option.isSome(keyRecovery) ? yield* keyRecovery.value.inspect : undefined;
+      if (recovery?.ctoxRetired) return;
+      yield* assertRegistryConsistency(publicDocument, secretDocument);
+    }).pipe(Effect.mapError(() => registryError("persistence_failed")));
+
   const readPairedInstances = Effect.fn("CtoxInstanceRegistry.readPairedInstances")(function* () {
     const [publicDocument, secretDocument] = yield* Effect.all([
       readPublicDocument(fileSystem, publicRegistryPath),
       readSecretDocument(fileSystem, secretRegistryPath),
     ]);
-    yield* assertRegistryConsistency(publicDocument, secretDocument);
+    yield* assertRecoverableConsistency(publicDocument, secretDocument);
     if (publicDocument.instances.length === 0) {
       return { instances: [] as readonly CtoxManagedInstance[], pairedUnavailable: false };
     }
@@ -1298,7 +1308,11 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     let storageUnavailable = Result.isFailure(yield* assertSafeStorage().pipe(Effect.result));
     for (const instance of publicDocument.instances) {
       const record = secretsById.get(instance.id);
-      if (record === undefined) return yield* registryError("persistence_failed");
+      if (record === undefined) {
+        pairedUnavailable = true;
+        instances.push({ ...instance, status: "pairing_expired" });
+        continue;
+      }
       if (storageUnavailable) {
         pairedUnavailable = true;
         instances.push({ ...instance, status: "error" });
@@ -1368,8 +1382,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       readPublicDocument(fileSystem, publicRegistryPath),
       readSecretDocument(fileSystem, secretRegistryPath),
     ]);
-    yield* assertRegistryConsistency(publicDocument, secretDocument);
     const descriptor = publicDocument.instances.find((instance) => instance.id === instanceId);
+    yield* assertRecoverableConsistency(publicDocument, secretDocument);
     const record = secretDocument.records.find((entry) => entry.id === instanceId);
     if (
       descriptor === undefined ||
@@ -1561,7 +1575,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       readPublicDocument(fileSystem, publicRegistryPath),
       readSecretDocument(fileSystem, secretRegistryPath),
     ]);
-    yield* assertRegistryConsistency(publicDocument, secretDocument);
+    yield* assertRecoverableConsistency(publicDocument, secretDocument);
 
     if (replacesInstanceId !== undefined) {
       const original = publicDocument.instances.find((entry) => entry.id === replacesInstanceId);
@@ -1700,6 +1714,48 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
                   keyRecovery: {
                     pendingLogin: recovery.pendingLogin,
                     connectionCatalogReset: recovery.catalogReset === true,
+                    ...(recovery.ctoxRetired || recovery.managedRepairStarted
+                      ? {
+                          generation: recovery.generation,
+                          repairingInstanceIds: (recovery.instanceRepairs ?? [])
+                            .filter((entry) => entry.state === "repairing")
+                            .map((entry) => entry.instanceId),
+                          repairedInstanceIds: (recovery.instanceRepairs ?? [])
+                            .filter((entry) => entry.state === "repaired")
+                            .map((entry) => entry.instanceId),
+                          instanceIssues: [
+                            ...(recovery.instanceRepairs ?? [])
+                              .filter((entry) => entry.state === "repair_failed")
+                              .map((entry) => ({
+                                instanceId: entry.instanceId,
+                                reason: "repair_failed" as const,
+                              })),
+                            ...(recovery.pendingLogin
+                              ? [
+                                  ...new Map(
+                                    [
+                                      ...stored,
+                                      ...(managed._tag === "ready" ? managed.instances : []),
+                                    ]
+                                      .filter((entry) => entry.id.startsWith("managed:"))
+                                      .map((entry) => [entry.id, entry]),
+                                  ).values(),
+                                ].map((entry) => ({
+                                  instanceId: entry.id,
+                                  reason: "login_required" as const,
+                                }))
+                              : []),
+                            ...(recovery.ctoxRetired
+                              ? paired
+                                  .filter((entry) => entry.status === "pairing_expired")
+                                  .map((entry) => ({
+                                    instanceId: entry.id,
+                                    reason: "pairing_required" as const,
+                                  }))
+                              : []),
+                          ],
+                        }
+                      : {}),
                   },
                 };
           if (merged._tag !== "ready") {
@@ -1791,7 +1847,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             readPublicDocument(fileSystem, publicRegistryPath),
             readSecretDocument(fileSystem, secretRegistryPath),
           ]);
-          yield* assertRegistryConsistency(publicDocument, secretDocument);
+          yield* assertRecoverableConsistency(publicDocument, secretDocument);
           const descriptor = publicDocument.instances.find(
             (instance) => instance.id === instanceId,
           );

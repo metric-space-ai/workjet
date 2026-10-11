@@ -80,6 +80,7 @@ import * as DesktopShellEnvironment from "./shell/DesktopShellEnvironment.ts";
 import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopComputerProvisioner from "./provisioning/DesktopComputerProvisioner.ts";
+import * as DesktopComputers from "./computers/DesktopComputers.ts";
 import * as DesktopState from "./app/DesktopState.ts";
 import { resolveDesktopProfileHome } from "./app/DesktopTestProfile.ts";
 import * as DesktopUserDataMigration from "./app/DesktopUserDataMigration.ts";
@@ -303,6 +304,12 @@ const desktopApplicationLayer = Layer.mergeAll(
   Layer.provideMerge(desktopCtoxFleetLayer),
   Layer.provideMerge(desktopSshLayer),
   Layer.provideMerge(desktopProvisioningLayer),
+  Layer.provideMerge(
+    DesktopComputers.layer.pipe(
+      Layer.provideMerge(desktopBackendLayer),
+      Layer.provideMerge(desktopCtoxLayer),
+    ),
+  ),
   // provideMerge, not mergeAll: the application menu resolves the bundle
   // service, and the IPC handler resolves the same instance from the
   // re-exported context.

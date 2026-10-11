@@ -7,6 +7,7 @@ import {
 } from "./workjetNativeProviders.ts";
 export * from "./workjetNativeProviders.ts";
 import * as Schema from "effect/Schema";
+import { ComputerRoles, ComputerFacts } from "./computerDetection.ts";
 import {
   WorkjetSupervisorRouteRequests,
   WorkjetSupervisorRouteResponses,
@@ -404,6 +405,17 @@ export type CtoxManagedDiscoveryResult = typeof CtoxManagedDiscoveryResult.Type;
 const CtoxKeyRecoveryStatus = Schema.Struct({
   pendingLogin: Schema.Boolean,
   connectionCatalogReset: Schema.Boolean,
+  generation: Schema.optionalKey(Schema.String),
+  repairingInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
+  repairedInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
+  instanceIssues: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        instanceId: CtoxManagedInstanceId,
+        reason: Schema.Literals(["repair_failed", "login_required", "pairing_required"]),
+      }),
+    ),
+  ),
 });
 export const CtoxDiscoveryResult = Schema.Union([
   Schema.TaggedStruct("ready", {
@@ -1345,6 +1357,10 @@ export const CtoxWorkjetComputerControlRequest = Schema.Union([
     hostingMode: CtoxComputerHostingMode,
     capabilities: CtoxComputerCapabilities,
     capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+    roles: Schema.optionalKey(ComputerRoles),
+    active: Schema.optionalKey(Schema.Boolean),
+    detectedFacts: Schema.optionalKey(ComputerFacts),
+    hostKeyFingerprint: Schema.optionalKey(Schema.NullOr(CtoxProjectText(256))),
     agentless: Schema.optionalKey(Schema.Boolean),
     selfHostedColocation: Schema.Literal(false),
   }),
@@ -1385,6 +1401,10 @@ export const CtoxWorkjetComputerProjection = Schema.Struct({
   status: Schema.Literals(["assigned", "unassigned"]),
   capabilities: CtoxComputerCapabilities,
   capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+  roles: Schema.optionalKey(ComputerRoles),
+  active: Schema.optionalKey(Schema.Boolean),
+  detectedFacts: Schema.optionalKey(ComputerFacts),
+  hostKeyFingerprint: Schema.optionalKey(Schema.NullOr(CtoxProjectText(256))),
   agentless: Schema.optionalKey(Schema.Boolean),
   selfHostedColocation: Schema.Boolean,
 });

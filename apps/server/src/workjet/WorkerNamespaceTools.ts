@@ -12,7 +12,7 @@ import type * as AcpSchema from "effect-acp/schema";
 import { workerNamespaceSpawnInput, type WorkerNamespaceSpawnCapture } from "./WorkerNamespaceSpawn.ts";
 
 const error = (cause: unknown) =>
-  new AcpErrors.AcpTransportError({ detail: "Confined worker tool failed", cause });
+  new AcpErrors.AcpTransportError({ detail: typeof cause === "string" ? cause : "Confined worker tool failed", cause });
 const MAX_TEXT = 4 * 1024 * 1024;
 const MAX_TERMINAL_OUTPUT = 1024 * 1024;
 
@@ -39,7 +39,15 @@ export const workerToolOutputText = (output: Output): string => {
   if (output.truncated) {
     while (start < output.bytes.length && (output.bytes[start]! & 0xc0) === 0x80) start++;
   }
-  return new TextDecoder().decode(output.bytes.subarray(start));
+  let end = output.bytes.length;
+  let last = end - 1;
+  while (last >= start && (output.bytes[last]! & 0xc0) === 0x80) last--;
+  if (last >= start) {
+    const lead = output.bytes[last]!;
+    const expected = lead >= 0xc2 && lead <= 0xdf ? 2 : lead >= 0xe0 && lead <= 0xef ? 3 : lead >= 0xf0 && lead <= 0xf4 ? 4 : 1;
+    if (end - last < expected) end = last;
+  }
+  return new TextDecoder().decode(output.bytes.subarray(start, end));
 };
 
 interface Terminal {
@@ -66,6 +74,7 @@ export const makeWorkerNamespaceTools = (
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const crypto = yield* Crypto.Crypto;
+    const runtimeScope = yield* Scope.Scope;
     const terminals = new Map<string, Terminal>();
     const creation = yield* Semaphore.make(1);
     const close = (terminal: Terminal) =>
@@ -185,7 +194,7 @@ export const makeWorkerNamespaceTools = (
             return yield* error("Terminal cwd is outside the captured worktree; escalation required");
           }
           const terminalId = yield* crypto.randomUUIDv4.pipe(Effect.mapError(error));
-          const scope = yield* Scope.make();
+          const scope = yield* Scope.fork(runtimeScope, "sequential");
           const done = yield* Deferred.make<AcpSchema.WaitForTerminalExitResponse, AcpErrors.AcpError>();
           const child = yield* spawn({
             kind: "terminal",

@@ -109,6 +109,18 @@ try:
     changed["worktree"]["identity"]["inode"] = "0"
     tool({"kind": "write", "path": str(target)}, "forbidden", succeeds=False, changed=changed)
     assert target.read_text() == "one\n🙂two\nthree\n"
+    original = root / "original-worker"
+    workspace.rename(original)
+    workspace.mkdir(mode=0o700)
+    try:
+        tool({"kind": "write", "path": str(target)}, "forbidden", succeeds=False)
+        assert not target.exists()
+        assert (original / "source.txt").read_text() == "one\n🙂two\nthree\n"
+    finally:
+        workspace.rmdir()
+        original.rename(workspace)
+    checks.append("real-worktree-replacement-does-not-adopt-a-new-directory")
+
     direct = subprocess.run([str(helper), "--worker-namespace-tools", json.dumps({
         "version": 1, "worktree": cap(workspace), "hostNetwork": plan["hostNetwork"],
         "operation": {"kind": "write", "path": str(target)},

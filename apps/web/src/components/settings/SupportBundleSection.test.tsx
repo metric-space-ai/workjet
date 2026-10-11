@@ -6,7 +6,6 @@ import {
   describeSupportBundleRedaction,
   formatSupportBundleSize,
   INITIAL_SUPPORT_BUNDLE_STATE,
-  SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE,
   SupportBundleSectionView,
 } from "./SupportBundleSection";
 
@@ -58,10 +57,8 @@ describe("support bundle section", () => {
     expect(markup).toContain("Pfad kopieren");
   });
 
-  it("explains itself instead of offering a dead button off the desktop", () => {
-    const markup = renderView({ isAvailable: false });
-    expect(markup).toContain(SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE);
-    expect(markup).toContain("disabled");
+  it("hides the whole section off the desktop instead of a dead button", () => {
+    expect(renderView({ isAvailable: false })).toBe("");
   });
 
   it("surfaces a failure instead of pretending a bundle exists", () => {

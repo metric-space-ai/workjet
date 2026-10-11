@@ -172,7 +172,7 @@ function HarnessAvailabilityNote({
   if (view.kind === "agrees" || view.kind === "unknown") return null;
   const isProblem = view.kind === "declared-but-missing";
   return (
-    <p
+    <span
       className={cn(
         "text-xs",
         !compact && "sm:col-span-3",
@@ -180,11 +180,12 @@ function HarnessAvailabilityNote({
       )}
       data-workjet-harness-availability={view.kind}
       role={isProblem ? "alert" : undefined}
+      {...(isProblem ? { title: view.reason } : {})}
     >
       {isProblem
-        ? `Eingeschaltet, hier nicht lauffähig: ${view.reason}`
-        : `Installiert${view.version === undefined ? "" : ` (${view.version})`}, aber ausgeschaltet`}
-    </p>
+        ? "Nicht lauffähig"
+        : `Installiert${view.version === undefined ? "" : ` · ${view.version}`}`}
+    </span>
   );
 }
 
@@ -254,7 +255,7 @@ export function WorkjetComputerEditor({
         <div className={cn("grid gap-3", !compact && "sm:grid-cols-2")}>
           {!computer ? (
             <div className="space-y-1.5">
-              <Label htmlFor="workjet-computer-environment">Verbindung</Label>
+              <Label htmlFor="workjet-computer-environment">Rechner</Label>
               <Select
                 value={draft.environmentId || null}
                 onValueChange={(value) => {
@@ -266,7 +267,7 @@ export function WorkjetComputerEditor({
                   setError(null);
                 }}
               >
-                <SelectTrigger id="workjet-computer-environment" aria-label="Rechnerverbindung">
+                <SelectTrigger id="workjet-computer-environment" aria-label="Rechner">
                   <SelectValue>{selectedEnvironment?.label ?? "Rechner wählen"}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
@@ -292,7 +293,7 @@ export function WorkjetComputerEditor({
             />
           </div>
           <div className={cn("space-y-1.5", !compact && "sm:col-span-2")}>
-            <Label htmlFor="workjet-computer-kind">Verbindungsart</Label>
+            <Label htmlFor="workjet-computer-kind">Verbindung</Label>
             <p id="workjet-computer-kind" className="text-sm text-muted-foreground">
               {PRESENTATION_OPTIONS.find(
                 (option) =>
@@ -305,7 +306,7 @@ export function WorkjetComputerEditor({
 
         <div className="space-y-2">
           <div>
-            <h3 className="text-sm font-medium">Coding-Werkzeuge</h3>
+            <h3 className="text-sm font-medium">Werkzeuge</h3>
           </div>
           {draft.harnesses.map((configuration) => {
             const label = WORKJET_HARNESS_OPTIONS.find(
@@ -322,11 +323,9 @@ export function WorkjetComputerEditor({
                 )}
               >
                 <Label htmlFor={inputId}>{label}</Label>
-                {/* The override is an expert escape hatch, and six always-open
-                  text inputs made the form read like a deployment script (the
-                  Swift editor shows availability first). Folded away unless a
-                  value exists — an existing override stays visible, because a
-                  hidden ACTIVE override would be worse than the clutter. */}
+                {/* Den Programmpfad erkennt der Rechner selbst (Erkennen statt
+                  fragen). Nur ein schon gesetzter Pfad bleibt sichtbar, damit er
+                  geleert werden kann; kein „Erweitert“-Aufklapper. */}
                 {configuration.executableOverride ? (
                   <Input
                     id={inputId}
@@ -339,29 +338,11 @@ export function WorkjetComputerEditor({
                         }),
                       )
                     }
-                    placeholder="Programmpfad (optional)"
+                    placeholder="Programmpfad"
                     aria-label={`${label}: Programmpfad`}
                   />
                 ) : (
-                  <details>
-                    <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
-                      Programmpfad …
-                    </summary>
-                    <Input
-                      id={inputId}
-                      nativeInput
-                      value={configuration.executableOverride}
-                      onChange={(event) =>
-                        setDraft((current) =>
-                          updateWorkjetComputerHarness(current, configuration.harness, {
-                            executableOverride: event.target.value,
-                          }),
-                        )
-                      }
-                      placeholder="Programmpfad (optional)"
-                      aria-label={`${label}: Programmpfad`}
-                    />
-                  </details>
+                  <span aria-hidden="true" />
                 )}
                 <Switch
                   checked={configuration.available}

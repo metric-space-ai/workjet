@@ -162,7 +162,8 @@ describe("WorkjetComputerEditor", () => {
     ]) {
       expect(markup).toContain(label);
     }
-    expect(markup).toContain("Coding-Werkzeuge");
+    expect(markup).toContain("Werkzeuge");
+    expect(markup).not.toContain("<details");
     expect(markup).toContain("Bezeichnung");
   });
   it("keeps the connection fixed while editing an offline computer", () => {

@@ -9,7 +9,7 @@ import { openInstanceRePair } from "../../instanceSetup";
 
 /**
  * Instanzliste (UI-Vertrag §1.2): ein Objekt, eine Zeile. Statuspunkt, Name,
- * Domain als Meta, Aktiv-Schalter, Papierkorb mit Inline-Bestätigung und
+ * Adresse als Meta, Aktiv-Schalter, Papierkorb mit Inline-Bestätigung und
  * ⋯-Menü für Seltenes (Auswählen, Neu koppeln, Diagnose).
  */
 export const INSTANCE_LIST_TEXT = {
@@ -38,7 +38,7 @@ export function instanceRowState(instance: CtoxManagedInstance): InstanceRowStat
   }
   switch (instance.status) {
     case "offline":
-      return { status: "error", label: "Offline", chip: "Offline" };
+      return { status: "error", label: "Getrennt", chip: "Getrennt" };
     case "pairing_expired":
       return { status: "error", label: "Kopplung abgelaufen", chip: "Abgelaufen" };
     case "needs_auth":
@@ -54,7 +54,7 @@ export function instanceRowState(instance: CtoxManagedInstance): InstanceRowStat
   }
 }
 
-/** Meta-Zeile: die Domain, sonst ein kurzer Ort. */
+/** Meta-Zeile: die Adresse, sonst ein kurzer Ort. */
 export function instanceRowMeta(instance: CtoxManagedInstance): string {
   if (instance.domain) return instance.domain;
   switch (instance.source) {
@@ -119,9 +119,8 @@ function InstanceDiagnosis({ instance }: { readonly instance: CtoxManagedInstanc
   const entries: ReadonlyArray<readonly [string, string]> = [
     ["Zustand", state.label],
     ["Quelle", SOURCE_LABELS[instance.source]],
-    ["Domain", instance.domain ?? "—"],
+    ["Adresse", instance.domain ?? "—"],
     ["Synchronisierung", instance.healthSummary.dataPlaneReady ? "bereit" : "nicht bestätigt"],
-    ["ID", instance.id],
   ];
   return (
     <dl

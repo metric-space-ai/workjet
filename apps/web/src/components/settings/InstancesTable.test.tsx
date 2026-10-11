@@ -86,7 +86,7 @@ describe("Instances table", () => {
       />,
     );
     expect(html).toContain("welsch.ctox.dev");
-    expect(html).toContain("Offline");
+    expect(html).toContain("Getrennt");
     for (const english of ["Enabled", "Remove", "Select", "Pair again", "Connected"])
       expect(html).not.toContain(english);
     expect(html).not.toContain("Wechsle zuerst");

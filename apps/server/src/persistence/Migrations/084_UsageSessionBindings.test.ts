@@ -9,7 +9,9 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      assert.deepEqual(migrationManifest.slice(-4), [
+      // Spätere Migrationen dürfen folgen; geprüft wird die Reihenfolge bis 084.
+      const through084 = migrationManifest.findIndex(([id]) => id === 84);
+      assert.deepEqual(migrationManifest.slice(through084 - 3, through084 + 1), [
         [81, "WorkerSourceCustody"],
         [82, "WorkerAutonomyDefaults"],
         [83, "WorkerSupervisorDecisions"],
@@ -32,7 +34,9 @@ it.effect(
       yield* sql`INSERT INTO projection_thread_sessions
       (thread_id, status, provider_name, provider_thread_id, updated_at)
       VALUES ('supervisor', 'idle', 'codex', 'session-two', '2026-10-11T00:00:00Z')`;
-      assert.deepEqual(yield* runMigrations(), [[84, "UsageSessionBindings"]]);
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 84 }), [
+        [84, "UsageSessionBindings"],
+      ]);
       assert.deepEqual(
         yield* sql`SELECT thread_id, provider_name, session_id FROM usage_session_bindings ORDER BY thread_id`,
         [
@@ -46,7 +50,7 @@ it.effect(
       VALUES ('worker', 'claudeAgent', 'claudeAgent', 'idle', '2026-10-11T00:01:00Z', '{"resume":"session-one"}')
       ON CONFLICT(thread_id) DO UPDATE SET resume_cursor_json = excluded.resume_cursor_json`;
       yield* sql`UPDATE provider_session_runtime SET resume_cursor_json = '{"resume":"session-three"}' WHERE thread_id = 'worker'`;
-      assert.deepEqual(yield* runMigrations(), []);
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 84 }), []);
       assert.deepEqual(
         yield* sql`SELECT session_id FROM usage_session_bindings WHERE thread_id = 'worker' ORDER BY session_id`,
         [{ session_id: "session-one" }, { session_id: "session-three" }],

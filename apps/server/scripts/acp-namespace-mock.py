@@ -73,6 +73,9 @@ for line in sys.stdin:
         stopped = call("terminal/wait_for_exit", {"terminalId": sleeping})
         assert stopped.get("exitCode", 0) != 0 or stopped.get("signal") in ("SIGTERM", "SIGKILL"), stopped
         call("terminal/release", {"terminalId": sleeping})
+        if turns == 2:
+            # Deliberately leave an owned terminal alive for runtime-scope teardown.
+            call("terminal/create", {"command": "/usr/bin/sleep", "args": ["30"]})
         pathlib.Path(os.environ["HOME"]).joinpath("acp-turns").write_text(str(turns))
         write({"method": "session/update", "params": {
             "sessionId": session, "update": {"sessionUpdate": "agent_message_chunk",

@@ -308,9 +308,12 @@ export const makeWorkerNamespaceTools = (
                     // Node's spawner reports its actual OS exit signal via the original cause.
                     // Never manufacture an exit code from the requested kill signal.
                     const reason = cause.reason;
-                    const signal = reason.method === "exitCode" && reason.cause instanceof Error
-                      ? /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/.exec(reason.cause.message)?.[1]
-                      : undefined;
+                    const signal =
+                      reason.method === "exitCode" && reason.cause instanceof Error
+                        ? /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/.exec(
+                            reason.cause.message,
+                          )?.[1]
+                        : undefined;
                     return signal ? Effect.succeed({ signal }) : Effect.fail(error(cause));
                   }),
                   Effect.tap((status) =>

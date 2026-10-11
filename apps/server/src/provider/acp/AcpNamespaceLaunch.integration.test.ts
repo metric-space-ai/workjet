@@ -6,6 +6,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import { makeWorkerSourceModelSocket } from "../../workjet/WorkerSourceModelSocket.ts";
@@ -105,8 +106,10 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
           (owned) =>
             Effect.gen(function* () {
               let callbacks = 0;
+              const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+              const children: ChildProcessSpawner.ChildProcessHandle[] = [];
               yield* Effect.tryPromise(owned.verify);
-              return yield* Effect.gen(function* () {
+              yield* Effect.gen(function* () {
                 const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
                 yield* runtime.handleReadTextFile(() =>
                   Effect.sync(() => {
@@ -135,6 +138,12 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                   );
                 }
                 expect(callbacks).toBe(0);
+                const commits = yield* Effect.tryPromise(() =>
+                  Promise.resolve(NodeChildProcess.execFileSync("/usr/bin/git", [
+                    "-C", owned.workspace, "rev-list", "--count", "HEAD",
+                  ], { timeout: 5000, encoding: "utf8" }).trim()),
+                );
+                expect(commits).toBe("2");
                 expect(
                   yield* Effect.tryPromise(() =>
                     NodeFSP.readFile(NodePath.join(owned.home, "acp-turns"), "utf8"),
@@ -163,6 +172,12 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                   }),
                 ),
                 Effect.scoped,
+                Effect.provideService(
+                  ChildProcessSpawner.ChildProcessSpawner,
+                  ChildProcessSpawner.make((command) => spawner.spawn(command).pipe(
+                    Effect.tap((child) => Effect.sync(() => { children.push(child); })),
+                  )),
+                ),
                 Effect.onError(() =>
                   Effect.tryPromise(() =>
                     NodeFSP.readFile(NodePath.join(owned.home, "acp-tool-replies"), "utf8"),
@@ -172,6 +187,10 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                   ),
                 ),
               );
+              expect(children.length).toBeGreaterThan(1);
+              for (const child of children) {
+                expect(yield* child.isRunning).toBe(false);
+              }
             }),
           (owned) => Effect.promise(owned.close),
         );

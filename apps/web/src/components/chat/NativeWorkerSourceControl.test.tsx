@@ -108,7 +108,7 @@ describe("automatic supervisor worker connection", () => {
     await bindConnection.mock.results[0]!.value;
     await Promise.resolve();
     expect(bindConnection).toHaveBeenCalledExactlyOnceWith(replacement);
-    expect(savedConfig.capabilityBindings).toContainEqual({
+    expect(savedConfig.schemaVersion === 2 ? savedConfig.capabilityBindings : []).toContainEqual({
       capabilityId: "ctox-business-os",
       target: {
         kind: "ctox-connection",

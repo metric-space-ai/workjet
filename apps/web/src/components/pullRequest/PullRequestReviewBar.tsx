@@ -28,20 +28,20 @@ const VERDICTS: ReadonlyArray<{
 }> = [
   {
     value: "comment",
-    label: "Comment",
-    sent: "Review submitted",
+    label: "Kommentieren",
+    sent: "Review gesendet",
     icon: <MessageSquareIcon className="size-3" />,
   },
   {
     value: "approve",
-    label: "Approve",
-    sent: "Pull request approved",
+    label: "Freigeben",
+    sent: "Pull Request freigegeben",
     icon: <CheckIcon className="size-3" />,
   },
   {
     value: "request-changes",
-    label: "Request changes",
-    sent: "Changes requested",
+    label: "Änderungen anfragen",
+    sent: "Änderungen angefragt",
     icon: <XCircleIcon className="size-3" />,
   },
 ];
@@ -92,7 +92,7 @@ export function PullRequestReviewBar({
     setPending(false);
     if (result._tag === "Failure") {
       // The draft is kept: whatever went wrong, retyping the review is not the answer.
-      toastManager.add({ type: "error", title: "The review could not be submitted" });
+      toastManager.add({ type: "error", title: "Review nicht gesendet" });
       return;
     }
     // More remarks may have been added while the host was accepting this snapshot. Leave those,
@@ -115,12 +115,12 @@ export function PullRequestReviewBar({
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>
           {comments.length === 0
-            ? "No line comments yet"
-            : `${comments.length} ${comments.length === 1 ? "comment" : "comments"} pending`}
+            ? "Keine Zeilenkommentare"
+            : `${comments.length} ${comments.length === 1 ? "Kommentar" : "Kommentare"} offen`}
         </span>
         {comments.length > 0 ? (
           <Button size="xs" variant="ghost" disabled={pending} onClick={() => clear(reviewKey)}>
-            Discard
+            Verwerfen
           </Button>
         ) : null}
       </div>
@@ -128,8 +128,8 @@ export function PullRequestReviewBar({
         size="sm"
         className="mt-2"
         value={body}
-        placeholder="Summarize your review (optional)"
-        aria-label="Review summary"
+        placeholder="Zusammenfassung (optional)"
+        aria-label="Zusammenfassung"
         onChange={(event) => setSummary(reviewKey, event.target.value)}
       />
       <div className="mt-2 flex flex-wrap justify-end gap-2">

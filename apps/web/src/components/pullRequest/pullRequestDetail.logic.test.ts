@@ -65,21 +65,21 @@ describe("pull request state description", () => {
 describe("pull request handoff labels", () => {
   it("names the open thread when actions write to its composer", () => {
     expect(pullRequestHandoffLabels(true)).toEqual({
-      fixFinding: "Fix in this thread",
-      fixCheck: "Fix in this thread",
-      fixFindings: "Fix findings in this thread",
-      resolve: "Resolve in this thread",
-      resolveConflicts: "Resolve conflicts in this thread",
+      fixFinding: "In diesem Chat beheben",
+      fixCheck: "In diesem Chat beheben",
+      fixFindings: "Befunde in diesem Chat beheben",
+      resolve: "In diesem Chat lösen",
+      resolveConflicts: "Konflikte in diesem Chat lösen",
     });
   });
 
   it("keeps the standalone pull request page labels", () => {
     expect(pullRequestHandoffLabels(false)).toEqual({
-      fixFinding: "Fix in a thread",
-      fixCheck: "Fix",
-      fixFindings: "Fix findings in a thread",
-      resolve: "Resolve in a new thread",
-      resolveConflicts: "Resolve conflicts in a thread",
+      fixFinding: "In Chat beheben",
+      fixCheck: "Beheben",
+      fixFindings: "Befunde in Chat beheben",
+      resolve: "In neuem Chat lösen",
+      resolveConflicts: "Konflikte in Chat lösen",
     });
   });
 });

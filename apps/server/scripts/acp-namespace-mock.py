@@ -17,6 +17,8 @@ def call(method, params, succeeds=True, session_id=session):
     request_id += 1
     write({"id": request_id, "method": method, "params": {"sessionId": session_id, **params}})
     reply = json.loads(sys.stdin.readline())
+    with pathlib.Path(os.environ["HOME"]).joinpath("acp-tool-replies").open("a") as log:
+        log.write(json.dumps({"method": method, "reply": reply}) + "\n")
     assert reply.get("id") == request_id, reply
     assert ("result" in reply) == succeeds, reply
     return reply.get("result")
@@ -68,7 +70,8 @@ for line in sys.stdin:
         call("terminal/release", {"terminalId": outside})
         sleeping = call("terminal/create", {"command": "/usr/bin/sleep", "args": ["30"]})["terminalId"]
         call("terminal/kill", {"terminalId": sleeping})
-        assert call("terminal/wait_for_exit", {"terminalId": sleeping})["exitCode"] != 0
+        stopped = call("terminal/wait_for_exit", {"terminalId": sleeping})
+        assert stopped.get("exitCode", 0) != 0 or stopped.get("signal") in ("SIGTERM", "SIGKILL"), stopped
         call("terminal/release", {"terminalId": sleeping})
         pathlib.Path(os.environ["HOME"]).joinpath("acp-turns").write_text(str(turns))
         write({"method": "session/update", "params": {

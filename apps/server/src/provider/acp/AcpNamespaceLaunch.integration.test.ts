@@ -163,6 +163,14 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                   }),
                 ),
                 Effect.scoped,
+                Effect.onError(() =>
+                  Effect.tryPromise(() =>
+                    NodeFSP.readFile(NodePath.join(owned.home, "acp-tool-replies"), "utf8"),
+                  ).pipe(
+                    Effect.tap((replies) => Effect.logError(replies)),
+                    Effect.ignore,
+                  ),
+                ),
               );
             }),
           (owned) => Effect.promise(owned.close),

@@ -287,17 +287,26 @@ export const makeWorkerNamespaceTools = (
                   Effect.mapError(error),
                 ),
                 child.exitCode.pipe(
-                  Effect.mapError(error),
-                  Effect.tap((exitCode) =>
+                  Effect.map((exitCode): AcpSchema.TerminalExitStatus => ({ exitCode })),
+                  Effect.catch((cause) => {
+                    // Node's spawner reports its actual OS exit signal via the original cause.
+                    // Never manufacture an exit code from the requested kill signal.
+                    const reason = cause.reason;
+                    const signal = reason.method === "exitCode" && reason.cause instanceof Error
+                      ? /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/.exec(reason.cause.message)?.[1]
+                      : undefined;
+                    return signal ? Effect.succeed({ signal }) : Effect.fail(error(cause));
+                  }),
+                  Effect.tap((status) =>
                     Effect.sync(() => {
-                      terminal.exitStatus = { exitCode };
+                      terminal.exitStatus = status;
                     }),
                   ),
                 ),
               ],
               { concurrency: "unbounded" },
             ).pipe(
-              Effect.map(([, exitCode]) => ({ exitCode })),
+              Effect.map(([, status]) => status),
               Deferred.into(done),
               Effect.forkIn(scope),
             );

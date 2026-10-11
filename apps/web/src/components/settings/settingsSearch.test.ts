@@ -64,7 +64,7 @@ describe("searchSettings", () => {
 
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
-    expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
+    expect(searchSettings("glas").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
     expect(searchSettings("xyzzy")).toEqual([]);
   });
 
@@ -80,11 +80,11 @@ describe("searchSettings", () => {
   });
 
   it("finds session import and links to its section on the Harnesses page", () => {
-    for (const query of ["import", "import sessions", "histories"]) {
+    for (const query of ["import", "sitzungen importieren", "histories"]) {
       expect(searchSettings(query)).toEqual([
         {
           id: "import-sessions",
-          title: "Import sessions",
+          title: "Sitzungen importieren",
           to: "/settings/harnesses",
           searchAliases: ["import", "history", "histories"],
         },
@@ -92,7 +92,7 @@ describe("searchSettings", () => {
     }
     expect(searchableSetting("import-sessions")).toEqual({
       id: "import-sessions",
-      title: "Import sessions",
+      title: "Sitzungen importieren",
     });
   });
 
@@ -120,8 +120,8 @@ describe("searchSettings", () => {
   });
 
   it("serves anchor props to panels from the catalog", () => {
-    expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Word wrap" });
-    expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
+    expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Zeilenumbruch" });
+    expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archivierte Threads" });
   });
 
   it("registers the Workjet catalog areas before Greppy runtime", () => {
@@ -136,23 +136,23 @@ describe("searchSettings", () => {
         },
       ]);
     }
-    expect(searchSettings("llm providers")).toEqual([
-      { id: "workjet-provider-accounts", title: "LLM providers", to: "/settings/models" },
+    expect(searchSettings("llm-anbieter")).toEqual([
+      { id: "workjet-provider-accounts", title: "LLM-Anbieter", to: "/settings/models" },
     ]);
-    expect(searchSettings("llm routes")).toEqual([
-      { id: "workjet-llm-routes", title: "LLM routes", to: "/settings/models" },
+    expect(searchSettings("llm-routen")).toEqual([
+      { id: "workjet-llm-routes", title: "LLM-Routen", to: "/settings/models" },
     ]);
-    expect(searchSettings("greppy runtime")).toEqual([
+    expect(searchSettings("greppy-laufzeit")).toEqual([
       {
         id: "greppy-runtime",
-        title: "Greppy Runtime",
+        title: "Greppy-Laufzeit",
         to: "/settings/workjet",
       },
     ]);
-    expect(searchSettings("worktree storage")).toEqual([
+    expect(searchSettings("worktree-speicher")).toEqual([
       {
         id: "automatic-worktree-storage",
-        title: "Automatic worktree storage",
+        title: "Worktree-Speicher",
         to: "/settings/workjet",
         targetId: "workjet-execution",
       },
@@ -180,11 +180,11 @@ describe("searchSettings", () => {
       id: "theme",
       to: "/settings/appearance",
     });
-    expect(searchSettings("word wrap")[0]).toMatchObject({
+    expect(searchSettings("zeilenumbruch")[0]).toMatchObject({
       id: "word-wrap",
       to: "/settings/appearance",
     });
-    expect(searchSettings("environment identification")[0]).toMatchObject({
+    expect(searchSettings("umgebungskennung")[0]).toMatchObject({
       id: "environment-identification",
       to: "/settings/appearance",
       targetId: "appearance",

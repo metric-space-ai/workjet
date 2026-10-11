@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { CheckIcon, CircleDashedIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import type { WorkjetSpeechConfig, WorkjetSpeechSettingsResponse } from "@workjet/contracts";
@@ -8,16 +9,16 @@ import { requestSpeechSettings, speechCheckAudio } from "../../lib/workjetSpeech
 
 const controlClass = "h-8 min-w-0 rounded-md border border-border bg-background px-2 text-sm";
 const remedies: Readonly<Record<string, string>> = {
-  missing_credential: "Enter your Mistral API key.",
-  missing_voice: "Choose a saved Mistral voice.",
-  credentials_rejected: "Replace the rejected Mistral API key.",
-  access_denied: "Check this key's speech permissions in your Mistral account.",
-  quota: "Check the available credit in your Mistral account.",
-  rate_limit: "The API rate limit was reached. Retry later.",
-  timeout: "The API did not respond in time. Retry the check.",
-  invalid_audio: "The API returned an invalid recording. Retry the check.",
-  invalid_transcript: "The API did not return a final transcript. Retry the check.",
-  backend_unavailable: "This check requires the Mistral API speech path.",
+  missing_credential: "Mistral-Schlüssel fehlt",
+  missing_voice: "Keine Stimme gewählt",
+  credentials_rejected: "Mistral-Schlüssel abgelehnt",
+  access_denied: "Keine Sprachrechte für diesen Schlüssel",
+  quota: "Mistral-Guthaben aufgebraucht",
+  rate_limit: "Ratenlimit erreicht",
+  timeout: "Zeitüberschreitung",
+  invalid_audio: "Ungültige Aufnahme erhalten",
+  invalid_transcript: "Kein Transkript erhalten",
+  backend_unavailable: "Nur über Mistral API",
 };
 
 export function SpeechSettingsPanel() {
@@ -27,9 +28,16 @@ export function SpeechSettingsPanel() {
       {selectedId ? (
         <InstanceSpeechSettings key={selectedId} instanceId={selectedId} />
       ) : (
-        <p role="status" className="px-4 text-sm text-muted-foreground">
-          Select a CTOX instance to configure speech.
-        </p>
+        <SettingsSection title="Sprache" id="speech">
+          <SettingsRow
+            title="Keine Instanz"
+            control={
+              <Button size="sm" render={<Link to="/settings/business-os" />}>
+                Instanz auswählen
+              </Button>
+            }
+          />
+        </SettingsSection>
       )}
     </SettingsPageContainer>
   );
@@ -79,7 +87,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
     } catch {
       if (!active.signal.aborted)
         setError(
-          "Speech settings could not be loaded or saved. Check the instance connection and Owner/Admin access, then retry.",
+          "Nicht geladen oder gespeichert",
         );
     } finally {
       if (controller.current === active && !active.signal.aborted) setBusy(undefined);
@@ -115,10 +123,11 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const sttCheck = settings?.sttCheck;
   const sttPending = busy === "speech.settings.check.transcription";
   const disabled = busy !== undefined || !config;
-  const unloadedLabel = busy === "speech.settings.read" ? "Loading…" : "Not loaded";
+  const unloadedLabel = busy === "speech.settings.read" ? "Lädt …" : "Nicht geladen";
+  const loadingSlow = useLoadingSlow(busy === "speech.settings.read");
   return (
     <SettingsSection
-      title="Speech"
+      title="Sprache"
       id="speech"
       headerAction={
         <Button
@@ -127,7 +136,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           disabled={busy !== undefined}
           onClick={() => void run({ action: "speech.settings.read" })}
         >
-          <RefreshCwIcon className="size-3.5" /> Refresh
+          <RefreshCwIcon className="size-3.5" /> Aktualisieren
         </Button>
       }
     >
@@ -136,20 +145,31 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           {error}
         </p>
       )}
+      {loadingSlow ? (
+        <div role="status" className="flex items-center gap-3 px-4 text-sm text-muted-foreground">
+          <span>Laden dauert länger</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void run({ action: "speech.settings.read" })}
+          >
+            Erneut versuchen
+          </Button>
+        </div>
+      ) : null}
       <div className="divide-y divide-border rounded-lg border border-border">
         <SettingsRow
           title="Mistral API"
-          description="Speech for this CTOX instance and its meetings."
           control={
             <span
               className="flex items-center gap-2 text-xs"
               role="status"
               title={
                 !config
-                  ? "Speech settings have not been loaded."
+                  ? "Nicht geladen"
                   : check
-                    ? "Checked " + check.checkedAt
-                    : "No successful audio check yet"
+                    ? "Geprüft " + check.checkedAt
+                    : "Noch nicht geprüft"
               }
             >
               {pending ? (
@@ -164,23 +184,23 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               {!config
                 ? unloadedLabel
                 : pending
-                  ? "Checking…"
+                  ? "Prüft …"
                   : checked
-                    ? "Voice checked · " + check.latencyMs + " ms"
+                    ? "Stimme geprüft · " + check.latencyMs + " ms"
                     : check
                       ? check.errorClass
-                      : "Not checked"}
+                      : "Nicht geprüft"}
             </span>
           }
         />
         <SettingsRow
-          title="API key"
-          description={
+          title="API-Schlüssel"
+          status={
             !settings
-              ? "Credential status unavailable."
+              ? "—"
               : settings.status.mistral_credential_present
-                ? "Key stored securely in this instance."
-                : "No Mistral key saved."
+                ? "Gespeichert"
+                : "Kein Schlüssel"
           }
           control={
             <form
@@ -196,7 +216,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               }}
             >
               <input
-                aria-label="Mistral API key"
+                aria-label="Mistral-Schlüssel"
                 type="password"
                 autoComplete="off"
                 spellCheck={false}
@@ -205,25 +225,25 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 className={controlClass + " w-full sm:w-64"}
                 placeholder={
                   !settings
-                    ? "Credential status unavailable"
+                    ? "—"
                     : settings.status.mistral_credential_present
-                      ? "Replace API key"
-                      : "Enter API key"
+                      ? "Schlüssel ersetzen"
+                      : "Schlüssel eingeben"
                 }
                 disabled={disabled}
                 onChange={(event) => setKey(event.target.value)}
               />
               <Button type="submit" size="sm" disabled={disabled || key.trim().length === 0}>
-                Save key
+                Speichern
               </Button>
             </form>
           }
         />
         <SettingsRow
-          title="Narration"
+          title="Vorlesen"
           control={
             <select
-              aria-label="Narration path"
+              aria-label="Vorlesen"
               className={controlClass + " w-full sm:w-64"}
               value={config?.synthesis ?? ""}
               disabled={disabled}
@@ -236,19 +256,19 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               }
             >
               {!config && <option value="">{unloadedLabel}</option>}
-              <option value="runtime">Configured local runtime</option>
+              <option value="runtime">Lokale Laufzeit</option>
               <option value="mistral">Mistral API</option>
               {config?.synthesis === "computer" && (
-                <option value="computer">Authorized speech computer</option>
+                <option value="computer">Sprach-Rechner</option>
               )}
             </select>
           }
         />
         <SettingsRow
-          title="Transcription"
+          title="Transkription"
           control={
             <select
-              aria-label="Transcription path"
+              aria-label="Transkription"
               className={controlClass + " w-full sm:w-64"}
               value={config?.transcription ?? ""}
               disabled={disabled}
@@ -261,20 +281,20 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               }
             >
               {!config && <option value="">{unloadedLabel}</option>}
-              <option value="runtime">Configured local runtime</option>
+              <option value="runtime">Lokale Laufzeit</option>
               <option value="mistral">Mistral API</option>
               {config?.transcription === "computer" && (
-                <option value="computer">Authorized speech computer</option>
+                <option value="computer">Sprach-Rechner</option>
               )}
             </select>
           }
         />
         <SettingsRow
-          title="Voice"
+          title="Stimme"
           control={
             <div className="flex w-full items-center gap-2">
               <select
-                aria-label="Saved Mistral voice"
+                aria-label="Stimme"
                 className={controlClass + " w-full sm:w-64"}
                 value={config?.voice_id ?? ""}
                 disabled={disabled || config?.synthesis !== "mistral"}
@@ -282,9 +302,9 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                   config && configure({ ...config, voice_id: event.target.value || null })
                 }
               >
-                <option value="">{config ? "Choose a saved voice" : unloadedLabel}</option>
+                <option value="">{config ? "Stimme wählen" : unloadedLabel}</option>
                 {config?.voice_id && !voices.some((voice) => voice.id === config.voice_id) && (
-                  <option value={config.voice_id}>Current voice · {config.voice_id}</option>
+                  <option value={config.voice_id}>Aktuelle Stimme</option>
                 )}
                 {voices.map((voice) => (
                   <option key={voice.id} value={voice.id}>
@@ -298,18 +318,17 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 disabled={disabled || !settings?.status.mistral_credential_present}
                 onClick={() => void run({ action: "speech.settings.voices" })}
               >
-                Load voices
+                Stimmen laden
               </Button>
             </div>
           }
         />
         <SettingsRow
-          title="Speaking speed"
-          description="Keeps the voice pitch. Default 1.15×."
+          title="Sprechtempo"
           control={
             <div className="flex items-center gap-2">
               <input
-                aria-label="Speaking speed"
+                aria-label="Sprechtempo"
                 type="number"
                 min={0.8}
                 max={1.5}
@@ -324,7 +343,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                   if (!config) return;
                   if (!Number.isFinite(value) || value < 0.8 || value > 1.5) {
                     setRate(String(config.rate));
-                    setError("Speaking speed must be between 0.8× and 1.5×.");
+                    setError("Sprechtempo: 0,8× bis 1,5×");
                   } else if (value !== config.rate) configure({ ...config, rate: value });
                 }}
               />
@@ -333,12 +352,11 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           }
         />
         <SettingsRow
-          title="Voice check"
-          description="Synthesizes a short sentence through the selected API."
+          title="Stimmtest"
           status={
             check?.state === "error"
               ? (remedies[check.errorClass ?? ""] ??
-                "The speech provider could not complete the check. Retry.")
+                "Test fehlgeschlagen")
               : undefined
           }
           control={
@@ -348,7 +366,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               disabled={disabled || config?.synthesis !== "mistral"}
               onClick={() => void run({ action: "speech.settings.check" })}
             >
-              {pending ? "Checking…" : "Check voice"}
+              {pending ? "Prüft …" : "Stimme testen"}
             </Button>
           }
         >
@@ -366,16 +384,13 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           )}
         </SettingsRow>
         <SettingsRow
-          title="Transcription check"
-          description="Checks a short clip from the selected voice. No microphone recording."
+          title="Transkriptionstest"
           status={
             !config
-              ? "Speech settings have not been loaded."
+              ? "Nicht geladen"
               : sttCheck?.state === "error"
-                ? (remedies[sttCheck.errorClass ?? ""] ?? "Transcription failed. Retry the check.")
-                : sttCheck?.state === "ok"
-                  ? "Measured from audio end to final transcript; microphone and connection setup are separate."
-                  : "Not checked — selecting a path does not verify live transcription."
+                ? (remedies[sttCheck.errorClass ?? ""] ?? "Test fehlgeschlagen")
+                : undefined
           }
           control={
             <div className="flex items-center gap-3">
@@ -384,10 +399,10 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 className="flex items-center gap-1.5 text-xs"
                 title={
                   !config
-                    ? "Speech settings have not been loaded."
+                    ? "Nicht geladen"
                     : sttCheck
-                      ? "Checked " + sttCheck.checkedAt
-                      : "No transcription check yet"
+                      ? "Geprüft " + sttCheck.checkedAt
+                      : "Noch nicht geprüft"
                 }
               >
                 {sttPending ? (
@@ -402,10 +417,10 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 {!config
                   ? unloadedLabel
                   : sttPending
-                    ? "Checking…"
+                    ? "Prüft …"
                     : sttCheck?.state === "ok"
                       ? sttCheck.latencyMs + " ms"
-                      : (sttCheck?.errorClass ?? "Not checked")}
+                      : (sttCheck?.errorClass ?? "Nicht geprüft")}
               </span>
               <Button
                 size="sm"
@@ -415,7 +430,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 }
                 onClick={() => void run({ action: "speech.settings.check.transcription" })}
               >
-                Check transcription
+                Transkription testen
               </Button>
             </div>
           }
@@ -425,4 +440,18 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
       </div>
     </SettingsSection>
   );
+}
+
+/** Ein Laden endet immer: nach 10 s meldet die Seite „Laden dauert länger“. */
+function useLoadingSlow(loading: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setSlow(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+  return slow;
 }

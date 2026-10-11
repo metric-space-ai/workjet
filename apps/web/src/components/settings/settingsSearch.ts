@@ -62,13 +62,13 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
 export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "posthog-consent",
-    title: "Send usage analytics to PostHog",
+    title: "Nutzungsdaten senden",
     to: "/settings/general",
     searchAliases: ["telemetry", "privacy", "consent", "us.i.posthog.com"],
   },
   {
     id: "color-scheme",
-    title: "Color scheme",
+    title: "Farbschema",
     to: "/settings/appearance",
     // The scheme tiles sit at the top of the Appearance section.
     targetId: "appearance",
@@ -84,125 +84,125 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     // Prefixed because the slider control already owns the `glass-opacity` id.
     id: "setting-glass-opacity",
-    title: "Glass opacity",
+    title: "Glas",
     to: "/settings/appearance",
   },
   {
     id: "environment-identification",
-    title: "Environment identification",
+    title: "Umgebungskennung",
     to: "/settings/appearance",
     // The setting is stage-dependent, so its parent section is the stable destination.
     targetId: "appearance",
   },
   {
     id: "interface-font",
-    title: "Interface font",
+    title: "Oberflächenschrift",
     to: "/settings/appearance",
   },
   {
     id: "prompt-font",
-    title: "Prompt font",
+    title: "Prompt-Schrift",
     to: "/settings/appearance",
   },
   {
     id: "code-font",
-    title: "Code font",
+    title: "Code-Schrift",
     to: "/settings/appearance",
   },
   {
     id: "terminal-font",
-    title: "Terminal font",
+    title: "Terminal-Schrift",
     to: "/settings/appearance",
   },
   {
     id: "font-smoothing",
-    title: "Font smoothing",
+    title: "Kantenglättung",
     to: "/settings/appearance",
   },
   {
     id: "word-wrap",
-    title: "Word wrap",
+    title: "Zeilenumbruch",
     to: "/settings/appearance",
   },
   {
     id: "project-grouping",
-    title: "Project grouping",
+    title: "Projekte gruppieren",
     to: "/settings/general",
   },
   {
     id: "auto-settle-inactive-threads",
-    title: "Auto-settle inactive threads",
+    title: "Inaktive ablegen",
     to: "/settings/general",
   },
   {
     id: "auto-settle-merged-threads",
-    title: "Auto-settle merged threads",
+    title: "Gemergte ablegen",
     to: "/settings/general",
   },
   {
     id: "time-format",
-    title: "Time format",
+    title: "Zeitformat",
     to: "/settings/general",
   },
   {
     id: "hide-whitespace-changes",
-    title: "Hide whitespace changes",
+    title: "Leerraum ausblenden",
     to: "/settings/general",
   },
   {
     id: "provider-update-checks",
-    title: "Provider update checks",
+    title: "Update-Prüfung",
     to: "/settings/general",
   },
   {
     id: "new-threads",
-    title: "New threads",
+    title: "Neue Threads",
     to: "/settings/general",
   },
   {
     id: "start-from-origin",
-    title: "Start from origin",
+    title: "Von origin starten",
     to: "/settings/general",
     targetId: "new-threads",
   },
   {
     id: "add-project-starts-in",
-    title: "Add project starts in",
+    title: "Projektordner",
     to: "/settings/general",
   },
   {
     id: "archive-confirmation",
-    title: "Archive confirmation",
+    title: "Archivieren bestätigen",
     to: "/settings/general",
   },
   {
     id: "delete-confirmation",
-    title: "Delete confirmation",
+    title: "Löschen bestätigen",
     to: "/settings/general",
   },
   {
     id: "text-generation-model",
-    title: "Text generation model",
+    title: "Textmodell",
     to: "/settings/general",
   },
   {
     id: "diagnostics",
-    title: "Diagnostics",
+    title: "Diagnose",
     to: "/settings/general",
   },
   {
     id: "legacy-plan-mode",
-    title: "Plan mode (legacy)",
+    title: "Plan-Modus",
     to: "/settings/general",
   },
   {
     id: "legacy-token-streaming",
-    title: "Stream token by token (legacy)",
+    title: "Token-Streaming",
     to: "/settings/general",
   },
   {
     id: "legacy-sidebar",
-    title: "Sidebar (legacy)",
+    title: "Alte Seitenleiste",
     to: "/settings/general",
   },
   {
@@ -212,13 +212,13 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "import-sessions",
-    title: "Import sessions",
+    title: "Sitzungen importieren",
     to: "/settings/harnesses",
     searchAliases: ["import", "history", "histories"],
   },
   {
     id: "source-control",
-    title: "Source control",
+    title: "Versionsverwaltung",
     to: "/settings/source-control",
   },
   {
@@ -237,7 +237,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-provider-accounts",
-    title: "LLM providers",
+    title: "LLM-Anbieter",
     // LLM accounts live on the Models page. Harnesses are CLI runtimes and
     // have their own page — the two were merged once and became impossible to
     // find, because "Providers" read as one thing and held two.
@@ -245,19 +245,19 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-provider-pools",
-    title: "Gateway pools",
+    title: "Gateway-Pools",
     // Directly under the account list, on the same Models page.
     to: "/settings/models",
   },
   {
     id: "workjet-llm-routes",
-    title: "LLM routes",
+    title: "LLM-Routen",
     // Routes live on the Models page, beside the accounts they reference.
     to: "/settings/models",
   },
   {
     id: "workjet-organigram",
-    title: "Organigram",
+    title: "Organigramm",
     to: "/settings/workjet",
   },
   {
@@ -267,28 +267,28 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-telemetry",
-    title: "Telemetry",
+    title: "Telemetrie",
     to: "/settings/workjet",
   },
   {
     id: "workjet-execution",
-    title: "Execution",
+    title: "Ausführung",
     to: "/settings/workjet",
   },
   {
     id: "automatic-worktree-storage",
-    title: "Automatic worktree storage",
+    title: "Worktree-Speicher",
     to: "/settings/workjet",
     targetId: "workjet-execution",
   },
   {
     id: "greppy-runtime",
-    title: "Greppy Runtime",
+    title: "Greppy-Laufzeit",
     to: "/settings/workjet",
   },
   {
     id: "archive",
-    title: "Archived threads",
+    title: "Archivierte Threads",
     to: "/settings/archived",
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;

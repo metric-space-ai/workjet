@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsSection } from "./settingsLayout";
 
 /**
@@ -33,14 +34,13 @@ export const INITIAL_SUPPORT_BUNDLE_STATE: SupportBundleState = {
 };
 
 /** Shown when the renderer is not hosted by a desktop build that has the bridge. */
-export const SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE =
-  "Support bundles are created by the desktop app. Open this page in Workjet to create one.";
+export const SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE = "Nur in der Desktop-App";
 
 export function formatSupportBundleSize(byteLength: number): string {
   if (byteLength < 1024) return `${byteLength} B`;
   const kilobytes = byteLength / 1024;
-  if (kilobytes < 1024) return `${kilobytes.toFixed(kilobytes >= 10 ? 0 : 1)} KB`;
-  return `${(kilobytes / 1024).toFixed(1)} MB`;
+  if (kilobytes < 1024) return `${kilobytes.toFixed(kilobytes >= 10 ? 0 : 1).replace(".", ",")} KB`;
+  return `${(kilobytes / 1024).toFixed(1).replace(".", ",")} MB`;
 }
 
 /**
@@ -49,7 +49,7 @@ export function formatSupportBundleSize(byteLength: number): string {
  * that hid them silently is not.
  */
 export function describeSupportBundleRedaction(result: DesktopSupportBundleResult): string {
-  return `${formatSupportBundleSize(result.byteLength)} · ${result.fieldCount} fields collected · ${result.redactedFieldCount} redacted · ${result.omittedFieldCount} omitted`;
+  return `${formatSupportBundleSize(result.byteLength)} · ${result.fieldCount} Felder · ${result.redactedFieldCount} geschwärzt · ${result.omittedFieldCount} ausgelassen`;
 }
 
 export function SupportBundleSectionView({
@@ -68,62 +68,69 @@ export function SupportBundleSectionView({
   return (
     <SettingsSection
       id="support-bundle"
-      title="Support Bundle"
+      title="Support-Bundle"
       icon={<LifeBuoyIcon className="size-4 text-muted-foreground" />}
       headerAction={
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!isAvailable || state.status === "creating"}
-          onClick={onCreate}
-        >
-          {state.status === "creating" ? "Creating..." : "Create support bundle"}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!isAvailable || state.status === "creating"}
+                onClick={onCreate}
+              >
+                {state.status === "creating" ? "Erstellt …" : "Erstellen"}
+              </Button>
+            }
+          />
+          <TooltipPopup side="top">Datei bleibt auf diesem Rechner</TooltipPopup>
+        </Tooltip>
       }
     >
-      <div className="space-y-3 rounded-md border border-border/60 px-4 py-3 text-xs leading-relaxed text-muted-foreground sm:px-5">
-        <p>
-          Writes a single JSON file containing app and runtime versions, the commit hash, feature
-          availability, provider-gateway routing counts, migration state, and short excerpts of
-          recent logs. Every value passes a redaction pass first: credentials, tokens, email
-          addresses, file paths, account labels, and prompt text are replaced with named
-          placeholders or left out entirely.
+      {!isAvailable ? (
+        <p className="px-3 text-xs text-muted-foreground sm:px-4">
+          {SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE}
         </p>
-        <p className="font-medium text-foreground">
-          The file stays on this computer. Nothing is uploaded, now or later. Open it and read it
-          before you send it to anyone.
-        </p>
+      ) : null}
 
-        {!isAvailable ? <p>{SUPPORT_BUNDLE_UNAVAILABLE_MESSAGE}</p> : null}
-
-        {state.status === "created" && state.result ? (
-          <div className="space-y-2 border-t border-border/60 pt-3">
-            <div className="flex items-start gap-2">
-              <code className="min-w-0 flex-1 break-all font-mono text-[11px] text-foreground">
-                {state.result.filePath}
-              </code>
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label={isPathCopied ? "Copied bundle path" : "Copy bundle path"}
-                onClick={onCopyPath}
-              >
-                <CopyIcon className="size-3" />
-              </Button>
-            </div>
-            <p className="font-mono text-[11px] tabular-nums">
-              {describeSupportBundleRedaction(state.result)}
-            </p>
+      {state.status === "created" && state.result ? (
+        <div className="space-y-1 px-3 text-xs text-muted-foreground sm:px-4">
+          <div className="flex items-start gap-2">
+            <code className="min-w-0 flex-1 break-all font-mono text-[11px] text-foreground">
+              {state.result.filePath}
+            </code>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={isPathCopied ? "Pfad kopiert" : "Pfad kopieren"}
+                    onClick={onCopyPath}
+                  >
+                    <CopyIcon className="size-3" />
+                  </Button>
+                }
+              />
+              <TooltipPopup side="top">{isPathCopied ? "Kopiert" : "Pfad kopieren"}</TooltipPopup>
+            </Tooltip>
           </div>
-        ) : null}
+          <p className="font-mono text-[11px] tabular-nums">
+            {describeSupportBundleRedaction(state.result)}
+          </p>
+        </div>
+      ) : null}
 
-        {state.status === "failed" && state.errorMessage ? (
-          <div className="flex items-start gap-2 border-t border-border/60 pt-3 text-destructive">
-            <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
-            <span>{state.errorMessage}</span>
-          </div>
-        ) : null}
-      </div>
+      {state.status === "failed" && state.errorMessage ? (
+        <div
+          className="flex items-start gap-2 px-3 text-destructive text-xs sm:px-4"
+          role="alert"
+        >
+          <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+          <span>{state.errorMessage}</span>
+        </div>
+      ) : null}
     </SettingsSection>
   );
 }
@@ -148,7 +155,7 @@ export function SupportBundleSection() {
           status: "failed",
           result: null,
           errorMessage:
-            error instanceof Error ? error.message : "The support bundle could not be created.",
+            error instanceof Error ? error.message : "Nicht erstellt",
         });
       }
     })();

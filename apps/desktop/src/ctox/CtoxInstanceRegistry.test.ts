@@ -5,6 +5,8 @@ import type { CtoxManagedInstance } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "node:crypto";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
@@ -17,6 +19,7 @@ import { expect, vi } from "vite-plus/test";
 vi.mock("electron", () => ({}));
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type * as CtoxLocalDaemonSource from "./CtoxLocalDaemonSource.ts";
 import {
@@ -125,6 +128,15 @@ function makeMemoryFileSystem(): MemoryFileSystem {
   const stubUid = typeof process.getuid === "function" ? process.getuid() : undefined;
   const stubGid = typeof process.getgid === "function" ? process.getgid() : undefined;
   const service = FileSystem.makeNoop({
+    exists: (path) => Effect.sync(() => files.has(path)),
+    chmod: () => Effect.void,
+    copyFile: (from, to) =>
+      Effect.suspend(() => {
+        const contents = files.get(from);
+        return contents === undefined
+          ? Effect.fail(fileError("copyFile", from))
+          : Effect.sync(() => void files.set(to, contents));
+      }),
     makeDirectory: () => Effect.void,
     readFileString: (path) =>
       files.has(path)
@@ -208,6 +220,7 @@ function registryHarness(
     readonly platform?: NodeJS.Platform;
     readonly localDaemon?: CtoxLocalDaemonSource.CtoxLocalDaemonDiscoveryOptions;
     readonly sshManaged?: CtoxSshManagedSource.CtoxSshManagedDiscoveryOptions;
+    readonly recovery?: DesktopKeyRecovery["Service"];
   } = {},
 ) {
   const memory = input.fileSystem ?? makeMemoryFileSystem();
@@ -226,6 +239,11 @@ function registryHarness(
       exec: () => Effect.fail(new CtoxSshManagedSource.CtoxSshExecError({ reason: "unreachable" })),
     },
   }).pipe(
+    Effect.provide(
+      input.recovery === undefined
+        ? Layer.empty
+        : Layer.succeed(DesktopKeyRecovery, input.recovery),
+    ),
     Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     Effect.provideService(ElectronSafeStorage.ElectronSafeStorage, input.storage ?? safeStorage()),
     Effect.provideService(FileSystem.FileSystem, memory.service),
@@ -241,6 +259,99 @@ function failureCode(
 }
 
 describe("CtoxInstanceRegistry", () => {
+  it.effect("re-pairs an unreadable entry in place and preserves both prior documents", () => {
+    const { memory, registry } = registryHarness();
+    return Effect.gen(function* () {
+      const first = yield* registry;
+      const descriptor = yield* first.importManualPairing(manualPairing);
+      const beforeSecrets = memory.files.get("/state/ctox/secrets.json");
+      const beforePublic = memory.files.get("/state/ctox/instances.json");
+      const changed = yield* registryHarness({
+        fileSystem: memory,
+        storage: safeStorage({ failDecrypt: true }),
+      }).registry;
+      const replaced = yield* changed.importManualPairing({
+        ...manualPairing,
+        browserToken: "replacement-browser-token",
+        browserTokenHash: NodeCrypto.createHash("sha256")
+          .update("replacement-browser-token")
+          .digest("hex"),
+      });
+      assert.equal(replaced.id, descriptor.id);
+      const backups = [...memory.files.entries()].filter(([file]) => file.includes(".recovery-"));
+      assert.equal(backups.length, 2);
+      assert.isTrue(backups.some(([, content]) => content === beforeSecrets));
+      assert.isTrue(backups.some(([, content]) => content === beforePublic));
+    });
+  });
+
+  it.effect(
+    "keeps the old public id across pairing sources and rejects an invite for another instance",
+    () => {
+      const { memory, registry } = registryHarness();
+      return Effect.gen(function* () {
+        const service = yield* registry;
+        const original = yield* service.importManualPairing(manualPairing);
+        const changed = yield* registryHarness({
+          fileSystem: memory,
+          storage: safeStorage({ failDecrypt: true }),
+        }).registry;
+        const before = memory.files.get("/state/ctox/secrets.json");
+        yield* changed
+          .importInvite(invite({ instance_id: "someone-else" }), original.id)
+          .pipe(Effect.flip);
+        assert.equal(memory.files.get("/state/ctox/secrets.json"), before);
+        const replaced = yield* changed.importInvite(invite(), original.id);
+        assert.equal(replaced.id, original.id);
+        assert.equal(replaced.source, "manual_pairing");
+        const restored = yield* registryHarness({ fileSystem: memory }).registry;
+        const launch = yield* restored.resolvePairedLaunch(original.id);
+        assert.equal(launch.descriptor.id, original.id);
+        assert.isTrue(
+          [...memory.files.entries()].some(
+            ([file, contents]) => file.includes(".recovery-") && contents === before,
+          ),
+        );
+      });
+    },
+  );
+
+  it.effect("re-enrolls a lost device key only after sign-in and preserves its ciphertext", () => {
+    const { memory, registry } = registryHarness();
+    const scope = { instanceId: "native-one", userId: "user-one" };
+    let pendingLogin = true;
+    const recovery = DesktopKeyRecovery.of({
+      inspect: Effect.sync(() => ({
+        version: 1,
+        generation: "1-11111111-1111-4111-8111-111111111111",
+        pendingLogin,
+        unreadableStores: ["session", "ctox"],
+      })),
+      completeLogin: Effect.sync(() => {
+        pendingLogin = false;
+      }),
+    });
+    return Effect.gen(function* () {
+      const original = yield* (yield* registry).deviceProofKey(scope, true);
+      const before = memory.files.get("/state/ctox/secrets.json");
+      const changed = yield* registryHarness({
+        fileSystem: memory,
+        storage: safeStorage({ failDecrypt: true }),
+        recovery,
+      }).registry;
+      yield* changed.deviceProofKey(scope, true).pipe(Effect.flip);
+      assert.equal(memory.files.get("/state/ctox/secrets.json"), before);
+      yield* recovery.completeLogin;
+      yield* changed.deviceProofKey(scope, false).pipe(Effect.flip);
+      const replacement = yield* changed.deviceProofKey(scope, true);
+      assert.notEqual(replacement.thumbprint, original.thumbprint);
+      assert.isTrue(
+        [...memory.files.entries()].some(
+          ([file, content]) => file.includes(".recovery-") && content === before,
+        ),
+      );
+    });
+  });
   it.effect("retains the scoped device identity across restart, re-pairing and removal", () => {
     const { memory, registry } = registryHarness();
     const scope = { instanceId: "native-one", userId: "user-one" };

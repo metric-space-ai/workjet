@@ -380,20 +380,27 @@ export const CtoxManagedDiscoveryResult = Schema.Union([
 export type CtoxManagedDiscoveryResult = typeof CtoxManagedDiscoveryResult.Type;
 
 /** Unified managed and accountless-pairing discovery state exposed to the renderer. */
+const CtoxKeyRecoveryStatus = Schema.Struct({
+  pendingLogin: Schema.Boolean,
+  connectionCatalogReset: Schema.Boolean,
+});
 export const CtoxDiscoveryResult = Schema.Union([
   Schema.TaggedStruct("ready", {
     instances: CtoxDiscoveryInstances,
     managedState: Schema.optionalKey(Schema.Literals(["ready", "signed_out", "failed"])),
     managedFailureCode: Schema.optionalKey(CtoxManagedDiscoveryFailureCode),
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
   Schema.TaggedStruct("signed_out", {
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
   Schema.TaggedStruct("failed", {
     code: CtoxManagedDiscoveryFailureCode,
     httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
     pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    keyRecovery: Schema.optionalKey(CtoxKeyRecoveryStatus),
   }),
 ]);
 export type CtoxDiscoveryResult = typeof CtoxDiscoveryResult.Type;
@@ -1691,12 +1698,14 @@ export type WorkjetDeviceInviteRedeemInput = typeof WorkjetDeviceInviteRedeemInp
 /** A bounded raw invite JSON document or CTOX desktop invite link. */
 export const CtoxPairingInviteImportInput = Schema.Struct({
   invite: Schema.String.check(Schema.isMaxLength(65_536)),
+  replacesInstanceId: Schema.optionalKey(CtoxManagedInstanceId),
 });
 export type CtoxPairingInviteImportInput = typeof CtoxPairingInviteImportInput.Type;
 
 /** Manual WebRTC pairing input. Secret-bearing fields are main-process only. */
 export const CtoxManualPairingImportInput = Schema.Struct({
   displayName: CtoxPairingDisplayName,
+  replacesInstanceId: Schema.optionalKey(CtoxManagedInstanceId),
   instanceId: Schema.optionalKey(CtoxPairingInstanceIdentity),
   syncRoom: CtoxPairingSyncRoom,
   signalingUrls: Schema.Array(CtoxPairingSignalingUrl).check(

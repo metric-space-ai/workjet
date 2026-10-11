@@ -45,6 +45,7 @@ export function InstanceSetupDialog() {
             <InstanceSetupContent
               key={request.revision}
               initialIntent={request.intent}
+              replacesInstanceId={request.replacesInstanceId}
               onBusyChange={setBusy}
               busy={busy}
             />
@@ -59,10 +60,12 @@ function InstanceSetupContent({
   initialIntent,
   onBusyChange,
   busy,
+  replacesInstanceId,
 }: {
   readonly initialIntent: InstanceSetupIntent;
   readonly onBusyChange: (busy: boolean) => void;
   readonly busy: boolean;
+  readonly replacesInstanceId?: string | undefined;
 }) {
   const mode = useCtoxMode();
   const [step, setStep] = useState<
@@ -262,6 +265,7 @@ function InstanceSetupContent({
               initialInvite={scannedInvite}
               initialChoice={connectMethod === "manual" ? "manual" : "invite"}
               existingOnly
+              replacesInstanceId={replacesInstanceId}
               onClose={() => setStep("choose")}
               onImported={chooseDiscovered}
               onBusyChange={onBusyChange}

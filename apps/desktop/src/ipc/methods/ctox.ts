@@ -56,6 +56,9 @@ import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as CtoxInstanceRegistry from "../../ctox/CtoxInstanceRegistry.ts";
 import * as CtoxManagedLaunch from "../../ctox/CtoxManagedLaunch.ts";
+import { DesktopKeyRecovery, DesktopKeyRecoveryError } from "../../app/DesktopKeyRecovery.ts";
+import { recoverManagedAfterLogin } from "../../ctox/CtoxKeyRecovery.ts";
+import * as Option from "effect/Option";
 import * as CtoxShellFleet from "../../ctox/CtoxShellFleet.ts";
 import * as IpcChannels from "../channels.ts";
 import type * as DesktopIpc from "../DesktopIpc.ts";
@@ -65,6 +68,27 @@ function encodeSafe<A, I>(schema: Schema.Codec<A, I>, value: A): Effect.Effect<I
 }
 
 const RAIL_INSTANCE_KEY_PREFIX = "instance:";
+
+const finishKeyRecovery = (discovery: import("@workjet/contracts").CtoxManagedDiscoveryResult) =>
+  Effect.gen(function* () {
+    const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
+    if (
+      Option.isNone(recovery) ||
+      (yield* recovery.value.inspect)?.pendingLogin !== true ||
+      discovery._tag !== "ready"
+    )
+      return;
+    const launch = yield* Effect.serviceOption(CtoxManagedLaunch.CtoxManagedLaunch);
+    const sessions = yield* Effect.serviceOption(CtoxElectronSessions.CtoxElectronSessions);
+    if (Option.isNone(launch) || Option.isNone(sessions))
+      return yield* new DesktopKeyRecoveryError({ operation: "resolve managed recovery services" });
+    yield* recoverManagedAfterLogin({
+      discovery,
+      recovery: recovery.value,
+      reconnect: (instance) =>
+        Effect.andThen(sessions.value.instance(instance), launch.value.launch(instance)),
+    });
+  });
 
 /**
  * The renderer only ever supplies the registry id, which a paired instance
@@ -97,6 +121,7 @@ export const refresh: DesktopIpc.DesktopIpcMethod<
       const managed = yield* auth.refresh.pipe(
         Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
       );
+      yield* finishKeyRecovery(managed).pipe(Effect.orElseSucceed(() => undefined));
       return yield* encodeSafe(CtoxDiscoveryResult, yield* registry.merge(managed));
     }),
 };
@@ -148,6 +173,7 @@ export const login: DesktopIpc.DesktopIpcMethod<
             const managed = yield* auth.refresh.pipe(
               Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
             );
+            yield* finishKeyRecovery(managed);
             return yield* encodeSafe(CtoxManagedLoginResult, {
               _tag: "completed",
               discovery: yield* registry.merge(managed),
@@ -253,7 +279,9 @@ export const importInvite: DesktopIpc.DesktopIpcMethod<
           code: "invalid_input",
         });
       }
-      const result = yield* registry.importInvite(input.value.invite).pipe(Effect.result);
+      const result = yield* registry
+        .importInvite(input.value.invite, input.value.replacesInstanceId)
+        .pipe(Effect.result);
       return yield* encodeSafe(
         CtoxPairedInstanceImportResult,
         Result.isSuccess(result)

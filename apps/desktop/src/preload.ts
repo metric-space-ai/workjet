@@ -289,8 +289,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_PROVISION_DECISION_HUB_CHANNEL, input),
     disconnectDecisionHub: (input) =>
       ipcRenderer.invoke(IpcChannels.CTOX_DISCONNECT_DECISION_HUB_CHANNEL, input),
-    importInvite: (invite) =>
-      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_INVITE_CHANNEL, { invite }),
+    importInvite: (invite, replacesInstanceId) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_INVITE_CHANNEL, {
+        invite,
+        ...(replacesInstanceId === undefined ? {} : { replacesInstanceId }),
+      }),
     importManualPairing: (input) =>
       ipcRenderer.invoke(IpcChannels.CTOX_IMPORT_MANUAL_PAIRING_CHANNEL, input),
     removePairedInstance: (instanceId) =>

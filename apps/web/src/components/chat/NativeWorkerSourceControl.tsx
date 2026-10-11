@@ -19,6 +19,7 @@ export interface WorkerSourceConnectionStatus {
   readonly message: string;
   readonly retry: (() => void) | null;
   readonly disabled: boolean;
+  readonly authenticationRequired: boolean;
 }
 
 export function NativeWorkerSourceControl(props: {
@@ -51,6 +52,7 @@ export function NativeWorkerSourceControl(props: {
     readonly scope: string;
     readonly message: string;
     readonly retryable?: boolean;
+    readonly authenticationRequired?: boolean;
   } | null>(null);
   const inFlight = useRef(false);
   const autoAttempted = useRef<string | null>(null);
@@ -109,6 +111,7 @@ export function NativeWorkerSourceControl(props: {
         if (result._tag === "failed") {
           setError({
             scope: requestedScope,
+            authenticationRequired: result.code === "signed_out",
             message:
               result.code === "signed_out"
                 ? "Sign in to Business OS to connect workers."
@@ -200,6 +203,9 @@ export function NativeWorkerSourceControl(props: {
       currentError
         ? {
             message: currentError,
+            authenticationRequired:
+              source?.status === "needs_auth" ||
+              (error?.scope === scope && error.authenticationRequired === true),
             retry: canRetry ? () => void connectRef.current(bound) : null,
             disabled: props.unavailable || busy || query.isPending || request === null,
           }
@@ -207,6 +213,9 @@ export function NativeWorkerSourceControl(props: {
     );
   }, [
     currentError,
+    source?.status,
+    error?.scope,
+    error?.authenticationRequired,
     canRetry,
     bound,
     props.unavailable,

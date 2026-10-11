@@ -451,6 +451,7 @@ export function NativeSupervisorComposer(props: {
     ((bindingMatches && binding.authenticationRequired) ||
       failureCode === "authentication_required" ||
       journal?.submissionError === "authentication_required" ||
+      workerStatus?.authenticationRequired === true ||
       props.blockReason?.startsWith("Sign in to ctox.dev") ||
       props.blockReason?.startsWith("Bei ctox.dev anmelden")),
   );

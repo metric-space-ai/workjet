@@ -99,6 +99,7 @@ import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletion
 import { PersistentGoalReactorLive } from "./orchestration/Layers/PersistentGoalReactor.ts";
 import { WorkerSupervisorDecisionReactorLive } from "./orchestration/Layers/WorkerSupervisorDecisionReactor.ts";
 import { SupervisorTickReactorLive } from "./orchestration/Layers/SupervisorTickReactor.ts";
+import { SupervisorMeetingPreparationLive } from "./workjet/SupervisorMeetingPreparation.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -540,7 +541,18 @@ const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.
 );
 
 const RuntimeCoreFoundationLive = Layer.mergeAll(
-  ReactorLayerLive,
+  ReactorLayerLive.pipe(
+    Layer.provide(
+      SupervisorMeetingPreparationLive.pipe(
+        Layer.provide(WorkerDispatchLayerLive),
+        Layer.provide(RemoteWorkerBrokerLayerLive),
+        Layer.provide(CtoxThreadBindingSourceLayerLive),
+        Layer.provide(DecisionHubConnectionRegistryLive),
+        Layer.provide(WorkerPullRequestStore.layer),
+        Layer.provide(GitHubCli.layer),
+      ),
+    ),
+  ),
   WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
   ProjectTokenBudgetMonitor.layer.pipe(
     Layer.provide(UsageLayerLive),

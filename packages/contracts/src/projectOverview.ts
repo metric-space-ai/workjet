@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { SupervisorTickConfiguration } from "./supervisorTick.ts";
+import { MeetingPreparationConfiguration } from "./meetingPreparation.ts";
 import { CtoxWorkjetJourFixe } from "./ctox.ts";
 import { ProjectTokenBudgetSettings } from "./projectTokenBudget.ts";
 
@@ -45,6 +46,7 @@ export type ProjectOverviewSlot = typeof ProjectOverviewSlot.Type;
 const OptionalSlot = Schema.NullOr(ProjectOverviewSlot);
 export const ProjectOverview = Schema.Struct({
   supervisorTick: Schema.optionalKey(SupervisorTickConfiguration),
+  meetingPreparation: Schema.optionalKey(MeetingPreparationConfiguration),
   regularMeeting: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
   tokenBudget: Schema.optionalKey(ProjectTokenBudgetSettings),
   // Archiving changes gallery visibility while retaining the project and all histories.

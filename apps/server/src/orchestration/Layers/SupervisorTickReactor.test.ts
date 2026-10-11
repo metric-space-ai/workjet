@@ -32,6 +32,7 @@ import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
 import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { makeSupervisorTickReactor } from "./SupervisorTickReactor.ts";
 import { UsageService } from "../../usage/UsageService.ts";
+import { SupervisorMeetingPreparation } from "../../workjet/SupervisorMeetingPreparation.ts";
 
 function runtimeLayer(db: string, dir: string) {
   return OrchestrationLayerLive.pipe(
@@ -187,9 +188,16 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
                 createdAt,
               });
               let reads = 0;
+              let preparations = 0;
               const reactor = yield* makeSupervisorTickReactor.pipe(
                 Effect.provide(
                   Layer.mergeAll(
+                    Layer.mock(SupervisorMeetingPreparation)({
+                      run: () =>
+                        Effect.sync(() => {
+                          preparations++;
+                        }),
+                    }),
                     Layer.succeed(
                       UsageService,
                       UsageService.of({
@@ -276,6 +284,7 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
                 DateTime.toEpochMillis(now) + 30 * 60_000,
               );
               expect(reads).toBe(0);
+              expect(preparations).toBe(0);
               const initialEvents = yield* Stream.runCollect(engine.readEvents(0, 100));
               expect(
                 initialEvents.filter((event) => event.type === "thread.turn-start-requested"),
@@ -306,9 +315,16 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
               expect(text).not.toContain("unavailable");
               expect(reads).toBeGreaterThanOrEqual(1);
               expect(reads).toBeLessThanOrEqual(2);
+              expect(preparations).toBeGreaterThanOrEqual(1);
+              const admittedPreparations = preparations;
+              yield* TestClock.adjust(Duration.minutes(31));
+              yield* reactor.reconcile();
+              expect(preparations).toBe(admittedPreparations);
               const before = yield* query.getCommandReadModel();
               const config = before.threads.find((t) => t.id === supervisor.id)!.workjetConfig;
-              expect(config.schemaVersion === 2 && config.supervisorTick?.outcome).toBe("started");
+              expect(config.schemaVersion === 2 && config.supervisorTick?.outcome).toBe(
+                "skipped-busy",
+              );
               return {
                 threadId: supervisor.id,
                 state: config.schemaVersion === 2 ? config.supervisorTick : undefined,

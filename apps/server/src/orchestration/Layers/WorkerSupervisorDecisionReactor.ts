@@ -1,4 +1,5 @@
 import * as Context from "effect/Context";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -24,6 +25,7 @@ export class WorkerSupervisorDecisionReactor extends Context.Service<
 export const WorkerSupervisorDecisionReactorLive = Layer.effect(
   WorkerSupervisorDecisionReactor,
   Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
     const engine = yield* OrchestrationEngineService;
     const worker = yield* makeDrainableWorker((_: void) =>
       retryRetainedWorkerAnswers().pipe(
@@ -33,7 +35,7 @@ export const WorkerSupervisorDecisionReactorLive = Layer.effect(
       ),
     );
     const start = Effect.fn("WorkerSupervisorDecisionReactor.start")(function* () {
-      yield* recoverWorkerDecisionAnswers().pipe(Effect.orDie);
+      yield* recoverWorkerDecisionAnswers().pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.orDie);
       yield* forkParked(
         Stream.runForEach(engine.streamDomainEvents, (event) =>
           event.aggregateKind === "thread" &&

@@ -8,6 +8,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { McpInvocationContext } from "../../McpInvocationContext.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProviderService } from "../../../provider/Services/ProviderService.ts";
 import {
   WorkerSupervisorAnswer,
@@ -54,7 +55,7 @@ const register = Effect.gen(function* () {
             ],
           });
         }).pipe(
-          Effect.provide(fiber.context),
+          Effect.provideService(OrchestrationEngineService, Context.getUnsafe(fiber.context, OrchestrationEngineService)),
           Effect.provideService(SqlClient.SqlClient, sql),
           Effect.provideService(ProjectionSnapshotQuery, query),
           Effect.provideService(ProviderService, providers),

@@ -1,3 +1,4 @@
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { recordWorkerOwnerActivity } from "./workjet/WorkerSupervisorDecisions.ts";
 import { makeCtoxCalendarRpc } from "./workjet/ctox/CtoxCalendarRpc.ts";
 import { WorkjetCalendarError } from "@workjet/contracts";
@@ -427,6 +428,7 @@ const makeWsRpcLayer = (
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
       const currentSessionId = currentSession.sessionId;
       const workerBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
       const workerReceiver = yield* Effect.serviceOption(RemoteWorkerReceiver);
@@ -1436,7 +1438,7 @@ const makeWsRpcLayer = (
             yield* runSetupProgram();
 
             const result = yield* orchestrationEngine.dispatch(finalTurnStartCommand);
-            if (!manualWorkerPrepared) yield* recordWorkerOwnerActivity(finalTurnStartCommand).pipe(Effect.orDie);
+            if (!manualWorkerPrepared) yield* recordWorkerOwnerActivity(finalTurnStartCommand).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.orDie);
             return result;
           });
 

@@ -11,6 +11,7 @@ import {
 } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -80,7 +81,7 @@ export const WORKER_SUPERVISOR_TIMEOUT_MS = 5 * 60 * 1000;
 const expireUnboundWorkerDecisions = Effect.fn("workjet.expireUnboundWorkerDecisions")(function* () {
   const sql = yield* SqlClient.SqlClient;
   const now = yield* Clock.currentTimeMillis;
-  const cutoff = new Date(now - WORKER_SUPERVISOR_TIMEOUT_MS).toISOString();
+  const cutoff = DateTime.formatIso(DateTime.makeUnsafe(now - WORKER_SUPERVISOR_TIMEOUT_MS));
   yield* sql`UPDATE workjet_worker_supervisor_decisions SET status='timed-out', failure='Projekt ohne Supervisor: Wartezeit abgelaufen'
     WHERE status='pending' AND created_at < ${cutoff} AND NOT EXISTS (
       SELECT 1 FROM projection_threads WHERE project_id=workjet_worker_supervisor_decisions.project_id
@@ -252,7 +253,7 @@ const continueWorkerWithAnswer = Effect.fn("workjet.continueWorkerWithAnswer")(f
   yield* engine.dispatch({
     type: "thread.turn.start", commandId: CommandId.make(`server:worker-answer:${input.decisionId}`),
     threadId: worker.id, message: { messageId: MessageId.make(`server:worker-answer:${input.decisionId}`),
-      role: "user", attachments: [], text: `Decision for ${input.decisionId}: ${JSON.stringify(input.answers ?? input.decision)}. Continue within your assigned goal and worktree.` },
+      role: "user", attachments: [], text: `Decision for ${input.decisionId}: ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(input.answers ?? input.decision)}. Continue within your assigned goal and worktree.` },
     runtimeMode: worker.runtimeMode, interactionMode: worker.interactionMode, createdAt,
   }, { deferWhileBusy: true });
 });
@@ -273,7 +274,7 @@ export const escalateWorkjetDecision = Effect.fn("workjet.escalateWorkjetDecisio
   if (Option.isNone(found) || !team || team.role === "worker")
     return yield* new WorkerSupervisorDecisionError({ message: "One-Shots cannot ask or escalate. Decide within your worktree and document the decision in the PR." });
   const thread = found.value;
-  const requestId = `workjet-escalate:${globalThis.crypto.randomUUID()}`;
+  const requestId = `workjet-escalate:${yield* (yield* Crypto.Crypto).randomUUID}`;
   const createdAt = DateTime.formatIso(yield* DateTime.now);
   const payload = { transport: "mcp", questions: [{ id: "decision", header: "Decision", question: input.question,
     multiSelect: false, options: (input.options ?? []).map((label) => ({ label, description: label })) }] };
@@ -283,7 +284,7 @@ export const escalateWorkjetDecision = Effect.fn("workjet.escalateWorkjetDecisio
   yield* sql`INSERT INTO workjet_worker_supervisor_decisions
     (decision_id,worker_thread_id,supervisor_thread_id,project_id,request_id,kind,request_json,created_at,notified)
     VALUES (${`${thread.id}:${requestId}`},${thread.id},${team.role === "supervisor" ? thread.id : supervisors[0]?.threadId ?? null},
-    ${thread.projectId},${requestId},'question',${JSON.stringify(payload)},${createdAt},${team.role === "supervisor" ? 1 : 0})`;
+    ${thread.projectId},${requestId},'question',${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(payload)},${createdAt},${team.role === "supervisor" ? 1 : 0})`;
   yield* engine.dispatch({ type: "thread.activity.append", commandId: CommandId.make(`server:${requestId}`), threadId,
     activity: { id: EventId.make(`server:${requestId}`), turnId: null, kind: "user-input.requested", summary: team.role === "supervisor" ? "Supervisor benötigt eine Owner-Entscheidung" : "Worker wartet auf Supervisor",
       tone: "info", payload: { ...payload, requestId, ...(team.role === "supervisor" ? {} : { recipient: "supervisor" }) }, createdAt }, createdAt });
@@ -292,14 +293,15 @@ export const escalateWorkjetDecision = Effect.fn("workjet.escalateWorkjetDecisio
 
 /** MCP questions have no native CLI callback; a UI answer resumes the Supervisor through the durable queue. */
 export const answerOwnerEscalation = Effect.fn("workjet.answerOwnerEscalation")(function* (
-  threadId: ThreadId, requestId: string, answers: Readonly<Record<string, string | ReadonlyArray<string>>>,
+  threadId: ThreadId, requestId: string, answers: Readonly<Record<string, unknown>>,
 ) {
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql`SELECT decision_id FROM workjet_worker_supervisor_decisions
     WHERE worker_thread_id=${threadId} AND supervisor_thread_id=${threadId} AND request_id=${requestId} AND status='pending'
     AND json_extract(request_json,'$.transport')='mcp'`;
   if (rows.length === 0) return false;
-  yield* answerWorkerDecision(threadId, { decisionId: `${threadId}:${requestId}`, answers });
+  const answer = yield* Schema.decodeUnknownEffect(WorkerSupervisorAnswer)({ decisionId: `${threadId}:${requestId}`, answers });
+  yield* answerWorkerDecision(threadId, answer);
   const engine = yield* OrchestrationEngineService;
   const createdAt = DateTime.formatIso(yield* DateTime.now);
   yield* engine.dispatch({ type: "thread.activity.append", commandId: CommandId.make(`server:owner-answer:${requestId}`), threadId,
@@ -329,7 +331,7 @@ export const routeWorkerTerminalQuestion = Effect.fn("workjet.routeWorkerTermina
   yield* sql`INSERT INTO workjet_worker_supervisor_decisions
     (decision_id,worker_thread_id,supervisor_thread_id,project_id,request_id,kind,request_json,created_at)
     VALUES (${`${thread.id}:${requestId}`},${thread.id},${supervisors[0]?.threadId ?? null},${thread.projectId},${requestId},'question',
-      ${JSON.stringify({transport:"text",questions:[{id:"decision",question:tail,options:[]}]})},${createdAt}) ON CONFLICT(decision_id) DO NOTHING`;
+      ${yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({transport:"text",questions:[{id:"decision",question:tail,options:[]}]})},${createdAt}) ON CONFLICT(decision_id) DO NOTHING`;
   return true;
 });
 
@@ -373,20 +375,15 @@ export const answerWorkerDecision = Effect.fn("workjet.answerWorkerDecision")(fu
       message: "The worker decision is already being answered.",
     });
   const request = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(row.requestJson);
-  yield* (request.transport === "mcp" || request.transport === "text"
-    ? continueWorkerWithAnswer(ThreadId.make(row.workerThreadId), input)
-    : row.kind === "question"
-      ? providers.respondToUserInput({
-          threadId: ThreadId.make(row.workerThreadId),
-          requestId: ApprovalRequestId.make(row.requestId),
-          answers: input.answers!,
-        })
-      : providers.respondToRequest({
-          threadId: ThreadId.make(row.workerThreadId),
-          requestId: ApprovalRequestId.make(row.requestId),
-          decision: input.decision!,
-        })
-  ).pipe(
+  yield* Effect.gen(function* () {
+    if (request.transport === "mcp" || request.transport === "text") {
+      yield* continueWorkerWithAnswer(ThreadId.make(row.workerThreadId), input);
+    } else if (row.kind === "question") {
+      yield* providers.respondToUserInput({threadId:ThreadId.make(row.workerThreadId),requestId:ApprovalRequestId.make(row.requestId),answers:input.answers!});
+    } else {
+      yield* providers.respondToRequest({threadId:ThreadId.make(row.workerThreadId),requestId:ApprovalRequestId.make(row.requestId),decision:input.decision!});
+    }
+  }).pipe(
     Effect.catch((error) => /stale|unknown pending|no active provider session/i.test(String(error))
       ? continueWorkerWithAnswer(ThreadId.make(row.workerThreadId), input) : Effect.fail(error)),
     Effect.tapError(

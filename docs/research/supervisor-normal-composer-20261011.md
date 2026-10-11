@@ -35,7 +35,7 @@ Browser lane `workjet-supervisor-normal-composer-20261011T045629Z` passed on `ec
 
 The first two UI attempts failed in the temporary browser setup before rendering. They were not recorded as product failures or acceptance passes. Every attempt completed its owned cleanup. The successful run uses an isolated router and the existing web package dependencies; no debug entry or mock server ships in the application.
 
-Final required checks run on the final committed PR head; their canonical receipt is recorded below after completion.
+Required final commands are `pnpm exec vp check`, `pnpm exec vp run typecheck`, the affected unit tests, and `node scripts/audit-workjet-content.mjs`. The final head and canonical lane receipt are recorded in the PR and in the durable owner evidence `~/.codex/task-evidence/composer-bar-restore-20261009/supervisor-normal-composer-20261011/final-validation.json` after the run. That external record does not alter the tested commit.
 
 ## Scope and resources
 

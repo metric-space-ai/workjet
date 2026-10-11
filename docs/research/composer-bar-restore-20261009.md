@@ -3,6 +3,12 @@
 Owner: Michael. Source baseline: `519aaba16528e4534dd948ac3e3cd184c099083b`.
 Branch: `codex/composer-bar-restore-20261009`. PR: https://github.com/metric-space-ai/workjet/pull/292. Merge remains the supervisor's responsibility.
 
+## Supervisor follow-up — 2026-10-11
+
+[PR #402](https://github.com/metric-space-ai/workjet/pull/402) replaces the remaining supervisor-specific Luma/model selects with the ordinary Manual/Luma, harness, model and computer components. Changes save immediately through the existing instance Luma configuration and project route contracts, with both read back before adoption. Healthy connections need no access-renewal button; connection recovery appears above the editor.
+
+The [follow-up report](supervisor-normal-composer-20261011.md) contains the 1440/420 comparisons using public Molecularity data, persistence tests and evidence scope. Browser native RPC is mocked; installed native execution acceptance remains open for the supervisor after merge/install.
+
 ## Cause
 
 The October 7 rebuild (`17e4fe426`, formatting follow-up `13b5f6040`) replaced the visible Luma picker with `CompactComposerControlsMenu addIcon`. That menu combined Lumas, attachments, workspace controls and advanced settings under `+`. The native supervisor rendered its own horizontal textarea/type/CTOX/send form and required Meta/Ctrl+Enter.

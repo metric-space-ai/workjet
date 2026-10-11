@@ -121,7 +121,7 @@ function categoryLabel(category: ResourceTelemetryProcessCategory): string {
     case "server-child":
       return "Backend-Kind";
     case "provider-root":
-      return "Provider";
+      return "Anbieter";
     case "terminal-root":
       return "Terminal";
     case "electron-main":
@@ -155,7 +155,7 @@ function ioSemanticsLabel(semantics: ResourceTelemetryIoSemantics): string {
     case "all-io":
       return "Alle I/O-Bytes";
     case "unavailable":
-      return "Unavailable";
+      return "Nicht verfügbar";
   }
 }
 
@@ -165,7 +165,7 @@ function booleanStateLabel(
 ): string {
   if (value === "true") return labels.true;
   if (value === "false") return labels.false;
-  return "Unknown";
+  return "—";
 }
 
 function sourceStatusTone(status: ResourceTelemetrySourceStatus): "default" | "warning" | "danger" {
@@ -1014,7 +1014,7 @@ export function ResourceTelemetryDiagnostics() {
             </div>
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground/65">
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              Alle {snapshot ? formatSampleInterval(snapshot.sampleIntervalMs) : "…"}
+              {snapshot ? `Alle ${formatSampleInterval(snapshot.sampleIntervalMs)}` : "—"}
             </div>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y divide-border/55 @[46rem]/resource-telemetry:grid-cols-3">
@@ -1063,7 +1063,7 @@ export function ResourceTelemetryDiagnostics() {
               icon={<GaugeIcon className="size-3.5" />}
               label="CPU-Drossel"
               value={
-                snapshot ? (speedLimit === null ? "Unknown" : `${speedLimit.toFixed(0)}%`) : "..."
+                snapshot ? (speedLimit === null ? "—" : `${speedLimit.toFixed(0)}%`) : "..."
               }
               detail={snapshot ? `${snapshot.power.thermalState}` : undefined}
               tone={speedLimit !== null && speedLimit < 80 ? "warning" : "default"}
@@ -1122,22 +1122,22 @@ export function ResourceTelemetryDiagnostics() {
                 <DetailRow
                   label="Stromquelle"
                   value={booleanStateLabel(snapshot.power.onBattery, {
-                    true: "Battery",
+                    true: "Akku",
                     false: "Netzteil",
                   })}
                 />
                 <DetailRow
                   label="Energiesparen"
                   value={booleanStateLabel(snapshot.power.lowPowerMode, {
-                    true: "Enabled",
-                    false: "Disabled",
+                    true: "An",
+                    false: "Aus",
                   })}
                 />
                 <DetailRow
                   label="Leerlauf"
                   value={`${booleanStateLabel(snapshot.power.idle, {
-                    true: "Idle",
-                    false: "Active",
+                    true: "Leerlauf",
+                    false: "Aktiv",
                   })}${
                     snapshot.power.idleSeconds === null
                       ? ""
@@ -1148,15 +1148,15 @@ export function ResourceTelemetryDiagnostics() {
                   label="Sitzung"
                   value={
                     snapshot.power.suspended
-                      ? "Suspended"
+                      ? "Ruhezustand"
                       : booleanStateLabel(snapshot.power.locked, {
-                          true: "Locked",
-                          false: "Unlocked",
+                          true: "Gesperrt",
+                          false: "Entsperrt",
                         })
                   }
                 />
                 <DetailRow
-                  label="Thermal"
+                  label="Temperatur"
                   value={snapshot.power.thermalState}
                   valueClassName={
                     snapshot.power.thermalState === "serious" ||
@@ -1171,10 +1171,6 @@ export function ResourceTelemetryDiagnostics() {
                 <div className="text-[13px] font-medium text-foreground">
                   Desktop-Signale nicht verbunden
                 </div>
-                <p className="mt-1.5 max-w-sm text-[11px] leading-relaxed text-muted-foreground/70">
-                  Power, idle, lock, and thermal state are supplied by the desktop host. Process
-                  telemetry remains fully active in this browser session.
-                </p>
               </div>
             )}
           </div>

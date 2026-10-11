@@ -144,6 +144,12 @@ const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, s
   none: "Keine",
 };
 
+const INTERFACE_LANGUAGE_LABELS = {
+  system: "System",
+  de: "Deutsch",
+  en: "English",
+} as const;
+
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System",
   "12-hour": "12 Stunden",
@@ -1584,7 +1590,7 @@ export function GeneralSettingsPanel() {
               }}
             >
               <SelectTrigger aria-label="Projektsprache" className="w-40">
-                <SelectValue />
+                <SelectValue>{INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage]}</SelectValue>
               </SelectTrigger>
               <SelectPopup>
                 <SelectItem value="system">System</SelectItem>

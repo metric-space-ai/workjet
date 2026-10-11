@@ -1,4 +1,5 @@
 import { ChevronDownIcon, GitPullRequestIcon, RefreshCwIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 import { useEffect, useState, type ReactNode } from "react";
@@ -474,12 +475,33 @@ function EmptySourceControlDiscovery({
 
 export function SourceControlSettingsPanel() {
   const target = useActiveBusinessOsSettingsEnvironment();
+  // Ein Laden endet immer: nach 10 s Statuszeile mit einer Aktion.
+  const resolving = target.phase === "resolving";
+  const [resolvingSlow, setResolvingSlow] = useState(false);
+  useEffect(() => {
+    if (!resolving) {
+      setResolvingSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setResolvingSlow(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [resolving]);
   if (target.phase !== "ready") {
+    const showInstanceAction = !resolving || resolvingSlow;
     return (
       <SettingsPageContainer>
         <SettingsSection title="Versionsverwaltung">
           <SettingsRow
-            title={target.phase === "resolving" ? "Instanz lädt …" : "Kein Code-Rechner"}
+            title={
+              resolving ? (resolvingSlow ? "Keine Instanz erreichbar" : "Instanz lädt …") : "Kein Code-Rechner"
+            }
+            control={
+              showInstanceAction ? (
+                <Button size="sm" variant="outline" render={<Link to="/settings/business-os" />}>
+                  Instanzen öffnen
+                </Button>
+              ) : undefined
+            }
           />
         </SettingsSection>
       </SettingsPageContainer>

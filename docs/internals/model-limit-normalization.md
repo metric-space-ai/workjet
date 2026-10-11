@@ -43,7 +43,7 @@ Codex duration and Z.ai duration/reset metadata, so missing periods display
 released and pinned. A near reset does not reveal the period length.
 
 100% is unused, 0% is exhausted. Yellow starts at 20% remaining, red at 5%.
-Boosts do not extend the visual scale above 100%. No-plan, unlimited and
+Legacy weekly boost scaling is divided out, so the display stays a fraction of the allowance rather than a percentage of its unboosted base. No-plan, unlimited and
 model-specific windows retain their scopes. Known zeros survive until reset;
 other readings expire after five minutes and future timestamps are unknown.
 

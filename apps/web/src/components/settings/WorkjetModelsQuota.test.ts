@@ -146,6 +146,6 @@ describe("provider quota evidence → remaining", () => {
     expect(normalize("minimax", { unlimited: true, remainingPercent: 0 }).exhausted).toBe(false);
     expect(
       normalize("minimax", { remainingPercent: 135, boostPermille: 1500 }).remainingPercent,
-    ).toBe(100);
+    ).toBe(90);
   });
 });

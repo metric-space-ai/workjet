@@ -39,7 +39,12 @@ export function normalizeModelsQuota(
       // MiniMax's documented status 2 means exhausted, even if a percent contradicts it.
       if (provider === "minimax" && direct && source?.status === 2) remaining = 0;
       if (remaining !== null && (!Number.isFinite(remaining) || remaining < 0)) remaining = null;
-      if (remaining !== null) remaining = Math.min(100, remaining);
+      // Undo the pinned host's separate weekly boost scaling, keeping 100% = unused.
+      if (!source && provider === "minimax" && remaining !== null && window.boostPermille !== null) {
+        remaining = window.boostPermille > 0 ? remaining * 1000 / window.boostPermille : null;
+      }
+      if (remaining !== null && remaining > 100) remaining = null;
+
 
       let seconds = source?.windowSeconds ?? null;
       // Qualified Z.ai response pairs; unknown encodings never use reset proximity.

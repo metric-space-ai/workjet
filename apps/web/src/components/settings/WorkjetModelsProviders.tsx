@@ -44,6 +44,7 @@ export interface ModelsAccountHealth {
     readonly label: string;
     readonly tooltip?: string;
     readonly unknownReason?: string | null;
+    readonly tone?: "red" | "yellow" | "green";
     readonly unlimited?: boolean;
     readonly notInPlan?: boolean;
     readonly remainingPercent: number | null;
@@ -249,7 +250,8 @@ function resetLabel(at: number | null) {
       });
 }
 
-function AccountLimits({ health }: { readonly health: ModelsAccountHealth | undefined }) {
+function AccountLimits({ health, provider }: { readonly health: ModelsAccountHealth | undefined; readonly provider: WorkjetGatewayProvider }) {
+
   if (health?.balance) {
     const balance = health.balance;
     return (
@@ -273,7 +275,10 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
       <span
         className="text-xs text-muted-foreground"
         title={
-          health?.quotaRefreshing
+          provider === "xai" || provider === "kimi"
+            ? "Anbieter meldet kein Limit"
+            : health?.quotaRefreshing
+
             ? "Checking provider limits"
             : health?.quotaError
               ? "Provider limits could not be refreshed"
@@ -307,9 +312,9 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
                 <span
                   className={cn(
                     "block h-full",
-                    remaining <= 5
+                    window.tone === "red"
                       ? "bg-red-500"
-                      : remaining <= 20
+                      : window.tone === "yellow"
                         ? "bg-amber-500"
                         : "bg-emerald-500/80",
                   )}
@@ -317,7 +322,7 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
                 />
               </span>
             )}
-            <span className="shrink-0">
+            <span className={cn("shrink-0", window.tone === "red" ? "text-red-500" : window.tone === "yellow" ? "text-amber-500" : null)}>
               {window.notInPlan
                 ? "No plan"
                 : window.unlimited
@@ -595,7 +600,7 @@ function AccountRow({
           role="cell"
           className="col-start-2 row-start-1 min-w-0 sm:col-start-auto sm:row-start-auto"
         >
-          <AccountLimits health={health} />
+          <AccountLimits health={health} provider={account.provider} />
         </div>
         <div
           role="cell"

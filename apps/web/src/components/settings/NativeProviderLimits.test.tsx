@@ -24,7 +24,7 @@ describe("native reported limits", () => {
     const failed = html({ state: "unavailable", errorClass: "quota_read_failed" });
     expect(failed).toContain("quota_read_failed");
     expect(failed).not.toContain("Credentials rejected");
-    expect(failed).not.toContain("role=\"meter\"");
+    expect(failed).not.toContain('role="meter"');
   });
   it("shares the remaining percentage, meter, window labels and evidence tooltip", () => {
     const result = html({
@@ -83,7 +83,8 @@ describe("native reported limits", () => {
     expect(expired).toContain("abgelaufen");
     expect(expired).not.toContain('role="meter"');
     const stale = html({
-      state: "reported", observedAtMs: now - 300_000,
+      state: "reported",
+      observedAtMs: now - 300_000,
       windows: [{ kind: "five_hour", status: "allowed", resetAtMs: now + 1000, utilization: 0.25 }],
     });
     expect(stale).toContain("unbekannt");

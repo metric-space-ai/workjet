@@ -53,8 +53,11 @@ describe("reported limit expiration while Models remains open", () => {
   });
   it("ages a positive reading at the shared freshness boundary without navigation", async () => {
     const lasting: Quota = {
-      state: "reported", observedAtMs: now,
-      windows: [{ kind: "five_hour", status: "allowed", resetAtMs: now + 3600_000, utilization: 0.25 }],
+      state: "reported",
+      observedAtMs: now,
+      windows: [
+        { kind: "five_hour", status: "allowed", resetAtMs: now + 3600_000, utilization: 0.25 },
+      ],
     };
     expect(render(lasting)).toContain('aria-valuenow="75"');
     await vi.advanceTimersByTimeAsync(300_001);

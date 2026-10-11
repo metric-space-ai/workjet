@@ -77,7 +77,8 @@ export function normalizeModelsQuota(
               : provider === "codex" && window.name === "primary_window"
                 ? "Short-term"
                 : "unbekannt";
-      const fresh = now >= window.observedAtMs && now - window.observedAtMs < MODELS_QUOTA_FRESH_FOR_MS;
+      const fresh =
+        now >= window.observedAtMs && now - window.observedAtMs < MODELS_QUOTA_FRESH_FOR_MS;
       const resetPending = window.resetsAtMs !== null && window.resetsAtMs > now;
       const expired = window.resetsAtMs !== null && window.resetsAtMs <= now;
       const notInPlan = window.notInPlan && fresh;

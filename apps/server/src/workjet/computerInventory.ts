@@ -17,6 +17,7 @@ export function computerInventory(configuration: {
       label: computer.label,
       environmentId: computer.environmentId,
       presentationKind: computer.presentationKind,
+      ...(computer.metadata === undefined ? {} : { metadata: computer.metadata }),
       harnesses: computer.harnesses.map(({ harness, available }) => ({ harness, available })),
       profiles: configuration.workerProfiles
         .filter((profile) => profile.computerId === computer.id)

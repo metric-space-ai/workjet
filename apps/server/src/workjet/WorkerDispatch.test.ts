@@ -678,6 +678,77 @@ const computerCatalogLayer = serverSettingsLayerTest({
     ],
   },
 });
+for (const computer of [localComputer, remoteComputer]) {
+  it.effect(
+    `rejects inactive ${computer.presentationKind} worker placement before any side effects`,
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ remoteSource: true });
+        const disabled = {
+          ...computer,
+          metadata: {
+            connection: null,
+            facts: null,
+            roles: { build: true, storage: true },
+            active: false,
+            hostKeyFingerprint: null,
+            identityFiles: [],
+            status: "unverified" as const,
+            error: null,
+            previousIds: [],
+            legacyRecords: [],
+          },
+        };
+        const service = yield* harness.service.pipe(
+          Effect.provide(
+            serverSettingsLayerTest({
+              workjet: { computers: [disabled], selectedComputerId: disabled.id },
+            }),
+          ),
+        );
+        const error = yield* Effect.flip(
+          service.dispatch(invocation, { task: "Fix documentation", computerId: disabled.id }),
+        );
+        expect(error.reason).toBe("computer-unavailable");
+        expect(harness.commands).toEqual([]);
+        expect(harness.worktreeCreates).toEqual([]);
+        expect(harness.remoteRequests).toEqual([]);
+      }),
+  );
+}
+
+it.effect("refuses an inactive implicit local target before creating a worker", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const disabled = {
+      ...localComputer,
+      metadata: {
+        connection: null,
+        facts: null,
+        roles: { build: true, storage: false },
+        active: false,
+        hostKeyFingerprint: null,
+        identityFiles: [],
+        status: "unverified" as const,
+        error: null,
+        previousIds: [],
+        legacyRecords: [],
+      },
+    };
+    const service = yield* harness.service.pipe(
+      Effect.provide(
+        serverSettingsLayerTest({
+          workjet: { computers: [disabled], selectedComputerId: null },
+        }),
+      ),
+    );
+    const error = yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation" }));
+    expect(error.reason).toBe("computer-unavailable");
+    expect(harness.commands).toEqual([]);
+    expect(harness.worktreeCreates).toEqual([]);
+  }),
+);
+
 const ids = [
   "00000000-0000-4000-8000-000000000001",
   "00000000-0000-4000-8000-000000000002",

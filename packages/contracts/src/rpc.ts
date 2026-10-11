@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { WorkjetConfiguration } from "./workjet.ts";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import {
@@ -635,7 +636,10 @@ export const WsWorkjetLumaUpdateRpc = Rpc.make(WS_METHODS.workjetLumaUpdate, {
 });
 
 export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
-  payload: Schema.Struct({ patch: ServerSettingsPatch }),
+  payload: Schema.Struct({
+    patch: ServerSettingsPatch,
+    expectedWorkjet: Schema.optionalKey(WorkjetConfiguration),
+  }),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });

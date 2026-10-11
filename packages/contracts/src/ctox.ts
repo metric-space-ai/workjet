@@ -7,6 +7,7 @@ import {
 } from "./workjetNativeProviders.ts";
 export * from "./workjetNativeProviders.ts";
 import * as Schema from "effect/Schema";
+import { ComputerRoles, ComputerFacts } from "./computerDetection.ts";
 import {
   WorkjetSupervisorRouteRequests,
   WorkjetSupervisorRouteResponses,
@@ -1356,6 +1357,10 @@ export const CtoxWorkjetComputerControlRequest = Schema.Union([
     hostingMode: CtoxComputerHostingMode,
     capabilities: CtoxComputerCapabilities,
     capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+    roles: Schema.optionalKey(ComputerRoles),
+    active: Schema.optionalKey(Schema.Boolean),
+    detectedFacts: Schema.optionalKey(ComputerFacts),
+    hostKeyFingerprint: Schema.optionalKey(Schema.NullOr(CtoxProjectText(256))),
     agentless: Schema.optionalKey(Schema.Boolean),
     selfHostedColocation: Schema.Literal(false),
   }),
@@ -1396,6 +1401,10 @@ export const CtoxWorkjetComputerProjection = Schema.Struct({
   status: Schema.Literals(["assigned", "unassigned"]),
   capabilities: CtoxComputerCapabilities,
   capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+  roles: Schema.optionalKey(ComputerRoles),
+  active: Schema.optionalKey(Schema.Boolean),
+  detectedFacts: Schema.optionalKey(ComputerFacts),
+  hostKeyFingerprint: Schema.optionalKey(Schema.NullOr(CtoxProjectText(256))),
   agentless: Schema.optionalKey(Schema.Boolean),
   selfHostedColocation: Schema.Boolean,
 });

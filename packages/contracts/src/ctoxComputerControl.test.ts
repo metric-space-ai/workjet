@@ -30,6 +30,35 @@ const computer = {
 };
 
 describe("CTOX computer control boundary", () => {
+  it("carries detected facts, roles and active without manual capacity input", () => {
+    const detectedFacts = {
+      checkedAt: "2026-10-11T00:00:00Z",
+      machineId: "fixture-machine",
+      operatingSystem: "Linux",
+      architecture: "x86_64",
+      cpuCores: 16,
+      ramBytes: 34359738368,
+      homeDirectory: "/home/fixture",
+      workDirectory: "/home/fixture/.workjet/computer-work",
+      freeBytes: 50000000000,
+      gpus: [],
+      toolchains: { node: "node fixture-version" },
+      codingTools: {},
+      warnings: [],
+    };
+    const fields = {
+      roles: { build: true, storage: false },
+      active: false,
+      detectedFacts,
+      hostKeyFingerprint: "SHA256:fixture",
+    };
+    const input = decodeInput({ ...assign, request: { ...assign.request, ...fields } });
+    expect(input.request).toMatchObject(fields);
+    expect(input.request).not.toHaveProperty("capabilityConfig");
+    expect(
+      decodeResponse({ action: "computer.assign", computer: { ...computer, ...fields } }),
+    ).toMatchObject({ computer: fields });
+  });
   it("preserves a native pairing binding for assignment without accepting caller authority", () => {
     const request = { ...assign.request, deviceBindingId: "native-device-proof" };
     expect(decodeInput({ ...assign, request })).toEqual({ ...assign, request });

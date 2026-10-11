@@ -35,6 +35,7 @@ import * as Schema from "effect/Schema";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import * as DesktopSshEnvironment from "../../ssh/DesktopSshEnvironment.ts";
+import { DesktopComputers } from "../../computers/DesktopComputers.ts";
 import * as DesktopSshPasswordPrompts from "../../ssh/DesktopSshPasswordPrompts.ts";
 
 type DesktopSshEnvironmentRequestOperation =
@@ -126,7 +127,7 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
     options,
   }) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    return yield* sshEnvironment.ensureEnvironment(target, options).pipe(
+    const bootstrap = yield* sshEnvironment.ensureEnvironment(target, options).pipe(
       Effect.catch((error) =>
         DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation(error)
           ? Effect.succeed({
@@ -136,6 +137,17 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
           : Effect.fail(error),
       ),
     );
+    if ("target" in bootstrap) {
+      const computers = yield* Effect.serviceOption(DesktopComputers);
+      if (computers._tag === "Some") {
+        yield* computers.value.discoverConnected({
+          httpBaseUrl: bootstrap.httpBaseUrl,
+          label: target.alias || target.hostname,
+          connection: { _tag: "ssh", target: bootstrap.target },
+        });
+      }
+    }
+    return bootstrap;
   }),
 });
 

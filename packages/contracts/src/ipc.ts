@@ -1115,7 +1115,19 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+import type {
+  ComputerControlInput,
+  ComputerControlResult,
+  ComputerSshKeyInfo,
+} from "./computerDetection.ts";
+
 export interface DesktopBridge {
+  controlComputers?: (input: ComputerControlInput) => Promise<ComputerControlResult>;
+  listComputerSshKeys?: () => Promise<readonly ComputerSshKeyInfo[]>;
+  assignDetectedComputer?: (input: {
+    id: string;
+    instanceId: string;
+  }) => Promise<CtoxWorkjetComputerControlResult>;
   getAppBranding: () => DesktopAppBranding | null;
   // One bootstrap per pool instance currently registered with bootstrap
   // info (omits instances whose backend hasn't produced a config yet).

@@ -237,3 +237,28 @@ a later G2 recovery producer must retain and validate its original custody
 rather than adopt an old directory. Legacy TCP profiles keep their existing
 behavior. Public autonomous-worktree modes remain unavailable until the
 authority, runtime, confined MCP/tools, and recovery contracts are implemented.
+
+### Greppy runtime capture and original allocation
+
+The Greppy adapter now projects its namespace from the original isolated-worktree
+journal receipt. Worker, project, request digest and destination must match; the
+published checkout retains the recorded root and private Git inode identities.
+A missing receipt, changed digest or substituted checkout does not acquire a new
+capture. Provider-instance construction retains the server's journal/launcher
+context for later session starts and hot reload.
+
+The actual Greppy ACP factory resolves the configured executable through absolute
+server PATH entries, captures the canonical regular executable and runs that path
+through the namespace launcher. ELF executables and single-file scripts with a
+direct system ELF interpreter are supported. Package bundles, env-based shebangs,
+relative command paths and privileged executables report unsupported capture;
+there is no host-spawn fallback. Only those files are mounted, never their host
+profile or parent package directory. The kernel rechecks their original inode
+identities before execution.
+
+The Linux integration uses the real Greppy adapter and factory with a protocol
+fixture: two turns read/edit/build and create two Git commits through confined
+tools; missing/changed receipts and root replacement fail. It does not use a real
+model/account and is not installed-product or native Owner/team acceptance.
+Public supported policy modes remain empty. Other harness runtime bundles,
+confined MCP, native admission and installed multi-harness acceptance remain open.

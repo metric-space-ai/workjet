@@ -33,8 +33,10 @@ for line in sys.stdin:
         assert capabilities["terminal"] is True
         write({"id": message["id"], "result": {
             "protocolVersion": 1, "agentCapabilities": {},
-            "authMethods": [{"id": "test", "name": "Test"}]}})
+            "authMethods": [{"id": "test", "name": "Test"}, {"id": "greppy.env", "name": "Fixture source"}]}})
     elif method == "authenticate":
+        write({"id": message["id"], "result": {}})
+    elif method == "session/set_model":
         write({"id": message["id"], "result": {}})
     elif method == "session/new":
         assert pathlib.Path(message["params"]["cwd"]) == pathlib.Path.cwd()

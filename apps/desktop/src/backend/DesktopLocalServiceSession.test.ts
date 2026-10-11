@@ -161,7 +161,9 @@ const fixture = () => {
               state.pending = false;
             }),
           get: Effect.suspend(() =>
-            state.denyRead ? Effect.fail(new LocalServiceCredentialError({ operation: state.readOperation })) : Effect.succeed(state.saved),
+            state.denyRead
+              ? Effect.fail(new LocalServiceCredentialError({ operation: state.readOperation }))
+              : Effect.succeed(state.saved),
           ),
           requireProtection: Effect.suspend(() => {
             events.push("protect");
@@ -198,20 +200,25 @@ const fixture = () => {
 };
 
 for (const operation of ["decrypt", "decode"]) {
-  it.effect(`automatically revokes and retires a ${operation} failure only after central key loss detection`, () =>
-    Effect.gen(function* () {
-      const { dependencies, state, events } = fixture();
-      state.saved = Option.some(credential);
-      state.denyRead = true;
-      state.readOperation = operation;
-      state.approveRecovery = false;
-      const access = yield* makeSessionAccess({ ...dependencies, keyLossDetected: Effect.succeed(true) });
-      const prepared = yield* access.prepareWithRecovery(config);
-      assert.deepEqual(prepared.credential, credential);
-      assert.notInclude(events, "confirm");
-      assert.isBelow(events.indexOf("revoke"), events.indexOf("retire"));
-      assert.isBelow(events.indexOf("retire"), events.indexOf("issue"));
-    }),
+  it.effect(
+    `automatically revokes and retires a ${operation} failure only after central key loss detection`,
+    () =>
+      Effect.gen(function* () {
+        const { dependencies, state, events } = fixture();
+        state.saved = Option.some(credential);
+        state.denyRead = true;
+        state.readOperation = operation;
+        state.approveRecovery = false;
+        const access = yield* makeSessionAccess({
+          ...dependencies,
+          keyLossDetected: Effect.succeed(true),
+        });
+        const prepared = yield* access.prepareWithRecovery(config);
+        assert.deepEqual(prepared.credential, credential);
+        assert.notInclude(events, "confirm");
+        assert.isBelow(events.indexOf("revoke"), events.indexOf("retire"));
+        assert.isBelow(events.indexOf("retire"), events.indexOf("issue"));
+      }),
   );
 }
 

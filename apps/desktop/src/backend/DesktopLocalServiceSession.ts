@@ -37,7 +37,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 import * as Credential from "./DesktopLocalServiceCredential.ts";
 import { ElectronDialog } from "../electron/ElectronDialog.ts";
-import { currentRecovery } from "../app/DesktopKeyRecovery.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 
 const LocalCliCommandFailure = Schema.Struct({
   command: Schema.Literals([
@@ -514,6 +514,7 @@ export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const dialog = yield* ElectronDialog;
+  const keyRecovery = yield* Effect.serviceOption(DesktopKeyRecovery);
   const runCli = (config: DesktopBackendStartConfig, args: ReadonlyArray<string>) =>
     runLocalCli(config, args).pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -567,8 +568,14 @@ export const make = Effect.gen(function* () {
       Effect.mapError(classifySessionConnectionFailure),
     );
   const access = yield* makeSessionAccess({
-    keyLossDetected: currentRecovery.pipe(
-      Effect.map((recovery) => recovery?.pendingLogin === true && recovery.unreadableStores.includes("session")),
+    keyLossDetected: (Option.isSome(keyRecovery)
+      ? keyRecovery.value.inspect
+      : Effect.succeed(undefined)
+    ).pipe(
+      Effect.map(
+        (recovery) =>
+          recovery?.pendingLogin === true && recovery.unreadableStores.includes("session"),
+      ),
       Effect.mapError(() => fail("inspect local key recovery for")),
     ),
     confirmRecovery: (target) => requestLocalSessionRecoveryConsent(dialog, target),

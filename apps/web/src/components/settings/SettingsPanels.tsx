@@ -72,6 +72,7 @@ import {
   useUpdateClientSettings,
   useUpdatePrimarySettings,
 } from "../../hooks/useSettings";
+import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -1752,6 +1753,7 @@ function LegacyFeaturesSection() {
 }
 
 export function GeneralSettingsPanel() {
+  const projectLanguage = useProjectOverviewLanguage();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
@@ -1816,6 +1818,35 @@ export function GeneralSettingsPanel() {
         }}
       />
       <SettingsSection title="General">
+        <SettingsRow
+          title={projectLanguage === "en" ? "Project language" : "Projektsprache"}
+          description={
+            projectLanguage === "en"
+              ? "Language of the project overview and its navigation."
+              : "Sprache der Projektübersicht und ihrer Navigation."
+          }
+          control={
+            <Select
+              value={settings.interfaceLanguage}
+              onValueChange={(value) => {
+                if (value === "system" || value === "de" || value === "en")
+                  updateClientSettings({ interfaceLanguage: value });
+              }}
+            >
+              <SelectTrigger
+                aria-label={projectLanguage === "de" ? "Projektsprache" : "Project language"}
+                className="w-40"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="system">System</SelectItem>
+                <SelectItem value="de">Deutsch</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
         <SettingsRow
           {...searchableSetting("posthog-consent")}
           description="Allow this environment to send anonymous feature usage and platform details to PostHog (normally us.i.posthog.com) to improve Workjet. Off by default; turn off to stop uploads."

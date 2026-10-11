@@ -16,6 +16,18 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
+describe("ClientSettings project language", () => {
+  it("keeps old settings compatible and persists explicit language choices", () => {
+    expect(decodeClientSettings({}).interfaceLanguage).toBe("system");
+    for (const interfaceLanguage of ["system", "de", "en"] as const) {
+      expect(decodeClientSettingsPatch({ interfaceLanguage }).interfaceLanguage).toBe(
+        interfaceLanguage,
+      );
+      expect(decodeClientSettings({ interfaceLanguage }).interfaceLanguage).toBe(interfaceLanguage);
+    }
+    expect(() => decodeClientSettingsPatch({ interfaceLanguage: "fr" })).toThrow();
+  });
+});
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);

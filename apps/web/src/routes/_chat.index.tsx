@@ -1350,7 +1350,7 @@ function HostedStaticOnboardingState() {
           )}
         >
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
+            <span className="text-[13.5px] font-medium text-foreground md:text-muted-foreground/60">
               {APP_DISPLAY_NAME}
             </span>
           </div>

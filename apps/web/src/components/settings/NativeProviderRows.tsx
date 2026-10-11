@@ -1,7 +1,8 @@
-import { CircleDashedIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { CheckIcon, XIcon, CircleDashedIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 import type {
   WorkjetNativeProviderAccount,
+  WorkjetNativeModelProbe,
   WorkjetNativeProviderRegistry,
 } from "@workjet/contracts";
 import { Button } from "../ui/button";
@@ -69,12 +70,63 @@ function ProviderModels({
   );
 }
 
+function ModelCheckStatus({
+  probe,
+  model,
+  disabled,
+  check,
+}: {
+  readonly probe: WorkjetNativeModelProbe | undefined;
+  readonly model: string;
+  readonly disabled: boolean;
+  readonly check: () => void;
+}) {
+  const title = probe
+    ? (probe.status === "ok"
+        ? "Hi check passed"
+        : (probe.failure?.replaceAll("_", " ") ?? "Check unavailable")) +
+      " · " +
+      probe.elapsedMs +
+      " ms · " +
+      new Date(probe.checkedAtMs).toLocaleString() +
+      (probe.httpStatus === null ? "" : " · HTTP " + probe.httpStatus) +
+      (probe.retryAtMs === null
+        ? ""
+        : " · Gateway retry after " + new Date(probe.retryAtMs).toLocaleString())
+    : "Inference not checked. Check this model.";
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={title}
+      aria-label={`Check ${model}`}
+      onClick={check}
+      className="inline-flex shrink-0 items-center p-0.5 disabled:opacity-50"
+    >
+      {probe?.status === "ok" ? (
+        <CheckIcon aria-label="Model check passed" className="size-3 text-emerald-500" />
+      ) : probe?.status === "failed" ? (
+        <XIcon
+          aria-label={`Model check failed: ${probe.failure}`}
+          className="size-3 text-destructive"
+        />
+      ) : (
+        <CircleDashedIcon
+          aria-label={probe ? `Model check unavailable: ${probe.failure}` : "Inference not checked"}
+          className="size-3 text-muted-foreground"
+        />
+      )}
+    </button>
+  );
+}
+
 function NativeAccountRow({
   account,
   registry,
   label,
   busy,
   run,
+  check,
   error,
 }: {
   readonly account: WorkjetNativeProviderAccount;
@@ -82,6 +134,7 @@ function NativeAccountRow({
   readonly label: string;
   readonly busy: boolean;
   readonly run: ReturnType<typeof useInstanceProviders>["run"];
+  readonly check: ReturnType<typeof useInstanceProviders>["check"];
   readonly error: string | undefined;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -100,38 +153,71 @@ function NativeAccountRow({
         </div>
         <div role="cell" className="flex min-w-0 flex-wrap gap-1">
           {selected.map((model) => (
-            <label
+            <div
               key={model}
               className="inline-flex max-w-full items-center gap-1 rounded border border-border/60 px-1.5 py-1 text-xs"
-              title="Live catalog metadata; inference has not been checked on this instance."
             >
-              <input
-                type="checkbox"
-                aria-label={`Use ${model} for instance account ${account.id}`}
-                checked={!account.excludedModels.includes(model)}
-                disabled={busy || !account.modelCatalog.models.includes(model)}
-                onChange={(event) => {
-                  void run({
-                    action: "instance.providers.models.exclude",
-                    accountId: account.id,
-                    expectedAccountRevision: account.revision,
-                    expectedRevision: registry.revision,
-                    models: event.target.checked
-                      ? account.excludedModels.filter((id) => id !== model)
-                      : [...account.excludedModels, model],
-                  });
+              <label className="inline-flex min-w-0 items-center gap-1">
+                <input
+                  type="checkbox"
+                  aria-label={`Use ${model} for instance account ${account.id}`}
+                  checked={!account.excludedModels.includes(model)}
+                  disabled={busy || !account.modelCatalog.models.includes(model)}
+                  onChange={(event) => {
+                    void run({
+                      action: "instance.providers.models.exclude",
+                      accountId: account.id,
+                      expectedAccountRevision: account.revision,
+                      expectedRevision: registry.revision,
+                      models: event.target.checked
+                        ? account.excludedModels.filter((id) => id !== model)
+                        : [...account.excludedModels, model],
+                    });
+                  }}
+                />
+                <span className="break-all whitespace-normal">{model}</span>
+              </label>
+              <ModelCheckStatus
+                model={model}
+                probe={account.modelChecks?.find((probe) => probe.modelId === model)}
+                disabled={
+                  busy ||
+                  !account.enabled ||
+                  !account.credentialReady ||
+                  !account.modelCatalog.fresh ||
+                  !account.effectiveModels.includes(model)
+                }
+                check={() => {
+                  void check(account.id, account.revision, model);
                 }}
               />
-              <span className="break-all whitespace-normal">{model}</span>
-              <CircleDashedIcon
-                aria-label="Inference not checked"
-                className="size-3 shrink-0 text-muted-foreground"
-              />
-            </label>
+            </div>
           ))}
           {selected.length === 0 && (
             <span className="text-xs text-muted-foreground">Choose shared models above</span>
           )}
+          {account.modelChecks
+            ?.filter((probe) => probe.status !== "ok" && selected.includes(probe.modelId))
+            .map((probe) => (
+              <span
+                key={probe.modelId}
+                className={
+                  "w-full text-[11px] " +
+                  (probe.status === "failed" ? "text-destructive" : "text-muted-foreground")
+                }
+              >
+                {probe.modelId}: {probe.failure?.replaceAll("_", " ")}
+                {probe.failure === "auth"
+                  ? ". Reconnect this account on its CTOX instance, then check again."
+                  : probe.failure === "model_not_found"
+                    ? ". Refresh the live model list and choose a listed model."
+                    : probe.failure === "gateway_cooldown" && probe.retryAtMs !== null
+                      ? ". Gateway retry after " + new Date(probe.retryAtMs).toLocaleString()
+                      : probe.source === "gateway"
+                        ? ". Check the instance connection and try again."
+                        : ""}
+              </span>
+            ))}
           {error && (
             <span role="alert" className="w-full text-xs text-destructive">
               {error}
@@ -285,8 +371,23 @@ export function NativeProviderRowsView({
   readonly state: ReturnType<typeof useInstanceProviders>;
   readonly label: string;
 }) {
+  const [checkingAll, setCheckingAll] = useState(false);
   const registry = state.registry;
   const accounts = registry?.accounts.filter((account) => account.provider === "claude") ?? [];
+  const checkAll = async () => {
+    setCheckingAll(true);
+    try {
+      for (const account of accounts) {
+        if (!account.enabled || !account.credentialReady || !account.modelCatalog.fresh) continue;
+        for (const model of account.effectiveModels) {
+          const result = await state.check(account.id, account.revision, model);
+          if (!result) return;
+        }
+      }
+    } finally {
+      setCheckingAll(false);
+    }
+  };
   const refresh = async () => {
     const current = await state.refresh();
     for (const account of current?.accounts ?? []) {
@@ -309,8 +410,31 @@ export function NativeProviderRowsView({
         <div role="cell" className="text-xs font-medium">
           Claude · {label}
         </div>
-        <div role="cell" className="text-xs text-muted-foreground">
-          {registry ? `${accounts.length} instance accounts` : "Accounts not loaded"}
+        <div
+          role="cell"
+          className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+        >
+          <span>{registry ? `${accounts.length} instance accounts` : "Accounts not loaded"}</span>
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={
+              state.busy ||
+              checkingAll ||
+              !accounts.some(
+                (account) =>
+                  account.enabled &&
+                  account.credentialReady &&
+                  account.modelCatalog.fresh &&
+                  account.effectiveModels.length > 0,
+              )
+            }
+            onClick={() => {
+              void checkAll();
+            }}
+          >
+            {checkingAll ? "Checking…" : "Check all"}
+          </Button>
         </div>
         <div role="cell" />
         <div role="cell" />
@@ -343,12 +467,31 @@ export function NativeProviderRowsView({
             registry={registry}
             busy={state.busy}
             select={(models) => {
-              void state.run({
-                action: "instance.providers.models.select",
-                provider: "claude",
-                models,
-                expectedRevision: registry.revision,
-              });
+              void (async () => {
+                const current = await state.run({
+                  action: "instance.providers.models.select",
+                  provider: "claude",
+                  models,
+                  expectedRevision: registry.revision,
+                });
+                const previous =
+                  registry.providers.find((provider) => provider.provider === "claude")
+                    ?.selection ?? [];
+                for (const account of current?.accounts ?? []) {
+                  if (
+                    account.provider !== "claude" ||
+                    !account.enabled ||
+                    !account.credentialReady ||
+                    !account.modelCatalog.fresh
+                  )
+                    continue;
+                  for (const model of models.filter(
+                    (model) => !previous.includes(model) && account.effectiveModels.includes(model),
+                  )) {
+                    if (!(await state.check(account.id, account.revision, model))) return;
+                  }
+                }
+              })();
             }}
           />
           <div role="cell" />
@@ -365,6 +508,7 @@ export function NativeProviderRowsView({
             label={label}
             busy={state.busy}
             run={state.run}
+            check={state.check}
             error={state.errorAccountId === account.id ? state.error : undefined}
           />
         ))}

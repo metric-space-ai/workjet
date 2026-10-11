@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import {
   WorkjetNativeProviderRequests,
+  WorkjetNativeModelCheckRequest,
+  WorkjetNativeModelCheckResponse,
   WorkjetNativeProviderResponse,
 } from "./workjetNativeProviders.ts";
 export * from "./workjetNativeProviders.ts";
@@ -728,6 +730,7 @@ export type CtoxWorkjetGalleryOrder = typeof CtoxWorkjetGalleryOrder.Type;
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetInstanceGrokRequests,
   ...WorkjetNativeProviderRequests,
+  WorkjetNativeModelCheckRequest,
   WorkjetJourFixeNarrationReadRequest,
   WorkjetExitModelReadRequest,
   WorkjetExitModelRefreshRequest,
@@ -911,6 +914,7 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetInstanceGrokResponse,
   WorkjetNativeProviderResponse,
+  WorkjetNativeModelCheckResponse,
   WorkjetSupervisorTurnCapabilitiesResponse,
   WorkjetSupervisorInputReceipt,
   WorkjetJourFixeNarrationReadResponse,

@@ -13,6 +13,94 @@ const Uuid = Schema.String.check(
 const Models = Schema.Array(Id).check(Schema.isMaxLength(256));
 const CatalogModels = Schema.Array(Id).check(Schema.isMaxLength(1024));
 const base = { version: Schema.Literal(1), operationId: Uuid };
+export const WorkjetNativeModelProbe = Schema.Struct({
+  modelId: Id,
+  checkedAtMs: Revision,
+  elapsedMs: Counter,
+  status: Schema.Literals(["ok", "failed", "unavailable"]),
+  source: Schema.Literals(["gateway", "upstream"]),
+  failure: Schema.NullOr(
+    Schema.Literals([
+      "account_unavailable",
+      "authority_unavailable",
+      "gateway_cooldown",
+      "gateway_state_unavailable",
+      "auth",
+      "model_not_found",
+      "quota_rate_limit",
+      "provider",
+      "invalid_response",
+      "unverified_failure",
+      "transport",
+      "timeout",
+      "response_too_large",
+    ]),
+  ),
+  httpStatus: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 }))),
+  retryAtMs: Schema.NullOr(Revision),
+}).check(
+  Schema.makeFilter((probe) => {
+    const status = probe.httpStatus;
+    if (probe.status === "ok")
+      return probe.source === "upstream" &&
+        probe.failure === null &&
+        probe.retryAtMs === null &&
+        status !== null &&
+        status >= 200 &&
+        status < 300
+        ? true
+        : "Success requires an actual upstream response.";
+    if (probe.status === "unavailable")
+      return probe.source === "gateway" &&
+        probe.failure !== null &&
+        [
+          "account_unavailable",
+          "authority_unavailable",
+          "gateway_cooldown",
+          "gateway_state_unavailable",
+          "unverified_failure",
+          "transport",
+          "timeout",
+          "response_too_large",
+        ].includes(probe.failure)
+        ? true
+        : "Local failures cannot claim rejected provider credentials.";
+    const valid =
+      status !== null &&
+      (probe.failure === "auth"
+        ? [401, 403].includes(status)
+        : probe.failure === "model_not_found"
+          ? [400, 404].includes(status)
+          : probe.failure === "quota_rate_limit"
+            ? [402, 429].includes(status)
+            : probe.failure === "provider"
+              ? status >= 400 && status <= 599
+              : probe.failure === "invalid_response"
+                ? status >= 200 && status < 300
+                : false);
+    return probe.source === "upstream" && valid && probe.retryAtMs === null
+      ? true
+      : "Provider failures require a coherent upstream status.";
+  }),
+);
+export type WorkjetNativeModelProbe = typeof WorkjetNativeModelProbe.Type;
+export const WorkjetNativeModelCheckRequest = Schema.Struct({
+  ...base,
+  action: Schema.Literal("instance.providers.models.check"),
+  accountId: Id,
+  expectedAccountRevision: Revision,
+  modelId: Id,
+});
+export type WorkjetNativeModelCheckRequest = typeof WorkjetNativeModelCheckRequest.Type;
+export const WorkjetNativeModelCheckResponse = Schema.Struct({
+  ...base,
+  action: Schema.Literal("instance.providers.models.check"),
+  accountId: Id,
+  accountRevision: Revision,
+  probe: WorkjetNativeModelProbe,
+});
+export type WorkjetNativeModelCheckResponse = typeof WorkjetNativeModelCheckResponse.Type;
+
 const actions = [
   "instance.providers.read",
   "instance.providers.adopt",
@@ -97,6 +185,16 @@ export const WorkjetNativeProviderAccount = Schema.Struct({
   excludedModels: Models,
   effectiveModels: CatalogModels,
   inferenceVerified: Schema.Literal(false),
+  modelChecks: Schema.optionalKey(
+    Schema.Array(WorkjetNativeModelProbe).check(
+      Schema.isMaxLength(256),
+      Schema.makeFilter((checks) =>
+        new Set(checks.map((check) => check.modelId)).size === checks.length
+          ? true
+          : "Model check IDs must be unique.",
+      ),
+    ),
+  ),
 }).check(
   Schema.makeFilter((account) =>
     account.id === account.nativeAccountReference.accountId &&

@@ -8,6 +8,7 @@ export type SettingsPath =
   | "/settings/speech"
   | "/settings/computers"
   | "/settings/workjet"
+  | "/settings/projects"
   | "/settings/source-control"
   | "/settings/diagnostics"
   | "/settings/archived";
@@ -36,6 +37,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
   "/settings/workjet": "Lumas",
+  "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
   "/settings/archived": "Archiv",

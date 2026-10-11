@@ -16,7 +16,7 @@ import {
   PlayIcon,
   WrenchIcon,
 } from "lucide-react";
-import React, { type FormEvent, type KeyboardEvent, useEffect, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useId, useState } from "react";
 
 import {
   keybindingValueForCommand,
@@ -24,38 +24,20 @@ import {
 } from "~/lib/projectScriptKeybindings";
 import { keybindingFromKeyboardEvent } from "~/components/settings/KeybindingsSettings.logic";
 import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogPopup,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
 import { Button } from "./ui/button";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
+import { cn } from "~/lib/utils";
 
 export const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
-  { id: "play", label: "Play" },
+  { id: "play", label: "Start" },
   { id: "test", label: "Test" },
   { id: "lint", label: "Lint" },
-  { id: "configure", label: "Configure" },
-  { id: "build", label: "Build" },
-  { id: "debug", label: "Debug" },
+  { id: "configure", label: "Konfigurieren" },
+  { id: "build", label: "Bauen" },
+  { id: "debug", label: "Debuggen" },
 ];
 
 export function ScriptIcon({
@@ -97,7 +79,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   autoOpenPreview: false,
 };
 
-/** What the editor dialog should open with. `scriptId: null` means "add". */
+/** What the inline editor opens with. `scriptId: null` means "add". */
 export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;
@@ -124,16 +106,19 @@ export function editorRequestForScript(
 }
 
 /**
- * Add/edit dialog for a project script, shared by the chat-header scripts menu
- * and the project settings page. The parent owns which script (if any) is
- * being edited via `request`; the dialog owns the form state and validation.
+ * Inline add/edit form for a project script (drei Orte, keine Popups): it
+ * renders in place under the script list of Einstellungen › Projekte ›
+ * <Projekt> or under the scripts control. The parent owns which script (if
+ * any) is being edited via `request`; the form owns its state and validation.
+ * Delete asks inline, never in a dialog.
  */
-export function ProjectScriptEditorDialog({
+export function ProjectScriptEditor({
   request,
   scripts,
   onSubmit,
   onDelete,
   onClose,
+  className,
 }: {
   request: ProjectScriptEditorRequest | null;
   /** Existing scripts, used to derive a unique id for new scripts. */
@@ -144,35 +129,37 @@ export function ProjectScriptEditorDialog({
   ) => Promise<ProjectScriptActionResult>;
   onDelete: (scriptId: string) => void;
   onClose: () => void;
+  className?: string;
 }) {
-  const formId = React.useId();
+  const formId = useId();
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
   const [keybinding, setKeybinding] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [autoOpenPreview, setAutoOpenPreview] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const isOpen = request !== null;
   const isEditing = request?.scriptId != null;
 
-  // Hydrate the form whenever a new request opens the dialog.
+  // Hydrate the form whenever a new request opens the editor.
   useEffect(() => {
     if (!request) return;
     setName(request.initial.name);
     setCommand(request.initial.command);
     setIcon(request.initial.icon);
-    setIconPickerOpen(false);
     setRunOnWorktreeCreate(request.initial.runOnWorktreeCreate);
     setKeybinding(request.initial.keybinding ?? "");
     setPreviewUrl(request.initial.previewUrl ?? "");
     setAutoOpenPreview(request.initial.autoOpenPreview);
     setValidationError(request.error ?? null);
+    setConfirmingDelete(false);
   }, [request]);
+
+  if (request === null) return null;
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Tab") return;
@@ -188,15 +175,15 @@ export function ProjectScriptEditorDialog({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!request) return;
+    if (saving) return;
     const trimmedName = name.trim();
     const trimmedCommand = command.trim();
     if (trimmedName.length === 0) {
-      setValidationError("Name is required.");
+      setValidationError("Name fehlt.");
       return;
     }
     if (trimmedCommand.length === 0) {
-      setValidationError("Command is required.");
+      setValidationError("Befehl fehlt.");
       return;
     }
 
@@ -224,192 +211,174 @@ export function ProjectScriptEditorDialog({
         autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
       } satisfies NewProjectScriptInput;
     } catch (error) {
-      setValidationError(error instanceof Error ? error.message : "Failed to save action.");
+      setValidationError(error instanceof Error ? error.message : "Skript nicht gespeichert.");
       return;
     }
 
-    const result = await onSubmit(request.scriptId, payload);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setValidationError(error instanceof Error ? error.message : "Failed to save action.");
+    setSaving(true);
+    try {
+      const result = await onSubmit(request.scriptId, payload);
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setValidationError(error instanceof Error ? error.message : "Skript nicht gespeichert.");
+        }
+        return;
       }
-      return;
+    } finally {
+      setSaving(false);
     }
-    setIconPickerOpen(false);
     onClose();
   };
 
   return (
-    <>
-      <Dialog
-        open={isOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIconPickerOpen(false);
-            onClose();
-          }
-        }}
-      >
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
-            <DialogDescription>
-              Actions are project-scoped commands you can run from the top bar or keybindings.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogPanel>
-            <form id={formId} className="space-y-4" onSubmit={submit}>
-              <div className="space-y-1.5">
-                <Label htmlFor="script-name">Name</Label>
-                <div className="flex items-center gap-2">
-                  <Popover onOpenChange={setIconPickerOpen} open={iconPickerOpen}>
-                    <PopoverTrigger
-                      render={
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="size-9 shrink-0 hover:bg-popover active:bg-popover data-pressed:bg-popover data-pressed:shadow-xs/5 data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] dark:border-transparent dark:bg-white/[0.035] dark:data-pressed:before:shadow-none"
-                          aria-label="Choose icon"
-                        />
-                      }
-                    >
-                      <ScriptIcon icon={icon} className="size-4.5" />
-                    </PopoverTrigger>
-                    <PopoverPopup align="start">
-                      <div className="grid grid-cols-3 gap-2">
-                        {SCRIPT_ICONS.map((entry) => {
-                          const isSelected = entry.id === icon;
-                          return (
-                            <button
-                              key={entry.id}
-                              type="button"
-                              className={`relative flex flex-col items-center gap-2 rounded-md border px-2 py-2 text-xs dark:border-transparent ${
-                                isSelected
-                                  ? "border-primary/70 bg-primary/10 dark:ring-1 dark:ring-primary/30"
-                                  : "border-border/70 hover:bg-accent/60 dark:bg-white/[0.035]"
-                              }`}
-                              onClick={() => {
-                                setIcon(entry.id);
-                                setIconPickerOpen(false);
-                              }}
-                            >
-                              <ScriptIcon icon={entry.id} className="size-4" />
-                              <span>{entry.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </PopoverPopup>
-                  </Popover>
-                  <Input
-                    id="script-name"
-                    autoFocus
-                    placeholder="Test"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="script-keybinding">Keybinding</Label>
-                <Input
-                  id="script-keybinding"
-                  placeholder="Press shortcut"
-                  value={keybinding}
-                  readOnly
-                  onKeyDown={captureKeybinding}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Press a shortcut. Use <code>Backspace</code> to clear.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="script-command">Command</Label>
-                <Textarea
-                  id="script-command"
-                  placeholder="bun test"
-                  value={command}
-                  onChange={(event) => setCommand(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="script-preview-url">Preview URL (optional)</Label>
-                <Input
-                  id="script-preview-url"
-                  placeholder="http://localhost:5173"
-                  value={previewUrl}
-                  onChange={(event) => setPreviewUrl(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Open this URL in the in-app preview when this action runs.
-                </p>
-              </div>
-              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
-                <span>Run automatically on worktree creation</span>
-                <Switch
-                  checked={runOnWorktreeCreate}
-                  onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
-                />
-              </label>
-              <label
-                className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
-                  previewUrl.trim().length === 0 ? "opacity-60" : ""
-                }`}
-              >
-                <span>Open preview automatically when this action runs</span>
-                <Switch
-                  checked={autoOpenPreview}
-                  disabled={previewUrl.trim().length === 0}
-                  onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
-                />
-              </label>
-              {validationError && <p className="text-sm text-destructive">{validationError}</p>}
-            </form>
-          </DialogPanel>
-          <DialogFooter className="dark:border-transparent dark:bg-transparent">
-            {isEditing && (
-              <Button
+    <form
+      id={formId}
+      aria-label={isEditing ? "Skript bearbeiten" : "Skript hinzufügen"}
+      className={cn("flex flex-col gap-3 rounded-lg border bg-card/40 p-3", className)}
+      data-slot="inline-panel"
+      data-settings-inline-editor=""
+      onSubmit={submit}
+    >
+      <div className="font-medium text-[13.5px]">
+        {isEditing ? "Skript bearbeiten" : "Skript hinzufügen"}
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${formId}-name`}>Name</Label>
+        <Input
+          id={`${formId}-name`}
+          autoFocus
+          placeholder="Test"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <span className="text-sm font-medium">Symbol</span>
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Symbol">
+          {SCRIPT_ICONS.map((entry) => {
+            const isSelected = entry.id === icon;
+            return (
+              <button
+                key={entry.id}
                 type="button"
-                variant="destructive-outline"
-                className="mr-auto"
-                onClick={() => setDeleteConfirmOpen(true)}
+                role="radio"
+                aria-checked={isSelected}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
+                  isSelected
+                    ? "border-primary/70 bg-primary/10"
+                    : "border-border/70 hover:bg-accent/60",
+                )}
+                onClick={() => setIcon(entry.id)}
               >
-                Delete
-              </Button>
-            )}
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button form={formId} type="submit">
-              {isEditing ? "Save changes" : "Save action"}
-            </Button>
-          </DialogFooter>
-        </DialogPopup>
-      </Dialog>
-
-      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete action "{name}"?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+                <ScriptIcon icon={entry.id} className="size-3.5" />
+                <span>{entry.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${formId}-command`}>Befehl</Label>
+        <Textarea
+          id={`${formId}-command`}
+          placeholder="bun test"
+          value={command}
+          onChange={(event) => setCommand(event.target.value)}
+        />
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2 sm:gap-3">
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${formId}-keybinding`}>Tastenkürzel</Label>
+          <Input
+            id={`${formId}-keybinding`}
+            placeholder="Kürzel drücken"
+            value={keybinding}
+            readOnly
+            onKeyDown={captureKeybinding}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor={`${formId}-preview-url`}>Vorschau-URL</Label>
+          <Input
+            id={`${formId}-preview-url`}
+            placeholder="http://localhost:5173"
+            value={previewUrl}
+            onChange={(event) => setPreviewUrl(event.target.value)}
+          />
+        </div>
+      </div>
+      <label className="flex items-center justify-between gap-3 text-sm">
+        <span>Beim Anlegen eines Worktrees ausführen</span>
+        <Switch
+          checked={runOnWorktreeCreate}
+          onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
+        />
+      </label>
+      <label
+        className={cn(
+          "flex items-center justify-between gap-3 text-sm",
+          previewUrl.trim().length === 0 && "opacity-60",
+        )}
+      >
+        <span>Vorschau automatisch öffnen</span>
+        <Switch
+          checked={autoOpenPreview}
+          disabled={previewUrl.trim().length === 0}
+          onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
+        />
+      </label>
+      {validationError ? (
+        <div className="text-xs text-destructive" role="alert" data-slot="inline-panel-status">
+          {validationError}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-end gap-2" data-slot="inline-panel-footer">
+        {isEditing && !confirmingDelete ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive-outline"
+            className="mr-auto"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Löschen
+          </Button>
+        ) : null}
+        {isEditing && confirmingDelete ? (
+          <div className="mr-auto flex items-center gap-1.5" role="group" data-slot="row-confirm">
+            <span className="text-xs text-muted-foreground">„{name}“ löschen?</span>
             <Button
+              type="button"
+              size="xs"
               variant="destructive"
               onClick={() => {
-                if (!request?.scriptId) return;
-                setDeleteConfirmOpen(false);
+                if (!request.scriptId) return;
+                setConfirmingDelete(false);
                 onClose();
                 onDelete(request.scriptId);
               }}
             >
-              Delete action
+              Löschen
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
-    </>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() => setConfirmingDelete(false)}
+            >
+              Abbrechen
+            </Button>
+          </div>
+        ) : null}
+        <Button type="button" size="sm" variant="outline" onClick={onClose}>
+          Abbrechen
+        </Button>
+        <Button type="submit" size="sm" disabled={saving}>
+          Speichern
+        </Button>
+      </div>
+    </form>
   );
 }

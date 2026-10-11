@@ -19,6 +19,7 @@ import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsWorkjetRouteImport } from './routes/settings.workjet'
 import { Route as SettingsSpeechRouteImport } from './routes/settings.speech'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
+import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsHarnessesRouteImport } from './routes/settings.harnesses'
@@ -29,9 +30,9 @@ import { Route as SettingsComputersRouteImport } from './routes/settings.compute
 import { Route as SettingsBusinessOsRouteImport } from './routes/settings.business-os'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
-import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
+import { Route as SettingsProjectsProjectKeyRouteImport } from './routes/settings.projects.$projectKey'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -84,6 +85,11 @@ const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   path: '/source-control',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsModelsRoute = SettingsModelsRouteImport.update({
   id: '/models',
   path: '/models',
@@ -134,11 +140,6 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
-const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
-  id: '/projects/$projectKey',
-  path: '/projects/$projectKey',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ConnectCallbackRoute = ConnectCallbackRouteImport.update({
   id: '/connect_/callback',
   path: '/connect/callback',
@@ -149,6 +150,12 @@ const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   path: '/pull-requests',
   getParentRoute: () => ChatRoute,
 } as any)
+const SettingsProjectsProjectKeyRoute =
+  SettingsProjectsProjectKeyRouteImport.update({
+    id: '/$projectKey',
+    path: '/$projectKey',
+    getParentRoute: () => SettingsProjectsRoute,
+  } as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -170,7 +177,6 @@ export interface FileRoutesByFullPath {
   '/usage': typeof UsageRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
-  '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/business-os': typeof SettingsBusinessOsRoute
@@ -181,11 +187,13 @@ export interface FileRoutesByFullPath {
   '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/projects/$projectKey': typeof SettingsProjectsProjectKeyRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
@@ -195,7 +203,6 @@ export interface FileRoutesByTo {
   '/usage': typeof UsageRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
-  '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/business-os': typeof SettingsBusinessOsRoute
@@ -206,12 +213,14 @@ export interface FileRoutesByTo {
   '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/projects/$projectKey': typeof SettingsProjectsProjectKeyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -223,7 +232,6 @@ export interface FileRoutesById {
   '/usage': typeof UsageRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/connect_/callback': typeof ConnectCallbackRoute
-  '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/business-os': typeof SettingsBusinessOsRoute
@@ -234,12 +242,14 @@ export interface FileRoutesById {
   '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
+  '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/projects/$projectKey': typeof SettingsProjectsProjectKeyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -252,7 +262,6 @@ export interface FileRouteTypes {
     | '/usage'
     | '/pull-requests'
     | '/connect/callback'
-    | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/business-os'
@@ -263,11 +272,13 @@ export interface FileRouteTypes {
     | '/settings/harnesses'
     | '/settings/keybindings'
     | '/settings/models'
+    | '/settings/projects'
     | '/settings/source-control'
     | '/settings/speech'
     | '/settings/workjet'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/settings/projects/$projectKey'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
@@ -277,7 +288,6 @@ export interface FileRouteTypes {
     | '/usage'
     | '/pull-requests'
     | '/connect/callback'
-    | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/business-os'
@@ -288,12 +298,14 @@ export interface FileRouteTypes {
     | '/settings/harnesses'
     | '/settings/keybindings'
     | '/settings/models'
+    | '/settings/projects'
     | '/settings/source-control'
     | '/settings/speech'
     | '/settings/workjet'
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/settings/projects/$projectKey'
   id:
     | '__root__'
     | '/_chat'
@@ -304,7 +316,6 @@ export interface FileRouteTypes {
     | '/usage'
     | '/_chat/pull-requests'
     | '/connect_/callback'
-    | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/business-os'
@@ -315,12 +326,14 @@ export interface FileRouteTypes {
     | '/settings/harnesses'
     | '/settings/keybindings'
     | '/settings/models'
+    | '/settings/projects'
     | '/settings/source-control'
     | '/settings/speech'
     | '/settings/workjet'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/settings/projects/$projectKey'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -331,7 +344,6 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
   ConnectCallbackRoute: typeof ConnectCallbackRoute
-  ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -406,6 +418,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSourceControlRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/projects': {
+      id: '/settings/projects'
+      path: '/projects'
+      fullPath: '/settings/projects'
+      preLoaderRoute: typeof SettingsProjectsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/models': {
       id: '/settings/models'
       path: '/models'
@@ -476,13 +495,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/projects/$projectKey': {
-      id: '/projects/$projectKey'
-      path: '/projects/$projectKey'
-      fullPath: '/projects/$projectKey'
-      preLoaderRoute: typeof ProjectsProjectKeyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/connect_/callback': {
       id: '/connect_/callback'
       path: '/connect/callback'
@@ -496,6 +508,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/pull-requests'
       preLoaderRoute: typeof ChatPullRequestsRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/settings/projects/$projectKey': {
+      id: '/settings/projects/$projectKey'
+      path: '/$projectKey'
+      fullPath: '/settings/projects/$projectKey'
+      preLoaderRoute: typeof SettingsProjectsProjectKeyRouteImport
+      parentRoute: typeof SettingsProjectsRoute
     }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
@@ -530,6 +549,17 @@ const ChatRouteChildren: ChatRouteChildren = {
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
+interface SettingsProjectsRouteChildren {
+  SettingsProjectsProjectKeyRoute: typeof SettingsProjectsProjectKeyRoute
+}
+
+const SettingsProjectsRouteChildren: SettingsProjectsRouteChildren = {
+  SettingsProjectsProjectKeyRoute: SettingsProjectsProjectKeyRoute,
+}
+
+const SettingsProjectsRouteWithChildren =
+  SettingsProjectsRoute._addFileChildren(SettingsProjectsRouteChildren)
+
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
@@ -541,6 +571,7 @@ interface SettingsRouteChildren {
   SettingsHarnessesRoute: typeof SettingsHarnessesRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
+  SettingsProjectsRoute: typeof SettingsProjectsRouteWithChildren
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsSpeechRoute: typeof SettingsSpeechRoute
   SettingsWorkjetRoute: typeof SettingsWorkjetRoute
@@ -557,6 +588,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsHarnessesRoute: SettingsHarnessesRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
+  SettingsProjectsRoute: SettingsProjectsRouteWithChildren,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsSpeechRoute: SettingsSpeechRoute,
   SettingsWorkjetRoute: SettingsWorkjetRoute,
@@ -574,7 +606,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,
   ConnectCallbackRoute: ConnectCallbackRoute,
-  ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

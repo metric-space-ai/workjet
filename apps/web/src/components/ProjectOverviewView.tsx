@@ -5,6 +5,7 @@ import type { ScopedThreadRef } from "@workjet/contracts";
 import { projectOverviewFormat, type ProjectOverviewLanguage } from "../projectOverviewText";
 import {
   projectOverviewStatusTone,
+  projectOverviewWorkerName,
   projectOverviewWorkerState,
   type ProjectOverviewStatus,
   type ProjectOwnerOverview,
@@ -126,7 +127,9 @@ export function ProjectOverviewView(props: {
               >
                 <span className="size-1.5 shrink-0 rounded-full bg-red-400" />
                 <span className="min-w-0 break-words">
-                  {projectOverviewFormat(text.disruptionLine, { name: thread.title })}
+                  {projectOverviewFormat(text.disruptionLine, {
+                    name: projectOverviewWorkerName(thread.title, data.title).name,
+                  })}
                 </span>
                 <Button
                   variant="outline"
@@ -148,7 +151,7 @@ export function ProjectOverviewView(props: {
                   <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
                   <span className="min-w-0 break-words">
                     {projectOverviewFormat(text.escalationLine, {
-                      name: thread.title,
+                      name: projectOverviewWorkerName(thread.title, data.title).name,
                       status: text[status],
                     })}
                   </span>

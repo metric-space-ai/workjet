@@ -108,7 +108,7 @@ try {
   });
   browser = await chromium.launch({
     executablePath: process.env.SUPERVISOR_TICK_CHROME_PATH ?? "/usr/bin/google-chrome",
-    args: ["--no-sandbox"],
+    args: ["--no-sandbox", "--disable-gpu", "--disable-crash-reporter"],
     headless: true,
   });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });

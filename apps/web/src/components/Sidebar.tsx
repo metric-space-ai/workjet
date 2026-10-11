@@ -102,7 +102,18 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { openCommandPalette } from "../commandPaletteBus";
+import {
+  onNewThreadMenuRequest,
+  onSidebarSearchMode,
+  openCommandPalette,
+  type SidebarSearchMode,
+} from "../commandPaletteBus";
+import { buildNewThreadMenuEntries, NewThreadInMenu } from "./NewThreadInMenu";
+import {
+  SidebarProjectSearchResults,
+  SidebarSearchModeSegment,
+  sidebarSearchPlaceholder,
+} from "./sidebar/SidebarProjectSearch";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
@@ -1726,6 +1737,10 @@ export default function Sidebar() {
     workjetProjectRegistry.selectedProjectId,
     workjetProjects,
   ]);
+  const newThreadMenuEntries = useMemo(
+    () => buildNewThreadMenuEntries(availableProjects, sidebarFallbackProject),
+    [availableProjects, sidebarFallbackProject],
+  );
   const sidebarAvailableProjectCount =
     availableProjects.length > 0
       ? availableProjects.length
@@ -1819,6 +1834,8 @@ export default function Sidebar() {
     },
   });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
+  const [newThreadMenuOpen, setNewThreadMenuOpen] = useState(false);
+  useEffect(() => onNewThreadMenuRequest(() => setNewThreadMenuOpen(true)), []);
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
     () => openCommandPalette({ open: "add-project" }),
@@ -2424,7 +2441,12 @@ export default function Sidebar() {
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
-  const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  // ⌘K searches threads, ⌘P files, ⌘⇧F file contents; all in this one field.
+  const [searchMode, setSearchMode] = useState<SidebarSearchMode>("threads");
+  useEffect(() => onSidebarSearchMode(setSearchMode), []);
+  const isSearchingProject = searchMode !== "threads";
+  const isSearchingThreads = !isSearchingProject && threadSearchQuery.trim().length > 0;
+  const isSearchActive = isSearchingProject || isSearchingThreads;
   const searchableThreads = useMemo(
     () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
     [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
@@ -2657,6 +2679,7 @@ export default function Sidebar() {
   const clearThreadSearch = useCallback(() => {
     setThreadSearchQuery("");
     setActiveSearchResultIndex(0);
+    setSearchMode("threads");
   }, []);
   const selectThreadSearchResult = useCallback(
     (thread: EnvironmentThreadShell) => {
@@ -2670,13 +2693,14 @@ export default function Sidebar() {
       // IME composition (Japanese/Chinese input) uses the same keys; committing
       // a candidate must not move the highlight or navigate away mid-compose.
       if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-      if (event.key === "Escape" && isSearchingThreads) {
+      if (event.key === "Escape" && isSearchActive) {
         event.preventDefault();
         event.stopPropagation();
         clearThreadSearch();
         return;
       }
-      if (threadSearchResults.length === 0) return;
+      // File and content results own their arrow/enter keys.
+      if (isSearchingProject || threadSearchResults.length === 0) return;
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setActiveSearchResultIndex((index) => (index + 1) % threadSearchResults.length);
@@ -2698,7 +2722,8 @@ export default function Sidebar() {
     [
       activeSearchResultIndex,
       clearThreadSearch,
-      isSearchingThreads,
+      isSearchActive,
+      isSearchingProject,
       selectThreadSearchResult,
       threadSearchResults,
     ],
@@ -3629,9 +3654,8 @@ export default function Sidebar() {
   }, []);
 
   // New thread defaults to the project you're in (active thread's project,
-  // falling back to the top project) — same resolution the command palette
-  // uses. The command palette already offers a "New thread in..." submenu
-  // for multi-project setups.
+  // falling back to the top project). Multi-project setups without a scoped
+  // project open the dropdown „Neue Unterhaltung in …“ next to the button.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
       if (workjetProjects.length > 0) {
@@ -3695,8 +3719,7 @@ export default function Sidebar() {
         });
         return;
       }
-      if (isMobile) setOpenMobile(false);
-      openCommandPalette({ open: "new-thread-in" });
+      setNewThreadMenuOpen(true);
     },
     [
       isMobile,
@@ -3714,7 +3737,7 @@ export default function Sidebar() {
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
-  // the command palette's "New thread in..." picker, and in single-project
+  // the dropdown „Neue Unterhaltung in …“, and in single-project
   // setups both create immediately. In multi-project setups the label is only
   // the picker's shortcut: falling back to chat.newLocal would advertise the
   // same shortcut for both the picker and direct create. In single-project
@@ -3751,7 +3774,7 @@ export default function Sidebar() {
                     setActiveSearchResultIndex(0);
                   }}
                   onKeyDown={handleThreadSearchKeyDown}
-                  placeholder={overviewText.search}
+                  placeholder={sidebarSearchPlaceholder(searchMode, overviewText.search)}
                   aria-label={overviewText.searchThreads}
                   role="combobox"
                   aria-autocomplete="list"
@@ -3768,7 +3791,7 @@ export default function Sidebar() {
                   }
                   className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
                 />
-                {isSearchingThreads ? (
+                {isSearchActive ? (
                   <Button
                     type="button"
                     size="icon-xs"
@@ -3826,7 +3849,30 @@ export default function Sidebar() {
                   </TooltipPopup>
                 </Tooltip>
               </div>
+              {sidebarAvailableProjectCount > 1 ? (
+                <NewThreadInMenu
+                  entries={newThreadMenuEntries}
+                  open={newThreadMenuOpen}
+                  onOpenChange={setNewThreadMenuOpen}
+                  onCreateProject={openAddProjectCommandPalette}
+                  onSelect={(project) => {
+                    setNewThreadMenuOpen(false);
+                    if (isMobile) setOpenMobile(false);
+                    void newThreadContext.handleNewThread(project);
+                  }}
+                />
+              ) : null}
             </div>
+            {isSearchActive ? (
+              <SidebarSearchModeSegment
+                mode={searchMode}
+                onModeChange={(mode) => {
+                  setSearchMode(mode);
+                  setActiveSearchResultIndex(0);
+                  threadSearchInputRef.current?.focus();
+                }}
+              />
+            ) : null}
             <SidebarMenuButton
               type="button"
               data-workjet-action="project.overview"
@@ -3996,6 +4042,16 @@ export default function Sidebar() {
         }
       >
         <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
+          {isSearchingProject ? (
+            <SidebarProjectSearchResults
+              mode={searchMode === "files" ? "files" : "content"}
+              query={threadSearchQuery}
+              inputRef={threadSearchInputRef}
+              onOpened={() => {
+                if (isMobile) setOpenMobile(false);
+              }}
+            />
+          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -4052,7 +4108,7 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
-          {!isSearchingThreads ? (
+          {!isSearchActive ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
               delay={150}
@@ -4394,7 +4450,7 @@ export default function Sidebar() {
               </ul>
             </TooltipProvider>
           ) : null}
-          {!isSearchingThreads &&
+          {!isSearchActive &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +

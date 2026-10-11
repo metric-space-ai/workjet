@@ -4,10 +4,15 @@ import {
   consumeProjectCreateRequest,
   focusSidebarSearch,
   isCommandPaletteOpen,
+  onNewThreadMenuRequest,
   onOpenCommandPalette,
   onProjectCreateRequest,
+  onSidebarSearchMode,
   openCommandPalette,
+  requestNewThreadMenu,
   requestProjectCreate,
+  requestSidebarSearchMode,
+  sidebarSearchModeForCommand,
 } from "./commandPaletteBus";
 
 // The bus only needs an EventTarget-shaped window and a querySelector.
@@ -76,5 +81,37 @@ describe("command palette bus without a palette dialog", () => {
     });
     expect(focusSidebarSearch()).toBe(false);
     expect(focus).toHaveBeenCalledOnce();
+  });
+});
+
+describe("sidebar search modes and the new-thread dropdown", () => {
+  it("maps ⌘K, ⌘P and ⌘⇧F onto one inline search field", () => {
+    expect(sidebarSearchModeForCommand("commandPalette.toggle")).toBe("threads");
+    expect(sidebarSearchModeForCommand("filePicker.toggle")).toBe("files");
+    expect(sidebarSearchModeForCommand("projectSearch.toggle")).toBe("content");
+    expect(sidebarSearchModeForCommand("chat.new")).toBeNull();
+    expect(sidebarSearchModeForCommand(null)).toBeNull();
+  });
+
+  it("delivers the requested search mode to the sidebar", () => {
+    const seen: string[] = [];
+    const stop = onSidebarSearchMode((mode) => seen.push(mode));
+    requestSidebarSearchMode("files");
+    requestSidebarSearchMode("content");
+    stop();
+    requestSidebarSearchMode("threads");
+    expect(seen).toEqual(["files", "content"]);
+  });
+
+  it("opens the dropdown only when a sidebar listens, else reports the fallback", () => {
+    expect(requestNewThreadMenu()).toBe(false);
+    let opened = 0;
+    const stop = onNewThreadMenuRequest(() => {
+      opened += 1;
+    });
+    expect(requestNewThreadMenu()).toBe(true);
+    stop();
+    expect(requestNewThreadMenu()).toBe(false);
+    expect(opened).toBe(1);
   });
 });

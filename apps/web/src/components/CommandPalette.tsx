@@ -5,11 +5,14 @@
  * mapping them onto inline places:
  *
  * - `commandPalette.toggle` (⌘K) and a bare `openCommandPalette()` focus the
- *   sidebar search field „Suchen“;
+ *   sidebar search field „Suchen“; `filePicker.toggle` (⌘P) and
+ *   `projectSearch.toggle` (⌘⇧F) focus the same field in the file or content
+ *   mode, results inline under it;
  * - `openCommandPalette({ open: "add-project" })` opens the project gallery
  *   with its inline „Projekt anlegen“ panel;
  * - `openCommandPalette({ open: "new-thread-in" })` (the `chat.new` shortcut
- *   in multi-project setups) starts a new thread in the contextual project;
+ *   in multi-project setups) opens the sidebar dropdown „Neue Unterhaltung
+ *   in …“, or starts a new thread in the contextual project without one;
  * - `themeEditor.toggle` keeps toggling the theme editor.
  */
 import { useAtomValue } from "@effect/atom-react";
@@ -20,7 +23,11 @@ import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import {
   focusSidebarSearch,
   onOpenCommandPalette,
+  requestNewThreadMenu,
   requestProjectCreate,
+  requestSidebarSearchMode,
+  sidebarSearchModeForCommand,
+  type SidebarSearchMode,
 } from "../commandPaletteBus";
 import { ComposerHandleContext } from "../composerHandleContext";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -70,15 +77,23 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       : false,
   );
 
-  const focusSearch = useCallback(() => {
-    if (focusSidebarSearch()) return;
-    // A collapsed sidebar renders no search field: open it, then focus.
+  const openSidebar = useCallback(() => {
     if (sidebar.isMobile) sidebar.setOpenMobile(true);
     else sidebar.setOpen(true);
-    window.requestAnimationFrame(() => {
-      focusSidebarSearch();
-    });
   }, [sidebar]);
+
+  const focusSearch = useCallback(
+    (mode: SidebarSearchMode = "threads") => {
+      requestSidebarSearchMode(mode);
+      if (focusSidebarSearch()) return;
+      // A collapsed sidebar renders no search field: open it, then focus.
+      openSidebar();
+      window.requestAnimationFrame(() => {
+        focusSidebarSearch();
+      });
+    },
+    [openSidebar],
+  );
 
   const openProjectCreate = useCallback(() => {
     requestProjectCreate();
@@ -124,6 +139,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         event.preventDefault();
         event.stopPropagation();
         focusSearch();
+        return;
+      }
+      const searchMode = sidebarSearchModeForCommand(command);
+      if (searchMode !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        focusSearch(searchMode);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -136,12 +158,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         if (detail.open === "add-project") {
           openProjectCreate();
         } else if (detail.open === "new-thread-in") {
-          startNewThread();
+          openSidebar();
+          if (!requestNewThreadMenu()) startNewThread();
         } else {
           focusSearch();
         }
       }),
-    [focusSearch, openProjectCreate, startNewThread],
+    [focusSearch, openProjectCreate, openSidebar, startNewThread],
   );
 
   return <ComposerHandleContext value={composerHandleRef}>{children}</ComposerHandleContext>;

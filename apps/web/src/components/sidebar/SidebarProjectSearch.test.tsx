@@ -1,0 +1,33 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vite-plus/test";
+
+import commandPaletteSource from "../CommandPalette.tsx?raw";
+import sidebarSource from "../Sidebar.tsx?raw";
+import { SidebarSearchModeSegment, sidebarSearchPlaceholder } from "./SidebarProjectSearch";
+
+describe("inline file and content search in the sidebar", () => {
+  it("names each mode in German and keeps the thread placeholder", () => {
+    expect(sidebarSearchPlaceholder("threads", "Suchen")).toBe("Suchen");
+    expect(sidebarSearchPlaceholder("files", "Suchen")).toBe("Datei suchen");
+    expect(sidebarSearchPlaceholder("content", "Suchen")).toBe("Im Projekt suchen");
+  });
+
+  it("renders the mode segment inline", () => {
+    const html = renderToStaticMarkup(
+      <SidebarSearchModeSegment mode="files" onModeChange={() => {}} />,
+    );
+    expect(html).toContain("Unterhaltungen");
+    expect(html).toContain("Dateien");
+    expect(html).toContain("Inhalt");
+    expect(html).not.toContain('role="dialog"');
+  });
+
+  it("routes ⌘P and ⌘⇧F to the sidebar field, results inline under it", () => {
+    expect(commandPaletteSource).toContain("sidebarSearchModeForCommand(command)");
+    expect(commandPaletteSource).toContain("focusSearch(searchMode)");
+    expect(commandPaletteSource).not.toContain("ProjectFilePicker");
+    expect(commandPaletteSource).not.toContain("ProjectContentSearchDialog");
+    expect(sidebarSource).toContain("<SidebarProjectSearchResults");
+    expect(sidebarSource).toContain("onSidebarSearchMode(setSearchMode)");
+  });
+});

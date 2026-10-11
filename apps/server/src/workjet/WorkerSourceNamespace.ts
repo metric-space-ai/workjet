@@ -12,7 +12,9 @@ import type { WorkerNamespaceSpawnCapture } from "./WorkerNamespaceSpawn.ts";
 export type WorkerNamespaceSessionCapture = Omit<
   WorkerNamespaceSpawnCapture,
   "runtimeFiles" | "runtimeDirectories"
->;
+> & {
+  readonly revalidate: (signal: AbortSignal) => Promise<void>;
+};
 
 /** This is process custody, not an Owner/team grant. The common policy boundary
  * continues to reject autonomous execution until native authority is enforced. */
@@ -67,8 +69,15 @@ export const prepareWorkerSourceNamespace = Effect.fn("prepareWorkerSourceNamesp
   const helperPath = yield* binary.value.resolve.pipe(
     Effect.mapError(() => failure("Worker namespace native launcher is unavailable.")),
   );
+  const revalidate = async (signal?: AbortSignal) => {
+    const current = () =>
+      readWorkerSourceHarness(input.threadId) === source && !source.isRevoked();
+    if (!current()) throw failure("Worker namespace original source route is unavailable.");
+    await source.admit(signal);
+    if (!current()) throw failure("Worker namespace original source route changed during admission.");
+  };
   yield* Effect.tryPromise({
-    try: () => source.admit(),
+    try: revalidate,
     catch: () => failure("Worker namespace source admission failed or expired."),
   });
   return {
@@ -80,5 +89,6 @@ export const prepareWorkerSourceNamespace = Effect.fn("prepareWorkerSourceNamesp
     },
     profile,
     modelSocket: source.modelSocket,
+    revalidate,
   } satisfies WorkerNamespaceSessionCapture;
 });

@@ -9,6 +9,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -43,9 +44,14 @@ const fixture = async () => {
   const runtime = NodePath.join(root, "runtime");
   const script = NodePath.join(runtime, "greppy");
   let route: Awaited<ReturnType<typeof installWorkerSourceRoute>> | undefined;
-  const source = NodeHttp.createServer((_request, response) =>
-    response.writeHead(200, { "content-type": "application/json" }).end("{}"),
-  );
+  let sourceAvailable = true;
+  let admissions = 0;
+  const source = NodeHttp.createServer((_request, response) => {
+    admissions++;
+    response
+      .writeHead(sourceAvailable ? 200 : 403, { "content-type": "application/json" })
+      .end("{}");
+  });
   try {
     await NodeFSP.mkdir(stage, { mode: 0o700 });
     await NodeFSP.mkdir(runtime, { mode: 0o700 });
@@ -133,6 +139,11 @@ const fixture = async () => {
       script,
       input,
       receipt,
+      admissions: () => admissions,
+      denySource: () => {
+        sourceAvailable = false;
+      },
+      revokeSource: route.revoke,
       home: route.nativeProfile!.environment.HOME!,
       close: async () => {
         await route?.revoke();
@@ -155,6 +166,10 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
     "missing-receipt",
     "changed-digest",
     "replaced-root",
+    "expired-source-tools",
+    "revoked-source-tools",
+    "expired-source-cleanup",
+    "expired-source-running",
   ] as const) {
     it.effect(
       variant,
@@ -200,26 +215,65 @@ describe.runIf(helper !== undefined)("Greppy original runtime/custody production
                   },
                 );
                 const started = yield* adapter.startSession(owned.input).pipe(Effect.result);
-                if (variant !== "two-turns") {
+                if (
+                  variant === "missing-receipt" ||
+                  variant === "changed-digest" ||
+                  variant === "replaced-root"
+                ) {
                   expect(started._tag).toBe("Failure");
                   if (variant !== "replaced-root") expect(children).toHaveLength(0);
                   return;
                 }
                 expect(started._tag).toBe("Success");
-                for (const input of ["first", "follow-up"])
-                  yield* adapter.sendTurn({ threadId: owned.input.threadId, input });
-                expect(
-                  yield* Effect.tryPromise(() =>
-                    NodeFSP.readFile(NodePath.join(owned.home, "acp-turns"), "utf8"),
-                  ),
-                ).toBe("2");
+                yield* adapter.sendTurn({
+                  threadId: owned.input.threadId,
+                  input: variant === "two-turns" ? "first" : "hold-terminal",
+                });
+                if (variant === "two-turns") {
+                  yield* adapter.sendTurn({ threadId: owned.input.threadId, input: "follow-up" });
+                  expect(
+                    yield* Effect.tryPromise(() =>
+                      NodeFSP.readFile(NodePath.join(owned.home, "acp-turns"), "utf8"),
+                    ),
+                  ).toBe("2");
+                } else {
+                  const held = children.at(-1)!;
+                  expect(yield* held.isRunning).toBe(true);
+                  const before = owned.admissions();
+                  if (variant === "revoked-source-tools")
+                    yield* Effect.promise(owned.revokeSource);
+                  else yield* Effect.sync(owned.denySource);
+                  if (variant === "expired-source-running") {
+                    yield* TestClock.adjust("10 seconds");
+                    yield* held.exitCode.pipe(Effect.result);
+                  } else {
+                    yield* adapter.sendTurn({
+                      threadId: owned.input.threadId,
+                      input: variant === "expired-source-cleanup" ? "cleanup-only" : "source-denied",
+                    });
+                  }
+                  expect(yield* held.isRunning).toBe(false);
+                  expect(owned.admissions() - before).toBe(
+                    variant === "revoked-source-tools" || variant === "expired-source-cleanup" ? 0 : 1,
+                  );
+                  expect(
+                    yield* Effect.tryPromise(() =>
+                      NodeFSP.readFile(NodePath.join(owned.workspace, "main.c"), "utf8"),
+                    ),
+                  ).toBe("int main(void) { return 0; }\n");
+                  expect(
+                    (yield* Effect.tryPromise(() =>
+                      NodeFSP.access(NodePath.join(owned.workspace, "denied-effect")),
+                    ).pipe(Effect.result))._tag,
+                  ).toBe("Failure");
+                }
                 expect(
                   NodeChildProcess.execFileSync(
                     "/usr/bin/git",
                     ["-C", owned.workspace, "rev-list", "--count", "HEAD"],
                     { timeout: 5000, encoding: "utf8" },
                   ).trim(),
-                ).toBe("2");
+                ).toBe(variant === "two-turns" ? "2" : "1");
                 const stopped = yield* adapter.stopSession(owned.input.threadId);
                 expect(stopped?.terminated).toBe(true);
               }).pipe(

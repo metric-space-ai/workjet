@@ -95,6 +95,49 @@ const fixture = async () => {
 };
 
 describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
+  it.effect(
+    "rejects a namespace without its original admission callback before spawning",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.tryPromise(fixture),
+        (owned) =>
+          Effect.gen(function* () {
+            let spawned = 0;
+            const original = yield* ChildProcessSpawner.ChildProcessSpawner;
+            const result = yield* AcpSessionRuntime.AcpSessionRuntime.pipe(
+              Effect.flatMap((runtime) => runtime.start()),
+              Effect.provide(
+                AcpSessionRuntime.layer({
+                  spawn: {
+                    command: "/usr/bin/python3",
+                    args: [owned.script],
+                    cwd: owned.workspace,
+                    env: owned.environment,
+                  },
+                  namespaceCapture: owned.capture,
+                  cwd: owned.workspace,
+                  clientInfo: { name: "workjet-test", version: "0" },
+                  authMethodId: "test",
+                }),
+              ),
+              Effect.scoped,
+              Effect.provideService(
+                ChildProcessSpawner.ChildProcessSpawner,
+                ChildProcessSpawner.make((command) =>
+                  Effect.sync(() => {
+                    spawned++;
+                  }).pipe(Effect.andThen(original.spawn(command))),
+                ),
+              ),
+              Effect.result,
+            );
+            expect(result._tag).toBe("Failure");
+            expect(spawned).toBe(0);
+          }),
+        (owned) => Effect.promise(owned.close),
+      ).pipe(Effect.provide(NodeServices.layer)),
+    { timeout: 45000 },
+  );
   // CI without the Linux helper does not assert the kernel boundary. The gpu3 qualification builds it.
   it.effect(
     "reads, edits, builds and commits through confined tools across two turns without daemon callbacks",
@@ -166,6 +209,7 @@ describe.runIf(helper !== undefined)("ACP Linux namespace execution", () => {
                       },
                     },
                     namespaceCapture: owned.capture,
+                    namespaceAdmission: owned.verify,
                     cwd: owned.workspace,
                     clientInfo: { name: "workjet-test", version: "0" },
                     authMethodId: "test",

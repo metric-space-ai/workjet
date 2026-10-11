@@ -120,6 +120,7 @@ export const makeWorkerNamespaceTools = (
   capture: WorkerNamespaceSpawnCapture,
   environment: Readonly<Record<string, string | undefined>>,
   authorizeSession: (sessionId: string) => Effect.Effect<void, AcpErrors.AcpError>,
+  revalidateSource: Effect.Effect<void, AcpErrors.AcpError>,
 ) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -131,11 +132,26 @@ export const makeWorkerNamespaceTools = (
       Deferred.fail(terminal.done, error("Terminal released")).pipe(
         Effect.andThen(Scope.close(terminal.scope, Exit.void)),
       );
-    yield* Effect.addFinalizer(() =>
-      Effect.forEach(terminals.values(), close, { discard: true }).pipe(
-        Effect.andThen(Effect.sync(() => terminals.clear())),
-      ),
+    const closeAll = Effect.fn("WorkerNamespaceTools.closeAll")(
+      function* () {
+        const owned = [...terminals.values()];
+        terminals.clear();
+        yield* Effect.forEach(owned, close, { discard: true });
+      },
+      Effect.uninterruptible,
     );
+    yield* Effect.addFinalizer(closeAll);
+    let admissionFailure: AcpErrors.AcpError | undefined;
+    const admit = Effect.fn("WorkerNamespaceTools.admit")(function* () {
+      if (admissionFailure) return yield* admissionFailure;
+      yield* revalidateSource.pipe(
+        Effect.catch((cause) =>
+          Effect.sync(() => {
+            admissionFailure = cause;
+          }).pipe(Effect.andThen(closeAll()), Effect.andThen(Effect.fail(cause))),
+        ),
+      );
+    });
 
     const spawn = Effect.fn("WorkerNamespaceTools.spawn")(function* (
       operation: Operation,
@@ -218,8 +234,10 @@ export const makeWorkerNamespaceTools = (
     const get = Effect.fn("WorkerNamespaceTools.getTerminal")(function* (
       sessionId: string,
       terminalId: string,
+      requireAdmission = true,
     ) {
       yield* authorizeSession(sessionId);
+      if (requireAdmission) yield* admit();
       const terminal = terminals.get(terminalId);
       if (!terminal) return yield* error("Unknown or released worker terminal");
       return terminal;
@@ -230,6 +248,7 @@ export const makeWorkerNamespaceTools = (
         request: AcpSchema.ReadTextFileRequest,
       ) {
         yield* authorizeSession(request.sessionId);
+        yield* admit();
         const result = yield* fileRequest({
           kind: "read",
           path: request.path,
@@ -244,6 +263,7 @@ export const makeWorkerNamespaceTools = (
         request: AcpSchema.WriteTextFileRequest,
       ) {
         yield* authorizeSession(request.sessionId);
+        yield* admit();
         yield* fileRequest({ kind: "write", path: request.path }, request.content);
         return {};
       }),
@@ -253,6 +273,7 @@ export const makeWorkerNamespaceTools = (
         yield* authorizeSession(request.sessionId);
         return yield* creation.withPermit(
           Effect.gen(function* () {
+            yield* admit();
             if (terminals.size >= 4)
               return yield* error("Worker terminal limit reached; release a terminal first");
             const cwd = request.cwd ?? capture.worktree.worktreePath;
@@ -329,6 +350,12 @@ export const makeWorkerNamespaceTools = (
               Deferred.into(done),
               Effect.forkIn(scope),
             );
+            yield* Effect.gen(function* () {
+              while (yield* child.isRunning) {
+                yield* Effect.raceFirst(Effect.sleep("10 seconds"), Deferred.await(done));
+                if (yield* child.isRunning) yield* admit();
+              }
+            }).pipe(Effect.ignore, Effect.forkIn(runtimeScope));
             yield* Effect.sleep("10 minutes").pipe(
               Effect.andThen(child.isRunning),
               Effect.flatMap((running) =>
@@ -354,12 +381,15 @@ export const makeWorkerNamespaceTools = (
       terminalWaitForExit: Effect.fn("WorkerNamespaceTools.terminalWaitForExit")(function* (
         request: AcpSchema.WaitForTerminalExitRequest,
       ) {
-        return yield* Deferred.await((yield* get(request.sessionId, request.terminalId)).done);
+        const terminal = yield* get(request.sessionId, request.terminalId);
+        const result = yield* Deferred.await(terminal.done);
+        yield* admit();
+        return result;
       }),
       terminalKill: Effect.fn("WorkerNamespaceTools.terminalKill")(function* (
         request: AcpSchema.KillTerminalRequest,
       ) {
-        const terminal = yield* get(request.sessionId, request.terminalId);
+        const terminal = yield* get(request.sessionId, request.terminalId, false);
         if (yield* terminal.child.isRunning.pipe(Effect.mapError(error))) {
           yield* terminal.child.kill({ killSignal: "SIGTERM" }).pipe(Effect.mapError(error));
           yield* Deferred.await(terminal.done).pipe(
@@ -377,7 +407,7 @@ export const makeWorkerNamespaceTools = (
       terminalRelease: Effect.fn("WorkerNamespaceTools.terminalRelease")(function* (
         request: AcpSchema.ReleaseTerminalRequest,
       ) {
-        const terminal = yield* get(request.sessionId, request.terminalId);
+        const terminal = yield* get(request.sessionId, request.terminalId, false);
         terminals.delete(request.terminalId);
         yield* close(terminal);
         return {};

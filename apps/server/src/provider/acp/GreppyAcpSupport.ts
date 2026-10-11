@@ -32,7 +32,7 @@ export function buildGreppyAcpSpawnInput(
 export const makeGreppyAcpRuntime = Effect.fn("makeGreppyAcpRuntime")(function* (
   input: Omit<
     AcpSessionRuntime.AcpSessionRuntimeOptions,
-    "spawn" | "authMethodId" | "namespaceCapture"
+    "spawn" | "authMethodId" | "namespaceCapture" | "namespaceAdmission"
   > & {
     readonly namespaceCapture?: WorkerNamespaceSessionCapture;
     readonly config: GreppySettings;
@@ -57,7 +57,16 @@ export const makeGreppyAcpRuntime = Effect.fn("makeGreppyAcpRuntime")(function* 
       ...options,
       spawn: runtime?.spawn ?? configured,
       ...(namespaceCapture && runtime
-        ? { namespaceCapture: { ...namespaceCapture, runtimeFiles: runtime.runtimeFiles } }
+        ? {
+            namespaceCapture: {
+              helperPath: namespaceCapture.helperPath,
+              worktree: namespaceCapture.worktree,
+              profile: namespaceCapture.profile,
+              modelSocket: namespaceCapture.modelSocket,
+              runtimeFiles: runtime.runtimeFiles,
+            },
+            namespaceAdmission: namespaceCapture.revalidate,
+          }
         : {}),
       authMethodId: "greppy.env",
       cancelPromptMode: "await-response",

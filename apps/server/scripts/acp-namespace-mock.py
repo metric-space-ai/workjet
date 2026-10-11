@@ -8,6 +8,7 @@ import sys
 session = "namespace-session"
 turns = 0
 request_id = 0
+held_terminal = None
 
 def write(message):
     print(json.dumps({"jsonrpc": "2.0", **message}), flush=True)
@@ -43,7 +44,25 @@ for line in sys.stdin:
         write({"id": message["id"], "result": {"sessionId": session}})
     elif method == "session/prompt":
         turns += 1
+        text = " ".join(item.get("text", "") for item in message["params"]["prompt"])
         target = str(pathlib.Path.cwd() / "main.c")
+        if "cleanup-only" in text or "source-denied" in text:
+            assert held_terminal is not None
+            if "cleanup-only" in text:
+                call("terminal/kill", {"terminalId": held_terminal})
+                call("terminal/release", {"terminalId": held_terminal})
+            else:
+                call("fs/read_text_file", {"path": target}, False)
+                call("fs/write_text_file", {"path": target, "content": "stale-write"}, False)
+                call("terminal/create", {"command": "/usr/bin/touch", "args": ["denied-effect"]}, False)
+                call("terminal/output", {"terminalId": held_terminal}, False)
+                call("terminal/wait_for_exit", {"terminalId": held_terminal}, False)
+            write({"method": "session/update", "params": {
+                "sessionId": session, "update": {"sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "Cleanup completed" if "cleanup-only" in text
+                            else "Source unavailable; confined actions refused"}}}})
+            write({"id": message["id"], "result": {"stopReason": "end_turn"}})
+            continue
         call("fs/write_text_file", {"path": target, "content": "int main(void) { return 0; }\n"})
         assert call("fs/read_text_file", {"path": target})["content"] == "int main(void) { return 0; }\n"
         assert call("fs/read_text_file", {"path": target, "line": 1, "limit": 1})["content"].endswith("\n")
@@ -75,9 +94,9 @@ for line in sys.stdin:
         stopped = call("terminal/wait_for_exit", {"terminalId": sleeping})
         assert stopped.get("exitCode", 0) != 0 or stopped.get("signal") in ("SIGTERM", "SIGKILL"), stopped
         call("terminal/release", {"terminalId": sleeping})
-        if turns == 2:
-            # Deliberately leave an owned terminal alive for runtime-scope teardown.
-            call("terminal/create", {"command": "/usr/bin/sleep", "args": ["30"]})
+        if turns == 2 or "hold-terminal" in text:
+            # Deliberately leave an owned terminal alive for runtime-scope teardown or revocation.
+            held_terminal = call("terminal/create", {"command": "/usr/bin/sleep", "args": ["30"]})["terminalId"]
         pathlib.Path(os.environ["HOME"]).joinpath("acp-turns").write_text(str(turns))
         write({"method": "session/update", "params": {
             "sessionId": session, "update": {"sessionUpdate": "agent_message_chunk",

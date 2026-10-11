@@ -66,6 +66,8 @@ export interface AcpSessionRuntimeOptions {
   readonly spawn: AcpSpawnInput;
   /** Internal server custody; never supplied by a client or inferred from runtimeMode. */
   readonly namespaceCapture?: WorkerNamespaceSpawnCapture;
+  /** Fresh admission of the captured original Source; required for namespace execution. */
+  readonly namespaceAdmission?: (signal: AbortSignal) => Promise<void>;
   readonly cwd: string;
   readonly resumeSessionId?: string;
   /** Claimed native work requires the provider's load RPC response, not replay-idle inference. */
@@ -341,6 +343,23 @@ export const make = (
         ),
       );
 
+    const originalAdmission = options.namespaceAdmission;
+    const admissionError = (cause: unknown) =>
+      new EffectAcpErrors.AcpTransportError({
+        detail: "Confined worker Source admission failed or expired",
+        cause,
+      });
+    const namespaceAdmission = options.namespaceCapture
+      ? Effect.tryPromise({
+          try: (signal) =>
+            originalAdmission
+              ? originalAdmission(signal)
+              : Promise.reject(new Error("Missing original Source admission")),
+          catch: admissionError,
+        }).pipe(Effect.timeout("10 seconds"), Effect.mapError(admissionError))
+      : Effect.void;
+    yield* namespaceAdmission;
+
     const spawn = yield* Effect.try({
       try: () =>
         options.namespaceCapture
@@ -415,6 +434,7 @@ export const make = (
                     ),
               ),
             ),
+          namespaceAdmission,
         )
       : undefined;
     if (namespaceTools) {

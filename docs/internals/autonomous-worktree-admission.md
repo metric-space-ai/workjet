@@ -262,3 +262,25 @@ tools; missing/changed receipts and root replacement fail. It does not use a rea
 model/account and is not installed-product or native Owner/team acceptance.
 Public supported policy modes remain empty. Other harness runtime bundles,
 confined MCP, native admission and installed multi-harness acceptance remain open.
+
+### Fresh Source admission for confined tools
+
+Namespace runtime construction requires the original Source admission callback
+and checks it before any CLI spawn. Greppy retains the same Source object that
+produced the original allocation/profile capture. Replacement or revocation of
+that route is rejected before and after each Source request; no new route is adopted.
+The callback is a live server function and is never included in the native capture.
+
+Every read, write, terminal creation and terminal-output/exit read revalidates
+Source admission. Running terminals additionally revalidate every ten seconds,
+within their existing ten-minute lifetime. A failed or timed-out check latches
+that session's denial and closes its owned terminals. The check has a ten-second
+bound and aborts its own Source HTTP request. Session teardown still closes the
+same scopes. Kill/release remain available for the authorized ACP session after
+Source authority has expired; cleanup does not mint or extend admission.
+
+Kernel integration fixtures exercise expiry, local route revocation, independent
+running-terminal revalidation and cleanup after expiry through the actual Greppy
+adapter/factory. They use no real native Owner/account/model. Native Parent/team
+enrollment, complete MCP/runtime enforcement and installed multi-harness acceptance
+remain open; public supported autonomous-worktree modes remain empty.

@@ -14,6 +14,54 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
+it("cancels a pending source admission with its caller and rejects an already aborted caller", async () => {
+  let onRequest = () => {};
+  let onClose = () => {};
+  let calls = 0;
+  const requested = new Promise<void>((resolve) => {
+    onRequest = () => resolve();
+  });
+  const closed = new Promise<void>((resolve) => {
+    onClose = () => resolve();
+  });
+  const server = NodeHttp.createServer((req, res) => {
+    calls++;
+    req.resume();
+    res.on("close", onClose);
+    onRequest();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  cleanups.push(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("fixture listener");
+  const harness = await installWorkerSourceRoute(
+    "cancel-admission",
+    {
+      sourceEnvironmentId: "source",
+      targetEnvironmentId: "target",
+      requestId: "cancel-admission",
+      requestDigest: "immutable-digest",
+      capability: "fixture-capability",
+      port: address.port,
+    },
+    { targetEnvironmentId: "target", requestDigest: "immutable-digest", modelId: "gpt-6.1-sol" },
+  );
+  cleanups.push(harness.revoke);
+  const already = new AbortController();
+  already.abort();
+  await expect(harness.admit(already.signal)).rejects.toThrow("interrupted");
+  expect(calls).toBe(0);
+  const current = new AbortController();
+  const pending = harness.admit(current.signal);
+  await requested;
+  current.abort();
+  await expect(pending).rejects.toThrow();
+  await closed;
+  expect(calls).toBe(1);
+});
 it("sends verified submission details and retains the source route after a failed retirement", async () => {
   const notices: unknown[] = [];
   let fail = true;

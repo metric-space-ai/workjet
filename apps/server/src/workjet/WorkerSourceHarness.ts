@@ -113,7 +113,7 @@ export interface WorkerSourceHarness {
       "sourceEnvironmentId" | "targetEnvironmentId" | "requestId" | "requestDigest"
     >
   >;
-  readonly admit: () => Promise<void>;
+  readonly admit: (signal?: AbortSignal) => Promise<void>;
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
@@ -413,15 +413,19 @@ export async function installWorkerSourceRoute(
       requestId: route.requestId,
       requestDigest: route.requestDigest,
     }),
-    admit: async () => {
+    admit: async (signal) => {
       if (revoked) throw new Error("Worker route revoked");
+      if (signal?.aborted) throw new Error("Worker source admission interrupted");
       const controller = new AbortController();
+      const abort = () => controller.abort();
+      signal?.addEventListener("abort", abort, { once: true });
       active.add(controller);
       const timeout = setTimeout(() => controller.abort(), 15_000);
       try {
         await source("admit", {}, controller.signal);
       } finally {
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
         active.delete(controller);
       }
     },

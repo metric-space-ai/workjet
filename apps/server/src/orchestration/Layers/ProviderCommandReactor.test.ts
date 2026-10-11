@@ -1952,7 +1952,9 @@ describe("ProviderCommandReactor", () => {
     );
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
-      input: "Kontrollrunde: prüfe Worker und offene PRs.",
+      input: expect.stringMatching(
+        /^\[Workjet system context\]\nToken budget: unknown\/unlimited \(usage unknown\/incomplete\); [^\n]+\n\nKontrollrunde: prüfe Worker und offene PRs\.$/u,
+      ),
     });
     expect(harness.generateThreadTitle).not.toHaveBeenCalled();
     const after = await harness.readModel();

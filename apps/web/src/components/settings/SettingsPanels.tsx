@@ -1,4 +1,4 @@
-import { ArchiveIcon, ArchiveX, LoaderIcon } from "lucide-react";
+import { ArchiveX } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -89,6 +89,7 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTime } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
+import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
 import {
   DEFAULT_CODE_FONT_STACK,
@@ -109,6 +110,7 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "../ui/number-field";
+import { Row } from "../ui/row";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -162,28 +164,7 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, stri
   "battery-saver": "Akku sparen",
 };
 
-type BackgroundActivityProfileOption = BackgroundActivityProfile | "advanced";
-
-const BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS: Record<BackgroundActivityProfileOption, string> = {
-  ...BACKGROUND_ACTIVITY_PROFILE_LABELS,
-  advanced: "Eigene Intervalle",
-};
-
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
-const BACKGROUND_ACTIVITY_BOOLEAN_OVERRIDES: ReadonlyArray<{
-  readonly key:
-    | "pauseWhenHostLocked"
-    | "pauseWhenHostLowPower"
-    | "pauseWhenClientLowPower"
-    | "pauseWhenOnBattery";
-  readonly label: string;
-}> = [
-  { key: "pauseWhenHostLocked", label: "Pause: Host gesperrt" },
-  { key: "pauseWhenHostLowPower", label: "Pause: Host spart" },
-  { key: "pauseWhenClientLowPower", label: "Pause: Client spart" },
-  { key: "pauseWhenOnBattery", label: "Pause: Akkubetrieb" },
-];
-
 function resetBackgroundActivitySettings() {
   return {
     backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -456,9 +437,9 @@ export function useSettingsRestore(onRestored?: () => void) {
 
   const changedSettingLabels = useMemo(
     () => [
-      ...(theme !== "system" ? ["Theme"] : []),
+      ...(theme !== "system" ? ["Thema"] : []),
       ...(!followSystem ? ["System folgen"] : []),
-      ...(themeHalves !== null ? ["Theme-Mix"] : []),
+      ...(themeHalves !== null ? ["Themen-Mix"] : []),
       ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glas"] : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
@@ -468,7 +449,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Zeitformat"]
         : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
-        ? ["Sichtbare Threads"]
+        ? ["Sichtbare Unterhaltungen"]
         : []),
       ...(settings.sidebarProjectGroupingMode !==
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
@@ -479,7 +460,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Inaktive ablegen"]
         : []),
       ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
-        ? ["Gemergte ablegen"]
+        ? ["Zusammengeführte ablegen"]
         : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Zeilenumbruch"] : []),
       ...getChangedTypographySettingLabels(settings),
@@ -496,7 +477,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(isBackgroundActivityDirty ? ["Hintergrundaktivität"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
-        ? ["Neue Threads"]
+        ? ["Neue Unterhaltungen"]
         : []),
       ...(settings.newWorktreesStartFromOrigin !==
       DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
@@ -589,7 +570,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Theme nicht zurückgesetzt",
+            title: "Thema nicht zurückgesetzt",
           }),
         );
       };
@@ -666,130 +647,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     changedSettingLabels,
     restoreDefaults,
   };
-}
-
-/**
- * Eigene Hintergrund-Intervalle, inline unter der Zeile „Hintergrundaktivität“
- * (früher ein Dialog). Jede Zeile: Bezeichnung und Steuerelement, kein Text.
- */
-function BackgroundActivityIntervalRows() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
-  const activeProfile = resolvedBackgroundActivity.profile;
-  const intervals: ReadonlyArray<{
-    readonly key:
-      | "automaticGitFetchInterval"
-      | "providerHealthRefreshInterval"
-      | "hostPowerMonitorActiveInterval"
-      | "hostPowerMonitorIdleInterval";
-    readonly label: string;
-    readonly min: number;
-    readonly step: number;
-  }> = [
-    { key: "automaticGitFetchInterval", label: "Git-Abruf", min: 0, step: 5 },
-    {
-      key: "providerHealthRefreshInterval",
-      label: "Anbieter-Prüfung",
-      min: 0,
-      step: PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
-    },
-    { key: "hostPowerMonitorActiveInterval", label: "Host-Energie aktiv", min: 5, step: 5 },
-    { key: "hostPowerMonitorIdleInterval", label: "Host-Energie Leerlauf", min: 5, step: 30 },
-  ];
-
-  return (
-    <div className="space-y-1 bg-muted/20 sm:pl-5" data-slot="background-activity-intervals">
-      <SettingsRow
-        title="Gemeinsame Regel"
-        control={
-          <Select
-            value={activeProfile}
-            onValueChange={(value) => {
-              if (value === "balanced" || value === "performance" || value === "battery-saver") {
-                updateSettings({
-                  backgroundActivity: backgroundActivitySharedPolicySettings(settings, value),
-                });
-              }
-            }}
-          >
-            <SelectTrigger className="w-full sm:w-40" aria-label="Gemeinsame Regel">
-              <SelectValue>{BACKGROUND_ACTIVITY_PROFILE_LABELS[activeProfile]}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem hideIndicator value="balanced">
-                {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
-              </SelectItem>
-              <SelectItem hideIndicator value="performance">
-                {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
-              </SelectItem>
-              <SelectItem hideIndicator value="battery-saver">
-                {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
-              </SelectItem>
-            </SelectPopup>
-          </Select>
-        }
-      />
-      {intervals.map(({ key, label, min, step }) => (
-        <SettingsRow
-          key={key}
-          title={label}
-          control={
-            <div className="flex shrink-0 items-center gap-2">
-              <NumberField
-                value={durationToSeconds(resolvedBackgroundActivity[key])}
-                min={min}
-                step={step}
-                size="sm"
-                className="w-32"
-                onValueChange={(value) =>
-                  updateSettings(
-                    backgroundActivityOverrideSettings(
-                      settings.backgroundActivity,
-                      resolvedBackgroundActivity,
-                      {
-                        [key]: Duration.seconds(normalizeIntervalSeconds(value, min)),
-                      },
-                    ),
-                  )
-                }
-              >
-                <NumberFieldGroup>
-                  <NumberFieldDecrement aria-label={`${label} verringern`} />
-                  <NumberFieldInput aria-label={`${label} in Sekunden`} />
-                  <NumberFieldIncrement aria-label={`${label} erhöhen`} />
-                </NumberFieldGroup>
-              </NumberField>
-              <span className="text-xs text-muted-foreground">s</span>
-            </div>
-          }
-        />
-      ))}
-      {BACKGROUND_ACTIVITY_BOOLEAN_OVERRIDES.map(({ key, label }) => (
-        <SettingsRow
-          key={key}
-          title={label}
-          control={
-            <Switch
-              checked={resolvedBackgroundActivity[key]}
-              onCheckedChange={(checked) =>
-                updateSettings(
-                  backgroundActivityOverrideSettings(
-                    settings.backgroundActivity,
-                    resolvedBackgroundActivity,
-                    {
-                      [key]: Boolean(checked),
-                    },
-                  ),
-                )
-              }
-              aria-label={label}
-            />
-          }
-        />
-      ))}
-    </div>
-  );
 }
 
 export function AppearanceSettingsPanel() {
@@ -1532,7 +1389,6 @@ export function GeneralSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
-  const [customIntervalsOpen, setCustomIntervalsOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
@@ -1560,8 +1416,10 @@ export function GeneralSettingsPanel() {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
-  const backgroundActivityProfileOption = resolveBackgroundActivityProfileOption(settings);
-  const showCustomIntervals = customIntervalsOpen || backgroundActivityProfileOption === "advanced";
+  // Nur die drei Profile; ein gespeichertes „advanced“ zeigt das Standardprofil.
+  const resolvedProfileOption = resolveBackgroundActivityProfileOption(settings);
+  const backgroundActivityProfile: BackgroundActivityProfile =
+    resolvedProfileOption === "advanced" ? "balanced" : resolvedProfileOption;
   const canResetBackgroundActivity = !Equal.equals(
     settings.backgroundActivity,
     DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -1642,7 +1500,7 @@ export function GeneralSettingsPanel() {
             settings.sidebarAutoSettleOnMerge !==
             DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge ? (
               <SettingResetButton
-                label="Gemergte ablegen"
+                label="Zusammengeführte ablegen"
                 onClick={() =>
                   updateSettings({
                     sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -1657,7 +1515,7 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
               }
-              aria-label="Gemergte ablegen"
+              aria-label="Zusammengeführte ablegen"
             />
           }
         />
@@ -1799,39 +1657,27 @@ export function GeneralSettingsPanel() {
             canResetBackgroundActivity ? (
               <SettingResetButton
                 label="Hintergrundaktivität"
-                onClick={() => {
-                  setCustomIntervalsOpen(false);
-                  updateSettings(resetBackgroundActivitySettings());
-                }}
+                onClick={() => updateSettings(resetBackgroundActivitySettings())}
               />
             ) : null
           }
           control={
             <>
               <Select
-                value={showCustomIntervals ? "advanced" : backgroundActivityProfileOption}
+                value={backgroundActivityProfile}
                 onValueChange={(value) => {
-                  if (value === "advanced") {
-                    setCustomIntervalsOpen(true);
-                    return;
-                  }
                   if (
                     value === "balanced" ||
                     value === "performance" ||
                     value === "battery-saver"
                   ) {
-                    setCustomIntervalsOpen(false);
                     updateSettings(backgroundActivityProfileSettings(value));
                   }
                 }}
               >
                 <SelectTrigger className="w-full sm:w-40" aria-label="Hintergrundaktivität">
                   <SelectValue>
-                    {
-                      BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS[
-                        showCustomIntervals ? "advanced" : backgroundActivityProfileOption
-                      ]
-                    }
+                    {BACKGROUND_ACTIVITY_PROFILE_LABELS[backgroundActivityProfile]}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -1844,15 +1690,11 @@ export function GeneralSettingsPanel() {
                   <SelectItem hideIndicator value="battery-saver">
                     {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
                   </SelectItem>
-                  <SelectItem hideIndicator value="advanced">
-                    {BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced}
-                  </SelectItem>
                 </SelectPopup>
               </Select>
             </>
           }
         />
-        {showCustomIntervals ? <BackgroundActivityIntervalRows /> : null}
 
         <SettingsRow
           {...searchableSetting("new-threads")}
@@ -1861,7 +1703,7 @@ export function GeneralSettingsPanel() {
             settings.newWorktreesStartFromOrigin !==
               DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
               <SettingResetButton
-                label="Neue Threads"
+                label="Neue Unterhaltungen"
                 onClick={() =>
                   updateSettings({
                     defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
@@ -1881,9 +1723,9 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger className="w-full sm:w-44" aria-label="Neue Threads">
+              <SelectTrigger className="w-full sm:w-44" aria-label="Neue Unterhaltungen">
                 <SelectValue>
-                  {settings.defaultThreadEnvMode === "worktree" ? "Neuer Worktree" : "Lokal"}
+                  {settings.defaultThreadEnvMode === "worktree" ? "Neue Arbeitskopie" : "Lokal"}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -1891,7 +1733,7 @@ export function GeneralSettingsPanel() {
                   Lokal
                 </SelectItem>
                 <SelectItem hideIndicator value="worktree">
-                  Neuer Worktree
+                  Neue Arbeitskopie
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -2114,7 +1956,7 @@ function formatGermanRelativeTime(isoDate: string): string {
 
 export function ArchivedThreadsPanel() {
   const projects = useProjects();
-  const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
+  const { unarchiveThread, confirmAndDeleteThread, deleteThread } = useThreadActions();
   const environmentIds = useMemo(
     () => [...new Set(projects.map((project) => project.environmentId))],
     [projects],
@@ -2125,16 +1967,7 @@ export function ArchivedThreadsPanel() {
     isLoading: isLoadingArchive,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(environmentIds);
-  // Ein Laden endet immer: nach 10 s Statuszeile mit „Erneut versuchen“.
-  const [archiveSlow, setArchiveSlow] = useState(false);
-  useEffect(() => {
-    if (!isLoadingArchive) {
-      setArchiveSlow(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setArchiveSlow(true), 10_000);
-    return () => window.clearTimeout(timer);
-  }, [isLoadingArchive]);
+  // Ein Laden endet immer: EmptyLoading zeigt nach 10 s „Erneut versuchen“.
 
   const archivedGroups = useMemo(() => {
     const projectsByEnvironmentAndId = new Map(
@@ -2235,40 +2068,79 @@ export function ArchivedThreadsPanel() {
     [confirmAndDeleteThread, refreshArchivedThreads, unarchiveThread],
   );
 
+  const restore = (threadRef: ScopedThreadRef) => {
+    void (async () => {
+      const result = await unarchiveThread(threadRef);
+      if (result._tag === "Success") {
+        refreshArchivedThreads();
+        return;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Nicht wiederhergestellt",
+            description: error instanceof Error ? error.message : undefined,
+          }),
+        );
+      }
+    })();
+  };
+
+  // Die Zeile fragt inline nach (ui/row), daher ohne zweiten Bestätigungsdialog.
+  const remove = (threadRef: ScopedThreadRef) => {
+    void (async () => {
+      const result = await deleteThread(threadRef);
+      if (result._tag === "Success") {
+        refreshArchivedThreads();
+        return;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Nicht gelöscht",
+            description: error instanceof Error ? error.message : undefined,
+          }),
+        );
+      }
+    })();
+  };
+
   return (
     <SettingsPageContainer>
       {archivedGroups.length === 0 ? (
-        <SettingsSection
-          id={isLoadingArchive ? undefined : searchableSetting("archive").id}
-          title={searchableSetting("archive").title}
+        <div
+          {...(isLoadingArchive ? {} : { id: searchableSetting("archive").id })}
+          data-slot="archive-empty"
         >
-          <SettingsRow
-            title={
-              <span className="inline-flex items-center gap-2">
-                {isLoadingArchive && !archiveSlow ? (
-                  <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
-                ) : (
-                  <ArchiveIcon className="size-3.5 text-muted-foreground" />
-                )}
-                {isLoadingArchive
-                  ? archiveSlow
-                    ? "Laden dauert länger"
-                    : "Lädt …"
-                  : archiveError
-                    ? "Nicht geladen"
-                    : "Keine archivierten Threads"}
-              </span>
-            }
-            status={!isLoadingArchive && archiveError ? archiveError : undefined}
-            control={
-              (isLoadingArchive && archiveSlow) || (!isLoadingArchive && archiveError) ? (
-                <Button size="xs" variant="outline" onClick={() => refreshArchivedThreads()}>
+          {isLoadingArchive ? (
+            <EmptyLoading
+              title="Archiv wird geladen …"
+              slowMessage="Archiv nicht geladen."
+              onRetry={refreshArchivedThreads}
+            />
+          ) : archiveError ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle role="alert">Archiv nicht geladen</EmptyTitle>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" onClick={() => refreshArchivedThreads()}>
                   Erneut versuchen
                 </Button>
-              ) : undefined
-            }
-          />
-        </SettingsSection>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>Keine archivierten Unterhaltungen</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </div>
       ) : (
         archivedGroups.map(({ project, threads: projectThreads }, index) => (
           <SettingsSection
@@ -2283,58 +2155,27 @@ export function ArchivedThreadsPanel() {
               />
             }
           >
-            {projectThreads.map((thread) => (
-              <SettingsRow
-                key={thread.id}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  void (async () => {
-                    const result = await settlePromise(() =>
-                      handleArchivedThreadContextMenu(
-                        scopeThreadRef(thread.environmentId, thread.id),
-                        {
-                          x: event.clientX,
-                          y: event.clientY,
-                        },
-                      ),
-                    );
-                    if (result._tag === "Failure") {
-                      const error = squashAtomCommandFailure(result);
-                      toastManager.add(
-                        stackedThreadToast({
-                          type: "error",
-                          title: "Aktion fehlgeschlagen",
-                          description: error instanceof Error ? error.message : undefined,
-                        }),
-                      );
-                    }
-                  })();
-                }}
-                title={thread.title}
-                status={`Archiviert ${formatGermanRelativeTime(
-                  thread.archivedAt ?? thread.createdAt,
-                )} · Erstellt ${formatGermanRelativeTime(thread.createdAt)}`}
-                control={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 shrink-0 cursor-pointer gap-1.5 px-2.5"
-                    onClick={() => {
+            <ul aria-label={`Archiv ${project.name}`} className="divide-y divide-border/60">
+              {projectThreads.map((thread) => {
+                const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+                return (
+                  <li
+                    key={thread.id}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
                       void (async () => {
-                        const result = await unarchiveThread(
-                          scopeThreadRef(thread.environmentId, thread.id),
+                        const result = await settlePromise(() =>
+                          handleArchivedThreadContextMenu(threadRef, {
+                            x: event.clientX,
+                            y: event.clientY,
+                          }),
                         );
-                        if (result._tag === "Success") {
-                          refreshArchivedThreads();
-                          return;
-                        }
-                        if (!isAtomCommandInterrupted(result)) {
+                        if (result._tag === "Failure") {
                           const error = squashAtomCommandFailure(result);
                           toastManager.add(
                             stackedThreadToast({
                               type: "error",
-                              title: "Nicht wiederhergestellt",
+                              title: "Aktion fehlgeschlagen",
                               description: error instanceof Error ? error.message : undefined,
                             }),
                           );
@@ -2342,12 +2183,25 @@ export function ArchivedThreadsPanel() {
                       })();
                     }}
                   >
-                    <ArchiveX className="size-3.5" />
-                    <span>Wiederherstellen</span>
-                  </Button>
-                }
-              />
-            ))}
+                    <Row
+                      name={thread.title}
+                      meta={`Archiviert ${formatGermanRelativeTime(
+                        thread.archivedAt ?? thread.createdAt,
+                      )} · Erstellt ${formatGermanRelativeTime(thread.createdAt)}`}
+                      chips={
+                        <Button size="xs" variant="outline" onClick={() => restore(threadRef)}>
+                          <ArchiveX className="size-3.5" />
+                          Wiederherstellen
+                        </Button>
+                      }
+                      onDelete={() => remove(threadRef)}
+                      deleteLabel="Löschen"
+                      deleteConfirmTitle="Unterhaltung löschen?"
+                    />
+                  </li>
+                );
+              })}
+            </ul>
           </SettingsSection>
         ))
       )}

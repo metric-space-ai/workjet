@@ -121,7 +121,10 @@ describe("searchSettings", () => {
 
   it("serves anchor props to panels from the catalog", () => {
     expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Zeilenumbruch" });
-    expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archivierte Threads" });
+    expect(searchableSetting("archive")).toEqual({
+      id: "archive",
+      title: "Archivierte Unterhaltungen",
+    });
   });
 
   it("registers the Workjet catalog areas before Greppy runtime", () => {

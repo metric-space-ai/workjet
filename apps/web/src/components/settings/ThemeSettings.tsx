@@ -538,12 +538,12 @@ export function ThemeLibrary({
 
   const notifyThemeSaveFailure = useCallback(() => {
     toastManager.add(
-      stackedThreadToast({ type: "error", title: "Theme-Auswahl nicht gespeichert" }),
+      stackedThreadToast({ type: "error", title: "Themenauswahl nicht gespeichert" }),
     );
   }, []);
 
   const notifyThemeRemovalFailure = useCallback(() => {
-    toastManager.add(stackedThreadToast({ type: "error", title: "Theme nicht entfernt" }));
+    toastManager.add(stackedThreadToast({ type: "error", title: "Thema nicht entfernt" }));
   }, []);
 
   const persistTheme = useCallback(
@@ -905,7 +905,7 @@ export function ThemeLibrary({
       </h3>
       {renderModeTiles()}
       <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 px-3 pt-2 sm:px-4">
-        <h3 className="text-sm font-medium tracking-[-0.005em] text-foreground">Themes</h3>
+        <h3 className="text-sm font-medium tracking-[-0.005em] text-foreground">Themen</h3>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             size="xs"
@@ -920,12 +920,12 @@ export function ThemeLibrary({
             }
           >
             <PlusIcon />
-            Theme erstellen
+            Thema erstellen
           </Button>
           {isImportOpen ? null : (
             <Button size="xs" variant="outline" onClick={() => onImportOpenChange(true)}>
               <DownloadIcon />
-              Theme importieren
+              Thema importieren
             </Button>
           )}
         </div>

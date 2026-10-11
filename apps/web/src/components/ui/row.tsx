@@ -7,14 +7,13 @@
  * Aufbau: Statuspunkt, Name (darunter höchstens eine kurze Meta-Zeile),
  * Chips, Aktiv-Schalter, Papierkorb mit eingebauter Bestätigung, ⋯-Menü
  * für Seltenes (Bearbeiten, Reparieren, Neu prüfen). Ein Objekt hat genau
- * eine Zeile.
+ * eine Zeile. Die Bestätigung steht inline in der Zeile, nie als Dialog
+ * (drei Orte: Dev, Ops, Einstellungen; keine Popups).
  */
 import { EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { AlertDialog, AlertDialogPopup, AlertDialogTitle } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
-import { DialogFooterActions } from "~/components/ui/dialog";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { Switch } from "~/components/ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -117,41 +116,42 @@ function Row({
               onCheckedChange={(checked) => onActiveChange(checked === true)}
             />
           ) : null}
-          {onDelete ? (
-            <>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-label={deleteLabel}
-                      size="icon-sm"
-                      variant="ghost"
-                      onClick={() => setConfirmingDelete(true)}
-                    />
-                  }
-                >
-                  <Trash2Icon />
-                </TooltipTrigger>
-                <TooltipPopup>{deleteLabel}</TooltipPopup>
-              </Tooltip>
-              <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
-                <AlertDialogPopup>
-                  <AlertDialogTitle>
-                    {deleteConfirmTitle ?? `${deleteLabel} bestätigen`}
-                  </AlertDialogTitle>
-                  <DialogFooterActions
-                    cancelLabel="Abbrechen"
-                    confirmLabel={deleteLabel}
-                    confirmVariant="destructive"
-                    onCancel={() => setConfirmingDelete(false)}
-                    onConfirm={() => {
-                      setConfirmingDelete(false);
-                      onDelete();
-                    }}
+          {onDelete && confirmingDelete ? (
+            <div className="flex items-center gap-1.5" data-slot="row-confirm" role="group">
+              <span className="text-xs text-muted-foreground">
+                {deleteConfirmTitle ?? `${deleteLabel}?`}
+              </span>
+              <Button
+                size="xs"
+                variant="destructive"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  onDelete();
+                }}
+              >
+                {deleteLabel}
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => setConfirmingDelete(false)}>
+                Abbrechen
+              </Button>
+            </div>
+          ) : null}
+          {onDelete && !confirmingDelete ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    aria-label={deleteLabel}
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => setConfirmingDelete(true)}
                   />
-                </AlertDialogPopup>
-              </AlertDialog>
-            </>
+                }
+              >
+                <Trash2Icon />
+              </TooltipTrigger>
+              <TooltipPopup>{deleteLabel}</TooltipPopup>
+            </Tooltip>
           ) : null}
           {menuActions?.length ? (
             <Menu>

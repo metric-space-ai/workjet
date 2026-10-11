@@ -108,7 +108,20 @@ try {
   });
   browser = await chromium.launch({
     executablePath: process.env.SUPERVISOR_TICK_CHROME_PATH ?? "/usr/bin/google-chrome",
-    args: ["--no-sandbox", "--disable-gpu", "--disable-crash-reporter"],
+    ignoreDefaultArgs: true,
+    args: [
+      "--headless=new",
+      "--no-sandbox",
+      "--disable-gpu",
+      "--disable-crash-reporter",
+      "--disable-background-networking",
+      "--disable-component-update",
+      "--disable-sync",
+      "--no-first-run",
+      "--password-store=basic",
+      "--remote-debugging-pipe",
+      "--user-data-dir=" + NodePath.join(profile, "chromium"),
+    ],
     headless: true,
   });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });

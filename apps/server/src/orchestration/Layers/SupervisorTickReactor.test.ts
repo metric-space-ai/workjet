@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import {
   CommandId,
   EventId,
@@ -40,6 +41,44 @@ function runtimeLayer(db: string, dir: string) {
   );
 }
 it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
+  it.effect("restores an unconsumed first schedule from SQLite after server restart", () =>
+    Effect.scoped(Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-supervisor-first-tick-" });
+      const db = path.join(dir, "state.sqlite");
+      const now = yield* DateTime.now;
+      const createdAt = DateTime.formatIso(now);
+      const firstTickAt = DateTime.formatIso(DateTime.add(now, { minutes: 15 }));
+      const threadId = yield* Effect.scoped(Effect.gen(function* () {
+        const engine = yield* OrchestrationEngineService;
+        const query = yield* ProjectionSnapshotQuery;
+        yield* engine.dispatch({
+          type: "project.create", commandId: CommandId.make("initial-restart-project"),
+          projectId: ProjectId.make("initial-restart-project"), title: "Initial restart",
+          workspaceRoot: null, createdAt,
+        });
+        const model = yield* query.getCommandReadModel();
+        const id = model.threads[0]!.id;
+        yield* engine.dispatch({
+          type: "thread.supervisor.tick.schedule",
+          commandId: CommandId.make("initial-restart-schedule"), threadId: id,
+          firstTickAt, createdAt,
+        });
+        return id;
+      }).pipe(Effect.provide(runtimeLayer(db, dir))));
+      yield* Effect.scoped(Effect.gen(function* () {
+        const query = yield* ProjectionSnapshotQuery;
+        const model = yield* query.getCommandReadModel();
+        const config = model.threads.find((thread) => thread.id === threadId)!.workjetConfig;
+        expect(config.schemaVersion === 2 && config.supervisorTick).toMatchObject({
+          firstTickAt, lastTickAt: createdAt, lastControlAt: null, outcome: "scheduled",
+        });
+        expect(supervisorTickDueAt(createdAt, undefined, config.schemaVersion === 2 ? config.supervisorTick : undefined)).toBe(Date.parse(firstTickAt));
+      }).pipe(Effect.provide(runtimeLayer(db, dir))));
+    })),
+  );
+
   it.effect(
     "collects SQL history, admits one concurrent tick, and retains state after restart",
     () =>
@@ -49,6 +88,8 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
           const path = yield* Path.Path;
           const dir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-supervisor-tick-" });
           const db = path.join(dir, "state.sqlite");
+          const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+          yield* Effect.addFinalizer(() => Effect.sync(() => random.mockRestore()));
           const now = yield* DateTime.now;
           const createdAt = DateTime.formatIso(DateTime.add(now, { hours: -3 }));
           const errorAt = DateTime.formatIso(DateTime.add(now, { minutes: -1 }));

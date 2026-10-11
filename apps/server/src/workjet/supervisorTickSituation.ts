@@ -62,7 +62,7 @@ export function supervisorTickSituation(input: {
     const c = t.workjetConfig;
     const goal = c.schemaVersion === 2 ? c.goal : undefined;
     return {
-      thread: t.id, title: clip(t.title), since: t.createdAt, lastTurn: t.latestTurn,
+      thread: t.id, title: clip(t.title), since: t.createdAt, lastTurn: t.latestTurn ? { state: t.latestTurn.state, requestedAt: t.latestTurn.requestedAt, completedAt: t.latestTurn.completedAt } : null,
       status: t.session?.status === "error" || t.latestTurn?.state === "error" ? "error" :
         goal?.status === "blocked" ? "blocked" :
         t.session?.status === "running" || t.session?.status === "starting" || t.latestTurn?.state === "running" ? "running" :
@@ -75,7 +75,7 @@ export function supervisorTickSituation(input: {
       changedAt: input.changes.filter((v) => v.threadId === t.id).map((v) => v.occurredAt),
     };
   };
-  return JSON.stringify({
+  const text = JSON.stringify({
     project: { id: input.project.id, title: input.project.title },
     since: input.since,
     persistentWorkers: members.filter((t) => t.workjetConfig.schemaVersion === 2 && t.workjetConfig.team?.role === "specialist").map(worker),
@@ -97,5 +97,6 @@ export function supervisorTickSituation(input: {
     minutesUntilNextRegularMeeting: input.meetingMinutes,
     sourceErrors: input.sourceErrors,
     limits: { pullRequests: 100, errors: 50, changes: 100 },
-  }, null, 2);
+  });
+  return text.length <= 62000 ? text : text.slice(0, 62000) + "\\nLagebild gekürzt: weitere Einträge im Projektverlauf.";
 }

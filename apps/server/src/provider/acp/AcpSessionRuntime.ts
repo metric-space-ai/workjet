@@ -399,17 +399,22 @@ export const make = (
 
     const acp = yield* Effect.service(EffectAcpClient.AcpClient).pipe(Effect.provide(acpContext));
     const namespaceTools = options.namespaceCapture
-      ? yield* makeWorkerNamespaceTools(options.namespaceCapture, options.spawn.env ?? {}, (sessionId) =>
-          Ref.get(startStateRef).pipe(
-            Effect.flatMap((state) =>
-              state._tag === "Started" && state.result.sessionId === sessionId
-                ? Effect.void
-                : Effect.fail(new EffectAcpErrors.AcpTransportError({
-                    detail: "Confined tool session does not match the active ACP session",
-                    cause: "Session custody mismatch",
-                  })),
+      ? yield* makeWorkerNamespaceTools(
+          options.namespaceCapture,
+          options.spawn.env ?? {},
+          (sessionId) =>
+            Ref.get(startStateRef).pipe(
+              Effect.flatMap((state) =>
+                state._tag === "Started" && state.result.sessionId === sessionId
+                  ? Effect.void
+                  : Effect.fail(
+                      new EffectAcpErrors.AcpTransportError({
+                        detail: "Confined tool session does not match the active ACP session",
+                        cause: "Session custody mismatch",
+                      }),
+                    ),
+              ),
             ),
-          ),
         )
       : undefined;
     if (namespaceTools) {

@@ -20,13 +20,6 @@ const toneClasses: Record<string, string> = {
   green: "border-emerald-500/40 text-emerald-400",
   gray: "border-border text-muted-foreground",
 };
-const dotClasses: Record<string, string> = {
-  red: "bg-red-400",
-  blue: "bg-blue-300",
-  amber: "bg-amber-400",
-  green: "bg-emerald-400",
-  gray: "bg-muted-foreground",
-};
 function StatusChip(props: { readonly status: ProjectOverviewStatus; readonly label: string }) {
   return (
     <span

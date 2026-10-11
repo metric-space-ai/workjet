@@ -95,8 +95,8 @@ export function PullRequestSearchInput({
         type="text"
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
-        placeholder="Search pull requests, or label:bug"
-        aria-label="Search pull requests"
+        placeholder="Suchen, z. B. label:bug"
+        aria-label="Pull Requests durchsuchen"
         // Tracks the shared input's height at both widths, so it stays level with the icon
         // button beside it rather than towering over it on wide screens.
         className="h-9 w-full rounded-lg border border-input bg-background pr-3 pl-9 text-sm outline-none placeholder:text-muted-foreground/72 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24 sm:h-8"
@@ -128,23 +128,23 @@ export const pullRequestProjectKey = (project: {
 }) => JSON.stringify([project.environmentId, project.id]);
 
 const DRAFT_OPTIONS = [
-  { value: UNFILTERED_VALUE, label: "All", Icon: LayersIcon },
-  { value: "only", label: "Drafts only", Icon: GitPullRequestDraftIcon },
-  { value: "hide", label: "Hide drafts", Icon: EyeOffIcon },
+  { value: UNFILTERED_VALUE, label: "Alle", Icon: LayersIcon },
+  { value: "only", label: "Nur Entwürfe", Icon: GitPullRequestDraftIcon },
+  { value: "hide", label: "Ohne Entwürfe", Icon: EyeOffIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 
 const REVIEW_OPTIONS = [
-  { value: UNFILTERED_VALUE, label: "All", Icon: LayersIcon },
-  { value: "approved", label: "Approved", Icon: CircleCheckIcon },
-  { value: "changes-requested", label: "Changes requested", Icon: CircleXIcon },
-  { value: "review-required", label: "Review required", Icon: CircleDashedIcon },
-  { value: "none", label: "No reviews", Icon: CircleSlashIcon },
+  { value: UNFILTERED_VALUE, label: "Alle", Icon: LayersIcon },
+  { value: "approved", label: "Freigegeben", Icon: CircleCheckIcon },
+  { value: "changes-requested", label: "Änderungen angefragt", Icon: CircleXIcon },
+  { value: "review-required", label: "Review offen", Icon: CircleDashedIcon },
+  { value: "none", label: "Ohne Review", Icon: CircleSlashIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 
 const CHECKS_OPTIONS = [
-  { value: UNFILTERED_VALUE, label: "All", Icon: LayersIcon },
-  { value: "passing", label: "Passing", Icon: CircleCheckIcon },
-  { value: "failing", label: "Failing", Icon: CircleXIcon },
+  { value: UNFILTERED_VALUE, label: "Alle", Icon: LayersIcon },
+  { value: "passing", label: "Bestanden", Icon: CircleCheckIcon },
+  { value: "failing", label: "Fehlgeschlagen", Icon: CircleXIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 
 function PullRequestFilterRadioGroup<Value extends string>({
@@ -276,7 +276,7 @@ export function PullRequestFiltersMenu({
           "relative inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-input text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground sm:size-8",
           filtered && "text-foreground",
         )}
-        aria-label="Filter pull requests"
+        aria-label="Pull Requests filtern"
       >
         <ListFilterIcon className="size-4" />
         {filtered ? (
@@ -288,21 +288,21 @@ export function PullRequestFiltersMenu({
       </MenuTrigger>
       <MenuPopup align="end" side="bottom" className="min-w-56">
         <PullRequestFilterRadioGroup
-          label="State"
+          label="Status"
           value={state}
           options={stateOptions}
           onChange={onState}
         />
         <MenuSeparator />
         <PullRequestFilterRadioGroup
-          label="Involvement"
+          label="Beteiligung"
           value={involvement}
           options={involvementOptions}
           onChange={onInvolvement}
         />
         <MenuSeparator />
         <PullRequestFilterRadioGroup
-          label="Draft"
+          label="Entwurf"
           value={filters.draft ?? UNFILTERED_VALUE}
           options={DRAFT_OPTIONS}
           onChange={(next) => onFilters(withFilter("draft", next))}
@@ -368,11 +368,11 @@ export function PullRequestFiltersMenu({
             }
           }}
         >
-          <MenuGroupLabel>Project</MenuGroupLabel>
+          <MenuGroupLabel>Projekt</MenuGroupLabel>
           <MenuRadioItem value={ALL_PROJECTS_VALUE}>
             <span className="flex min-w-0 items-center gap-2">
               <LayersIcon aria-hidden className="size-3.5" />
-              All projects
+              Alle Projekte
             </span>
           </MenuRadioItem>
           {/* The ones that can be chosen first: a list that opens with three disabled rows reads
@@ -402,7 +402,7 @@ export function PullRequestFiltersMenu({
                     <span className="min-w-0 flex-1 truncate">{project.title}</span>
                     {reason === undefined ? null : (
                       <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400/90">
-                        Unavailable
+                        Nicht verfügbar
                       </span>
                     )}
                   </span>

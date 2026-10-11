@@ -79,7 +79,7 @@ export function PullRequestMarkdownEditor({
       {preview ? (
         <div className="rounded-lg border border-border/60 px-3 py-2">
           {empty ? (
-            <p className="text-xs text-muted-foreground">Nothing to preview.</p>
+            <p className="text-xs text-muted-foreground">—</p>
           ) : (
             <PullRequestMarkdown text={draft} cwd={cwd} />
           )}
@@ -105,7 +105,7 @@ export function PullRequestMarkdownEditor({
           disabled={saving || (empty && !allowEmpty)}
           onClick={() => onSave(draft)}
         >
-          {saving ? "Saving..." : "Save"}
+          {saving ? "Speichert …" : "Speichern"}
         </Button>
       </div>
     </div>

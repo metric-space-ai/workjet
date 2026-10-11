@@ -25,6 +25,7 @@ import {
   LoaderIcon,
   RefreshCwIcon,
   SearchIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -65,7 +66,7 @@ import {
   type PullRequestFilterOption,
 } from "../components/pullRequest/PullRequestListFilters";
 import { PullRequestListEmptyState } from "../components/pullRequest/PullRequestListEmptyState";
-import { PullRequestListGhost } from "../components/pullRequest/PullRequestGhosts";
+import { PullRequestListLoading } from "../components/pullRequest/PullRequestGhosts";
 import { PullRequestRow } from "../components/pullRequest/PullRequestRow";
 import { PullRequestsUnavailableState } from "../components/pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs, type PullRequestTabStatus } from "../components/RightPanelTabs";
@@ -75,6 +76,7 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../components/WorkspaceBreadcrumb";
 import { PanelLayoutControls } from "../components/chat/PanelLayoutControls";
+import { Banner } from "../components/ui/banner";
 import { Button } from "../components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../components/ui/menu";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -137,16 +139,16 @@ export interface PullRequestsSearch {
 
 // The state filters wear the same glyphs the rows do, so the two read as one vocabulary.
 const INVOLVEMENT_TABS = [
-  { value: "all", label: "All", Icon: LayersIcon },
-  { value: "reviewing", label: "Reviewing", Icon: EyeIcon },
-  { value: "authored", label: "Authored", Icon: PenLineIcon },
+  { value: "all", label: "Alle", Icon: LayersIcon },
+  { value: "reviewing", label: "Zu prüfen", Icon: EyeIcon },
+  { value: "authored", label: "Von mir", Icon: PenLineIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<PullRequestInvolvement>>;
 
 const STATE_TABS = [
-  { value: "all", label: "All", Icon: LayersIcon },
-  { value: "open", label: "Open", Icon: GitPullRequestIcon },
-  { value: "closed", label: "Closed", Icon: GitPullRequestClosedIcon },
-  { value: "merged", label: "Merged", Icon: GitMergeIcon },
+  { value: "all", label: "Alle", Icon: LayersIcon },
+  { value: "open", label: "Offen", Icon: GitPullRequestIcon },
+  { value: "closed", label: "Geschlossen", Icon: GitPullRequestClosedIcon },
+  { value: "merged", label: "Zusammengeführt", Icon: GitMergeIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
 
 /** Long enough that a keystroke does not become a request, short enough to feel answered. */
@@ -1320,19 +1322,21 @@ function PullRequestsRouteView() {
     showingCarried && listQuery.isPending && entries.length === 0 && typedQuery.length === 0;
   const listBody = (
     <>
+      {/* Laden endet immer (UI-Vertrag §1.3): höchstens 10 s Platzhalter, dann eine
+          Statuszeile mit „Erneut versuchen“. */}
       {!capabilityKnown ? (
-        <PullRequestListGhost rows={7} />
+        <PullRequestListLoading rows={7} onRetry={() => void refreshFromHost()} />
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
-          title="Pull requests unavailable"
-          error="Update your CTOX servers to browse pull requests."
+          title="Pull Requests nicht verfügbar"
+          error="CTOX-Server aktualisieren"
         />
       ) : firstLoad ? (
-        <PullRequestListGhost rows={7} />
+        <PullRequestListLoading rows={7} onRetry={() => void refreshFromHost()} />
       ) : listQuery.error && listData === null ? (
         <PullRequestsUnavailableState error={listQuery.error} onRetry={() => listQuery.refresh()} />
       ) : carriedToNothing ? (
-        <PullRequestListGhost rows={7} />
+        <PullRequestListLoading rows={7} onRetry={() => void refreshFromHost()} />
       ) : entries.length === 0 ? (
         <PullRequestListEmptyState
           hasProjects={!projectsKnown || projects.length > 0}
@@ -1352,11 +1356,11 @@ function PullRequestsRouteView() {
           onLoadMore={loadMore}
         />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {groups.map((group) => (
             <div key={group.key} className="space-y-0.5">
               {group.label ? (
-                <h2 className="px-3 pb-0.5 text-xs font-medium text-muted-foreground/70">
+                <h2 className="px-3 pb-0.5 text-[12px] font-medium text-muted-foreground">
                   {group.label}
                 </h2>
               ) : null}
@@ -1393,19 +1397,19 @@ function PullRequestsRouteView() {
       )}
 
       {listQuery.error && listData !== null ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
-          <span>The latest request failed. Showing the last pull requests loaded.</span>
-          <Button size="xs" variant="outline" onClick={() => listQuery.refresh()}>
-            Retry
-          </Button>
-        </div>
+        <Banner
+          icon={TriangleAlertIcon}
+          action={{ label: "Erneut versuchen", onClick: () => listQuery.refresh() }}
+        >
+          Letzte Abfrage fehlgeschlagen, zeige letzten Stand.
+        </Banner>
       ) : null}
       {listData?.truncated && entries.length > 0 ? (
         <div ref={sentinelRef} className="flex justify-center py-2 text-xs text-muted-foreground">
           {loadingMore ? (
             <span className="flex items-center gap-2">
               <LoaderIcon aria-hidden className="size-3.5 animate-spin" />
-              Loading more
+              Lädt mehr
             </span>
           ) : null}
         </div>
@@ -1417,7 +1421,7 @@ function PullRequestsRouteView() {
   // kind force the hostname to tell them apart.
   const hostEntries = hosts.length > 0 ? hosts : expectedHosts;
   const hostMenuOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
-    { value: "", label: "All hosts", Icon: LayersIcon },
+    { value: "", label: "Alle Hosts", Icon: LayersIcon },
     ...hostEntries.map((entry) => {
       // `expectedHosts` stands in before the server has answered, and nothing is known to be
       // unreadable yet; once the summaries arrive they carry whether each one could be read.
@@ -1428,14 +1432,14 @@ function PullRequestsRouteView() {
         Icon: getSourceControlPresentationForKind(entry.kind).Icon,
         ...(summary === undefined || summary.configured
           ? {}
-          : { unavailable: summary.detail ?? "This host could not be read." }),
+          : { unavailable: summary.detail ?? "Host nicht lesbar" }),
       };
     }),
   ];
   // The same shape the host pills take, so the two groups read as one control. A local
   // connection wears the screen it is on; every other server wears a server.
   const serverMenuOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
-    { value: "", label: "All servers", Icon: LayersIcon },
+    { value: "", label: "Alle Server", Icon: LayersIcon },
     ...capableEnvironments.map((environment) => ({
       value: environment.environmentId,
       label: environment.label,
@@ -1475,6 +1479,7 @@ function PullRequestsRouteView() {
     />
   );
   const columnProps = {
+    projectTitle: scopedProject?.title ?? null,
     refreshing,
     onRefresh: () => void refreshFromHost(),
     searchValue: search.q ?? "",
@@ -1711,7 +1716,7 @@ function ExpandableSearch({
     <Button
       size="icon-sm"
       variant="ghost"
-      aria-label="Search pull requests"
+      aria-label="Pull Requests durchsuchen"
       onClick={() => onOpenChange(true)}
     >
       <SearchIcon className="size-4" />
@@ -1728,6 +1733,7 @@ function ExpandableSearch({
  * descendant rules.
  */
 function PullRequestsColumn({
+  projectTitle,
   refreshing,
   onRefresh,
   searchValue,
@@ -1744,6 +1750,8 @@ function PullRequestsColumn({
   rightPanelOpen,
   listBody,
 }: {
+  /** Das Projekt, auf das die Liste eingeschränkt ist: erster Brotkrumen. */
+  projectTitle: string | null;
   refreshing: boolean;
   onRefresh: () => void;
   searchValue: string;
@@ -1832,30 +1840,38 @@ function PullRequestsColumn({
         )}
       >
         {condensed ? (
-          <WorkspaceBreadcrumb ariaLabel="Pull request scope">
+          <WorkspaceBreadcrumb ariaLabel="Pull-Request-Filter">
             {/* The page name remains the foreground anchor in both states; the live filters are
                 its compact scope, grouped as the second crumb rather than pretending each menu
                 is a separate page in the hierarchy. */}
+            {projectTitle ? (
+              <>
+                <WorkspaceBreadcrumbItem className="truncate">
+                  {projectTitle}
+                </WorkspaceBreadcrumbItem>
+                <WorkspaceBreadcrumbSeparator />
+              </>
+            ) : null}
             <WorkspaceBreadcrumbItem current>
               <h1 className="truncate">Pull Requests</h1>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator />
             <WorkspaceBreadcrumbItem className="gap-1.5 overflow-hidden">
               <CompactFilterMenu
-                label="Filter by state"
+                label="Nach Status filtern"
                 value={state}
                 options={STATE_TABS}
                 onChange={onState}
               />
               <CompactFilterMenu
-                label="Filter by involvement"
+                label="Nach Beteiligung filtern"
                 value={involvement}
                 options={INVOLVEMENT_TABS}
                 onChange={onInvolvement}
               />
               {hostMenuOptions.length > 2 ? (
                 <CompactFilterMenu
-                  label="Filter by host"
+                  label="Nach Host filtern"
                   value={host ?? ""}
                   options={hostMenuOptions}
                   onChange={(next) => onHost(next === "" ? undefined : next)}
@@ -1864,7 +1880,15 @@ function PullRequestsColumn({
             </WorkspaceBreadcrumbItem>
           </WorkspaceBreadcrumb>
         ) : (
-          <WorkspaceBreadcrumb ariaLabel="Pull requests breadcrumb">
+          <WorkspaceBreadcrumb ariaLabel="Pull Requests">
+            {projectTitle ? (
+              <>
+                <WorkspaceBreadcrumbItem className="truncate">
+                  {projectTitle}
+                </WorkspaceBreadcrumbItem>
+                <WorkspaceBreadcrumbSeparator />
+              </>
+            ) : null}
             <WorkspaceBreadcrumbItem current>
               <h1 className="truncate">Pull Requests</h1>
             </WorkspaceBreadcrumbItem>
@@ -1886,7 +1910,7 @@ function PullRequestsColumn({
         <Button
           size="icon-sm"
           variant="ghost"
-          aria-label="Refresh pull requests"
+          aria-label="Pull Requests aktualisieren"
           onClick={onRefresh}
         >
           <RefreshCwIcon className={cn("size-4", refreshing && "animate-spin")} />

@@ -73,7 +73,7 @@ function menu(overrides: Partial<Parameters<typeof PullRequestFiltersMenu>[0]>) 
 describe("pull request filters menu", () => {
   it("does not emit a change when the selected state is chosen again", () => {
     const onState = vi.fn();
-    const group = findValueChange(findLabeledGroup(menu({ onState }), "State"));
+    const group = findValueChange(findLabeledGroup(menu({ onState }), "Status"));
     expect(group).toBeDefined();
 
     group?.props.onValueChange("open");
@@ -87,7 +87,7 @@ describe("pull request filters menu", () => {
   it("names the chosen narrowing and leaves the others alone", () => {
     const onFilters = vi.fn();
     const group = findValueChange(
-      findLabeledGroup(menu({ filters: { review: "approved" }, onFilters }), "Draft"),
+      findLabeledGroup(menu({ filters: { review: "approved" }, onFilters }), "Entwurf"),
     );
     expect(group).toBeDefined();
 

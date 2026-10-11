@@ -15,9 +15,9 @@ desktop operations.
 
 Completed ordinary ctox.dev logins reconcile or enroll the device key. The
 server enforces the ten-minute fresh-login window. A duplicate thumbprint
-triggers one new pair; quota errors appear inline in Konto · ctox.dev. The
-ellipsis menu can enroll a replacement with a fresh session. Explicit logout
-suspends automatic recovery, including across restarts, until ordinary login.
+triggers one new pair. Enrollment outcomes are exposed as public status and
+bounded notice codes. Explicit logout suspends automatic recovery, including
+across restarts, until ordinary login.
 
 Missing or expired account sessions, and a pending #414 recovery, first try a
 signed session-package request. Discovery uses the existing tenant normalizer
@@ -30,34 +30,82 @@ is limited to one attempt plus one retry; there is no new polling loop.
 DEVICE_AUTH_REQUIRED preserves the file and marks the record invalid. The next
 ordinary login enrolls a new pair. The local expiration follows the server's
 thirty-day inactivity and 180-day absolute limits. Only public dates, state and
-bounded error codes cross settings IPC; private material stays in the desktop
-main process.
+bounded error codes cross IPC; private material stays in desktop main.
 
 TODO: optional Secure Enclave storage as a later hardening step.
 
-## Verification
+## UI owner handover
+
+UI design and implementation belong to Kimi or Grok. This backend PR contains
+no changes under `apps/web/src/components` or `apps/web/src/routes`. The former
+Codex-authored presentation is preserved only as a reference on
+`ui-handover/device-key-client-20261011`, without a PR. It must not be shipped as
+the UI implementation. The UI owner must build and verify the account settings
+integration and 1440/420 px evidence separately.
+
+### Public data
+
+`packages/contracts/src/ctoxControlDevice.ts` defines and exports
+`CtoxControlDeviceStatus` through `packages/contracts/src/index.ts`:
+
+- `state`: `"active" | "not_configured"`. Use this field for validity; retained
+  dates can remain present for an expired or invalid record.
+- `createdAt?`, `expiresAt?`: ISO timestamps.
+- `lastUsedAt?`: ISO timestamp or `null` for an unused key.
+- `notice?`: a bounded backend error code. Enrollment can report
+  `DEVICE_KEY_LIMIT_REACHED`, `DEVICE_FRESH_LOGIN_REQUIRED`,
+  `DEVICE_AUTH_REQUIRED`, `DEVICE_THUMBPRINT_ALREADY_REGISTERED`,
+  `DEVICE_SCOPE_DENIED`, `DEVICE_TENANT_DENIED` or `DEVICE_SERVICE_UNAVAILABLE`.
+  Transport/read failures use the service-unavailable status. No upstream
+  error text, private key, thumbprint or launch credential belongs in this data.
+
+### Actions
+
+`packages/contracts/src/ipc.ts` defines the optional desktop bridge methods:
+
+- `DesktopCtoxBridge.deviceStatus(): Promise<CtoxControlDeviceStatus>` reads the
+  current public metadata. It does not start login, enroll or poll.
+- `DesktopCtoxBridge.resetDevice(): Promise<CtoxControlDeviceStatus>` requests
+  replacement through the current account session and returns the resulting
+  status after completion. The server enforces fresh login. A stale session or
+  quota limit becomes `notice`; this operation does not open a login dialog.
+- Existing `DesktopCtoxBridge.login()` is the explicit ordinary-login action.
+  Successful normal login performs enrollment automatically in desktop main.
+
+Feature-detect the optional bridge methods. The UI owner connects these data
+and actions through the existing desktop bridge, handles pending/rejected
+promises, and refreshes state after replacement or normal login. No new polling
+loop or browser-side key storage is needed.
+
+`apps/desktop/src/preload.ts` exposes the methods. Channel constants in
+`apps/desktop/src/ipc/channels.ts` are `desktop:ctox-device-status` and
+`desktop:ctox-device-reset`. Handlers in `apps/desktop/src/ipc/methods/ctox.ts`
+validate public metadata and call `apps/desktop/src/ctox/CtoxDevAuth.ts`.
+The credential owner is `apps/desktop/src/ctox/CtoxControlDeviceClient.ts`,
+wired to ServerSecretStore by `apps/desktop/src/ctox/CtoxControlDevice.ts`.
+
+## Backend verification
 
 Run `scripts/check-ctox-device-key-client.sh` through the shared Linux build
-lane. It checks formatting, targeted lint/tests, desktop/server/web types and
-an isolated browser fixture that renders the actual production settings
-components at 1440 and 420 pixels. Its bridge supplies public fixture metadata;
-it does not claim a deployed account or full Electron end-to-end acceptance.
+lane. It checks formatting, targeted backend lint/tests and Effect-patched
+desktop/server/web types. Web typechecking verifies shared contract consumers;
+no UI component, browser fixture or presentation test is part of this PR.
 
-After the ctox-dev owner deploys the contract revision:
+After the ctox-dev owner deploys the contract revision, verify with an
+acceptance account and tenant in a new isolated desktop profile:
 
-1. Launch this Workjet revision in a new isolated profile and complete one
-   ordinary ctox.dev login with an acceptance account and acceptance tenant.
-   Check the active settings row and the enrollment email. Record revisions.
-2. Quit normally. Simulate the #414 loss only in that isolated profile, using
-   the existing mock/reset test harness. Retain its device-secret file. Reopen:
-   the enrolled instances must reappear without a login prompt. Activate one
-   tenant and verify the one-use launch exchange reaches the guest.
-3. In the acceptance account's device management, revoke this test device.
-   Quit/reopen the isolated profile with its account session absent. Confirm
-   the existing login-start message appears and the device record is invalid.
-4. Complete ordinary login again, check the new active device and enrollment
-   email, then use the settings ellipsis to set up another replacement while
-   the session is fresh. Capture the row at both widths.
+1. Complete ordinary ctox.dev login. Check `deviceStatus()` is active and the
+   enrollment email arrived. Record deployed and client revisions.
+2. Quit normally. Simulate #414 loss only in that isolated profile with the
+   existing wrong-key test path, retaining its device-secret file. Reopen:
+   enrolled instances must return without login. Activate a tenant and verify
+   the one-use launch exchange reaches the guest.
+3. Revoke the acceptance device via ctox.dev `/dashboard/device-keys`. With the
+   isolated account session absent, quit/reopen: the existing login-start state
+   must return and the local record remain invalid. Ordinary login must enroll
+   a distinct new pair.
+4. Once the Kimi/Grok implementation lands, verify its settings integration,
+   replacement while the session is fresh, and both screenshot widths.
 5. Revoke acceptance devices through the normal account UI and remove only the
-   isolated profile. Do not access the installed application's credentials or
-   protected files, alter its Keychain, or deploy from this client task.
+   isolated profile. Do not access the installed application's protected files,
+   alter its Keychain, or deploy from this client task.

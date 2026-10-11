@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Run through gpu-build-run.sh; all browser state and artifacts are isolated.
+# Backend checks; run through gpu-build-run.sh with two workers.
 set -euo pipefail
 export RUST_TEST_THREADS=2
 files=(
   docs/internals/ctox-device-keys.md
-  docs/user/ctox-device-keys.md
+
   apps/desktop/src/ctox/fixtures/ctox-dev-desktop-device-proof.mjs
   apps/desktop/src/ctox/fixtures/ctox-dev-desktop-device-proof.d.mts
   apps/desktop/tsconfig.json
@@ -24,14 +24,11 @@ files=(
   apps/desktop/src/main.ts
   apps/desktop/src/preload.ts
   apps/server/src/auth/ServerSecretStore.ts
-  apps/web/src/components/settings/CtoxDeviceKeyRow.tsx
-  apps/web/src/components/settings/CtoxDeviceKeyRow.test.tsx
-  apps/web/src/components/settings/BusinessOsSettings.tsx
-  apps/web/src/components/ctox/InstanceOnboarding.test.tsx
+
   packages/contracts/src/ctoxControlDevice.ts
   packages/contracts/src/index.ts
   packages/contracts/src/ipc.ts
-  scripts/test-ctox-device-key-settings.mjs
+
 )
 if [[ "${1:-}" == --format ]]; then
   pnpm exec vp fmt --threads 2 "${files[@]}"
@@ -47,12 +44,8 @@ pnpm exec vp test run --maxWorkers 2 \
   apps/desktop/src/ctox/CtoxManagedLaunch.test.ts \
   apps/desktop/src/app/DesktopKeyRecovery.test.ts \
   apps/desktop/src/ipc/methods/ctox.test.ts \
-  apps/server/src/auth/ServerSecretStore.test.ts \
-  apps/web/src/components/settings/CtoxDeviceKeyRow.test.tsx \
-  apps/web/src/components/settings/BusinessOsSettings.test.tsx \
-  apps/web/src/components/ctox/InstanceOnboarding.test.tsx
+  apps/server/src/auth/ServerSecretStore.test.ts
 pnpm exec effect-tsgo patch
 pnpm exec tsgo --noEmit -p apps/desktop/tsconfig.json
 pnpm exec tsgo --noEmit -p apps/server/tsconfig.json
 pnpm exec tsgo --noEmit -p apps/web/tsconfig.json
-DEVICE_UI_EVIDENCE_DIR="${DEVICE_UI_EVIDENCE_DIR:?set an isolated artifact directory}" node scripts/test-ctox-device-key-settings.mjs

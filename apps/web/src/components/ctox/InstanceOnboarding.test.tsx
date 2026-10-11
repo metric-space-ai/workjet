@@ -64,26 +64,6 @@ describe("instance-first network navigation", () => {
       ),
     ).toBe("create-or-connect");
   });
-  it("removes the login boundary after device recovery and retains it on revocation", () => {
-    expect(
-      resolveInstanceOnboardingState(
-        {
-          _tag: "ready",
-          instances: [alpha],
-          keyRecovery: { pendingLogin: false, connectionCatalogReset: true },
-        },
-        alpha.id,
-        "ready",
-      ),
-    ).toBe("ready");
-    expect(
-      resolveInstanceOnboardingState(
-        { _tag: "signed_out", keyRecovery: { pendingLogin: true, connectionCatalogReset: true } },
-        null,
-        "ready",
-      ),
-    ).toBe("create-or-connect");
-  });
   it("renders the selected Code workspace and project sidebar before an Ops guest exists", () => {
     const html = renderToStaticMarkup(
       <InstanceWorkspaceBoundary surface="code">

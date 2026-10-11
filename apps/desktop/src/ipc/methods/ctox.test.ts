@@ -32,6 +32,8 @@ import {
   requestSessionControl,
   registerSessionTransferEvents,
   refresh,
+  deviceStatus,
+  resetDevice,
   resolveInstanceAuthority,
   removePairedInstance,
   addSshManagedInstance,
@@ -43,6 +45,55 @@ import { DesktopKeyRecovery } from "../../app/DesktopKeyRecovery.ts";
 import type { Session } from "electron";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+describe("device-key metadata IPC", () => {
+  it.effect("returns only public metadata, excluding credential material", () => {
+    const metadata = {
+      state: "active" as const,
+      createdAt: "2026-10-11T17:00:00Z",
+      lastUsedAt: null,
+      expiresAt: "2026-11-10T17:00:00Z",
+      privateKey: "must-not-cross-ipc",
+      thumbprint: "must-not-cross-ipc",
+    };
+    const auth = CtoxDevAuth.CtoxDevAuth.of({
+      refresh: Effect.die("unused"),
+      login: Effect.die("unused"),
+      logout: Effect.die("unused"),
+      deviceStatus: Effect.succeed(metadata),
+    });
+    return Effect.gen(function* () {
+      const result = yield* deviceStatus.handler(undefined);
+      assert.deepEqual(result, {
+        state: metadata.state,
+        createdAt: metadata.createdAt,
+        lastUsedAt: metadata.lastUsedAt,
+        expiresAt: metadata.expiresAt,
+      });
+    }).pipe(Effect.provideService(CtoxDevAuth.CtoxDevAuth, auth));
+  });
+
+  it.effect("awaits replacement and returns its inline status without starting login", () => {
+    const events: string[] = [];
+    const auth = CtoxDevAuth.CtoxDevAuth.of({
+      refresh: Effect.die("unused"),
+      login: Effect.die("replacement must not start login"),
+      logout: Effect.die("unused"),
+      resetDevice: Effect.sync(() => void events.push("replace")),
+      deviceStatus: Effect.sync(() => {
+        events.push("status");
+        return { state: "not_configured" as const, notice: "DEVICE_KEY_LIMIT_REACHED" };
+      }),
+    });
+    return Effect.gen(function* () {
+      assert.deepEqual(yield* resetDevice.handler(undefined), {
+        state: "not_configured",
+        notice: "DEVICE_KEY_LIMIT_REACHED",
+      });
+      assert.deepEqual(events, ["replace", "status"]);
+    }).pipe(Effect.provideService(CtoxDevAuth.CtoxDevAuth, auth));
+  });
+});
 
 const pairedInstance = {
   id: "paired:manual_pairing:abcdefghijklmnopqrstuv",

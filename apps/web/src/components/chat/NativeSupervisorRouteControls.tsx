@@ -34,7 +34,7 @@ import {
 } from "../../workjetProjectRegistry";
 import {
   isSupervisorManualProfile,
-  prepareSupervisorManualProfile,
+  prepareSupervisorManualChoice,
   persistSupervisorComposerSelection,
   supervisorSelectionForHarness,
   type SupervisorManualSelection,
@@ -195,10 +195,10 @@ export function NativeSupervisorRouteControls(props: {
       readActiveWorkjetScope().selectedInstanceId === scope.instanceId &&
       readActiveWorkjetScope().selectionRevision === selection.selectionRevision;
     try {
-      const profile =
+      const prepared =
         typeof value === "string"
           ? profiles.find((entry) => entry.id === value)
-          : prepareSupervisorManualProfile({
+          : prepareSupervisorManualChoice({
               projectId: scope.projectId,
               selection:
                 value ??
@@ -210,12 +210,15 @@ export function NativeSupervisorRouteControls(props: {
               computers,
               models: catalog.data?.models ?? [],
             });
-      if (!profile) throw new Error("The selected Luma is unavailable in this instance.");
+      if (!prepared) throw new Error("The selected Luma is unavailable in this instance.");
+      const profile = "profile" in prepared ? prepared.profile : prepared;
+      const selectedConfiguration =
+        "configuration" in prepared ? prepared.configuration : configuration;
       const persisted = await persistSupervisorComposerSelection({
         scope,
         project,
         profile,
-        snapshot: { ...snapshot, configuration },
+        snapshot: { ...snapshot, configuration: selectedConfiguration },
         signal: controller.signal,
         isCurrent,
         writeConfiguration: async (configuration, expectedRevision) => {

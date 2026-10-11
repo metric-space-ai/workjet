@@ -1,5 +1,6 @@
 import {
   WorkjetWorkerProfileId,
+  WorkjetLlmRouteId,
   type CtoxWorkjetProjectProjection,
   type WorkjetComputer,
   type WorkjetGatewayModelSummary,
@@ -26,6 +27,36 @@ export type SupervisorManualSelection = Pick<
   "harness" | "modelId" | "computerId"
 >;
 
+/** An advertised account can supply a missing route; account identities come from the catalog. */
+export function prepareSupervisorManualChoice(
+  input: Parameters<typeof prepareSupervisorManualProfile>[0],
+) {
+  let configuration = input.configuration;
+  const template = configuration.workerProfiles.find(
+    (profile) => profile.modelId === input.selection.modelId,
+  );
+  const model = input.models.find((entry) => entry.id === input.selection.modelId);
+  const hasRoute = configuration.llmRoutes.some(
+    (route) =>
+      route.id === template?.llmRouteId ||
+      (route.gatewayAccountId !== undefined && model?.accountIds.includes(route.gatewayAccountId)),
+  );
+  if (!hasRoute && model?.accountIds[0]) {
+    configuration = {
+      ...configuration,
+      llmRoutes: [
+        ...configuration.llmRoutes,
+        {
+          id: WorkjetLlmRouteId.make(randomUUID()),
+          label: model.displayName,
+          gatewayAccountId: model.accountIds[0],
+        },
+      ],
+    };
+  }
+  return { configuration, profile: prepareSupervisorManualProfile({ ...input, configuration }) };
+}
+
 /** Manual is an instance-owned route, scoped to one project and immutable once selected. */
 export function prepareSupervisorManualProfile(input: {
   readonly projectId: string;
@@ -50,13 +81,12 @@ export function prepareSupervisorManualProfile(input: {
       `${computer.label} cannot run ${selection.harness}. Configure its harness in Settings.`,
     );
   const model = input.models.find((entry) => entry.id === selection.modelId);
-  const route = template
-    ? configuration.llmRoutes.find((entry) => entry.id === template.llmRouteId)
-    : configuration.llmRoutes.find(
-        (entry) =>
-          entry.gatewayAccountId !== undefined &&
-          model?.accountIds.includes(entry.gatewayAccountId),
-      );
+  const route =
+    configuration.llmRoutes.find((entry) => entry.id === template?.llmRouteId) ??
+    configuration.llmRoutes.find(
+      (entry) =>
+        entry.gatewayAccountId !== undefined && model?.accountIds.includes(entry.gatewayAccountId),
+    );
   if (!route) throw new Error("No configured account route can run this model on the instance.");
   if (!template && !model) throw new Error("This model is not in the available instance catalog.");
   const previous = configuration.workerProfiles.find(
@@ -117,6 +147,20 @@ export async function persistSupervisorComposerSelection(input: {
   const profile = confirmed.configuration?.workerProfiles.find(
     (entry) => entry.id === input.profile.id,
   );
+  const expectedRoute = configuration.llmRoutes.find(
+    (route) => route.id === input.profile.llmRouteId,
+  );
+  const confirmedRoute = confirmed.configuration?.llmRoutes.find(
+    (route) => route.id === input.profile.llmRouteId,
+  );
+  if (
+    !expectedRoute ||
+    !confirmedRoute ||
+    expectedRoute.gatewayAccountId !== confirmedRoute.gatewayAccountId ||
+    JSON.stringify(expectedRoute.nativeAccountReference) !==
+      JSON.stringify(confirmedRoute.nativeAccountReference)
+  )
+    throw new Error("The instance did not confirm the selected model’s account route.");
   if (
     !profile ||
     profile.harness !== input.profile.harness ||

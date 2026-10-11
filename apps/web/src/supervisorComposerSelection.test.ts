@@ -4,6 +4,7 @@ import {
   WorkjetWorkerProfile,
   WorkjetComputer,
   WorkjetLumaInstanceConfiguration,
+  WorkjetGatewayAccountId,
   DEFAULT_WORKJET_CONFIGURATION,
   type CtoxWorkjetProjectProjection,
 } from "@workjet/contracts";
@@ -12,6 +13,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   isSupervisorManualProfile,
   prepareSupervisorManualProfile,
+  prepareSupervisorManualChoice,
   persistSupervisorComposerSelection,
   supervisorSelectionForHarness,
 } from "./supervisorComposerSelection";
@@ -54,6 +56,108 @@ const project: CtoxWorkjetProjectProjection = {
 };
 
 describe("Supervisor composer selection persistence", () => {
+  it("creates a missing account route and Luma from an advertised account without inventing a model", async () => {
+    const unconfigured = { ...configuration, llmRoutes: [] };
+    const prepared = prepareSupervisorManualChoice({
+      projectId: scope.projectId,
+      selection: profile,
+      configuration: unconfigured,
+      computers,
+      models: [
+        {
+          id: profile.modelId,
+          displayName: profile.modelId,
+          providers: [],
+          accountIds: [WorkjetGatewayAccountId.make("advertised-account")],
+        },
+      ],
+    });
+    expect(prepared.configuration.llmRoutes).toHaveLength(1);
+    expect(prepared.configuration.llmRoutes[0]).toMatchObject({
+      id: prepared.profile.llmRouteId,
+      gatewayAccountId: "advertised-account",
+    });
+    expect(unconfigured.llmRoutes).toEqual([]);
+    expect(() =>
+      prepareSupervisorManualChoice({
+        projectId: scope.projectId,
+        selection: profile,
+        configuration: unconfigured,
+        computers,
+        models: [],
+      }),
+    ).toThrow("No configured account route");
+    let saved = prepared.configuration;
+    const write = vi.fn(async (next: typeof configuration) => {
+      saved = next;
+      return "saved" as const;
+    });
+    const selectedProject = { ...project, supervisorLumaId: prepared.profile.id };
+    const port = vi.fn<WorkjetProjectControlPort>(async (_instance, request) => {
+      if (request.action === "project.configure")
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            commandId: request.commandId,
+            project: selectedProject,
+          },
+        };
+      if (request.action === "project.list")
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            projects: [selectedProject],
+            count: 1,
+            truncated: false,
+          },
+        };
+      throw new Error("Must never send a turn");
+    });
+    await persistSupervisorComposerSelection({
+      scope,
+      project,
+      profile: prepared.profile,
+      snapshot: { revision: 1, configuration: prepared.configuration, updatedAtMs: null },
+      writeConfiguration: write,
+      readConfiguration: async () => ({ revision: 2, configuration: saved, updatedAtMs: null }),
+      signal: new AbortController().signal,
+      isCurrent: () => true,
+      port,
+    });
+    expect(write).toHaveBeenCalledOnce();
+    expect(saved.workerProfiles).toContainEqual(prepared.profile);
+  });
+  it("rejects a changed account route before selecting the project Luma", async () => {
+    const port = vi.fn<WorkjetProjectControlPort>();
+    await expect(
+      persistSupervisorComposerSelection({
+        scope,
+        project,
+        profile,
+        snapshot: { revision: 1, configuration, updatedAtMs: null },
+        writeConfiguration: async () => "saved",
+        readConfiguration: async () => ({
+          revision: 1,
+          configuration: {
+            ...configuration,
+            llmRoutes: [
+              {
+                ...configuration.llmRoutes[0]!,
+                gatewayAccountId: WorkjetGatewayAccountId.make("different-account"),
+              },
+            ],
+          },
+          updatedAtMs: null,
+        }),
+        signal: new AbortController().signal,
+        isCurrent: () => true,
+        port,
+      }),
+    ).rejects.toThrow("did not confirm the selected model’s account route");
+    expect(port).not.toHaveBeenCalled();
+  });
   it("creates a project-owned Manual route without changing a shared Luma", () => {
     const manual = prepareSupervisorManualProfile({
       projectId: scope.projectId,

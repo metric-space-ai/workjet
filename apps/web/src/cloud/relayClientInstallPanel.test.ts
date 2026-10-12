@@ -1,45 +1,45 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
-  completeRelayClientInstallDialogClose,
+  completeRelayClientInstallPanelClose,
   finishRelayClientInstall,
-  readRelayClientInstallDialogState,
+  readRelayClientInstallPanelState,
   RelayClientInstallConfirmationConflictError,
   reportRelayClientInstallProgress,
   requestRelayClientInstallConfirmation,
-  resetRelayClientInstallDialogForTests,
+  resetRelayClientInstallPanelForTests,
   respondToRelayClientInstallConfirmation,
-} from "./relayClientInstallDialog";
+} from "./relayClientInstallPanel";
 
 describe("relay client install dialog coordinator", () => {
   beforeEach(() => {
-    resetRelayClientInstallDialogForTests();
+    resetRelayClientInstallPanelForTests();
   });
 
   it("moves a confirmed installation through streamed progress stages", async () => {
     const confirmation = requestRelayClientInstallConfirmation("2026.5.2");
-    expect(readRelayClientInstallDialogState()).toEqual({
+    expect(readRelayClientInstallPanelState()).toEqual({
       status: "confirming",
       version: "2026.5.2",
     });
 
     respondToRelayClientInstallConfirmation(true);
     await expect(confirmation).resolves.toBe(true);
-    expect(readRelayClientInstallDialogState()).toEqual({
+    expect(readRelayClientInstallPanelState()).toEqual({
       status: "installing",
       version: "2026.5.2",
       stage: "checking",
     });
 
     reportRelayClientInstallProgress({ type: "progress", stage: "downloading" });
-    expect(readRelayClientInstallDialogState()).toEqual({
+    expect(readRelayClientInstallPanelState()).toEqual({
       status: "installing",
       version: "2026.5.2",
       stage: "downloading",
     });
 
     finishRelayClientInstall();
-    expect(readRelayClientInstallDialogState()).toEqual({
+    expect(readRelayClientInstallPanelState()).toEqual({
       status: "closing",
       view: {
         status: "installing",
@@ -48,8 +48,8 @@ describe("relay client install dialog coordinator", () => {
       },
     });
 
-    completeRelayClientInstallDialogClose();
-    expect(readRelayClientInstallDialogState()).toEqual({ status: "idle" });
+    completeRelayClientInstallPanelClose();
+    expect(readRelayClientInstallPanelState()).toEqual({ status: "idle" });
   });
 
   it("returns to idle when installation is declined", async () => {
@@ -57,7 +57,7 @@ describe("relay client install dialog coordinator", () => {
     respondToRelayClientInstallConfirmation(false);
 
     await expect(confirmation).resolves.toBe(false);
-    expect(readRelayClientInstallDialogState()).toEqual({
+    expect(readRelayClientInstallPanelState()).toEqual({
       status: "closing",
       view: {
         status: "confirming",
@@ -65,8 +65,8 @@ describe("relay client install dialog coordinator", () => {
       },
     });
 
-    completeRelayClientInstallDialogClose();
-    expect(readRelayClientInstallDialogState()).toEqual({ status: "idle" });
+    completeRelayClientInstallPanelClose();
+    expect(readRelayClientInstallPanelState()).toEqual({ status: "idle" });
   });
 
   it("rejects concurrent confirmation with the active install state", async () => {

@@ -2,7 +2,7 @@ import type { DesktopSshPasswordPromptRequest } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ActiveSshPasswordPrompt } from "./SshPasswordPromptDialog";
+import { ActiveSshPasswordPrompt } from "./SshPasswordPromptNotice";
 
 const request = {
   requestId: "ssh-1",

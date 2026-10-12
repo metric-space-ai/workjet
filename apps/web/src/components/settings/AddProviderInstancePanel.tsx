@@ -21,8 +21,8 @@ import {
   deriveProviderInstanceId,
   newInstanceUsesWorkjetGateway,
   validateProviderInstanceId,
-} from "./AddProviderInstanceDialog.logic";
-import { AddProviderInstanceDriverSelect } from "./AddProviderInstanceWizardSteps";
+} from "./AddProviderInstancePanel.logic";
+import { AddProviderInstanceDriverSelect } from "./AddProviderInstanceDriverSelect";
 
 const PROVIDER_ACCENT_SWATCHES = [
   "#2563eb",

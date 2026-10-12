@@ -1340,13 +1340,13 @@ export function WorkjetSettings({
         ) : (
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>{noInstance ? "Keine Instanz" : "Keine Verbindung"}</EmptyTitle>
+              <EmptyTitle>{noInstance ? "Keine Instanz" : "Instanz nicht verbunden"}</EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
               {noInstance ? (
                 <Button render={<Link to="/settings/business-os" />}>Instanz auswählen</Button>
               ) : (
-                <Button render={<Link to="/settings/computers" />}>Rechner einrichten</Button>
+                <Button render={<Link to="/settings/business-os" />}>Instanzen verwalten</Button>
               )}
             </EmptyContent>
           </Empty>

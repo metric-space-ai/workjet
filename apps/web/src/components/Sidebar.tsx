@@ -4400,19 +4400,6 @@ export default function Sidebar() {
                   for (const thread of renderedSettledThreads) {
                     items.push(renderThreadRow(thread, "settled"));
                   }
-                  if (groupByTeam && scopedProjectGroup)
-                    items.push(
-                      <li key="project-settings" className="mt-2 list-none">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
-                          onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
-                        >
-                          <SettingsIcon className="size-3" />
-                          {overviewText.settings}
-                        </button>
-                      </li>,
-                    );
                   return items;
                 })()}
                 {settledShelfExpanded && hiddenSettledCount > 0 ? (

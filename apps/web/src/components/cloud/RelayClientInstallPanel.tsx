@@ -3,11 +3,11 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { RelayClientInstallProgressStage } from "@workjet/contracts";
 
 import {
-  completeRelayClientInstallDialogClose,
-  readRelayClientInstallDialogState,
+  completeRelayClientInstallPanelClose,
+  readRelayClientInstallPanelState,
   respondToRelayClientInstallConfirmation,
-  subscribeRelayClientInstallDialog,
-} from "../../cloud/relayClientInstallDialog";
+  subscribeRelayClientInstallPanel,
+} from "../../cloud/relayClientInstallPanel";
 import { InlineConfirmBar, InlineNoticePortal, InlineNoticeRow } from "../InlineNoticeSlot";
 
 export const RELAY_CLIENT_INSTALL_STEPS: ReadonlyArray<{
@@ -27,21 +27,21 @@ export const RELAY_CLIENT_INSTALL_STEPS: ReadonlyArray<{
  * Relay-Client-Installation ohne Modal: erst eine Inline-Bestätigung
  * („Relay-Client 1.2.3 installieren? [Installieren] [Abbrechen]“), danach eine
  * Fortschrittszeile mit Schritt und Balken, beides unter dem Kopf. Der
- * Zustand kommt unverändert aus `cloud/relayClientInstallDialog`.
+ * Zustand kommt unverändert aus `cloud/relayClientInstallPanel`.
  *
  * Selbstständig: die Komponente kann global (heute `__root.tsx`) oder im
  * Abschnitt Workjet Connect von Einstellungen › Instanzen eingehängt werden.
  */
-export function RelayClientInstallDialog() {
+export function RelayClientInstallPanel() {
   const state = useSyncExternalStore(
-    subscribeRelayClientInstallDialog,
-    readRelayClientInstallDialogState,
-    readRelayClientInstallDialogState,
+    subscribeRelayClientInstallPanel,
+    readRelayClientInstallPanelState,
+    readRelayClientInstallPanelState,
   );
 
   // Ohne Ausblend-Animation ist der Abschluss sofort erreicht.
   useEffect(() => {
-    if (state.status === "closing") completeRelayClientInstallDialogClose();
+    if (state.status === "closing") completeRelayClientInstallPanelClose();
   }, [state]);
 
   if (state.status === "confirming") {

@@ -29,15 +29,15 @@ import { toastManager } from "../ui/toast";
  *
  * Self-contained: today it is mounted in `__root.tsx` and renders into the
  * notice slot under the header. Target mount (handover): the Workjet Connect
- * section of Settings › Instanzen, as `<ConnectOnboardingDialog />` there.
+ * section of Settings › Instanzen, as `<ConnectOnboardingPanel />` there.
  */
-export function ConnectOnboardingDialog() {
+export function ConnectOnboardingPanel() {
   if (!hasCloudPublicConfig()) return null;
 
-  return <ConfiguredConnectOnboardingDialog />;
+  return <ConfiguredConnectOnboardingPanel />;
 }
 
-function ConfiguredConnectOnboardingDialog() {
+function ConfiguredConnectOnboardingPanel() {
   // Mirrors ManagedRelayAuthProvider: a pending Clerk session must not read as
   // signed-out, or its later activation would look like a fresh sign-in.
   const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });

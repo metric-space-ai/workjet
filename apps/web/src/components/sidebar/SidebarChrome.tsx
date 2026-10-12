@@ -6,7 +6,6 @@ import { useCrossModeNavigator } from "../../crossMode/useCrossModeNavigator";
 import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useSharedWorkjetHeader } from "../WorkjetHeaderSlots";
-import { VersionChip } from "../VersionChip";
 import { resolveWorkjetProductMode, type WorkjetProductMode } from "../../workjetProductMode";
 import workjetMarkUrl from "../../../../../assets/workjet/workjet-app-icon.png";
 import {
@@ -216,9 +215,6 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
-      <div className="mt-2 flex justify-center group-data-[collapsible=icon]:hidden">
-        <VersionChip />
-      </div>
     </SidebarFooter>
   );
 });

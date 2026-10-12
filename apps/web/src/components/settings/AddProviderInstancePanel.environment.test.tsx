@@ -28,7 +28,7 @@ vi.mock("../../hooks/useSettings", () => ({
   useUpdateEnvironmentSettings: settingsHooks.update,
 }));
 
-import { AddProviderInstancePanel } from "./AddProviderInstanceDialog";
+import { AddProviderInstancePanel } from "./AddProviderInstancePanel";
 
 const remoteEnvironmentId = EnvironmentId.make("remote-device");
 

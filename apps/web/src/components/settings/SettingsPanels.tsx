@@ -2132,6 +2132,11 @@ export function ArchivedThreadsPanel() {
               <EmptyHeader>
                 <EmptyTitle>Keine archivierten Unterhaltungen</EmptyTitle>
               </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" render={<Link to="/" />}>
+                  Zu den Projekten
+                </Button>
+              </EmptyContent>
             </Empty>
           )}
         </div>

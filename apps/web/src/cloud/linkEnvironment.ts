@@ -37,7 +37,7 @@ import {
   finishRelayClientInstall,
   reportRelayClientInstallProgress,
   requestRelayClientInstallConfirmation,
-} from "./relayClientInstallDialog";
+} from "./relayClientInstallPanel";
 
 export function normalizeRelayBaseUrl(value: string | null | undefined): string | null {
   const trimmed = value?.trim();

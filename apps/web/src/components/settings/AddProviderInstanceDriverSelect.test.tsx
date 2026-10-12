@@ -6,7 +6,7 @@ import { visitElements } from "../../test/reactElementTree";
 import {
   AddProviderInstanceDriverSelect,
   COMING_SOON_DRIVER_OPTIONS,
-} from "./AddProviderInstanceWizardSteps";
+} from "./AddProviderInstanceDriverSelect";
 import { DRIVER_OPTIONS } from "./providerDriverMeta";
 
 type Element = ReactElement<Record<string, unknown>>;

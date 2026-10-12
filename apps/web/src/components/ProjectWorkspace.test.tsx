@@ -425,5 +425,7 @@ describe("owner project overview", () => {
     expect(projectOverviewLanguage("de", "en-US")).toBe("de");
     expect(projectOverviewLanguage("en", "de-DE")).toBe("en");
     expect(projectOverviewLanguage("system", "de-DE")).toBe("de");
+    // Electron meldet oft en-US, obwohl macOS deutsch ist: System bleibt Deutsch.
+    expect(projectOverviewLanguage("system", "en-US")).toBe("de");
   });
 });

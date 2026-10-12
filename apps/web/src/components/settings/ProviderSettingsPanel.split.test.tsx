@@ -114,7 +114,7 @@ describe("harnesses and models are separate surfaces", () => {
     const loading = withTitle(panel, "Rechner werden geladen");
     expect(loading).not.toBeNull();
     expect(typeof loading?.props.onRetry).toBe("function");
-    expect(loading?.props.slowStatus).toBe("Keine Rechner gemeldet");
+    expect(loading?.props.slowStatus).toBe("Rechner nicht geladen");
     expect(withTitle(panel, "Rechner")).toBeNull();
   });
 

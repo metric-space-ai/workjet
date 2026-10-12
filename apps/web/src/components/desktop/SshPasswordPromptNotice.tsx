@@ -33,7 +33,7 @@ function getPromptErrorMessage(error: unknown): string {
  * beantwortet sie (Passwort oder `null` für Abbruch). Das Passwort wird nie
  * protokolliert und nur an den lokalen SSH-Prozess weitergereicht.
  */
-export function SshPasswordPromptDialog() {
+export function SshPasswordPromptNotice() {
   const [queue, setQueue] = useState<readonly DesktopSshPasswordPromptRequest[]>([]);
   const currentRequest = queue[0] ?? null;
 

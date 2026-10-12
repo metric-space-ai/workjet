@@ -117,7 +117,7 @@ describe("native meeting room session", () => {
       .mockImplementation(async (_, request) => reply(request));
     const session = new JourFixeNativeSession("instance-1", project, () => true, control);
     await expect(session.end(native.id, 3)).rejects.toThrow(
-      "The instance did not respond in time.",
+      "Die Instanz hat nicht rechtzeitig geantwortet.",
     );
     await session.end(native.id, 3);
     expect(control.mock.calls.map((call) => call[1].action)).toEqual([

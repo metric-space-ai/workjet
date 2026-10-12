@@ -24,7 +24,7 @@ const navigateWithLocation = (url: string): void => {
   window.location.assign(url);
 };
 
-export function DeepLinkConfirmationDialog({
+export function DeepLinkConfirmationNotice({
   navigate = navigateWithLocation,
 }: {
   readonly navigate?: (url: string) => void;

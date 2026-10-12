@@ -74,7 +74,7 @@ import {
 } from "../ui/number-field";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { AddProviderInstancePanel } from "./AddProviderInstanceDialog";
+import { AddProviderInstancePanel } from "./AddProviderInstancePanel";
 import { providerCheckedAgeLabel } from "./providerStatus";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
@@ -324,8 +324,7 @@ export function ProviderSettingsPanel({
           <LoadingStatusRow
             key={loadAttempt}
             title="Rechner werden geladen"
-            slowStatus="Keine Rechner gemeldet"
-            slowAction={<AddComputerLinkButton />}
+            slowStatus="Rechner nicht geladen"
             onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
           />
         </SettingsSection>
@@ -419,8 +418,7 @@ export function WorkjetGatewayAccountsSection({
           <LoadingStatusRow
             key={loadAttempt}
             title="Rechner werden geladen"
-            slowStatus="Keine Rechner gemeldet"
-            slowAction={<AddComputerLinkButton />}
+            slowStatus="Rechner nicht geladen"
             onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
           />
         ) : (

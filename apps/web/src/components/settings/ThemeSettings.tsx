@@ -28,7 +28,7 @@ import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ThemeEditorSection } from "./ThemeEditorHost";
-import { ThemeImportDialog } from "./ThemeImportDialog";
+import { ThemeImportPanel } from "./ThemeImportPanel";
 import { useThemeEditorStore } from "./themeEditorStore";
 import {
   STANDARD_THEME_CARDS,
@@ -932,7 +932,7 @@ export function ThemeLibrary({
       </div>
       {isImportOpen ? (
         <div className="mx-auto w-full max-w-[56rem] px-3 sm:px-4">
-          <ThemeImportDialog
+          <ThemeImportPanel
             onImportedMany={(importedThemes, { updated }) => {
               // Re-apply after collection updates. The update may remove the
               // selected variant, in which case the theme hook falls back safely.

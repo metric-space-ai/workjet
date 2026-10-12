@@ -1897,6 +1897,7 @@ export type CtoxGuestBounds = typeof CtoxGuestBounds.Type;
 export const CtoxManagedActivationInput = Schema.Struct({
   instanceId: CtoxManagedInstanceId,
   bounds: CtoxGuestBounds,
+  repair: Schema.optionalKey(Schema.Literal(true)),
 });
 export type CtoxManagedActivationInput = typeof CtoxManagedActivationInput.Type;
 

@@ -597,7 +597,7 @@ export const activate: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxG
       const input = yield* Schema.decodeUnknownEffect(CtoxManagedActivationInput)(raw).pipe(
         Effect.option,
       );
-      if (Option.isSome(input)) {
+      if (Option.isSome(input) && input.value.repair === true) {
         const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
         if (Option.isSome(recovery) && recovery.value.prepareManagedRetry !== undefined)
           yield* recovery.value.prepareManagedRetry(input.value.instanceId).pipe(Effect.ignore);

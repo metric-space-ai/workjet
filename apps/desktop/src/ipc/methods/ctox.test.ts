@@ -623,6 +623,13 @@ describe("CTOX IPC methods", () => {
           instanceId: "managed:tenant",
           bounds: { x: 0, y: 0, width: 800, height: 600 },
         });
+        assert.deepEqual(events, ["activate"]);
+        events.length = 0;
+        yield* activate.handler({
+          instanceId: "managed:tenant",
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          repair: true,
+        });
         assert.deepEqual(events, ["repair:managed:tenant", "activate"]);
       }).pipe(
         Effect.provide(

@@ -1,4 +1,14 @@
 import { projectKpiPresentation, type ProjectKpiRecord } from "../projectKpis";
+import { workjetUiLanguage } from "../workjetProjectControl";
+
+/** UI language, not the browser locale; 24-hour clock in de and en (European default). */
+export function formatKpiTime(value: Date, language: "de" | "en" = workjetUiLanguage()): string {
+  return value.toLocaleTimeString(language === "en" ? "en-GB" : "de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
 
 export function ProjectKpiResult({
   record,
@@ -26,7 +36,7 @@ export function ProjectKpiResult({
           <strong className="font-semibold text-foreground">{result.value}</strong>
           <span className="text-muted-foreground"> · {result.source} · </span>
           <time className="text-muted-foreground" dateTime={calculatedAt.toISOString()}>
-            {calculatedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+            {formatKpiTime(calculatedAt)}
           </time>
           {result.status === "stale" && <span className="text-amber-500"> · {result.detail}</span>}
         </>

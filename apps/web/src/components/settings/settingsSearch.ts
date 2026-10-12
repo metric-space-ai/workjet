@@ -150,6 +150,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "calendar-week-start",
+    title: "Wochenbeginn",
+    to: "/settings/general",
+  },
+  {
     id: "hide-whitespace-changes",
     title: "Leerraum ausblenden",
     to: "/settings/general",

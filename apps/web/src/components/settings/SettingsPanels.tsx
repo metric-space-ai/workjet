@@ -1,4 +1,5 @@
 import { ArchiveX } from "lucide-react";
+import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -137,6 +138,18 @@ const INTERFACE_LANGUAGE_LABELS = {
   system: "System",
   de: "Deutsch",
   en: "English",
+} as const;
+
+/** Wochenbeginn texts per UI language; new languages add an entry. */
+const CALENDAR_WEEK_START_TEXT = {
+  de: {
+    title: "Wochenbeginn",
+    labels: { locale: "Automatisch", monday: "Montag", sunday: "Sonntag" },
+  },
+  en: {
+    title: "Week starts on",
+    labels: { locale: "Automatic", monday: "Monday", sunday: "Sunday" },
+  },
 } as const;
 
 const TIMESTAMP_FORMAT_LABELS = {
@@ -442,6 +455,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
         ? ["Zeitformat"]
         : []),
+      ...(settings.calendarWeekStart !== DEFAULT_UNIFIED_SETTINGS.calendarWeekStart
+        ? ["Wochenbeginn"]
+        : []),
       ...(settings.sidebarThreadPreviewCount !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
         ? ["Sichtbare Unterhaltungen"]
         : []),
@@ -514,6 +530,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
+      settings.calendarWeekStart,
       settings.wordWrap,
       followSystem,
       theme,
@@ -593,6 +610,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       }
       updateSettings({
         timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+        calendarWeekStart: DEFAULT_UNIFIED_SETTINGS.calendarWeekStart,
         wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
         diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
         environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
@@ -1380,6 +1398,7 @@ function LegacyFeaturesSection() {
 }
 
 export function GeneralSettingsPanel() {
+  const weekStartText = CALENDAR_WEEK_START_TEXT[useProjectOverviewLanguage()];
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
@@ -1588,6 +1607,48 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
                 <SelectItem hideIndicator value="24-hour">
                   {TIMESTAMP_FORMAT_LABELS["24-hour"]}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("calendar-week-start")}
+          title={weekStartText.title}
+          resetAction={
+            settings.calendarWeekStart !== DEFAULT_UNIFIED_SETTINGS.calendarWeekStart ? (
+              <SettingResetButton
+                label={weekStartText.title}
+                onClick={() =>
+                  updateSettings({
+                    calendarWeekStart: DEFAULT_UNIFIED_SETTINGS.calendarWeekStart,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.calendarWeekStart}
+              onValueChange={(value) => {
+                if (value === "locale" || value === "monday" || value === "sunday") {
+                  updateSettings({ calendarWeekStart: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label={weekStartText.title}>
+                <SelectValue>{weekStartText.labels[settings.calendarWeekStart]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="locale">
+                  {weekStartText.labels.locale}
+                </SelectItem>
+                <SelectItem hideIndicator value="monday">
+                  {weekStartText.labels.monday}
+                </SelectItem>
+                <SelectItem hideIndicator value="sunday">
+                  {weekStartText.labels.sunday}
                 </SelectItem>
               </SelectPopup>
             </Select>

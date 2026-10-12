@@ -56,16 +56,18 @@ describe("project places are inline", () => {
     expect(projectSettingsPanelSource).toContain("<InlineRemovalConfirm");
   });
 
-  it("expands the exit inline and sends manage to Einstellungen › Projekte", () => {
-    expect(projectOverviewCardSource).not.toContain(
-      'data-workjet-project-card-section="configure"',
-    );
+  it("edits exit and configuration on the card back without moving the grid", () => {
+    // Die Karte behält ihren Platz: keine Zeilen-Ausdehnung, keine Navigation.
+    expect(chatIndexSource).not.toContain("data-workjet-project-card-expanded");
+    expect(chatIndexSource).not.toContain("col-span-full");
+    expect(projectOverviewCardSource).toContain("data-workjet-project-card-backface={editing}");
+    expect(projectOverviewCardSource).not.toContain('data-workjet-project-card-section="exit"');
+    expect(projectOverviewCardSource).toContain("ProjectExitModelCardPanel");
+    expect(projectOverviewCardSource).toContain("ProjectCardConfigEditor");
     expect(projectOverviewCardSource).not.toContain("<ProjectOverviewEditor");
-    expect(projectOverviewCardSource).toContain('data-workjet-project-card-section="exit"');
-    expect(chatIndexSource).toContain('to: "/settings/projects/$projectKey"');
-    expect(chatIndexSource).toContain(
-      "[&>*:has([data-workjet-project-card-expanded])]:col-span-full",
-    );
+    // „Projekt konfigurieren“ speichert über project.configure statt zu navigieren.
+    expect(chatIndexSource).toContain("configureWorkjetProject(activeCtoxInstanceId");
+    expect(chatIndexSource).not.toContain('to: "/settings/projects/$projectKey"');
     expect(projectWorkspaceSource).toContain("<InlinePanel");
   });
 });

@@ -27,11 +27,13 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
+import type { ProjectCardConfigurationValues } from "../components/ProjectOverviewEditor";
 import { ProjectTokenBudget } from "../components/ProjectTokenBudget";
 import { ConnectedProjectCalendar } from "../components/ConnectedProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverviewSelection";
 import {
+  configureWorkjetProject,
   describeWorkjetProjectControlFailure,
   readWorkjetGalleryOrder,
   readWorkjetProjectKpis,
@@ -86,7 +88,6 @@ import {
   EmptyLoading,
   EmptyTitle,
 } from "../components/ui/empty";
-import { useSettingsProjectGroups } from "../components/settings/ProjectSettingsPanel";
 import { NoInstanceHero } from "../components/NoInstanceHero";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
@@ -186,7 +187,6 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const navigate = useNavigate();
-  const settingsProjectGroups = useSettingsProjectGroups();
   const selectedLegacyProject = useProjectOverviewRef(activeCtoxInstanceId);
   const selectedNative =
     registry.projects.find((project) => project.id === registry.selectedProjectId) ?? null;
@@ -523,24 +523,35 @@ function IndexDraftLanding() {
               environment.connection.phase === "connected" &&
               environment.serverConfig?.projectArchive === true,
           ),
-          onConfigure: () => {
-            const local = project.local;
-            const group =
-              local === null
-                ? undefined
-                : settingsProjectGroups.find((candidate) =>
-                    candidate.memberProjects.some(
-                      (member) =>
-                        member.environmentId === local.environmentId && member.id === local.id,
-                    ),
-                  );
-            void (group
-              ? navigate({
-                  to: "/settings/projects/$projectKey",
-                  params: { projectKey: group.projectKey },
-                })
-              : navigate({ to: "/settings/projects" }));
-          },
+          // „Projekt konfigurieren“ bleibt in der Karte: derselbe Speicherpfad
+          // (project.configure) wie Einstellungen › Projekt, keine Navigation.
+          onSaveConfiguration:
+            project.configuration !== undefined && activeCtoxInstanceId !== null
+              ? async (values) => {
+                  const configuration = project.configuration;
+                  if (configuration === undefined || activeCtoxInstanceId === null) return false;
+                  if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId)
+                    return false;
+                  const result = await configureWorkjetProject(activeCtoxInstanceId, {
+                    action: "project.configure",
+                    commandId: newCommandId(),
+                    projectId: configuration.id,
+                    title: values.title,
+                    repoUrl: values.repositoryUrl,
+                    publicUrl: values.websiteUrl,
+                    info: configuration.info ?? null,
+                    jourFixe: values.jourFixe,
+                  });
+                  if (
+                    result._tag !== "completed" ||
+                    result.response.action !== "project.configure" ||
+                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+                  )
+                    return false;
+                  refreshWorkjetProjectRegistry(activeCtoxInstanceId);
+                  return true;
+                }
+              : undefined,
           onOpenJourFixe: project.native
             ? () => {
                 if (
@@ -656,7 +667,9 @@ function ProjectGallery({
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
     readonly onOpenJourFixe?: (() => void) | undefined;
-    readonly onConfigure?: (() => void) | undefined;
+    readonly onSaveConfiguration?:
+      | ((values: ProjectCardConfigurationValues) => Promise<boolean>)
+      | undefined;
     readonly canArchive: boolean;
     readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
@@ -865,7 +878,20 @@ function ProjectGallery({
             >
               <span>{registryStatus ?? "Instanz nicht erreichbar"}</span>
               {lastUpdatedAt !== undefined && (
-                <span> · Letzter Stand: {new Date(lastUpdatedAt).toLocaleString()}</span>
+                <span>
+                  {" "}
+                  · Letzter Stand:{" "}
+                  {new Date(lastUpdatedAt).toLocaleString(
+                    workjetUiLanguage() === "en" ? "en-US" : "de-DE",
+                    {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    },
+                  )}
+                </span>
               )}
             </div>
           ) : null}
@@ -910,7 +936,7 @@ function ProjectGallery({
                 strategy={rectSortingStrategy}
               >
                 <div
-                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1 [&>*:has([data-workjet-project-card-expanded])]:col-span-full"
+                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1"
                   data-workjet-project-gallery-grid=""
                 >
                   {visibleProjects.map((project) => (
@@ -927,7 +953,7 @@ function ProjectGallery({
                           ctoxInstanceId={instanceId}
                           onOpen={project.onOpen}
                           onSave={project.onSave}
-                          onConfigure={project.onConfigure}
+                          onSaveConfiguration={project.onSaveConfiguration}
                           canArchive={project.canArchive}
                           statistics={project.statistics}
                           kpis={

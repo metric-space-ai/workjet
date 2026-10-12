@@ -7,6 +7,7 @@ import { Fragment, useState } from "react";
 import { PlusIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Row } from "../ui/row";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsSection } from "./settingsLayout";
@@ -99,7 +100,15 @@ export function WorkjetLlmRoutesSection(props: {
         </Button>
       }
     >
-      {addingRoute ? routeEditor : null}
+      <InlineExpand
+        label="Route hinzufügen"
+        open={addingRoute}
+        onOpenChange={(open) => {
+          if (!open) setAddingRoute(false);
+        }}
+      >
+        {addingRoute ? routeEditor : null}
+      </InlineExpand>
       {props.configuration.llmRoutes.map((route) => (
         <Fragment key={route.id}>
           <Row
@@ -119,18 +128,22 @@ export function WorkjetLlmRoutesSection(props: {
             }
             deleteLabel="Entfernen"
             deleteConfirmTitle="Route entfernen?"
-            menuActions={[
-              {
-                label: "Bearbeiten",
-                onSelect: () => {
-                  setAddingRoute(false);
-                  setEditingRouteId(route.id);
-                },
-              },
-            ]}
-            menuLabel={`Aktionen für ${route.label}`}
+            expanded={editingRouteId === route.id}
+            onToggleExpanded={() => {
+              setAddingRoute(false);
+              setEditingRouteId((current) => (current === route.id ? null : route.id));
+            }}
           />
-          {editingRoute?.id === route.id ? routeEditor : null}
+          <InlineExpand
+            hideCollapseControl
+            label={route.label}
+            open={editingRoute?.id === route.id}
+            onOpenChange={(open) => {
+              if (!open && editingRouteId === route.id) setEditingRouteId(null);
+            }}
+          >
+            {editingRoute?.id === route.id ? routeEditor : null}
+          </InlineExpand>
         </Fragment>
       ))}
       <WorkjetGatewayModelRoutes catalog={props.catalog} />

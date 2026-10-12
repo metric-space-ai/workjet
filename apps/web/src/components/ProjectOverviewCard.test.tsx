@@ -1,9 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, type ProjectOverview } from "@workjet/contracts";
 import { ProjectOverviewCard } from "./ProjectOverviewCard";
 import type { GalleryProject } from "../projectOverview";
 import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
+
+// Diese Tests prüfen deutsche Texte: Oberflächensprache fest auf "de",
+// damit "System" nicht von der Testumgebung (englisch) abhängt.
+vi.mock("../hooks/useProjectOverviewLanguage", () => ({
+  useProjectOverviewLanguage: () => "de",
+}));
 
 const project: GalleryProject = {
   key: "instance:greppy",
@@ -143,5 +149,31 @@ describe("compact project gallery", () => {
     expect(markup).toContain("7 tasks");
     expect(markup).toMatch(/<dd class="[^"]*text-\[22px\][^"]*">7 tasks<\/dd>/);
     expect(markup).not.toMatch(/<dt[^>]*class="[^"]*truncate/);
+  });
+});
+
+describe("inline card back", () => {
+  it("shows the dimmed not-rated stamp on cards without an exit value", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard project={project} onOpen={() => {}} />,
+    );
+    expect(markup).toContain('data-workjet-exit-model-stamp=""');
+    expect(markup).toContain("Nicht bewertet");
+    expect(markup).toContain("pointer-events-none");
+    expect(markup).not.toMatch(/<button[^>]*data-workjet-exit-model-stamp/);
+  });
+  it("renders the closed card without an expanded marker or a back face", () => {
+    for (const props of [
+      { onSave: async () => true },
+      { onSaveConfiguration: async () => true },
+      {},
+    ]) {
+      const markup = renderToStaticMarkup(
+        <ProjectOverviewCard project={project} onOpen={() => {}} {...props} />,
+      );
+      expect(markup).not.toContain("data-workjet-project-card-expanded");
+      expect(markup).not.toContain("data-workjet-project-card-backface");
+      expect(markup).toContain('aria-label="Aktionen für greppy.xyz"');
+    }
   });
 });

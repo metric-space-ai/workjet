@@ -46,6 +46,7 @@ import { randomUUID } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
+import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
 import { Row } from "../ui/row";
 import { Spinner } from "../ui/spinner";
@@ -730,13 +731,12 @@ export function WorkjetSettingsView({
         }}
         gatewayAccounts={gateway.catalog?.accounts ?? []}
         gatewayEnvironmentId={gatewayEnvironmentId}
-        onAddRoute={() =>
-          // LLM routes live on the Models page; "Set up access" takes the
-          // operator to where an access is actually created.
-          void navigate({
-            to: "/settings/models",
-            hash: "workjet-llm-routes",
-            hashScrollIntoView: false,
+        onCreateRoute={(route) =>
+          // The access is created right inside the Luma editor; no jump to
+          // the Models page.
+          onChange({
+            ...configuration,
+            llmRoutes: replaceCatalogItem(configuration.llmRoutes, route),
           })
         }
         onCancel={() => {
@@ -824,9 +824,19 @@ export function WorkjetSettingsView({
           {/* Inline-Panel-Muster: der Auslöser steht dort, wo das Formular
               aufklappt; Bearbeiten klappt direkt unter der Zeile auf. Kein
               Dialog, kein Popover. */}
-          {addingWorker ? (
-            workerEditor
-          ) : configuration.workerProfiles.length === 0 ? null : (
+          <InlineExpand
+            label="Luma hinzufügen"
+            open={addingWorker}
+            onOpenChange={(open) => {
+              if (!open) {
+                setAddingWorker(false);
+                setPendingWorkerParentId(null);
+              }
+            }}
+          >
+            {addingWorker ? workerEditor : null}
+          </InlineExpand>
+          {addingWorker ? null : configuration.workerProfiles.length === 0 ? null : (
             <div className="px-3 sm:px-4">
               <Button type="button" size="sm" variant="outline" onClick={openAddWorker}>
                 <PlusIcon className="size-3.5" />
@@ -905,19 +915,24 @@ export function WorkjetSettingsView({
                       }
                       onDelete={deleteWorker}
                       deleteConfirmTitle="Luma löschen?"
-                      menuActions={[
-                        {
-                          label: "Bearbeiten",
-                          onSelect: () => {
-                            setAddingWorker(false);
-                            setEditingWorkerId(worker.id);
-                            setPendingWorkerParentId(null);
-                          },
-                        },
-                        { label: "Duplizieren", onSelect: duplicateWorker },
-                      ]}
+                      expanded={editingWorkerId === worker.id}
+                      onToggleExpanded={() => {
+                        setAddingWorker(false);
+                        setPendingWorkerParentId(null);
+                        setEditingWorkerId((current) => (current === worker.id ? null : worker.id));
+                      }}
+                      menuActions={[{ label: "Duplizieren", onSelect: duplicateWorker }]}
                     />
-                    {editingWorker?.id === worker.id ? workerEditor : null}
+                    <InlineExpand
+                      hideCollapseControl
+                      label={worker.name}
+                      open={editingWorker?.id === worker.id}
+                      onOpenChange={(open) => {
+                        if (!open && editingWorkerId === worker.id) setEditingWorkerId(null);
+                      }}
+                    >
+                      {editingWorker?.id === worker.id ? workerEditor : null}
+                    </InlineExpand>
                   </Fragment>
                 );
               })}
@@ -932,29 +947,17 @@ export function WorkjetSettingsView({
             workers={configuration.workerProfiles}
             graph={configuration.workerGraph}
             onChange={(workerGraph) => onChange({ ...configuration, workerGraph })}
+            // Bearbeiten bleibt im Organigramm: der Editor klappt direkt
+            // darunter auf, kein Wechsel in die Lumas-Liste.
             onAddWorker={(parentId) => {
               setPendingWorkerParentId(parentId);
               setEditingWorkerId(null);
               setAddingWorker(true);
-              setActiveSection("workers");
-              void navigate({
-                to: "/settings/workjet",
-                hash: "workjet-workers",
-                replace: true,
-                hashScrollIntoView: false,
-              });
             }}
             onEditWorker={(workerId) => {
               setPendingWorkerParentId(null);
               setAddingWorker(false);
-              setEditingWorkerId(workerId);
-              setActiveSection("workers");
-              void navigate({
-                to: "/settings/workjet",
-                hash: "workjet-workers",
-                replace: true,
-                hashScrollIntoView: false,
-              });
+              setEditingWorkerId((current) => (current === workerId ? null : workerId));
             }}
             onDeleteWorker={(workerId) => {
               const workerProfiles = configuration.workerProfiles.filter(
@@ -967,6 +970,18 @@ export function WorkjetSettingsView({
               });
             }}
           />
+          <InlineExpand
+            label={editingWorker?.name ?? "Luma hinzufügen"}
+            open={editingWorker !== null || addingWorker}
+            onOpenChange={(open) => {
+              if (open) return;
+              setAddingWorker(false);
+              setEditingWorkerId(null);
+              setPendingWorkerParentId(null);
+            }}
+          >
+            {editingWorker !== null || addingWorker ? workerEditor : null}
+          </InlineExpand>
         </div>
       ) : null}
 

@@ -1,8 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { ProjectId } from "@workjet/contracts";
 import { ProjectCalendar, buildSessionEvents } from "./ProjectCalendar";
 import type { GalleryProject } from "../projectOverview";
+
+// Diese Tests prüfen deutsche Texte und Datumsformate: Oberflächensprache
+// fest auf "de", damit "System" nicht von der Testumgebung (englisch) abhängt.
+vi.mock("../hooks/useProjectOverviewLanguage", () => ({
+  useProjectOverviewLanguage: () => "de",
+}));
 
 function project(id: string, meeting?: { weekday: number; time: string; timezone: string }) {
   return {
@@ -34,6 +40,32 @@ describe("project calendar", () => {
     expect(html).toContain('aria-label="greppy.xyz, ');
     expect(html).toContain('title="ctox.dev · Europe/Berlin"');
     expect(html).toContain('title="greppy.xyz · America/New_York"');
+  });
+
+  it("speaks German dates and 24-hour times, and honours the week start", () => {
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        initialDate="2026-10-14"
+        projects={[project("ctox.dev", { weekday: 3, time: "13:00", timezone: "UTC" })]}
+      />,
+    ).replace(/[\u2009\u202f]/g, " ");
+    expect(html).toContain("12.–18. Okt. 2026 · KW 42");
+    expect(html).toContain("Oktober 2026");
+    expect(html).not.toMatch(/\b(AM|PM)\b/);
+    expect(html).toContain("13:00");
+    expect(html).not.toContain("October");
+
+    const sunday = renderToStaticMarkup(
+      <ProjectCalendar
+        initialDate="2026-10-14"
+        locale="en-US"
+        weekStart="locale"
+        projects={[project("ctox.dev", { weekday: 3, time: "13:00", timezone: "UTC" })]}
+      />,
+    ).replace(/[\u2009\u202f]/g, " ");
+    expect(sunday).toContain("Oct 11 – 17, 2026 · Week 42");
+    expect(sunday).toContain("1 PM");
+    expect(sunday).toContain("October 2026");
   });
 
   it("offers the day, week, month and year views", () => {
@@ -105,6 +137,6 @@ describe("native project session calendar", () => {
         sessionsStatus="unavailable"
       />,
     );
-    expect(html).toContain("Geladene Sitzungen können veraltet sein");
+    expect(html).toContain("Sitzungen nicht erreichbar · Anzeige evtl. veraltet");
   });
 });

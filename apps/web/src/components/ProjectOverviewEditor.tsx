@@ -6,7 +6,7 @@ import {
   type ProjectOverview,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
-import { decodeOverviewDraft, overviewDraft } from "../projectOverview";
+import { decodeOverviewDraft, overviewDraft, websiteDraftChange } from "../projectOverview";
 import { parseTokenBudgetBillions } from "@workjet/shared/projectTokenBudget";
 import { deferTokenBudgetCalendarSource } from "../projectTokenBudgetSource";
 import {
@@ -25,6 +25,200 @@ import { workjetUiLanguage } from "../workjetProjectControl";
 const decodeProjectConfiguration = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
   onExcessProperty: "error",
 });
+
+/** Werte der Karten-Rückseite „Projekt konfigurieren“ (Name, Website, Repository, Regeltermin). */
+export type ProjectCardConfigurationValues = {
+  readonly title: string;
+  readonly websiteUrl: string | null;
+  readonly repositoryUrl: string | null;
+  readonly jourFixe: { weekday: number; time: string; timezone: string } | null;
+};
+
+const WEEKDAY_LABELS = [
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+  "Sonntag",
+] as const;
+
+/**
+ * Dichte Rückseite der Galeriekarte. Speichert über denselben Pfad wie
+ * Einstellungen › Projekt (project.configure bzw. Projektübersicht).
+ */
+export function ProjectCardConfigEditor({
+  title,
+  websiteUrl,
+  repositoryUrl,
+  jourFixe,
+  canEditTitle = false,
+  onSave,
+  onCancel,
+}: {
+  readonly title: string;
+  readonly websiteUrl: string | null;
+  readonly repositoryUrl: string | null;
+  readonly jourFixe: { weekday: number; time: string; timezone: string } | null;
+  /** Nur der Instanz-Pfad (project.configure) trägt den Namen; sonst gesperrt. */
+  readonly canEditTitle?: boolean | undefined;
+  readonly onSave: (values: ProjectCardConfigurationValues) => Promise<boolean>;
+  readonly onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<ProjectCardConfigurationValues>(() => ({
+    title,
+    websiteUrl,
+    repositoryUrl,
+    jourFixe,
+  }));
+  const [state, setState] = useState({ pending: false, message: "" });
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      className="flex size-full min-h-0 flex-col"
+      data-workjet-project-card-config=""
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (state.pending) return;
+        for (const url of [draft.websiteUrl, draft.repositoryUrl])
+          if (url)
+            try {
+              new URL(url);
+            } catch {
+              setError("Vollständige Adresse mit https:// eintragen.");
+              return;
+            }
+        if (draft.title.trim() === "") {
+          setError("Name eintragen.");
+          return;
+        }
+        setError(null);
+        setState({ pending: true, message: "" });
+        try {
+          const saved = await onSave({
+            title: draft.title.trim(),
+            websiteUrl: draft.websiteUrl?.trim() ? draft.websiteUrl.trim() : null,
+            repositoryUrl: draft.repositoryUrl?.trim() ? draft.repositoryUrl.trim() : null,
+            jourFixe: draft.jourFixe,
+          });
+          setState({ pending: false, message: saved ? "Gespeichert" : "Nicht gespeichert" });
+          if (saved) onCancel();
+        } catch {
+          setState({ pending: false, message: "Nicht gespeichert" });
+        }
+      }}
+    >
+      {/* Dicht: Felder tragen ihre Bezeichnung als Platzhalter; die Knopfzeile
+          bleibt unten stehen, auch wenn der Inhalt intern scrollt. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">
+        <div className="grid grid-cols-2 gap-1.5 pr-8">
+          <Input
+            aria-label="Projektname"
+            size="sm"
+            maxLength={256}
+            required
+            placeholder="Name"
+            disabled={state.pending || !canEditTitle}
+            value={draft.title}
+            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+          />
+          <Input
+            aria-label="Website"
+            size="sm"
+            type="url"
+            maxLength={2048}
+            placeholder="https://example.com"
+            disabled={state.pending}
+            value={draft.websiteUrl ?? ""}
+            onChange={(event) => setDraft({ ...draft, websiteUrl: event.target.value || null })}
+          />
+        </div>
+        <Input
+          aria-label="Repository"
+          size="sm"
+          type="url"
+          maxLength={2048}
+          placeholder="https://github.com/owner/repository"
+          disabled={state.pending}
+          value={draft.repositoryUrl ?? ""}
+          onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
+        />
+        <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-1.5">
+          <select
+            aria-label="Regeltermin Wochentag"
+            className="h-7.5 min-w-0 rounded-md border border-input bg-background px-2 text-xs sm:h-6.5"
+            disabled={state.pending}
+            value={draft.jourFixe?.weekday ?? "none"}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                jourFixe:
+                  event.target.value === "none"
+                    ? null
+                    : {
+                        weekday: Number(event.target.value),
+                        time: current.jourFixe?.time ?? "09:00",
+                        timezone: current.jourFixe?.timezone ?? "Europe/Berlin",
+                      },
+              }))
+            }
+          >
+            <option value="none">Kein Termin</option>
+            {WEEKDAY_LABELS.map((day, index) => (
+              <option key={day} value={index + 1}>
+                {day}
+              </option>
+            ))}
+          </select>
+          <Input
+            aria-label="Regeltermin Uhrzeit"
+            size="sm"
+            type="time"
+            required={draft.jourFixe !== null}
+            disabled={state.pending || draft.jourFixe === null}
+            value={draft.jourFixe?.time ?? ""}
+            onChange={(event) =>
+              setDraft((current) =>
+                current.jourFixe === null
+                  ? current
+                  : { ...current, jourFixe: { ...current.jourFixe, time: event.target.value } },
+              )
+            }
+          />
+        </div>
+        {error !== null && (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+      <div
+        className="flex flex-none items-center gap-1.5 border-t border-border px-2 py-1.5"
+        data-workjet-project-card-config-actions=""
+      >
+        <Button type="submit" size="xs" disabled={state.pending}>
+          {state.pending ? "Speichern …" : "Speichern"}
+        </Button>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={state.pending}
+          onClick={onCancel}
+        >
+          Abbrechen
+        </Button>
+        <p
+          className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground"
+          role="status"
+        >
+          {state.message}
+        </p>
+      </div>
+    </form>
+  );
+}
 
 export type ProjectConfigurationValues = Pick<
   Extract<CtoxWorkjetProjectControlRequest, { readonly action: "project.configure" }>,
@@ -298,7 +492,7 @@ export function ProjectOverviewEditor({
           maxLength={2048}
           value={draft.websiteUrl}
           onChange={(event) =>
-            setDraft((current) => ({ ...current, websiteUrl: event.target.value }))
+            setDraft((current) => websiteDraftChange(current, event.target.value))
           }
           placeholder="https://example.com"
           disabled={state.pending}

@@ -1,7 +1,24 @@
 import { useEffect, useRef } from "react";
-import type { GalleryProject } from "../projectOverview";
+import type { ProjectOverview } from "@workjet/contracts";
+import { fallbackProjectOverview, type GalleryProject } from "../projectOverview";
 import { projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
+
+/** Automatic metadata sync starts from the project's fallback overview (domain
+ * fallback included); it never invents a cleared website field. */
+export function supervisorProjectMetadataOverview(input: {
+  readonly title: string;
+  readonly overview: ProjectOverview | null | undefined;
+  readonly regularMeeting: ProjectOverview["regularMeeting"];
+  readonly repositoryUrl: string | null | undefined;
+}): ProjectOverview {
+  return {
+    ...fallbackProjectOverview(input.title),
+    ...input.overview,
+    regularMeeting: input.regularMeeting ?? null,
+    repositoryUrl: input.repositoryUrl ?? null,
+  };
+}
 
 /** Persist the already identity-bound native meeting metadata for server control rounds. */
 export function useSupervisorProjectMetadata(project: GalleryProject) {
@@ -32,13 +49,12 @@ export function useSupervisorProjectMetadata(project: GalleryProject) {
       environmentId: local.environmentId,
       input: {
         projectId: local.id,
-        overview: {
-          websiteUrl: null,
-          slots: [null, null, null],
-          ...local.overview,
+        overview: supervisorProjectMetadataOverview({
+          title: local.title,
+          overview: local.overview,
           regularMeeting: meeting,
-          repositoryUrl: native.repoUrl ?? null,
-        },
+          repositoryUrl: native.repoUrl,
+        }),
       },
     });
   }, [key, local, meeting, native, update]);

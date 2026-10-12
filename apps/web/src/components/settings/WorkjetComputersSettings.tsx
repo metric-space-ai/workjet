@@ -39,6 +39,7 @@ import { workerSourceConnectionForEnrollment } from "../../workjetWorkerSourceCo
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Row, type RowDeleteOption, type RowMenuAction, type RowStatus } from "../ui/row";
 import { Spinner } from "../ui/spinner";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
@@ -753,8 +754,6 @@ export function WorkjetComputersSettingsView({
           if (computer && renderRepair)
             menuActions.push({ label: "Reparieren", onSelect: () => toggle(row.key, "repair") });
           if (onRecheck) menuActions.push({ label: "Neu prüfen", onSelect: () => onRecheck(row) });
-          if (computer && renderEdit)
-            menuActions.push({ label: "Bearbeiten", onSelect: () => toggle(row.key, "edit") });
           if (computer)
             menuActions.push({
               label:
@@ -809,7 +808,7 @@ export function WorkjetComputersSettingsView({
                 className={cn(!active && "opacity-55")}
               >
                 <Row
-                  className="flex-wrap sm:flex-nowrap max-sm:[&>div:has(>[data-slot=row-name])]:basis-[calc(100%-1.25rem)] max-sm:[&>[data-slot=row-chips]]:flex-1 max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap max-sm:[&>[data-slot=row-chips]]:pl-5 max-sm:[&>[data-slot=row-actions]]:ml-auto max-sm:[&>[data-slot=row-actions]]:max-w-full max-sm:[&>[data-slot=row-actions]]:flex-wrap max-sm:[&_[data-slot=row-confirm]]:min-w-0 max-sm:[&_[data-slot=row-confirm]]:flex-wrap"
+                  className="flex-wrap sm:flex-nowrap max-sm:[&>div:has(>[data-slot=row-name])]:basis-[calc(100%-1.25rem)] max-sm:[&>[data-slot=row-open]]:basis-[calc(100%-1.25rem)] max-sm:[&>[data-slot=row-chips]]:flex-1 max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap max-sm:[&>[data-slot=row-chips]]:pl-5 max-sm:[&>[data-slot=row-actions]]:ml-auto max-sm:[&>[data-slot=row-actions]]:max-w-full max-sm:[&>[data-slot=row-actions]]:flex-wrap max-sm:[&_[data-slot=row-confirm]]:min-w-0 max-sm:[&_[data-slot=row-confirm]]:flex-wrap"
                   status={status}
                   statusLabel={statusLabel}
                   name={label}
@@ -838,18 +837,41 @@ export function WorkjetComputersSettingsView({
                     : {})}
                   menuActions={menuActions}
                   menuLabel={`Weitere Aktionen für ${label}`}
+                  {...(computer && renderEdit
+                    ? {
+                        expanded: expanded === "edit",
+                        onToggleExpanded: () => toggle(row.key, "edit"),
+                      }
+                    : {})}
                 />
               </div>
               {noticeLine(row.key, false)}
-              {expanded === "repair" && renderRepair ? (
-                <div className="px-3 pb-3 pl-8" data-slot="computer-repair">
-                  {renderRepair(row, close)}
-                </div>
+              {renderRepair ? (
+                <InlineExpand
+                  label={`${label} reparieren`}
+                  open={expanded === "repair"}
+                  onOpenChange={(open) => {
+                    if (!open && expanded === "repair") close();
+                  }}
+                >
+                  <div className="px-3 pb-3 pl-8" data-slot="computer-repair">
+                    {expanded === "repair" ? renderRepair(row, close) : null}
+                  </div>
+                </InlineExpand>
               ) : null}
-              {expanded === "edit" && renderEdit ? (
-                <div className="px-3 pb-3 pl-8" data-slot="computer-edit">
-                  {renderEdit(row, close)}
-                </div>
+              {renderEdit && computer ? (
+                <InlineExpand
+                  hideCollapseControl
+                  label={label}
+                  open={expanded === "edit"}
+                  onOpenChange={(open) => {
+                    if (!open && expanded === "edit") close();
+                  }}
+                >
+                  <div className="px-3 pb-3 pl-8" data-slot="computer-edit">
+                    {expanded === "edit" ? renderEdit(row, close) : null}
+                  </div>
+                </InlineExpand>
               ) : null}
             </Fragment>
           );

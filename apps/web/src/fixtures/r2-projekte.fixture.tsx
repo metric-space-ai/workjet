@@ -27,9 +27,14 @@ import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { ProjectOverviewEditor } from "../components/ProjectOverviewEditor";
 import { SidebarProvider } from "../components/ui/sidebar";
 import type { GalleryProject } from "../projectOverview";
+import { exitModelFixture } from "../test/exitModelFixture";
 import "../index.css";
 
 const view = new URLSearchParams(window.location.search).get("view") ?? "karten";
+
+/** Merkt gespeicherte Konfigurationen der Karten-Rückseite (nur Fixture-Nachweis). */
+const savedConfigurations: string[] = [];
+(window as unknown as { savedConfigurations: string[] }).savedConfigurations = savedConfigurations;
 
 const instance = (id: string, displayName: string, status: string, ready: boolean) =>
   ({
@@ -54,6 +59,42 @@ const galleryProjects: GalleryProject[] = [
     title: "molecularity",
     local: null,
     native: true,
+    configuration: {
+      id: ProjectId.make("molecularity"),
+      title: "molecularity",
+      publicUrl: "https://molecularity.example",
+      repoUrl: "https://github.com/metric-space-ai/molecularity",
+      jourFixe: { weekday: 2, time: "10:00", timezone: "Europe/Berlin" },
+      exitModel: { ...exitModelFixture, project_id: ProjectId.make("molecularity") },
+    },
+  },
+  { key: "instance:fzul", id: "fzul", title: "fzul.app", local: null, native: true },
+  {
+    key: "instance:i-hate-ai",
+    id: "i-hate-ai",
+    title: "i-hate-ai.community",
+    local: null,
+    native: true,
+  },
+  {
+    // Regression coverage: automatic syncs stored an unmarked websiteUrl: null;
+    // the card must still fall back to the domain preview.
+    key: "local:kunstmen",
+    id: "kunstmen",
+    title: "kunstmen.com",
+    local: {
+      id: ProjectId.make("kunstmen"),
+      title: "kunstmen.com",
+      environmentId: EnvironmentId.make("environment-local"),
+      updatedAt: "2026-10-12T00:00:00.000Z",
+      ctoxRegistration: null,
+      overview: {
+        tokenBudget: { limitBillions: null, revision: 0, jourFixe: null },
+        websiteUrl: null,
+        slots: [null, null, null],
+      },
+    },
+    native: false,
   },
 ];
 
@@ -140,14 +181,24 @@ function Fixture() {
   return (
     <main className="mx-auto max-w-6xl px-5 py-6">
       <h1 className="mb-4 text-[22px] font-semibold">Alle Projekte</h1>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1">
+      <div
+        className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1"
+        data-workjet-project-gallery-grid=""
+      >
         {galleryProjects.map((project) => (
           <ProjectOverviewCard
             key={project.key}
             project={project}
             onOpen={() => {}}
             onSave={async () => true}
-            onConfigure={() => {}}
+            onSaveConfiguration={
+              project.configuration
+                ? async () => {
+                    savedConfigurations.push(project.id);
+                    return true;
+                  }
+                : undefined
+            }
             canArchive
           />
         ))}

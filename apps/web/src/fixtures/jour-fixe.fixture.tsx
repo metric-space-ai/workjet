@@ -3,14 +3,19 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ProjectId } from "@workjet/contracts";
 import { JourFixeRoom } from "../components/JourFixeRoom";
+import { JourFixeSpeechRoom } from "../components/JourFixeSpeechRoom";
+import { ProviderUpdateChipView } from "../components/ProviderUpdateLaunchNotification";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
 import { updateSlideCanvas } from "@workjet/slide-engine/excalidraw/scene";
 import type { SlideDocument } from "@workjet/slide-engine/schema";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import { ProjectCalendar } from "../components/ProjectCalendar";
 import { Button } from "../components/ui/button";
+import { JourFixeReadError } from "../lib/jourFixeReadRetry";
+import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { type JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import type { GalleryProject } from "../projectOverview";
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { randomUUID } from "../lib/utils";
 import fixture from "./jour-fixe.contract.json";
 import "../index.css";
@@ -18,6 +23,8 @@ import "../index.css";
 if (!import.meta.env.DEV || !["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
   throw new Error("Jour fixe fixture is available only on a loopback development server.");
 }
+// Die Fixture bildet die deutsche Workjet-Oberfläche ab (index.html hat lang="de").
+document.documentElement.lang = "de";
 const contractMeeting = fixture.meeting as JourFixeRoomSnapshot;
 const project: GalleryProject = {
   key: "fixture:project-1",
@@ -63,8 +70,14 @@ function syntheticNarration() {
 }
 // `?presentation=1`: the first two slides carry a hand-drawn presentation; saves stay in memory.
 // `?scheduledIn=30`: the meeting is scheduled N minutes from now, to show the start lock.
+// `?speech=1&narration=ready|loading|failed`: speech session with a fixture provider,
+// so the dense German narration states (load, failure + „Erneut laden“, playing) are visible.
+// `?chrome=1`: header row with the update chip and the German „Letzter Stand“ line.
 const params = new URLSearchParams(location.search);
 const withPresentation = params.get("presentation") === "1";
+const withSpeech = params.get("speech") === "1";
+const narrationMode = params.get("narration") ?? "ready";
+const withChrome = params.get("chrome") === "1";
 const scheduledInMinutes = Number(params.get("scheduledIn") ?? Number.NaN);
 const fixturePresentation: SlideDocument = {
   ...jourFixeDeck,
@@ -75,7 +88,10 @@ const fixturePresentation: SlideDocument = {
 };
 
 function Fixture() {
-  const [view, setView] = useState<"overview" | "calendar" | "meeting">("overview");
+  const [view, setView] = useState<"overview" | "calendar" | "meeting">(
+    withSpeech ? "meeting" : "overview",
+  );
+  const [chipDismissed, setChipDismissed] = useState(false);
   const [presentation, setPresentation] = useState<SlideDocument>(fixturePresentation);
   const [canvasSaveCount, setCanvasSaveCount] = useState(0);
   const [meeting, setMeeting] = useState<JourFixeRoomSnapshot>({
@@ -120,6 +136,32 @@ function Fixture() {
   useEffect(() => () => URL.revokeObjectURL(narration), [narration]);
   const [microphone, setMicrophone] = useState(false);
   const [partial, setPartial] = useState("");
+  // Fixture provider: „loading“ bleibt offen (wie die bis zu 5 min laufenden
+  // Wiederholungen der Bibliothek), „failed“ meldet den Fehlercode guest_failed.
+  const [speechProvider] = useState<JourFixeSpeechProvider>(() => ({
+    kind: "ctox-gateway",
+    microphoneAvailable: false,
+    async prepareNarration({ signal }) {
+      if (narrationMode === "failed") throw new JourFixeReadError("guest_failed");
+      if (narrationMode === "loading") {
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            {
+              once: true,
+            },
+          );
+        });
+      }
+      signal.throwIfAborted();
+      const response = await fetch(narration);
+      return response.blob();
+    },
+    async startListening() {
+      throw new Error("Fixture only");
+    },
+  }));
   async function apply(
     revision: number,
     change: (current: JourFixeRoomSnapshot) => JourFixeRoomSnapshot,
@@ -134,6 +176,33 @@ function Fixture() {
   }
   return (
     <main className="min-h-dvh bg-background text-foreground" data-workjet-fixture="jour-fixe">
+      {withChrome && (
+        <div
+          className="flex items-center justify-end gap-2 border-b border-border px-3 py-1.5"
+          data-workjet-fixture-chrome=""
+        >
+          <span className="mr-auto text-xs text-muted-foreground" role="status">
+            Instanz nicht erreichbar · Letzter Stand:{" "}
+            {new Date("2026-10-12T18:32:38").toLocaleString(
+              workjetUiLanguage() === "en" ? "en-US" : "de-DE",
+              {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            )}
+          </span>
+          {!chipDismissed && (
+            <ProviderUpdateChipView
+              title="Codex 0.162.1 verfügbar"
+              onOpen={() => {}}
+              onDismiss={() => setChipDismissed(true)}
+            />
+          )}
+        </div>
+      )}
       <nav
         className="flex flex-wrap items-center gap-2 border-b border-border p-3"
         aria-label="Fixture controls"
@@ -203,7 +272,34 @@ function Fixture() {
           />
         </div>
       )}
-      {view === "meeting" && (
+      {view === "meeting" && withSpeech && (
+        <JourFixeSpeechRoom
+          instanceId="fixture"
+          speechProvider={speechProvider}
+          projectTitle="Fixture project"
+          meeting={meeting}
+          onBack={() => setView("overview")}
+          onRefresh={async () => {
+            setMeeting({ ...meeting });
+          }}
+          onMessage={(_id, revision, text) =>
+            apply(revision, (current) => ({
+              ...current,
+              revision: current.revision + 1,
+              transcript: [
+                ...current.transcript,
+                {
+                  id: randomUUID(),
+                  sequence: Math.max(0, ...current.transcript.map((turn) => turn.sequence)) + 1,
+                  speaker: "owner",
+                  text,
+                },
+              ],
+            }))
+          }
+        />
+      )}
+      {view === "meeting" && !withSpeech && (
         <JourFixeRoom
           projectTitle="Fixture project"
           meeting={meeting}

@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
-import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
+import { JourFixeSpeechRoom, jourFixeSpeechErrorView } from "./JourFixeSpeechRoom";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
+import { JourFixeReadError } from "../lib/jourFixeReadRetry";
 import { nativeJourFixeNarrationProvider } from "../lib/nativeJourFixeNarrationProvider";
 import type { JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import fixture from "../fixtures/jour-fixe.contract.json";
@@ -58,5 +59,33 @@ describe("Jour fixe speech room hook", () => {
       <JourFixeSpeechRoom {...props} speechProvider={provider("local-helper")} />,
     );
     expect(html).not.toContain("Mikrofon an");
+  });
+  it("shows a calm loading state while the narration read retries", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeSpeechRoom
+        {...props}
+        speechProvider={provider("ctox-gateway")}
+        meeting={{ ...meeting, state: "live" }}
+      />,
+    );
+    expect(html).toContain("Ton wird geladen …");
+    expect(html).not.toContain("guest_failed");
+  });
+});
+describe("jourFixeSpeechErrorView", () => {
+  it.each(["timeout", "request_timeout", "guest_failed", "unsupported"])(
+    "maps transport code %s to a short German state with reload",
+    (code) => {
+      expect(jourFixeSpeechErrorView(new JourFixeReadError(code))).toEqual({
+        text: "Ton nicht verfügbar",
+        canRetry: true,
+      });
+    },
+  );
+  it("keeps microphone and integrity errors unchanged and without reload", () => {
+    expect(jourFixeSpeechErrorView(new Error("Mikrofon nicht angeschlossen"))).toEqual({
+      text: "Mikrofon nicht angeschlossen",
+      canRetry: false,
+    });
   });
 });

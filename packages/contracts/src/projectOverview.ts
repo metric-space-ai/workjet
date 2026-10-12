@@ -54,6 +54,9 @@ export const ProjectOverview = Schema.Struct({
   // Repository metadata is independent of a deployment website or local checkout.
   repositoryUrl: Schema.optionalKey(Schema.NullOr(ProjectWebsiteUrl)),
   websiteUrl: Schema.NullOr(ProjectWebsiteUrl),
+  // A conscious clear in the editor opts out of the domain-title fallback;
+  // an unmarked null means the website was never set (legacy and automatic writes).
+  websiteUrlCleared: Schema.optionalKey(Schema.Boolean),
   slots: Schema.Tuple([OptionalSlot, OptionalSlot, OptionalSlot]),
 });
 export type ProjectOverview = typeof ProjectOverview.Type;

@@ -1,5 +1,5 @@
 import type { CtoxWorkjetProjectProjection, WorkjetComputer } from "@workjet/contracts";
-import type { GalleryLocalProject } from "./projectOverview";
+import { fallbackProjectOverview, type GalleryLocalProject } from "./projectOverview";
 import { resolveProjectHistoryBindings } from "./workjetProjectIdentity";
 
 const editorSaves = new Set<string>();
@@ -44,7 +44,9 @@ export function tokenBudgetCalendarUpdates(input: {
           projectId: project.id,
           expectedTokenBudgetRevision: budget.revision,
           overview: {
-            ...(project.overview ?? { websiteUrl: null, slots: [null, null, null] as const }),
+            // Automatic sync never invents a cleared website: start from the
+            // project's fallback overview (domain fallback included), not null.
+            ...(project.overview ?? fallbackProjectOverview(project.title)),
             tokenBudget: { ...budget, jourFixe: source.jourFixe },
           },
         },

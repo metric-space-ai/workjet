@@ -62,42 +62,28 @@ export function useInstanceOnlyProjects(): {
 const text = () =>
   workjetUiLanguage() === "en"
     ? {
-        section: "On the instance",
-        meta: "No copy on this computer",
         settings: "Meeting, budget and Supervisor",
       }
     : {
-        section: "Auf der Instanz",
-        meta: "Keine Kopie auf diesem Rechner",
         settings: "Regeltermin, Budget und Supervisor",
       };
 
-/** Listed below the local projects so instance settings and KPIs stay reachable (#492). */
-export function InstanceProjectsSettingsSection() {
-  const { projects } = useInstanceOnlyProjects();
-  if (projects.length === 0) return null;
-  const t = text();
+/** One row in the plain project list for an instance project without a local copy (#492). */
+export function InstanceProjectRow({ project }: { readonly project: GalleryProject }) {
+  const key = instanceProjectSettingsKey(project.id);
   return (
-    <SettingsSection title={t.section}>
-      <div className="divide-y divide-border/60" data-workjet-settings-instance-projects="">
-        {projects.map((project) => (
-          <Row
-            key={project.key}
-            name={
-              <Link
-                to="/settings/projects/$projectKey"
-                params={{ projectKey: instanceProjectSettingsKey(project.id) }}
-                className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                data-workjet-action={`project.settings:${instanceProjectSettingsKey(project.id)}`}
-              >
-                <span className="truncate">{project.title}</span>
-              </Link>
-            }
-            meta={t.meta}
-          />
-        ))}
-      </div>
-    </SettingsSection>
+    <Row
+      name={
+        <Link
+          to="/settings/projects/$projectKey"
+          params={{ projectKey: key }}
+          className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-workjet-action={`project.settings:${key}`}
+        >
+          <span className="truncate">{project.title}</span>
+        </Link>
+      }
+    />
   );
 }
 

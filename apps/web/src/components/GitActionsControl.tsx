@@ -1464,10 +1464,11 @@ export default function GitActionsControl({
 
       {/* Commit inline im Git-Bereich: Dateien als Haken, eine Nachricht, ein Schalter
           für einen neuen Branch. Kein Dialog (drei Orte, keine Popups). */}
-      {isCommitDialogOpen ? (
+      {
         <InlinePanel
+          hideTrigger
           triggerLabel="Übernehmen"
-          open
+          open={isCommitDialogOpen}
           onOpenChange={(open) => {
             if (!open) closeCommitPanel();
           }}
@@ -1574,7 +1575,7 @@ export default function GitActionsControl({
             Neuer Zweig
           </label>
         </InlinePanel>
-      ) : null}
+      }
 
       {/* Ohne Remote steht „Veröffentlichen“ direkt im Git-Bereich. */}
       {canPublishRepository || isPublishDialogOpen ? (

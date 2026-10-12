@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { isThemeColor, themeColorToHex, type ThemeColorRole } from "../../themePalette";
 import { cn } from "../../lib/utils";
 import { Input } from "../ui/input";
+import { InlineExpand } from "../ui/inline-expand";
 
 const THEME_ROLE_LABELS: Record<ThemeColorRole, string> = {
   canvas: "Hintergrund",
@@ -530,9 +531,16 @@ export const ThemeColorField = memo(function ThemeColorField({
           />
         </div>
       </div>
-      {isPickerOpen ? (
-        <ThemeColorPickerPanel label={label} onChange={handlePickerChange} value={swatchValue} />
-      ) : null}
+      <InlineExpand
+        hideCollapseControl
+        label={label}
+        open={isPickerOpen}
+        onOpenChange={setIsPickerOpen}
+      >
+        {isPickerOpen ? (
+          <ThemeColorPickerPanel label={label} onChange={handlePickerChange} value={swatchValue} />
+        ) : null}
+      </InlineExpand>
     </div>
   );
 });

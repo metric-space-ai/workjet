@@ -157,11 +157,12 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           </MenuPopup>
         </Menu>
       </div>
-      {isSaveDialogOpen ? (
+      {
         <InlinePanel
+          hideTrigger
           className="mt-3"
           triggerLabel="Im Workspace speichern"
-          open
+          open={isSaveDialogOpen}
           onOpenChange={(open) => {
             if (!open && !isSavingToWorkspace) setIsSaveDialogOpen(false);
           }}
@@ -179,7 +180,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             disabled={isSavingToWorkspace}
           />
         </InlinePanel>
-      ) : null}
+      }
       <div className="mt-4">
         <div className={cn("relative", canCollapse && !expanded && "max-h-104 overflow-hidden")}>
           {canCollapse && !expanded ? (

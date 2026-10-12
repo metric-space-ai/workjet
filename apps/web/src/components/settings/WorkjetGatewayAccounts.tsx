@@ -29,6 +29,7 @@ import type * as React from "react";
 import { useState, useEffect } from "react";
 
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { InlinePanel } from "../ui/inline-panel";
 import { Row } from "../ui/row";
 import { Spinner } from "../ui/spinner";
@@ -699,16 +700,26 @@ export function WorkjetGatewayAccountsSectionView(
                       );
                     })}
 
-                    {isKeyFormOpen ? (
-                      <div className="pt-2">
-                        <AddApiKeyForm
-                          provider={provider}
-                          disabled={!canAdd}
-                          apiKey={state.apiKey}
-                          onSubmit={(value) => state.onAddApiKey(provider, value)}
-                          onDismiss={() => setOpenApiKeyProvider(null)}
-                        />
-                      </div>
+                    {isApiKey ? (
+                      <InlineExpand
+                        label={WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+                        open={isKeyFormOpen}
+                        onOpenChange={(open) => {
+                          if (!open) setOpenApiKeyProvider(null);
+                        }}
+                      >
+                        {isKeyFormOpen ? (
+                          <div className="pt-2">
+                            <AddApiKeyForm
+                              provider={provider}
+                              disabled={!canAdd}
+                              apiKey={state.apiKey}
+                              onSubmit={(value) => state.onAddApiKey(provider, value)}
+                              onDismiss={() => setOpenApiKeyProvider(null)}
+                            />
+                          </div>
+                        ) : null}
+                      </InlineExpand>
                     ) : null}
                     {isApiKey ? (
                       <AddApiKeyProgress provider={provider} apiKey={state.apiKey} />

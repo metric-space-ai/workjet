@@ -27,11 +27,18 @@ async function sha256(filePath) {
     .digest("hex");
 }
 
+// electron-builder names Linux AppImages by machine (x86_64, aarch64), not by Node arch.
+const ARCH_ALIASES = { x64: ["x64", "x86_64", "amd64"], arm64: ["arm64", "aarch64"] };
+
 function findUniqueArtifact(files, version, arch, suffix) {
-  const prefix = `Workjet-${version}-${arch}`;
-  const matches = files.filter((name) => name.startsWith(prefix) && name.endsWith(suffix));
+  const prefixes = (ARCH_ALIASES[arch] ?? [arch]).map((name) => `Workjet-${version}-${name}`);
+  const matches = files.filter(
+    (name) => prefixes.some((prefix) => name.startsWith(prefix)) && name.endsWith(suffix),
+  );
   if (matches.length !== 1) {
-    throw new Error(`Expected one ${prefix}*${suffix} artifact, found ${matches.length}`);
+    throw new Error(
+      `Expected one ${prefixes.join("|")}*${suffix} artifact, found ${matches.length}`,
+    );
   }
   return matches[0];
 }

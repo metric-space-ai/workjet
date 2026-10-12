@@ -38,6 +38,35 @@ NodeTest.test("generates the complete signed-release target matrix", async () =>
   }
 });
 
+NodeTest.test("accepts electron-builder machine names for Linux AppImages", async () => {
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-install-manifest-"));
+  try {
+    for (const name of [
+      "Workjet-1.2.3-arm64.dmg",
+      "Workjet-1.2.3-arm64.AppImage",
+      "Workjet-1.2.3-x86_64.AppImage",
+      "Workjet-1.2.3-amd64.deb",
+      "Workjet-1.2.3-x64.exe",
+      "Workjet-1.2.3-arm64.exe",
+    ])
+      await NodeFSP.writeFile(NodePath.join(root, name), name);
+    const manifest = await generateWorkjetInstallManifest({
+      assetsDir: root,
+      tag: "v1.2.3",
+      version: "1.2.3",
+      repository: "metric-space-ai/workjet",
+      output: NodePath.join(root, "manifest.json"),
+    });
+    NodeAssert.equal(
+      manifest.artifacts.find(({ platform, arch }) => platform === "linux" && arch === "x64")
+        ?.filename,
+      "Workjet-1.2.3-x86_64.AppImage",
+    );
+  } finally {
+    await NodeFSP.rm(root, { recursive: true, force: true });
+  }
+});
+
 NodeTest.test(
   "explicit targets preserve the full default and reject unknown or duplicate scopes",
   async () => {

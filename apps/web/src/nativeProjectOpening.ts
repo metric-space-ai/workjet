@@ -3,7 +3,22 @@ import type {
   EnvironmentId,
   OrchestrationProjectShell,
 } from "@workjet/contracts";
+import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
 import type { GalleryProject } from "./projectOverview";
+
+/** One automatic opening per project and local-environment readiness. */
+export function nativeOpenAttemptKey(
+  instanceId: string | null,
+  projectId: string,
+  localEnvironmentId: EnvironmentId | null,
+  localPhase: Parameters<typeof canCreateProjectInEnvironment>[0],
+): string {
+  return JSON.stringify([
+    instanceId,
+    projectId,
+    localEnvironmentId !== null && canCreateProjectInEnvironment(localPhase),
+  ]);
+}
 
 /** A native project keeps its identity when its local conversation is first opened. */
 export function resolveNativeProjectOpening(input: {

@@ -24,7 +24,14 @@ import { createModelSelection } from "@workjet/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@workjet/shared/keybindings";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  LaptopIcon,
+  PlusIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -92,7 +99,7 @@ import { ProjectFaviconPicker } from "./ProjectFaviconPicker";
 import { ProjectSupervisorLumaField } from "../ProjectSupervisorLumaField";
 import type { ProjectConfigurationValues } from "../ProjectOverviewEditor";
 import { buildProjectGallery } from "../../projectOverview";
-import { configureWorkjetProject } from "../../workjetProjectControl";
+import { configureWorkjetProject, workjetUiLanguage } from "../../workjetProjectControl";
 import { useProjectKpiSettings } from "../../hooks/useProjectKpiSettings";
 import {
   recordWorkjetProjectProjection,
@@ -101,6 +108,12 @@ import {
 } from "../../workjetProjectRegistry";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
 import { newCommandId } from "../../lib/utils";
+import {
+  INSTANCE_PROJECT_KEY_PREFIX,
+  InstanceProjectDetail,
+  InstanceProjectRow,
+  useInstanceOnlyProjects,
+} from "./InstanceProjectSettings";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Nach Repository",
@@ -141,12 +154,30 @@ function memberKey(member: { environmentId: string; id: string }): string {
  * Einstellungen › Projekte: every project as one Row. A click on the name
  * opens Einstellungen › Projekte › <Projekt>.
  */
+function compareByName(a: { readonly name: string }, b: { readonly name: string }) {
+  return a.name.localeCompare(b.name);
+}
+
+function instanceProjectRow(project: Parameters<typeof InstanceProjectRow>[0]["project"]) {
+  return <InstanceProjectRow key={project.key} project={project} />;
+}
+
 export function ProjectsSettingsList() {
   const groups = useSettingsProjectGroups();
+  const instanceProjects = useInstanceOnlyProjects().projects;
+  const localCopy =
+    workjetUiLanguage() === "en" ? "Copy on this computer" : "Kopie auf diesem Rechner";
+  const rows = [
+    ...groups.map((group) => ({ name: group.displayName, row: localProjectRow(group, localCopy) })),
+    ...instanceProjects.map((project) => ({
+      name: project.title,
+      row: instanceProjectRow(project),
+    })),
+  ].toSorted(compareByName);
   return (
     <SettingsPageContainer>
       <SettingsSection title="Projekte">
-        {groups.length === 0 ? (
+        {rows.length === 0 ? (
           <Empty className="py-8">
             <EmptyHeader>
               <EmptyTitle className="text-[13.5px]">Noch keine Projekte</EmptyTitle>
@@ -158,48 +189,56 @@ export function ProjectsSettingsList() {
           </Empty>
         ) : (
           <div className="divide-y divide-border/60" data-workjet-settings-projects="">
-            {groups.map((group) => {
-              const representative =
-                group.memberProjects.find(
-                  (member) =>
-                    member.environmentId === group.environmentId && member.id === group.id,
-                ) ?? group.memberProjects[0];
-              return (
-                <Row
-                  key={group.projectKey}
-                  name={
-                    <Link
-                      to="/settings/projects/$projectKey"
-                      params={{ projectKey: group.projectKey }}
-                      className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      data-workjet-action={`project.settings:${group.projectKey}`}
-                    >
-                      {representative ? (
-                        <ProjectFavicon
-                          environmentId={representative.environmentId}
-                          cwd={representative.workspaceRoot}
-                          faviconPath={representative.faviconPath ?? null}
-                          className="size-4 shrink-0"
-                        />
-                      ) : null}
-                      <span className="truncate">{group.displayName}</span>
-                    </Link>
-                  }
-                  meta={representative?.environmentLabel ?? undefined}
-                  chips={
-                    group.memberProjects.length > 1 ? (
-                      <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">
-                        {group.memberProjects.length} Arbeitskopien
-                      </span>
-                    ) : undefined
-                  }
-                />
-              );
-            })}
+            {rows.map((entry) => entry.row)}
           </div>
         )}
       </SettingsSection>
     </SettingsPageContainer>
+  );
+}
+
+function localProjectRow(group: SidebarProjectSnapshot, localCopy: string) {
+  const representative =
+    group.memberProjects.find(
+      (member) => member.environmentId === group.environmentId && member.id === group.id,
+    ) ?? group.memberProjects[0];
+  return (
+    <Row
+      key={group.projectKey}
+      name={
+        <Link
+          to="/settings/projects/$projectKey"
+          params={{ projectKey: group.projectKey }}
+          className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-workjet-action={`project.settings:${group.projectKey}`}
+        >
+          {representative ? (
+            <ProjectFavicon
+              environmentId={representative.environmentId}
+              cwd={representative.workspaceRoot}
+              faviconPath={representative.faviconPath ?? null}
+              className="size-4 shrink-0"
+            />
+          ) : null}
+          <span className="truncate">{group.displayName}</span>
+          <LaptopIcon
+            className="size-3.5 shrink-0 text-muted-foreground"
+            aria-label={localCopy}
+            data-workjet-project-local-copy=""
+          >
+            <title>{localCopy}</title>
+          </LaptopIcon>
+        </Link>
+      }
+      meta={representative?.environmentLabel ?? undefined}
+      chips={
+        group.memberProjects.length > 1 ? (
+          <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">
+            {group.memberProjects.length} Arbeitskopien
+          </span>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -208,6 +247,12 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
   const navigate = useNavigate();
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
+  const instance = useInstanceOnlyProjects();
+  const instanceProject = projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)
+    ? (instance.projects.find(
+        (project) => project.id === projectKey.slice(INSTANCE_PROJECT_KEY_PREFIX.length),
+      ) ?? null)
+    : null;
 
   // Mitglieder der zuletzt gezeigten Gruppe merken: Ändert sich die
   // Gruppierungsregel (und damit der Schlüssel), folgt die Seite dem Projekt.
@@ -239,6 +284,8 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     }
   }, [groups, navigate, projectKey, selected]);
 
+  if (!selected && instanceProject !== null && instance.instanceId !== null)
+    return <InstanceProjectDetail instanceId={instance.instanceId} project={instanceProject} />;
   if (!selected) {
     return (
       <Empty className="flex-1">

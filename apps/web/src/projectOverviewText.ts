@@ -1,13 +1,46 @@
 export type ProjectOverviewLanguage = "de" | "en";
+export const SUPPORTED_UI_LANGUAGES: readonly ProjectOverviewLanguage[] = ["de", "en"];
+/** Fallback when the OS/browser asks for a language Workjet does not ship yet. */
+export const FALLBACK_UI_LANGUAGE: ProjectOverviewLanguage = "en";
+
+/** Maps a BCP 47 tag ("de-AT", "en_US") to a supported UI language, or null. */
+export function matchSupportedUiLanguage(tag: string | null | undefined) {
+  const base = (tag ?? "").trim().toLowerCase().split(/[-_]/)[0] ?? "";
+  return SUPPORTED_UI_LANGUAGES.find((language) => language === base) ?? null;
+}
+
 /**
- * Workjet spricht Deutsch. Englisch nur bei ausdrücklicher Wahl: Electron
- * meldet als Browsersprache oft „en-US“, auch wenn macOS deutsch eingestellt ist.
+ * Resolves the UI language. An explicit setting wins; "system" walks the OS /
+ * browser preference list (most preferred first) and picks the first language
+ * Workjet supports, falling back to English.
  */
 export function projectOverviewLanguage(
   preference: string = "system",
-  _browserLanguage: string = "de",
+  systemLanguages: string | readonly string[] = [],
 ): ProjectOverviewLanguage {
-  return preference === "en" ? "en" : "de";
+  const explicit = preference === "system" ? null : matchSupportedUiLanguage(preference);
+  if (explicit) return explicit;
+  const candidates = typeof systemLanguages === "string" ? [systemLanguages] : systemLanguages;
+  for (const candidate of candidates) {
+    const match = matchSupportedUiLanguage(candidate);
+    if (match) return match;
+  }
+  return FALLBACK_UI_LANGUAGE;
+}
+
+/** OS languages from the desktop bridge, else the browser's preference list. */
+export function readSystemLanguages(): readonly string[] {
+  if (typeof window !== "undefined") {
+    try {
+      const fromDesktop = window.desktopBridge?.getSystemLanguages?.();
+      if (fromDesktop && fromDesktop.length > 0) return fromDesktop;
+    } catch {
+      // fall through to navigator
+    }
+  }
+  if (typeof navigator === "undefined") return [];
+  if (navigator.languages && navigator.languages.length > 0) return navigator.languages;
+  return navigator.language ? [navigator.language] : [];
 }
 export const PROJECT_OVERVIEW_TEXT = {
   de: {

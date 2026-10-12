@@ -20,7 +20,7 @@ import {
   projectGoalSentence,
   projectOverviewWorkerState,
 } from "../projectOverviewModel";
-import { projectOverviewLanguage } from "../projectOverviewText";
+import { projectOverviewLanguage, readSystemLanguages } from "../projectOverviewText";
 import type { GalleryProject } from "../projectOverview";
 
 const source = EnvironmentId.make("desktop");
@@ -413,10 +413,7 @@ describe("owner project overview", () => {
     );
     expect(html).toContain('data-workjet-project-overview="real-project"');
     expect(html).toContain(
-      projectOverviewLanguage(
-        "system",
-        typeof navigator === "undefined" ? "de" : navigator.language,
-      ) === "de"
+      projectOverviewLanguage("system", readSystemLanguages()) === "de"
         ? "Regeltermin beitreten"
         : "Join regular meeting",
     );
@@ -425,7 +422,14 @@ describe("owner project overview", () => {
     expect(projectOverviewLanguage("de", "en-US")).toBe("de");
     expect(projectOverviewLanguage("en", "de-DE")).toBe("en");
     expect(projectOverviewLanguage("system", "de-DE")).toBe("de");
-    // Electron meldet oft en-US, obwohl macOS deutsch ist: System bleibt Deutsch.
-    expect(projectOverviewLanguage("system", "en-US")).toBe("de");
+    expect(projectOverviewLanguage("system", "en-US")).toBe("en");
+  });
+  it("follows the OS preference list for the system setting", () => {
+    expect(projectOverviewLanguage("system", ["de-AT", "en-US"])).toBe("de");
+    expect(projectOverviewLanguage("system", ["de_CH"])).toBe("de");
+    expect(projectOverviewLanguage("system", ["fr-FR", "de-DE"])).toBe("de");
+    expect(projectOverviewLanguage("system", ["fr-FR", "es-ES"])).toBe("en");
+    expect(projectOverviewLanguage("system", [])).toBe("en");
+    expect(projectOverviewLanguage("system", ["EN-gb"])).toBe("en");
   });
 });

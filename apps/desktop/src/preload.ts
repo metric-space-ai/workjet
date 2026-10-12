@@ -246,6 +246,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.MENU_ACTION_CHANNEL, wrappedListener);
     };
   },
+  getSystemLanguages: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LANGUAGES_CHANNEL);
+    return Array.isArray(result)
+      ? result.filter((entry): entry is string => typeof entry === "string")
+      : [];
+  },
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
   onWindowFullscreenStateChange: (listener) => {

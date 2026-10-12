@@ -171,6 +171,9 @@ describe("project exit assessment", () => {
     expect(de(formatExitEur(8_050))).toBe("8,1 Tsd. €");
     expect(de(formatExitEur(950))).toBe("950 €");
     expect(de(formatExitEur(0))).toBe("0 €");
+    expect(formatExitEur(3_163_500, "en")).toBe("€3.2M");
+    expect(formatExitEur(800_000, "en")).toBe("€800K");
+    expect(formatExitEur(950, "en")).toBe("€950");
     expect(formatExitEur(Number.NaN)).toBe("—");
     expect(formatExitEur(null)).toBe("—");
     expect(de(formatExitPercent(0.8))).toBe("80 %");

@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "./workjetProjectControl";
 import {
   WorkjetExitModelAssessment,
   WorkjetExitModelResponse,
@@ -183,8 +184,20 @@ export function formatExitChange(percent: number): string {
 }
 
 /** Display precision follows the forecast scale; stored calculations retain full precision. */
-export function formatExitEur(value: number | null): string {
+export function formatExitEur(
+  value: number | null,
+  language: "de" | "en" = workjetUiLanguage(),
+): string {
   if (value === null || !Number.isFinite(value) || value < 0) return "—";
+  if (language === "en") {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "EUR",
+      ...(value >= 1_000
+        ? { notation: "compact" as const, maximumFractionDigits: 1 }
+        : { maximumFractionDigits: 0 }),
+    }).format(value);
+  }
   const forecast = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
   if (value >= 1_000_000) return forecast.format(value / 1_000_000) + "\u00A0Mio.\u00A0€";
   if (value >= 1_000) return forecast.format(value / 1_000) + "\u00A0Tsd.\u00A0€";

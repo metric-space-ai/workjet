@@ -15,7 +15,9 @@ export type ProjectTokenBudgetView = {
 };
 export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectTokenBudgetView }) {
   const tokens = view.totals === null ? null : projectTokenTotal(view.totals);
-  const used = tokens === null ? "unbekannt" : (tokens / BILLION).toFixed(1);
+  // Unknown usage is not information: no "unbekannt · ?" badge on the card (#470).
+  if (tokens === null && view.limitBillions === null) return null;
+  const used = tokens === null ? "–" : (tokens / BILLION).toFixed(1);
   const percent =
     tokens === null || view.limitBillions === null
       ? null
@@ -38,12 +40,6 @@ export function ProjectTokenBudgetSummary({ view }: { readonly view: ProjectToke
         className={`inline-flex max-w-full flex-wrap items-center gap-1 rounded px-1.5 py-0.5 text-xs tabular-nums ${percent !== null && percent >= 80 ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
       >
         {label}
-        {partial ? (
-          <span aria-hidden="true" title="Verbrauch teilweise unbekannt">
-            {" "}
-            · ?
-          </span>
-        ) : null}
       </TooltipTrigger>
       <TooltipPopup className="max-w-[min(24rem,calc(100vw-2rem))]">
         <div className="grid gap-1 whitespace-normal break-words py-1">

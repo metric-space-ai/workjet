@@ -377,3 +377,24 @@ This local journal is process custody, not native Owner/team authorization.
 Other provider launchers still need their runtime producers. Supported policy
 modes remain empty. Full server/process recovery with a real model in the installed
 product remains an acceptance requirement.
+
+## Claude SDK admission before process start
+
+For a Source route with private model IPC, the Claude adapter uses the actual SDK
+0.3.170 spawn hook. It returns the required synchronous process handle while
+Source admission and runtime journal capture complete asynchronously. SDK stdin
+and EOF are retained until the child starts; stdout, stderr, error events, exit
+codes and cancellation retain the process interface. A cancellation during
+admission prevents even a late successful admission from creating a child.
+
+Every SDK spawn revalidates the original Source, captures its concrete executable
+and supported single-file interpreter, persists those original runtime identities,
+and revalidates Source again before invoking the native namespace launcher. A
+missing journal, changed runtime, expired Source or unsupported runtime returns
+an error without a host fallback. The original private profile is used and the
+host attachment directory is not granted. A query override or a host MCP endpoint
+is explicitly unsupported on this path until a confined MCP server is available.
+
+Policy-free Claude sessions retain their existing process launch. This hook does
+not enable an autonomous-worktree policy mode, prove native Parent authority or
+establish installed real-model acceptance.

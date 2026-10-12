@@ -29,6 +29,22 @@ export type AccountCalendarState = {
   readonly syncedAtMs: number | null;
 };
 
+/** Only exceptions earn a visible line; routine sync state stays in the tooltip. */
+export function accountCalendarProblem(calendar: AccountCalendarState): string | null {
+  if (calendar.status === "unavailable") return "Abgleich fehlgeschlagen";
+  if (calendar.status === "unsupported") return "Nicht unterstützt";
+  if (calendar.status === "ready" && calendar.truncated) return "Teilweise abgeglichen";
+  return null;
+}
+
+export function accountCalendarStatusTitle(calendar: AccountCalendarState): string {
+  if (calendar.status === "loading") return "Wird abgeglichen …";
+  if (calendar.status !== "ready") return accountCalendarProblem(calendar) ?? "";
+  return calendar.syncedAtMs === null
+    ? "Abgeglichen"
+    : `Abgeglichen ${new Date(calendar.syncedAtMs).toLocaleTimeString()}`;
+}
+
 type CalendarProject = GalleryProject & {
   readonly onOpen: () => void;
   readonly onOpenJourFixe?: (() => void) | undefined;
@@ -668,82 +684,67 @@ export function ProjectCalendar({
             />
             Projektsitzungen
           </label>
-          {sessionsStatus !== undefined && sessionsStatus !== "ready" && (
+          {sessionsStatus === "unavailable" && (
             <p role="status" className="mt-2 text-xs text-muted-foreground">
-              {sessionsStatus === "loading"
-                ? "Sitzungen werden geladen …"
-                : "Sitzungen nicht erreichbar. Geladene Sitzungen können veraltet sein."}
+              Sitzungen nicht erreichbar · Anzeige evtl. veraltet
             </p>
           )}
-          {sessions.some((session) => session.createdAtMs === undefined) && (
-            <p role="status" className="mt-2 text-xs text-muted-foreground">
-              Einige Sitzungen haben keine Startzeit.
-            </p>
-          )}
-          {onRefreshSessions && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={sessionsStatus === "loading"}
-              onClick={onRefreshSessions}
-            >
-              Sitzungen aktualisieren
-            </Button>
-          )}
-          <h3 className="mt-4 text-sm font-medium">Verbundene Konten</h3>
-          {accountsLoading && (
-            <p role="status" className="text-xs text-muted-foreground">
-              Kalenderkonten werden geladen …
-            </p>
+          {accountCalendars.length > 0 && (
+            <h3 className="mt-4 text-sm font-medium">Verbundene Konten</h3>
           )}
           {accountsUnavailable && (
-            <p role="status" className="text-xs text-muted-foreground">
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
               Kontokalender nicht erreichbar.
             </p>
           )}
-          {!accountsLoading && !accountsUnavailable && accountCalendars.length === 0 && (
-            <p className="text-xs text-muted-foreground">Keine Kalenderkonten verbunden.</p>
-          )}
-          {accountCalendars.map((calendar) => (
-            <div key={calendar.id} className="mt-2 text-xs">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={!hiddenCalendars.has(calendar.id)}
-                  onChange={(event) =>
-                    setHiddenCalendars((previous) => {
-                      const next = new Set(previous);
-                      if (event.target.checked) next.delete(calendar.id);
-                      else next.add(calendar.id);
-                      return next;
-                    })
-                  }
-                />
-                <span className="min-w-0 break-words">{calendar.label}</span>
-              </label>
-              <p role="status" className="ml-6 text-muted-foreground">
-                {calendar.status === "ready"
-                  ? calendar.truncated
-                    ? "Teilweise abgeglichen · weitere Termine im Konto"
-                    : calendar.syncedAtMs === null
-                      ? "Abgeglichen"
-                      : `Abgeglichen ${new Date(calendar.syncedAtMs).toLocaleTimeString()}`
-                  : calendar.status === "loading"
-                    ? "Wird abgeglichen …"
-                    : calendar.status === "unsupported"
-                      ? "Kalender für dieses Konto nicht unterstützt"
-                      : "Abgleich fehlgeschlagen"}
-              </p>
-            </div>
-          ))}
+          {accountCalendars.map((calendar) => {
+            const problem = accountCalendarProblem(calendar);
+            return (
+              <div key={calendar.id} className="mt-2 text-sm">
+                <label
+                  className="flex cursor-pointer items-center gap-2"
+                  title={accountCalendarStatusTitle(calendar)}
+                >
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-primary"
+                    checked={!hiddenCalendars.has(calendar.id)}
+                    onChange={(event) =>
+                      setHiddenCalendars((previous) => {
+                        const next = new Set(previous);
+                        if (event.target.checked) next.delete(calendar.id);
+                        else next.add(calendar.id);
+                        return next;
+                      })
+                    }
+                  />
+                  <span className="min-w-0 break-words">{calendar.label}</span>
+                </label>
+                {problem !== null && (
+                  <p role="status" className="ml-6 text-xs text-muted-foreground">
+                    {problem}
+                  </p>
+                )}
+              </div>
+            );
+          })}
           {accountsTruncated && (
-            <p role="status" className="text-xs text-muted-foreground">
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
               Kontenliste unvollständig.
             </p>
           )}
-          {onRefreshAccounts && (
-            <Button size="sm" variant="ghost" onClick={onRefreshAccounts}>
-              Konten abgleichen
+          {(onRefreshSessions || onRefreshAccounts) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="mt-2"
+              disabled={sessionsStatus === "loading" || accountsLoading}
+              onClick={() => {
+                onRefreshSessions?.();
+                onRefreshAccounts?.();
+              }}
+            >
+              Aktualisieren
             </Button>
           )}
         </section>

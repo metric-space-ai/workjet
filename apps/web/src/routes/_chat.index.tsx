@@ -1320,7 +1320,13 @@ function InlineProjectCreate({
             }}
           />
         }
-        submitLabel="Anlegen"
+        submitLabel={
+          error !== null && source === "clone"
+            ? workjetUiLanguage() === "en"
+              ? "Try again"
+              : "Erneut versuchen"
+            : "Anlegen"
+        }
         submitDisabled={submitDisabled}
         busy={pending}
         status={status}

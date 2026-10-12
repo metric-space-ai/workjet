@@ -141,3 +141,4 @@ export const CTOX_SHELL_FLEET_ROLLOUT_RESUME_CHANNEL = "desktop:ctox-shell-fleet
 export const CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT = "desktop:ctox-shell-fleet-rollout-event";
 /** Main → renderer push: per-instance guest lifecycle ("none"|"loading"|"warm"). */
 export const CTOX_GUEST_STATE_CHANNEL = "desktop:ctox-guest-state";
+export const GET_SYSTEM_LANGUAGES_CHANNEL = "desktop:get-system-languages";

@@ -1,9 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, type ProjectOverview } from "@workjet/contracts";
 import { ProjectOverviewCard } from "./ProjectOverviewCard";
 import type { GalleryProject } from "../projectOverview";
 import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
+
+// Diese Tests prüfen deutsche Texte: Oberflächensprache fest auf "de",
+// damit "System" nicht von der Testumgebung (englisch) abhängt.
+vi.mock("../hooks/useProjectOverviewLanguage", () => ({
+  useProjectOverviewLanguage: () => "de",
+}));
 
 const project: GalleryProject = {
   key: "instance:greppy",

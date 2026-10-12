@@ -4,15 +4,9 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
-export const WORKJET_INSTALL_MANIFEST_SCHEMA = "workjet.desktop-install-manifest.v1";
+import { selectReleaseTargets } from "./lib/workjet-release-targets.mjs";
 
-const TARGETS = [
-  ["macos", "arm64", ".dmg"],
-  ["macos", "x64", ".dmg"],
-  ["linux", "arm64", ".AppImage"],
-  ["linux", "x64", ".AppImage"],
-  ["windows", "x64", ".exe"],
-];
+export const WORKJET_INSTALL_MANIFEST_SCHEMA = "workjet.desktop-install-manifest.v1";
 
 function parseArgs(argv) {
   const values = new Map();
@@ -48,6 +42,7 @@ export async function generateWorkjetInstallManifest({
   version,
   repository,
   output,
+  targets,
 }) {
   if (!assetsDir || !tag || !version || !repository || !output) {
     throw new Error("assetsDir, tag, version, repository and output are required");
@@ -55,7 +50,7 @@ export async function generateWorkjetInstallManifest({
   const files = await NodeFSP.readdir(assetsDir);
   const releaseBase = `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}`;
   const artifacts = [];
-  for (const [platform, arch, suffix] of TARGETS) {
+  for (const [platform, arch, suffix] of selectReleaseTargets(targets)) {
     const filename = findUniqueArtifact(files, version, arch, suffix);
     const filePath = NodePath.join(assetsDir, filename);
     const stat = await import("node:fs/promises").then(({ stat }) => stat(filePath));
@@ -95,5 +90,6 @@ if (
     version: args.get("--version"),
     repository: args.get("--repository"),
     output: args.get("--output"),
+    targets: args.get("--targets"),
   });
 }

@@ -131,6 +131,19 @@ describe("compact project configuration", () => {
     expect(markup).toContain("Wishlists: </span>");
     expect(markup).toContain("1.204");
   });
+  it("says so when the KPIs could not be loaded", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewEditor
+        overview={null}
+        configuration={{ id: ProjectId.make("project"), title: "Project" }}
+        onSave={async () => true}
+        onSaveKpis={async () => true}
+        kpisLoadFailed
+      />,
+    );
+    expect(markup).toContain("KPIs konnten nicht von der Instanz geladen werden.");
+    expect(markup.match(/<textarea[^>]*disabled=""/g)).toHaveLength(3);
+  });
   it("does not expose KPI configuration for a foreign project", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewEditor

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ProjectExitModelPanel, ProjectExitModelSummary } from "./ProjectExitModel";
 import type { ProjectOverview } from "@workjet/contracts";
-import { ArrowUpRightIcon, EllipsisIcon, XIcon } from "lucide-react";
+import { ArrowUpRightIcon, EllipsisIcon, ExternalLinkIcon, XIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -12,6 +12,8 @@ import {
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
 import { projectKpiPresentation, type PromptedProjectKpis } from "../projectKpis";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
+import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { workjetUiLanguage } from "../workjetProjectControl";
@@ -49,6 +51,10 @@ export function ProjectOverviewCard({
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const text = PROJECT_OVERVIEW_TEXT[useProjectOverviewLanguage()];
+  const openProjectLabel = projectOverviewFormat(text.cardOpenProjectLabel, {
+    title: project.title,
+  });
   const overview = resolveGalleryProjectOverview(project);
   const website = overview.websiteUrl;
   const cachedPreview = resolveCachedProjectPreview(website);
@@ -74,14 +80,13 @@ export function ProjectOverviewCard({
     overview.slots[2] ?? defaultSlots[2],
   ];
   const scopedKpis = kpis?.project_id === project.id ? kpis : undefined;
+  const websiteHost =
+    website
+      ?.replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/\/$/, "") ?? null;
   const titleIsWebsite =
-    website != null &&
-    project.title.trim().toLowerCase() ===
-      website
-        .replace(/^https?:\/\//, "")
-        .replace(/^www\./, "")
-        .replace(/\/$/, "")
-        .toLowerCase();
+    websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
   // Der Exit öffnet inline in der Karte; das Raster lässt die Karte die Zeile füllen.
   const expanded = assessing;
@@ -113,31 +118,38 @@ export function ProjectOverviewCard({
             title={project.title}
             data-workjet-project-title=""
           >
-            {titleIsWebsite ? (
-              <a
-                href={website ?? undefined}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="hover:text-primary focus-visible:outline focus-visible:outline-ring"
-              >
-                {project.title}
-              </a>
-            ) : (
-              project.title
-            )}
+            {/* The title is the card's primary action: it opens the project in Workjet. */}
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={openProjectLabel}
+              data-workjet-action={`project.open.gallery-title:${project.key}`}
+              className="text-left hover:text-primary focus-visible:outline focus-visible:outline-ring"
+            >
+              {project.title}
+            </button>
           </h2>
           {website && !titleIsWebsite && (
-            <a
-              href={website}
-              target="_blank"
-              rel="noreferrer noopener"
-              title={website}
-              className="block truncate text-xs text-muted-foreground hover:text-primary focus-visible:outline focus-visible:outline-ring"
-            >
-              {website}
-            </a>
+            <p title={website} className="truncate text-xs text-muted-foreground">
+              {websiteHost}
+            </p>
           )}
         </div>
+        {website && (
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            render={<a href={website} target="_blank" rel="noreferrer noopener" />}
+            title={text.cardOpenWebsite}
+            aria-label={projectOverviewFormat(text.cardOpenWebsiteLabel, {
+              title: project.title,
+              url: website,
+            })}
+            data-workjet-action={`project.open.website:${project.key}`}
+          >
+            <ExternalLinkIcon className="size-4" aria-hidden="true" />
+          </Button>
+        )}
         {tokenBudget}
         {reorderHandle}
         {
@@ -198,6 +210,15 @@ export function ProjectOverviewCard({
             className="relative aspect-video overflow-hidden bg-muted/40"
             data-workjet-project-preview=""
           >
+            {/* The whole preview opens the project; buttons on top keep their own actions. */}
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={openProjectLabel}
+              tabIndex={-1}
+              data-workjet-action={`project.open.gallery-preview:${project.key}`}
+              className="absolute inset-0 z-0 cursor-pointer"
+            />
             {!archived && cachedPreview && failedCachedWebsite !== website ? (
               <img
                 src={cachedPreview.image}
@@ -215,15 +236,15 @@ export function ProjectOverviewCard({
                 onError={() => setFailedCachedWebsite(website ?? null)}
                 className={
                   cachedPreview.kind === "logo"
-                    ? "size-full object-contain p-12"
-                    : "size-full object-cover object-top"
+                    ? "pointer-events-none size-full object-contain p-12"
+                    : "pointer-events-none size-full object-cover object-top"
                 }
               />
             ) : (
               <div
                 role="img"
                 aria-label={t(`Logo von ${project.title}`, `${project.title} logo`)}
-                className="flex size-full items-center justify-center"
+                className="pointer-events-none flex size-full items-center justify-center"
                 data-workjet-project-logo=""
               >
                 {project.local?.workspaceRoot ? (
@@ -243,8 +264,8 @@ export function ProjectOverviewCard({
             <Button
               size="icon-sm"
               onClick={onOpen}
-              title={t("Projekt öffnen", "Open project")}
-              aria-label={t(`${project.title} öffnen`, `Open ${project.title}`)}
+              title={text.cardOpenProject}
+              aria-label={openProjectLabel}
               data-workjet-action={`project.open.gallery:${project.key}`}
               className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
             >

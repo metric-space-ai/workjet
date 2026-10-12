@@ -128,6 +128,10 @@ export const PROJECT_OVERVIEW_TEXT = {
     prompt: "Gespeichertes Ziel und Anweisungen",
     raw: "Rohdaten",
     back: "Zur Übersicht",
+    cardOpenProject: "Projekt öffnen",
+    cardOpenProjectLabel: "{title} öffnen",
+    cardOpenWebsite: "Webseite öffnen",
+    cardOpenWebsiteLabel: "Webseite von {title} öffnen ({url})",
   },
   en: {
     overview: "Overview",
@@ -247,6 +251,10 @@ export const PROJECT_OVERVIEW_TEXT = {
     prompt: "Saved goal and instructions",
     raw: "Raw data",
     back: "Back to overview",
+    cardOpenProject: "Open project",
+    cardOpenProjectLabel: "Open {title}",
+    cardOpenWebsite: "Open website",
+    cardOpenWebsiteLabel: "Open website of {title} ({url})",
   },
 } as const;
 export type ProjectOverviewText = (typeof PROJECT_OVERVIEW_TEXT)[ProjectOverviewLanguage];

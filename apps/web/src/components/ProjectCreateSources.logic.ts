@@ -33,7 +33,7 @@ export const PROJECT_CLONE_PROVIDERS: ReadonlyArray<{
   readonly label: string;
   readonly placeholder: string;
 }> = [
-  { value: "url", label: "Git-URL", placeholder: "https://… oder git@…" },
+  { value: "url", label: "Adresse", placeholder: "https://… oder git@…" },
   { value: "github", label: "GitHub", placeholder: "owner/repo" },
   { value: "gitlab", label: "GitLab", placeholder: "gruppe/projekt" },
   { value: "bitbucket", label: "Bitbucket", placeholder: "workspace/repo" },

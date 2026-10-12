@@ -199,7 +199,7 @@ function ToastBodyContent({
         ) : null}
         <div
           className={cn(
-            "line-clamp-3 min-h-0 min-w-0 flex-1 wrap-break-word",
+            "line-clamp-6 min-h-0 min-w-0 flex-1 wrap-break-word",
             stackedActionLayout && "pr-5",
           )}
         >

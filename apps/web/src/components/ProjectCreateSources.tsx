@@ -176,7 +176,7 @@ export function ProjectCloneFields(props: {
       <div className="grid gap-3 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
         {props.computer}
         <div className="grid min-w-0 gap-1 text-[13.5px]">
-          <span>Repository</span>
+          <span>Quelle</span>
           <div className="grid min-w-0 gap-2 sm:flex">
             {providerEntries.length > 1 ? (
               <Select

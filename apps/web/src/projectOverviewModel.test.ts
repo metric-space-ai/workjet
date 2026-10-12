@@ -68,12 +68,12 @@ describe("dense owner overview model", () => {
   });
   it("formats token usage with and without a limit", () => {
     expect(projectOverviewBudgetValue({ consumedTokens: 1_800_000_000, limitBillions: 2.3 })).toBe(
-      "1.8/2.3B (78 %)",
+      "1,8/2,3 Mrd. (78 %)",
     );
     expect(projectOverviewBudgetValue({ consumedTokens: 1_800_000_000, limitBillions: null })).toBe(
-      "1.8B",
+      "1,8 Mrd.",
     );
-    expect(projectOverviewBudgetValue({ consumedTokens: 0, limitBillions: null })).toBe("0.0B");
+    expect(projectOverviewBudgetValue({ consumedTokens: 0, limitBillions: null })).toBe("0,0 Mrd.");
     expect(projectOverviewBudgetValue({ consumedTokens: null, limitBillions: 2.3 })).toBe("—");
     expect(projectOverviewBudgetValue()).toBe("—");
     expect(
@@ -82,6 +82,6 @@ describe("dense owner overview model", () => {
         limitBillions: 2.3,
         partial: true,
       }),
-    ).toBe("1.8/2.3B (≥78 %)");
+    ).toBe("1,8/2,3 Mrd. (≥78 %)");
   });
 });

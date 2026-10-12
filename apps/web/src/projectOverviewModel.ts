@@ -52,13 +52,17 @@ export function projectOverviewBudgetValue(
     source.consumedTokens < 0
   )
     return "—";
-  const used = (source.consumedTokens / 1_000_000_000).toFixed(1);
+  const billions = new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  const used = billions.format(source.consumedTokens / 1_000_000_000);
   const limit = source.limitBillions;
-  if (limit == null || !Number.isFinite(limit) || limit <= 0) return used + "B";
+  if (limit == null || !Number.isFinite(limit) || limit <= 0) return used + " Mrd.";
   const percent = Math.floor(
     (source.consumedTokens / (Math.round(limit * 10) * 100_000_000)) * 100,
   );
-  return `${used}/${limit.toFixed(1)}B (${source.partial ? "≥" : ""}${percent} %)`;
+  return `${used}/${billions.format(limit)} Mrd. (${source.partial ? "≥" : ""}${percent} %)`;
 }
 export function projectOverviewWorkerName(title: string, projectTitle: string) {
   const suffix = title.match(/\s*\((Codex|Claude(?: Code)?|Cursor|Grok|OpenCode)\)\s*$/iu);

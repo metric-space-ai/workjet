@@ -5,6 +5,7 @@ import {
   type WorkjetHarness,
   type WorkjetWorkerProfile,
 } from "@workjet/contracts";
+import { useEffect, useState } from "react";
 import { useProjectSupervisorLumas } from "./ProjectSupervisorLumaField";
 import { workjetHarnessDisplayLabel } from "./settings/WorkjetWorkerEditor";
 import { Button } from "./ui/button";
@@ -47,6 +48,16 @@ export function MeetingPreparationField({
   const available = matching.filter((p) => p.modelId === config.model);
   const change = (patch: Partial<MeetingPreparationConfiguration>) =>
     onChange({ ...config, ...patch });
+  // Laden endet nach 10 s in einer Statuszeile statt endlos zu warten.
+  const [loadingSlow, setLoadingSlow] = useState(false);
+  useEffect(() => {
+    if (phase !== "loading") {
+      setLoadingSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setLoadingSlow(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
   return (
     <fieldset
       className="grid min-w-0 gap-2 rounded-md border border-border p-3"
@@ -154,7 +165,7 @@ export function MeetingPreparationField({
             {config.leadMinutes.length > 1 && (
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="xs"
                 aria-label={`Vorbereitung ${index + 1} entfernen`}
                 onClick={() =>
@@ -184,7 +195,9 @@ export function MeetingPreparationField({
       <p className="break-words text-xs text-muted-foreground" role="status">
         {oneShotHarnessUnavailableReason(config.harness) ??
           (phase === "loading"
-            ? "Lumas werden geladen …"
+            ? loadingSlow
+              ? "Lumas nicht erreichbar"
+              : "Lumas werden geladen …"
             : available.length === 0
               ? "Keine passende Luma"
               : "")}

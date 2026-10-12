@@ -37,7 +37,7 @@ describe("overview reads the canonical #417 budget source", () => {
         project: limited,
         projectTokenBudgetSource: source,
       }).kpis.at(-1)?.value,
-    ).toBe("1.8/2.3B (78 %)");
+    ).toBe("1,8/2,3 Mrd. (78 %)");
   });
   it("keeps consumption without inventing a limit", () => {
     expect(projectOverviewTokenBudgetSource(project, known)).toMatchObject({

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SupervisorTickStatus } from "./SupervisorTickStatus";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import type { ScopedThreadRef } from "@workjet/contracts";
@@ -35,6 +35,78 @@ function StatusChip(props: { readonly status: ProjectOverviewStatus; readonly la
 function localeOf(language: ProjectOverviewLanguage) {
   return language === "de" ? "de-DE" : "en-GB";
 }
+
+/** Beitreten frühestens fünf Minuten vor dem geplanten Beginn. */
+export const JOUR_FIXE_JOIN_LEAD_MS = 5 * 60_000;
+/** Am Termintag bleibt der Knopf nach dem Beginn offen; die Wiederholung zählt erst danach weiter. */
+const MEETING_DAY_WINDOW_MS = 12 * 3_600_000;
+
+/** Minutentakt für die Zeitsperre des Beitreten-Knopfs. */
+function useMinuteNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+function zonedDay(timeZone: string, now: number): { date: string; weekday: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(now));
+  const value = (key: string) => Number(parts.find((part) => part.type === key)?.value);
+  const day = new Date(Date.UTC(value("year"), value("month") - 1, value("day")));
+  return {
+    date: `${value("year")}-${String(value("month")).padStart(2, "0")}-${String(value("day")).padStart(2, "0")}`,
+    weekday: day.getUTCDay() || 7,
+  };
+}
+
+/** Kalendertag plus Uhrzeit in der Terminzone als UTC-Zeitpunkt (zwei Iterationen für Sommerzeit). */
+function zonedStartMs(date: string, time: string, timeZone: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const guess = Date.UTC(year!, month! - 1, day!, hour, minute);
+  let ms = guess;
+  for (let round = 0; round < 2; round += 1) {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(ms));
+    const value = (key: string) => Number(parts.find((part) => part.type === key)?.value);
+    const shown = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"));
+    ms = ms - (shown - guess);
+  }
+  return ms;
+}
+
+type JourFixeRecurring = NonNullable<ProjectOwnerOverview["recurring"]>;
+
+/** Vor Beginn − 5 min zeigt der Knopf nur die Uhrzeit; danach ist er am Termintag aktiv. */
+export function jourFixeJoinLocked(
+  recurring: JourFixeRecurring | null,
+  nextMeetingDate: string | null,
+  now: number,
+): boolean {
+  if (!recurring) return false;
+  const today = zonedDay(recurring.timezone, now);
+  if (today.weekday === recurring.weekday) {
+    const startToday = zonedStartMs(today.date, recurring.time, recurring.timezone);
+    if (now >= startToday - JOUR_FIXE_JOIN_LEAD_MS && now <= startToday + MEETING_DAY_WINDOW_MS)
+      return false;
+  }
+  if (nextMeetingDate === null) return false;
+  return now < zonedStartMs(nextMeetingDate, recurring.time, recurring.timezone) - JOUR_FIXE_JOIN_LEAD_MS;
+}
 export function ProjectOverviewView(props: {
   readonly data: ProjectOwnerOverview;
   readonly onOpenChat: (ref: ScopedThreadRef) => void;
@@ -46,6 +118,8 @@ export function ProjectOverviewView(props: {
   const { data, onOpenChat } = props;
   const { text, language } = data;
   const locale = localeOf(language);
+  const now = useMinuteNow();
+  const joinLocked = jourFixeJoinLocked(data.recurring, data.nextMeetingDate, now);
   const date = (at: string | number) =>
     new Intl.DateTimeFormat(locale, {
       day: "2-digit",
@@ -336,11 +410,17 @@ export function ProjectOverviewView(props: {
             size="xs"
             className="mt-2.5"
             onClick={props.onOpenJourFixe}
-            disabled={!props.onOpenJourFixe}
-            title={props.onOpenJourFixe ? undefined : text.meetingConnectionRequired}
+            disabled={!props.onOpenJourFixe || joinLocked}
+            title={
+              props.onOpenJourFixe
+                ? joinLocked
+                  ? `${text.nextMeeting}: ${data.recurring?.time ?? ""}`
+                  : undefined
+                : text.meetingConnectionRequired
+            }
             data-workjet-action="project.jour-fixe.open"
           >
-            {text.join}
+            {joinLocked && data.recurring ? data.recurring.time : text.join}
           </Button>
         </section>
         <section className="rounded-lg border border-border bg-card px-3.5 py-3">

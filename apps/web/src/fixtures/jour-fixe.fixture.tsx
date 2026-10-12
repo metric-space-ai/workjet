@@ -62,7 +62,10 @@ function syntheticNarration() {
   return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
 }
 // `?presentation=1`: the first two slides carry a hand-drawn presentation; saves stay in memory.
-const withPresentation = new URLSearchParams(location.search).get("presentation") === "1";
+// `?scheduledIn=30`: the meeting is scheduled N minutes from now, to show the start lock.
+const params = new URLSearchParams(location.search);
+const withPresentation = params.get("presentation") === "1";
+const scheduledInMinutes = Number(params.get("scheduledIn") ?? Number.NaN);
 const fixturePresentation: SlideDocument = {
   ...jourFixeDeck,
   slides: [
@@ -78,6 +81,9 @@ function Fixture() {
   const [meeting, setMeeting] = useState<JourFixeRoomSnapshot>({
     ...contractMeeting,
     state: "live",
+    ...(Number.isFinite(scheduledInMinutes)
+      ? { scheduledAt: Date.now() + scheduledInMinutes * 60_000 }
+      : {}),
     slides: [
       ...contractMeeting.slides,
       {

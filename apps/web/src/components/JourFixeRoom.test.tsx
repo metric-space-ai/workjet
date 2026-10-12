@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { JourFixeRoom } from "./JourFixeRoom";
+import { JourFixeRoom, jourFixeActionError } from "./JourFixeRoom";
 import type { JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import fixture from "../fixtures/jour-fixe.contract.json";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
@@ -145,5 +145,50 @@ describe("Jour fixe room states", () => {
     );
     expect(html).toContain("Kommentar auf Folie setzen");
     expect(html).not.toContain("Folie kommentieren");
+  });
+});
+
+describe("Jour fixe start lock", () => {
+  const inMinutes = (minutes: number) => Date.now() + minutes * 60_000;
+  const render = (state: JourFixeRoomSnapshot["state"], scheduledAt: number) =>
+    renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={{ ...meeting, state, scheduledAt }}
+        onStartMeeting={async () => {}}
+      />,
+    );
+  it("hides the start button more than five minutes before the meeting", () => {
+    const html = render("ready", inMinutes(30));
+    expect(html).not.toContain("Termin starten");
+    expect(html).toContain("Beginnt um");
+    expect(html).toContain("Vorbereitet");
+  });
+  it("reports ongoing preparation while locked", () => {
+    const html = render("preparing", inMinutes(30));
+    expect(html).not.toContain("Termin starten");
+    expect(html).toContain("Beginnt um");
+    expect(html).toContain("Vorbereitung läuft");
+  });
+  it("offers the start button from five minutes before the meeting", () => {
+    const html = render("ready", inMinutes(4));
+    expect(html).toContain("Termin starten");
+    expect(html).not.toContain("Beginnt um");
+  });
+  it("never locks a live meeting", () => {
+    const html = render("live", inMinutes(30));
+    expect(html).not.toContain("Beginnt um");
+  });
+  it("answers a server meeting_not_started rejection with a German line", () => {
+    const scheduled = { ...meeting, scheduledAt: inMinutes(30) };
+    expect(jourFixeActionError(new Error("rejected: meeting_not_started"), scheduled)).toBe(
+      `Der Termin beginnt erst um ${new Intl.DateTimeFormat("de-DE", { timeStyle: "short", timeZone: meeting.timezone }).format(scheduled.scheduledAt)}.`,
+    );
+    expect(jourFixeActionError(new Error("other"), scheduled)).toBe(
+      "Änderung nicht bestätigt · Entwurf bleibt erhalten.",
+    );
+    expect(jourFixeActionError("meeting_not_started", scheduled)).toBe(
+      "Änderung nicht bestätigt · Entwurf bleibt erhalten.",
+    );
   });
 });

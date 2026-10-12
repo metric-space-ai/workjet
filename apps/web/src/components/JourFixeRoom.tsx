@@ -65,6 +65,33 @@ const MEETING_MARKDOWN_COMPONENTS: Components = {
   a: ({ children }) => <span className="underline">{children}</span>,
 };
 
+/** Der Raum öffnet frühestens fünf Minuten vor dem geplanten Beginn. */
+export const JOUR_FIXE_START_LEAD_MS = 5 * 60_000;
+
+/** Minutentakt für die Zeitsperre; kein Sekundenzeiger in der Kopfzeile. */
+function useMinuteNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+function meetingTimeLabel(meeting: JourFixeRoomSnapshot): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    timeStyle: "short",
+    timeZone: meeting.timezone,
+  }).format(meeting.scheduledAt);
+}
+
+/** Server-Ablehnungen erscheinen als deutsche Zeile im Raum, nie als Toast. */
+export function jourFixeActionError(reason: unknown, meeting: JourFixeRoomSnapshot): string {
+  return reason instanceof Error && reason.message.includes("meeting_not_started")
+    ? `Der Termin beginnt erst um ${meetingTimeLabel(meeting)}.`
+    : "Änderung nicht bestätigt · Entwurf bleibt erhalten.";
+}
+
 export interface JourFixeRoomProps {
   readonly projectTitle: string;
   readonly meeting: JourFixeRoomSnapshot;
@@ -174,6 +201,10 @@ function JourFixeRoomContent({
   const [visibleTurns, setVisibleTurns] = useState(100);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const now = useMinuteNow();
+  const startLocked =
+    ["planned", "preparing", "ready"].includes(meeting.state) &&
+    now < meeting.scheduledAt - JOUR_FIXE_START_LEAD_MS;
   // Presenter mode: Auto plays every slide's narration in turn; keys and full screen as in
   // learnordie's live presenter.
   const [autoAdvance, setAutoAdvance] = useState(false);
@@ -214,8 +245,8 @@ function JourFixeRoomContent({
     try {
       await action();
       done?.();
-    } catch {
-      setError("Änderung nicht bestätigt · Entwurf bleibt erhalten.");
+    } catch (reason) {
+      setError(jourFixeActionError(reason, meeting));
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -307,14 +338,29 @@ function JourFixeRoomContent({
           {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
           {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
         </span>
-        {meeting.state === "ready" && onStartMeeting && (
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => void perform(() => onStartMeeting(meeting.id, meeting.revision))}
+        {startLocked ? (
+          <span
+            className="text-xs text-muted-foreground"
+            data-workjet-meeting-start-lock={meeting.state}
           >
-            Termin starten
-          </Button>
+            Beginnt um {meetingTimeLabel(meeting)}
+            {meeting.state === "preparing"
+              ? " · Vorbereitung läuft"
+              : meeting.state === "ready"
+                ? " · Vorbereitet"
+                : ""}
+          </span>
+        ) : (
+          meeting.state === "ready" &&
+          onStartMeeting && (
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => void perform(() => onStartMeeting(meeting.id, meeting.revision))}
+            >
+              Termin starten
+            </Button>
+          )
         )}
         {meeting.state === "live" && onEndMeeting && (
           <Button

@@ -857,7 +857,20 @@ function ProjectGallery({
             >
               <span>{registryStatus ?? "Instanz nicht erreichbar"}</span>
               {lastUpdatedAt !== undefined && (
-                <span> · Letzter Stand: {new Date(lastUpdatedAt).toLocaleString()}</span>
+                <span>
+                  {" "}
+                  · Letzter Stand:{" "}
+                  {new Date(lastUpdatedAt).toLocaleString(
+                    workjetUiLanguage() === "en" ? "en-US" : "de-DE",
+                    {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    },
+                  )}
+                </span>
               )}
             </div>
           ) : null}

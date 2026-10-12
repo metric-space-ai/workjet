@@ -47,6 +47,10 @@ function NativeJourFixeRoomContent({
   const [error, setError] = useState<string | null>(null);
   const [presentation, setPresentation] = useState<JourFixePresentation | null>(null);
   const [presentationReload, setPresentationReload] = useState(0);
+  // Die Bibliothek wiederholt bis zu 5 min; erst danach gilt der Stand als
+  // endgültig fehlgeschlagen. Solange läuft die Anzeige im Ladezustand.
+  const [presentationPending, setPresentationPending] = useState(false);
+  const [presentationFailed, setPresentationFailed] = useState(false);
   const meetingId = result?.meeting?.id;
   const deckRevision = result?.meeting?.deck_revision;
   const meetingState = result?.meeting?.state;
@@ -54,6 +58,7 @@ function NativeJourFixeRoomContent({
     if (!meetingId) return;
     let cancelled = false;
     const controller = new AbortController();
+    setPresentationPending(true);
     void readJourFixePresentation(
       instanceId,
       projectId,
@@ -62,15 +67,17 @@ function NativeJourFixeRoomContent({
       controller.signal,
     ).then(
       (value) => {
-        if (!cancelled) setPresentation(value);
+        if (!cancelled) {
+          setPresentation(value);
+          setPresentationPending(false);
+          setPresentationFailed(false);
+        }
       },
-      (reason: unknown) => {
-        if (!cancelled)
-          setError(
-            reason instanceof Error
-              ? `Folien nicht geladen: ${reason.message}`
-              : "Folien nicht geladen.",
-          );
+      () => {
+        if (!cancelled) {
+          setPresentationPending(false);
+          setPresentationFailed(true);
+        }
       },
     );
     return () => {
@@ -78,6 +85,10 @@ function NativeJourFixeRoomContent({
       controller.abort();
     };
   }, [instanceId, projectId, meetingId, deckRevision, meetingState, presentationReload]);
+  const reloadPresentation = useCallback(() => {
+    setPresentationFailed(false);
+    setPresentationReload((count) => count + 1);
+  }, []);
   const savePresentationSlide = useCallback(
     async (slideId: string, scene: CanvasScene) => {
       if (!presentation) throw new Error("This meeting has no presentation.");
@@ -90,7 +101,7 @@ function NativeJourFixeRoomContent({
       );
       if (active.current) {
         if (saved.presentation) setPresentation(saved.presentation);
-        if (saved.reloadError) setError(saved.reloadError);
+        if (saved.reloadError) setPresentationFailed(true);
       }
     },
     [instanceId, projectId, presentation],
@@ -189,6 +200,26 @@ function NativeJourFixeRoomContent({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {presentationFailed ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 border-b border-destructive/30 px-4 py-2 text-xs text-destructive"
+          data-workjet-presentation-state="failed"
+        >
+          <span className="min-w-0 flex-1">Folien nicht verfügbar</span>
+          <Button size="sm" variant="outline" onClick={reloadPresentation}>
+            Erneut laden
+          </Button>
+        </div>
+      ) : presentationPending && presentation === null ? (
+        <p
+          role="status"
+          className="border-b border-border px-4 py-2 text-xs text-muted-foreground"
+          data-workjet-presentation-state="loading"
+        >
+          Folien werden geladen …
+        </p>
+      ) : null}
       {error && (
         <div
           role="alert"

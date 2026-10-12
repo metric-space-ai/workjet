@@ -192,6 +192,7 @@ function makeGuestHarness(
     readonly openWindow: (url: string) => { readonly action: string };
     readonly willNavigate: (url: string) => boolean;
   }> = [];
+  let projectControlImplementation: ((expression: string) => Promise<unknown>) | undefined;
   const createView = vi.fn((webPreferences: CtoxGuestManager.CtoxGuestWebPreferences) => {
     assert.deepEqual(webPreferences, {
       session: browserSession,
@@ -218,7 +219,9 @@ function makeGuestHarness(
     const loadURL = vi.fn((url: string) => loadURLImplementation(url, emit));
     const setBounds = vi.fn();
     const ipcHandlers = new Map<string, (event: unknown, ...args: Array<unknown>) => void>();
-    const executeJavaScript = vi.fn(async () => undefined);
+    const executeJavaScript = vi.fn(async (expression: string) =>
+      projectControlImplementation?.(expression),
+    );
     const webContents = {
       session: browserSession,
       isDestroyed: vi.fn(() => destroyed),
@@ -446,6 +449,10 @@ function makeGuestHarness(
     shellLaunch,
     setDiscovery: (value: CtoxManagedDiscoveryResult) => {
       discovery = value;
+    },
+    setProjectControlImplementation: (implementation: (expression: string) => Promise<unknown>) => {
+      projectControlImplementation = implementation;
+      for (const view of views) view.executeJavaScript.mockImplementation(implementation);
     },
     setLoadURLImplementation: (
       implementation: (
@@ -1517,7 +1524,7 @@ describe("CtoxGuestManager", () => {
           "globalThis.workjetProjectControl = async () => { const error = new Error(fixtureMessage); if (fixtureMessage === 'projection delayed') error.code = 'projection_delayed'; if (fixtureMessage === 'Workjet project list did not finish collections before its deadline.') error.code = 'WORKJET_PROJECT_TIMEOUT'; throw error; };",
           context,
         );
-        harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) => {
+        harness.setProjectControlImplementation(async (expression: string) => {
           try {
             return await NodeVM.runInContext(expression, context);
           } catch {
@@ -1566,7 +1573,7 @@ describe("CtoxGuestManager", () => {
             "globalThis.workjetProjectControl = async () => { throw Object.assign(new Error(fixtureMessage), { code: 'WORKJET_PROJECT_TIMEOUT' }); };",
             context,
           );
-          harness.views[0]!.executeJavaScript.mockImplementationOnce(async (expression: string) =>
+          harness.setProjectControlImplementation(async (expression: string) =>
             NodeVM.runInContext(expression, context),
           );
           const result = yield* manager.requestProjectControl(descriptor.id, {

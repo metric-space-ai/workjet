@@ -108,7 +108,7 @@ export function NetworkDiagram({
               </span>
               <span className="network-node-copy">
                 <small className="network-node-role">GERÄTE</small>
-                <strong>Desktop · Mobil</strong>
+                <strong>Rechner · Mobil</strong>
                 <small>
                   {empty || registeredClients === null ? "—" : `${registeredClients} gekoppelt`}
                 </small>

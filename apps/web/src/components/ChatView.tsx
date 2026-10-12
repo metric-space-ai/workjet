@@ -295,8 +295,8 @@ import {
   type WorkjetCrossModeCardModel,
 } from "./chat/WorkjetCrossModeLinkCard";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
-import { ExpandedImageInline } from "./chat/ExpandedImageDialog";
-import { PullRequestThreadPanel } from "./PullRequestThreadDialog";
+import { ExpandedImageInline } from "./chat/ExpandedImageInline";
+import { PullRequestThreadPanel } from "./PullRequestThreadPanel";
 import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import type {

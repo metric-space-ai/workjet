@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { InlineConfirmBarProps } from "../InlineNoticeSlot";
-import { DeepLinkConfirmationPrompt, describeDeepLinkTarget } from "./DeepLinkConfirmationDialog";
+import { DeepLinkConfirmationPrompt, describeDeepLinkTarget } from "./DeepLinkConfirmationNotice";
 
 const link: DesktopPendingDeepLink = {
   linkId: "deep-link-1",

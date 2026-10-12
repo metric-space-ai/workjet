@@ -17,7 +17,7 @@ import { Button } from "../ui/button";
  * an empty profile with no visible way to bring the paired CTOX instances
  * along — that silent break is exactly what the explicit offer prevents.
  */
-export function UserDataMigrationDialog() {
+export function UserDataMigrationNotice() {
   const [offer, setOffer] = useState<DesktopUserDataMigrationOffer | null>(null);
   const [isResponding, setIsResponding] = useState(false);
   const [responseError, setResponseError] = useState<string | null>(null);

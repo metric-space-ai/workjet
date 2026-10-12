@@ -231,7 +231,7 @@ describe("Business OS settings scope", () => {
         onRevokeDevice={() => undefined}
       />,
     );
-    expect(markup).toContain("Gerät 1");
+    expect(markup).toContain("Gerät vom ");
     expect(markup).toContain('aria-label="Trennen"');
     expect(markup).not.toContain("welsch-authority");
     expect(markup).not.toContain("pairing-1");

@@ -13,12 +13,12 @@ import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
-import { DeepLinkConfirmationDialog } from "../components/desktop/DeepLinkConfirmationDialog";
-import { UserDataMigrationDialog } from "../components/desktop/UserDataMigrationDialog";
+import { DeepLinkConfirmationNotice } from "../components/desktop/DeepLinkConfirmationNotice";
+import { UserDataMigrationNotice } from "../components/desktop/UserDataMigrationNotice";
 import { ConnectionCatalogWarning } from "../components/desktop/ConnectionCatalogWarning";
-import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
-import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
-import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
+import { ConnectOnboardingPanel } from "../components/cloud/ConnectOnboardingPanel";
+import { RelayClientInstallPanel } from "../components/cloud/RelayClientInstallPanel";
+import { SshPasswordPromptNotice } from "../components/desktop/SshPasswordPromptNotice";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { Button } from "../components/ui/button";
@@ -140,11 +140,11 @@ function RootRouteView() {
         <GlassAppearanceSync />
         <FontAppearanceSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
-        <RelayClientInstallDialog />
-        <ConnectOnboardingDialog />
-        <SshPasswordPromptDialog />
-        <UserDataMigrationDialog />
-        <DeepLinkConfirmationDialog />
+        <RelayClientInstallPanel />
+        <ConnectOnboardingPanel />
+        <SshPasswordPromptNotice />
+        <UserDataMigrationNotice />
+        <DeepLinkConfirmationNotice />
         <ConnectionCatalogWarning />
         <ConfirmDialogHost />
         <SlowRpcRequestToastCoordinator />

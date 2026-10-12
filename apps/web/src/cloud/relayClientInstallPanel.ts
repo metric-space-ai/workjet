@@ -19,7 +19,7 @@ export class RelayClientInstallConfirmationConflictError extends Schema.TaggedEr
   }
 }
 
-export type RelayClientInstallDialogState =
+export type RelayClientInstallPanelState =
   | { readonly status: "idle" }
   | { readonly status: "confirming"; readonly version: string }
   | {
@@ -38,23 +38,23 @@ export type RelayClientInstallDialogState =
           };
     };
 
-const idleState: RelayClientInstallDialogState = { status: "idle" };
-let state: RelayClientInstallDialogState = idleState;
+const idleState: RelayClientInstallPanelState = { status: "idle" };
+let state: RelayClientInstallPanelState = idleState;
 let resolveConfirmation: ((confirmed: boolean) => void) | null = null;
 const listeners = new Set<() => void>();
 
-function publish(next: RelayClientInstallDialogState) {
+function publish(next: RelayClientInstallPanelState) {
   state = next;
   for (const listener of listeners) {
     listener();
   }
 }
 
-export function readRelayClientInstallDialogState(): RelayClientInstallDialogState {
+export function readRelayClientInstallPanelState(): RelayClientInstallPanelState {
   return state;
 }
 
-export function subscribeRelayClientInstallDialog(listener: () => void): () => void {
+export function subscribeRelayClientInstallPanel(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -112,13 +112,13 @@ export function finishRelayClientInstall(): void {
   }
 }
 
-export function completeRelayClientInstallDialogClose(): void {
+export function completeRelayClientInstallPanelClose(): void {
   if (state.status === "closing") {
     publish(idleState);
   }
 }
 
-export function resetRelayClientInstallDialogForTests(): void {
+export function resetRelayClientInstallPanelForTests(): void {
   resolveConfirmation?.(false);
   resolveConfirmation = null;
   publish(idleState);

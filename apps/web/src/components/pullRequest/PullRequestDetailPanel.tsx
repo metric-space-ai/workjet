@@ -169,7 +169,7 @@ const UPDATE_BRANCH_REBASE_FAILURE_HINT = "Rebase abgebrochen: Zusammenführen v
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Übersicht" },
   { value: "timeline", label: "Verlauf" },
-  { value: "code", label: "Code" },
+  { value: "code", label: "Änderungen" },
 ];
 
 // The diff viewer pulls in its worker pool, so it stays out of the bundle until Code is opened.

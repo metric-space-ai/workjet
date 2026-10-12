@@ -352,11 +352,16 @@ function DevicesSection({
           <p className="text-xs text-muted-foreground">Keine weiteren Geräte</p>
         ) : (
           <ul aria-label="Geräte" className="-mx-3 divide-y divide-border/60 sm:-mx-4">
-            {devices.map((device, index) => (
+            {devices.map((device) => (
               <li key={device.devicePairingId}>
                 <Row
-                  name={`Gerät ${index + 1}`}
-                  meta={`Gekoppelt am ${new Date(device.pairedAtMillis).toLocaleDateString("de-DE")}`}
+                  name={`Gerät vom ${new Date(device.pairedAtMillis).toLocaleString("de-DE", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}`}
                   status="ok"
                   statusLabel="Gekoppelt"
                   {...(onRevokeDevice === undefined

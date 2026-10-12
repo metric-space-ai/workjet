@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { UserDataMigrationBanner } from "./UserDataMigrationDialog";
+import { UserDataMigrationBanner } from "./UserDataMigrationNotice";
 
 function render(previousAttemptFailed: boolean, responseError: string | null = null) {
   return renderToStaticMarkup(

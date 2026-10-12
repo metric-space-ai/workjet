@@ -45,7 +45,7 @@ export function describeOversizedThemeFile(bytes: number): string | null {
 /** What the import pipeline needs from a file; DOM File satisfies it. */
 type ImportableThemeFile = { name: string; size: number; text: () => Promise<string> };
 
-export function ThemeImportDialog({
+export function ThemeImportPanel({
   open,
   onOpenChange,
   onImported,

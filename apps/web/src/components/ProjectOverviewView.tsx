@@ -270,14 +270,14 @@ export function ProjectOverviewView(props: {
             <ul className="divide-y divide-border rounded-lg border border-border bg-card px-3">
               {data.merged.map((pr) => (
                 <li key={pr.url} className="flex flex-wrap items-baseline gap-x-2 py-2 leading-5">
-                  <a
-                    href={pr.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-w-0 break-words"
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="h-auto max-w-full justify-start py-0.5 text-left leading-snug break-words whitespace-normal sm:h-auto"
+                    render={<a href={pr.url} target="_blank" rel="noopener noreferrer" />}
                   >
                     #{pr.number} {pr.title}
-                  </a>
+                  </Button>
                   {pr.mergedAt != null && (
                     <time
                       dateTime={new Date(pr.mergedAt).toISOString()}

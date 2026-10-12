@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { describeOversizedThemeFile, MAX_THEME_FILE_BYTES } from "./ThemeImportDialog";
+import { describeOversizedThemeFile, MAX_THEME_FILE_BYTES } from "./ThemeImportPanel";
 
 describe("theme import size guard", () => {
   it("accepts anything a theme file could plausibly be", () => {

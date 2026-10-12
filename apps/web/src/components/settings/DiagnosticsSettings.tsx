@@ -41,6 +41,7 @@ import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { SupportBundleSection } from "./SupportBundleSection";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
+import "./resourceTelemetryDiagnostics.css";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
 
@@ -204,7 +205,7 @@ function ExpandableText({
 function DiagnosticsTable({
   headers,
   children,
-  minTableWidth = "min-w-[640px]",
+  minTableWidth = "sm:min-w-[640px]",
   columnWidths,
 }: {
   headers: ReadonlyArray<string>;
@@ -220,7 +221,11 @@ function DiagnosticsTable({
       className="w-full max-w-full rounded-none"
     >
       <table
-        className={cn("w-full text-left text-xs", minTableWidth, columnWidths && "table-fixed")}
+        className={cn(
+          "resource-telemetry-table w-full text-left text-xs",
+          minTableWidth,
+          columnWidths && "table-fixed",
+        )}
       >
         {columnWidths ? (
           <colgroup>
@@ -469,7 +474,7 @@ function ProcessDiagnosticsTable({
       hideScrollbars
       className="max-h-[min(64vh,44rem)] w-full max-w-full rounded-none border-t border-border/60"
     >
-      <table className="w-full min-w-[1040px] table-fixed text-left text-xs">
+      <table className="resource-telemetry-table w-full table-fixed text-left text-xs sm:min-w-[1040px]">
         <colgroup>
           <col className="w-[24%]" />
           <col className="w-[8%]" />
@@ -507,13 +512,19 @@ function ProcessDiagnosticsTable({
                   onToggle={toggleProcess}
                 />
               </td>
-              <td className="px-3 py-2 text-right align-middle font-mono tabular-nums">
+              <td
+                data-label="CPU"
+                className="px-3 py-2 text-right align-middle font-mono tabular-nums"
+              >
                 {process.cpuPercent.toFixed(1)}%
               </td>
-              <td className="px-3 py-2 text-right align-middle font-mono tabular-nums">
+              <td
+                data-label="Speicher"
+                className="px-3 py-2 text-right align-middle font-mono tabular-nums"
+              >
                 {formatBytes(process.rssBytes)}
               </td>
-              <td className="px-3 py-2 align-middle text-muted-foreground">
+              <td data-label="Befehl" className="px-3 py-2 align-middle text-muted-foreground">
                 <Tooltip>
                   <TooltipTrigger
                     render={<span className="block truncate">{process.command}</span>}
@@ -526,10 +537,16 @@ function ProcessDiagnosticsTable({
                   </TooltipPopup>
                 </Tooltip>
               </td>
-              <td className="px-3 py-2 text-right align-middle font-mono tabular-nums text-muted-foreground">
+              <td
+                data-label="PID"
+                className="px-3 py-2 text-right align-middle font-mono tabular-nums text-muted-foreground"
+              >
                 {process.pid}
               </td>
-              <td className="truncate px-3 py-2 align-middle text-muted-foreground">
+              <td
+                data-label="Typ"
+                className="truncate px-3 py-2 align-middle text-muted-foreground"
+              >
                 {formatProcessType(process)}
               </td>
               <td className="p-2 align-middle sm:pr-4">
@@ -698,7 +715,7 @@ function ProcessResourceHistoryTable({
       hideScrollbars
       className="max-h-[min(64vh,44rem)] w-full max-w-full border-t border-border/60"
     >
-      <table className="w-full min-w-[980px] table-fixed text-left text-xs">
+      <table className="resource-telemetry-table w-full table-fixed text-left text-xs sm:min-w-[980px]">
         <colgroup>
           <col className="w-[24%]" />
           <col className="w-[10%]" />
@@ -756,7 +773,7 @@ function ProcessResourceHistoryTable({
               <td className="px-3 py-2 text-right align-middle font-mono tabular-nums">
                 {formatBytes(process.maxRssBytes)}
               </td>
-              <td className="px-3 py-2 align-middle text-muted-foreground">
+              <td data-label="Befehl" className="px-3 py-2 align-middle text-muted-foreground">
                 <Tooltip>
                   <TooltipTrigger
                     render={<span className="block truncate">{process.command}</span>}
@@ -1233,7 +1250,7 @@ export function DiagnosticsSettingsPanel() {
         {data && data.commonFailures.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Anzahl", "Ursache", "Zuletzt"]}
-            minTableWidth="min-w-[760px]"
+            minTableWidth="sm:min-w-[760px]"
           >
             {data.commonFailures.map((failure) => (
               <tr key={`${failure.name}:${failure.cause}`}>
@@ -1261,7 +1278,7 @@ export function DiagnosticsSettingsPanel() {
         {data && data.slowestSpans.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Dauer", "Ende", "Trace"]}
-            minTableWidth="min-w-[900px]"
+            minTableWidth="sm:min-w-[900px]"
             columnWidths={["w-[44%]", "w-[14%]", "w-[12%]", "w-[30%]"]}
           >
             {data.slowestSpans.map((span) => (
@@ -1294,7 +1311,7 @@ export function DiagnosticsSettingsPanel() {
             hideScrollbars
             className="w-full max-w-full rounded-none"
           >
-            <table className="w-full min-w-[920px] table-fixed text-left text-xs">
+            <table className="resource-telemetry-table w-full table-fixed text-left text-xs sm:min-w-[920px]">
               <colgroup>
                 <col className="w-[11%]" />
                 <col className="w-[9%]" />
@@ -1352,7 +1369,7 @@ export function DiagnosticsSettingsPanel() {
         {data && data.topSpansByCount.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Anzahl", "Fehler", "Mittel", "Max."]}
-            minTableWidth="min-w-[760px]"
+            minTableWidth="sm:min-w-[760px]"
             columnWidths={["w-[48%]", "w-[13%]", "w-[13%]", "w-[13%]", "w-[13%]"]}
           >
             {data.topSpansByCount.map((span) => (

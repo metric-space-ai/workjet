@@ -5,7 +5,7 @@ import {
   newInstanceUsesWorkjetGateway,
   slugifyInstanceLabel,
   validateProviderInstanceId,
-} from "./AddProviderInstanceDialog.logic";
+} from "./AddProviderInstancePanel.logic";
 
 describe("deriveProviderInstanceId", () => {
   const none = new Set<string>();

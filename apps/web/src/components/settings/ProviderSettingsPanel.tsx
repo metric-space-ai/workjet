@@ -74,7 +74,7 @@ import {
 } from "../ui/number-field";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { AddProviderInstancePanel } from "./AddProviderInstanceDialog";
+import { AddProviderInstancePanel } from "./AddProviderInstancePanel";
 import { providerCheckedAgeLabel } from "./providerStatus";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";

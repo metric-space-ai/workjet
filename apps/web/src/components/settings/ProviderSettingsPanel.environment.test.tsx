@@ -98,7 +98,7 @@ vi.mock("../../state/session", () => ({
   useEnvironmentSessionState: () => ({ data: null, hasError: false, isPending: true }),
 }));
 
-import { AddProviderInstancePanel } from "./AddProviderInstanceDialog";
+import { AddProviderInstancePanel } from "./AddProviderInstancePanel";
 import {
   EnvironmentProviderSettings,
   PROVIDER_AUTO_REFRESH_COOLDOWN_MS,

@@ -35,7 +35,7 @@ import {
   type WorkjetSendDraft,
 } from "../components/chat/WorkjetSendToWorkerPanel";
 import { ContextWindowMeter } from "../components/chat/ContextWindowMeter";
-import { ExpandedImageInline } from "../components/chat/ExpandedImageDialog";
+import { ExpandedImageInline } from "../components/chat/ExpandedImageInline";
 import { Banner } from "../components/ui/banner";
 import { Button } from "../components/ui/button";
 

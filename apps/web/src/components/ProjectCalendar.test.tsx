@@ -1,8 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { ProjectId } from "@workjet/contracts";
 import { ProjectCalendar, buildSessionEvents } from "./ProjectCalendar";
 import type { GalleryProject } from "../projectOverview";
+
+// Diese Tests prüfen deutsche Texte und Datumsformate: Oberflächensprache
+// fest auf "de", damit "System" nicht von der Testumgebung (englisch) abhängt.
+vi.mock("../hooks/useProjectOverviewLanguage", () => ({
+  useProjectOverviewLanguage: () => "de",
+}));
 
 function project(id: string, meeting?: { weekday: number; time: string; timezone: string }) {
   return {

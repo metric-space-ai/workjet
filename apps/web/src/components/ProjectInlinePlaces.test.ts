@@ -56,16 +56,14 @@ describe("project places are inline", () => {
     expect(projectSettingsPanelSource).toContain("<InlineRemovalConfirm");
   });
 
-  it("expands the exit inline and sends manage to Einstellungen › Projekte", () => {
+  it("keeps the exit as a stamp only and sends manage to Einstellungen › Projekte", () => {
     expect(projectOverviewCardSource).not.toContain(
       'data-workjet-project-card-section="configure"',
     );
     expect(projectOverviewCardSource).not.toContain("<ProjectOverviewEditor");
-    expect(projectOverviewCardSource).toContain('data-workjet-project-card-section="exit"');
+    expect(projectOverviewCardSource).not.toContain('data-workjet-project-card-section="exit"');
+    expect(projectOverviewCardSource).not.toContain("ProjectExitModelPanel");
     expect(chatIndexSource).toContain('to: "/settings/projects/$projectKey"');
-    expect(chatIndexSource).toContain(
-      "[&>*:has([data-workjet-project-card-expanded])]:col-span-full",
-    );
     expect(projectWorkspaceSource).toContain("<InlinePanel");
   });
 });

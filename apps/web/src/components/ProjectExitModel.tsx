@@ -15,39 +15,43 @@ import {
   parseExitMonthlyBudget,
 } from "../projectExitModel";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { Button } from "./ui/button";
 
+/** Diagonal exit stamp across the card preview; always visible, muted without a value. */
 export function ProjectExitModelSummary({
   projectId,
   assessment,
-  onOpen,
 }: {
   readonly projectId: string;
   readonly assessment?: WorkjetExitModelAssessment | null;
-  readonly onOpen: () => void;
 }) {
+  const en = workjetUiLanguage() === "en";
   const view = exitModelPresentation(assessment, projectId);
-  // Ohne Wert kein Stempel über der Vorschau; die Bewertung öffnet dann das ⋯-Menü der Karte.
-  if (view.value === "—") return null;
+  const rated = view.value !== "—";
+  const text = rated ? view.value : en ? "Not rated" : "Nicht bewertet";
+  const label = en ? "Exit value in five years" : "Exit-Wert in fünf Jahren";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Fünf-Jahres-Exit-Bewertung ansehen"
-      aria-description={view.value + " · " + view.label}
+    <span
+      role="img"
+      aria-label={label + ": " + text}
       title={
-        view.value +
-        " · " +
-        view.label +
+        label +
+        ": " +
+        text +
         (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
       }
-      data-workjet-action={"project.exit_model.open:" + projectId}
-      className="absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double border-foreground/70 bg-background/90 px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums shadow-sm hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+      className={
+        "pointer-events-none absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-12 rounded-sm border-4 border-double px-4 py-2 text-center leading-none font-bold tracking-tight whitespace-nowrap tabular-nums uppercase " +
+        (rated
+          ? "border-foreground/70 bg-background/90 text-[22px] text-foreground shadow-sm"
+          : "border-muted-foreground/40 bg-background/70 text-[15px] text-muted-foreground")
+      }
       data-workjet-exit-model-status={view.status}
-      data-workjet-exit-model-stamp=""
+      data-workjet-exit-model-stamp={rated ? "" : "empty"}
     >
-      {view.value}
-    </button>
+      {text}
+    </span>
   );
 }
 

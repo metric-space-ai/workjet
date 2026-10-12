@@ -59,9 +59,9 @@ describe("project exit assessment display", () => {
     );
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
     expect(markup).toContain(formatExitEur(800_000));
-    expect(markup).toContain('aria-label="Fünf-Jahres-Exit-Bewertung ansehen"');
+    expect(markup).not.toContain("project.exit_model.menu");
     const stamp = markup.match(
-      /<button[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/button>/,
+      /<span[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/span>/,
     );
     expect(stamp?.[1]).toBe(formatExitEur(800_000));
   });
@@ -117,17 +117,32 @@ describe("project exit assessment display", () => {
     expect(markup).toContain(formatExitEur(800_000));
   });
 
-  it("hides a different project's assessment on a reused card", () => {
+  it("shows a muted 'not rated' stamp for a different project's assessment", () => {
     const markup = renderToStaticMarkup(
-      <ProjectExitModelSummary
-        projectId="foreign"
-        assessment={exitModelFixture}
-        onOpen={() => {}}
-      />,
+      <ProjectExitModelSummary projectId="foreign" assessment={exitModelFixture} />,
     );
     expect(markup).not.toContain(formatExitEur(800_000));
-    // Ohne gültige Bewertung kein Stempel über der Vorschau.
-    expect(markup).toBe("");
+    expect(markup).toContain('data-workjet-exit-model-stamp="empty"');
+    expect(markup).toMatch(/Nicht bewertet|Not rated/);
+  });
+
+  it("stamps the valued exit diagonally with a double border", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectExitModelSummary
+        projectId={exitModelFixture.project_id}
+        assessment={exitModelFixture}
+      />,
+    );
+    if (exitModelFixture.result) {
+      expect(markup).toContain('data-workjet-exit-model-stamp=""');
+      expect(markup).toContain("border-double");
+      expect(markup).toContain("-rotate-12");
+    }
+  });
+
+  it("formats EUR per locale", () => {
+    expect(formatExitEur(3_200_000, "de")).toBe("3,2\u00a0Mio.\u00a0€");
+    expect(formatExitEur(3_200_000, "en")).toBe("€3.2M");
   });
 });
 

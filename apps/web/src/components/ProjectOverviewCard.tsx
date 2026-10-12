@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { ProjectExitModelPanel, ProjectExitModelSummary } from "./ProjectExitModel";
+import { ProjectExitModelSummary } from "./ProjectExitModel";
 import type { ProjectOverview } from "@workjet/contracts";
-import { ArrowUpRightIcon, EllipsisIcon, ExternalLinkIcon, XIcon } from "lucide-react";
+import { ArrowUpRightIcon, EllipsisIcon, ExternalLinkIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -47,7 +47,6 @@ export function ProjectOverviewCard({
 }) {
   const en = workjetUiLanguage() === "en";
   const t = (de: string, english: string) => (en ? english : de);
-  const [assessing, setAssessing] = useState(false);
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -88,8 +87,6 @@ export function ProjectOverviewCard({
   const titleIsWebsite =
     websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
-  // Der Exit öffnet inline in der Karte; das Raster lässt die Karte die Zeile füllen.
-  const expanded = assessing;
   const changeArchive = async () => {
     if (!onSave || archivePending) return false;
     setArchivePending(true);
@@ -109,7 +106,6 @@ export function ProjectOverviewCard({
     <article
       className="min-w-0 overflow-hidden rounded-lg border border-border bg-card"
       data-workjet-project-card={project.key}
-      data-workjet-project-card-expanded={expanded ? "" : undefined}
     >
       <div className="flex min-w-0 items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
@@ -161,12 +157,6 @@ export function ProjectOverviewCard({
               <EllipsisIcon className="size-4" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end">
-              <MenuItem
-                onClick={() => setAssessing(true)}
-                data-workjet-action={`project.exit_model.menu:${project.key}`}
-              >
-                {t("Exit-Bewertung", "Exit valuation")}
-              </MenuItem>
               {onConfigure && (
                 <MenuItem
                   onClick={onConfigure}
@@ -204,197 +194,165 @@ export function ProjectOverviewCard({
           </Menu>
         }
       </div>
-      {!expanded && (
-        <>
+      <div
+        className="relative aspect-video overflow-hidden bg-muted/40"
+        data-workjet-project-preview=""
+      >
+        {/* The whole preview opens the project; buttons on top keep their own actions. */}
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={openProjectLabel}
+          tabIndex={-1}
+          data-workjet-action={`project.open.gallery-preview:${project.key}`}
+          className="absolute inset-0 z-0 cursor-pointer"
+        />
+        {!archived && cachedPreview && failedCachedWebsite !== website ? (
+          <img
+            src={cachedPreview.image}
+            alt={
+              cachedPreview.kind === "logo"
+                ? t(`Logo von ${project.title}`, `${project.title} logo`)
+                : t(
+                    `Gespeicherte Vorschau von ${project.title}`,
+                    `Saved preview of ${project.title}`,
+                  )
+            }
+            title={`${t("Gespeicherte Vorschau", "Saved preview")} · ${cachedPreview.capturedOn}`}
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailedCachedWebsite(website ?? null)}
+            className={
+              cachedPreview.kind === "logo"
+                ? "pointer-events-none size-full object-contain p-12"
+                : "pointer-events-none size-full object-cover object-top"
+            }
+          />
+        ) : (
           <div
-            className="relative aspect-video overflow-hidden bg-muted/40"
-            data-workjet-project-preview=""
+            role="img"
+            aria-label={t(`Logo von ${project.title}`, `${project.title} logo`)}
+            className="pointer-events-none flex size-full items-center justify-center"
+            data-workjet-project-logo=""
           >
-            {/* The whole preview opens the project; buttons on top keep their own actions. */}
-            <button
-              type="button"
-              onClick={onOpen}
-              aria-label={openProjectLabel}
-              tabIndex={-1}
-              data-workjet-action={`project.open.gallery-preview:${project.key}`}
-              className="absolute inset-0 z-0 cursor-pointer"
-            />
-            {!archived && cachedPreview && failedCachedWebsite !== website ? (
-              <img
-                src={cachedPreview.image}
-                alt={
-                  cachedPreview.kind === "logo"
-                    ? t(`Logo von ${project.title}`, `${project.title} logo`)
-                    : t(
-                        `Gespeicherte Vorschau von ${project.title}`,
-                        `Saved preview of ${project.title}`,
-                      )
-                }
-                title={`${t("Gespeicherte Vorschau", "Saved preview")} · ${cachedPreview.capturedOn}`}
-                loading="lazy"
-                decoding="async"
-                onError={() => setFailedCachedWebsite(website ?? null)}
-                className={
-                  cachedPreview.kind === "logo"
-                    ? "pointer-events-none size-full object-contain p-12"
-                    : "pointer-events-none size-full object-cover object-top"
-                }
+            {project.local?.workspaceRoot ? (
+              <ProjectFavicon
+                environmentId={project.local.environmentId}
+                cwd={project.local.workspaceRoot}
+                faviconPath={project.local.faviconPath}
+                className="size-16"
               />
             ) : (
-              <div
-                role="img"
-                aria-label={t(`Logo von ${project.title}`, `${project.title} logo`)}
-                className="pointer-events-none flex size-full items-center justify-center"
-                data-workjet-project-logo=""
-              >
-                {project.local?.workspaceRoot ? (
-                  <ProjectFavicon
-                    environmentId={project.local.environmentId}
-                    cwd={project.local.workspaceRoot}
-                    faviconPath={project.local.faviconPath}
-                    className="size-16"
-                  />
-                ) : (
-                  <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-[22px] font-semibold tracking-tight text-foreground/70">
-                    {project.title.slice(0, 2).toUpperCase()}
-                  </span>
-                )}
-              </div>
+              <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-[22px] font-semibold tracking-tight text-foreground/70">
+                {project.title.slice(0, 2).toUpperCase()}
+              </span>
             )}
-            <Button
-              size="icon-sm"
-              onClick={onOpen}
-              title={text.cardOpenProject}
-              aria-label={openProjectLabel}
-              data-workjet-action={`project.open.gallery:${project.key}`}
-              className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
-            >
-              <ArrowUpRightIcon className="size-4" aria-hidden="true" />
-            </Button>
-            <ProjectExitModelSummary
-              projectId={project.id}
-              assessment={project.configuration?.exitModel ?? null}
-              onOpen={() => setAssessing(true)}
-            />
           </div>
-          <div className="border-t border-border px-3 py-3">
-            <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
-              {(["first", "second", "third"] as const).map((position, index) => {
-                const slot = slots[index] ?? null;
-                const metric = scopedKpis
-                  ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)
-                  : null;
-                // Native KPIs still loading, or configured but without a resolved label yet:
-                // show a skeleton instead of a placeholder that flips to the real name (#470).
-                if (
-                  project.native &&
-                  kpis === undefined &&
-                  !kpisUnavailable &&
-                  !overview.slots[index] &&
-                  !suggestedSlots
-                )
-                  return (
-                    <div
-                      key={position}
-                      className="flex min-w-0 flex-col gap-1"
-                      data-workjet-project-card-slot={index + 1}
-                      data-workjet-kpi-loading=""
-                      aria-busy="true"
+        )}
+        <Button
+          size="icon-sm"
+          onClick={onOpen}
+          title={text.cardOpenProject}
+          aria-label={openProjectLabel}
+          data-workjet-action={`project.open.gallery:${project.key}`}
+          className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
+        >
+          <ArrowUpRightIcon className="size-4" aria-hidden="true" />
+        </Button>
+        <ProjectExitModelSummary
+          projectId={project.id}
+          assessment={project.configuration?.exitModel ?? null}
+        />
+      </div>
+      <div className="border-t border-border px-3 py-3">
+        <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
+          {(["first", "second", "third"] as const).map((position, index) => {
+            const slot = slots[index] ?? null;
+            const metric = scopedKpis
+              ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)
+              : null;
+            // Native KPIs still loading, or configured but without a resolved label yet:
+            // show a skeleton instead of a placeholder that flips to the real name (#470).
+            if (
+              project.native &&
+              kpis === undefined &&
+              !kpisUnavailable &&
+              !overview.slots[index] &&
+              !suggestedSlots
+            )
+              return (
+                <div
+                  key={position}
+                  className="flex min-w-0 flex-col gap-1"
+                  data-workjet-project-card-slot={index + 1}
+                  data-workjet-kpi-loading=""
+                  aria-busy="true"
+                >
+                  <span className="h-7 w-14 animate-pulse rounded bg-muted" />
+                  <span className="h-3 w-20 animate-pulse rounded bg-muted" />
+                </div>
+              );
+            return (
+              <div
+                key={position}
+                className="flex min-w-0 flex-col gap-0.5"
+                data-workjet-project-card-slot={index + 1}
+              >
+                <dt
+                  title={metric?.label ?? slot?.label}
+                  className={
+                    slot
+                      ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
+                      : "sr-only"
+                  }
+                >
+                  {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
+                </dt>
+                <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+                  {metric ? (
+                    <span
+                      title={metric.message ?? metric.detail}
+                      data-workjet-kpi-status={metric.status}
                     >
-                      <span className="h-7 w-14 animate-pulse rounded bg-muted" />
-                      <span className="h-3 w-20 animate-pulse rounded bg-muted" />
-                    </div>
-                  );
-                return (
-                  <div
-                    key={position}
-                    className="flex min-w-0 flex-col gap-0.5"
-                    data-workjet-project-card-slot={index + 1}
-                  >
-                    <dt
-                      title={metric?.label ?? slot?.label}
-                      className={
-                        slot
-                          ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
-                          : "sr-only"
-                      }
-                    >
-                      {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
-                    </dt>
-                    <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
-                      {metric ? (
-                        <span
-                          title={metric.message ?? metric.detail}
-                          data-workjet-kpi-status={metric.status}
-                        >
-                          {metric.value}
-                        </span>
-                      ) : slot === null ? (
-                        <span
-                          className="text-muted-foreground"
-                          aria-label={t(
-                            `KPI ${index + 1} nicht eingerichtet`,
-                            `KPI ${index + 1} not set up`,
-                          )}
-                        >
-                          —
-                        </span>
-                      ) : slot.kind === "link" ? (
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
-                        >
-                          {t("Link öffnen", "Open link")}
-                        </Button>
-                      ) : slot.kind === "updated" ? (
-                        <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
-                          {activityAt === null ? "—" : projectUpdateAge(activityAt)}
-                        </time>
-                      ) : slot.kind === "metric" ? (
-                        `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
-                      ) : (
-                        slot.value
+                      {metric.value}
+                    </span>
+                  ) : slot === null ? (
+                    <span
+                      className="text-muted-foreground"
+                      aria-label={t(
+                        `KPI ${index + 1} nicht eingerichtet`,
+                        `KPI ${index + 1} not set up`,
                       )}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </div>
-        </>
-      )}
+                    >
+                      —
+                    </span>
+                  ) : slot.kind === "link" ? (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
+                    >
+                      {t("Link öffnen", "Open link")}
+                    </Button>
+                  ) : slot.kind === "updated" ? (
+                    <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
+                      {activityAt === null ? "—" : projectUpdateAge(activityAt)}
+                    </time>
+                  ) : slot.kind === "metric" ? (
+                    `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+                  ) : (
+                    slot.value
+                  )}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      </div>
       {archiveError && (
         <p role="alert" className="px-3 py-2 text-xs text-destructive">
           {archiveError}
         </p>
-      )}
-      {assessing && (
-        <section
-          aria-label={`${t("Exit in fünf Jahren", "Exit in five years")} · ${project.title}`}
-          className="border-t border-border px-3 py-3"
-          data-workjet-project-card-section="exit"
-        >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-[13.5px] font-medium">
-              {t("Exit in fünf Jahren", "Exit in five years")}
-            </h3>
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label={t("Schließen", "Close")}
-              onClick={() => setAssessing(false)}
-            >
-              <XIcon className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-          <ProjectExitModelPanel
-            key={project.key}
-            projectId={project.id}
-            instanceId={project.native ? ctoxInstanceId : null}
-            assessment={project.configuration?.exitModel ?? null}
-          />
-        </section>
       )}
     </article>
   );

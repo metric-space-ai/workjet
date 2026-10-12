@@ -915,7 +915,7 @@ function ProjectGallery({
                 strategy={rectSortingStrategy}
               >
                 <div
-                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1 [&>*:has([data-workjet-project-card-expanded])]:col-span-full"
+                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1"
                   data-workjet-project-gallery-grid=""
                 >
                   {visibleProjects.map((project) => (

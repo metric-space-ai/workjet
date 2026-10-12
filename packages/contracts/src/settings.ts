@@ -19,6 +19,14 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
+/**
+ * First day of the week in calendar views. "locale" follows the UI language's
+ * locale (de-DE, en-GB: Monday; en-US: Sunday).
+ */
+export const CalendarWeekStart = Schema.Literals(["locale", "monday", "sunday"]);
+export type CalendarWeekStart = typeof CalendarWeekStart.Type;
+export const DEFAULT_CALENDAR_WEEK_START: CalendarWeekStart = "locale";
+
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
@@ -207,6 +215,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
+  ),
+  calendarWeekStart: CalendarWeekStart.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CALENDAR_WEEK_START)),
   ),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   workjetProductMode: WorkjetProductMode.pipe(
@@ -967,6 +978,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   timestampFormat: Schema.optionalKey(TimestampFormat),
+  calendarWeekStart: Schema.optionalKey(CalendarWeekStart),
   wordWrap: Schema.optionalKey(Schema.Boolean),
   workjetProductMode: Schema.optionalKey(WorkjetProductMode),
   workjetModesIntroSeen: Schema.optionalKey(Schema.Boolean),

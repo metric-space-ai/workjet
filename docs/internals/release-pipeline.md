@@ -2,13 +2,13 @@
 
 PR #452 remains unpublished and unmerged. Required desktop targets:
 
-| Platform | Runner | Assets for 0.0.89 |
-| --- | --- | --- |
-| macOS arm64 | macos-15 | Workjet-0.0.89-arm64.dmg, Workjet-0.0.89-arm64.zip, latest-mac.yml |
-| Linux x64 | ubuntu-24.04 | Workjet-0.0.89-x64.AppImage, Workjet-0.0.89-x64.deb, latest-linux.yml |
-| Linux arm64 | ubuntu-24.04-arm | Workjet-0.0.89-arm64.AppImage, Workjet-0.0.89-arm64.deb, latest-linux-arm64.yml |
-| Windows x64 | windows-latest | Workjet-0.0.89-x64.exe, latest.yml |
-| Windows arm64 | windows-11-arm | Workjet-0.0.89-arm64.exe, latest.yml (combined architecture entries) |
+| Platform      | Runner           | Assets for 0.0.89                                                               |
+| ------------- | ---------------- | ------------------------------------------------------------------------------- |
+| macOS arm64   | macos-15         | Workjet-0.0.89-arm64.dmg, Workjet-0.0.89-arm64.zip, latest-mac.yml              |
+| Linux x64     | ubuntu-24.04     | Workjet-0.0.89-x64.AppImage, Workjet-0.0.89-x64.deb, latest-linux.yml           |
+| Linux arm64   | ubuntu-24.04-arm | Workjet-0.0.89-arm64.AppImage, Workjet-0.0.89-arm64.deb, latest-linux-arm64.yml |
+| Windows x64   | windows-latest   | Workjet-0.0.89-x64.exe, latest.yml                                              |
+| Windows arm64 | windows-11-arm   | Workjet-0.0.89-arm64.exe, latest.yml (combined architecture entries)            |
 
 Each release also includes workjet-desktop-install-manifest-v1.json, SOURCE_COMMIT,
 SHA256SUMS and generated blockmaps. No Intel Mac is required.
@@ -16,6 +16,7 @@ SHA256SUMS and generated blockmaps. No Intel Mac is required.
 ## Signing inputs
 
 macOS secrets:
+
 - CSC_LINK: Developer ID certificate in electron-builder-supported form.
 - CSC_KEY_PASSWORD: certificate password.
 - APPLE_API_KEY: actual App Store Connect .p8 **contents**.
@@ -23,16 +24,17 @@ macOS secrets:
 - MACOS_PROVISIONING_PROFILE is optional, only for an explicitly configured
   associated-domain/passkey profile. Not needed for ordinary Developer ID signing.
 
-Repository variable APPLE_TEAM_ID is 2HS27B8739 (set by Main).
+Repository variable APPLE*TEAM_ID is 2HS27B8739 (set by Main).
 Optional passkey variables: WORKJET_CLERK_PASSKEY_RP_DOMAINS or
 CLERK_PUBLISHABLE_KEY. Neither is required for ordinary signing.
 The macOS job writes the .p8 contents to
-$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8 with mode 600, then sets APPLE_API_KEY
+$RUNNER_TEMP/AuthKey*${APPLE_API_KEY_ID}.p8 with mode 600, then sets APPLE_API_KEY
 to that path. Certificate configured => Developer ID signing; complete API inputs
 => notarization. Missing certificate => ad-hoc; missing notarization => prerelease
 draft marked “nicht notarisiert”.
 
 Windows Azure Artifact Signing secrets:
+
 - AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
 - AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME
 - AZURE_TRUSTED_SIGNING_PUBLISHER_NAME

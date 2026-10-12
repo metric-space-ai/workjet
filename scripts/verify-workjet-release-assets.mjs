@@ -59,9 +59,13 @@ if (selection !== undefined) {
   for (const [platform, arch] of targets) {
     const suffix = platform === "macos" ? ".zip" : platform === "linux" ? ".deb" : undefined;
     if (!suffix) continue;
-    const prefix = `Workjet-${manifest.appVersion}-${arch}`;
-    const matching = files.filter((file) => file.startsWith(prefix) && file.endsWith(suffix));
-    if (matching.length !== 1) throw new Error(`Expected one ${prefix}*${suffix}`);
+    // electron-builder names Linux packages by machine (amd64/x86_64, aarch64), not by Node arch.
+    const aliases = { x64: ["x64", "x86_64", "amd64"], arm64: ["arm64", "aarch64"] }[arch] ?? [arch];
+    const prefixes = aliases.map((name) => `Workjet-${manifest.appVersion}-${name}`);
+    const matching = files.filter(
+      (file) => prefixes.some((prefix) => file.startsWith(prefix)) && file.endsWith(suffix),
+    );
+    if (matching.length !== 1) throw new Error(`Expected one ${prefixes.join("|")}*${suffix}`);
     if ((await NodeFSP.stat(NodePath.join(assetsDir, matching[0]))).size === 0) {
       throw new Error(`Empty release asset: ${matching[0]}`);
     }

@@ -788,7 +788,8 @@ interface StagePackageJson {
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
-  readonly author: string;
+  readonly homepage: string;
+  readonly author: { readonly name: string; readonly email: string };
   readonly main: string;
   readonly build: Record<string, unknown>;
   readonly dependencies: Record<string, unknown>;
@@ -2915,7 +2916,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     private: true,
     packageManager: rootPackageJson.packageManager,
     description: "Workjet desktop build",
-    author: "Metric Space AI",
+    // Linux .deb packages require a homepage and a maintainer address.
+    homepage: "https://ctox.dev/downloads/workjet",
+    author: { name: "Metric Space AI", email: "hello@workjet.com" },
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,

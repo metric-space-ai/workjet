@@ -54,6 +54,23 @@ const ServiceStatus = Schema.Struct({
   desktop: Schema.optionalKey(DesktopEndpoint),
 });
 type Discovery = Option.Option<Endpoint> | "install" | "migrate";
+export type ServiceMode = "auto" | "foreground";
+
+export const parseServiceMode = (value: string | undefined): ServiceMode =>
+  value?.trim().toLowerCase() === "foreground" ? "foreground" : "auto";
+
+/**
+ * `systemctl --user` needs a systemd-booted host (sd_booted: /run/systemd/system)
+ * and a user session runtime directory.
+ */
+export const detectLinuxServiceManager = (
+  fs: FileSystem.FileSystem,
+  env: Readonly<Record<string, string | undefined>>,
+) =>
+  fs.exists("/run/systemd/system").pipe(
+    Effect.map((booted) => booted && (env.XDG_RUNTIME_DIR ?? "") !== ""),
+    Effect.orElseSucceed(() => false),
+  );
 
 const endpointArgs = (endpoint: Endpoint): ReadonlyArray<string> => [
   "--desktop-port",
@@ -77,6 +94,10 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
       readonly resourcesPath: string;
       readonly configuredBackendPort: Option.Option<number>;
       readonly path: { readonly join: (...parts: ReadonlyArray<string>) => string };
+      /** `foreground` (WORKJET_SERVICE_MODE) never installs or attaches a background service. */
+      readonly serviceMode?: ServiceMode;
+      /** Linux only: whether a systemd user manager can host the service. Defaults to true. */
+      readonly linuxServiceManagerAvailable?: boolean;
     };
     readonly fs: FileSystem.FileSystem;
     readonly status: (
@@ -94,7 +115,18 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
       (environment.platform !== "darwin" && environment.platform !== "linux")
     )
       return foreground;
+    if (environment.serviceMode === "foreground") return foreground;
     const initial = yield* input.status([]);
+    // A host that can never run the background service (no systemd user manager,
+    // containers, WSL without systemd) has nothing to install or migrate into, so
+    // the app owns a foreground backend instead of blocking. An already installed
+    // service keeps the strict checks below.
+    if (
+      !initial.installed &&
+      (!initial.supported ||
+        (environment.platform === "linux" && environment.linuxServiceManagerAvailable === false))
+    )
+      return foreground;
     let setup: "install" | "migrate" = "install";
     if (!initial.installed) {
       const runtimeDir = environment.path.join(environment.baseDir, "runtime");
@@ -241,7 +273,11 @@ export const makeAttachment = Effect.fn("desktop.localServiceAttachment.make")(f
         ),
       );
     });
-  return { resolvePort, run };
+  /** True once discovery chose a Desktop-owned foreground backend instead of the service. */
+  const ownsForegroundBackend = Effect.sync(
+    () => selection !== undefined && typeof selection !== "string" && Option.isNone(selection),
+  );
+  return { resolvePort, run, ownsForegroundBackend };
 });
 
 export class DesktopLocalServiceAttachment extends Context.Service<
@@ -303,7 +339,19 @@ export const layer = Layer.effect(
     });
     return yield* makeAttachment({
       discover: Effect.gen(function* () {
-        const discovered = yield* discoverService({ environment, fs, status });
+        const linuxServiceManagerAvailable =
+          environment.platform === "linux"
+            ? yield* detectLinuxServiceManager(fs, process.env)
+            : true;
+        const discovered = yield* discoverService({
+          environment: {
+            ...environment,
+            serviceMode: parseServiceMode(process.env.WORKJET_SERVICE_MODE),
+            linuxServiceManagerAvailable,
+          },
+          fs,
+          status,
+        });
         artifactArgs = discovered.artifactArgs;
         return discovered.selection;
       }),

@@ -178,7 +178,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       assert.deepStrictEqual(cloneCalls, [
         {
           cwd: parent,
-          args: ["clone", CLONE_URLS.url, "workjet"],
+          args: ["clone", "--", CLONE_URLS.url, "workjet"],
         },
       ]);
     }).pipe(
@@ -397,5 +397,30 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
         },
       }),
     ),
+  );
+});
+
+it("classifies git clone failures without leaking credentials", () => {
+  assert.strictEqual(
+    SourceControlRepositoryService.describeCloneFailure(
+      "Cloning into 'metric'...\nremote: Repository not found.\nfatal: repository 'https://user:secret@github.com/a/b/' not found\n",
+    ),
+    "clone-failed:not-found fatal: repository 'https://github.com/a/b/' not found",
+  );
+  assert.match(
+    SourceControlRepositoryService.describeCloneFailure(
+      "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    ),
+    /^clone-failed:auth /,
+  );
+  assert.match(
+    SourceControlRepositoryService.describeCloneFailure(
+      "fatal: unable to access 'https://github.com/a/b/': Could not resolve host: github.com",
+    ),
+    /^clone-failed:network /,
+  );
+  assert.strictEqual(
+    SourceControlRepositoryService.describeCloneFailure(""),
+    "clone-failed:unknown",
   );
 });

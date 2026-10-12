@@ -14,6 +14,7 @@ import type {
 } from "@workjet/contracts";
 
 import { inferProjectTitleFromPath } from "../lib/projectPaths";
+import { workjetUiLanguage } from "../workjetProjectControl";
 
 export type ProjectCreateSource = "new" | "folder" | "clone";
 
@@ -227,8 +228,60 @@ export async function cloneProjectRepository(
     input: buildCloneRepositoryInput(request),
   });
   if (result._tag === "Failure") {
-    const failure = squashAtomCommandFailure(result);
-    throw failure instanceof Error ? failure : new Error("Klonen fehlgeschlagen.");
+    throw new Error(cloneFailureMessage(squashAtomCommandFailure(result), request.repository));
   }
   return result.value.cwd;
+}
+
+const CLONE_FAILURE_TEXT = {
+  de: {
+    auth: "Kein Zugriff auf {repo} – auf diesem Rechner bei GitHub anmelden.",
+    "not-found": "{repo} nicht gefunden.",
+    "destination-exists": "Zielordner ist nicht leer.",
+    network: "{host} nicht erreichbar.",
+    unknown: "Klonen von {repo} fehlgeschlagen.",
+  },
+  en: {
+    auth: "No access to {repo} – sign in to GitHub on this computer.",
+    "not-found": "{repo} not found.",
+    "destination-exists": "Target folder is not empty.",
+    network: "{host} unreachable.",
+    unknown: "Cloning {repo} failed.",
+  },
+} as const;
+
+/** Human-readable de/en text for a clone failure; Git's own reason is kept for unknown cases. */
+export function cloneFailureMessage(
+  failure: unknown,
+  repository: string,
+  language: "de" | "en" = workjetUiLanguage(),
+): string {
+  const detail =
+    failure !== null && typeof failure === "object" && "detail" in failure
+      ? String((failure as { detail: unknown }).detail)
+      : failure instanceof Error
+        ? failure.message
+        : "";
+  if (/already exists and is not empty/i.test(detail))
+    return CLONE_FAILURE_TEXT[language]["destination-exists"];
+  if (
+    !detail.includes("clone-failed:") &&
+    !detail.startsWith("Source control repository operation") &&
+    failure instanceof Error &&
+    detail.length > 0
+  )
+    return detail;
+  const match = /clone-failed:([a-z-]+)\s*(.*)$/s.exec(detail);
+  const code = (match?.[1] ?? "unknown") as keyof (typeof CLONE_FAILURE_TEXT)["de"];
+  const texts = CLONE_FAILURE_TEXT[language];
+  const template = texts[code] ?? texts.unknown;
+  const trimmed = repository
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "");
+  const repo = trimmed.replace(/^https?:\/\/[^/]+\//, "") || trimmed;
+  const host = /^https?:\/\/([^/]+)/.exec(trimmed)?.[1] ?? "GitHub";
+  const text = template.replace("{repo}", repo).replace("{host}", host);
+  const reason = match?.[2]?.trim() ?? "";
+  return code === "unknown" && reason ? `${text} (${reason})` : text;
 }

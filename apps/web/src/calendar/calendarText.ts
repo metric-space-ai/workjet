@@ -1,0 +1,96 @@
+import type { ProjectOverviewLanguage } from "../projectOverviewText";
+
+/**
+ * Calendar UI strings per UI language. A new language adds one entry with the
+ * same keys; the type keeps every language complete.
+ */
+export const CALENDAR_TEXT = {
+  de: {
+    calendar: "Projektkalender",
+    viewGroup: "Kalenderansicht",
+    views: { day: "Tag", week: "Woche", month: "Monat", year: "Jahr" },
+    today: "Heute",
+    previous: "Zurück",
+    next: "Weiter",
+    weekNumber: "KW",
+    allDay: "ganztägig",
+    allDayEvents: "Ganztägige Termine",
+    more: (count: number) => `${count} weitere`,
+    project: "Projekt",
+    projectSelect: "Kalenderprojekt",
+    allProjects: "Alle Projekte",
+    calendars: "Kalender",
+    regularMeetings: "Regeltermine",
+    projectSessions: "Projektsitzungen",
+    session: "Sitzung",
+    sessionsLoading: "Sitzungen werden geladen …",
+    sessionsUnavailable: "Sitzungen nicht erreichbar. Geladene Sitzungen können veraltet sein.",
+    sessionsWithoutStart: "Einige Sitzungen haben keine Startzeit.",
+    refreshSessions: "Sitzungen aktualisieren",
+    connectedAccounts: "Verbundene Konten",
+    accountsLoading: "Kalenderkonten werden geladen …",
+    accountsUnavailable: "Kontokalender nicht erreichbar.",
+    noAccounts: "Keine Kalenderkonten verbunden.",
+    syncedPartially: "Teilweise abgeglichen · weitere Termine im Konto",
+    synced: "Abgeglichen",
+    syncedAt: (time: string) => `Abgeglichen ${time}`,
+    syncing: "Wird abgeglichen …",
+    unsupported: "Kalender für dieses Konto nicht unterstützt",
+    syncFailed: "Abgleich fehlgeschlagen",
+    accountsTruncated: "Kontenliste unvollständig.",
+    syncAccounts: "Konten abgleichen",
+    withoutRegularMeetingLabel: "Projekte ohne Regeltermin",
+    withoutRegularMeeting: "Ohne Regeltermin",
+    eventDetails: "Termindetails",
+    close: "Schließen",
+    accountEventReadOnly: "Kontotermin · nur lesen",
+  },
+  en: {
+    calendar: "Project calendar",
+    viewGroup: "Calendar view",
+    views: { day: "Day", week: "Week", month: "Month", year: "Year" },
+    today: "Today",
+    previous: "Previous",
+    next: "Next",
+    weekNumber: "Week",
+    allDay: "all-day",
+    allDayEvents: "All-day events",
+    more: (count: number) => `${count} more`,
+    project: "Project",
+    projectSelect: "Calendar project",
+    allProjects: "All projects",
+    calendars: "Calendars",
+    regularMeetings: "Regular meetings",
+    projectSessions: "Project sessions",
+    session: "Session",
+    sessionsLoading: "Loading sessions …",
+    sessionsUnavailable: "Sessions unavailable. Loaded sessions may be out of date.",
+    sessionsWithoutStart: "Some sessions have no start time.",
+    refreshSessions: "Refresh sessions",
+    connectedAccounts: "Connected accounts",
+    accountsLoading: "Loading calendar accounts …",
+    accountsUnavailable: "Account calendars unavailable.",
+    noAccounts: "No calendar accounts connected.",
+    syncedPartially: "Partially synced · more events in the account",
+    synced: "Synced",
+    syncedAt: (time: string) => `Synced ${time}`,
+    syncing: "Syncing …",
+    unsupported: "Calendar not supported for this account",
+    syncFailed: "Sync failed",
+    accountsTruncated: "Account list incomplete.",
+    syncAccounts: "Sync accounts",
+    withoutRegularMeetingLabel: "Projects without a regular meeting",
+    withoutRegularMeeting: "No regular meeting",
+    eventDetails: "Event details",
+    close: "Close",
+    accountEventReadOnly: "Account event · read-only",
+  },
+} as const satisfies Record<ProjectOverviewLanguage, unknown>;
+
+export type CalendarText = (typeof CALENDAR_TEXT)[ProjectOverviewLanguage];
+
+/** Strings for a UI language or BCP 47 locale ("en-GB" → en); English fallback. */
+export function calendarText(languageOrLocale: string): CalendarText {
+  const base = languageOrLocale.toLowerCase().split(/[-_]/)[0] ?? "";
+  return base in CALENDAR_TEXT ? CALENDAR_TEXT[base as ProjectOverviewLanguage] : CALENDAR_TEXT.en;
+}

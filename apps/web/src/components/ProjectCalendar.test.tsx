@@ -20,6 +20,7 @@ describe("project calendar", () => {
   it("renders the anchored week with the project meetings as their own calendar", () => {
     const html = renderToStaticMarkup(
       <ProjectCalendar
+        locale="de-DE"
         initialDate="2026-10-07"
         projects={[
           project("ctox.dev", { weekday: 3, time: "09:30", timezone: "Europe/Berlin" }),
@@ -39,6 +40,7 @@ describe("project calendar", () => {
   it("speaks German dates and 24-hour times, and honours the week start", () => {
     const html = renderToStaticMarkup(
       <ProjectCalendar
+        locale="de-DE"
         initialDate="2026-10-14"
         projects={[project("ctox.dev", { weekday: 3, time: "13:00", timezone: "UTC" })]}
       />,
@@ -63,15 +65,55 @@ describe("project calendar", () => {
   });
 
   it("offers the day, week, month and year views", () => {
-    const html = renderToStaticMarkup(<ProjectCalendar projects={[]} initialDate="2026-10-07" />);
+    const html = renderToStaticMarkup(
+      <ProjectCalendar locale="de-DE" projects={[]} initialDate="2026-10-07" />,
+    );
     for (const label of ["Tag", "Woche", "Monat", "Jahr", "Heute", "Zurück", "Weiter"]) {
       expect(html).toContain(label);
     }
   });
 
+  it("renders calendar chrome in English for an English UI", () => {
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        locale="en-GB"
+        projects={[project("miltonticket.app")]}
+        initialDate="2026-10-07"
+        initialView="day"
+        sessionsStatus="loading"
+        accountsLoading
+      />,
+    );
+    for (const label of [
+      "Day",
+      "Week",
+      "Month",
+      "Year",
+      "Today",
+      'aria-label="Previous"',
+      'aria-label="Next"',
+      "Regular meetings",
+      "Project sessions",
+      "Loading sessions …",
+      "Loading calendar accounts …",
+      "all-day",
+      'aria-label="Projects without a regular meeting"',
+      'aria-label="Calendar view"',
+    ]) {
+      expect(html).toContain(label);
+    }
+    for (const german of ["Heute", "ganztägig", "Regeltermine", "Projektsitzungen", "geladen"]) {
+      expect(html).not.toContain(german);
+    }
+  });
+
   it("keeps projects with no regular meeting visible and does not manufacture appointments", () => {
     const html = renderToStaticMarkup(
-      <ProjectCalendar initialDate="2026-10-07" projects={[project("miltonticket.app")]} />,
+      <ProjectCalendar
+        locale="de-DE"
+        initialDate="2026-10-07"
+        projects={[project("miltonticket.app")]}
+      />,
     );
     expect(html).toContain('aria-label="Projekte ohne Regeltermin"');
     expect(html).toContain("miltonticket.app");
@@ -111,6 +153,7 @@ describe("native project session calendar", () => {
     it(`renders actual sessions in ${initialView} with all-project/per-project selection`, () => {
       const html = renderToStaticMarkup(
         <ProjectCalendar
+          locale="de-DE"
           initialView={initialView}
           initialDate="2026-10-07"
           projects={[project("ctox.dev")]}
@@ -125,6 +168,7 @@ describe("native project session calendar", () => {
   it("marks retained data stale when the native read fails", () => {
     const html = renderToStaticMarkup(
       <ProjectCalendar
+        locale="de-DE"
         projects={[project("ctox.dev")]}
         initialDate="2026-10-07"
         sessions={[session]}

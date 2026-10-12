@@ -128,16 +128,11 @@ export function WorkjetLlmRoutesSection(props: {
             }
             deleteLabel="Entfernen"
             deleteConfirmTitle="Route entfernen?"
-            menuActions={[
-              {
-                label: "Bearbeiten",
-                onSelect: () => {
-                  setAddingRoute(false);
-                  setEditingRouteId(route.id);
-                },
-              },
-            ]}
-            menuLabel={`Aktionen für ${route.label}`}
+            expanded={editingRouteId === route.id}
+            onToggleExpanded={() => {
+              setAddingRoute(false);
+              setEditingRouteId((current) => (current === route.id ? null : route.id));
+            }}
           />
           <InlineExpand
             label={route.label}

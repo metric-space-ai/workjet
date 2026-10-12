@@ -77,6 +77,8 @@ export interface InlineExpandProps {
   readonly children: ReactNode;
   /** Hide the built-in collapse chevron when the body has its own close row. */
   readonly hideCollapseControl?: boolean;
+  /** Navigation disclosure (not an editor): skip the single-open rule. */
+  readonly independent?: boolean;
   readonly className?: string;
 }
 
@@ -86,9 +88,10 @@ export function InlineExpand({
   label,
   children,
   hideCollapseControl,
+  independent = false,
   className,
 }: InlineExpandProps) {
-  const id = useSingleInlineExpand(open, onOpenChange);
+  const id = useSingleInlineExpand(open && !independent, onOpenChange);
   const regionRef = useRef<HTMLDivElement>(null);
   const labels = inlineExpandLabels();
   // Keep the body mounted while it collapses so the height animates down

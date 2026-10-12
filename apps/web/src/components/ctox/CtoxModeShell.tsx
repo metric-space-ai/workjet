@@ -59,6 +59,7 @@ import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { WorkjetHeaderContent } from "../WorkjetHeaderSlots";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { toastManager } from "../ui/toast";
@@ -1460,8 +1461,20 @@ function CtoxAppRailCategory({
     ),
   );
   const [expanded, setExpanded] = useState(false);
-  const visible = visibleCtoxRailApps(group.apps, expanded);
-  const hidden = group.apps.length - visible.length;
+  const visible = visibleCtoxRailApps(group.apps, false);
+  const extra = group.apps.slice(visible.length);
+  const hidden = extra.length;
+  const renderRow = (app: CtoxInstanceApp) => (
+    <CtoxAppRailRow
+      key={app.id}
+      app={app}
+      instanceReady={instanceReady}
+      stale={stale}
+      launchable={launchable}
+      onOpen={onOpen}
+      onToggleDock={onToggleDock}
+    />
+  );
   return (
     <li data-ctox-app-category={group.category}>
       <button
@@ -1487,25 +1500,38 @@ function CtoxAppRailCategory({
           {group.apps.length}
         </span>
       </button>
-      {collapsed ? null : (
+      <InlineExpand
+        hideCollapseControl
+        independent
+        label={group.category}
+        open={!collapsed}
+        onOpenChange={(open) => {
+          setCollapsed(!open);
+          writeCtoxRailCollapsed(instance.id, group.category, !open);
+        }}
+      >
         <ul className="space-y-px">
-          {visible.map((app) => (
-            <CtoxAppRailRow
-              key={app.id}
-              app={app}
-              instanceReady={instanceReady}
-              stale={stale}
-              launchable={launchable}
-              onOpen={onOpen}
-              onToggleDock={onToggleDock}
-            />
-          ))}
-          {hidden > 0 || expanded ? (
+          {visible.map(renderRow)}
+          {hidden > 0 ? (
+            <li>
+              <InlineExpand
+                hideCollapseControl
+                independent
+                label={group.category}
+                open={expanded}
+                onOpenChange={setExpanded}
+              >
+                <ul className="space-y-px">{extra.map(renderRow)}</ul>
+              </InlineExpand>
+            </li>
+          ) : null}
+          {hidden > 0 ? (
             <li>
               <button
                 type="button"
                 className="w-full rounded-md px-5 py-1 text-left text-[11px] text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
                 data-ctox-app-category-more={group.category}
+                aria-expanded={expanded}
                 onClick={() => setExpanded((value) => !value)}
               >
                 {expanded ? "Weniger anzeigen" : `Mehr anzeigen (${hidden})`}
@@ -1513,7 +1539,7 @@ function CtoxAppRailCategory({
             </li>
           ) : null}
         </ul>
-      )}
+      </InlineExpand>
     </li>
   );
 }

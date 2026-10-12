@@ -36,6 +36,32 @@ describe("project calendar", () => {
     expect(html).toContain('title="greppy.xyz · America/New_York"');
   });
 
+  it("speaks German dates and 24-hour times, and honours the week start", () => {
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        initialDate="2026-10-14"
+        projects={[project("ctox.dev", { weekday: 3, time: "13:00", timezone: "UTC" })]}
+      />,
+    ).replace(/[\u2009\u202f]/g, " ");
+    expect(html).toContain("12.–18. Okt. 2026 · KW 42");
+    expect(html).toContain("Oktober 2026");
+    expect(html).not.toMatch(/\b(AM|PM)\b/);
+    expect(html).toContain("13:00");
+    expect(html).not.toContain("October");
+
+    const sunday = renderToStaticMarkup(
+      <ProjectCalendar
+        initialDate="2026-10-14"
+        locale="en-US"
+        weekStart="locale"
+        projects={[project("ctox.dev", { weekday: 3, time: "13:00", timezone: "UTC" })]}
+      />,
+    ).replace(/[\u2009\u202f]/g, " ");
+    expect(sunday).toContain("Oct 11 – 17, 2026 · Week 42");
+    expect(sunday).toContain("1 PM");
+    expect(sunday).toContain("October 2026");
+  });
+
   it("offers the day, week, month and year views", () => {
     const html = renderToStaticMarkup(<ProjectCalendar projects={[]} initialDate="2026-10-07" />);
     for (const label of ["Tag", "Woche", "Monat", "Jahr", "Heute", "Zurück", "Weiter"]) {

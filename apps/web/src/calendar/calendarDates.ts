@@ -42,8 +42,12 @@ export function isoWeekday(key: DateKey): number {
   return sundayBased === 0 ? 7 : sundayBased;
 }
 
-export function startOfWeek(key: DateKey): DateKey {
-  return addDays(key, 1 - isoWeekday(key));
+/** First day of a calendar week. Monday follows ISO 8601 / DIN 1355, the default. */
+export type WeekStart = "monday" | "sunday";
+
+export function startOfWeek(key: DateKey, weekStart: WeekStart = "monday"): DateKey {
+  const offset = weekStart === "sunday" ? isoWeekday(key) % 7 : isoWeekday(key) - 1;
+  return addDays(key, -offset);
 }
 
 export function startOfMonth(key: DateKey): DateKey {
@@ -54,9 +58,9 @@ export function startOfYear(key: DateKey): DateKey {
   return `${key.slice(0, 4)}-01-01`;
 }
 
-/** Six full weeks, Monday first, so the grid height never changes between months. */
-export function monthGrid(key: DateKey): readonly DateKey[] {
-  const start = startOfWeek(startOfMonth(key));
+/** Six full weeks, so the grid height never changes between months. */
+export function monthGrid(key: DateKey, weekStart: WeekStart = "monday"): readonly DateKey[] {
+  const start = startOfWeek(startOfMonth(key), weekStart);
   return Array.from({ length: 42 }, (_, index) => addDays(start, index));
 }
 
@@ -64,8 +68,136 @@ export function isSameMonth(a: DateKey, b: DateKey): boolean {
   return a.slice(0, 7) === b.slice(0, 7);
 }
 
-export function formatDateKey(key: DateKey, options: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat(undefined, { ...options, timeZone: "UTC" }).format(keyToUtc(key));
+/**
+ * Calendar formatting follows the app's active UI language (Einstellungen ›
+ * Allgemein › Sprache), not hardcoded strings: month and weekday names, date
+ * order, ranges, hour cycle and week start all come from Intl for that locale.
+ * New UI languages only need an entry in `calendarLocale`.
+ */
+export const DEFAULT_CALENDAR_LOCALE = "de-DE";
+
+/**
+ * BCP 47 locale for a UI language. A regional browser locale of the same
+ * language wins (en-GB stays en-GB), otherwise a sensible default region.
+ */
+export function calendarLocale(uiLanguage: string, browserLanguage?: string): string {
+  const language = uiLanguage.toLowerCase().split("-")[0] ?? "";
+  const browser = browserLanguage?.trim();
+  if (browser && browser.toLowerCase().split("-")[0] === language && browser.includes("-")) {
+    try {
+      return new Intl.Locale(browser).toString();
+    } catch {
+      // fall through to the default region
+    }
+  }
+  const defaults: Record<string, string> = { de: "de-DE", en: "en-US" };
+  return defaults[language] ?? (language || DEFAULT_CALENDAR_LOCALE);
+}
+
+/** "monday" or "sunday" as the locale prefers; other first days fall back to Monday. */
+export function localeWeekStart(locale: string): WeekStart {
+  try {
+    const intlLocale = new Intl.Locale(locale) as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number };
+      weekInfo?: { firstDay: number };
+    };
+    const firstDay = intlLocale.getWeekInfo?.().firstDay ?? intlLocale.weekInfo?.firstDay;
+    return firstDay === 7 ? "sunday" : "monday";
+  } catch {
+    return "monday";
+  }
+}
+
+/** Resolves an "auto" week-start preference against the locale. */
+export function resolveWeekStart(preference: WeekStart | "locale", locale: string): WeekStart {
+  return preference === "locale" ? localeWeekStart(locale) : preference;
+}
+
+export function formatDateKey(
+  key: DateKey,
+  options: Intl.DateTimeFormatOptions,
+  locale: string = DEFAULT_CALENDAR_LOCALE,
+): string {
+  return new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC" }).format(keyToUtc(key));
+}
+
+/** A date range: "12.–18. Okt. 2026" (de-DE), "Oct 12 – 18, 2026" (en-US). */
+export function formatDateKeyRange(
+  from: DateKey,
+  to: DateKey,
+  locale: string = DEFAULT_CALENDAR_LOCALE,
+): string {
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).formatRange(keyToUtc(from), keyToUtc(to));
+}
+
+/** "12-hour" or "24-hour" override; "locale" follows the calendar locale. */
+export type CalendarTimeFormat = "locale" | "12-hour" | "24-hour";
+
+function hourCycleOptions(format: CalendarTimeFormat): Intl.DateTimeFormatOptions {
+  if (format === "12-hour") return { hourCycle: "h12" };
+  if (format === "24-hour") return { hourCycle: "h23" };
+  return {};
+}
+
+function uses12Hour(format: CalendarTimeFormat, locale: string): boolean {
+  if (format !== "locale") return format === "12-hour";
+  const cycle = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle;
+  return cycle === "h12" || cycle === "h11";
+}
+
+/** Wall-clock time of an instant: "13:00" (de-DE) or "1:00 PM" (en-US). */
+export function formatClockTime(
+  ms: number,
+  format: CalendarTimeFormat = "locale",
+  timeZone?: string,
+  locale: string = DEFAULT_CALENDAR_LOCALE,
+): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: uses12Hour(format, locale) ? "numeric" : "2-digit",
+    minute: "2-digit",
+    ...hourCycleOptions(format),
+    ...(timeZone === undefined ? {} : { timeZone }),
+  }).format(ms);
+}
+
+/** Hour label for the time grid: "13:00" on a 24-hour clock, "1 PM" on a 12-hour one. */
+export function formatHourLabel(
+  hour: number,
+  format: CalendarTimeFormat = "locale",
+  locale: string = DEFAULT_CALENDAR_LOCALE,
+): string {
+  if (uses12Hour(format, locale)) {
+    return new Intl.DateTimeFormat(locale, { hour: "numeric", hourCycle: "h12" }).format(
+      new Date(2000, 0, 1, hour),
+    );
+  }
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+/** Date plus time of an instant, e.g. "12. Okt. 2026, 13:00". */
+export function formatDateTime(
+  ms: number,
+  format: CalendarTimeFormat = "locale",
+  locale: string = DEFAULT_CALENDAR_LOCALE,
+): string {
+  const date = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(ms);
+  return `${date}, ${formatClockTime(ms, format, undefined, locale)}`;
+}
+
+/** ISO 8601 calendar week number (KW). */
+export function isoWeekNumber(key: DateKey): number {
+  const thursday = addDays(key, 4 - isoWeekday(key));
+  const yearStart = keyToUtc(startOfYear(thursday));
+  return Math.floor((keyToUtc(thursday) - yearStart) / DAY_MS / 7) + 1;
 }
 
 export function localTimeZone(): string {

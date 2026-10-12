@@ -861,6 +861,7 @@ export function WorkjetComputersSettingsView({
               ) : null}
               {renderEdit && computer ? (
                 <InlineExpand
+                  hideCollapseControl
                   label={label}
                   open={expanded === "edit"}
                   onOpenChange={(open) => {

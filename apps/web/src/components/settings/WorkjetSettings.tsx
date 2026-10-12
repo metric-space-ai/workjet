@@ -924,6 +924,7 @@ export function WorkjetSettingsView({
                       menuActions={[{ label: "Duplizieren", onSelect: duplicateWorker }]}
                     />
                     <InlineExpand
+                      hideCollapseControl
                       label={worker.name}
                       open={editingWorker?.id === worker.id}
                       onOpenChange={(open) => {

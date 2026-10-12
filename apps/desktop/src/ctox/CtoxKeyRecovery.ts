@@ -121,7 +121,7 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
 
 /** Scoped desktop owner: independent of renderer refreshes; the marker owns all admission. */
 export class CtoxRepairScheduler extends Context.Service<CtoxRepairScheduler, object>()(
-  "@workjet/desktop/CtoxRepairScheduler",
+  "@workjet/desktop/ctox/CtoxKeyRecovery/CtoxRepairScheduler",
 ) {}
 export const layer = Layer.effect(
   CtoxRepairScheduler,

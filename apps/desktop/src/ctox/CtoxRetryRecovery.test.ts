@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
 import { makeRecovery, DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
@@ -20,6 +21,8 @@ import type { CtoxManagedDiscoveryResult } from "@workjet/contracts";
 import type { Session } from "electron";
 vi.mock("electron", () => ({}));
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
 const fixture = Effect.fn(function* (count = 1) {
   const fs = yield* FileSystem.FileSystem;
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "ctox-retry-fixture-" });
@@ -29,7 +32,7 @@ const fixture = Effect.fn(function* (count = 1) {
   const generation = "1-11111111-1111-4111-8111-111111111111";
   yield* fs.writeFileString(
     `${stateDir}/key-recovery.json`,
-    JSON.stringify({
+    encodeJson({
       version: 1,
       generation,
       unreadableStores: ["ctox"],
@@ -128,7 +131,7 @@ it.effect(
         const state = yield* h.owner.inspect;
         yield* h.fs.writeFileString(
           `${h.stateDir}/key-recovery.json`,
-          JSON.stringify({
+          encodeJson({
             ...state,
             pendingLogin: false,
             managedRepairStarted: true,

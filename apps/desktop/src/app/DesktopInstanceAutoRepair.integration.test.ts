@@ -203,7 +203,14 @@ for (const mode of ["ready", "signed_out", "partial_failure"] as const) {
         );
         assert.deepEqual(repaired.keyRecovery?.instanceIssues ?? [], [
           ...(mode === "partial_failure"
-            ? [{ instanceId: "managed:skf", reason: "repair_failed" as const }]
+            ? [
+                {
+                  instanceId: "managed:skf",
+                  reason: "retryable" as const,
+                  operation: "launch-token",
+                  httpStatus: 503,
+                },
+              ]
             : []),
           { instanceId: manual.id, reason: "pairing_required" as const },
         ]);

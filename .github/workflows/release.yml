@@ -97,14 +97,17 @@ jobs:
         run: |
           vp run --filter @workjet/desktop ensure:electron
           cargo build --locked --jobs 2 --manifest-path native/resource-monitor/Cargo.toml
-      - name: Validate source
+      - name: Validate release contracts (main CI owns broad source checks)
         env:
           TMPDIR: ${{ runner.temp }}
         run: |
-          node scripts/assert-github-actions-pinned.mjs
-          vp check
-          vp run typecheck
-          vp run test
+          set -euo pipefail
+          node scripts/assert-github-actions-pinned.mjs > "$RUNNER_TEMP/release-contracts.log" 2>&1
+          if ! node --test scripts/generate-workjet-install-manifest.test.mjs >> "$RUNNER_TEMP/release-contracts.log" 2>&1; then
+            tail -n 100 "$RUNNER_TEMP/release-contracts.log"
+            exit 1
+          fi
+          tail -n 20 "$RUNNER_TEMP/release-contracts.log"
 
   ssh_servers:
     needs: preflight

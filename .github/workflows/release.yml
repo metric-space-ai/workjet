@@ -176,15 +176,15 @@ jobs:
         run: |
           set -euo pipefail
           directory="$GITHUB_WORKSPACE/apps/desktop/resources/ssh-servers"
-          (cd "$directory" && sha256sum --check "workjet-server-linux-$ARCH.tgz.sha256")
           mkdir -p "$GITHUB_WORKSPACE/wsl-prebuild"
-          archive="$directory/workjet-server-linux-$ARCH.tgz"
-          for member in "package/node_modules/node-pty/build/Release/pty.node" "package/node_modules/node-pty/prebuilds/linux-$ARCH/pty.node"; do
-            if tar -tzf "$archive" "$member" >/dev/null 2>&1; then
-              tar -xOzf "$archive" "$member" > "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
-              break
-            fi
-          done
+          # Git Bash tar can interpret a Windows drive colon as a remote archive.
+          # Stay in the artifact directory and pass a relative archive filename.
+          cd "$directory"
+          archive="workjet-server-linux-$ARCH.tgz"
+          sha256sum --check "$archive.sha256"
+          member="$(node "$GITHUB_WORKSPACE/scripts/lib/wsl-pty-archive.mjs" "$archive" "$ARCH")"
+          printf 'Selected verified WSL PTY (%s): %s\n' "$ARCH" "$member"
+          tar -xOzf "$archive" "$member" > "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
           test -s "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
       - name: Build installers (configured signing or explicit fallback)
         env:

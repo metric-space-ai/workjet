@@ -314,3 +314,35 @@ NodeTest.test("Windows chooses complete Azure, otherwise PFX, otherwise unsigned
     await NodeFSP.rm(root, { recursive: true, force: true });
   }
 });
+
+NodeTest.test("WSL PTY selection accepts npm, pnpm and leading-dot archive paths", async () => {
+  const { selectWslPtyArchiveMember } = await import("./lib/wsl-pty-archive.mjs");
+  for (const arch of ["x64", "arm64"]) {
+    for (const prefix of [
+      "package/node_modules/",
+      "./package/node_modules/",
+      "package/node_modules/.pnpm/node-pty@1.1.0/node_modules/",
+    ]) {
+      const filename = `${prefix}node-pty/prebuilds/linux-${arch}/pty.node`;
+      NodeAssert.equal(selectWslPtyArchiveMember(filename + "\n", arch), filename);
+    }
+    const built = "package/node_modules/node-pty/build/Release/pty.node";
+    NodeAssert.equal(selectWslPtyArchiveMember(built + "\n", arch), built);
+  }
+});
+
+NodeTest.test(
+  "WSL PTY selection fails closed on missing, foreign or ambiguous binaries",
+  async () => {
+    const { selectWslPtyArchiveMember } = await import("./lib/wsl-pty-archive.mjs");
+    for (const input of [
+      "",
+      "package/node_modules/node-pty/prebuilds/linux-arm64/pty.node",
+      "/node-pty/build/Release/pty.node",
+      "../node-pty/build/Release/pty.node",
+      "a/node-pty/build/Release/pty.node\nb/node-pty/build/Release/pty.node",
+    ]) {
+      NodeAssert.throws(() => selectWslPtyArchiveMember(input, "x64"));
+    }
+  },
+);

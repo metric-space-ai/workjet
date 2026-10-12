@@ -849,38 +849,44 @@ export function ProjectCalendar({
           )}
         </aside>
         <div className="order-1 min-w-0 lg:order-2">
-          <InlineExpand
-            hideCollapseControl
-            label="Termindetails"
-            open={selectedEvent !== null}
-            onOpenChange={(open) => {
-              if (!open) setSelectedEvent(null);
-            }}
-          >
-            {selectedEvent !== null && (
-              <section
-                aria-label="Termindetails"
-                className="mb-4 rounded-md border border-border p-4"
-                data-workjet-calendar-event-details=""
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="font-semibold">{selectedEvent.title}</h2>
-                  <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
-                    Schließen
-                  </Button>
-                </div>
-                <p className="mt-2 text-sm">
-                  {formatDateTime(selectedEvent.start_ms, timeFormat, locale)} –{" "}
-                  {formatDateTime(selectedEvent.end_ms, timeFormat, locale)}
-                </p>
-                {selectedEvent.location && <p className="mt-2 text-sm">{selectedEvent.location}</p>}
-                {selectedEvent.notes && (
-                  <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
-                )}
-                <p className="mt-2 text-xs text-muted-foreground">Kontotermin · nur lesen</p>
-              </section>
-            )}
-          </InlineExpand>
+          {/* Bleibt beim Scrollen im Blick (sticky), damit ein Klick weiter
+              unten im Raster die Details nicht außer Sicht öffnet. */}
+          <div className="sticky top-2 z-20">
+            <InlineExpand
+              hideCollapseControl
+              label="Termindetails"
+              open={selectedEvent !== null}
+              onOpenChange={(open) => {
+                if (!open) setSelectedEvent(null);
+              }}
+            >
+              {selectedEvent !== null && (
+                <section
+                  aria-label="Termindetails"
+                  className="mb-4 rounded-md border border-border bg-background p-4 shadow-sm"
+                  data-workjet-calendar-event-details=""
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="font-semibold">{selectedEvent.title}</h2>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
+                      Schließen
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-sm">
+                    {formatDateTime(selectedEvent.start_ms, timeFormat, locale)} –{" "}
+                    {formatDateTime(selectedEvent.end_ms, timeFormat, locale)}
+                  </p>
+                  {selectedEvent.location && (
+                    <p className="mt-2 text-sm">{selectedEvent.location}</p>
+                  )}
+                  {selectedEvent.notes && (
+                    <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
+                  )}
+                  <p className="mt-2 text-xs text-muted-foreground">Kontotermin · nur lesen</p>
+                </section>
+              )}
+            </InlineExpand>
+          </div>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
               Heute

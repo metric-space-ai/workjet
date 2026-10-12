@@ -30,6 +30,7 @@ function NativeJourFixeRoomContent({
   speechProvider,
 }: Parameters<typeof NativeJourFixeRoom>[0]) {
   const active = useRef(false);
+  const readAbort = useRef<AbortController | null>(null);
   const recovery = useRef<{ resolve: () => void; reject: (error: Error) => void } | null>(null);
   const retrying = useRef(false);
   const [retryBusy, setRetryBusy] = useState(false);
@@ -52,7 +53,14 @@ function NativeJourFixeRoomContent({
   useEffect(() => {
     if (!meetingId) return;
     let cancelled = false;
-    void readJourFixePresentation(instanceId, projectId, meetingId).then(
+    const controller = new AbortController();
+    void readJourFixePresentation(
+      instanceId,
+      projectId,
+      meetingId,
+      undefined,
+      controller.signal,
+    ).then(
       (value) => {
         if (!cancelled) setPresentation(value);
       },
@@ -67,6 +75,7 @@ function NativeJourFixeRoomContent({
     );
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [instanceId, projectId, meetingId, deckRevision, meetingState, presentationReload]);
   const savePresentationSlide = useCallback(
@@ -88,14 +97,16 @@ function NativeJourFixeRoomContent({
   );
   const refresh = async () => {
     setPresentationReload((count) => count + 1);
-    const value = await session.read(result?.meeting?.id);
+    const value = await session.read(result?.meeting?.id, readAbort.current?.signal);
     setResult(value);
     setError(null);
   };
   useEffect(() => {
     active.current = true;
+    const controller = new AbortController();
+    readAbort.current = controller;
     let cancelled = false;
-    void session.read().then(
+    void session.read(undefined, controller.signal).then(
       (value) => {
         if (!cancelled) {
           setResult(value);
@@ -110,6 +121,7 @@ function NativeJourFixeRoomContent({
     return () => {
       cancelled = true;
       active.current = false;
+      controller.abort();
       recovery.current?.reject(new Error("Meeting closed before the change was confirmed."));
       recovery.current = null;
     };

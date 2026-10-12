@@ -11,6 +11,12 @@ import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema
 import { requestWorkjetProjectControl } from "../workjetProjectControl";
 import { newCommandId } from "./utils";
 
+import {
+  retryJourFixeRead,
+  jourFixeReadDeadline,
+  jourFixeTransportError,
+} from "./jourFixeReadRetry";
+
 type Control = typeof requestWorkjetProjectControl;
 
 export interface JourFixePresentation {
@@ -60,9 +66,14 @@ async function confirmed(
   control: Control,
   instanceId: string,
   request: CtoxWorkjetProjectControlRequest,
+  options?: { readonly signal?: AbortSignal | undefined; readonly deadline?: number },
 ) {
-  const result = await control(instanceId, request);
-  if (result._tag !== "completed") throw new Error(`Presentation unavailable: ${result.code}`);
+  const invoke = async () => {
+    const result = await control(instanceId, request);
+    if (result._tag !== "completed") throw jourFixeTransportError(result);
+    return result;
+  };
+  const result = options ? await retryJourFixeRead(invoke, options) : await invoke();
   if (
     result.response.action !== request.action ||
     !isWorkjetPresentationReceiptForRequest(request, result.response)
@@ -81,13 +92,20 @@ export async function readJourFixePresentation(
   projectId: ProjectId,
   meetingId: string,
   control: Control = requestWorkjetProjectControl,
+  signal?: AbortSignal,
 ): Promise<JourFixePresentation | null> {
-  const read = await confirmed(control, instanceId, {
-    action: "project.presentation.read",
-    commandId: newCommandId(),
-    projectId,
-    meetingId,
-  });
+  const options = { signal, deadline: jourFixeReadDeadline() };
+  const read = await confirmed(
+    control,
+    instanceId,
+    {
+      action: "project.presentation.read",
+      commandId: newCommandId(),
+      projectId,
+      meetingId,
+    },
+    options,
+  );
   if (read.action !== "project.presentation.read") throw new Error("Unexpected answer.");
   const manifest = read.presentation;
   if (manifest === null) return null;
@@ -95,16 +113,21 @@ export async function readJourFixePresentation(
   let offset = 0;
   while (offset < manifest.document_bytes) {
     const length = Math.min(WORKJET_PRESENTATION_RANGE_BYTES, manifest.document_bytes - offset);
-    const part = await confirmed(control, instanceId, {
-      action: "project.presentation.content.read",
-      commandId: newCommandId(),
-      projectId,
-      meetingId,
-      presentationId: manifest.presentation_id,
-      revision: manifest.revision,
-      offset,
-      length,
-    });
+    const part = await confirmed(
+      control,
+      instanceId,
+      {
+        action: "project.presentation.content.read",
+        commandId: newCommandId(),
+        projectId,
+        meetingId,
+        presentationId: manifest.presentation_id,
+        revision: manifest.revision,
+        offset,
+        length,
+      },
+      options,
+    );
     if (part.action !== "project.presentation.content.read") throw new Error("Unexpected answer.");
     const chunk = base64Bytes(part.range.data_base64);
     if (

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId, type ProjectOverview } from "@workjet/contracts";
 import { ProjectOverviewCard } from "./ProjectOverviewCard";
 import type { GalleryProject } from "../projectOverview";
+import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
 
 const project: GalleryProject = {
   key: "instance:greppy",
@@ -11,6 +12,19 @@ const project: GalleryProject = {
   local: null,
   native: true,
 };
+describe("project card text", () => {
+  it("has German and English labels for opening the project and its website", () => {
+    for (const language of ["de", "en"] as const) {
+      const text = PROJECT_OVERVIEW_TEXT[language];
+      expect(projectOverviewFormat(text.cardOpenWebsiteLabel, { title: "a", url: "b" })).toMatch(
+        /a.*b/,
+      );
+      expect(projectOverviewFormat(text.cardOpenProjectLabel, { title: "a" })).toContain("a");
+    }
+    expect(PROJECT_OVERVIEW_TEXT.en.cardOpenWebsite).toBe("Open website");
+    expect(PROJECT_OVERVIEW_TEXT.en.cardOpenProjectLabel).toBe("Open {title}");
+  });
+});
 describe("compact project gallery", () => {
   it.each(["fzul.app", "i-hate-ai.community"])("uses the saved static preview for %s", (title) => {
     const markup = renderToStaticMarkup(
@@ -22,19 +36,23 @@ describe("compact project gallery", () => {
     expect(markup).toContain("2026-10-07");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
-  it("opens the domain title as a website and shows its saved homepage preview", () => {
+  it("opens the project from the title and preview, and the website only via its own link", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} />,
     );
-    expect(markup).toContain('href="https://greppy.xyz"');
+    expect(markup).toMatch(/<h2[^>]*><button[^>]*type="button"[^>]*>greppy.xyz<\/button><\/h2>/);
+    expect(markup).not.toMatch(/<h2[^>]*><a/);
+    expect(markup).toContain('data-workjet-action="project.open.gallery-title:instance:greppy"');
+    expect(markup).toContain('data-workjet-action="project.open.gallery-preview:instance:greppy"');
+    expect(markup.match(/href="https:\/\/greppy.xyz"/g)).toHaveLength(1);
     expect(markup).toMatch(
-      /<h2[^>]*><a[^>]*href="https:\/\/greppy.xyz"[^>]*>greppy.xyz<\/a><\/h2>/,
+      /<a[^>]*href="https:\/\/greppy.xyz"[^>]*aria-label="Webseite von greppy.xyz öffnen \(https:\/\/greppy.xyz\)"|<a[^>]*aria-label="Webseite von greppy.xyz öffnen \(https:\/\/greppy.xyz\)"[^>]*href="https:\/\/greppy.xyz"/,
     );
+    expect(markup).toContain('title="Webseite öffnen"');
     expect(markup).toContain('alt="Gespeicherte Vorschau von greppy.xyz"');
     expect(markup).toContain('aria-label="greppy.xyz öffnen"');
     expect(markup).not.toContain("<iframe");
     expect(markup).not.toContain("Hide preview");
-    expect(markup).not.toContain("Open website");
     expect(markup).not.toContain("If the website blocks");
     expect(markup).not.toContain("Nicht eingerichtet");
     expect(markup).toContain("Nutzer");

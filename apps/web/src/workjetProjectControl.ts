@@ -332,6 +332,32 @@ export async function saveWorkjetProjectKpis(
   }
 }
 
+/** Manual KPI recalculation (#502). CTOX bounds the run and reports per KPI; null = not reachable. */
+export async function refreshWorkjetProjectKpis(
+  instanceId: string,
+  projectId: ProjectId,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectKpis | null> {
+  const commandId = newCommandId();
+  try {
+    const result = await requestWorkjetProjectControl(
+      instanceId,
+      { action: "project.kpis.refresh", commandId, projectId },
+      port,
+    );
+    if (result._tag !== "completed" || result.response.action !== "project.kpis.refresh")
+      return null;
+    const response = result.response;
+    return response.commandId === commandId &&
+      response.projectId === projectId &&
+      response.kpis.project_id === projectId
+      ? response.kpis
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function readWorkjetGalleryOrder(
   instanceId: string,
   commandId: CommandId,

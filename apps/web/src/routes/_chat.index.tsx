@@ -35,6 +35,8 @@ import {
   describeWorkjetProjectControlFailure,
   readWorkjetGalleryOrder,
   readWorkjetProjectKpis,
+  refreshWorkjetProjectKpis,
+  saveWorkjetProjectKpis,
   saveWorkjetGalleryOrder,
 } from "../workjetProjectControl";
 import {
@@ -43,7 +45,7 @@ import {
   moveGalleryItem,
   orderGalleryProjects,
 } from "../projectGalleryOrder";
-import type { PromptedProjectKpis } from "../projectKpis";
+import type { ProjectKpiPromptInput, PromptedProjectKpis } from "../projectKpis";
 import { mergeProjectKpiRead, readGalleryProjectKpis } from "../projectKpiProjection";
 import { SortableProjectTile } from "../components/SortableProjectTile";
 import {
@@ -789,6 +791,41 @@ function ProjectGallery({
     };
   }, [instanceId, nativeProjectIds, readKpis, kpiReload]);
 
+  // Inline KPI edit and recalculation on the card write straight into the projection.
+  const saveKpis = useCallback(
+    async (
+      projectId: string,
+      prompts: readonly ProjectKpiPromptInput[],
+      expectedRevision: number,
+    ) => {
+      const scope = kpiScope.current;
+      if (instanceId === null || !scope.active || scope.instanceId !== instanceId) return false;
+      const saved = await saveWorkjetProjectKpis(instanceId, {
+        action: "project.kpis.configure",
+        commandId: newCommandId(),
+        projectId: ProjectId.make(projectId),
+        operationId: newCommandId(),
+        expectedRevision,
+        prompts: [...prompts],
+      });
+      if (saved === null || !scope.active || kpiScope.current !== scope) return false;
+      setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, saved));
+      return true;
+    },
+    [instanceId],
+  );
+  const refreshKpis = useCallback(
+    async (projectId: string) => {
+      const scope = kpiScope.current;
+      if (instanceId === null || !scope.active || scope.instanceId !== instanceId) return false;
+      const kpis = await refreshWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
+      if (kpis === null || !scope.active || kpiScope.current !== scope) return false;
+      setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
+      return true;
+    },
+    [instanceId],
+  );
+
   const reorderProjects = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
@@ -941,6 +978,12 @@ function ProjectGallery({
                               : undefined
                           }
                           kpisUnavailable={kpiFailures.has(project.id)}
+                          onSaveKpis={
+                            project.native
+                              ? (prompts, revision) => saveKpis(project.id, prompts, revision)
+                              : undefined
+                          }
+                          onRefreshKpis={project.native ? () => refreshKpis(project.id) : undefined}
                           reorderHandle={reorderHandle}
                         />
                       )}

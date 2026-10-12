@@ -304,11 +304,16 @@ export function makeControlDeviceClient(input: {
       await enroll(cookieFetch);
     },
     recoverOnce: (generation?: string) => {
-      if (generation !== recoveryGeneration) { recovery = undefined; recoveryGeneration = generation; }
+      if (generation !== recoveryGeneration) {
+        recovery = undefined;
+        recoveryGeneration = generation;
+      }
       recovery ??= (async () => {
-          try {
-            return await request("/api/desktop/session-package", { method: "GET" });
-          } catch { /* A later durable generation may try again. */ }
+        try {
+          return await request("/api/desktop/session-package", { method: "GET" });
+        } catch {
+          /* A later durable generation may try again. */
+        }
         return undefined;
       })();
       return recovery.then(async (response) => (active(await read()) ? response : undefined));

@@ -409,13 +409,22 @@ const CtoxKeyRecoveryStatus = Schema.Struct({
   pendingLogin: Schema.Boolean,
   connectionCatalogReset: Schema.Boolean,
   generation: Schema.optionalKey(Schema.String),
+  attempt: Schema.optionalKey(Schema.Int),
+  nextAt: Schema.optionalKey(Schema.Number),
   repairingInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
   repairedInstanceIds: Schema.optionalKey(Schema.Array(CtoxManagedInstanceId)),
   instanceIssues: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
         instanceId: CtoxManagedInstanceId,
-        reason: Schema.Literals(["repair_failed", "login_required", "pairing_required"]),
+        reason: Schema.Literals([
+          "repair_failed",
+          "login_required",
+          "pairing_required",
+          "retryable",
+        ]),
+        operation: Schema.optionalKey(Schema.String),
+        httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
       }),
     ),
   ),

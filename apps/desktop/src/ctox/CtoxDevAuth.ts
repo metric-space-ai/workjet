@@ -205,18 +205,42 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
       Effect.mapError(() => new CtoxDevAuthOperationError({ operation: "account-session" })),
     );
 
+    let deviceDiscovery:
+      | { generation: string | undefined; discovery: CtoxManagedDiscoveryResult }
+      | undefined;
     const recoverWithDevice = Effect.promise(async () => {
       if (device === undefined || (await device.status()).state !== "active") return undefined;
 
       const state = recovery === undefined ? undefined : await runPromise(recovery.inspect);
-      if (recovery?.claimDeviceRecovery !== undefined && !(await runPromise(recovery.claimDeviceRecovery))) return undefined;
+      if (
+        recovery?.claimDeviceRecovery !== undefined &&
+        !(await runPromise(recovery.claimDeviceRecovery))
+      )
+        return deviceDiscovery?.generation === state?.generation
+          ? deviceDiscovery?.discovery
+          : undefined;
       const response = await device.recoverOnce(state?.generation);
       if (response === undefined) return undefined;
-      const discovery = await discoverCtoxManagedInstances({ baseUrl, fetchImpl: async () => response.clone() });
-      if (discovery._tag === "ready" && discovery.sessionVerified === true && state?.pendingLogin && recovery?.restartManagedRepairAfterLogin !== undefined) {
+      const discovery = await discoverCtoxManagedInstances({
+        baseUrl,
+        fetchImpl: async () => response.clone(),
+      });
+      if (
+        discovery._tag === "ready" &&
+        discovery.sessionVerified === true &&
+        state?.pendingLogin &&
+        recovery?.restartManagedRepairAfterLogin !== undefined
+      ) {
         const status = await device?.status();
-        if (status?.state === "active") await runPromise(recovery.restartManagedRepairAfterLogin(`device:${status.createdAt}`));
+        if (status?.state === "active")
+          await runPromise(recovery.restartManagedRepairAfterLogin(`device:${status.createdAt}`));
       }
+      if (discovery._tag === "ready" && discovery.sessionVerified === true)
+        deviceDiscovery = {
+          generation:
+            recovery === undefined ? undefined : (await runPromise(recovery.inspect))?.generation,
+          discovery,
+        };
       return discovery;
     }).pipe(
       Effect.orElseSucceed(() => undefined),
@@ -245,11 +269,14 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
         if (restored?._tag === "ready") return restored;
       }
       if (discovery._tag === "ready" && discovery.sessionVerified === true && device !== undefined)
-        yield* Effect.promise(() => device.retryEnrollment((url, init) => browserSession.fetch(url, init))).pipe(Effect.ignore);
+        yield* Effect.promise(() =>
+          device.retryEnrollment((url, init) => browserSession.fetch(url, init)),
+        ).pipe(Effect.ignore);
       return discovery;
     }).pipe(Effect.withSpan("CtoxDevAuth.refresh"));
 
     const logout = Effect.gen(function* () {
+      deviceDiscovery = undefined;
       if (device !== undefined)
         yield* Effect.tryPromise({
           try: () => device.suspend(),
@@ -459,6 +486,7 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
         if (activeLogin !== undefined) return activeLogin;
         const current = runPromise(runLogin)
           .then(async (result) => {
+            if (result._tag === "completed") deviceDiscovery = undefined;
             if (result._tag === "completed" && device !== undefined) {
               const session = await runPromise(accountSession);
               await device.enroll((url, init) => session.fetch(url, init)).catch(() => undefined);

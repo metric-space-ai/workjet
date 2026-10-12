@@ -270,7 +270,9 @@ const desktopCtoxControlServices = Layer.mergeAll(
   Layer.provideMerge(desktopFoundationLayer),
 );
 
-const desktopCtoxControlLayer = CtoxKeyRecovery.layer.pipe(Layer.provideMerge(desktopCtoxControlServices));
+const desktopCtoxControlLayer = CtoxKeyRecovery.layer.pipe(
+  Layer.provideMerge(desktopCtoxControlServices),
+);
 
 const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
   // Reuse both the registry and the exact password-prompt instance whose

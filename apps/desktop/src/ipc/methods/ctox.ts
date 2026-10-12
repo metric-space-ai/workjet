@@ -79,12 +79,7 @@ const finishKeyRecovery = (
 ) =>
   Effect.gen(function* () {
     const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
-    if (
-      Option.isNone(recovery) ||
-
-      discovery._tag !== "ready" ||
-      discovery.sessionVerified !== true
-    )
+    if (Option.isNone(recovery) || discovery._tag !== "ready" || discovery.sessionVerified !== true)
       return;
     const launch = yield* Effect.serviceOption(CtoxManagedLaunch.CtoxManagedLaunch);
     const sessions = yield* Effect.serviceOption(CtoxElectronSessions.CtoxElectronSessions);

@@ -567,46 +567,73 @@ describe("CTOX IPC methods", () => {
       ),
     );
   });
-  it.effect("valid explicit activation rearms recovery before the guest, malformed input does not", () => {
-    const events: string[] = [];
-    const activateGuest = vi.fn(() => Effect.sync(() => { events.push("activate"); return { _tag: "failed" as const, code: "launch_failed" as const }; }));
-    const repair = vi.fn((instanceId: string | undefined) => Effect.sync(() => { events.push(`repair:${instanceId}`); return true; }));
-    const recovery = DesktopKeyRecovery.of({ inspect: Effect.succeed(undefined), completeLogin: Effect.void, prepareManagedRetry: repair });
-    const guests = CtoxGuestManager.CtoxGuestManager.of({
-      enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
-      exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
-      activate: activateGuest,
-      ensurePooled: () => Effect.die("unused"),
-      suspend: Effect.succeed({ _tag: "completed" }),
-      deactivate: Effect.succeed({ _tag: "completed" }),
-      deactivateAll: Effect.succeed({ _tag: "completed" }),
-      deactivateInstance: () => Effect.succeed({ _tag: "completed" }),
-      setBounds: () => Effect.succeed({ _tag: "completed" }),
-      readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
-      openGuestApp: () => Effect.die("unused"),
-      openGuestSettings: () => Effect.die("unused"),
-      setHostTheme: () => Effect.succeed({ _tag: "completed" }),
-      requestDeviceControl: () => Effect.die("unused"),
-      requestProjectControl: () => Effect.die("unused"),
-      requestComputerControl: () => Effect.die("unused"),
-      requestSessionControl: () => Effect.die("unused"),
-      registerSessionTransferEvents: () => Effect.die("unused"),
-    });
-
-    return Effect.gen(function* () {
-      const result = yield* activate.handler({
-        instanceId: "managed:tenant",
-        bounds: { x: -1, y: 0, width: 800, height: 600 },
-        launchUrl: "https://ctox.dev/?ctox_config=secret",
+  it.effect(
+    "valid explicit activation rearms recovery before the guest, malformed input does not",
+    () => {
+      const events: string[] = [];
+      const activateGuest = vi.fn(() =>
+        Effect.sync(() => {
+          events.push("activate");
+          return { _tag: "failed" as const, code: "launch_failed" as const };
+        }),
+      );
+      const repair = vi.fn((instanceId: string | undefined) =>
+        Effect.sync(() => {
+          events.push(`repair:${instanceId}`);
+          return true;
+        }),
+      );
+      const recovery = DesktopKeyRecovery.of({
+        inspect: Effect.succeed(undefined),
+        completeLogin: Effect.void,
+        prepareManagedRetry: repair,
       });
-      assert.deepEqual(result, { _tag: "failed", code: "invalid_input" });
-      expect(activateGuest).not.toHaveBeenCalled();
-      assert.notInclude(encodeUnknownJson(result), "secret");
-      expect(repair).not.toHaveBeenCalled();
-      yield* activate.handler({ instanceId: "managed:tenant", bounds: { x: 0, y: 0, width: 800, height: 600 } });
-      assert.deepEqual(events, ["repair:managed:tenant", "activate"]);
-    }).pipe(Effect.provide(Layer.merge(Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests), Layer.succeed(DesktopKeyRecovery, recovery))));
-  });
+      const guests = CtoxGuestManager.CtoxGuestManager.of({
+        enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+        exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
+        activate: activateGuest,
+        ensurePooled: () => Effect.die("unused"),
+        suspend: Effect.succeed({ _tag: "completed" }),
+        deactivate: Effect.succeed({ _tag: "completed" }),
+        deactivateAll: Effect.succeed({ _tag: "completed" }),
+        deactivateInstance: () => Effect.succeed({ _tag: "completed" }),
+        setBounds: () => Effect.succeed({ _tag: "completed" }),
+        readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
+        openGuestApp: () => Effect.die("unused"),
+        openGuestSettings: () => Effect.die("unused"),
+        setHostTheme: () => Effect.succeed({ _tag: "completed" }),
+        requestDeviceControl: () => Effect.die("unused"),
+        requestProjectControl: () => Effect.die("unused"),
+        requestComputerControl: () => Effect.die("unused"),
+        requestSessionControl: () => Effect.die("unused"),
+        registerSessionTransferEvents: () => Effect.die("unused"),
+      });
+
+      return Effect.gen(function* () {
+        const result = yield* activate.handler({
+          instanceId: "managed:tenant",
+          bounds: { x: -1, y: 0, width: 800, height: 600 },
+          launchUrl: "https://ctox.dev/?ctox_config=secret",
+        });
+        assert.deepEqual(result, { _tag: "failed", code: "invalid_input" });
+        expect(activateGuest).not.toHaveBeenCalled();
+        assert.notInclude(encodeUnknownJson(result), "secret");
+        expect(repair).not.toHaveBeenCalled();
+        yield* activate.handler({
+          instanceId: "managed:tenant",
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+        });
+        assert.deepEqual(events, ["repair:managed:tenant", "activate"]);
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests),
+            Layer.succeed(DesktopKeyRecovery, recovery),
+          ),
+        ),
+      );
+    },
+  );
 
   it.effect("registers and delegates the ensure-pooled channel", () => {
     const ensureGuest = vi.fn((instanceId: string) =>

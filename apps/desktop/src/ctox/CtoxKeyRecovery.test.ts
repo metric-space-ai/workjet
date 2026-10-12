@@ -69,14 +69,18 @@ const fixture = Effect.fn("test.recoveryLogin.fixture")(function* (failureStatus
     fetch: async (url: string) => {
       requests.push(url);
       const token = url.endsWith("/launch-token");
-      if (token && !authenticatedTokens && failureStatus === -1) throw new DOMException("fixture timeout", "TimeoutError");
+      if (token && !authenticatedTokens && failureStatus === -1)
+        throw new DOMException("fixture timeout", "TimeoutError");
       if (token && !authenticatedTokens)
         return {
           ok: failureStatus === 200,
           status: failureStatus,
           json: async () => {
             if (failureStatus === 401) throw new Error("HTML sign-in response fixture");
-            return { error: failureStatus === 200 ? "AUTH_REQUIRED" : "relation device_keys fixture missing" };
+            return {
+              error:
+                failureStatus === 200 ? "AUTH_REQUIRED" : "relation device_keys fixture missing",
+            };
           },
         };
       return {
@@ -111,7 +115,10 @@ const fixture = Effect.fn("test.recoveryLogin.fixture")(function* (failureStatus
     requests,
     begin,
     restart,
-    openRecovery: () => makeRecovery({ baseDir: root, stateDir, platform: "darwin" }).pipe(Effect.provideService(ElectronSafeStorage, storage)),
+    openRecovery: () =>
+      makeRecovery({ baseDir: root, stateDir, platform: "darwin" }).pipe(
+        Effect.provideService(ElectronSafeStorage, storage),
+      ),
     authenticateTokens: () => {
       authenticatedTokens = true;
     },
@@ -159,7 +166,7 @@ it.live(
     ).pipe(Effect.provide(NodeServices.layer)),
 );
 
-for (const status of [401, 403, 200, 400, 503, -1, 404]) {
+for (const status of [401, 403, 200, 400, 408, 409, 422, 425, 429, 500, 503, -1, 404]) {
   it.live(
     `classifies token status ${status} and permits exactly one new repair after verified login`,
     () =>
@@ -173,9 +180,19 @@ for (const status of [401, 403, 200, 400, 503, -1, 404]) {
             reconnect,
           });
           const failed = yield* h.recovery.inspect;
-          const reason = [400, 503, -1].includes(status) ? "retryable" : status === 404 ? "repair_failed" : "login_required";
+          const reason = [400, 408, 409, 422, 425, 429, 500, 503, -1].includes(status)
+            ? "retryable"
+            : status === 404
+              ? "repair_failed"
+              : "login_required";
           assert.deepEqual(failed?.instanceRepairs, [
-            { instanceId: "managed:fixture", state: reason, failureClass: reason, operation: "launch-token", ...(status === -1 ? {} : { httpStatus: status }) },
+            {
+              instanceId: "managed:fixture",
+              state: reason,
+              failureClass: reason,
+              operation: "launch-token",
+              ...(status === -1 ? {} : { httpStatus: status }),
+            },
           ]);
           assert.equal(failed?.pendingLogin, reason === "login_required");
           assert.equal(h.requests.length, 1);
@@ -228,18 +245,25 @@ for (const status of [401, 403, 200, 400, 503, -1, 404]) {
 }
 
 it.effect("a real 400 launch exchange heals on the next window without login", () =>
-  Effect.scoped(Effect.gen(function* () {
-    const h = yield* fixture(400);
-    const run = () => recoverManagedAfterLogin({ discovery: h.discovery, recovery: h.recovery, reconnect: h.launch.launch });
-    yield* run();
-    assert.equal((yield* h.recovery.inspect)?.instanceRepairs?.[0]?.failureClass, "retryable");
-    assert.equal((yield* h.recovery.inspect)?.instanceRepairs?.[0]?.httpStatus, 400);
-    h.authenticateTokens();
-    yield* TestClock.adjust("1 minute");
-    yield* Effect.all([run(), run()], { concurrency: 2 });
-    assert.equal(h.requests.length, 3);
-    assert.equal((yield* h.recovery.inspect)?.instanceRepairs?.[0]?.state, "repaired");
-    const config = yield* h.launch.launch(h.discovery.instances[0]!);
-    assert.equal(config.launchOrigin, "https://fixture.ctox.dev");
-  })).pipe(Effect.provide(NodeServices.layer)),
+  Effect.scoped(
+    Effect.gen(function* () {
+      const h = yield* fixture(400);
+      const run = () =>
+        recoverManagedAfterLogin({
+          discovery: h.discovery,
+          recovery: h.recovery,
+          reconnect: h.launch.launch,
+        });
+      yield* run();
+      assert.equal((yield* h.recovery.inspect)?.instanceRepairs?.[0]?.failureClass, "retryable");
+      assert.equal((yield* h.recovery.inspect)?.instanceRepairs?.[0]?.httpStatus, 400);
+      h.authenticateTokens();
+      yield* TestClock.adjust("1 minute");
+      yield* Effect.all([run(), run()], { concurrency: 2 });
+      assert.equal(h.requests.length, 3);
+      assert.equal((yield* h.recovery.inspect)?.instanceRepairs?.[0]?.state, "repaired");
+      const config = yield* h.launch.launch(h.discovery.instances[0]!);
+      assert.equal(config.launchOrigin, "https://fixture.ctox.dev");
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
 );

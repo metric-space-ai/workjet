@@ -260,6 +260,53 @@ function failureCode(
 }
 
 describe("CtoxInstanceRegistry", () => {
+  it.effect("publishes retry timing and redacted failure diagnostics through discovery", () => {
+    const generation = "1-11111111-1111-4111-8111-111111111111";
+    const recovery = DesktopKeyRecovery.of({
+      inspect: Effect.succeed({
+        version: 1,
+        generation,
+        pendingLogin: false,
+        unreadableStores: ["ctox"],
+        ctoxRetired: true,
+        managedRepairStarted: true,
+        managedRepairVersion: 3,
+        attempt: 2,
+        nextAt: 180_000,
+        instanceRepairs: [
+          {
+            instanceId: "managed:fixture",
+            state: "retryable",
+            failureClass: "retryable",
+            operation: "launch-token",
+            httpStatus: 400,
+          },
+        ],
+      }),
+      completeLogin: Effect.void,
+    });
+    return Effect.gen(function* () {
+      const registry = yield* registryHarness({ recovery }).registry;
+      const result = yield* registry.merge({ _tag: "signed_out" });
+      assert.deepEqual(result.keyRecovery, {
+        pendingLogin: false,
+        connectionCatalogReset: false,
+        generation,
+        attempt: 2,
+        nextAt: 180_000,
+        repairingInstanceIds: [],
+        repairedInstanceIds: [],
+        instanceIssues: [
+          {
+            instanceId: "managed:fixture",
+            reason: "retryable",
+            operation: "launch-token",
+            httpStatus: 400,
+          },
+        ],
+      });
+    });
+  });
   for (const workjetState of ["enabled", "disabled", "removed"] as const)
     it.effect("preserves recovery status and " + workjetState + " activity in discovery", () => {
       const { memory, registry } = registryHarness();

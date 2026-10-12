@@ -65,7 +65,7 @@ import {
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor, projectSupervisorThreadInput } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
+import { CpuIcon, LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
 import {
   useCallback,
   useContext,
@@ -114,6 +114,7 @@ import {
 import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { nativeOpenAttemptKey, resolveNativeProjectOpening } from "../nativeProjectOpening";
+import { projectOverviewNeedsModelAccount } from "../projectModelAccountHint";
 import {
   resolveDefaultProviderModelSelection,
   resolveProjectTeamModelSelection,
@@ -723,6 +724,8 @@ export function ProjectGallery({
   const t = useUiText();
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"gallery" | "calendar">("gallery");
+  const { environments: galleryEnvironments } = useEnvironments();
+  const needsModelAccount = projectOverviewNeedsModelAccount(galleryEnvironments);
   const [galleryOrder, setGalleryOrder] = useState<{
     readonly revision: number;
     readonly projectIds: readonly string[];
@@ -1035,6 +1038,27 @@ export function ProjectGallery({
               </div>
             </div>
           </div>
+          {needsModelAccount ? (
+            // Banner (UI-Vertrag §1): Icon, eine Zeile, ein Button – kein Erklärsatz (#472).
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-[13.5px]"
+              data-workjet-model-account-missing=""
+            >
+              <CpuIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="min-w-0 flex-1 font-medium">
+                {t("Kein Modell-Konto", "No model account")}
+              </span>
+              <Button
+                render={<Link to="/settings/models" />}
+                size="xs"
+                variant="outline"
+                data-workjet-action="project.model-account.setup"
+              >
+                {t("Modell-Konto einrichten", "Set up model account")}
+              </Button>
+            </div>
+          ) : null}
           {showArchived ? null : createForm !== undefined ? (
             createForm
           ) : (

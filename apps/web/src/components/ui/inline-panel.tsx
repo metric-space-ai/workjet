@@ -5,14 +5,15 @@
  * direkt auf der Seite, nie in einem Dialog, Sheet oder Popover.
  *
  * Aufbau: ein Auslöser-Button („+ Rechner hinzufügen“). Ein Klick klappt
- * darunter ein Formular auf: optional ein Segment für die Optionen, die
- * Felder und ein Fuß mit „Abbrechen“ und der Primäraktion. Kein Untertitel,
- * keine Erklärsätze; höchstens eine Fehler- oder Statuszeile.
+ * darunter ein Formular animiert auf (InlineExpand): optional ein Segment,
+ * die Felder und ein Fuß mit „Abbrechen“ und der Primäraktion. Esc und der
+ * Pfeil oben rechts klappen wieder zu; es ist immer nur ein Panel offen.
  */
 import { PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
+import { InlineExpand, inlineExpandLabels } from "~/components/ui/inline-expand";
 import { cn } from "~/lib/utils";
 
 export interface InlinePanelProps {
@@ -48,56 +49,59 @@ function InlinePanel({
   statusTone = "neutral",
   className,
 }: InlinePanelProps) {
-  if (!open) {
-    return (
-      <Button
-        className={cn("self-start", className)}
-        data-slot="inline-panel-trigger"
-        size="sm"
-        variant="outline"
-        onClick={() => onOpenChange(true)}
-      >
-        <PlusIcon />
-        {triggerLabel}
-      </Button>
-    );
-  }
+  const labels = inlineExpandLabels();
   return (
-    <form
-      aria-label={triggerLabel}
-      className={cn("flex flex-col gap-3 rounded-lg border bg-card/40 p-3", className)}
-      data-slot="inline-panel"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!submitDisabled && !busy) onSubmit();
-      }}
-    >
-      <div className="font-medium text-[13.5px]">{triggerLabel}</div>
-      {segment ? <div data-slot="inline-panel-segment">{segment}</div> : null}
-      <div className="flex flex-col gap-3" data-slot="inline-panel-body">
-        {children}
-      </div>
-      {status ? (
-        <div
-          className={cn(
-            "text-xs",
-            statusTone === "error" ? "text-destructive" : "text-muted-foreground",
-          )}
-          data-slot="inline-panel-status"
-          role={statusTone === "error" ? "alert" : "status"}
+    <>
+      {open ? null : (
+        <Button
+          className={cn("self-start", className)}
+          data-slot="inline-panel-trigger"
+          size="sm"
+          variant="outline"
+          onClick={() => onOpenChange(true)}
         >
-          {status}
-        </div>
-      ) : null}
-      <div className="flex items-center justify-end gap-2" data-slot="inline-panel-footer">
-        <Button size="sm" type="button" variant="outline" onClick={() => onOpenChange(false)}>
-          Abbrechen
+          <PlusIcon />
+          {triggerLabel}
         </Button>
-        <Button disabled={submitDisabled || busy} size="sm" type="submit">
-          {submitLabel}
-        </Button>
-      </div>
-    </form>
+      )}
+      <InlineExpand label={triggerLabel} open={open} onOpenChange={onOpenChange}>
+        <form
+          aria-label={triggerLabel}
+          className={cn("flex flex-col gap-3 rounded-lg border bg-card/40 p-3", className)}
+          data-slot="inline-panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!submitDisabled && !busy) onSubmit();
+          }}
+        >
+          <div className="pe-7 font-medium text-[13.5px]">{triggerLabel}</div>
+          {segment ? <div data-slot="inline-panel-segment">{segment}</div> : null}
+          <div className="flex flex-col gap-3" data-slot="inline-panel-body">
+            {children}
+          </div>
+          {status ? (
+            <div
+              className={cn(
+                "text-xs",
+                statusTone === "error" ? "text-destructive" : "text-muted-foreground",
+              )}
+              data-slot="inline-panel-status"
+              role={statusTone === "error" ? "alert" : "status"}
+            >
+              {status}
+            </div>
+          ) : null}
+          <div className="flex items-center justify-end gap-2" data-slot="inline-panel-footer">
+            <Button size="sm" type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {labels.cancel}
+            </Button>
+            <Button disabled={submitDisabled || busy} size="sm" type="submit">
+              {submitLabel}
+            </Button>
+          </div>
+        </form>
+      </InlineExpand>
+    </>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   type DesktopEnvironmentBootstrap,
   type PickedThemeFile,
 } from "@workjet/contracts";
+import * as Electron from "electron";
 import * as NodeOS from "node:os";
 import { DesktopComputers } from "../../computers/DesktopComputers.ts";
 import * as FileSystem from "effect/FileSystem";
@@ -58,6 +59,24 @@ export const getAppBranding = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getAppBranding")(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     return environment.branding;
+  }),
+});
+
+// OS-level preferred languages. Chromium's navigator.language in Electron
+// reports the locale Electron was built/launched with (often en-US), not the
+// user's OS language, so the renderer asks the main process instead.
+export const getSystemLanguages = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_SYSTEM_LANGUAGES_CHANNEL,
+  result: Schema.Array(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.getSystemLanguages")(function* () {
+    return yield* Effect.sync(() => {
+      try {
+        const preferred = Electron.app.getPreferredSystemLanguages?.() ?? [];
+        return preferred.length > 0 ? preferred : [Electron.app.getLocale()];
+      } catch {
+        return [] as string[];
+      }
+    });
   }),
 });
 

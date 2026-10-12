@@ -282,6 +282,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/release-assets"
           for file in "$RUNNER_TEMP"/installers/*; do
             case "$file" in
+              # electron-builder's own debug dump is not an update feed.
+              */builder-debug.yml) ;;
               *.dmg|*.zip|*.AppImage|*.deb|*.exe|*.blockmap|*.yml) cp "$file" "$RUNNER_TEMP/release-assets/" ;;
             esac
           done

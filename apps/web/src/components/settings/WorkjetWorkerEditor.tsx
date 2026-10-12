@@ -33,6 +33,8 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
 import { Textarea } from "../ui/textarea";
+import { InlineExpand } from "../ui/inline-expand";
+import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
 import { WorkjetWorkerPersonalizationEditor } from "./WorkjetWorkerPersonalization";
 
 /** Display name for a harness id — raw slugs kept leaking into lists (K-A11). */
@@ -292,6 +294,7 @@ export function WorkjetWorkerEditor({
   onSave,
   onCancel,
   onAddRoute,
+  onCreateRoute,
   initialDraft,
   onDraftChange,
   compact = false,
@@ -319,7 +322,10 @@ export function WorkjetWorkerEditor({
   readonly compact?: boolean;
   /** Opens the place where an access is created. Optional so existing callers keep working. */
   readonly onAddRoute?: (() => void) | undefined;
+  /** Creates an access in place, inside this editor; preferred over onAddRoute. */
+  readonly onCreateRoute?: ((route: WorkjetLlmRoute) => void) | undefined;
 }) {
+  const [creatingRoute, setCreatingRoute] = useState(false);
   const [draft, setDraft] = useState(() => {
     if (initialDraft) return initialDraft;
     // "Add LLM route…" navigates AWAY to the Models page; without this stash
@@ -536,7 +542,18 @@ export function WorkjetWorkerEditor({
                 onClick={() => patchDraft({ llmRouteId: route.id })}
               />
             ))}
-            {onAddRoute ? (
+            {onCreateRoute ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                aria-expanded={creatingRoute}
+                onClick={() => setCreatingRoute((open) => !open)}
+              >
+                <PlusIcon className="size-3.5" />
+                Zugang einrichten
+              </Button>
+            ) : onAddRoute ? (
               <Button
                 type="button"
                 size="xs"
@@ -559,6 +576,26 @@ export function WorkjetWorkerEditor({
               </Button>
             ) : null}
           </div>
+          {onCreateRoute ? (
+            <InlineExpand
+              hideCollapseControl
+              label="Zugang einrichten"
+              open={creatingRoute}
+              onOpenChange={setCreatingRoute}
+            >
+              <div className="rounded-md border bg-muted/30 p-2" data-slot="worker-inline-route">
+                <WorkjetLlmRouteEditor
+                  accounts={gatewayAccounts}
+                  onCancel={() => setCreatingRoute(false)}
+                  onSave={(route) => {
+                    onCreateRoute(route);
+                    patchDraft({ llmRouteId: route.id });
+                    setCreatingRoute(false);
+                  }}
+                />
+              </div>
+            </InlineExpand>
+          ) : null}
           {draft.llmRouteId ? null : (
             <p role="status" className="text-[11px] text-amber-500">
               Kein Zugang gewählt.

@@ -649,7 +649,8 @@ export function EnvironmentProviderSettings({
   const [updatingProviderDrivers, setUpdatingProviderDrivers] = useState<
     ReadonlySet<ProviderDriverKind>
   >(() => new Set());
-  const [openInstanceDetails, setOpenInstanceDetails] = useState<Record<string, boolean>>({});
+  // Immer nur eine Harness-Karte offen.
+  const [openInstanceId, setOpenInstanceId] = useState<string | null>(null);
   const refreshingRef = useRef(false);
   const updatingDriversRef = useRef<Set<ProviderDriverKind>>(new Set());
 
@@ -1084,12 +1085,11 @@ export function EnvironmentProviderSettings({
                 // describes a CLI runtime and never a login. LLM account state
                 // lives on Settings → Models.
                 runtimeOnly
-                isExpanded={openInstanceDetails[row.instanceId] ?? false}
+                isExpanded={openInstanceId === row.instanceId}
                 onExpandedChange={(open) =>
-                  setOpenInstanceDetails((existing) => ({
-                    ...existing,
-                    [row.instanceId]: open,
-                  }))
+                  setOpenInstanceId((current) =>
+                    open ? row.instanceId : current === row.instanceId ? null : current,
+                  )
                 }
                 onUpdate={(next) => {
                   const wasEnabled = row.instance.enabled ?? true;

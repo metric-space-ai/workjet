@@ -29,6 +29,7 @@ import {
 import { useClientSettings } from "../hooks/useSettings";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { Button } from "./ui/button";
+import { InlineExpand } from "./ui/inline-expand";
 
 export type CalendarView = "day" | "week" | "month" | "year";
 
@@ -848,29 +849,38 @@ export function ProjectCalendar({
           )}
         </aside>
         <div className="order-1 min-w-0 lg:order-2">
-          {selectedEvent !== null && (
-            <section
-              aria-label="Termindetails"
-              className="mb-4 rounded-md border border-border p-4"
-              data-workjet-calendar-event-details=""
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="font-semibold">{selectedEvent.title}</h2>
-                <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
-                  Schließen
-                </Button>
-              </div>
-              <p className="mt-2 text-sm">
-                {formatDateTime(selectedEvent.start_ms, timeFormat, locale)} –{" "}
-                {formatDateTime(selectedEvent.end_ms, timeFormat, locale)}
-              </p>
-              {selectedEvent.location && <p className="mt-2 text-sm">{selectedEvent.location}</p>}
-              {selectedEvent.notes && (
-                <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
-              )}
-              <p className="mt-2 text-xs text-muted-foreground">Kontotermin · nur lesen</p>
-            </section>
-          )}
+          <InlineExpand
+            hideCollapseControl
+            label="Termindetails"
+            open={selectedEvent !== null}
+            onOpenChange={(open) => {
+              if (!open) setSelectedEvent(null);
+            }}
+          >
+            {selectedEvent !== null && (
+              <section
+                aria-label="Termindetails"
+                className="mb-4 rounded-md border border-border p-4"
+                data-workjet-calendar-event-details=""
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="font-semibold">{selectedEvent.title}</h2>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
+                    Schließen
+                  </Button>
+                </div>
+                <p className="mt-2 text-sm">
+                  {formatDateTime(selectedEvent.start_ms, timeFormat, locale)} –{" "}
+                  {formatDateTime(selectedEvent.end_ms, timeFormat, locale)}
+                </p>
+                {selectedEvent.location && <p className="mt-2 text-sm">{selectedEvent.location}</p>}
+                {selectedEvent.notes && (
+                  <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">Kontotermin · nur lesen</p>
+              </section>
+            )}
+          </InlineExpand>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
               Heute

@@ -23,6 +23,7 @@ import { cn } from "../../lib/utils";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { Badge } from "../ui/badge";
+import { useSingleInlineExpand } from "../ui/inline-expand";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent } from "../ui/collapsible";
 import {
@@ -255,6 +256,7 @@ function DiscoveryItemRow({
   const authStatus = auth ? authPresentation(auth) : null;
   const authAccount = auth ? optionLabel(auth.account) : null;
   const [isExpanded, setIsExpanded] = useState(false);
+  useSingleInlineExpand(isExpanded, setIsExpanded);
   const hasDetails = children !== undefined;
 
   return (

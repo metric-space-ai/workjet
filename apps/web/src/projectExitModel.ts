@@ -175,27 +175,20 @@ export function exitModelChange(assessment: WorkjetExitModelAssessment) {
 }
 
 export function formatExitChange(percent: number): string {
-  return (
-    new Intl.NumberFormat("en-GB", {
-      signDisplay: "exceptZero",
-      maximumFractionDigits: 1,
-    }).format(percent) + "%"
-  );
+  return new Intl.NumberFormat("de-DE", {
+    style: "percent",
+    signDisplay: "exceptZero",
+    maximumFractionDigits: 1,
+  }).format(percent / 100);
 }
 
 /** Display precision follows the forecast scale; stored calculations retain full precision. */
 export function formatExitEur(value: number | null): string {
   if (value === null || !Number.isFinite(value) || value < 0) return "—";
-  if (value >= 1_000_000)
-    return (
-      new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value / 1_000_000) +
-      "m EUR"
-    );
-  if (value >= 1_000)
-    return (
-      new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value / 1_000) + "k EUR"
-    );
-  return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(value) + " EUR";
+  const forecast = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
+  if (value >= 1_000_000) return forecast.format(value / 1_000_000) + "\u00A0Mio.\u00A0€";
+  if (value >= 1_000) return forecast.format(value / 1_000) + "\u00A0Tsd.\u00A0€";
+  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value) + "\u00A0€";
 }
 
 /** Eingabe „Std./Woche": ganze Zahl von 0 bis 168, leer oder ungültig → null. */
@@ -215,7 +208,7 @@ export function parseExitMonthlyBudget(raw: string): number | null {
 }
 
 export function formatExitPercent(value: number): string {
-  return new Intl.NumberFormat("en-GB", { style: "percent", maximumFractionDigits: 1 }).format(
+  return new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 1 }).format(
     value,
   );
 }
@@ -223,9 +216,9 @@ export function formatExitPercent(value: number): string {
 export function formatExitDate(value: string | null): string {
   return value === null
     ? "—"
-    : new Intl.DateTimeFormat("en-GB", {
-        day: "numeric",
-        month: "short",
+    : new Intl.DateTimeFormat("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
         year: "numeric",
         timeZone: "UTC",
       }).format(new Date(value + "T00:00:00Z"));

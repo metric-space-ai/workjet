@@ -18,6 +18,7 @@ vi.mock("react/compiler-runtime", async () => {
 import { ProjectExitModelReport, ProjectExitModelSummary } from "./ProjectExitModel";
 import { ProjectOverviewCard } from "./ProjectOverviewCard";
 import { exitModelFixture } from "../test/exitModelFixture";
+import { formatExitEur, formatExitPercent } from "../projectExitModel";
 
 const projectId = "project-one";
 const decodeAssessment = Schema.decodeUnknownSync(WorkjetExitModelAssessment);
@@ -28,9 +29,9 @@ describe("project exit assessment display", () => {
     const markup = renderToStaticMarkup(
       <ProjectExitModelReport projectId="project" assessment={assessment} />,
     );
-    expect(markup).toContain("8.1k EUR");
+    expect(markup).toContain(formatExitEur(8_050));
     expect(markup).toContain("Vorläufig");
-    expect(markup).toContain("100%");
+    expect(markup).toContain(formatExitPercent(1));
     expect(markup).toContain("Bewertungsverlauf · 2");
     expect(markup).toContain("Fictitious test values");
     expect(markup).toContain("test fixture only; not a real project");
@@ -57,12 +58,12 @@ describe("project exit assessment display", () => {
       />,
     );
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
-    expect(markup).toContain("800k EUR");
+    expect(markup).toContain(formatExitEur(800_000));
     expect(markup).toContain('aria-label="Fünf-Jahres-Exit-Bewertung ansehen"');
     const stamp = markup.match(
       /<button[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/button>/,
     );
-    expect(stamp?.[1]).toBe("800k EUR");
+    expect(stamp?.[1]).toBe(formatExitEur(800_000));
   });
 
   it("distinguishes proceeds, sale probability, conditional price and financing", () => {
@@ -74,11 +75,11 @@ describe("project exit assessment display", () => {
       />,
     );
     expect(markup).toContain("Verkaufschance");
-    expect(markup).toContain("80%");
+    expect(markup).toContain(formatExitPercent(0.8));
     expect(markup).toContain("Preis bei Verkauf");
     expect(markup).toContain("Kein Erlös");
     expect(markup).toContain("Unternehmenswert");
-    expect(markup).toContain("950k EUR");
+    expect(markup).toContain(formatExitEur(950_000));
     expect(markup).toContain("Finanzierung");
     expect(markup).toContain("Plan-Budget · 60 Monate");
     expect(markup).toContain("Monatsbudget (Vorschlag)");
@@ -113,7 +114,7 @@ describe("project exit assessment display", () => {
     expect(markup).toMatch(/data-workjet-exit-model-value="">—<\/p>/);
     expect(markup).toContain("Confirmed sale perimeter");
     expect(markup).toContain("Bewertungsverlauf · 1");
-    expect(markup).toContain("800k EUR");
+    expect(markup).toContain(formatExitEur(800_000));
   });
 
   it("hides a different project's assessment on a reused card", () => {
@@ -124,7 +125,7 @@ describe("project exit assessment display", () => {
         onOpen={() => {}}
       />,
     );
-    expect(markup).not.toContain("800k EUR");
+    expect(markup).not.toContain(formatExitEur(800_000));
     // Ohne gültige Bewertung kein Stempel über der Vorschau.
     expect(markup).toBe("");
   });

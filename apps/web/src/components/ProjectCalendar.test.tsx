@@ -131,6 +131,6 @@ describe("native project session calendar", () => {
         sessionsStatus="unavailable"
       />,
     );
-    expect(html).toContain("Geladene Sitzungen können veraltet sein");
+    expect(html).toContain("Sitzungen nicht erreichbar · Anzeige evtl. veraltet");
   });
 });

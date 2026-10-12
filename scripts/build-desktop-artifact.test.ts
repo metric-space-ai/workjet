@@ -228,6 +228,46 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "workjet");
   });
 
+  it.effect("uses the explicit ctox.dev generic feed without changing unconfigured builds", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveGitHubPublishConfig(
+        "nightly",
+        "https://ctox.dev/updates/workjet/nightly",
+      );
+      assert.deepStrictEqual(config, {
+        provider: "generic",
+        url: "https://ctox.dev/updates/workjet/nightly/",
+        channel: "latest",
+      });
+      const invalid = yield* resolveGitHubPublishConfig(
+        "latest",
+        "http://ctox.dev/updates/workjet/stable/",
+      ).pipe(Effect.flip);
+      assert.equal(invalid._tag, "InvalidDesktopUpdateFeedUrlError");
+    }),
+  );
+
+  it.effect("uses PFX signing without requiring Azure configuration", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.0.89",
+        true,
+        false,
+        undefined,
+        undefined,
+        "shell",
+      ).pipe(
+        Effect.provide(
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { WIN_CSC_LINK: "synthetic-pfx" } })),
+        ),
+      );
+      assert.equal(config.forceCodeSigning, true);
+      assert.isUndefined((config.win as Record<string, unknown>).azureSignOptions);
+    }),
+  );
+
   it.effect("resolves GitHub desktop publish config from Effect config", () =>
     Effect.gen(function* () {
       const latestConfig = yield* resolveGitHubPublishConfig("latest").pipe(

@@ -66,6 +66,17 @@ if (selection !== undefined) {
       throw new Error(`Empty release asset: ${matching[0]}`);
     }
   }
+  for (const [platform, arch] of targets) {
+    const metadata =
+      platform === "macos"
+        ? "latest-mac.yml"
+        : platform === "windows"
+          ? "latest.yml"
+          : arch === "arm64"
+            ? "latest-linux-arm64.yml"
+            : "latest-linux.yml";
+    if (!files.includes(metadata)) throw new Error(`Missing updater metadata: ${metadata}`);
+  }
 }
 if (!files.some((file) => /\.(?:yml|yaml)$/i.test(file))) {
   throw new Error("Updater metadata is missing.");

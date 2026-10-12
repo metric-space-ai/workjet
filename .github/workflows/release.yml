@@ -36,6 +36,8 @@ jobs:
       name: ${{ steps.meta.outputs.name }}
       signed: ${{ steps.signing.outputs.signed }}
       notarized: ${{ steps.signing.outputs.notarized }}
+      windows_signing: ${{ steps.signing.outputs.windows_signing }}
+      channel: ${{ inputs.channel || 'stable' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
@@ -70,14 +72,24 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          AZURE_PUBLISHER: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
           signed=false
           notarized=false
-          if [[ -n "$CSC_LINK" && -n "$APPLE_TEAM_ID" && -n "$MACOS_PROVISIONING_PROFILE" && ( -n "$RP_DOMAINS" || -n "$CLERK_KEY" ) ]]; then
+          if [[ -n "$CSC_LINK" ]]; then
             signed=true
             if [[ -n "$APPLE_API_KEY" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER" ]]; then notarized=true; fi
           fi
-          printf 'signed=%s\nnotarized=%s\n' "$signed" "$notarized" >> "$GITHUB_OUTPUT"
+          windows_signing=unsigned
+          if [[ -n "$AZURE_TENANT_ID" && -n "$AZURE_CLIENT_ID" && -n "$AZURE_CLIENT_SECRET" && -n "$AZURE_PROFILE" && -n "$AZURE_PUBLISHER" ]]; then windows_signing=azure
+          elif [[ -n "$WIN_CSC_LINK" ]]; then windows_signing=pfx
+          fi
+          printf 'signed=%s\nnotarized=%s\nwindows_signing=%s\n' "$signed" "$notarized" "$windows_signing" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
           toolchain: stable
@@ -110,9 +122,14 @@ jobs:
       matrix:
         include:
           - { runner: macos-15, platform: mac, arch: arm64, target: dmg }
-          - { runner: macos-15-intel, platform: mac, arch: x64, target: dmg }
           - { runner: ubuntu-24.04, platform: linux, arch: x64, target: AppImage }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64, target: AppImage }
+          - { runner: windows-latest, platform: win, arch: x64, target: nsis }
+          - { runner: windows-11-arm, platform: win, arch: arm64, target: nsis }
     runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     env:
       CI: "1"
       CARGO_BUILD_JOBS: "2"
@@ -143,13 +160,47 @@ jobs:
       - name: Install Linux packaging tools
         if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install -y imagemagick
-      - name: Build installers (ad-hoc signing unless fully configured)
+      - name: Prepare Azure Artifact Signing
+        if: matrix.platform == 'win' && needs.preflight.outputs.windows_signing == 'azure'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Install-Module TrustedSigning -MinimumVersion 0.5.0 -Force -AllowClobber -Scope CurrentUser -Repository PSGallery
+      - name: Reuse matching Linux node-pty for the WSL backend
+        if: matrix.platform == 'win'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          directory="$GITHUB_WORKSPACE/apps/desktop/resources/ssh-servers"
+          (cd "$directory" && sha256sum --check "workjet-server-linux-$ARCH.tgz.sha256")
+          mkdir -p "$GITHUB_WORKSPACE/wsl-prebuild"
+          archive="$directory/workjet-server-linux-$ARCH.tgz"
+          for member in "package/node_modules/node-pty/build/Release/pty.node" "package/node_modules/node-pty/prebuilds/linux-$ARCH/pty.node"; do
+            if tar -tzf "$archive" "$member" >/dev/null 2>&1; then
+              tar -xOzf "$archive" "$member" > "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+              break
+            fi
+          done
+          test -s "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"
+      - name: Build installers (configured signing or explicit fallback)
         env:
           PLATFORM: ${{ matrix.platform }}
           ARCH: ${{ matrix.arch }}
           TARGET: ${{ matrix.target }}
           MAC_SIGNED: ${{ needs.preflight.outputs.signed }}
           MAC_NOTARIZED: ${{ needs.preflight.outputs.notarized }}
+          WINDOWS_SIGNING: ${{ needs.preflight.outputs.windows_signing }}
+          UPDATE_CHANNEL: ${{ needs.preflight.outputs.channel }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT || 'https://weu.codesigning.azure.net/' }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME || 'metricspace-signing' }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
@@ -166,19 +217,29 @@ jobs:
           export ELECTRON_BUILDER_CACHE="$RUNNER_TEMP/electron-builder-cache"
           args=(--platform "$PLATFORM" --arch "$ARCH" --target "$TARGET" --output-dir "$RUNNER_TEMP/installers"
             --gpu-build-owner "github-actions:${GITHUB_REPOSITORY_ID}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}"
-            --prebuilt-linux-ssh-server "$GITHUB_WORKSPACE/apps/desktop/resources/ssh-servers")
+            --prebuilt-linux-ssh-server "$GITHUB_WORKSPACE/apps/desktop/resources/ssh-servers"
+            --update-feed-url "https://ctox.dev/updates/workjet/$UPDATE_CHANNEL/")
           if [[ "$PLATFORM" == mac && "$MAC_SIGNED" == true ]]; then
             umask 077
             export CSC_IDENTITY_AUTO_DISCOVERY=true
-            export WORKJET_MACOS_PROVISIONING_PROFILE="$RUNNER_TEMP/Workjet.provisionprofile"
-            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$WORKJET_MACOS_PROVISIONING_PROFILE"
+            if [[ -n "$MACOS_PROVISIONING_PROFILE" ]]; then
+              export WORKJET_MACOS_PROVISIONING_PROFILE="$RUNNER_TEMP/Workjet.provisionprofile"
+              printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$WORKJET_MACOS_PROVISIONING_PROFILE"
+            fi
             args+=(--signed)
             if [[ "$MAC_NOTARIZED" == true ]]; then
-              export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
+              export APPLE_API_KEY="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
               printf '%s' "$APPLE_API_KEY_CONTENT" > "$APPLE_API_KEY"
+              chmod 600 "$APPLE_API_KEY"
             else
               unset APPLE_API_KEY_ID APPLE_API_ISSUER
             fi
+          fi
+          if [[ "$PLATFORM" == win ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
+            if [[ "$WINDOWS_SIGNING" != unsigned ]]; then args+=(--signed); fi
+            if [[ "$WINDOWS_SIGNING" == azure ]]; then unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; fi
           fi
           node scripts/build-desktop-artifact.ts "${args[@]}"
           if [[ "$PLATFORM" == linux ]]; then
@@ -205,13 +266,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/release-assets"
           for file in "$RUNNER_TEMP"/installers/*; do
             case "$file" in
-              *.dmg|*.zip|*.AppImage|*.deb|*.blockmap|*.yml) cp "$file" "$RUNNER_TEMP/release-assets/" ;;
+              *.dmg|*.zip|*.AppImage|*.deb|*.exe|*.blockmap|*.yml) cp "$file" "$RUNNER_TEMP/release-assets/" ;;
             esac
           done
-          if [[ "$PLATFORM" == mac && "$ARCH" == x64 ]]; then
-            for file in "$RUNNER_TEMP"/release-assets/*-mac.yml; do
+          if [[ "$PLATFORM" == win && "$ARCH" == arm64 ]]; then
+            for file in "$RUNNER_TEMP"/release-assets/*.yml; do
               [[ -f "$file" ]] || continue
-              mv "$file" "${file%-mac.yml}-mac-x64.yml"
+              mv "$file" "$RUNNER_TEMP/release-assets/latest-win-arm64.yml"
             done
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -233,6 +294,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
       RELEASE_NAME: ${{ needs.preflight.outputs.name }}
       NOTARIZED: ${{ needs.preflight.outputs.notarized }}
+      WINDOWS_SIGNING: ${{ needs.preflight.outputs.windows_signing }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -251,22 +313,18 @@ jobs:
       - name: Verify release surface and prepare notes
         run: |
           set -euo pipefail
-          for primary in release-assets/*-mac.yml; do
-            [[ -f "$primary" ]] || continue
-            secondary="${primary%-mac.yml}-mac-x64.yml"
-            test -f "$secondary"
-            node scripts/merge-update-manifests.ts --platform mac "$primary" "$secondary" "$primary"
-            rm "$secondary"
-          done
-          node scripts/generate-workjet-install-manifest.mjs --assets-dir release-assets --tag "$RELEASE_TAG" --version "$RELEASE_VERSION" --repository "$GITHUB_REPOSITORY" --output release-assets/workjet-desktop-install-manifest-v1.json --targets macos/arm64,macos/x64,linux/x64
-          node scripts/verify-workjet-release-assets.mjs release-assets --targets macos/arm64,macos/x64,linux/x64
+          node scripts/merge-update-manifests.ts --platform win release-assets/latest.yml release-assets/latest-win-arm64.yml release-assets/latest.yml
+          rm release-assets/latest-win-arm64.yml
+          node scripts/generate-workjet-install-manifest.mjs --assets-dir release-assets --tag "$RELEASE_TAG" --version "$RELEASE_VERSION" --repository "$GITHUB_REPOSITORY" --output release-assets/workjet-desktop-install-manifest-v1.json --targets macos/arm64,linux/x64,linux/arm64,windows/x64,windows/arm64
+          node scripts/verify-workjet-release-assets.mjs release-assets --targets macos/arm64,linux/x64,linux/arm64,windows/x64,windows/arm64
           git rev-parse HEAD > release-assets/SOURCE_COMMIT
           (cd release-assets && sha256sum Workjet-* workjet-desktop-install-manifest-v1.json SOURCE_COMMIT > SHA256SUMS)
           printf '# %s\n\nUnpublished draft; publication requires Michael and the supervisor.\n\nSource: %s\n' "$RELEASE_NAME" "$GITHUB_SHA" > "$RUNNER_TEMP/release-notes.md"
           if [[ "$NOTARIZED" != true ]]; then
             printf '\n**nicht notarisiert**: macOS packages use ad-hoc signing when Apple credentials are absent. Gatekeeper may require explicit approval.\n' >> "$RUNNER_TEMP/release-notes.md"
           fi
-          printf '\nIncluded: macOS arm64/x64 (DMG + ZIP), Linux x64 (AppImage + DEB). Windows is skipped in this draft pipeline; no Windows signing credentials are required.\n\nnpm publication, Vercel deployment, Release-App main writes and Discord announcements are disabled for drafts.\n' >> "$RUNNER_TEMP/release-notes.md"
+          if [[ "$WINDOWS_SIGNING" == unsigned ]]; then printf '\n**Windows unsigniert**: Azure/PFX configuration is not yet complete.\n' >> "$RUNNER_TEMP/release-notes.md"; fi
+          printf '\nIncluded: macOS arm64 (DMG + ZIP), Linux x64/arm64 (AppImage + DEB), Windows x64/arm64 (NSIS). All five targets are mandatory.\n\nUpdater: https://ctox.dev/updates/workjet/<channel>/ (feed activation delivered separately). Assets remain on GitHub Releases.\n\nnpm publication, Vercel deployment, Release-App main writes and Discord announcements are disabled for drafts.\n' >> "$RUNNER_TEMP/release-notes.md"
       - name: Refuse to overwrite any existing release
         run: |
           set -euo pipefail
@@ -279,7 +337,7 @@ jobs:
           target_commitish: ${{ needs.preflight.outputs.ref }}
           name: ${{ needs.preflight.outputs.name }}
           draft: true
-          prerelease: ${{ needs.preflight.outputs.notarized != 'true' || contains(needs.preflight.outputs.version, '-') }}
+          prerelease: ${{ needs.preflight.outputs.notarized != 'true' || needs.preflight.outputs.windows_signing == 'unsigned' || contains(needs.preflight.outputs.version, '-') }}
           make_latest: false
           generate_release_notes: true
           body_path: ${{ runner.temp }}/release-notes.md

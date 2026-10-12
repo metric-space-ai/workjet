@@ -15,6 +15,7 @@ NodeTest.test("generates the complete signed-release target matrix", async () =>
       "Workjet-1.2.3-arm64.AppImage",
       "Workjet-1.2.3-x64.AppImage",
       "Workjet-1.2.3-x64.exe",
+      "Workjet-1.2.3-arm64.exe",
     ])
       await NodeFSP.writeFile(NodePath.join(root, name), name);
     const output = NodePath.join(root, "manifest.json");
@@ -29,7 +30,7 @@ NodeTest.test("generates the complete signed-release target matrix", async () =>
     NodeAssert.equal(manifest.artifacts.length, 5);
     NodeAssert.deepEqual(
       manifest.artifacts.map(({ platform, arch }) => `${platform}/${arch}`),
-      ["macos/arm64", "macos/x64", "linux/arm64", "linux/x64", "windows/x64"],
+      ["macos/arm64", "linux/arm64", "linux/x64", "windows/x64", "windows/arm64"],
     );
     NodeAssert.ok(manifest.artifacts.every((artifact) => /^[a-f0-9]{64}$/.test(artifact.sha256)));
   } finally {
@@ -61,6 +62,7 @@ async function draftFixture(run) {
       "Workjet-1.2.3-x64.AppImage",
       "Workjet-1.2.3-x64.deb",
       "latest-mac.yml",
+      "latest-linux.yml",
     ])
       await NodeFSP.writeFile(NodePath.join(root, name), name);
     await generateWorkjetInstallManifest({
@@ -133,7 +135,7 @@ NodeTest.test("release workflow uses hosted runners and cannot publish or deploy
   NodeAssert.deepEqual(Object.keys(workflow.on).sort(), ["push", "workflow_dispatch"]);
   NodeAssert.deepEqual(
     workflow.jobs.build.strategy.matrix.include.map(({ runner }) => runner),
-    ["macos-15", "macos-15-intel", "ubuntu-24.04"],
+    ["macos-15", "ubuntu-24.04", "ubuntu-24.04-arm", "windows-latest", "windows-11-arm"],
   );
   NodeAssert.deepEqual(Object.keys(workflow.jobs).sort(), [
     "build",
@@ -154,7 +156,7 @@ NodeTest.test("release workflow uses hosted runners and cannot publish or deploy
   const { spawnSync } = await import("node:child_process");
   for (const job of Object.values(workflow.jobs)) {
     for (const step of job.steps || []) {
-      if (!step.run) continue;
+      if (!step.run || step.shell === "pwsh") continue;
       const result = spawnSync("bash", ["-n"], { input: step.run, encoding: "utf8" });
       NodeAssert.equal(result.status, 0, `${step.name}: ${result.stderr}`);
     }
@@ -178,7 +180,7 @@ NodeTest.test("Apple credentials are optional; incomplete signing stays ad-hoc",
   try {
     for (const [credentials, expected] of [
       [{}, "signed=false\nnotarized=false\n"],
-      [{ CSC_LINK: "synthetic-certificate" }, "signed=false\nnotarized=false\n"],
+      [{ CSC_LINK: "synthetic-certificate" }, "signed=true\nnotarized=false\n"],
       [complete, "signed=true\nnotarized=false\n"],
       [
         {
@@ -202,7 +204,111 @@ NodeTest.test("Apple credentials are optional; incomplete signing stays ad-hoc",
         encoding: "utf8",
       });
       NodeAssert.equal(result.status, 0, result.stderr);
-      NodeAssert.equal(await NodeFSP.readFile(output, "utf8"), expected);
+      NodeAssert.equal(
+        await NodeFSP.readFile(output, "utf8"),
+        `${expected}windows_signing=unsigned\n`,
+      );
+    }
+  } finally {
+    await NodeFSP.rm(root, { recursive: true, force: true });
+  }
+});
+
+NodeTest.test(
+  "the required five-platform release fails for any missing installer or feed",
+  async () => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-required-release-"));
+    const targets = "macos/arm64,linux/x64,linux/arm64,windows/x64,windows/arm64";
+    const assets = [
+      "Workjet-1.2.3-arm64.dmg",
+      "Workjet-1.2.3-arm64.zip",
+      "Workjet-1.2.3-x64.AppImage",
+      "Workjet-1.2.3-x64.deb",
+      "Workjet-1.2.3-arm64.AppImage",
+      "Workjet-1.2.3-arm64.deb",
+      "Workjet-1.2.3-x64.exe",
+      "Workjet-1.2.3-arm64.exe",
+      "latest-mac.yml",
+      "latest-linux.yml",
+      "latest-linux-arm64.yml",
+      "latest.yml",
+    ];
+    try {
+      for (const filename of assets)
+        await NodeFSP.writeFile(NodePath.join(root, filename), filename);
+      await generateWorkjetInstallManifest({
+        assetsDir: root,
+        tag: "v1.2.3",
+        version: "1.2.3",
+        repository: "metric-space-ai/workjet",
+        output: NodePath.join(root, "workjet-desktop-install-manifest-v1.json"),
+        targets,
+      });
+      const { spawnSync } = await import("node:child_process");
+      const verify = () =>
+        spawnSync(
+          process.execPath,
+          [
+            new URL("./verify-workjet-release-assets.mjs", import.meta.url).pathname,
+            root,
+            "--targets",
+            targets,
+          ],
+          { encoding: "utf8" },
+        );
+      NodeAssert.equal(verify().status, 0);
+      for (const filename of assets) {
+        await NodeFSP.rm(NodePath.join(root, filename));
+        NodeAssert.notEqual(verify().status, 0, filename);
+        await NodeFSP.writeFile(NodePath.join(root, filename), filename);
+      }
+    } finally {
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+NodeTest.test("Windows chooses complete Azure, otherwise PFX, otherwise unsigned", async () => {
+  const { parse } = await import("yaml");
+  const { spawnSync } = await import("node:child_process");
+  const workflow = parse(
+    await NodeFSP.readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
+  );
+  const step = workflow.jobs.preflight.steps.find(({ id }) => id === "signing");
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-windows-signing-"));
+  try {
+    for (const [credentials, mode] of [
+      [{}, "unsigned"],
+      [{ WIN_CSC_LINK: "synthetic-pfx" }, "pfx"],
+      [{ WIN_CSC_LINK: "synthetic-pfx", AZURE_CLIENT_ID: "synthetic-client" }, "pfx"],
+      [
+        {
+          WIN_CSC_LINK: "synthetic-pfx",
+          AZURE_TENANT_ID: "synthetic-tenant",
+          AZURE_CLIENT_ID: "synthetic-client",
+          AZURE_CLIENT_SECRET: "synthetic-secret",
+          AZURE_PROFILE: "synthetic-profile",
+          AZURE_PUBLISHER: "synthetic-publisher",
+        },
+        "azure",
+      ],
+    ]) {
+      const output = NodePath.join(root, "output");
+      await NodeFSP.writeFile(output, "");
+      const result = spawnSync("bash", ["-eu", "-c", step.run], {
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          GITHUB_OUTPUT: output,
+          ...Object.fromEntries(Object.keys(step.env).map((key) => [key, ""])),
+          ...credentials,
+        },
+      });
+      NodeAssert.equal(result.status, 0, result.stderr);
+      NodeAssert.match(
+        await NodeFSP.readFile(output, "utf8"),
+        new RegExp(`windows_signing=${mode}\\n`),
+      );
     }
   } finally {
     await NodeFSP.rm(root, { recursive: true, force: true });

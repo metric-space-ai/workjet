@@ -168,6 +168,7 @@ interface BuildCliInput {
   readonly diagnosticProviderGatewayHost?: Option.Option<string>;
   readonly gpuBuildOwner?: Option.Option<string>;
   readonly prebuiltLinuxSshServer?: Option.Option<string>;
+  readonly updateFeedUrl?: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -776,6 +777,7 @@ interface ResolvedBuildOptions {
   readonly diagnosticProviderGatewayHost?: string;
   readonly gpuBuildOwner?: string;
   readonly prebuiltLinuxSshServer?: string;
+  readonly updateFeedUrl?: string;
 }
 
 interface StagePackageJson {
@@ -1604,6 +1606,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const prebuiltLinuxSshServer = Option.getOrUndefined(
     input.prebuiltLinuxSshServer ?? Option.none(),
   );
+  const updateFeedUrl = Option.getOrUndefined(input.updateFeedUrl ?? Option.none());
 
   return {
     platform,
@@ -1621,6 +1624,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
     ...(gpuBuildOwner === undefined ? {} : { gpuBuildOwner }),
     ...(prebuiltLinuxSshServer === undefined ? {} : { prebuiltLinuxSshServer }),
+    ...(updateFeedUrl === undefined ? {} : { updateFeedUrl }),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2189,9 +2193,40 @@ export function resolveServerRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/server");
 }
 
+export class InvalidDesktopUpdateFeedUrlError extends Schema.TaggedErrorClass<InvalidDesktopUpdateFeedUrlError>()(
+  "InvalidDesktopUpdateFeedUrlError",
+  { url: Schema.String, cause: Schema.Defect() },
+) {}
+
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
+  updateFeedUrl?: string,
 ) {
+  if (updateFeedUrl !== undefined) {
+    const url = yield* Effect.try({
+      try: () => {
+        const parsed = new URL(updateFeedUrl);
+        if (
+          parsed.protocol !== "https:" ||
+          parsed.username ||
+          parsed.password ||
+          parsed.search ||
+          parsed.hash
+        ) {
+          throw new Error(
+            "The desktop update feed must be an HTTPS base URL without credentials, query or fragment.",
+          );
+        }
+        return parsed;
+      },
+      catch: (cause) => new InvalidDesktopUpdateFeedUrlError({ url: updateFeedUrl, cause }),
+    });
+    return {
+      provider: "generic",
+      url: url.href.endsWith("/") ? url.href : `${url.href}/`,
+      channel: "latest",
+    };
+  }
   const env = yield* Config.all({
     updateRepository: Config.string("WORKJET_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
@@ -2282,6 +2317,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   businessOsShellInstallPath: string,
   /** Staged host directory, or undefined when no release has been staged. */
   providerGatewayHostStagePath?: string,
+  updateFeedUrl?: string,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
@@ -2302,9 +2338,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ),
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+  const publishConfig = yield* resolveGitHubPublishConfig(updateChannel, updateFeedUrl);
   if (publishConfig) {
     buildConfig.publish = [publishConfig];
+    if (updateFeedUrl !== undefined) buildConfig.detectUpdateChannel = false;
   } else if (mockUpdates) {
     buildConfig.publish = [
       {
@@ -2331,7 +2368,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
             entitlements: MAC_ADHOC_ENTITLEMENTS_PATH,
             entitlementsInherit: MAC_ADHOC_ENTITLEMENTS_PATH,
           }
-        : {}),
+        : {
+            hardenedRuntime: true,
+            entitlements: MAC_ADHOC_ENTITLEMENTS_PATH,
+            entitlementsInherit: MAC_ADHOC_ENTITLEMENTS_PATH,
+          }),
       protocols: [
         {
           name: "Workjet",
@@ -2381,7 +2422,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       signAndEditExecutable: true,
     };
     if (signed) {
-      winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
+      const certificate = yield* Config.string("WIN_CSC_LINK").pipe(Config.option);
+      if (!Option.getOrUndefined(certificate)?.trim()) {
+        winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
+      }
+      buildConfig.forceCodeSigning = true;
     }
     buildConfig.win = winConfig;
   }
@@ -2804,10 +2849,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
   yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));
 
+  const macSigningEnv = loadRepoEnv({ repoRoot });
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" &&
+    options.signed &&
+    macSigningEnv.WORKJET_MACOS_PROVISIONING_PROFILE?.trim()
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => resolveMacPasskeySigningConfiguration(macSigningEnv),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
@@ -2884,6 +2932,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         : undefined,
       businessOsShell.installPath,
       providerGatewayHost.installPath,
+      options.updateFeedUrl,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -2993,6 +3042,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     }
     delete buildEnv.CSC_LINK;
     delete buildEnv.CSC_KEY_PASSWORD;
+    delete buildEnv.WIN_CSC_LINK;
+    delete buildEnv.WIN_CSC_KEY_PASSWORD;
     delete buildEnv.APPLE_API_KEY;
     delete buildEnv.APPLE_API_KEY_ID;
     delete buildEnv.APPLE_API_ISSUER;
@@ -3131,7 +3182,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   ),
   signed: Flag.boolean("signed").pipe(
     Flag.withDescription(
-      "Enable signing/notarization discovery; Windows uses Azure Trusted Signing (env: WORKJET_DESKTOP_SIGNED).",
+      "Enable signing/notarization discovery; Windows uses WIN_CSC_LINK or Azure Trusted Signing (env: WORKJET_DESKTOP_SIGNED).",
     ),
     Flag.optional,
   ),
@@ -3161,6 +3212,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   prebuiltLinuxSshServer: Flag.string("prebuilt-linux-ssh-server").pipe(
     Flag.withDescription(
       "Directory of an admitted Linux SSH server build and receipt, verified against this source and fresh server output.",
+    ),
+    Flag.optional,
+  ),
+  updateFeedUrl: Flag.string("update-feed-url").pipe(
+    Flag.withDescription(
+      "HTTPS generic updater base URL for this build; overrides GitHub updater discovery.",
     ),
     Flag.optional,
   ),

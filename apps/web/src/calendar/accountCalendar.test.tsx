@@ -34,6 +34,7 @@ describe("connected account calendar", () => {
     for (const initialView of ["day", "week", "month"] as const) {
       const html = renderToStaticMarkup(
         <ProjectCalendar
+          locale="de-DE"
           projects={[]}
           initialDate="2026-10-09"
           initialView={initialView}
@@ -119,6 +120,7 @@ describe("connected account calendar", () => {
   it("keeps all-day occurrences in the all-day lane", () => {
     const html = renderToStaticMarkup(
       <ProjectCalendar
+        locale="de-DE"
         projects={[]}
         initialDate="2026-10-09"
         initialView="day"

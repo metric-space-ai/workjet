@@ -1,12 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
 
 import { type SlowRpcAckRequest, useSlowRpcAckRequests } from "../rpc/requestLatencyState";
-import { toastManager } from "./ui/toast";
 
 /**
  * Eine Zeile (UI-Vertrag): „2 Anfragen warten länger als 15 s“. Die einzelnen
- * Anfragen (Rohdaten) gehören in Einstellungen › Diagnose, nicht in den Toast.
+ * Anfragen (Rohdaten) gehören in Einstellungen › Diagnose, nicht in einen Toast.
  */
 export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>): string {
   const count = requests.length;
@@ -16,50 +14,36 @@ export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>)
   );
   // Zahl und Einheit bleiben bei 420 px zusammen (geschütztes Leerzeichen).
   return count === 1
-    ? `1 Anfrage wartet länger als ${thresholdSeconds}\u00a0s`
-    : `${count} Anfragen warten länger als ${thresholdSeconds}\u00a0s`;
+    ? `1 Anfrage wartet länger als ${thresholdSeconds} s`
+    : `${count} Anfragen warten länger als ${thresholdSeconds} s`;
 }
 
-export function SlowRpcRequestToastCoordinator() {
+/**
+ * Kleiner Chip in der Kopfzeile statt Toast. Die einzige Aktion ist der Klick
+ * auf den Chip; er führt zu Einstellungen › Diagnose.
+ */
+export function SlowRpcRequestChip() {
   const slowRequests = useSlowRpcAckRequests();
   const navigate = useNavigate();
-  const toastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
-
-  useEffect(() => {
-    if (slowRequests.length === 0) {
-      if (toastIdRef.current !== null) {
-        toastManager.close(toastIdRef.current);
-        toastIdRef.current = null;
-      }
-      return;
-    }
-
-    // Die eine erlaubte Aktion: die Einzelheiten stehen in Einstellungen › Diagnose.
-    const nextToast = {
-      timeout: 0,
-      title: describeSlowRequests(slowRequests),
-      type: "warning" as const,
-      actionProps: {
-        children: "Diagnose",
-        onClick: () => void navigate({ to: "/settings/diagnostics" }),
-      },
-    };
-
-    if (toastIdRef.current === null) {
-      toastIdRef.current = toastManager.add(nextToast);
-    } else {
-      toastManager.update(toastIdRef.current, nextToast);
-    }
-  }, [navigate, slowRequests]);
-
-  useEffect(
-    () => () => {
-      if (toastIdRef.current !== null) {
-        toastManager.close(toastIdRef.current);
-      }
-    },
-    [],
+  if (slowRequests.length === 0) return null;
+  return (
+    <button
+      type="button"
+      className="no-drag inline-flex shrink-0 items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] whitespace-nowrap text-amber-400 hover:bg-amber-500/20 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      data-workjet-slow-requests=""
+      title="Einstellungen › Diagnose"
+      onClick={() => void navigate({ to: "/settings/diagnostics" })}
+    >
+      {describeSlowRequests(slowRequests)}
+    </button>
   );
+}
 
+/**
+ * Früher: Toast mit „Diagnose“-Knopf. Der Hinweis ist jetzt der Chip in der
+ * Kopfzeile (SlowRpcRequestChip im WorkjetHeader); diese Hülle bleibt nur,
+ * weil die Wurzel sie noch einhängt.
+ */
+export function SlowRpcRequestToastCoordinator() {
   return null;
 }

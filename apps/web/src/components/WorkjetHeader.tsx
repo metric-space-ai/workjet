@@ -6,6 +6,7 @@ import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { isElectron } from "../env";
 import type { WorkjetProductMode } from "../workjetProductMode";
 import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
+import { SlowRpcRequestChip } from "./SlowRpcRequestToastCoordinator";
 import { VersionChip } from "./VersionChip";
 import { BrowserBusinessOsNavigation } from "./BrowserBusinessOsNavigation";
 import { WorkjetProductModeSwitch } from "./sidebar/SidebarChrome";
@@ -62,6 +63,7 @@ export function WorkjetHeaderFrame({
           className="relative flex min-w-0 flex-1 items-center"
           data-workjet-header-slot=""
         />
+        <SlowRpcRequestChip />
         <VersionChip />
         <button
           type="button"

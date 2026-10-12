@@ -37,6 +37,7 @@ import {
   useWorkjetProjectRegistry,
 } from "../../workjetProjectRegistry";
 import { Button } from "../ui/button";
+import { useSingleInlineExpand } from "../ui/inline-expand";
 import { SessionImportBrowser, sessionImportFolderName } from "./SessionImportBrowser";
 import { prepareSessionImportProject, type SessionImportProject } from "./sessionImportProject";
 import { selectAllSessionImportCandidates } from "./sessionImportSelection";
@@ -90,6 +91,7 @@ export function SessionImportSection({
     [presentationInstanceId, registry.projects, localProjects, computer?.id],
   );
   const [open, setOpen] = useState(false);
+  useSingleInlineExpand(open, setOpen);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [source, setSource] = useState<WorkjetSessionImportSource | "all">("all");

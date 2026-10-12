@@ -20,34 +20,36 @@ import { Button } from "./ui/button";
 export function ProjectExitModelSummary({
   projectId,
   assessment,
-  onOpen,
 }: {
   readonly projectId: string;
   readonly assessment?: WorkjetExitModelAssessment | null;
-  readonly onOpen: () => void;
 }) {
   const view = exitModelPresentation(assessment, projectId);
-  // Ohne Wert kein Stempel über der Vorschau; die Bewertung öffnet dann das ⋯-Menü der Karte.
-  if (view.value === "—") return null;
+  const valued = view.value !== "—";
+  // Der Stempel ist immer sichtbar und bleibt reine Anzeige: nicht klickbar,
+  // damit ein Klick auf die Vorschau weiter das Projekt öffnet.
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Fünf-Jahres-Exit-Bewertung ansehen"
-      aria-description={view.value + " · " + view.label}
-      title={
-        view.value +
-        " · " +
-        view.label +
-        (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
+    <div
+      role="img"
+      aria-label={
+        valued
+          ? view.value +
+            " · " +
+            view.label +
+            (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
+          : "Nicht bewertet"
       }
-      data-workjet-action={"project.exit_model.open:" + projectId}
-      className="absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double border-foreground/70 bg-background/90 px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums shadow-sm hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+      className={
+        "pointer-events-none absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap tabular-nums shadow-sm " +
+        (valued
+          ? "border-foreground/70 bg-background/90 text-foreground"
+          : "border-foreground/30 bg-background/70 text-muted-foreground/70")
+      }
       data-workjet-exit-model-status={view.status}
       data-workjet-exit-model-stamp=""
     >
-      {view.value}
-    </button>
+      {valued ? view.value : "Nicht bewertet"}
+    </div>
   );
 }
 

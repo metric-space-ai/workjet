@@ -153,6 +153,15 @@ describe("compact project gallery", () => {
 });
 
 describe("inline card back", () => {
+  it("shows the dimmed not-rated stamp on cards without an exit value", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard project={project} onOpen={() => {}} />,
+    );
+    expect(markup).toContain('data-workjet-exit-model-stamp=""');
+    expect(markup).toContain("Nicht bewertet");
+    expect(markup).toContain("pointer-events-none");
+    expect(markup).not.toMatch(/<button[^>]*data-workjet-exit-model-stamp/);
+  });
   it("renders the closed card without an expanded marker or a back face", () => {
     for (const props of [
       { onSave: async () => true },

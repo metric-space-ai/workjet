@@ -76,7 +76,7 @@ export function ProjectCardConfigEditor({
   const [error, setError] = useState<string | null>(null);
   return (
     <form
-      className="flex size-full min-h-0 flex-col gap-2 p-3"
+      className="flex size-full min-h-0 flex-col"
       data-workjet-project-card-config=""
       onSubmit={async (event) => {
         event.preventDefault();
@@ -109,22 +109,23 @@ export function ProjectCardConfigEditor({
         }
       }}
     >
-      <div className="grid grid-cols-2 items-end gap-x-2 gap-y-1.5">
-        <label className="col-span-2 flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
-          Name
+      {/* Dicht: Felder tragen ihre Bezeichnung als Platzhalter; die Knopfzeile
+          bleibt unten stehen, auch wenn der Inhalt intern scrollt. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">
+        <div className="grid grid-cols-2 gap-1.5 pr-8">
           <Input
             aria-label="Projektname"
+            size="sm"
             maxLength={256}
             required
+            placeholder="Name"
             disabled={state.pending || !canEditTitle}
             value={draft.title}
             onChange={(event) => setDraft({ ...draft, title: event.target.value })}
           />
-        </label>
-        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
-          Website
           <Input
             aria-label="Website"
+            size="sm"
             type="url"
             maxLength={2048}
             placeholder="https://example.com"
@@ -132,24 +133,21 @@ export function ProjectCardConfigEditor({
             value={draft.websiteUrl ?? ""}
             onChange={(event) => setDraft({ ...draft, websiteUrl: event.target.value || null })}
           />
-        </label>
-        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
-          Repository
-          <Input
-            aria-label="Repository"
-            type="url"
-            maxLength={2048}
-            placeholder="https://github.com/owner/repository"
-            disabled={state.pending}
-            value={draft.repositoryUrl ?? ""}
-            onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
-          />
-        </label>
-        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
-          Regeltermin
+        </div>
+        <Input
+          aria-label="Repository"
+          size="sm"
+          type="url"
+          maxLength={2048}
+          placeholder="https://github.com/owner/repository"
+          disabled={state.pending}
+          value={draft.repositoryUrl ?? ""}
+          onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
+        />
+        <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-1.5">
           <select
             aria-label="Regeltermin Wochentag"
-            className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+            className="h-7.5 min-w-0 rounded-md border border-input bg-background px-2 text-xs sm:h-6.5"
             disabled={state.pending}
             value={draft.jourFixe?.weekday ?? "none"}
             onChange={(event) =>
@@ -173,11 +171,9 @@ export function ProjectCardConfigEditor({
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
-          Uhrzeit
           <Input
             aria-label="Regeltermin Uhrzeit"
+            size="sm"
             type="time"
             required={draft.jourFixe !== null}
             disabled={state.pending || draft.jourFixe === null}
@@ -190,14 +186,17 @@ export function ProjectCardConfigEditor({
               )
             }
           />
-        </label>
+        </div>
+        {error !== null && (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
-      {error !== null && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="mt-auto flex items-center gap-2">
+      <div
+        className="flex flex-none items-center gap-1.5 border-t border-border px-2 py-1.5"
+        data-workjet-project-card-config-actions=""
+      >
         <Button type="submit" size="xs" disabled={state.pending}>
           {state.pending ? "Speichern …" : "Speichern"}
         </Button>
@@ -210,7 +209,10 @@ export function ProjectCardConfigEditor({
         >
           Abbrechen
         </Button>
-        <p className="text-xs text-muted-foreground" role="status">
+        <p
+          className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground"
+          role="status"
+        >
           {state.message}
         </p>
       </div>

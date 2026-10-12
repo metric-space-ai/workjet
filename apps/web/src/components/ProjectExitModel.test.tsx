@@ -63,11 +63,12 @@ describe("project exit assessment display", () => {
     );
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
     expect(markup).toContain(formatExitEur(800_000));
-    expect(markup).toContain('aria-label="Fünf-Jahres-Exit-Bewertung ansehen"');
-    const stamp = markup.match(
-      /<button[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/button>/,
-    );
+    // Der Stempel ist reine Anzeige: kein Knopf, Klicks öffnen über die Vorschau das Projekt.
+    expect(markup).not.toContain('aria-label="Fünf-Jahres-Exit-Bewertung ansehen"');
+    expect(markup).not.toMatch(/<button[^>]*data-workjet-exit-model-stamp/);
+    const stamp = markup.match(/<div[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/div>/);
     expect(stamp?.[1]).toBe(formatExitEur(800_000));
+    expect(stamp?.[0]).toContain("pointer-events-none");
   });
 
   it("distinguishes proceeds, sale probability, conditional price and financing", () => {
@@ -121,17 +122,26 @@ describe("project exit assessment display", () => {
     expect(markup).toContain(formatExitEur(800_000));
   });
 
-  it("hides a different project's assessment on a reused card", () => {
+  it("keeps the stamp visible without a value, dimmed as not rated", () => {
+    for (const assessment of [null]) {
+      const markup = renderToStaticMarkup(
+        <ProjectExitModelSummary projectId={projectId} assessment={assessment} />,
+      );
+      expect(markup).toContain('data-workjet-exit-model-stamp=""');
+      expect(markup).toContain("Nicht bewertet");
+      expect(markup).toContain("pointer-events-none");
+      expect(markup).not.toContain("<button");
+    }
+  });
+
+  it("hides a different project's value on a reused card but keeps the stamp", () => {
     const markup = renderToStaticMarkup(
-      <ProjectExitModelSummary
-        projectId="foreign"
-        assessment={exitModelFixture}
-        onOpen={() => {}}
-      />,
+      <ProjectExitModelSummary projectId="foreign" assessment={exitModelFixture} />,
     );
     expect(markup).not.toContain(formatExitEur(800_000));
-    // Ohne gültige Bewertung kein Stempel über der Vorschau.
-    expect(markup).toBe("");
+    // Ohne gültigen Wert zeigt derselbe Stempel gedämpft „Nicht bewertet“.
+    expect(markup).toContain("Nicht bewertet");
+    expect(markup).toContain("pointer-events-none");
   });
 });
 

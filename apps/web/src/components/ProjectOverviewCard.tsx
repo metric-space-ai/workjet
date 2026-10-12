@@ -350,7 +350,6 @@ export function ProjectOverviewCard({
           <ProjectExitModelSummary
             projectId={project.id}
             assessment={project.configuration?.exitModel ?? null}
-            onOpen={() => setEditing("exit")}
           />
         </div>
       )}

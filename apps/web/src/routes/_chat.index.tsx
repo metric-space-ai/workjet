@@ -104,7 +104,7 @@ import {
 } from "../state/environments";
 import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
-import { resolveNativeProjectOpening } from "../nativeProjectOpening";
+import { nativeOpenAttemptKey, resolveNativeProjectOpening } from "../nativeProjectOpening";
 import {
   resolveDefaultProviderModelSelection,
   resolveProjectTeamModelSelection,
@@ -394,7 +394,14 @@ function IndexDraftLanding() {
       return;
     }
     if (!bootstrapped || supervisor !== null || openingNative.current) return;
-    const key = JSON.stringify([activeCtoxInstanceId, selectedNative.id]);
+    // Desktop registers the local environment only after its backend is up. An attempt
+    // made before that is repeated once it is connected instead of parking on "blocked" (#492).
+    const key = nativeOpenAttemptKey(
+      activeCtoxInstanceId,
+      selectedNative.id,
+      primaryEnvironmentId,
+      primaryEnvironment?.connection.phase,
+    );
     if (automaticNativeAttempt.current === key) return;
     automaticNativeAttempt.current = key;
     void openNativeSupervisor(selectedNative);
@@ -404,6 +411,7 @@ function IndexDraftLanding() {
     nativeOpenState.pending,
     openNativeSupervisor,
     primaryEnvironment?.connection.phase,
+    primaryEnvironmentId,
     selectedNative,
     supervisor,
   ]);

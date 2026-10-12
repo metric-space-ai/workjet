@@ -101,6 +101,12 @@ import {
 } from "../../workjetProjectRegistry";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
 import { newCommandId } from "../../lib/utils";
+import {
+  INSTANCE_PROJECT_KEY_PREFIX,
+  InstanceProjectDetail,
+  InstanceProjectsSettingsSection,
+  useInstanceOnlyProjects,
+} from "./InstanceProjectSettings";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Nach Repository",
@@ -143,62 +149,66 @@ function memberKey(member: { environmentId: string; id: string }): string {
  */
 export function ProjectsSettingsList() {
   const groups = useSettingsProjectGroups();
+  const instanceProjects = useInstanceOnlyProjects().projects;
   return (
     <SettingsPageContainer>
-      <SettingsSection title="Projekte">
-        {groups.length === 0 ? (
-          <Empty className="py-8">
-            <EmptyHeader>
-              <EmptyTitle className="text-[13.5px]">Noch keine Projekte</EmptyTitle>
-            </EmptyHeader>
-            <Button size="sm" variant="outline" render={<Link to="/" />}>
-              <PlusIcon className="size-4" />
-              Projekt anlegen
-            </Button>
-          </Empty>
-        ) : (
-          <div className="divide-y divide-border/60" data-workjet-settings-projects="">
-            {groups.map((group) => {
-              const representative =
-                group.memberProjects.find(
-                  (member) =>
-                    member.environmentId === group.environmentId && member.id === group.id,
-                ) ?? group.memberProjects[0];
-              return (
-                <Row
-                  key={group.projectKey}
-                  name={
-                    <Link
-                      to="/settings/projects/$projectKey"
-                      params={{ projectKey: group.projectKey }}
-                      className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      data-workjet-action={`project.settings:${group.projectKey}`}
-                    >
-                      {representative ? (
-                        <ProjectFavicon
-                          environmentId={representative.environmentId}
-                          cwd={representative.workspaceRoot}
-                          faviconPath={representative.faviconPath ?? null}
-                          className="size-4 shrink-0"
-                        />
-                      ) : null}
-                      <span className="truncate">{group.displayName}</span>
-                    </Link>
-                  }
-                  meta={representative?.environmentLabel ?? undefined}
-                  chips={
-                    group.memberProjects.length > 1 ? (
-                      <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">
-                        {group.memberProjects.length} Arbeitskopien
-                      </span>
-                    ) : undefined
-                  }
-                />
-              );
-            })}
-          </div>
-        )}
-      </SettingsSection>
+      {groups.length === 0 && instanceProjects.length > 0 ? null : (
+        <SettingsSection title="Projekte">
+          {groups.length === 0 ? (
+            <Empty className="py-8">
+              <EmptyHeader>
+                <EmptyTitle className="text-[13.5px]">Noch keine Projekte</EmptyTitle>
+              </EmptyHeader>
+              <Button size="sm" variant="outline" render={<Link to="/" />}>
+                <PlusIcon className="size-4" />
+                Projekt anlegen
+              </Button>
+            </Empty>
+          ) : (
+            <div className="divide-y divide-border/60" data-workjet-settings-projects="">
+              {groups.map((group) => {
+                const representative =
+                  group.memberProjects.find(
+                    (member) =>
+                      member.environmentId === group.environmentId && member.id === group.id,
+                  ) ?? group.memberProjects[0];
+                return (
+                  <Row
+                    key={group.projectKey}
+                    name={
+                      <Link
+                        to="/settings/projects/$projectKey"
+                        params={{ projectKey: group.projectKey }}
+                        className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        data-workjet-action={`project.settings:${group.projectKey}`}
+                      >
+                        {representative ? (
+                          <ProjectFavicon
+                            environmentId={representative.environmentId}
+                            cwd={representative.workspaceRoot}
+                            faviconPath={representative.faviconPath ?? null}
+                            className="size-4 shrink-0"
+                          />
+                        ) : null}
+                        <span className="truncate">{group.displayName}</span>
+                      </Link>
+                    }
+                    meta={representative?.environmentLabel ?? undefined}
+                    chips={
+                      group.memberProjects.length > 1 ? (
+                        <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">
+                          {group.memberProjects.length} Arbeitskopien
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                );
+              })}
+            </div>
+          )}
+        </SettingsSection>
+      )}
+      <InstanceProjectsSettingsSection />
     </SettingsPageContainer>
   );
 }
@@ -208,6 +218,12 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
   const navigate = useNavigate();
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
+  const instance = useInstanceOnlyProjects();
+  const instanceProject = projectKey.startsWith(INSTANCE_PROJECT_KEY_PREFIX)
+    ? (instance.projects.find(
+        (project) => project.id === projectKey.slice(INSTANCE_PROJECT_KEY_PREFIX.length),
+      ) ?? null)
+    : null;
 
   // Mitglieder der zuletzt gezeigten Gruppe merken: Ändert sich die
   // Gruppierungsregel (und damit der Schlüssel), folgt die Seite dem Projekt.
@@ -239,6 +255,8 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
     }
   }, [groups, navigate, projectKey, selected]);
 
+  if (!selected && instanceProject !== null && instance.instanceId !== null)
+    return <InstanceProjectDetail instanceId={instance.instanceId} project={instanceProject} />;
   if (!selected) {
     return (
       <Empty className="flex-1">

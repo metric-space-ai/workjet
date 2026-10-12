@@ -7,6 +7,7 @@ import { Fragment, useState } from "react";
 import { PlusIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Row } from "../ui/row";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsSection } from "./settingsLayout";
@@ -99,7 +100,15 @@ export function WorkjetLlmRoutesSection(props: {
         </Button>
       }
     >
-      {addingRoute ? routeEditor : null}
+      <InlineExpand
+        label="Route hinzufügen"
+        open={addingRoute}
+        onOpenChange={(open) => {
+          if (!open) setAddingRoute(false);
+        }}
+      >
+        {addingRoute ? routeEditor : null}
+      </InlineExpand>
       {props.configuration.llmRoutes.map((route) => (
         <Fragment key={route.id}>
           <Row
@@ -130,7 +139,15 @@ export function WorkjetLlmRoutesSection(props: {
             ]}
             menuLabel={`Aktionen für ${route.label}`}
           />
-          {editingRoute?.id === route.id ? routeEditor : null}
+          <InlineExpand
+            label={route.label}
+            open={editingRoute?.id === route.id}
+            onOpenChange={(open) => {
+              if (!open && editingRouteId === route.id) setEditingRouteId(null);
+            }}
+          >
+            {editingRoute?.id === route.id ? routeEditor : null}
+          </InlineExpand>
         </Fragment>
       ))}
       <WorkjetGatewayModelRoutes catalog={props.catalog} />

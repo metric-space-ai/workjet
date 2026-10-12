@@ -229,6 +229,9 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
       exitBusinessOsMode: inWindow((guests) => guests.exitBusinessOsMode),
       activate: (id, bounds) => inWindow((guests) => guests.activate(id, bounds)),
       ensurePooled: (id) => inWindow((guests) => guests.ensurePooled(id)),
+      observeShellGenerations: instances => lock.withPermit(Effect.gen(function* () {
+        for (const entry of entries.values()) yield* entry.guests.observeShellGenerations?.(instances) ?? Effect.void;
+      })),
       suspend: inWindow((guests) => guests.suspend),
       deactivate: inWindow((guests) => guests.deactivate),
       deactivateAll,

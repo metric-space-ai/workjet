@@ -202,7 +202,11 @@ export const refresh: DesktopIpc.DesktopIpcMethod<
         Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
       );
       yield* finishKeyRecovery(managed).pipe(Effect.orElseSucceed(() => undefined));
-      return yield* encodeSafe(CtoxDiscoveryResult, yield* registry.merge(managed));
+      const discovery = yield* registry.merge(managed);
+      const guests = yield* Effect.serviceOption(CtoxGuestManager.CtoxGuestManager);
+      if (discovery._tag === "ready" && Option.isSome(guests))
+        yield* guests.value.observeShellGenerations?.(discovery.instances) ?? Effect.void;
+      return yield* encodeSafe(CtoxDiscoveryResult, discovery);
     }),
 };
 

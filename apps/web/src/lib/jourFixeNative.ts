@@ -10,8 +10,8 @@ import {
 } from "@workjet/contracts";
 import {
   requestWorkjetProjectControl,
-  describeWorkjetProjectControlFailure,
 } from "../workjetProjectControl";
+import { retryJourFixeRead, jourFixeTransportError } from "./jourFixeReadRetry";
 import { newCommandId, randomUUID } from "./utils";
 import type { JourFixeCommentDraft, JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
 
@@ -84,6 +84,7 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
 export class JourFixeNativeSession {
   private pending: PendingMutation | undefined;
   private closed = false;
+  private readonly reads = new Map<string, Promise<WorkjetJourFixeReadResponse>>();
   constructor(
     readonly instanceId: string,
     readonly projectId: ProjectId,
@@ -104,7 +105,17 @@ export class JourFixeNativeSession {
   private assertCurrent() {
     if (this.closed || !this.current()) throw new Error("Meeting scope changed.");
   }
-  async read(meetingId?: string): Promise<WorkjetJourFixeReadResponse> {
+  read(meetingId?: string, signal?: AbortSignal): Promise<WorkjetJourFixeReadResponse> {
+    const key = meetingId ?? "";
+    const existing = this.reads.get(key);
+    if (existing) return existing;
+    const pending = this.readSnapshot(meetingId, signal).finally(() => {
+      if (this.reads.get(key) === pending) this.reads.delete(key);
+    });
+    this.reads.set(key, pending);
+    return pending;
+  }
+  private async readSnapshot(meetingId?: string, signal?: AbortSignal): Promise<WorkjetJourFixeReadResponse> {
     this.assertCurrent();
     const request = {
       action: "project.jour_fixe.meeting.read" as const,
@@ -112,10 +123,14 @@ export class JourFixeNativeSession {
       projectId: this.projectId,
       ...(meetingId ? { meetingId } : {}),
     };
-    const result = await this.control(this.instanceId, request);
+    const result = await retryJourFixeRead(async () => {
+      this.assertCurrent();
+      const value = await this.control(this.instanceId, request);
+      this.assertCurrent();
+      if (value._tag !== "completed") throw jourFixeTransportError(value);
+      return value;
+    }, { signal });
     this.assertCurrent();
-    if (result._tag !== "completed")
-      throw new Error(describeWorkjetProjectControlFailure(result, this.instanceId));
     if (
       result.response.action !== request.action ||
       !isWorkjetJourFixeReadReceiptForRequest(request, result.response)

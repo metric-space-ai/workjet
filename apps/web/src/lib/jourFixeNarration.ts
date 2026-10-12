@@ -18,6 +18,8 @@ export interface JourFixeNarrationOptions {
   readonly signal: AbortSignal;
   readonly port?: WorkjetProjectControlPort;
 }
+import { retryJourFixeRead, jourFixeReadDeadline, jourFixeTransportError, JourFixeReadError } from "./jourFixeReadRetry";
+
 const canceled = () => new DOMException("Narration scope canceled.", "AbortError");
 async function digest(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
@@ -32,36 +34,20 @@ export async function prepareJourFixeNarration(options: JourFixeNarrationOptions
   const slideId = options.slideId;
   const signal = options.signal;
   const port = options.port;
-  const deadline = Date.now() + 120_000;
+  const deadline = jourFixeReadDeadline();
   let first: WorkjetJourFixeNarrationReadResponse | undefined;
   let bytes: Uint8Array<ArrayBuffer> | undefined;
   let offset = 0;
   const current = () => {
     if (signal.aborted) throw canceled();
-    if (Date.now() >= deadline) throw new Error("Narration retrieval exceeded its deadline.");
+    if (Date.now() >= deadline) throw new JourFixeReadError("timeout");
   };
-  const invoke = async (request: Parameters<WorkjetProjectControlPort>[1]) => {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let detach = () => {};
-    try {
-      return await Promise.race([
-        requestWorkjetProjectControl(scope.instanceId, request, port),
-        new Promise<never>((_, reject) => {
-          const abort = () => reject(canceled());
-          signal.addEventListener("abort", abort, { once: true });
-          detach = () => signal.removeEventListener("abort", abort);
-          timeout = setTimeout(
-            () => reject(new Error("Narration retrieval exceeded its deadline.")),
-            Math.min(30_000, Math.max(1, deadline - Date.now())),
-          );
-          if (signal.aborted) abort();
-        }),
-      ]);
-    } finally {
-      if (timeout !== undefined) clearTimeout(timeout);
-      detach();
-    }
-  };
+  const invoke = (request: Parameters<WorkjetProjectControlPort>[1]) =>
+    retryJourFixeRead(async () => {
+      const result = await requestWorkjetProjectControl(scope.instanceId, request, port);
+      if (result._tag !== "completed") throw jourFixeTransportError(result);
+      return result;
+    }, { signal, deadline });
   try {
     do {
       current();
@@ -77,8 +63,6 @@ export async function prepareJourFixeNarration(options: JourFixeNarrationOptions
       };
       const result = await invoke(request);
       current();
-      if (result._tag !== "completed")
-        throw new Error(`Narration transport unavailable: ${result.code}`);
       if (!isWorkjetJourFixeNarrationReceiptForRequest(request, result.response))
         throw new Error("Narration response belongs to another slide, scope or byte range.");
       const response = result.response;

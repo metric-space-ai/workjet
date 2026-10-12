@@ -152,6 +152,7 @@ interface ActiveGuest {
    */
   readonly release?: () => void;
   readonly awaitRelease?: Effect.Effect<void>;
+  readonly shellGeneration?: string;
 }
 
 /**
@@ -212,6 +213,8 @@ export class CtoxGuestManager extends Context.Service<
     ) => Effect.Effect<CtoxManagedGuestResult>;
     /** Load an instance guest into the warm pool without attaching its native view. */
     readonly ensurePooled: (instanceId: string) => Effect.Effect<CtoxManagedGuestResult>;
+    /** Public discovery metadata only; no extra network/auth refresh per room read. */
+    readonly observeShellGenerations?: (instances: readonly CtoxManagedInstance[]) => Effect.Effect<void>;
     /** Detach the active guest without destroying its warm renderer state. */
     readonly suspend: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivate: Effect.Effect<CtoxManagedActionResult>;
@@ -1034,6 +1037,24 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     let latestHostTheme: CtoxHostThemeInput | undefined;
     let registeredSessionComputerIds: readonly string[] = [];
     let guestUseSequence = 0;
+    const shellGenerations = new Map<string, string>();
+    const listFailures = new WeakMap<WebContents, number>();
+    const pendingLists = new Map<string, Deferred.Deferred<CtoxWorkjetProjectControlResult>>();
+    const generationOf = (instance: CtoxManagedInstance) =>
+      instance.shellUpdate?.activeVersion
+        ? JSON.stringify([instance.shellUpdate.activeVersion, instance.shellUpdate.lastActivatedAt])
+        : undefined;
+    const observeShellGenerations = (instances: readonly CtoxManagedInstance[]) =>
+      Effect.sync(() => {
+        for (const instance of instances) {
+          const generation = generationOf(instance);
+          if (generation !== undefined) shellGenerations.set(instance.id, generation);
+        }
+      });
+    const staleShell = (guest: ActiveGuest) =>
+      guest.shellGeneration !== undefined &&
+      shellGenerations.has(guest.instanceId) &&
+      guest.shellGeneration !== shellGenerations.get(guest.instanceId);
     const sessionEventDecoders = new Map<string, CtoxSessionTransferEventDecoder>();
     const stateRef = yield* SynchronizedRef.make<GuestState>({
       businessOsModeActive: false,
@@ -1241,6 +1262,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               Effect.andThen(sessions.instance(instance), launches.launch(instance)),
           }).pipe(Effect.orElseSucceed(() => undefined));
         const discovery = yield* registry.merge(managed);
+        if (discovery._tag === "ready") yield* observeShellGenerations(discovery.instances);
         const descriptor =
           discovery._tag === "ready"
             ? discovery.instances.find((instance) => instance.id === instanceId)
@@ -1419,6 +1441,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           view,
           bounds,
           browserSession: resolvedSession.value,
+          ...(generationOf(authoritativeDescriptor) === undefined ? {} : { shellGeneration: generationOf(authoritativeDescriptor)! }),
           lease,
           ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
           awaitRelease: awaitLaunchRelease,
@@ -1598,7 +1621,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (
             warm !== undefined &&
             !warm.view.webContents.isDestroyed() &&
-            !warm.window.isDestroyed()
+            !warm.window.isDestroyed() &&
+            !staleShell(warm)
           ) {
             // Warm switch: move the native views only. The outgoing guest is
             // detached without teardown and the warm one re-attached at the
@@ -1687,7 +1711,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (
             warm !== undefined &&
             !warm.view.webContents.isDestroyed() &&
-            !warm.window.isDestroyed()
+            !warm.window.isDestroyed() &&
+            !staleShell(warm)
           ) {
             warm.lease?.touch();
             pool.set(instanceId, { ...warm, lastUsedAt: stamp });
@@ -2114,7 +2139,23 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return { _tag: "completed", response: decoded.value };
       });
 
-    const requestProjectControl = (
+    const rebuildPooled = (instanceId: string, expected: PooledGuest) =>
+      SynchronizedRef.modifyEffect(stateRef, state => Effect.gen(function* () {
+        if (state.pool.get(instanceId)?.view !== expected.view) return [undefined, state] as const;
+        const attached = state.activeId === instanceId;
+        destroyPooledGuest(expected);
+        const pool = new Map(state.pool);
+        pool.delete(instanceId);
+        emitGuestState(instanceId, "loading");
+        const [, replacement] = yield* prepareGuest(instanceId, expected.bounds, expected.browserSession, attached);
+        if (replacement) {
+          pool.set(instanceId, { ...replacement, lastUsedAt: ++guestUseSequence });
+          emitGuestState(instanceId, "warm");
+        } else emitGuestState(instanceId, "none");
+        return [undefined, { ...state, pool, activeId: attached && !replacement ? undefined : state.activeId }] as const;
+      }));
+
+    const requestProjectControlOnce = (
       instanceId: string,
       request: CtoxWorkjetProjectControlRequest,
     ): Effect.Effect<CtoxWorkjetProjectControlResult> =>
@@ -2226,6 +2267,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         ) {
           return { _tag: "failed", code: "not_active" };
         }
+        if (staleShell(guest)) return { _tag: "failed", code: "guest_failed" };
         const raw = pending.value;
         const commandTiming = sanitizeProjectCommandTiming(
           typeof raw === "object" && raw !== null
@@ -2434,6 +2476,40 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return { _tag: "completed", response: decoded.value };
       });
 
+    const projectControlWithRecovery = (
+      instanceId: string, request: CtoxWorkjetProjectControlRequest,
+    ): Effect.Effect<CtoxWorkjetProjectControlResult> => Effect.gen(function* () {
+      const result = yield* requestProjectControlOnce(instanceId, request);
+      const state = yield* SynchronizedRef.get(stateRef);
+      const guest = state.pool.get(instanceId);
+      if (!guest) return result;
+      let failures = 0;
+      if (request.action === "project.list") {
+        failures = result._tag === "failed" && result.code === "guest_failed"
+          ? (listFailures.get(guest.view.webContents) ?? 0) + 1 : 0;
+        listFailures.set(guest.view.webContents, failures);
+      }
+      if (staleShell(guest) || failures >= 3) {
+        yield* rebuildPooled(instanceId, guest);
+        return yield* requestProjectControlOnce(instanceId, request);
+      }
+      return result;
+    });
+    const requestProjectControl = (
+      instanceId: string, request: CtoxWorkjetProjectControlRequest,
+    ): Effect.Effect<CtoxWorkjetProjectControlResult> => Effect.gen(function* () {
+      if (request.action !== "project.list") return yield* projectControlWithRecovery(instanceId, request);
+      const key = JSON.stringify([instanceId, projectControlReadKey(request)]);
+      const existing = pendingLists.get(key);
+      if (existing) return yield* Deferred.await(existing);
+      const receipt = Deferred.makeUnsafe<CtoxWorkjetProjectControlResult>();
+      pendingLists.set(key, receipt);
+      yield* Deferred.into(projectControlWithRecovery(instanceId, request).pipe(
+        Effect.ensuring(Effect.sync(() => { pendingLists.delete(key); })),
+      ), receipt).pipe(Effect.forkIn(ownerScope));
+      return yield* Deferred.await(receipt);
+    });
+
     const registerSessionTransferEvents = (
       computerIds: readonly string[],
     ): Effect.Effect<CtoxManagedActionResult> =>
@@ -2455,6 +2531,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       exitBusinessOsMode,
       activate,
       ensurePooled,
+      observeShellGenerations,
       suspend,
       deactivate,
       deactivateAll: deactivate,

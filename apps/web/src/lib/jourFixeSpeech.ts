@@ -142,8 +142,6 @@ export class JourFixeSpeechSession {
   async prepareNarration(slideId: string): Promise<void> {
     if (this.closed) return;
     this.narration?.abort();
-    this.releaseAudio();
-    this.events.onAudio(undefined);
     const controller = new AbortController();
     this.narration = controller;
     try {
@@ -159,6 +157,7 @@ export class JourFixeSpeechSession {
         throw new Error("Narration has an invalid speaking speed.");
       if (!blob.type.startsWith("audio/") || blob.size === 0 || blob.size > 32 * 1024 * 1024)
         throw new Error("Narration is not a supported audio recording.");
+      this.releaseAudio();
       this.audioUrl = URL.createObjectURL(blob);
       this.events.onAudio({ ...this.scope, slideId, blobUrl: this.audioUrl, rate });
     } catch (error) {

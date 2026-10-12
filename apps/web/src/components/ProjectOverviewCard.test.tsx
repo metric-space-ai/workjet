@@ -151,3 +151,20 @@ describe("compact project gallery", () => {
     expect(markup).not.toMatch(/<dt[^>]*class="[^"]*truncate/);
   });
 });
+
+describe("inline card back", () => {
+  it("renders the closed card without an expanded marker or a back face", () => {
+    for (const props of [
+      { onSave: async () => true },
+      { onSaveConfiguration: async () => true },
+      {},
+    ]) {
+      const markup = renderToStaticMarkup(
+        <ProjectOverviewCard project={project} onOpen={() => {}} {...props} />,
+      );
+      expect(markup).not.toContain("data-workjet-project-card-expanded");
+      expect(markup).not.toContain("data-workjet-project-card-backface");
+      expect(markup).toContain('aria-label="Aktionen für greppy.xyz"');
+    }
+  });
+});

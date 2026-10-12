@@ -15,7 +15,11 @@ vi.mock("react/compiler-runtime", async () => {
   const { reactHookHarness } = await import("../test/reactHookHarness");
   return { c: reactHookHarness.useMemoCache };
 });
-import { ProjectExitModelReport, ProjectExitModelSummary } from "./ProjectExitModel";
+import {
+  ProjectExitModelCardPanel,
+  ProjectExitModelReport,
+  ProjectExitModelSummary,
+} from "./ProjectExitModel";
 import { ProjectOverviewCard } from "./ProjectOverviewCard";
 import { exitModelFixture } from "../test/exitModelFixture";
 import { formatExitEur, formatExitPercent } from "../projectExitModel";
@@ -240,5 +244,55 @@ describe("resource input for the five-year exit assessment", () => {
     expect(findButton(tree, "project.exit_model.mode.equal:" + projectId).disabled).toBe(true);
     expect(findButton(tree, "project.exit_model.mode.specific:" + projectId).disabled).toBe(true);
     expect(findButton(tree, "project.exit_model.refresh:" + projectId).disabled).toBe(true);
+  });
+});
+
+describe("exit card back panel", () => {
+  it("renders the dense resources row and a one-line status without instance", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectExitModelCardPanel projectId={projectId} instanceId={null} assessment={null} />,
+    );
+    expect(markup).toContain('data-workjet-project-card-exit=""');
+    expect(markup).toContain("Std./Woche");
+    expect(markup).toContain("€/Monat");
+    expect(markup).toContain(">Gleich<");
+    expect(markup).toContain(">Projekt<");
+    expect(markup).toContain("Bewerten");
+    expect(markup).toContain("Nicht bewertet");
+    expect(markup).toContain("Instanz nicht verbunden");
+    expect(markup).not.toContain("Szenarien");
+    expect(markup).not.toContain("Quellen");
+  });
+
+  it("shows value and state in one status line", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectExitModelCardPanel
+        projectId={projectId}
+        instanceId={null}
+        assessment={exitModelFixture}
+      />,
+    );
+    expect(markup).toContain(formatExitEur(800_000));
+    expect(markup).toContain("Vorläufig");
+  });
+
+  it("lists missing inputs after the state", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectExitModelCardPanel
+        projectId={projectId}
+        instanceId={null}
+        assessment={{
+          ...exitModelFixture,
+          status: "blocked",
+          result: null,
+          plan_summary: null,
+          scenarios: [],
+          diagnostics: [],
+          missing_inputs: ["confirmed_resource_plan", "research_inputs"],
+        }}
+      />,
+    );
+    expect(markup).toContain("Angaben fehlen");
+    expect(markup).toContain("fehlt: Bestätigter Ressourcenplan");
   });
 });

@@ -26,6 +26,198 @@ const decodeProjectConfiguration = Schema.decodeUnknownSync(CtoxWorkjetProjectCo
   onExcessProperty: "error",
 });
 
+/** Werte der Karten-Rückseite „Projekt konfigurieren“ (Name, Website, Repository, Regeltermin). */
+export type ProjectCardConfigurationValues = {
+  readonly title: string;
+  readonly websiteUrl: string | null;
+  readonly repositoryUrl: string | null;
+  readonly jourFixe: { weekday: number; time: string; timezone: string } | null;
+};
+
+const WEEKDAY_LABELS = [
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+  "Sonntag",
+] as const;
+
+/**
+ * Dichte Rückseite der Galeriekarte. Speichert über denselben Pfad wie
+ * Einstellungen › Projekt (project.configure bzw. Projektübersicht).
+ */
+export function ProjectCardConfigEditor({
+  title,
+  websiteUrl,
+  repositoryUrl,
+  jourFixe,
+  canEditTitle = false,
+  onSave,
+  onCancel,
+}: {
+  readonly title: string;
+  readonly websiteUrl: string | null;
+  readonly repositoryUrl: string | null;
+  readonly jourFixe: { weekday: number; time: string; timezone: string } | null;
+  /** Nur der Instanz-Pfad (project.configure) trägt den Namen; sonst gesperrt. */
+  readonly canEditTitle?: boolean | undefined;
+  readonly onSave: (values: ProjectCardConfigurationValues) => Promise<boolean>;
+  readonly onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<ProjectCardConfigurationValues>(() => ({
+    title,
+    websiteUrl,
+    repositoryUrl,
+    jourFixe,
+  }));
+  const [state, setState] = useState({ pending: false, message: "" });
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      className="flex size-full min-h-0 flex-col gap-2 p-3"
+      data-workjet-project-card-config=""
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (state.pending) return;
+        for (const url of [draft.websiteUrl, draft.repositoryUrl])
+          if (url)
+            try {
+              new URL(url);
+            } catch {
+              setError("Vollständige Adresse mit https:// eintragen.");
+              return;
+            }
+        if (draft.title.trim() === "") {
+          setError("Name eintragen.");
+          return;
+        }
+        setError(null);
+        setState({ pending: true, message: "" });
+        try {
+          const saved = await onSave({
+            title: draft.title.trim(),
+            websiteUrl: draft.websiteUrl?.trim() ? draft.websiteUrl.trim() : null,
+            repositoryUrl: draft.repositoryUrl?.trim() ? draft.repositoryUrl.trim() : null,
+            jourFixe: draft.jourFixe,
+          });
+          setState({ pending: false, message: saved ? "Gespeichert" : "Nicht gespeichert" });
+          if (saved) onCancel();
+        } catch {
+          setState({ pending: false, message: "Nicht gespeichert" });
+        }
+      }}
+    >
+      <div className="grid grid-cols-2 items-end gap-x-2 gap-y-1.5">
+        <label className="col-span-2 flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
+          Name
+          <Input
+            aria-label="Projektname"
+            maxLength={256}
+            required
+            disabled={state.pending || !canEditTitle}
+            value={draft.title}
+            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
+          Website
+          <Input
+            aria-label="Website"
+            type="url"
+            maxLength={2048}
+            placeholder="https://example.com"
+            disabled={state.pending}
+            value={draft.websiteUrl ?? ""}
+            onChange={(event) => setDraft({ ...draft, websiteUrl: event.target.value || null })}
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
+          Repository
+          <Input
+            aria-label="Repository"
+            type="url"
+            maxLength={2048}
+            placeholder="https://github.com/owner/repository"
+            disabled={state.pending}
+            value={draft.repositoryUrl ?? ""}
+            onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
+          Regeltermin
+          <select
+            aria-label="Regeltermin Wochentag"
+            className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+            disabled={state.pending}
+            value={draft.jourFixe?.weekday ?? "none"}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                jourFixe:
+                  event.target.value === "none"
+                    ? null
+                    : {
+                        weekday: Number(event.target.value),
+                        time: current.jourFixe?.time ?? "09:00",
+                        timezone: current.jourFixe?.timezone ?? "Europe/Berlin",
+                      },
+              }))
+            }
+          >
+            <option value="none">Kein Termin</option>
+            {WEEKDAY_LABELS.map((day, index) => (
+              <option key={day} value={index + 1}>
+                {day}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-0.5 text-[11px] text-muted-foreground">
+          Uhrzeit
+          <Input
+            aria-label="Regeltermin Uhrzeit"
+            type="time"
+            required={draft.jourFixe !== null}
+            disabled={state.pending || draft.jourFixe === null}
+            value={draft.jourFixe?.time ?? ""}
+            onChange={(event) =>
+              setDraft((current) =>
+                current.jourFixe === null
+                  ? current
+                  : { ...current, jourFixe: { ...current.jourFixe, time: event.target.value } },
+              )
+            }
+          />
+        </label>
+      </div>
+      {error !== null && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="mt-auto flex items-center gap-2">
+        <Button type="submit" size="xs" disabled={state.pending}>
+          {state.pending ? "Speichern …" : "Speichern"}
+        </Button>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={state.pending}
+          onClick={onCancel}
+        >
+          Abbrechen
+        </Button>
+        <p className="text-xs text-muted-foreground" role="status">
+          {state.message}
+        </p>
+      </div>
+    </form>
+  );
+}
+
 export type ProjectConfigurationValues = Pick<
   Extract<CtoxWorkjetProjectControlRequest, { readonly action: "project.configure" }>,
   "repoUrl" | "publicUrl" | "info" | "jourFixe" | "supervisorLumaId"

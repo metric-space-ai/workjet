@@ -160,3 +160,49 @@ describe("compact project configuration", () => {
     ).toHaveLength(3);
   });
 });
+
+describe("card back configuration editor", () => {
+  it("renders the dense fields with small labels and both buttons", async () => {
+    const { ProjectCardConfigEditor } = await import("./ProjectOverviewEditor");
+    const markup = renderToStaticMarkup(
+      <ProjectCardConfigEditor
+        title="molecularity"
+        websiteUrl="https://molecularity.example"
+        repositoryUrl="https://github.com/metric-space-ai/molecularity"
+        jourFixe={{ weekday: 2, time: "10:00", timezone: "Europe/Berlin" }}
+        canEditTitle
+        onSave={async () => true}
+        onCancel={() => {}}
+      />,
+    );
+    expect(markup).toContain('data-workjet-project-card-config=""');
+    for (const label of ["Name", "Website", "Repository", "Regeltermin", "Uhrzeit"])
+      expect(markup).toContain(label);
+    expect(markup).toContain('value="molecularity"');
+    expect(markup).toContain('value="https://molecularity.example"');
+    expect(markup).toContain('value="https://github.com/metric-space-ai/molecularity"');
+    expect(markup).toContain('value="10:00"');
+    expect(markup).toContain(">Dienstag</option>");
+    expect(markup).toContain("Kein Termin");
+    expect(markup).toContain("Speichern");
+    expect(markup).toContain("Abbrechen");
+    expect(markup).not.toContain("KPI");
+    expect(markup).not.toContain("Supervisor");
+  });
+  it("locks the name without the instance save path", async () => {
+    const { ProjectCardConfigEditor } = await import("./ProjectOverviewEditor");
+    const markup = renderToStaticMarkup(
+      <ProjectCardConfigEditor
+        title="kunstmen.com"
+        websiteUrl={null}
+        repositoryUrl={null}
+        jourFixe={null}
+        onSave={async () => true}
+        onCancel={() => {}}
+      />,
+    );
+    expect(markup).toContain('aria-label="Projektname"');
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("Kein Termin");
+  });
+});

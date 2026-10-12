@@ -26,11 +26,11 @@ const normalize = (provider: WorkjetGatewayProvider, patch: Partial<WorkjetGatew
 
 describe("provider quota evidence → remaining", () => {
   it.each([
-    ["claude", "five_hour", raw("utilization", 0, 18_000), 100, "Short-term"],
+    ["claude", "five_hour", raw("utilization", 0, 18_000), 100, "Kurzfristig"],
     ["claude", "seven_day", raw("utilization", 1, 604_800), 99, "7 Tage"],
-    ["codex", "primary_window", raw("used_percent", 57, 18_000), 43, "Short-term"],
+    ["codex", "primary_window", raw("used_percent", 57, 18_000), 43, "Kurzfristig"],
     ["codex", "secondary_window", raw("used_percent", 100, 604_800), 0, "7 Tage"],
-    ["zai", "TOKENS_LIMIT_0", raw("percentage", 5, 18_000), 95, "Short-term"],
+    ["zai", "TOKENS_LIMIT_0", raw("percentage", 5, 18_000), 95, "Kurzfristig"],
     ["zai", "TOKENS_LIMIT_1", raw("percentage", 42, 604_800), 58, "7 Tage"],
     ["zai", "TOKENS_LIMIT_1", raw("percentage", 42, 2_592_000), 58, "30 Tage"],
     [
@@ -38,7 +38,7 @@ describe("provider quota evidence → remaining", () => {
       "general_interval",
       raw("current_interval_remaining_percent", 80, 18_000),
       80,
-      "Short-term",
+      "Kurzfristig",
     ],
     ["minimax", "general_weekly", raw("current_weekly_remaining_percent", 0, 604_800), 0, "7 Tage"],
   ] as const)("%s %s uses its raw field once", (provider, name, source, expected, label) => {
@@ -86,7 +86,7 @@ describe("provider quota evidence → remaining", () => {
   });
   it("never guesses Z.ai duration from list order or time until reset", () => {
     for (const [unit, number, label] of [
-      [3, 5, "Short-term"],
+      [3, 5, "Kurzfristig"],
       [6, 1, "7 Tage"],
       [5, 1, "30 Tage"],
       [6, 7, "unbekannt"],
@@ -105,7 +105,7 @@ describe("provider quota evidence → remaining", () => {
     ];
     expect(normalizeModelsQuota("zai", quotas, now).map((w) => w.label)).toEqual([
       "7 Tage",
-      "Short-term",
+      "Kurzfristig",
     ]);
     expect(normalize("zai", { name: "TOKENS_LIMIT_0" }).label).toBe("unbekannt");
     expect(normalize("zai", { name: "TOKENS_LIMIT_0" }).tooltip).toContain(

@@ -75,7 +75,7 @@ describe("WorkjetComputerEditor", () => {
     const draft = createWorkjetComputerDraft({ environments: [remoteEnvironment] });
     const onSave = vi.fn();
     await expect(persistWorkjetComputerDraft(draft, [], onSave)).rejects.toThrow(
-      "Choose a connected computer",
+      "Kein verbundener Rechner",
     );
     expect(onSave).not.toHaveBeenCalled();
   });
@@ -162,8 +162,9 @@ describe("WorkjetComputerEditor", () => {
     ]) {
       expect(markup).toContain(label);
     }
-    expect(markup).toContain("Coding tools");
-    expect(markup).toContain("Name");
+    expect(markup).toContain("Werkzeuge");
+    expect(markup).not.toContain("<details");
+    expect(markup).toContain("Bezeichnung");
   });
   it("keeps the connection fixed while editing an offline computer", () => {
     const configured = saveWorkjetComputerDraft(
@@ -180,7 +181,7 @@ describe("WorkjetComputerEditor", () => {
     expect(markup).not.toContain('role="combobox"');
     expect(markup).toContain("Tailscale");
     expect(markup).toContain("Remote devbox");
-    expect(markup).toContain("Save computer");
+    expect(markup).toContain("Speichern");
   });
 });
 

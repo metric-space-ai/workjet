@@ -148,9 +148,8 @@ describe("owner project overview", () => {
     const data = { ...overview([crew]), supervisorLumaId: "supervisor-identity" };
     const html = renderToStaticMarkup(<ProjectOverviewView data={data} onOpenChat={() => {}} />);
     expect(html).not.toContain("supervisor-identity");
-    expect(html).toContain("controlEnvironmentId");
-    expect(html).toContain(">Rechner</dt><dd class=");
-    expect(html).not.toMatch(/>Rechner<\/dt><dd[^>]*>desktop<\/dd>/u);
+    expect(html).not.toContain("controlEnvironmentId");
+    expect(html).not.toMatch(/>desktop</u);
   });
   it("labels stale native KPI values instead of implying a current measurement", () => {
     const kpis = {
@@ -188,9 +187,9 @@ describe("owner project overview", () => {
     };
     expect(overview([], { kpis }).kpis[0]).toMatchObject({
       value: "0 von 5",
-      explanation: expect.stringContaining("veraltet"),
+      note: "veraltet",
     });
-    expect(overview([], { kpis, language: "en" }).kpis[0]?.explanation).toContain("out of date");
+    expect(overview([], { kpis, language: "en" }).kpis[0]?.note).toContain("out of date");
   });
   it("keeps the goal sentence separate from handoff paths and technical directions", () => {
     expect(
@@ -215,7 +214,8 @@ describe("owner project overview", () => {
     } as EnvironmentThreadShell;
     const html = markup([supervisor, thread]);
     expect(overview([thread]).goals[0]?.title).toBe("Molecularity bauen.");
-    expect(html).toContain(full);
+    expect(html).toContain("Molecularity bauen.");
+    expect(html).not.toContain(full);
   });
   it("counts durable goal statuses without treating completed turns as completed goals", () => {
     const goal = {
@@ -239,21 +239,23 @@ describe("owner project overview", () => {
     } as EnvironmentThreadShell;
     expect(overview([supervisor, complete]).kpis[2]?.value).toBe("0");
     expect(overview([supervisor, complete]).goals[0]?.state).toBe("erledigt");
-    expect(overview([supervisor, withGoal, specialist]).kpis[2]?.value).toBeNull();
+    expect(overview([supervisor, withGoal, specialist]).kpis[2]?.value).toBe("—");
   });
   it("keeps an active one-shot that is waiting for its owner's answer", () => {
     expect(isRunningProjectOneShot({ ...worker, hasPendingUserInput: true })).toBe(true);
   });
 
-  it("renders exactly four honest KPIs and explains unavailable values without zero placeholders", () => {
+  it("renders five KPI tiles that always show a value or a dash, never an explanation", () => {
     const data = overview([supervisor, specialist]);
-    expect(data.kpis).toHaveLength(4);
-    expect(data.kpis.every((kpi) => kpi.value === null)).toBe(true);
-    expect(data.kpis.find((kpi) => kpi.id === "tasks")?.explanation).toContain("Erledigungsstand");
+    expect(data.kpis).toHaveLength(5);
+    expect(data.kpis.every((kpi) => kpi.value === "—")).toBe(true);
+    expect(data.kpis.find((kpi) => kpi.id === "tokens")?.label).toBe("Token-Budget");
+    expect(data.kpis.every((kpi) => !("explanation" in kpi))).toBe(true);
     const html = markup([supervisor, specialist]);
     expect(html).not.toContain("Sessions");
     expect(html).not.toContain("Latency");
-    expect(html).not.toContain(">—<");
+    expect(html).toContain(">—<");
+    expect(html).not.toMatch(/noch nicht verfügbar|not yet available/iu);
   });
   it("uses confirmed to-dos before persistent goals without inventing completion", () => {
     const data = overview([supervisor, specialist], { meeting });
@@ -262,7 +264,7 @@ describe("owner project overview", () => {
       meeting.todos.items.map((item) => item.title),
     );
     expect(data.goals.every((goal) => goal.state === data.text.unknown)).toBe(true);
-    expect(data.kpis.find((kpi) => kpi.id === "tasks")?.value).toBeNull();
+    expect(data.kpis.find((kpi) => kpi.id === "tasks")?.value).toBe("—");
   });
   it("rejects another project's meeting and keeps saved persistent goals", () => {
     const data = overview([supervisor, specialist], {
@@ -285,14 +287,14 @@ describe("owner project overview", () => {
       title: "Measured result",
       state: "merged" as const,
     };
-    expect(overview([supervisor], { meeting, pullRequests: [pr] }).kpis[1]?.value).toBeNull();
+    expect(overview([supervisor], { meeting, pullRequests: [pr] }).kpis[1]?.value).toBe("—");
     expect(
       overview([supervisor], {
         meeting,
         pullRequests: [{ ...pr, mergedAt: "2026-10-08T00:00:00Z" }],
       }).kpis[1]?.value,
     ).toBe("1");
-    expect(overview([supervisor], { meeting }).kpis[1]?.value).toBeNull();
+    expect(overview([supervisor], { meeting }).kpis[1]?.value).toBe("—");
   });
   it("keeps confirmed merges separate from closed proposals", () => {
     const data = overview([supervisor], {
@@ -335,13 +337,13 @@ describe("owner project overview", () => {
       "running",
     );
   });
-  it("keeps technical configuration and prompts inside collapsed diagnosis", () => {
+  it("keeps technical configuration and prompts out of the overview (no diagnosis expander)", () => {
     const html = markup([supervisor, specialist]);
-    const diagnosis = html.indexOf('data-workjet-overview-section="diagnosis"');
-    expect(html.slice(0, diagnosis)).not.toContain("gpt-6.1-sol");
-    expect(html.slice(diagnosis)).toContain("gpt-6.1-sol");
-    expect(html).not.toContain("<details open");
-    expect(html).toContain("noch nicht verfügbar");
+    expect(html).not.toContain('data-workjet-overview-section="diagnosis"');
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("gpt-6.1-sol");
+    expect(html).not.toMatch(/noch nicht verfügbar|not yet available/iu);
+    expect(html).not.toContain("Rohdaten");
   });
   it("keeps the native supervisor route unknown rather than substituting its local thread model", () => {
     expect(markup([supervisor])).not.toContain("gpt-6.1-sol");
@@ -349,18 +351,28 @@ describe("owner project overview", () => {
   it("follows the mock's section order and translates all overview navigation in both languages", () => {
     for (const language of ["de", "en"] as const) {
       const html = markup([supervisor], language);
-      const positions = ["decisions", "goals", "results", "history", "diagnosis"].map((section) =>
+      const positions = ["kpis", "goals", "results", "history"].map((section) =>
         html.indexOf('data-workjet-overview-section="' + section + '"'),
       );
       expect(positions).toEqual([...positions].sort((a, b) => a - b));
-      expect(html).toContain(language === "de" ? "Braucht dich" : "Needs you");
-      expect(html).not.toContain(language === "de" ? "Open decisions" : "Braucht dich");
+      expect(html).not.toContain('data-workjet-overview-section="decisions"');
       expect(html).toContain('lang="' + language + '"');
+      const pending = renderToStaticMarkup(
+        <ProjectOverviewView
+          data={overview([{ ...supervisor, hasPendingApprovals: true } as EnvironmentThreadShell], {
+            language,
+          })}
+          onOpenChat={() => {}}
+          decisions={<button type="button">{language === "de" ? "Freigeben" : "Approve"}</button>}
+        />,
+      );
+      expect(pending).toContain(language === "de" ? "Braucht dich" : "Needs you");
+      expect(pending).not.toContain(language === "de" ? "Open decisions" : "Braucht dich");
     }
   });
-  it("offers the real Jour fixe action even if its schedule is not available", () => {
-    expect(markup([supervisor])).toContain("Jour fixe beitreten");
-    expect(markup([supervisor])).toContain("noch nicht verfügbar");
+  it("offers the real regular-meeting action even if its schedule is not available", () => {
+    expect(markup([supervisor])).toContain("Regeltermin beitreten");
+    expect(markup([supervisor])).not.toContain("noch nicht verfügbar");
   });
   it("shows the actual pending question and its answer choices", () => {
     const html = renderToStaticMarkup(
@@ -405,8 +417,8 @@ describe("owner project overview", () => {
         "system",
         typeof navigator === "undefined" ? "de" : navigator.language,
       ) === "de"
-        ? "Jour fixe beitreten"
-        : "Join Jour fixe",
+        ? "Regeltermin beitreten"
+        : "Join regular meeting",
     );
   });
   it("resolves the saved UI setting before the browser language", () => {

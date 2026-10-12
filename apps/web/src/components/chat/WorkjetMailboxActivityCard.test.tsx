@@ -203,11 +203,11 @@ describe("mailbox badge vocabulary", () => {
       null,
     ];
     expect(dispositions.map(dispositionBadgeLabel)).toEqual([
-      "delivered",
-      "duplicate ignored",
-      "expired",
-      "rejected",
-      "queued",
+      "zugestellt",
+      "Duplikat ignoriert",
+      "abgelaufen",
+      "abgelehnt",
+      "wartend",
     ]);
   });
 
@@ -253,10 +253,10 @@ describe("mailbox badge vocabulary", () => {
 describe("WorkjetMailboxActivityCard", () => {
   it("labels direction and kind for all four combinations", () => {
     const cases = [
-      { kind: "message" as const, direction: "outbound" as const, expected: "Message to" },
-      { kind: "message" as const, direction: "inbound" as const, expected: "Message from" },
-      { kind: "task" as const, direction: "outbound" as const, expected: "Task to" },
-      { kind: "task" as const, direction: "inbound" as const, expected: "Task from" },
+      { kind: "message" as const, direction: "outbound" as const, expected: "Nachricht an" },
+      { kind: "message" as const, direction: "inbound" as const, expected: "Nachricht von" },
+      { kind: "task" as const, direction: "outbound" as const, expected: "Aufgabe an" },
+      { kind: "task" as const, direction: "inbound" as const, expected: "Aufgabe von" },
     ];
 
     for (const testCase of cases) {
@@ -270,11 +270,11 @@ describe("WorkjetMailboxActivityCard", () => {
 
   it("renders every disposition variant as its own badge text", () => {
     for (const [disposition, label] of [
-      ["accepted-new", "delivered"],
-      ["duplicate-ignored", "duplicate ignored"],
-      ["expired", "expired"],
-      ["rejected", "rejected"],
-      [null, "queued"],
+      ["accepted-new", "zugestellt"],
+      ["duplicate-ignored", "Duplikat ignoriert"],
+      ["expired", "abgelaufen"],
+      ["rejected", "abgelehnt"],
+      [null, "wartend"],
     ] as ReadonlyArray<[WorkjetDeliveryDisposition | null, string]>) {
       const card = WorkjetMailboxActivityCard({
         model: model({ disposition }),
@@ -334,7 +334,7 @@ describe("WorkjetMailboxActivityCard", () => {
 
     expect(children.some((element) => element.type === "button")).toBe(false);
     expect(textContent(card.props.children)).toContain("thread-worker");
-    expect(textContent(card.props.children)).toContain("queued");
+    expect(textContent(card.props.children)).toContain("wartend");
   });
 });
 
@@ -601,7 +601,7 @@ describe("WorkjetMailboxActivityCard delegation actions", () => {
       },
     );
     const select = descendants(card.props.children).find(
-      (element) => element.props["aria-label"] === "Reassign to thread",
+      (element) => element.props["aria-label"] === "Unterhaltung wählen",
     );
     // The same recipient list the send panel uses, one option each plus the
     // empty placeholder.

@@ -1,11 +1,5 @@
-import { ChevronDownIcon, ChevronUpIcon, MousePointer2Icon, PlusIcon, XIcon } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { MousePointer2Icon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyThemeColorPreview,
   THEME_COLOR_ROLES,
@@ -28,7 +22,6 @@ import {
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { getThemeRoleLabel, ThemeColorField } from "./ThemeColorPicker";
 import {
@@ -82,17 +75,17 @@ const THEME_EDITOR_ROLE_GROUPS: ReadonlyArray<{
 }> = [
   {
     id: "main",
-    title: "Main colors",
+    title: "Hauptfarben",
     roles: THEME_EDITOR_PRIMARY_ROLES,
   },
   {
     id: "status",
-    title: "Status colors",
+    title: "Statusfarben",
     roles: THEME_EDITOR_STATUS_ROLES,
   },
   {
     id: "additional",
-    title: "Other colors",
+    title: "Weitere Farben",
     roles: THEME_EDITOR_ADVANCED_ROLES,
   },
 ];
@@ -116,6 +109,10 @@ function getThemeEditorColorsByAppearance(): ThemeEditorColorsByAppearance {
 
 function isThemeEditorColor(value: string): boolean {
   return isThemeColor(value.trim());
+}
+
+function paletteAdjective(appearance: ThemeAppearance): string {
+  return appearance === "light" ? "helle" : "dunkle";
 }
 
 function getManagedEditorColors(
@@ -165,7 +162,7 @@ export function ThemeEditorPanel({
   const isEditing = editingTheme !== null;
   const [name, setName] = useState("");
   const [activeAppearance, setActiveAppearance] = useState<ThemeAppearance>(initialAppearance);
-  const [isAdvanced, setIsAdvanced] = useState(false);
+  const [showAllColors, setShowAllColors] = useState(false);
   const [colorsByAppearance, setColorsByAppearance] = useState<ThemeEditorColorsByAppearance>(() =>
     getThemeEditorColorsByAppearance(),
   );
@@ -173,62 +170,11 @@ export function ThemeEditorPanel({
     Record<ThemeAppearance, boolean>
   >({ light: false, dark: false });
   const [error, setError] = useState<string | null>(null);
-  const [isMinimized, setIsMinimized] = useState(false);
   const [roleQuery, setRoleQuery] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
   const [selectedRole, setSelectedRole] = useState<ThemeColorRole | null>(null);
   const [usageCount, setUsageCount] = useState<number | null>(null);
-  // Null parks the panel at its default corner; a value is a dragged spot,
-  // kept clamped so the header can always be grabbed again.
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  // Null keeps the responsive default size; a value is a corner-grip resize.
-  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
-  const resizeStartRef = useRef<{
-    pointerX: number;
-    pointerY: number;
-    // Where the panel's top-left sits: the grip only moves the opposite
-    // corner, so the room to grow is measured from here.
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    // A panel sized wider than the window can no longer be clamped back into
-    // view by position alone -- its right edge (close, minimize, the grip)
-    // stays off screen. So the size shrinks to fit first, then the position
-    // is re-clamped against the new size.
-    const clamp = () => {
-      const margin = 8;
-      let clampedWidth: number | undefined;
-      let clampedHeight: number | undefined;
-      setSize((current) => {
-        if (!current) return current;
-        clampedWidth = Math.max(280, Math.min(current.width, window.innerWidth - margin * 2));
-        clampedHeight = Math.max(220, Math.min(current.height, window.innerHeight - margin * 2));
-        return { width: clampedWidth, height: clampedHeight };
-      });
-      setPosition((current) => {
-        if (!current) return current;
-        const clamped = clampPosition(current.x, current.y, clampedWidth);
-        // Dragging may park the panel with only its header showing, but a
-        // window resize should pull the whole thing back into view when it
-        // fits -- otherwise the grip ends up below the fold. Minimized, the
-        // stored height is not applied (the panel hugs its header), so the
-        // rendered height is what has to fit.
-        const height = isMinimized
-          ? (panelRef.current?.offsetHeight ?? 0)
-          : (clampedHeight ?? panelRef.current?.offsetHeight ?? 0);
-        const maxY = Math.max(margin, window.innerHeight - height - margin);
-        return { x: clamped.x, y: Math.min(clamped.y, maxY) };
-      });
-    };
-    window.addEventListener("resize", clamp);
-    return () => window.removeEventListener("resize", clamp);
-  }, [isMinimized, open]);
+  const panelRef = useRef<HTMLElement>(null);
 
   // The draft only reaches the live app once this open has been seeded;
   // previewing in the seeding commit would paint the previous session's
@@ -259,11 +205,11 @@ export function ThemeEditorPanel({
       setName(editingTheme?.label ?? seedName ?? "");
       setActiveAppearance(nextAppearance);
       // Themes saved by the guided editor carry the managed flag; anything
-      // else (imports, hand-edited files, older saves) opens in advanced mode
+      // else (imports, hand-edited files, older saves) opens on "Alle Farben"
       // so guided regeneration cannot silently discard hand-tuned colors. A
       // seeded new theme follows the same rule: its palette is only safe to
       // regenerate when the guided editor produced it.
-      setIsAdvanced(sourceTheme !== null && sourceTheme.managed !== true);
+      setShowAllColors(sourceTheme !== null && sourceTheme.managed !== true);
       setSimpleColorsDirtyByAppearance({ light: false, dark: false });
       setColorsByAppearance(nextColors);
       setSelectedRole(null);
@@ -300,10 +246,10 @@ export function ThemeEditorPanel({
   // had it (adding one is a create-with-same-name away).
   const appearanceLockReason = (appearance: ThemeAppearance): string | null => {
     if (editableAppearances && !editableAppearances.includes(appearance)) {
-      return `“${editingTheme?.label}” has no ${appearance} palette. Create a theme with the same name to add one.`;
+      return `„${editingTheme?.label}“ hat keine ${paletteAdjective(appearance)} Palette.`;
     }
     if (!isEditing && takenAppearances.includes(appearance)) {
-      return `“${mergeTarget?.label}” already has a ${appearance} palette.`;
+      return `„${mergeTarget?.label}“ hat bereits eine ${paletteAdjective(appearance)} Palette.`;
     }
     return null;
   };
@@ -344,7 +290,7 @@ export function ThemeEditorPanel({
       setColorsByAppearance((current) => {
         const nextColors = { ...current[activeAppearance], [role]: value };
         const shouldManageColors =
-          !isAdvanced && THEME_EDITOR_SIMPLE_ROLES.includes(role) && isThemeEditorColor(value);
+          !showAllColors && THEME_EDITOR_SIMPLE_ROLES.includes(role) && isThemeEditorColor(value);
 
         return {
           ...current,
@@ -353,20 +299,20 @@ export function ThemeEditorPanel({
             : nextColors,
         };
       });
-      if (!isAdvanced && THEME_EDITOR_SIMPLE_ROLES.includes(role) && isThemeEditorColor(value)) {
+      if (!showAllColors && THEME_EDITOR_SIMPLE_ROLES.includes(role) && isThemeEditorColor(value)) {
         setSimpleColorsDirtyByAppearance((current) => ({
           ...current,
           [activeAppearance]: true,
         }));
       }
     },
-    [activeAppearance, isAdvanced],
+    [activeAppearance, showAllColors],
   );
 
   const selectThemeRole = useCallback((role: ThemeColorRole, reveal = false) => {
     setSelectedRole(role);
     if (!THEME_EDITOR_SIMPLE_ROLES.includes(role)) {
-      setIsAdvanced(true);
+      setShowAllColors(true);
       setRoleQuery("");
     }
     if (!reveal) return;
@@ -389,7 +335,7 @@ export function ThemeEditorPanel({
   }, []);
 
   const selectedHighlightRoles = selectedRole
-    ? !isAdvanced && THEME_EDITOR_SIMPLE_ROLES.includes(selectedRole)
+    ? !showAllColors && THEME_EDITOR_SIMPLE_ROLES.includes(selectedRole)
       ? THEME_COLOR_ROLES.filter(
           (role) =>
             colorsByAppearance[activeAppearance][role].trim().toLowerCase() ===
@@ -580,9 +526,9 @@ export function ThemeEditorPanel({
     };
   }, [clearInspectorSelection, isInspecting, open, selectThemeRole]);
 
-  const handleAdvancedChange = useCallback(
+  const handleShowAllColorsChange = useCallback(
     (checked: boolean) => {
-      setIsAdvanced(checked);
+      setShowAllColors(checked);
       if (checked) return;
       if (selectedRole && !THEME_EDITOR_SIMPLE_ROLES.includes(selectedRole)) {
         setSelectedRole(null);
@@ -612,14 +558,14 @@ export function ThemeEditorPanel({
 
   const handleSubmit = () => {
     if (!name.trim()) {
-      setError("Name your theme first.");
+      setError("Name fehlt.");
       return;
     }
 
     try {
       // Only regenerate palettes the user actually touched in guided mode, so
       // untouched appearances save exactly what the editor displayed.
-      const colorsForSave = !isAdvanced
+      const colorsForSave = !showAllColors
         ? {
             light: simpleColorsDirtyByAppearance.light
               ? getManagedEditorColors("light", colorsByAppearance.light)
@@ -641,7 +587,9 @@ export function ThemeEditorPanel({
         const editedModes = getThemeModes(editingTheme);
         const collision = editedModes.find((mode) => takenAppearances.includes(mode));
         if (collision) {
-          setError(`“${mergeTarget.label}” already has a ${collision} palette. Pick another name.`);
+          setError(
+            `„${mergeTarget.label}“ hat bereits eine ${paletteAdjective(collision)} Palette. Anderer Name.`,
+          );
           return;
         }
         mergedAppearance = editedModes[0] ?? null;
@@ -656,7 +604,7 @@ export function ThemeEditorPanel({
               ...mergeTarget.variants,
               ...Object.fromEntries(editedModes.map((mode) => [mode, colorsForSave[mode]])),
             },
-            ...(mergeTarget.managed === true && !isAdvanced ? { managed: true } : {}),
+            ...(mergeTarget.managed === true && !showAllColors ? { managed: true } : {}),
           }),
           ...(mergeTarget.collection ? { collection: mergeTarget.collection } : {}),
         });
@@ -687,15 +635,13 @@ export function ThemeEditorPanel({
             ...(getThemeModes(editingTheme).length > 1
               ? { variants: { [variantAppearance]: colorsForSave[variantAppearance] } }
               : {}),
-            ...(isAdvanced ? {} : { managed: true }),
+            ...(showAllColors ? {} : { managed: true }),
           }),
           ...(editingTheme.collection ? { collection: editingTheme.collection } : {}),
         });
       } else if (mergeTarget) {
         if (takenAppearances.includes(activeAppearance)) {
-          setError(
-            `“${mergeTarget.label}” already has light and dark palettes. Pick another name.`,
-          );
+          setError(`„${mergeTarget.label}“ hat bereits helle und dunkle Paletten. Anderer Name.`);
           return;
         }
         // The new palette joins the existing theme as its other mode; its
@@ -714,7 +660,7 @@ export function ThemeEditorPanel({
               ...mergeTarget.variants,
               [activeAppearance]: colorsForSave[activeAppearance],
             },
-            ...(mergeTarget.managed === true && !isAdvanced ? { managed: true } : {}),
+            ...(mergeTarget.managed === true && !showAllColors ? { managed: true } : {}),
           }),
           ...(mergeTarget.collection ? { collection: mergeTarget.collection } : {}),
         });
@@ -725,7 +671,7 @@ export function ThemeEditorPanel({
             name,
             appearance: activeAppearance,
             colors: colorsForSave[activeAppearance],
-            ...(isAdvanced ? {} : { managed: true }),
+            ...(showAllColors ? {} : { managed: true }),
           }),
         );
       }
@@ -752,7 +698,7 @@ export function ThemeEditorPanel({
             // Storage is failing wholesale; the error below covers it.
           }
         }
-        setError("Theme saved, but it could not be made active. Try again.");
+        setError("Gespeichert, aber nicht aktiviert. Erneut versuchen.");
         return;
       }
       onOpenChange(false);
@@ -761,15 +707,15 @@ export function ThemeEditorPanel({
         cause instanceof Error
           ? cause.message
           : isEditing
-            ? "Could not save the theme."
-            : "Could not create the theme.",
+            ? "Thema nicht gespeichert."
+            : "Thema nicht erstellt.",
       );
     }
   };
 
   const renderNameField = () => (
     <label className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-3">
-      <span className="text-sm font-medium">Theme name</span>
+      <span className="text-[13.5px] font-medium">Name</span>
       <Input
         autoFocus
         onChange={(event) => {
@@ -778,29 +724,38 @@ export function ThemeEditorPanel({
           // the stale message goes with the old name.
           setError(null);
         }}
-        placeholder={isEditing ? "Theme name" : "e.g. Aurora"}
+        placeholder={isEditing ? "Name" : "z. B. Aurora"}
         value={name}
       />
     </label>
   );
 
-  const renderAppearanceButton = (appearance: ThemeAppearance) => {
-    const isActive = activeAppearance === appearance;
-    const lockReason = appearanceLockReason(appearance);
+  const renderSegmentButton = ({
+    isActive,
+    label,
+    onClick,
+    lockReason = null,
+  }: {
+    isActive: boolean;
+    label: string;
+    onClick: () => void;
+    lockReason?: string | null;
+  }) => {
     // A locked mode stays hoverable so the tooltip can say why it is off;
     // a real disabled attribute would swallow the pointer events.
     const button = (
       <Button
         aria-disabled={lockReason !== null}
         aria-pressed={isActive}
-        className={lockReason !== null ? "opacity-50" : undefined}
+        className={cn(isActive && "bg-accent", lockReason !== null && "opacity-50")}
+        size="sm"
         style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
-        variant={isActive ? "secondary" : "outline"}
+        variant="outline"
         onClick={() => {
-          if (lockReason === null) setActiveAppearance(appearance);
+          if (lockReason === null) onClick();
         }}
       >
-        {appearance === "light" ? "Light" : "Dark"}
+        {label}
       </Button>
     );
     if (lockReason === null) return button;
@@ -814,41 +769,42 @@ export function ThemeEditorPanel({
 
   const renderAppearanceButtons = () => (
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-3">
-      <span className="text-sm font-medium">Appearance</span>
-      <div aria-label="Theme appearance" className="grid grid-cols-2 gap-2" role="group">
-        {renderAppearanceButton("light")}
-        {renderAppearanceButton("dark")}
+      <span className="text-[13.5px] font-medium">Modus</span>
+      <div aria-label="Modus" className="grid grid-cols-2 gap-2" role="group">
+        {(["light", "dark"] as const).map((appearance) => (
+          <span className="contents" key={appearance}>
+            {renderSegmentButton({
+              isActive: activeAppearance === appearance,
+              label: appearance === "light" ? "Hell" : "Dunkel",
+              lockReason: appearanceLockReason(appearance),
+              onClick: () => setActiveAppearance(appearance),
+            })}
+          </span>
+        ))}
       </div>
     </div>
   );
 
+  // „Hauptfarben“ zeigt die zwei Leitfarben, der Rest wird abgeleitet und als
+  // managed gespeichert; „Alle Farben“ zeigt jede Rolle und speichert sie so.
   const renderColorsHeader = () => (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-start gap-3">
-      <div>
-        <h3 className="text-sm font-medium">Colors</h3>
-        {isAdvanced ? null : (
-          <p className="text-xs text-muted-foreground">Two colors, rest derived</p>
-        )}
-      </div>
-      <div className="flex min-w-0 items-start gap-3">
-        {isAdvanced ? (
-          <Input
-            aria-label="Filter colors"
-            className="min-w-0 flex-1"
-            onChange={(event) => setRoleQuery(event.currentTarget.value)}
-            placeholder="Filter colors"
-            size="sm"
-            value={roleQuery}
-          />
-        ) : null}
-        <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-2 pt-0.5 text-sm font-medium">
-          <span>Advanced</span>
-          <Switch
-            aria-label="Use advanced theme colors"
-            checked={isAdvanced}
-            onCheckedChange={(checked) => handleAdvancedChange(Boolean(checked))}
-          />
-        </label>
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-3">
+      <span className="text-[13.5px] font-medium">Farben</span>
+      <div aria-label="Farben" className="grid grid-cols-2 gap-2" role="group">
+        {renderSegmentButton({
+          isActive: !showAllColors,
+          label: "Hauptfarben",
+          onClick: () => {
+            if (showAllColors) handleShowAllColorsChange(false);
+          },
+        })}
+        {renderSegmentButton({
+          isActive: showAllColors,
+          label: "Alle Farben",
+          onClick: () => {
+            if (!showAllColors) handleShowAllColorsChange(true);
+          },
+        })}
       </div>
     </div>
   );
@@ -880,18 +836,27 @@ export function ThemeEditorPanel({
         (role) => !query || getThemeRoleLabel(role).toLowerCase().includes(query),
       ),
     })).filter((group) => group.roles.length > 0);
-    return isAdvanced ? (
-      <div className="space-y-5">
+    return showAllColors ? (
+      <div className="space-y-4">
+        <Input
+          aria-label="Farben filtern"
+          onChange={(event) => setRoleQuery(event.currentTarget.value)}
+          placeholder="Farben filtern"
+          size="sm"
+          value={roleQuery}
+        />
         {groups.map((group) => (
-          <section className="space-y-2" key={group.id}>
-            <h4 className="text-sm font-medium text-foreground">{group.title}</h4>
-            {renderRoleFields(group.roles, "grid gap-1")}
+          <section className="space-y-1" key={group.id}>
+            <h4 className="text-xs font-medium text-muted-foreground">{group.title}</h4>
+            {renderRoleFields(group.roles, "grid gap-1 sm:grid-cols-2")}
           </section>
         ))}
-        {groups.length === 0 ? <p className="text-xs text-muted-foreground">No matches.</p> : null}
+        {groups.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Keine Treffer</p>
+        ) : null}
       </div>
     ) : (
-      <div className="grid gap-1">
+      <div className="grid gap-1 sm:grid-cols-2">
         {THEME_EDITOR_SIMPLE_ROLES.map((role) => (
           <ThemeColorField
             key={role}
@@ -899,7 +864,7 @@ export function ThemeEditorPanel({
             onSelect={selectThemeRole}
             onToggleSelected={toggleThemeRole}
             role={role}
-            label={role === "canvas" ? "Background" : "Accent"}
+            label={role === "canvas" ? "Hintergrund" : "Akzent"}
             selected={selectedRole === role}
             value={colorsByAppearance[activeAppearance][role]}
           />
@@ -908,226 +873,64 @@ export function ThemeEditorPanel({
     );
   };
 
-  const clampPosition = (x: number, y: number, widthOverride?: number) => {
-    const panel = panelRef.current;
-    const margin = 8;
-    // The caller passes a width when it has just shrunk the panel: the DOM
-    // still reports the old one until React commits.
-    const width = widthOverride ?? panel?.offsetWidth ?? 0;
-    return {
-      x: Math.min(Math.max(x, margin), Math.max(margin, window.innerWidth - width - margin)),
-      // Keep at least the header on screen even when dragged far down.
-      y: Math.min(Math.max(y, margin), Math.max(margin, window.innerHeight - 48)),
-    };
-  };
-
-  const handleDragPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // Buttons in the header keep their own behavior.
-    if ((event.target as HTMLElement).closest("button, input, a")) return;
-    const rect = panelRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    dragOffsetRef.current = { dx: event.clientX - rect.x, dy: event.clientY - rect.y };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const handleDragPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const offset = dragOffsetRef.current;
-    if (!offset) return;
-    setPosition(clampPosition(event.clientX - offset.dx, event.clientY - offset.dy));
-  };
-
-  const endDrag = () => {
-    dragOffsetRef.current = null;
-  };
-
-  const handleResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const rect = panelRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    event.preventDefault();
-    // The grip drags the bottom-right corner, so the top-left must hold
-    // still; the default parking spot is anchored bottom-right and would
-    // slide, so it converts to an explicit position first.
-    if (position === null) setPosition(clampPosition(rect.x, rect.y));
-    resizeStartRef.current = {
-      pointerX: event.clientX,
-      pointerY: event.clientY,
-      left: rect.x,
-      top: rect.y,
-      width: rect.width,
-      height: rect.height,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const handleResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = resizeStartRef.current;
-    if (!start) return;
-    const margin = 8;
-    const MIN_WIDTH = 280;
-    const MIN_HEIGHT = 220;
-    // Grow only into the space right of and below the panel's own corner,
-    // otherwise a panel parked away from the top-left pushes its far edges
-    // (and this grip) off screen.
-    const maxWidth = Math.max(MIN_WIDTH, window.innerWidth - margin - start.left);
-    const maxHeight = Math.max(MIN_HEIGHT, window.innerHeight - margin - start.top);
-    setSize({
-      width: Math.min(Math.max(start.width + event.clientX - start.pointerX, MIN_WIDTH), maxWidth),
-      height: Math.min(
-        Math.max(start.height + event.clientY - start.pointerY, MIN_HEIGHT),
-        maxHeight,
-      ),
-    });
-  };
-
-  const endResize = () => {
-    resizeStartRef.current = null;
-  };
+  const title = isEditing ? "Thema bearbeiten" : "Thema erstellen";
+  const inspectorStatus = isInspecting
+    ? "Element wählen · Esc beendet"
+    : selectedRole
+      ? `${getThemeRoleLabel(selectedRole)} · ${usageCount ?? 0} ${usageCount === 1 ? "Verwendung" : "Verwendungen"}`
+      : null;
 
   return (
-    <div
-      aria-label={isEditing ? "Edit theme" : "Create theme"}
-      className={cn(
-        "dialog-glass fixed z-[110] flex max-h-[min(42rem,calc(100dvh-6rem))] w-[min(26rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border text-popover-foreground",
-        position === null && "bottom-4 right-4",
-        isMinimized && "max-h-none",
-      )}
+    <section
+      aria-label={title}
+      className="flex flex-col gap-3 rounded-lg border bg-card/40 p-3"
       data-theme-editor-panel
       ref={panelRef}
-      role="dialog"
-      style={{
-        ...(position ? { left: position.x, top: position.y } : {}),
-        ...(size ? { width: size.width } : {}),
-        // A chosen height only applies expanded; minimized keeps hugging the
-        // header. The viewport stays the ceiling either way.
-        ...(size && !isMinimized ? { height: size.height, maxHeight: "calc(100dvh - 1rem)" } : {}),
-      }}
     >
-      <div
-        className="flex cursor-grab touch-none select-none items-center gap-1 border-b border-border/70 px-3 py-2 active:cursor-grabbing"
-        onPointerCancel={endDrag}
-        onPointerDown={handleDragPointerDown}
-        onPointerMove={handleDragPointerMove}
-        onPointerUp={endDrag}
-      >
-        <div className="flex min-w-0 flex-1 items-baseline gap-2">
-          <h2 className="shrink-0 truncate text-sm font-medium">
-            {isEditing ? "Edit theme" : "Create theme"}
-          </h2>
-          {isMinimized ? null : (
-            <p className="truncate text-xs text-muted-foreground">
-              {isInspecting
-                ? "Select an element · Esc to cancel"
-                : selectedRole
-                  ? `${getThemeRoleLabel(selectedRole)} · ${usageCount ?? 0} ${usageCount === 1 ? "use" : "uses"}`
-                  : "Select a color below"}
-            </p>
-          )}
-        </div>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                aria-label={isInspecting ? "Cancel inspecting app colors" : "Inspect app colors"}
-                aria-pressed={isInspecting}
-                size="xs"
-                variant={isInspecting ? "secondary" : "ghost"}
-                onClick={() => {
-                  if (isInspecting) {
-                    clearInspectorSelection();
-                    return;
-                  }
-                  setIsInspecting(true);
-                }}
-              >
-                <MousePointer2Icon />
-                {isInspecting ? "Cancel" : "Inspect"}
-              </Button>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <h3 className="min-w-0 flex-1 truncate font-medium text-[13.5px]">{title}</h3>
+        {inspectorStatus ? (
+          <span className="min-w-0 truncate text-xs text-muted-foreground" role="status">
+            {inspectorStatus}
+          </span>
+        ) : null}
+        <Button
+          aria-pressed={isInspecting}
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            if (isInspecting) {
+              clearInspectorSelection();
+              return;
             }
-          />
-          <TooltipPopup data-theme-editor-panel="">
-            {isInspecting ? "Cancel and clear the selection" : "Pick a color from the app"}
-          </TooltipPopup>
-        </Tooltip>
-        <Button
-          aria-label={isMinimized ? "Expand the theme editor" : "Minimize the theme editor"}
-          size="icon-xs"
-          variant="ghost"
-          onClick={() => setIsMinimized(!isMinimized)}
+            setIsInspecting(true);
+          }}
         >
-          {isMinimized ? <ChevronUpIcon /> : <ChevronDownIcon />}
-        </Button>
-        <Button
-          aria-label="Close the theme editor"
-          size="icon-xs"
-          variant="ghost"
-          onClick={() => onOpenChange(false)}
-        >
-          <XIcon />
+          <MousePointer2Icon />
+          {isInspecting ? "Auswahl beenden" : "Farbe aufnehmen"}
         </Button>
       </div>
-
-      {isMinimized ? null : (
-        <>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-3 pl-3 pr-1.5">
-            {renderNameField()}
-            {/* Inline and above the color list: the panel scrolls, and an
-                error parked below every role would go unseen. */}
-            {error ? (
-              <p aria-live="polite" className="text-sm text-destructive">
-                {error}
-              </p>
-            ) : null}
-            {renderAppearanceButtons()}
-            <div className="space-y-3">
-              {renderColorsHeader()}
-              {renderColorFields()}
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-border/70 px-3 py-2">
-            <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button disabled={!name.trim()} size="sm" onClick={handleSubmit}>
-              {isEditing ? (
-                mergeTarget ? (
-                  `Merge into “${mergeTarget.label}”`
-                ) : (
-                  "Save changes"
-                )
-              ) : mergeTarget ? (
-                <>
-                  <PlusIcon />
-                  {`Add ${activeAppearance} palette`}
-                </>
-              ) : (
-                <>
-                  <PlusIcon />
-                  Create theme
-                </>
-              )}
-            </Button>
-          </div>
-          <div
-            aria-hidden
-            className="absolute bottom-0 right-0 z-10 flex size-5 cursor-se-resize touch-none select-none items-end justify-end p-1 text-muted-foreground/70"
-            onPointerCancel={endResize}
-            onPointerDown={handleResizePointerDown}
-            onPointerMove={handleResizePointerMove}
-            onPointerUp={endResize}
-          >
-            <svg
-              className="size-2.5"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth="1.2"
-              viewBox="0 0 8 8"
-            >
-              <path d="M7 1 1 7M7 4.5 4.5 7" />
-            </svg>
-          </div>
-        </>
-      )}
-    </div>
+      {renderNameField()}
+      {renderAppearanceButtons()}
+      {renderColorsHeader()}
+      {renderColorFields()}
+      {error ? (
+        <div aria-live="polite" className="text-xs text-destructive" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+          Abbrechen
+        </Button>
+        <Button disabled={!name.trim()} size="sm" onClick={handleSubmit}>
+          {mergeTarget
+            ? isEditing
+              ? `In „${mergeTarget.label}“ zusammenführen`
+              : "Palette hinzufügen"
+            : "Speichern"}
+        </Button>
+      </div>
+    </section>
   );
 }

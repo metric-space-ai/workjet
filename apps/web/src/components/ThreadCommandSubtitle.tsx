@@ -104,7 +104,7 @@ export function ThreadCommandSubtitle(props: {
       {props.isCurrent ? (
         <>
           {projectLabel || branchLabel || showHarness ? <Dot /> : null}
-          <span className="shrink-0">Current thread</span>
+          <span className="shrink-0">Aktuelle Unterhaltung</span>
         </>
       ) : null}
     </span>

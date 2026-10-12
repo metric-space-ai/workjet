@@ -83,16 +83,16 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain(`Last execution · Claude Code · ${route.actual?.model}`);
-    expect(html.indexOf("Last execution")).toBeGreaterThan(
+    expect(html).toContain(`Letzte Ausführung · Claude Code · ${route.actual?.model}`);
+    expect(html.indexOf("Letzte Ausführung")).toBeGreaterThan(
       html.indexOf('data-composer-bar="true"'),
     );
     expect(html).toContain('aria-label="Luma"');
     expect(html).toContain('aria-label="Harness"');
-    expect(html).toContain('aria-label="Model"');
+    expect(html).toContain('aria-label="Modell"');
     expect(html.match(/<textarea/g)).toHaveLength(1);
-    expect(html.match(/aria-label="Send to Supervisor"/g)).toHaveLength(1);
-    expect(html).not.toContain('aria-label="Last execution"');
+    expect(html.match(/aria-label="An Supervisor senden"/g)).toHaveLength(1);
+    expect(html).not.toContain('aria-label="Letzte Ausführung"');
     if (route.actual) {
       expect(html).not.toContain(route.actual.account_id);
       expect(html).not.toContain(route.actual.sdk_session_id);
@@ -111,12 +111,12 @@ describe("native supervisor receipt display", () => {
     );
     expect(html.indexOf("<textarea")).toBeLessThan(html.indexOf("data-composer-bar="));
     expect(html).toContain('data-composer-bar="true"');
-    expect(html).toContain('aria-label="Advanced settings"');
-    expect(html).toContain('aria-label="Dictate message"');
-    expect(html).not.toContain('aria-label="Supervisor message type"');
+    expect(html).toContain('aria-label="Optionen"');
+    expect(html).toContain('aria-label="Diktieren"');
+    expect(html).not.toContain('aria-label="Nachrichtenart"');
     expect(html).toContain('aria-label="Luma"');
     expect(html).toContain('aria-label="Harness"');
-    expect(html).toContain('aria-label="Model"');
+    expect(html).toContain('aria-label="Modell"');
     expect(html).not.toContain("Project instance");
     expect(html).not.toContain("Configure Workers");
     expect(html).not.toContain("Refresh task");
@@ -134,8 +134,8 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Sign in to ctox.dev</button>");
-    expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
+    expect(html).toContain("Bei ctox.dev anmelden</button>");
+    expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
   });
 
   it.each(["not_active", "timeout"] as const)(
@@ -162,11 +162,11 @@ describe("native supervisor receipt display", () => {
         />,
       );
       expect(html).toContain("Real requested change");
-      expect(html).toContain("Waiting for CTOX receipt");
-      expect(html).not.toContain("Not sent");
+      expect(html).toContain("Warte auf CTOX-Bestätigung");
+      expect(html).not.toContain("Nicht gesendet");
       expect(html).not.toContain("You can send a new request");
       expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
-      expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
+      expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
     },
   );
   it("shows a pending receipt without asking for Owner confirmation", () => {
@@ -189,7 +189,7 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Waiting for CTOX receipt");
+    expect(html).toContain("Warte auf CTOX-Bestätigung");
     expect(html).not.toContain("Awaiting confirmation");
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
     expect(html).not.toContain("Refresh task");
@@ -216,13 +216,13 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Continue anyway");
-    expect(html).toContain("Add context to task");
-    expect(html).toContain("Same-task context is unavailable on this connection.");
-    expect(html).toContain("starts a separate request");
+    expect(html).toContain("Trotzdem fortfahren");
+    expect(html).toContain("Kontext ergänzen");
+    expect(html).toContain("Kein Aufgabenkontext");
+    expect(html).toContain("Vorherige Anfrage:");
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
     expect(html).not.toContain("Refresh task");
-    expect(html).toContain("Cancel");
+    expect(html).toContain("Abbrechen");
     expect(html).not.toContain("Approve");
   });
   it("shows received native result and attempt without local provider controls", () => {
@@ -237,7 +237,7 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Actual native result");
-    expect(html).toContain("Attempt 2");
+    expect(html).toContain("Versuch 2");
     expect(html).toContain("native-task");
     expect(html).not.toContain("Codex CLI");
     expect(html).not.toContain("gpt-6");
@@ -256,7 +256,7 @@ describe("native supervisor receipt display", () => {
     expect(html).not.toContain("Actual native result");
     expect(html).not.toContain("Real requested change");
     expect(html).toContain("no confirmed CTOX binding");
-    expect(html).toContain("Retry connection");
+    expect(html).toContain("Erneut versuchen");
   });
   it("shows a definitive pre-submit refusal and lets the user edit a new prompt", () => {
     const rejectedConfig: WorkjetThreadConfig = {
@@ -279,10 +279,10 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Not sent");
-    expect(html).toContain("Sign in to ctox.dev</button>");
+    expect(html).toContain("Nicht gesendet");
+    expect(html).toContain("Bei ctox.dev anmelden</button>");
     expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
-    expect(html.match(/Sign in to ctox.dev<\/button>/g)).toHaveLength(1);
+    expect(html.match(/Bei ctox.dev anmelden<\/button>/g)).toHaveLength(1);
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
   });
   it("keeps send unavailable without confirmed native project scope", () => {
@@ -296,10 +296,10 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain('aria-label="Message to Supervisor"');
-    expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
+    expect(html).toContain('aria-label="Nachricht an Supervisor"');
+    expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
-    expect(html).not.toContain("Retry connection");
+    expect(html).not.toContain("Erneut versuchen");
   });
   it("offers a direct way to re-check the connection when scope is missing", () => {
     const html = renderToStaticMarkup(
@@ -314,6 +314,6 @@ describe("native supervisor receipt display", () => {
     );
     expect(html).not.toContain("Confirm the project and CTOX connection to send.");
     expect(html).toContain("Could not read the CTOX project list.");
-    expect(html).toContain("Retry connection");
+    expect(html).toContain("Erneut versuchen");
   });
 });

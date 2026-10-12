@@ -221,12 +221,12 @@ export function ProjectNativeSyncStatus({
       data-workjet-project-sync="pending"
       className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-sm text-muted-foreground"
     >
-      <span>Project saved locally · CTOX synchronization pending.</span>
+      <span>Lokal gespeichert · CTOX-Abgleich ausstehend</span>
       {intent.lastFailure ? (
         <span>{workjetProjectCreationFailureMessage(intent.lastFailure)}</span>
       ) : null}
       <Button variant="outline" size="xs" onClick={requestLocalProjectRegistrationRetry}>
-        Retry sync
+        Erneut versuchen
       </Button>
     </div>
   );

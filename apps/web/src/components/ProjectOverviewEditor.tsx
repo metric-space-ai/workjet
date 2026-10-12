@@ -15,6 +15,7 @@ import {
   type SaveProjectKpiPrompts,
 } from "../projectKpis";
 import { ProjectKpiResult } from "./ProjectKpiResult";
+import { ProjectMeetingPreparationField } from "./ProjectMeetingPreparationField";
 import { ProjectSupervisorLumaSelect, type LumaFieldProps } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -61,6 +62,7 @@ export function ProjectOverviewEditor({
       : overview.tokenBudget.limitBillions.toFixed(1).replace(".", ","),
   );
   const [state, setState] = useState({ pending: false, message: "" });
+  const [errors, setErrors] = useState<{ budget?: string; urls?: string; meeting?: string }>({});
   const [supervisorLumaId, setSupervisorLumaId] = useState<string | null>(
     configuration?.supervisorLumaId ?? null,
   );
@@ -112,6 +114,7 @@ export function ProjectOverviewEditor({
     });
     setPrompts(initialPrompts());
     setState({ pending: false, message: "" });
+    setErrors({});
   };
   return (
     <form
@@ -122,6 +125,31 @@ export function ProjectOverviewEditor({
         if (state.pending) return;
         let next: ProjectOverview;
         let metadata: ProjectConfigurationValues | undefined;
+        const fieldErrors: { budget?: string; urls?: string; meeting?: string } = {};
+        try {
+          parseTokenBudgetBillions(budget);
+        } catch {
+          fieldErrors.budget = "Zahl mit einer Dezimalstelle, z. B. 2,3.";
+        }
+        for (const url of [draft.repositoryUrl, draft.websiteUrl])
+          if (url)
+            try {
+              new URL(url);
+            } catch {
+              fieldErrors.urls = "Vollständige Adresse mit https:// eintragen.";
+            }
+        if (meeting.enabled)
+          try {
+            new Intl.DateTimeFormat("de-DE", { timeZone: meeting.timezone.trim() });
+          } catch {
+            fieldErrors.meeting = "Zeitzone wie Europe/Berlin eintragen.";
+          }
+        if (Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+          setState({ pending: false, message: "" });
+          return;
+        }
+        setErrors({});
         try {
           next = {
             ...decodeOverviewDraft(draft),
@@ -160,7 +188,8 @@ export function ProjectOverviewEditor({
                   }
                 : null,
             });
-            if (validated.action !== "project.configure") throw new Error("Invalid configuration");
+            if (validated.action !== "project.configure")
+              throw new Error("Ungültige Einstellungen");
             metadata = {
               ...(validated.supervisorLumaId !== undefined
                 ? { supervisorLumaId: validated.supervisorLumaId }
@@ -175,8 +204,7 @@ export function ProjectOverviewEditor({
         } catch {
           setState({
             pending: false,
-            message:
-              "Check the URLs, meeting settings, supervisor cadence (1–10080 minutes) and token budget (one decimal place).",
+            message: "Eingaben prüfen",
           });
           return;
         }
@@ -186,7 +214,7 @@ export function ProjectOverviewEditor({
           if (metadata && onSaveConfiguration && !(await onSaveConfiguration(metadata))) {
             setState({
               pending: false,
-              message: "Couldn’t save project settings. Reconnect and try again.",
+              message: "Projekteinstellungen nicht gespeichert",
             });
             return;
           }
@@ -198,7 +226,7 @@ export function ProjectOverviewEditor({
             if (!savedKpis) {
               setState({
                 pending: false,
-                message: "Couldn’t save KPI prompts. Reopen project settings and try again.",
+                message: "KPIs nicht gespeichert",
               });
               return;
             }
@@ -207,14 +235,12 @@ export function ProjectOverviewEditor({
           if (saved) onCancel?.();
           setState({
             pending: false,
-            message: saved
-              ? "Project saved."
-              : "Couldn’t save the overview. Reconnect and try again.",
+            message: saved ? "Projekt gespeichert" : "Übersicht nicht gespeichert",
           });
         } catch {
           setState({
             pending: false,
-            message: "Couldn’t save the overview. Reconnect and try again.",
+            message: "Übersicht nicht gespeichert",
           });
         } finally {
           resumeCalendarSource();
@@ -223,7 +249,7 @@ export function ProjectOverviewEditor({
     >
       <div className="grid items-center gap-x-3 gap-y-2 sm:grid-cols-[6rem_minmax(0,1fr)]">
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-token-budget`}>
-          Token-Budget je Zyklus
+          Budget (Mrd.)
         </label>
         <div className="grid gap-1">
           <div className="flex items-center gap-2">
@@ -233,17 +259,19 @@ export function ProjectOverviewEditor({
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
               placeholder="2,3"
+              title="Milliarden Tokens je Regeltermin-Zyklus · leer = kein Limit"
               disabled={state.pending}
-              aria-describedby={`${id}-budget-help`}
+              aria-invalid={errors.budget !== undefined}
             />
-            <span className="text-xs">B</span>
           </div>
-          <p id={`${id}-budget-help`} className="text-xs text-muted-foreground">
-            Milliarden Tokens je Regeltermin-Zyklus. Leer = kein Limit. Kein automatischer Abbruch.
-          </p>
+          {errors.budget !== undefined && (
+            <p className="text-xs text-red-400" role="alert">
+              {errors.budget}
+            </p>
+          )}
         </div>
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-repository`}>
-          Repository
+          Git-Quelle
         </label>
         <Input
           id={`${id}-repository`}
@@ -257,7 +285,7 @@ export function ProjectOverviewEditor({
           disabled={state.pending}
         />
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-website`}>
-          Website
+          Webseite
         </label>
         <Input
           id={`${id}-website`}
@@ -269,7 +297,13 @@ export function ProjectOverviewEditor({
           }
           placeholder="https://example.com"
           disabled={state.pending}
+          aria-invalid={errors.urls !== undefined}
         />
+        {errors.urls !== undefined && (
+          <p className="text-xs text-red-400 sm:col-start-2" role="alert">
+            {errors.urls}
+          </p>
+        )}
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-tick`}>
           Supervisor-Takt
         </label>
@@ -319,9 +353,6 @@ export function ProjectOverviewEditor({
             Minuten
           </label>
         </div>
-        <p className="text-xs leading-5 text-muted-foreground sm:col-start-2">
-          Prüft Worker, offene PRs und Blocker. Laufende Supervisor-Turns werden übersprungen.
-        </p>
         {configuration && onSaveConfiguration && (
           <>
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-supervisor-luma`}>
@@ -344,10 +375,10 @@ export function ProjectOverviewEditor({
                 profiles={[]}
               />
             )}
-            <span className="text-xs text-muted-foreground">Jour fixe</span>
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2">
+            <span className="text-xs text-muted-foreground">Regeltermin</span>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2 max-sm:grid-cols-1">
               <select
-                aria-label="Jour fixe weekday"
+                aria-label="Regeltermin Wochentag"
                 className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs"
                 disabled={state.pending}
                 value={meeting.enabled ? meeting.weekday : "none"}
@@ -360,17 +391,23 @@ export function ProjectOverviewEditor({
                   }))
                 }
               >
-                <option value="none">No meeting</option>
-                {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(
-                  (day, index) => (
-                    <option key={day} value={index + 1}>
-                      {day}
-                    </option>
-                  ),
-                )}
+                <option value="none">Kein Termin</option>
+                {[
+                  "Montag",
+                  "Dienstag",
+                  "Mittwoch",
+                  "Donnerstag",
+                  "Freitag",
+                  "Samstag",
+                  "Sonntag",
+                ].map((day, index) => (
+                  <option key={day} value={index + 1}>
+                    {day}
+                  </option>
+                ))}
               </select>
               <Input
-                aria-label="Jour fixe time"
+                aria-label="Regeltermin Uhrzeit"
                 type="time"
                 required={meeting.enabled}
                 disabled={state.pending || !meeting.enabled}
@@ -380,7 +417,7 @@ export function ProjectOverviewEditor({
                 }
               />
               <Input
-                aria-label="Jour fixe timezone"
+                aria-label="Regeltermin Zeitzone"
                 required={meeting.enabled}
                 disabled={state.pending || !meeting.enabled}
                 value={meeting.timezone}
@@ -389,8 +426,23 @@ export function ProjectOverviewEditor({
                 }
               />
             </div>
+            {errors.meeting !== undefined && (
+              <p className="text-xs text-red-400 sm:col-start-2" role="alert">
+                {errors.meeting}
+              </p>
+            )}
+            <div className="sm:col-span-2">
+              <ProjectMeetingPreparationField
+                id={`${id}-preparation`}
+                value={draft.meetingPreparation}
+                disabled={state.pending || !meeting.enabled}
+                onChange={(value) =>
+                  setDraft((current) => ({ ...current, meetingPreparation: value }))
+                }
+              />
+            </div>
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-description`}>
-              Description
+              Beschreibung
             </label>
             <Input
               id={`${id}-description`}
@@ -401,13 +453,11 @@ export function ProjectOverviewEditor({
                 setInfo((current) => ({ ...current, summary: event.target.value }))
               }
             />
-            <details className="sm:col-start-2">
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                Goal, phase and status
-              </summary>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <label className="col-span-2 grid gap-1 text-xs">
-                  Goal
+            <span className="text-xs text-muted-foreground">Stand</span>
+            <div className="grid min-w-0 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="col-span-full grid gap-1 text-xs sm:col-span-2">
+                  Ziel
                   <Input
                     maxLength={4096}
                     value={info.goal}
@@ -440,7 +490,7 @@ export function ProjectOverviewEditor({
                   />
                 </label>
               </div>
-            </details>
+            </div>
           </>
         )}
       </div>
@@ -457,7 +507,7 @@ export function ProjectOverviewEditor({
               id={`${id}-kpi-${index}`}
               maxLength={1024}
               value={prompts[index]}
-              placeholder="Describe the metric in one sentence"
+              placeholder="Kennzahl in einem Satz"
               disabled={state.pending || !canConfigureKpis}
               onChange={(event) =>
                 setPrompts((current) =>
@@ -473,11 +523,6 @@ export function ProjectOverviewEditor({
             />
           </div>
         ))}
-        {!canConfigureKpis && (
-          <p className="text-xs text-muted-foreground" role="status">
-            KPI prompts need the CTOX KPI service. Existing card values are retained.
-          </p>
-        )}
       </div>
       <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-border bg-popover pt-3">
         {onArchive && (
@@ -492,28 +537,28 @@ export function ProjectOverviewEditor({
                 const saved = await onArchive();
                 setState({
                   pending: false,
-                  message: saved ? "" : "Couldn’t save the project. Try again.",
+                  message: saved ? "" : "Projekt nicht gespeichert",
                 });
               } catch {
-                setState({ pending: false, message: "Couldn’t save the project. Try again." });
+                setState({ pending: false, message: "Speichern fehlgeschlagen" });
               }
             }}
           >
-            {archived ? "Restore project" : "Archive project"}
+            {archived ? "Projekt wiederherstellen" : "Projekt archivieren"}
           </Button>
         )}
         <Button
           type="button"
           size="sm"
-          variant="ghost"
+          variant="outline"
           disabled={state.pending}
           className="ml-auto"
           onClick={cancel}
         >
-          Cancel
+          Abbrechen
         </Button>
         <Button type="submit" size="sm" disabled={state.pending}>
-          {state.pending ? "Saving…" : "Save project"}
+          {state.pending ? "Speichern …" : "Projekt speichern"}
         </Button>
         <p className="text-xs text-muted-foreground" role="status">
           {state.message}

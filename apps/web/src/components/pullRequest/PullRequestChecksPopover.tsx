@@ -1,28 +1,32 @@
+/**
+ * Checks einer Pull Request, inline statt als Popover (drei Orte, keine Popups).
+ *
+ * `PullRequestChecksChip` ist der Chip mit dem Sammelstatus; ein Klick klappt
+ * `PullRequestChecksList` direkt unter der Zeile bzw. dem Kopf auf. Ohne
+ * mitgegebene Checks (Listenzeile) liest die Liste das Detail erst beim
+ * Aufklappen: eine Seite voller Zeilen wären sonst hundert Anfragen.
+ */
 import type {
   EnvironmentId,
   PullRequestCheck,
   PullRequestChecksState,
   PullRequestRef,
 } from "@workjet/contracts";
+import { ChevronDownIcon, ExternalLinkIcon } from "lucide-react";
 
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   PullRequestCheckStatusIcon,
   pullRequestCheckStatusLabel,
   pullRequestChecksStatePresentation,
-  summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
-/**
- * The checks behind the rollup, for a row that only carries the rollup. Mounted by the popup, so
- * the read starts when somebody opens it rather than once per row of a listing — the detail read
- * is a request per pull request, and a page of them at rest would be a hundred.
- */
 function LazyChecksBody({
   environmentId,
   reference,
@@ -34,12 +38,16 @@ function LazyChecksBody({
     pullRequestEnvironment.detail({ environmentId, input: reference }),
   );
   if (detailQuery.error !== null) {
-    return <p className="text-muted-foreground text-xs">{detailQuery.error}</p>;
+    return (
+      <p className="text-muted-foreground text-xs" role="status">
+        Prüfungen nicht verfügbar
+      </p>
+    );
   }
   if (detailQuery.data === null) {
     return (
-      <p className="text-muted-foreground text-xs">
-        {detailQuery.isPending ? "Loading checks…" : "No checks reported"}
+      <p className="text-muted-foreground text-xs" role="status">
+        {detailQuery.isPending ? "Prüfungen laden …" : "Keine Prüfungen"}
       </p>
     );
   }
@@ -48,14 +56,17 @@ function LazyChecksBody({
 
 function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
   if (checks.length === 0) {
-    return <p className="text-muted-foreground text-xs">No checks reported</p>;
+    return <p className="text-muted-foreground text-xs">Keine Prüfungen</p>;
   }
   return (
-    <ul className="flex flex-col gap-1">
-      {/* Keyed by position as well as by name: the host is the one that decides how many runs
-          share a name, and a repeated key is a rendering fault rather than a wrong list. */}
+    <ul className="flex flex-col gap-0.5">
+      {/* Nach Position und Name: der Host entscheidet, wie viele Läufe einen Namen teilen. */}
       {checks.map((check, index) => (
-        <li key={`${index}:${check.name}`} className="flex items-center gap-2 text-xs">
+        <li
+          key={`${index}:${check.name}`}
+          className="flex min-h-7 items-center gap-2 text-xs"
+          data-slot="pull-request-check"
+        >
           <PullRequestCheckStatusIcon status={check.status} />
           <span className="min-w-0 flex-1 truncate" title={check.description ?? check.name}>
             {check.name}
@@ -64,13 +75,21 @@ function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
             {pullRequestCheckStatusLabel(check.status)}
           </span>
           {check.url === null ? null : (
-            <button
-              type="button"
-              className="shrink-0 text-primary hover:underline"
-              onClick={() => void readLocalApi()?.shell.openExternal(check.url ?? "")}
-            >
-              Details
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`${check.name} öffnen`}
+                    onClick={() => void readLocalApi()?.shell.openExternal(check.url ?? "")}
+                  />
+                }
+              >
+                <ExternalLinkIcon className="size-3" />
+              </TooltipTrigger>
+              <TooltipPopup>Öffnen</TooltipPopup>
+            </Tooltip>
           )}
         </li>
       ))}
@@ -79,57 +98,73 @@ function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
 }
 
 /**
- * The checks indicator and what it opens, in both places a change request is shown: a listing
- * row, which knows only the rollup, and the detail header, which is already holding every check.
- *
- * `checks` decides between the two. Given them, nothing is read; without them, the popup reads
- * the detail itself, which is why the row must also say which environment it came from.
+ * Chip mit dem Sammelstatus. Ein echter Button; die Liste darunter klappt der
+ * Aufrufer über `expanded`/`onToggle` auf.
  */
-export function PullRequestChecksPopover({
+export function PullRequestChecksChip({
   checksState,
+  summary,
+  expanded,
+  onToggle,
+  className,
+}: {
+  checksState: PullRequestChecksState;
+  /** Zählung wie „2 von 5 fehlgeschlagen“, wo die Prüfungen bekannt sind. */
+  summary?: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  const presentation = pullRequestChecksStatePresentation(checksState);
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-label={`Prüfungen: ${summary ?? presentation.label}`}
+      data-slot="pull-request-checks-chip"
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border/70 px-1.5 text-[11px] text-muted-foreground outline-none transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        expanded && "border-foreground/30 text-foreground",
+        className,
+      )}
+    >
+      <presentation.Icon aria-hidden className={cn("size-3", presentation.toneClassName)} />
+      {/* Bei 420 px nur das Zeichen: der Titel braucht die Breite. */}
+      <span className="hidden whitespace-nowrap sm:inline">{summary ?? presentation.label}</span>
+      <ChevronDownIcon
+        aria-hidden
+        className={cn("size-3 transition-transform", expanded ? "rotate-180" : "")}
+      />
+    </button>
+  );
+}
+
+/**
+ * Die aufgeklappte Liste. Mit `checks` wird nichts gelesen (Detailkopf); ohne
+ * sie liest die Liste das Detail selbst (Listenzeile).
+ */
+export function PullRequestChecksList({
   checks,
   environmentId,
   reference,
   className,
 }: {
-  checksState: PullRequestChecksState;
-  /** The checks already in hand, for the detail header. Absent on a listing row. */
   checks?: ReadonlyArray<PullRequestCheck>;
   environmentId?: EnvironmentId;
   reference?: PullRequestRef;
   className?: string;
 }) {
-  const presentation = pullRequestChecksStatePresentation(checksState);
-  // Counts beat the rollup's own wording where they are known, the way GitHub's own header reads.
-  const summary = checks === undefined ? null : summarizePullRequestChecks(checks);
   return (
-    <Popover>
-      {/* A listing row is itself a button, so the trigger renders as a span: a nested button is
-          not valid inside one. The click is stopped here so opening the checks does not also
-          select the row it sits on. */}
-      <PopoverTrigger
-        nativeButton={false}
-        render={
-          <span
-            role="button"
-            tabIndex={0}
-            aria-label={`Checks: ${presentation.label}`}
-            className={cn("inline-flex shrink-0 cursor-pointer items-center", className)}
-          />
-        }
-        onClick={(event) => event.stopPropagation()}
-      >
-        <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
-      </PopoverTrigger>
-      <PopoverPopup align="start" className="w-80 max-w-full" side="bottom">
-        <p className="mb-2 font-medium text-sm">{presentation.label}</p>
-        {summary === null ? null : <p className="mb-2 text-muted-foreground text-xs">{summary}</p>}
-        {checks !== undefined ? (
-          <ChecksBody checks={checks} />
-        ) : environmentId !== undefined && reference !== undefined ? (
-          <LazyChecksBody environmentId={environmentId} reference={reference} />
-        ) : null}
-      </PopoverPopup>
-    </Popover>
+    <div className={cn("px-3 pb-2", className)} data-slot="pull-request-checks-list">
+      {checks !== undefined ? (
+        <ChecksBody checks={checks} />
+      ) : environmentId !== undefined && reference !== undefined ? (
+        <LazyChecksBody environmentId={environmentId} reference={reference} />
+      ) : null}
+    </div>
   );
 }

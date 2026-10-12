@@ -47,8 +47,8 @@ describe("WorkjetMailboxNotificationList", () => {
       />,
     );
 
-    expect(markup).toContain("2 need");
-    expect(markup).not.toContain("3 need");
+    expect(markup).toContain("2 offen");
+    expect(markup).not.toContain("3 offen");
   });
 
   it("offers no navigation, because a dead-lettered envelope has nowhere to go", () => {

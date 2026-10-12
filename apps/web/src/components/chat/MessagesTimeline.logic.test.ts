@@ -513,7 +513,7 @@ describe("deriveMessagesTimelineRows", () => {
     expect(foldRow?.turnId).toBe("turn-1");
     expect(foldRow?.expanded).toBe(false);
     // User message boundary (00:00:00) → terminal message updatedAt (00:00:22).
-    expect(foldRow?.label).toBe("Worked for 22s");
+    expect(foldRow?.label).toBe("Gearbeitet: 22s");
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
       "turn-fold:turn-1",
@@ -635,7 +635,7 @@ describe("deriveMessagesTimelineRows", () => {
     );
     // User message (00:00:00) → trailing work entry (00:00:12).
     expect(foldRow?.turnId).toBe("turn-1");
-    expect(foldRow?.label).toBe("Worked for 12s");
+    expect(foldRow?.label).toBe("Gearbeitet: 12s");
   });
 
   it("uses latest-turn timings and the stopped label for an interrupted latest turn", () => {
@@ -670,7 +670,7 @@ describe("deriveMessagesTimelineRows", () => {
       expect.objectContaining({
         kind: "turn-fold",
         turnId: "turn-1",
-        label: "You stopped after 47s",
+        label: "Abgebrochen nach 47s",
         expanded: false,
       }),
     ]);

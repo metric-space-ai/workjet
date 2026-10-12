@@ -1,14 +1,28 @@
 import { useAtomCommand } from "../../state/use-atom-command";
 import type {
+  ComputerConnection,
+  ComputerControlInput,
+  ComputerControlResult,
+  ComputerFacts,
+  ComputerMetadata,
+  ComputerSshKeyInfo,
+  DesktopBridge,
   EnvironmentId,
   CtoxWorkjetComputerProjection,
-  CtoxComputerOperationalCapability,
   WorkjetComputer,
   WorkjetConfiguration,
   WorkjetHarnessAvailabilitySnapshot,
 } from "@workjet/contracts";
-import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useActiveWorkjetScope } from "../../activeWorkjetScope";
 import {
   createComputerMembershipStore,
@@ -23,30 +37,29 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { workerSourceConnectionForEnrollment } from "../../workjetWorkerSourceConnection";
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
+import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
-import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
-import {
-  Sheet,
-  SheetHeader,
-  SheetPanel,
-  SheetPopup,
-  SheetTitle,
-  SheetDescription,
-} from "../ui/sheet";
+import { Row, type RowDeleteOption, type RowMenuAction, type RowStatus } from "../ui/row";
+import { Spinner } from "../ui/spinner";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
-import {
-  Dialog,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-  DialogDescription,
-} from "../ui/dialog";
-import { ComputerCapabilitiesEditor } from "./ComputerCapabilitiesEditor";
 import type { OperationalComputerEnrollment } from "../../computerCapabilityEnrollment";
+import {
+  buildRoleEnrollment,
+  gibOf,
+  gpuDetected,
+  shortGpuModel,
+  type ComputerSshAccess,
+} from "./ComputerCapabilitiesEditor";
 import { toastManager } from "../ui/toast";
 import { useComputerConnections } from "./ConnectionsSettings";
+import {
+  AddComputerInline,
+  type AddComputerKind,
+  type AddComputerOutcome,
+  type AddComputerRequest,
+  type KnownComputerFacts,
+} from "./AddComputerInline";
 import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
@@ -55,7 +68,6 @@ import {
 } from "./WorkjetComputerEditor";
 import { workjetEnvironmentTargetOptions } from "./WorkjetSettings";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
-import { workjetComputerKindLabel } from "../chat/ComposerWorkjetTargetControls";
 import { workjetHarnessDisplayLabel } from "./WorkjetWorkerEditor";
 import { ComputerProvisioningSection } from "./ComputerProvisioningSection";
 import { searchableSetting } from "./settingsSearch";
@@ -67,11 +79,19 @@ interface ComputerHarnessInspection {
   readonly error: string | null;
 }
 
+type ComputerRecord = ComputerControlResult["computers"][number];
+
+function emptyIdSet(): ReadonlySet<string> {
+  return new Set();
+}
+
 function ComputerHarnessProbe({
   environmentId,
+  revision,
   onInspection,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly revision: number;
   readonly onInspection: (
     environmentId: EnvironmentId,
     inspection: ComputerHarnessInspection | null,
@@ -80,6 +100,11 @@ function ComputerHarnessProbe({
   const query = useEnvironmentQuery(
     serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
+  const refresh = query.refresh;
+  const firstRevision = useRef(revision);
+  useEffect(() => {
+    if (revision !== firstRevision.current) refresh();
+  }, [revision, refresh]);
   useEffect(() => {
     onInspection(environmentId, {
       snapshot: query.error === null ? query.data : null,
@@ -153,58 +178,250 @@ export async function removeComputerConnection(input: {
 
 export { findComputerForTarget, includeSavedComputers } from "../../workjetComputerCatalog";
 
-const OPERATIONAL_CAPABILITIES = [
-  { kind: "build", label: "Build" },
-  { kind: "storage", label: "Storage" },
-  { kind: "gpu", label: "GPU" },
-] as const;
+/** Eine Maschine = eine Zeile: Coding-Verbindung und Instanz-Eintrag zusammen. */
+export interface ComputerMachineRow {
+  readonly key: string;
+  readonly computer: WorkjetComputer | null;
+  readonly native: CtoxWorkjetComputerProjection | null;
+}
 
-function ComputerCapabilityChips({
-  capabilities,
-  capabilityConfig,
-  label,
-  onClick,
-  disabled,
+const GENERIC_NAME_TOKENS = new Set([
+  "ssh",
+  "lan",
+  "wan",
+  "vpn",
+  "tailnet",
+  "ts",
+  "local",
+  "com",
+  "net",
+  "org",
+  "de",
+  "dev",
+  "io",
+]);
+
+function nameTokens(...values: ReadonlyArray<string | undefined>): Set<string> {
+  const tokens = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    for (const token of value
+      .toLowerCase()
+      .replace(/^[a-z]+:\/\//, "")
+      .split(/[^a-z0-9]+/)) {
+      if (token.length >= 2 && !GENERIC_NAME_TOKENS.has(token)) tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Dieselbe Maschine laut Erkennung: Machine-ID, sonst Host-Schlüssel.
+ * null, wenn eine Seite keine Identität kennt.
+ */
+export function sameDetectedMachine(
+  computer: WorkjetComputer,
+  native: CtoxWorkjetComputerProjection,
+): boolean | null {
+  const machineId = computer.metadata?.facts?.machineId ?? null;
+  const nativeMachineId = native.detectedFacts?.machineId ?? null;
+  if (machineId && nativeMachineId) return machineId === nativeMachineId;
+  const fingerprint = computer.metadata?.hostKeyFingerprint ?? null;
+  const nativeFingerprint = native.hostKeyFingerprint ?? null;
+  if (fingerprint && nativeFingerprint) return fingerprint === nativeFingerprint;
+  return null;
+}
+
+/**
+ * Führt den Instanz-Eintrag und die Verbindung derselben Maschine zu einer
+ * Zeile zusammen: (1) gleiche ID, auch eine frühere ID des zusammengeführten
+ * Rechners; (2) gleiche Identität aus der Erkennung (Machine-ID oder
+ * Host-Schlüssel); (3) nur ohne Identität auf einer Seite die Namensteile,
+ * wenn sie in Name oder Adresse genau EINER Verbindung vorkommen.
+ */
+export function mergeComputerRows(
+  computers: ReadonlyArray<WorkjetComputer>,
+  natives: ReadonlyArray<CtoxWorkjetComputerProjection>,
+  environments: ReadonlyArray<WorkjetEnvironmentTargetOption> = [],
+): ComputerMachineRow[] {
+  const nativeFor: Record<string, CtoxWorkjetComputerProjection> = {};
+  const claimed = new Set<string>();
+  const claim = (computer: WorkjetComputer, native: CtoxWorkjetComputerProjection) => {
+    nativeFor[computer.id] = native;
+    claimed.add(native.id);
+  };
+  for (const native of natives) {
+    const exact =
+      computers.find((computer) => computer.id === native.id) ??
+      computers.find((computer) => computer.metadata?.previousIds.includes(native.id));
+    if (exact && nativeFor[exact.id] === undefined) claim(exact, native);
+  }
+  for (const native of natives) {
+    if (claimed.has(native.id)) continue;
+    const candidates = computers.filter(
+      (computer) =>
+        nativeFor[computer.id] === undefined && sameDetectedMachine(computer, native) === true,
+    );
+    if (candidates.length === 1) claim(candidates[0]!, native);
+  }
+  for (const native of natives) {
+    if (claimed.has(native.id)) continue;
+    const wanted = nameTokens(native.displayName);
+    if (wanted.size === 0) continue;
+    const candidates = computers.filter((computer) => {
+      if (nativeFor[computer.id] !== undefined) return false;
+      if (sameDetectedMachine(computer, native) === false) return false;
+      const target = environments.find((entry) => entry.environmentId === computer.environmentId);
+      const have = nameTokens(computer.label, target?.label, target?.detail);
+      return [...wanted].every((token) => have.has(token));
+    });
+    if (candidates.length === 1) claim(candidates[0]!, native);
+  }
+  return [
+    ...computers.map((computer) => ({
+      key: computer.id,
+      computer,
+      native: nativeFor[computer.id] ?? null,
+    })),
+    ...natives
+      .filter((native) => !claimed.has(native.id))
+      .map((native) => ({ key: `native:${native.id}`, computer: null, native })),
+  ];
+}
+
+function Chip({
+  children,
+  title,
+  tone = "muted",
+  ...rest
 }: {
-  readonly capabilities: readonly string[];
-  readonly capabilityConfig?: readonly CtoxComputerOperationalCapability[] | undefined;
-  readonly label: string;
-  readonly onClick?: (() => void) | undefined;
-  readonly disabled?: boolean;
-}) {
-  const declared = OPERATIONAL_CAPABILITIES.filter(({ kind }) => capabilities.includes(kind));
-  const gpu = capabilityConfig?.find((entry) => entry.kind === "gpu");
+  readonly children: ReactNode;
+  readonly title?: string | undefined;
+  readonly tone?: "muted" | "outline" | "busy" | "error";
+} & Record<`data-${string}`, string>) {
   return (
-    <button
-      type="button"
-      disabled={disabled || !onClick}
-      onClick={onClick}
-      aria-label={`Edit capabilities for ${label}`}
-      title={
-        declared.length
-          ? declared.map(({ kind }) => kind).join(", ")
-          : "No registered operational capabilities"
-      }
-      className="flex max-w-full items-center gap-1 overflow-hidden rounded text-left disabled:cursor-default enabled:hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      {declared.length === 0 ? (
-        <span className="text-muted-foreground">—</span>
-      ) : (
-        declared.map(({ kind }) => (
-          <span
-            key={kind}
-            data-workjet-capability={kind}
-            className="min-w-0 truncate rounded bg-muted px-1 py-0.5 text-[10px] font-medium"
-          >
-            {kind === "gpu" && gpu
-              ? `gpu ${gpu.model.replace(/^(?:NVIDIA\s+)?(?:GeForce\s+)?RTX\s+/i, "")} ${gpu.vram_gib} GB`
-              : kind}
-          </span>
-        ))
+    <span
+      {...rest}
+      title={title}
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] leading-none whitespace-nowrap",
+        tone === "muted" && "bg-muted text-foreground",
+        tone === "outline" && "border border-border text-muted-foreground",
+        tone === "busy" && "bg-muted text-muted-foreground",
+        tone === "error" && "bg-destructive/10 text-destructive",
       )}
-    </button>
+    >
+      {children}
+    </span>
   );
 }
+
+export type ComputerCapacity = NonNullable<ComputerControlResult["computers"][number]["capacity"]>;
+
+function gpuChip(key: string, model: string, gib: number | null, unified: boolean): ReactNode {
+  return (
+    <Chip
+      key={key}
+      data-workjet-capability="gpu"
+      title={[model, gib ? `${gib} GB${unified ? " gemeinsam" : " VRAM"}` : null]
+        .filter((part): part is string => !!part)
+        .join(" · ")}
+    >
+      {`GPU ${shortGpuModel(model)}${gib ? ` · ${gib} GB` : ""}`}
+    </Chip>
+  );
+}
+
+/**
+ * Chips einer Zeile: Rollen (Build, Speicher), erkannte GPU mit Speicher und
+ * die CPU-Zahl. Die Kapazität ist abgeleitet (ein Build, alle CPUs) und nur
+ * als Hinweis am Build-Chip sichtbar, nie als Eingabe.
+ */
+export function computerFactChips(
+  metadata: ComputerMetadata | null | undefined,
+  native: CtoxWorkjetComputerProjection | null,
+  capacity: ComputerCapacity | null = null,
+): ReactNode[] {
+  const facts = metadata?.facts ?? null;
+  const roles = metadata
+    ? metadata.roles
+    : {
+        build: native?.capabilities.includes("build") ?? false,
+        storage: native?.capabilities.includes("storage") ?? false,
+      };
+  const cpus = capacity?.workersPerBuild ?? facts?.cpuCores ?? null;
+  const chips: ReactNode[] = [];
+  if (roles.build)
+    chips.push(
+      <Chip
+        key="build"
+        data-workjet-capability="build"
+        title={cpus ? `1 Build · ${cpus} Jobs` : undefined}
+      >
+        Build
+      </Chip>,
+    );
+  if (roles.storage)
+    chips.push(
+      <Chip key="storage" data-workjet-capability="storage">
+        Speicher
+      </Chip>,
+    );
+  if (facts) {
+    const [gpu, ...more] = facts.gpus;
+    if (gpu) {
+      const bytes = gpu.vramBytes ?? (gpu.unifiedMemory ? facts.ramBytes : null);
+      chips.push(gpuChip("gpu", gpu.model, bytes ? gibOf(bytes) : null, gpu.unifiedMemory));
+      if (more.length)
+        chips.push(
+          <Chip key="gpu-more" title={more.map((entry) => entry.model).join(", ")}>
+            +{more.length}
+          </Chip>,
+        );
+    }
+    chips.push(
+      <Chip
+        key="cpu"
+        tone="outline"
+        data-workjet-cpu={String(facts.cpuCores)}
+        title={`${gibOf(facts.ramBytes)} GB RAM`}
+      >
+        {facts.cpuCores} CPUs
+      </Chip>,
+    );
+  } else {
+    const gpu = native?.capabilityConfig?.find((entry) => entry.kind === "gpu");
+    if (native?.capabilities.includes("gpu"))
+      chips.push(
+        gpu && gpu.kind === "gpu" ? (
+          gpuChip("gpu", gpu.model, gpu.vram_gib, false)
+        ) : (
+          <Chip key="gpu" data-workjet-capability="gpu">
+            GPU
+          </Chip>
+        ),
+      );
+  }
+  if (metadata?.status === "unreachable")
+    chips.push(
+      <Chip key="unreachable" tone="error" title={metadata.error ?? undefined}>
+        nicht erreichbar
+      </Chip>,
+    );
+  return chips;
+}
+
+/** „Nur Workjet“ bzw. „Auch auf dem Rechner“. */
+export type ComputerRemoveMode = "workjet-only" | "workjet-and-files";
+
+export interface ComputerRemoveOutcome {
+  readonly tone: "ok" | "error";
+  readonly text: string;
+}
+
+type Expansion = { readonly key: string; readonly kind: "repair" | "edit" };
+
+const NOTICE_MS = 5_000;
 
 export function WorkjetComputersSettingsView({
   configuration,
@@ -215,59 +432,113 @@ export function WorkjetComputersSettingsView({
   environmentId = null,
   onChange,
   membership,
-  onAssign,
-  onCapabilities,
-  onUnassignNative,
-  onNativeCapabilities,
   businessOsLabel,
-  onAdd,
-  onRemove,
-  renderConnection,
   connectedEnvironmentIds,
   connectingEnvironmentIds,
   pendingConnectionEnvironmentId,
+  addPanel,
+  capacities,
+  checkingComputerIds,
+  onActiveChange,
+  onRemove,
+  remoteRemoveAvailable = true,
+  onRecheck,
+  onAssign,
+  renderRepair,
+  renderEdit,
+  onRetryMembership,
 }: {
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
   readonly environmentsReady: boolean;
-  /**
-   * Live probe of THIS server's harnesses (`workjet.harness.inspect`), plus
-   * which environment it describes. Null before the first probe answers —
-   * rows then show the declared state with "not probed from here" instead of
-   * implying agreement.
-   */
+  /** Werkzeugprüfung dieses Servers; null bis zur ersten Antwort. */
   readonly harnessInspection?: WorkjetHarnessAvailabilitySnapshot | null;
   readonly harnessInspections?: Readonly<Record<string, ComputerHarnessInspection>>;
   readonly environmentId?: EnvironmentId | null;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
   readonly membership?: ComputerMembershipSnapshot | undefined;
-  readonly onAssign?: ((computer: WorkjetComputer, assigned: boolean) => void) | undefined;
-  readonly onCapabilities?: ((computer: WorkjetComputer) => void) | undefined;
-  readonly onUnassignNative?: ((computerId: string) => void) | undefined;
-  readonly onNativeCapabilities?: ((computer: CtoxWorkjetComputerProjection) => void) | undefined;
   readonly businessOsLabel?: string | null;
-  readonly onAdd?: () => void;
-  readonly onRemove?: (computer: WorkjetComputer) => void;
-  readonly renderConnection?: (environmentId: EnvironmentId) => ReactNode;
   readonly connectedEnvironmentIds?: ReadonlyArray<EnvironmentId>;
   readonly connectingEnvironmentIds?: ReadonlyArray<EnvironmentId>;
   readonly pendingConnectionEnvironmentId?: EnvironmentId | null;
+  /** Das Inline-Panel „Rechner hinzufügen“. */
+  readonly addPanel?: ReactNode;
+  /** Abgeleitete Kapazität je Rechner-ID (nur Anzeige). */
+  readonly capacities?: Readonly<Record<string, ComputerCapacity | null>>;
+  /** Rechner, deren Erkennung gerade läuft. */
+  readonly checkingComputerIds?: ReadonlySet<string>;
+  /** Aktiv-Schalter; nur für Rechner mit gespeichertem Eintrag. */
+  readonly onActiveChange?: (row: ComputerMachineRow, active: boolean) => void;
+  readonly onRemove?: (
+    row: ComputerMachineRow,
+    mode: ComputerRemoveMode,
+  ) => Promise<ComputerRemoveOutcome>;
+  /** „Auch auf dem Rechner entfernen“ braucht die Desktop-App. */
+  readonly remoteRemoveAvailable?: boolean;
+  readonly onRecheck?: (row: ComputerMachineRow) => void;
+  readonly onAssign?: ((computer: WorkjetComputer, assigned: boolean) => void) | undefined;
+  readonly renderRepair?: (row: ComputerMachineRow, close: () => void) => ReactNode;
+  readonly renderEdit?: (row: ComputerMachineRow, close: () => void) => ReactNode;
+  readonly onRetryMembership?: (() => void) | undefined;
 }) {
-  const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
-  const [connectionComputerId, setConnectionComputerId] = useState<string | null>(null);
-  const [removingComputer, setRemovingComputer] = useState<WorkjetComputer | null>(null);
-  const [capabilityFilter, setCapabilityFilter] = useState<string>("all");
-  const editingComputer =
-    configuration.computers.find((entry) => entry.id === editingComputerId) ?? null;
-  const connectionComputer =
-    configuration.computers.find((entry) => entry.id === connectionComputerId) ?? null;
-  const nativeComputers =
-    membership?.phase === "ready"
+  const [expansion, setExpansion] = useState<Expansion | null>(null);
+  const [removing, setRemoving] = useState(emptyIdSet);
+  const [notices, setNotices] = useState<
+    Readonly<Record<string, ComputerRemoveOutcome & { readonly label: string }>>
+  >({});
+  const noticeTimers = useRef(new Map<string, number>());
+  useEffect(() => {
+    const timers = noticeTimers.current;
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer);
+    };
+  }, []);
+  const showNotice = (key: string, notice: ComputerRemoveOutcome & { readonly label: string }) => {
+    setNotices((current) => ({ ...current, [key]: notice }));
+    const previous = noticeTimers.current.get(key);
+    if (previous !== undefined) window.clearTimeout(previous);
+    noticeTimers.current.set(
+      key,
+      window.setTimeout(() => {
+        noticeTimers.current.delete(key);
+        setNotices((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      }, NOTICE_MS),
+    );
+  };
+  const runRemove = (row: ComputerMachineRow, label: string, mode: ComputerRemoveMode) => {
+    if (!onRemove) return;
+    setRemoving((current) => new Set(current).add(row.key));
+    void onRemove(row, mode)
+      .then(
+        (outcome) => showNotice(row.key, { ...outcome, label }),
+        (failure: unknown) =>
+          showNotice(row.key, {
+            tone: "error",
+            text: failure instanceof Error ? failure.message : "Entfernen fehlgeschlagen",
+            label,
+          }),
+      )
+      .finally(() =>
+        setRemoving((current) => {
+          const next = new Set(current);
+          next.delete(row.key);
+          return next;
+        }),
+      );
+  };
+  // Während die Instanz neu prüft, bleiben die zuletzt bestätigten Einträge
+  // stehen (die Membership-Ablage behält sie für dieselbe Instanz). Zeilen
+  // erscheinen und verschwinden nicht; ein Chip „prüft…“ zeigt die Prüfung.
+  const natives =
+    membership && membership.phase !== "failed"
       ? membership.computers.filter((entry) => entry.status === "assigned")
       : [];
-  const nativeOnlyComputers = nativeComputers.filter(
-    (entry) => !configuration.computers.some((configured) => configured.id === entry.id),
-  );
+  const membershipChecking = membership?.phase === "loading";
+  const membershipUnreachable = membership?.phase === "failed";
   const stateFor = (computer: WorkjetComputer) => {
     const connecting = connectingEnvironmentIds?.includes(computer.environmentId) ?? false;
     const disconnected =
@@ -289,513 +560,472 @@ export function WorkjetComputersSettingsView({
             : null;
     return { connecting, disconnected, inspection, snapshot };
   };
-  const configured = [...configuration.computers].sort((left, right) => {
-    const rank = (computer: WorkjetComputer) =>
-      computer.environmentId === environmentId
-        ? 0
-        : stateFor(computer).disconnected || stateFor(computer).connecting
-          ? 2
-          : 1;
-    return rank(left) - rank(right) || left.label.localeCompare(right.label);
+  // Feste Reihenfolge: dieser Rechner zuerst, dann nach Name. Verbindungs-
+  // zustände ändern die Reihenfolge nie (kein Springen beim Prüfen).
+  const computers = [...configuration.computers].sort(
+    (left, right) =>
+      Number(right.environmentId === environmentId) -
+        Number(left.environmentId === environmentId) || left.label.localeCompare(right.label),
+  );
+  const rows = mergeComputerRows(computers, natives, environments).sort((left, right) => {
+    if (left.computer && !right.computer) return -1;
+    if (!left.computer && right.computer) return 1;
+    if (left.computer || right.computer) return 0;
+    return (left.native?.displayName ?? "").localeCompare(right.native?.displayName ?? "");
   });
-  const matchesFilter = (capabilities: readonly string[]) =>
-    capabilityFilter === "all" || capabilities.includes(capabilityFilter);
-  const assignmentTitle =
-    membership?.phase === "loading"
-      ? "Checking Business OS assignment…"
-      : membership?.phase === "failed"
-        ? "Business OS assignment could not be checked"
-        : "Not added to the selected Business OS";
-  const assignmentBadge = (assigned: boolean) =>
-    assigned ? (
-      <span
-        title="Available in the selected Business OS"
-        className="inline-flex max-w-full truncate rounded bg-muted px-1.5 py-0.5 text-[11px]"
-      >
-        in {businessOsLabel ?? "Business OS"}
-      </span>
-    ) : (
-      <span className="text-muted-foreground" title={assignmentTitle}>
-        —
-      </span>
+  const rowKeys = new Set(rows.map((row) => row.key));
+  const toggle = (key: string, kind: Expansion["kind"]) =>
+    setExpansion((current) =>
+      current?.key === key && current.kind === kind ? null : { key, kind },
     );
+  const close = () => setExpansion(null);
+
+  const noticeLine = (key: string, withLabel: boolean) => {
+    const notice = notices[key];
+    if (!notice) return null;
+    return (
+      <div
+        key={`notice-${key}`}
+        role={notice.tone === "error" ? "alert" : "status"}
+        data-slot="computer-remove-result"
+        className={cn(
+          "px-3 pb-2 pl-8 text-xs",
+          notice.tone === "error" ? "text-destructive" : "text-muted-foreground",
+          withLabel && "pt-2",
+        )}
+      >
+        {withLabel ? `${notice.label}: ${notice.text}` : notice.text}
+      </div>
+    );
+  };
+
+  const headerStatus = membershipChecking ? (
+    <Chip tone="busy" data-slot="computers-membership-checking">
+      <Spinner className="size-2.5" />
+      prüft…
+    </Chip>
+  ) : membershipUnreachable ? (
+    <span className="flex items-center gap-1.5">
+      <Chip tone="error" title={membership?.error ?? undefined}>
+        Instanz nicht erreichbar
+      </Chip>
+      {onRetryMembership ? (
+        <Button size="xs" variant="outline" onClick={onRetryMembership}>
+          Erneut versuchen
+        </Button>
+      ) : null}
+    </span>
+  ) : null;
 
   return (
     <SettingsSection
       id={searchableSetting("workjet-computers").id}
       title={searchableSetting("workjet-computers").title}
-      headerAction={
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={onAdd}
-          disabled={onAdd === undefined}
-        >
-          <PlusIcon className="size-3.5" />
-          Add computer
-        </Button>
-      }
+      headerAction={headerStatus}
     >
-      {configuration.computers.length + nativeOnlyComputers.length > 5 ? (
-        <div
-          className="flex items-center gap-1 pb-3"
-          role="group"
-          aria-label="Filter computers by capability"
-        >
-          {["all", ...OPERATIONAL_CAPABILITIES.map((entry) => entry.kind)].map((kind) => (
-            <Button
-              key={kind}
-              size="xs"
-              variant={capabilityFilter === kind ? "secondary" : "ghost"}
-              aria-pressed={capabilityFilter === kind}
-              onClick={() => setCapabilityFilter(kind)}
-            >
-              {kind === "all" ? "All computers" : kind}
-            </Button>
-          ))}
-        </div>
-      ) : null}
-      <div className="overflow-x-auto">
-        <table
-          className="w-full table-fixed text-left text-xs"
-          aria-label="Computers"
-          data-workjet-computers-table
-        >
-          <colgroup>
-            <col className="w-7" />
-            <col className="w-[22%]" />
-            <col className="w-[16%]" />
-            <col className="w-[32%]" />
-            <col />
-            <col className="w-24" />
-          </colgroup>
-          <thead className="border-b border-border text-[11px] text-muted-foreground">
-            <tr>
-              <th className="py-2 font-normal">
-                <span className="sr-only">Status</span>
-              </th>
-              {["Computer", "Capabilities", "Coding tools", "Business OS"].map((label) => (
-                <th key={label} className="px-2 py-2 font-normal">
-                  {label}
-                </th>
-              ))}
-              <th className="px-1 py-2 text-right font-normal">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {configured
-              .filter((computer) =>
-                matchesFilter(
-                  nativeComputers.find((entry) => entry.id === computer.id)?.capabilities ?? [],
-                ),
-              )
-              .map((computer) => {
-                const { connecting, disconnected, inspection, snapshot } = stateFor(computer);
-                const nativeComputer = nativeComputers.find((entry) => entry.id === computer.id);
-                const target = environments.find(
-                  (entry) => entry.environmentId === computer.environmentId,
-                );
-                const isCurrent = configuration.selectedComputerId === computer.id;
-                const status = !environmentsReady
-                  ? "Checking connection…"
-                  : connecting
-                    ? "Connecting"
-                    : disconnected
-                      ? "Offline"
-                      : "Online";
-                const probeTitle = disconnected
-                  ? "Disconnected. Reconnect this computer to check its coding tools."
-                  : connecting
-                    ? "Connecting. Coding tools will be checked once connected."
-                    : inspection?.error
-                      ? "Could not check coding tools. Check this computer’s connection."
-                      : "Checking coding tools…";
-                const location =
-                  computer.environmentId === environmentId
-                    ? "This machine"
-                    : (target?.detail ?? workjetComputerKindLabel(computer.presentationKind));
-                return (
-                  <tr
-                    key={computer.id}
-                    data-workjet-computer={computer.id}
-                    className="h-14 border-b border-border/60 hover:bg-muted/30"
+      <div
+        className="divide-y divide-border/60 border-y border-border/60"
+        data-workjet-computers-table
+      >
+        {rows.map((row) => {
+          const { computer, native } = row;
+          const metadata = computer?.metadata ?? null;
+          const active = metadata ? metadata.active : (native?.active ?? true);
+          const label = computer?.label ?? native?.displayName ?? row.key;
+          let status: RowStatus = "off";
+          let statusLabel = "Getrennt";
+          let meta: ReactNode = null;
+          const chips: ReactNode[] = computerFactChips(
+            metadata,
+            native,
+            computer ? (capacities?.[computer.id] ?? null) : null,
+          );
+          if (computer && checkingComputerIds?.has(computer.id))
+            chips.push(
+              <Chip key="detecting" tone="busy" data-slot="computer-detecting">
+                <Spinner className="size-2.5" />
+                erkennt…
+              </Chip>,
+            );
+          if (removing.has(row.key))
+            chips.push(
+              <Chip key="removing" tone="busy" data-slot="computer-removing">
+                <Spinner className="size-2.5" />
+                entfernt…
+              </Chip>,
+            );
+          if (computer) {
+            const { connecting, disconnected, inspection, snapshot } = stateFor(computer);
+            const target = environments.find(
+              (entry) => entry.environmentId === computer.environmentId,
+            );
+            const checking =
+              !environmentsReady || computer.environmentId === pendingConnectionEnvironmentId;
+            status = checking || connecting ? "busy" : disconnected ? "off" : "ok";
+            statusLabel = checking
+              ? "Prüft"
+              : connecting
+                ? "Verbindet"
+                : disconnected
+                  ? "Getrennt"
+                  : "Verbunden";
+            meta =
+              computer.environmentId === environmentId
+                ? "Dieser Rechner"
+                : target
+                  ? [target.label !== computer.label ? target.label : null, target.detail]
+                      .filter((part): part is string => !!part)
+                      .join(" · ")
+                  : computer.presentationKind === "local"
+                    ? "Lokal"
+                    : "—";
+            if (snapshot) {
+              const tools = computer.harnesses.filter(
+                (declared) =>
+                  declared.available &&
+                  snapshot.harnesses.some(
+                    (live) =>
+                      live.harness === declared.harness && live.availability === "available",
+                  ),
+              );
+              for (const declared of tools.slice(0, 3)) {
+                const live = snapshot.harnesses.find((entry) => entry.harness === declared.harness);
+                chips.push(
+                  <Chip
+                    key={`tool-${declared.harness}`}
+                    tone="outline"
+                    data-workjet-tool={declared.harness}
+                    title={
+                      live?.availability === "available"
+                        ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
+                        : undefined
+                    }
                   >
-                    <td className="pl-1">
-                      <span
-                        role="img"
-                        aria-label={status}
-                        title={status}
-                        className={
-                          status === "Online"
-                            ? "block size-1.5 rounded-full bg-emerald-500"
-                            : "block size-1.5 rounded-full bg-muted-foreground/40"
-                        }
-                      />
-                    </td>
-                    <td className="min-w-0 px-2 py-1.5">
-                      <div className="truncate font-medium text-foreground" title={computer.label}>
-                        {computer.label}
-                      </div>
-                      <div
-                        className="truncate text-[11px] text-muted-foreground"
-                        title={target ? `${location} · ${target.label}` : location}
-                      >
-                        {location}
-                      </div>
-                    </td>
-                    <td className="px-2">
-                      <ComputerCapabilityChips
-                        capabilities={nativeComputer?.capabilities ?? []}
-                        capabilityConfig={nativeComputer?.capabilityConfig}
-                        label={computer.label}
-                        onClick={onCapabilities ? () => onCapabilities(computer) : undefined}
-                        disabled={
-                          membership?.phase !== "ready" || membership.pendingComputerId !== null
-                        }
-                      />
-                    </td>
-                    <td className="px-2">
-                      {snapshot === null ? (
-                        <span title={probeTitle} className="text-muted-foreground">
-                          —
-                        </span>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-1 py-1">
-                          {computer.harnesses.map((declared) => {
-                            const live = snapshot.harnesses.find(
-                              (entry) => entry.harness === declared.harness,
-                            );
-                            const available = live?.availability === "available";
-                            const detail =
-                              live?.availability === "available"
-                                ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
-                                : live
-                                  ? humanizeHarnessProbeReason(live.reason)
-                                  : declared.available
-                                    ? "declared available · not probed from here"
-                                    : "not offered";
-                            return (
-                              <span
-                                key={declared.harness}
-                                title={detail}
-                                className="inline-flex shrink-0 items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-[10px]"
-                              >
-                                {workjetHarnessDisplayLabel(declared.harness).replace(
-                                  /\s+(CLI|Code)$/,
-                                  "",
-                                )}
-                                <span
-                                  className={
-                                    available
-                                      ? "text-emerald-600 dark:text-emerald-400"
-                                      : "text-muted-foreground"
-                                  }
-                                >
-                                  {available ? "✓" : "—"}
-                                </span>
-                              </span>
-                            );
-                          })}
-                          {computer.harnesses.length === 0 ? (
-                            <span
-                              title="No coding tools enabled. Edit this computer to choose them."
-                              className="text-muted-foreground"
-                            >
-                              —
-                            </span>
-                          ) : null}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-2">{assignmentBadge(nativeComputer !== undefined)}</td>
-                    <td className="px-1">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant={isCurrent ? "secondary" : "ghost"}
-                          role="radio"
-                          aria-checked={isCurrent}
-                          title={isCurrent ? "Current computer" : "Use as current computer"}
-                          aria-label={
-                            isCurrent
-                              ? `Stop using ${computer.label} as current computer`
-                              : `Use ${computer.label} as current computer`
-                          }
-                          onClick={() =>
-                            onChange(toggleCurrentComputer(configuration, computer.id))
-                          }
-                        >
-                          {isCurrent ? "Current" : "Use"}
-                        </Button>
-                        <Menu>
-                          <MenuTrigger
-                            render={
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label={`More actions for ${computer.label}`}
-                              />
-                            }
-                          >
-                            <MoreHorizontalIcon className="size-3.5" />
-                          </MenuTrigger>
-                          <MenuPopup align="end">
-                            <MenuItem onClick={() => setEditingComputerId(computer.id)}>
-                              Edit
-                            </MenuItem>
-                            {renderConnection ? (
-                              <MenuItem onClick={() => setConnectionComputerId(computer.id)}>
-                                Connection
-                              </MenuItem>
-                            ) : null}
-                            {onAssign && membership ? (
-                              <MenuItem
-                                disabled={
-                                  membership.phase !== "ready" ||
-                                  membership.pendingComputerId !== null ||
-                                  (disconnected && !nativeComputer)
-                                }
-                                data-workjet-action={`computer-${computer.id}-${nativeComputer ? "unassign" : "assign"}`}
-                                aria-label={`${nativeComputer ? "Remove" : "Add"} ${computer.label} ${nativeComputer ? "from" : "to"} selected Business OS`}
-                                onClick={() => onAssign(computer, nativeComputer === undefined)}
-                              >
-                                {nativeComputer ? "Remove from Business OS" : "Add to Business OS"}
-                              </MenuItem>
-                            ) : null}
-                            <MenuSeparator />
-                            <MenuItem
-                              variant="destructive"
-                              onClick={() => setRemovingComputer(computer)}
-                            >
-                              Remove
-                            </MenuItem>
-                          </MenuPopup>
-                        </Menu>
-                      </div>
-                    </td>
-                  </tr>
+                    {workjetHarnessDisplayLabel(declared.harness).replace(/\s+(CLI|Code)$/, "")}
+                  </Chip>,
                 );
-              })}
-            {nativeOnlyComputers
-              .filter((computer) => matchesFilter(computer.capabilities))
-              .map((computer) => (
-                <tr
-                  key={computer.id}
-                  data-workjet-native-computer={computer.id}
-                  className="h-14 border-b border-border/60 hover:bg-muted/30"
-                >
-                  <td className="pl-1">
-                    <span
-                      role="img"
-                      aria-label="Connection not observed"
-                      title="Connection not observed from this app"
-                      className="block size-1.5 rounded-full bg-muted-foreground/40"
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <div className="truncate font-medium" title={computer.displayName}>
-                      {computer.displayName}
-                    </div>
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {computer.agentless ? "Storage endpoint" : "Business OS computer"}
-                    </div>
-                  </td>
-                  <td className="px-2">
-                    <ComputerCapabilityChips
-                      capabilities={computer.capabilities}
-                      capabilityConfig={computer.capabilityConfig}
-                      label={computer.displayName}
-                      onClick={
-                        onNativeCapabilities ? () => onNativeCapabilities(computer) : undefined
+              }
+              if (tools.length > 3)
+                chips.push(
+                  <Chip
+                    key="tool-more"
+                    tone="outline"
+                    title={tools
+                      .slice(3)
+                      .map((declared) => workjetHarnessDisplayLabel(declared.harness))
+                      .join(", ")}
+                  >
+                    +{tools.length - 3}
+                  </Chip>,
+                );
+            } else if (!disconnected && !connecting && inspection?.error) {
+              chips.push(
+                <Chip key="tool-error" tone="error" title={inspection.error}>
+                  Werkzeuge ?
+                </Chip>,
+              );
+            } else if (!disconnected) {
+              chips.push(
+                <Chip key="tool-check" tone="busy" data-slot="computer-tools-checking">
+                  {connecting ? "verbindet…" : "prüft…"}
+                </Chip>,
+              );
+            }
+            if (configuration.selectedComputerId === computer.id)
+              chips.push(
+                <Chip key="current" tone="outline" data-slot="computer-current">
+                  Aktuell
+                </Chip>,
+              );
+          } else if (native) {
+            status = "off";
+            statusLabel = "Nur Instanz";
+            meta = native.agentless ? "Speicher" : "Instanz";
+          }
+          if (native)
+            chips.push(
+              <Chip key="instance" tone="outline" title={businessOsLabel ?? undefined}>
+                {businessOsLabel ?? "Instanz"}
+              </Chip>,
+            );
+
+          const menuActions: RowMenuAction[] = [];
+          if (computer && renderRepair)
+            menuActions.push({ label: "Reparieren", onSelect: () => toggle(row.key, "repair") });
+          if (onRecheck) menuActions.push({ label: "Neu prüfen", onSelect: () => onRecheck(row) });
+          if (computer && renderEdit)
+            menuActions.push({ label: "Bearbeiten", onSelect: () => toggle(row.key, "edit") });
+          if (computer)
+            menuActions.push({
+              label:
+                configuration.selectedComputerId === computer.id
+                  ? "Nicht mehr aktuell"
+                  : "Als aktuell verwenden",
+              onSelect: () => onChange(toggleCurrentComputer(configuration, computer.id)),
+            });
+          if (computer && !native && onAssign && membership?.phase === "ready")
+            menuActions.push({
+              label: "Zur Instanz hinzufügen",
+              onSelect: () => onAssign(computer, true),
+            });
+
+          // Papierkorb: die Frage, ob auch auf dem Rechner entfernt werden soll.
+          const remoteComputer =
+            computer !== null &&
+            (metadata?.connection
+              ? metadata.connection._tag !== "local"
+              : computer.presentationKind !== "local");
+          const deleteOptions: RowDeleteOption[] = onRemove
+            ? [
+                {
+                  label: "Nur Workjet",
+                  disabled: removing.has(row.key),
+                  onSelect: () => runRemove(row, label, "workjet-only"),
+                },
+                ...(remoteComputer
+                  ? [
+                      {
+                        label: "Auch auf dem Rechner",
+                        disabled:
+                          removing.has(row.key) ||
+                          !remoteRemoveAvailable ||
+                          !metadata?.facts ||
+                          !metadata.connection,
+                        onSelect: () => runRemove(row, label, "workjet-and-files"),
+                      },
+                    ]
+                  : []),
+              ]
+            : [];
+
+          const expanded = expansion?.key === row.key ? expansion.kind : null;
+          return (
+            <Fragment key={row.key}>
+              <div
+                {...(computer
+                  ? { "data-workjet-computer": computer.id }
+                  : { "data-workjet-native-computer": native?.id ?? row.key })}
+                data-active={active ? "true" : "false"}
+                className={cn(!active && "opacity-55")}
+              >
+                <Row
+                  className="flex-wrap sm:flex-nowrap max-sm:[&>div:has(>[data-slot=row-name])]:basis-[calc(100%-1.25rem)] max-sm:[&>[data-slot=row-chips]]:flex-1 max-sm:[&>[data-slot=row-chips]]:shrink max-sm:[&>[data-slot=row-chips]]:flex-wrap max-sm:[&>[data-slot=row-chips]]:pl-5 max-sm:[&>[data-slot=row-actions]]:ml-auto max-sm:[&>[data-slot=row-actions]]:max-w-full max-sm:[&>[data-slot=row-actions]]:flex-wrap max-sm:[&_[data-slot=row-confirm]]:min-w-0 max-sm:[&_[data-slot=row-confirm]]:flex-wrap"
+                  status={status}
+                  statusLabel={statusLabel}
+                  name={label}
+                  meta={meta}
+                  chips={
+                    <span className="flex min-w-0 flex-wrap items-center gap-1 max-sm:flex-1">
+                      {chips}
+                    </span>
+                  }
+                  {...(onActiveChange
+                    ? {
+                        active,
+                        activeLabel: `${label} aktiv`,
+                        // Ohne Metadaten bleibt der Schalter sichtbar, aber gesperrt:
+                        // jede Zeile hat dieselbe Spalte.
+                        activeDisabled: !computer || !metadata,
+                        onActiveChange: (checked: boolean) => onActiveChange(row, checked),
                       }
-                      disabled={
-                        membership?.phase !== "ready" ||
-                        membership.pendingComputerId !== null ||
-                        computer.agentless === undefined ||
-                        computer.selfHostedColocation
+                    : {})}
+                  {...(deleteOptions.length
+                    ? {
+                        deleteOptions,
+                        deleteLabel: `${label} entfernen`,
+                        deleteConfirmTitle: "Entfernen?",
                       }
-                    />
-                  </td>
-                  <td className="px-2 text-muted-foreground">
-                    <span title="No coding connection to this computer">—</span>
-                  </td>
-                  <td className="px-2">{assignmentBadge(true)}</td>
-                  <td className="px-1 text-right">
-                    <Menu>
-                      <MenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label={`More actions for ${computer.displayName}`}
-                          />
-                        }
-                      >
-                        <MoreHorizontalIcon className="size-3.5" />
-                      </MenuTrigger>
-                      <MenuPopup align="end">
-                        {onNativeCapabilities ? (
-                          <MenuItem
-                            disabled={
-                              computer.agentless === undefined || computer.selfHostedColocation
-                            }
-                            onClick={() => onNativeCapabilities(computer)}
-                          >
-                            Edit
-                          </MenuItem>
-                        ) : null}
-                        <MenuItem
-                          variant="destructive"
-                          disabled={
-                            !onUnassignNative ||
-                            membership?.phase !== "ready" ||
-                            membership.pendingComputerId !== null
-                          }
-                          aria-label={`Remove ${computer.displayName} from selected Business OS`}
-                          onClick={() => onUnassignNative?.(computer.id)}
-                        >
-                          Remove from Business OS
-                        </MenuItem>
-                      </MenuPopup>
-                    </Menu>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+                    : {})}
+                  menuActions={menuActions}
+                  menuLabel={`Weitere Aktionen für ${label}`}
+                />
+              </div>
+              {noticeLine(row.key, false)}
+              {expanded === "repair" && renderRepair ? (
+                <div className="px-3 pb-3 pl-8" data-slot="computer-repair">
+                  {renderRepair(row, close)}
+                </div>
+              ) : null}
+              {expanded === "edit" && renderEdit ? (
+                <div className="px-3 pb-3 pl-8" data-slot="computer-edit">
+                  {renderEdit(row, close)}
+                </div>
+              ) : null}
+            </Fragment>
+          );
+        })}
+        {Object.keys(notices)
+          .filter((key) => !rowKeys.has(key))
+          .map((key) => noticeLine(key, true))}
+        {rows.length === 0 ? (
+          <div className="px-3 py-2.5 text-[13.5px] text-muted-foreground" role="status">
+            {environmentsReady ? "Noch keine Rechner" : "Lädt…"}
+          </div>
+        ) : null}
       </div>
-      {configuration.computers.length + nativeOnlyComputers.length === 0 ? (
-        <p className="py-4 text-sm text-muted-foreground">
-          {environmentsReady
-            ? "No computers yet. Add this computer, an SSH host, or a computer on your Tailscale network."
-            : "Loading computers…"}
-        </p>
-      ) : null}
-      {capabilityFilter !== "all" &&
-      !configured.some((computer) =>
-        matchesFilter(
-          nativeComputers.find((entry) => entry.id === computer.id)?.capabilities ?? [],
-        ),
-      ) &&
-      !nativeOnlyComputers.some((computer) => matchesFilter(computer.capabilities)) ? (
-        <p className="py-4 text-sm text-muted-foreground">No computers with this capability.</p>
-      ) : null}
-      <Sheet
-        open={editingComputer !== null}
-        onOpenChange={(open) => {
-          if (!open) setEditingComputerId(null);
-        }}
-      >
-        <SheetPopup className="motion-reduce:transition-none">
-          <SheetHeader>
-            <SheetTitle>Edit computer</SheetTitle>
-            <SheetDescription>Name and coding tools for this connection.</SheetDescription>
-          </SheetHeader>
-          <SheetPanel>
-            {editingComputer ? (
-              <WorkjetComputerEditor
-                key={editingComputer.id}
-                computer={editingComputer}
-                environments={environments}
-                availability={stateFor(editingComputer).snapshot}
-                onCancel={() => setEditingComputerId(null)}
-                onSave={(computer) => {
-                  const computers = configuration.computers.map((entry) =>
-                    entry.id === computer.id ? computer : entry,
-                  );
-                  onChange(
-                    applyAutomaticCurrentComputer({ ...configuration, computers }, environmentId),
-                  );
-                  setEditingComputerId(null);
-                  toastManager.add({
-                    type: "success",
-                    title: "Computer saved",
-                    description: computer.label,
-                  });
-                }}
-              />
-            ) : null}
-          </SheetPanel>
-        </SheetPopup>
-      </Sheet>
-      <Dialog
-        open={connectionComputer !== null}
-        onOpenChange={(open) => {
-          if (!open) setConnectionComputerId(null);
-        }}
-      >
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>{connectionComputer?.label} connection</DialogTitle>
-            <DialogDescription>Reconnect or disconnect this computer.</DialogDescription>
-          </DialogHeader>
-          <DialogPanel>
-            {connectionComputer
-              ? (renderConnection?.(connectionComputer.environmentId) ?? (
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground" role="status">
-                      {!environmentsReady
-                        ? "Loading connection details…"
-                        : connectionComputer.environmentId === environmentId
-                          ? "This is the local Workjet connection."
-                          : `The saved connection for ${connectionComputer.label} is unavailable. Set up its connection again to reconnect.`}
-                    </p>
-                    {environmentsReady &&
-                    connectionComputer.environmentId !== environmentId &&
-                    onAdd ? (
-                      <Button
-                        onClick={() => {
-                          setConnectionComputerId(null);
-                          onAdd();
-                        }}
-                      >
-                        Set up connection
-                      </Button>
-                    ) : null}
-                  </div>
-                ))
-              : null}
-          </DialogPanel>
-        </DialogPopup>
-      </Dialog>
-      <Dialog
-        open={removingComputer !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemovingComputer(null);
-        }}
-      >
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>Remove {removingComputer?.label}?</DialogTitle>
-            <DialogDescription>
-              Remove this saved connection. Unassign it from the Business OS first if it is still
-              assigned.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogPanel className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setRemovingComputer(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (removingComputer) {
-                  if (onRemove) onRemove(removingComputer);
-                  else onChange(removeComputer(configuration, removingComputer.id));
-                  setRemovingComputer(null);
-                }
-              }}
-            >
-              Remove
-            </Button>
-          </DialogPanel>
-        </DialogPopup>
-      </Dialog>
+      {addPanel ? <div className="flex flex-col pt-3">{addPanel}</div> : null}
     </SettingsSection>
   );
 }
+
+function sshAccessFor(request: AddComputerRequest): ComputerSshAccess | null {
+  if (!request.target || !request.hostKey || !request.target.username) return null;
+  return {
+    host: request.target.hostname,
+    port: request.target.port ?? 22,
+    username: request.target.username,
+    hostKeySha256: request.hostKey.fingerprint,
+    hostKeyAlgorithm: request.hostKey.algorithm,
+  };
+}
+
+export type ComputerControl = NonNullable<DesktopBridge["controlComputers"]>;
+
+/** Datensatz des Backends zu einem Rechner, auch unter einer früheren ID. */
+export function computerRecordFor(
+  records: ReadonlyArray<ComputerRecord>,
+  id: string,
+): ComputerRecord | undefined {
+  return (
+    records.find((record) => record.id === id) ??
+    records.find((record) => record.metadata.previousIds.includes(id))
+  );
+}
+
+/**
+ * Gespeicherte Rechner mit dem jüngsten Stand des Backends (Erkennung,
+ * Rollen, aktiv) und dem gerade umgelegten Aktiv-Schalter.
+ */
+export function withComputerRecords(
+  configuration: WorkjetConfiguration,
+  records: ReadonlyArray<ComputerRecord>,
+  pendingActive: Readonly<Record<string, boolean>> = {},
+): WorkjetConfiguration {
+  if (records.length === 0 && Object.keys(pendingActive).length === 0) return configuration;
+  return {
+    ...configuration,
+    computers: configuration.computers.map((computer) => {
+      const metadata = computerRecordFor(records, computer.id)?.metadata ?? computer.metadata;
+      if (!metadata) return computer;
+      const pending = pendingActive[computer.id];
+      return {
+        ...computer,
+        metadata: pending === undefined ? metadata : { ...metadata, active: pending },
+      };
+    }),
+  };
+}
+
+/** Aktiv/Inaktiv dauerhaft im Backend; ohne Desktop-App oder Eintrag nichts. */
+export async function changeComputerActive(input: {
+  readonly control: ComputerControl | undefined;
+  readonly row: ComputerMachineRow;
+  readonly active: boolean;
+}): Promise<ComputerControlResult | null> {
+  if (!input.control || !input.row.computer) return null;
+  return input.control({ _tag: "setActive", id: input.row.computer.id, active: input.active });
+}
+
+/** Eine Zeile Ergebnis: „3 Pfade entfernt“ oder die Pfade, die blieben. */
+export function removedPathsSummary(
+  paths: ComputerControlResult["removedPaths"],
+): ComputerRemoveOutcome {
+  const plural = (count: number) => (count === 1 ? "Pfad" : "Pfade");
+  const failed = paths.filter((path) => path.status === "failed" || path.status === "refused");
+  if (failed.length > 0)
+    return { tone: "error", text: `${failed.length} ${plural(failed.length)} nicht entfernt` };
+  const removed = paths.filter((path) => path.status === "removed").length;
+  return { tone: "ok", text: `${removed} ${plural(removed)} entfernt` };
+}
+
+/**
+ * Papierkorb einer Zeile: zuerst aus der Instanz austragen, dann den
+ * Rechner im Backend entfernen (mit oder ohne Dateien), zuletzt die nicht
+ * mehr gebrauchte Verbindung. Bleiben Pfade stehen, bleibt der Rechner
+ * (inaktiv) und die Verbindung erhalten.
+ */
+export async function removeComputerRow(input: {
+  readonly row: ComputerMachineRow;
+  readonly mode: ComputerRemoveMode;
+  readonly control: ComputerControl | undefined;
+  /** Austragen aus der Instanz; Fehlertext oder null. */
+  readonly unassign: ((nativeId: string) => Promise<string | null>) | null;
+  /** Verbindung entfernen, wenn sie sonst niemand nutzt; Fehlertext oder null. */
+  readonly removeConnection: (computer: WorkjetComputer) => Promise<string | null>;
+  /** Ohne Desktop-App: nur die gespeicherte Konfiguration ändern. */
+  readonly removeWithoutBackend: (computer: WorkjetComputer) => Promise<string | null>;
+}): Promise<ComputerRemoveOutcome> {
+  const removedFromWorkjet: ComputerRemoveOutcome = { tone: "ok", text: "Aus Workjet entfernt" };
+  if (input.row.native && input.unassign) {
+    const failure = await input.unassign(input.row.native.id);
+    if (failure) return { tone: "error", text: failure };
+  }
+  const computer = input.row.computer;
+  if (!computer) return removedFromWorkjet;
+  if (!input.control) {
+    if (input.mode === "workjet-and-files")
+      return { tone: "error", text: "Nur mit der Desktop-App" };
+    const failure = await input.removeWithoutBackend(computer);
+    return failure ? { tone: "error", text: failure } : removedFromWorkjet;
+  }
+  let result: ComputerControlResult;
+  try {
+    result = await input.control({ _tag: "remove", id: computer.id, mode: input.mode });
+  } catch {
+    return {
+      tone: "error",
+      text:
+        input.mode === "workjet-and-files"
+          ? "Auf dem Rechner nicht entfernbar"
+          : "Entfernen fehlgeschlagen",
+    };
+  }
+  const summary =
+    input.mode === "workjet-and-files" ? removedPathsSummary(result.removedPaths) : null;
+  if (summary?.tone === "error") return summary;
+  const failure = await input.removeConnection(computer);
+  if (failure) return { tone: "error", text: failure };
+  return summary ?? removedFromWorkjet;
+}
+
+/** Die Verbindung, über die das Backend den Rechner erkennt. */
+export function computerConnectionFor(request: AddComputerRequest): ComputerConnection {
+  if (request.kind === "local" || !request.target) return { _tag: "local" };
+  const port = request.target.port;
+  return {
+    _tag: request.kind,
+    target: {
+      alias: request.target.alias,
+      hostname: request.target.hostname,
+      username: request.target.username,
+      port: port && Number.isInteger(port) && port > 0 && port <= 65535 ? port : null,
+    },
+  };
+}
+
+/** Schon erkannte Fakten für das Hinzufügen-Panel (Local oder eine Adresse). */
+export function knownComputerFacts(
+  computers: ReadonlyArray<WorkjetComputer>,
+  kind: AddComputerKind,
+  hostname: string | null,
+  localEnvironmentId: EnvironmentId | null,
+): KnownComputerFacts | null {
+  const wanted = hostname?.trim().toLowerCase() ?? null;
+  const match = computers.find((computer) => {
+    const connection = computer.metadata?.connection;
+    if (kind === "local")
+      return connection?._tag === "local" || computer.environmentId === localEnvironmentId;
+    if (!wanted || !connection || connection._tag === "local") return false;
+    return (
+      connection.target.hostname.toLowerCase() === wanted ||
+      connection.target.alias.toLowerCase() === wanted
+    );
+  });
+  if (!match?.metadata) return null;
+  return { facts: match.metadata.facts, identityFiles: match.metadata.identityFiles };
+}
+
+const PENDING_COMPUTER_TIMEOUT_MS = 90_000;
 
 export function WorkjetComputersSettings({
   instanceId,
@@ -815,8 +1045,6 @@ export function WorkjetComputersSettings({
     discovery,
     selectedInstanceId,
   ).activeInstanceName;
-  const [nativeCapabilityComputer, setNativeCapabilityComputer] =
-    useState<CtoxWorkjetComputerProjection | null>(null);
   const [mapMembership] = useState(createComputerMembershipStore);
   const membershipStore = instanceId === undefined ? workjetComputerMembership : mapMembership;
   useEffect(() => {
@@ -835,9 +1063,11 @@ export function WorkjetComputersSettings({
   const { environments, isReady: environmentsReady } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const environmentId = primaryEnvironment?.environmentId ?? null;
+  const localAvailable = environmentsReady && primaryEnvironment?.connection.phase === "connected";
   const [harnessInspections, setHarnessInspections] = useState<
     Readonly<Record<string, ComputerHarnessInspection>>
   >({});
+  const [probeRevision, setProbeRevision] = useState<Readonly<Record<string, number>>>({});
   const recordHarnessInspection = useCallback(
     (target: EnvironmentId, inspection: ComputerHarnessInspection | null) => {
       setHarnessInspections((current) => {
@@ -849,41 +1079,120 @@ export function WorkjetComputersSettings({
     },
     [],
   );
-  const [setupComputer, setSetupComputer] = useState<WorkjetComputer | null>(null);
-  const [addMode, setAddMode] = useState<"choose" | "capabilities" | null>(null);
-  const [capabilityComputer, setCapabilityComputer] = useState<WorkjetComputer | null>(null);
-  useEffect(() => {
-    setAddMode(null);
-    setCapabilityComputer(null);
-    setSetupComputer(null);
-  }, [selectedInstanceId]);
-  const [pendingComputerId, setPendingComputerId] = useState<EnvironmentId | null>(null);
-  const [pendingKind, setPendingKind] = useState<"local" | "ssh" | "tailscale" | undefined>();
-  const targetOptions = workjetEnvironmentTargetOptions(environments);
-  const configuration = includeSavedComputers(settings.workjet, targetOptions, environmentId);
-  const connections = useComputerConnections({
-    inline: setupOnly,
-    localAvailable: environmentsReady && primaryEnvironment?.connection.phase === "connected",
-    onConnected: (id, kind) => {
-      setPendingKind(kind);
-      setPendingComputerId(id);
-    },
+  const [addOpen, setAddOpen] = useState(() => {
+    try {
+      if (window.sessionStorage.getItem("workjet-computer-create") !== null) {
+        window.sessionStorage.removeItem("workjet-computer-create");
+        return true;
+      }
+    } catch {
+      /* Storage can be unavailable. The add button remains usable. */
+    }
+    return false;
   });
-  const pendingTarget = targetOptions.find((target) => target.environmentId === pendingComputerId);
-  const pendingInspection = useEnvironmentQuery(
-    pendingComputerId === null
-      ? null
-      : serverEnvironment.workjetHarnessInspect({ environmentId: pendingComputerId, input: {} }),
+  const [segment, setSegment] = useState<AddComputerKind>("ssh");
+  const connections = useComputerConnections({
+    discoverSshHosts: (addOpen || setupOnly) && segment === "ssh",
+  });
+  const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
+  // Rechner-Backend (Desktop): Erkennung, Rollen, aktiv, Entfernen.
+  const control = useMemo<ComputerControl | undefined>(
+    () =>
+      bridge?.controlComputers
+        ? (input: ComputerControlInput) => bridge.controlComputers!(input)
+        : undefined,
+    [bridge],
+  );
+  const [records, setRecords] = useState<ReadonlyArray<ComputerRecord>>([]);
+  const [pendingActive, setPendingActive] = useState<Readonly<Record<string, boolean>>>({});
+  const [checkingComputerIds, setCheckingComputerIds] = useState(emptyIdSet);
+  const runControl = useCallback(
+    async (input: ComputerControlInput): Promise<ComputerControlResult> => {
+      if (!control) throw new Error("Nur mit der Desktop-App");
+      const result = await control(input);
+      setRecords(result.computers);
+      return result;
+    },
+    [control],
+  );
+  // Neu lesen, sobald sich die gespeicherten Rechner ändern (z. B. nach einer
+  // Erkennung im Hintergrund). Der Schlüssel hält die Abfrage ruhig.
+  const settingsComputersKey = JSON.stringify(
+    settings.workjet.computers.map((computer) => [
+      computer.id,
+      computer.metadata?.active,
+      computer.metadata?.roles,
+      computer.metadata?.status,
+      computer.metadata?.facts?.checkedAt,
+    ]),
   );
   useEffect(() => {
-    if (!pendingTarget || !pendingInspection.data) return;
+    if (!control) return;
+    let current = true;
+    void control({ _tag: "list" }).then(
+      (result) => {
+        if (current) setRecords(result.computers);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [control, settingsComputersKey]);
+  const [sshKeys, setSshKeys] = useState<ReadonlyArray<ComputerSshKeyInfo> | null>(null);
+  const sshKeysWanted = (addOpen || setupOnly) && segment !== "local";
+  useEffect(() => {
+    if (!sshKeysWanted || sshKeys !== null || !bridge?.listComputerSshKeys) return;
+    let current = true;
+    void bridge.listComputerSshKeys().then(
+      (keys) => {
+        if (current) setSshKeys(keys);
+      },
+      () => {
+        if (current) setSshKeys([]);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [sshKeysWanted, sshKeys, bridge]);
+
+  // Connect → harness probe → computer record. The add pipeline awaits it.
+  const [pending, setPending] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly kind: AddComputerKind;
+  } | null>(null);
+  const pendingWaiter = useRef<{
+    readonly environmentId: EnvironmentId;
+    readonly resolve: (computer: WorkjetComputer) => void;
+    readonly reject: (error: Error) => void;
+  } | null>(null);
+  const targetOptions = workjetEnvironmentTargetOptions(environments);
+  const configuration = withComputerRecords(
+    includeSavedComputers(settings.workjet, targetOptions, environmentId),
+    records,
+    pendingActive,
+  );
+  const pendingTarget = targetOptions.find(
+    (target) => target.environmentId === pending?.environmentId,
+  );
+  const pendingInspection = useEnvironmentQuery(
+    pending === null
+      ? null
+      : serverEnvironment.workjetHarnessInspect({
+          environmentId: pending.environmentId,
+          input: {},
+        }),
+  );
+  useEffect(() => {
+    if (!pending || !pendingTarget || !pendingInspection.data) return;
     const existing = findComputerForTarget(settings.workjet, pendingTarget, targetOptions);
     const draft = createWorkjetComputerDraft({ environments: [pendingTarget] });
     const computer =
       existing ??
       saveWorkjetComputerDraft({
         ...draft,
-        presentationKind: pendingKind ?? draft.presentationKind,
+        presentationKind: pending.kind,
         harnesses: draft.harnesses.map((entry) => ({
           ...entry,
           available: pendingInspection.data!.harnesses.some(
@@ -900,28 +1209,54 @@ export function WorkjetComputersSettings({
         selectedComputerId: computer.id,
       },
     });
-    setSetupComputer(computer);
-    if (!setupOnly) {
-      setCapabilityComputer(computer);
-      setAddMode("capabilities");
+    if (pendingWaiter.current?.environmentId === pending.environmentId) {
+      pendingWaiter.current.resolve(computer);
+      pendingWaiter.current = null;
     }
-    setPendingComputerId(null);
+    setPending(null);
   }, [
+    pending,
     pendingTarget,
-    pendingKind,
     pendingInspection.data,
     settings.workjet,
-    setupOnly,
     targetOptions,
     updateSettings,
   ]);
-  const setupBusy = connections.busy || membership.pendingComputerId !== null;
+  useEffect(() => {
+    if (!pending || !pendingInspection.error) return;
+    if (pendingWaiter.current?.environmentId === pending.environmentId) {
+      pendingWaiter.current.reject(new Error("Werkzeuge nicht prüfbar."));
+      pendingWaiter.current = null;
+    }
+    setPending(null);
+  }, [pending, pendingInspection.error]);
+  function waitForComputer(target: EnvironmentId, kind: AddComputerKind): Promise<WorkjetComputer> {
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        if (pendingWaiter.current?.environmentId === target) pendingWaiter.current = null;
+        setPending(null);
+        reject(new Error("Prüfung dauert zu lange."));
+      }, PENDING_COMPUTER_TIMEOUT_MS);
+      pendingWaiter.current = {
+        environmentId: target,
+        resolve: (computer) => {
+          window.clearTimeout(timer);
+          resolve(computer);
+        },
+        reject: (error) => {
+          window.clearTimeout(timer);
+          reject(error);
+        },
+      };
+      setPending({ environmentId: target, kind });
+    });
+  }
+
+  const setupBusy = connections.busy || pending !== null || membership.pendingComputerId !== null;
   useEffect(() => {
     onBusyChange?.(setupBusy);
     return () => onBusyChange?.(false);
   }, [setupBusy, onBusyChange]);
-  // Live harness probe of this server, for the per-computer rows. Same
-  // environment-query mechanics as every other read on this page.
   const harnessInspectQuery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -936,171 +1271,279 @@ export function WorkjetComputersSettings({
       ? null
       : serverEnvironment.workjetDecisionHubConnections({ environmentId, input: {} }),
   );
-  const finishCapabilities = () => {
-    setAddMode(null);
-    setCapabilityComputer(null);
-    if (setupOnly) onCompleted?.();
-  };
-  const saveCapabilities = async (enrollment: OperationalComputerEnrollment) => {
-    if (!selectedInstanceId) throw new Error("Select a Business OS before adding this computer.");
-    const computer = setupOnly ? setupComputer : capabilityComputer;
-    const build = enrollment.capabilityConfig.find((capability) => capability.kind === "build");
-    let assigned = enrollment;
-    if (build && computer?.environmentId !== environmentId) {
-      if (!computer || !environmentId)
-        throw new Error("Connect this build computer over SSH before saving its capabilities.");
-      const source = workerSourceConnectionForEnrollment(
-        workerConnections.data?.connections ?? [],
-        selectedInstanceId,
-      );
-      if (!source)
-        throw new Error(
-          "Connect workers for this Business OS in its project supervisor before saving a remote build computer.",
-        );
-      const result = await enrollRemoteComputer({
-        environmentId,
-        targetEnvironmentId: computer.environmentId,
-        input: {
-          selectedInstanceId: source.instanceId,
-          sourceConnectionId: source.connectionId,
-          computerId: computer.id,
-          displayName: enrollment.displayName,
-          hostingMode: enrollment.hostingMode,
-          buildCapability: build,
-        },
-      });
-      if (result._tag !== "Success")
-        throw new Error(
-          "Build computer enrollment failed. Check its SSH connection and the selected Business OS grant, then retry.",
-        );
-      assigned = { ...enrollment, computerId: result.value.computerId };
+
+  const rolesAvailable = !!selectedInstanceId && activeMembership?.phase === "ready";
+  const rolesStatus = !selectedInstanceId
+    ? "Keine Instanz gewählt"
+    : activeMembership?.phase === "failed"
+      ? "Instanz nicht erreichbar"
+      : activeMembership?.phase === "ready"
+        ? null
+        : "Instanz prüft…";
+
+  const addComputer = async (
+    request: AddComputerRequest,
+    progress?: (step: string) => void,
+  ): Promise<AddComputerOutcome> => {
+    // 1. Verbinden.
+    let connected: EnvironmentId;
+    if (request.kind === "local") {
+      if (environmentId === null || !localAvailable)
+        return { status: "error", message: "Dieser Rechner ist nicht verbunden." };
+      connected = environmentId;
+    } else {
+      if (!request.target) return { status: "error", message: "Adresse fehlt." };
+      const result = await connections.connectSsh(request.target, request.label);
+      if (!result.ok) return { status: "error", message: result.message ?? "Abgebrochen." };
+      connected = result.environmentId;
     }
-    const key = await membershipStore.enroll(
-      selectedInstanceId,
-      assigned,
-      window.desktopBridge?.ctox,
-    );
-    if (!key) finishCapabilities();
-    return key;
+    // 2. Werkzeuge prüfen und den Rechner anlegen (oder den bekannten nehmen).
+    let computer: WorkjetComputer;
+    try {
+      computer = await waitForComputer(connected, request.kind);
+    } catch (failure) {
+      return {
+        status: "error",
+        message: failure instanceof Error ? failure.message : "Werkzeuge nicht prüfbar.",
+      };
+    }
+    // 3. Erkennen (CPU, RAM, GPU, Platte, Werkzeuge) und die Haken speichern.
+    let facts: ComputerFacts | null = null;
+    if (control) {
+      progress?.("Erkennt Rechner…");
+      try {
+        const result = await runControl({
+          _tag: "add",
+          id: computer.id,
+          label: request.label || computer.label,
+          environmentId: computer.environmentId,
+          connection: computerConnectionFor(request),
+        });
+        const record = computerRecordFor(result.computers, computer.id);
+        facts = record?.metadata.facts ?? null;
+        if (
+          record &&
+          request.kind !== "local" &&
+          rolesAvailable &&
+          (record.metadata.roles.build !== request.roles.build ||
+            record.metadata.roles.storage !== request.roles.storage)
+        )
+          await runControl({
+            _tag: "setRoles",
+            id: record.id,
+            roles: { build: request.roles.build, storage: request.roles.storage },
+          });
+      } catch {
+        return { status: "error", message: "Erkennung fehlgeschlagen." };
+      }
+    }
+    // 4. In der gewählten Instanz eintragen, mit den Haken.
+    if (!selectedInstanceId) return { status: "done" };
+    const snapshot = membershipStore.getSnapshot();
+    const wantsRoles = request.roles.build || request.roles.storage;
+    if (snapshot.instanceId !== selectedInstanceId || snapshot.phase !== "ready") {
+      return wantsRoles
+        ? { status: "error", message: "Instanz prüft noch. Erneut versuchen." }
+        : { status: "done" };
+    }
+    const native = snapshot.computers.find((entry) => entry.id === computer.id) ?? null;
+    // „Wenn eine GPU da ist, kann sie benutzt werden“: erkannt oder schon
+    // gespeichert gilt als angehakt, außer der Haken wurde bewusst entfernt.
+    const roles = {
+      ...request.roles,
+      gpu: request.gpuDecided
+        ? request.roles.gpu
+        : request.roles.gpu ||
+          gpuDetected(facts) ||
+          (native?.capabilities.includes("gpu") ?? false),
+    };
+    let enrollment: OperationalComputerEnrollment;
+    try {
+      enrollment = buildRoleEnrollment({
+        computerId: computer.id,
+        displayName: request.label || computer.label,
+        roles,
+        agentCapabilities: computer.harnesses
+          .filter((entry) => entry.available)
+          .map((entry) => entry.harness),
+        access: sshAccessFor(request),
+        native,
+        facts,
+        cpuCount:
+          request.kind === "local" && typeof navigator !== "undefined"
+            ? navigator.hardwareConcurrency
+            : null,
+      });
+      // „Local“ hat keine Haken für Build und Speicher: Gespeichertes bleibt.
+      if (
+        request.kind === "local" &&
+        native?.capabilityConfig?.some((capability) => capability.kind !== "gpu") &&
+        !roles.build &&
+        !roles.storage
+      )
+        enrollment = {
+          ...enrollment,
+          capabilityConfig: [],
+          endpoint: null,
+          preserveOperationalCapabilities: true,
+        };
+    } catch (failure) {
+      return {
+        status: "error",
+        message: failure instanceof Error ? failure.message : "Haken nicht speicherbar.",
+      };
+    }
+    try {
+      const build = enrollment.capabilityConfig.find((capability) => capability.kind === "build");
+      if (build && build.kind === "build" && connected !== environmentId) {
+        if (!environmentId)
+          return { status: "error", message: "Dieser Rechner ist nicht verbunden." };
+        const source = workerSourceConnectionForEnrollment(
+          workerConnections.data?.connections ?? [],
+          selectedInstanceId,
+        );
+        if (!source) return { status: "error", message: "Lumas der Instanz sind nicht verbunden." };
+        const result = await enrollRemoteComputer({
+          environmentId,
+          targetEnvironmentId: connected,
+          input: {
+            selectedInstanceId: source.instanceId,
+            sourceConnectionId: source.connectionId,
+            computerId: computer.id,
+            displayName: enrollment.displayName,
+            hostingMode: enrollment.hostingMode,
+            buildCapability: build,
+          },
+        });
+        if (result._tag !== "Success")
+          return { status: "error", message: "Build-Rechner nicht eingetragen." };
+        enrollment = { ...enrollment, computerId: result.value.computerId };
+      }
+      const key = await membershipStore.enroll(
+        selectedInstanceId,
+        enrollment,
+        window.desktopBridge?.ctox,
+      );
+      if (key && request.target)
+        return {
+          status: "key",
+          publicKey: key.publicKey,
+          publicKeySha256: key.publicKeySha256,
+          where: `${request.target.username ?? ""}@${request.target.hostname}`.replace(/^@/, ""),
+        };
+      return { status: "done" };
+    } catch (failure) {
+      return {
+        status: "error",
+        message: failure instanceof Error ? failure.message : "Instanz hat nicht bestätigt.",
+      };
+    }
   };
-  const enrollmentAvailable =
-    !!selectedInstanceId &&
-    activeMembership?.phase === "ready" &&
-    activeMembership.pendingComputerId === null;
-  const addChoices = (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Connect a computer for coding, or register a build, GPU, or storage computer such as a NAS.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={() => {
-            setAddMode(null);
-            connections.openAddComputer();
-          }}
-        >
-          Coding computer
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!enrollmentAvailable}
-          onClick={() => {
-            setCapabilityComputer(null);
-            setAddMode("capabilities");
-          }}
-        >
-          Build, GPU, or storage computer
-        </Button>
-      </div>
-      {!enrollmentAvailable ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Select a connected Business OS and wait for its computer list to register capabilities.
-        </p>
-      ) : null}
-    </div>
+
+  // Stabile Referenz: die tailnet-Liste lädt nur beim Öffnen und auf „Neu laden“.
+  const discoverTailscalePeers = useMemo(
+    () => (bridge?.discoverTailscalePeers ? () => bridge.discoverTailscalePeers() : undefined),
+    [bridge],
+  );
+  const addPanel = (
+    <AddComputerInline
+      open={addOpen}
+      onOpenChange={setAddOpen}
+      alwaysOpen={setupOnly}
+      segment={segment}
+      onSegmentChange={setSegment}
+      localAvailable={localAvailable}
+      desktopAvailable={connections.desktopAvailable}
+      sshAliases={connections.sshAliases}
+      knownHosts={connections.knownHosts}
+      sshAliasesLoading={connections.sshAliasesLoading}
+      onRefreshSshAliases={connections.refreshSshAliases}
+      connectionError={connections.catalogError ?? connections.sshAliasesError}
+      catalogRecoveryAvailable={connections.catalogRecoveryAvailable}
+      onRecoverCatalog={() => void connections.recoverCatalog()}
+      rolesAvailable={rolesAvailable}
+      rolesStatus={rolesStatus}
+      {...(discoverTailscalePeers ? { discoverTailscalePeers } : {})}
+      {...(bridge?.inspectProvisioningHostKey
+        ? { inspectHostKey: (target) => bridge.inspectProvisioningHostKey!(target) }
+        : {})}
+      sshKeys={sshKeys ?? []}
+      sshKeysLoading={sshKeysWanted && sshKeys === null && !!bridge?.listComputerSshKeys}
+      knownComputer={(kind, hostname) =>
+        knownComputerFacts(configuration.computers, kind, hostname, environmentId)
+      }
+      onAdd={addComputer}
+      onDone={() => {
+        toastManager.add({ type: "success", title: "Rechner hinzugefügt" });
+        if (setupOnly) onCompleted?.();
+      }}
+    />
   );
 
-  if (setupOnly)
-    return (
-      <div className="space-y-4">
-        {setupComputer === null && pendingComputerId === null ? (
-          addMode === "capabilities" ? (
-            <ComputerCapabilitiesEditor
-              onSave={saveCapabilities}
-              onDone={finishCapabilities}
-              onCancel={() => setAddMode(null)}
-            />
-          ) : (
-            <>
-              {addChoices}
-              {connections.form}
-            </>
-          )
-        ) : null}
-        {pendingComputerId !== null ? <p role="status">Connected. Checking coding tools…</p> : null}
-        {pendingInspection.error ? (
-          <div role="alert">
-            <p>The coding tools could not be checked.</p>
-            <Button variant="outline" onClick={() => setPendingComputerId(null)}>
-              Reconnect
-            </Button>
-          </div>
-        ) : null}
-        {setupComputer !== null ? (
-          <>
-            <p className="font-medium">{setupComputer.label}</p>
-            <p className="text-sm text-muted-foreground">
-              This computer is connected to the app. Add it to the selected Business OS.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {setupComputer.harnesses
-                .filter((harness) => harness.available)
-                .map((harness) => (
-                  <span key={harness.harness} className="rounded-md bg-muted px-2 py-1 text-xs">
-                    {workjetHarnessDisplayLabel(harness.harness)}
-                  </span>
-                ))}
-            </div>
-            {activeMembership?.phase === "loading" ? (
-              <p role="status">Checking Business OS assignment…</p>
-            ) : null}
-            {activeMembership?.error ? (
-              <p role="alert" className="text-sm text-destructive">
-                {activeMembership.error}
-              </p>
-            ) : null}
-            <ComputerCapabilitiesEditor
-              key={setupComputer.id}
-              computer={setupComputer}
-              preserveExistingCapabilities={
-                activeMembership?.computers.some(
-                  (entry) =>
-                    entry.id === setupComputer.id &&
-                    entry.capabilities.some((kind) =>
-                      OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind),
-                    ),
-                ) ?? false
-              }
-              onSave={saveCapabilities}
-              onDone={finishCapabilities}
-              onCancel={() => setSetupComputer(null)}
-            />
-            {activeMembership?.phase === "failed" ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (selectedInstanceId)
-                    void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
-                }}
-              >
-                Recheck assignment
-              </Button>
-            ) : null}
-          </>
-        ) : null}
-      </div>
-    );
+  if (setupOnly) return <div className="space-y-3">{addPanel}</div>;
+
+  const savedEnvironmentIds = connections.savedEnvironments.map((entry) => entry.environmentId);
+  const connectedIds = environments
+    .filter((entry) => entry.connection.phase === "connected")
+    .map((entry) => entry.environmentId);
+  const removeRow = (row: ComputerMachineRow, mode: ComputerRemoveMode) =>
+    removeComputerRow({
+      row,
+      mode,
+      control: control ? runControl : undefined,
+      unassign: selectedInstanceId
+        ? async (nativeId) =>
+            (await membershipStore.unassign(
+              selectedInstanceId,
+              nativeId,
+              window.desktopBridge?.ctox,
+            ))
+              ? null
+              : (membershipStore.getSnapshot().error ?? "Instanz hat nicht bestätigt.")
+        : null,
+      removeConnection: async (computer) => {
+        const shared = configuration.computers.some(
+          (entry) => entry.id !== computer.id && entry.environmentId === computer.environmentId,
+        );
+        if (
+          !shared &&
+          savedEnvironmentIds.includes(computer.environmentId) &&
+          !(await connections.removeConnection(computer.environmentId))
+        )
+          return "Verbindung nicht entfernbar.";
+        return null;
+      },
+      removeWithoutBackend: async (computer) => {
+        const result = await removeComputerConnection({
+          configuration,
+          computer,
+          selectedInstanceId,
+          membership: membershipStore.getSnapshot(),
+          savedEnvironmentIds,
+          removeConnection: (target) => connections.removeConnection(target),
+        });
+        if (result.status !== "removed")
+          return result.status === "assigned"
+            ? "Noch in der Instanz eingetragen."
+            : "Verbindung nicht entfernbar.";
+        updateSettings({ workjet: result.configuration });
+        return null;
+      },
+    });
+  const recheckRow = (row: ComputerMachineRow) => {
+    const id = row.computer?.id;
+    if (!id || !control) return;
+    setCheckingComputerIds((current) => new Set(current).add(id));
+    void runControl({ _tag: "recheck", id })
+      .catch(() => toastManager.add({ type: "error", title: "Erkennung fehlgeschlagen" }))
+      .finally(() =>
+        setCheckingComputerIds((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        }),
+      );
+  };
 
   return (
     <SettingsPageContainer wide className="gap-6">
@@ -1114,158 +1557,78 @@ export function WorkjetComputersSettings({
           <ComputerHarnessProbe
             key={target}
             environmentId={target}
+            revision={probeRevision[target] ?? 0}
             onInspection={recordHarnessInspection}
           />
         ))}
-      {connections.dialog}
-      <Dialog
-        open={addMode === "choose"}
-        onOpenChange={(open) => {
-          if (!open && !setupBusy) setAddMode(null);
-        }}
-      >
-        <DialogPopup showCloseButton={!setupBusy}>
-          <DialogHeader>
-            <DialogTitle>Add computer</DialogTitle>
-            <DialogDescription>
-              Add a coding connection or a build, GPU, or storage computer.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogPanel>{addChoices}</DialogPanel>
-        </DialogPopup>
-      </Dialog>
-      <Sheet
-        open={addMode === "capabilities"}
-        onOpenChange={(open) => {
-          if (!open && !setupBusy) setAddMode(null);
-        }}
-      >
-        <SheetPopup showCloseButton={!setupBusy} className="motion-reduce:transition-none">
-          <SheetHeader>
-            <SheetTitle>Computer capabilities</SheetTitle>
-            <SheetDescription>
-              Save capabilities after the selected Business OS confirms access.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetPanel>
-            <ComputerCapabilitiesEditor
-              key={nativeCapabilityComputer?.id ?? capabilityComputer?.id ?? "operational-new"}
-              {...(capabilityComputer ? { computer: capabilityComputer } : {})}
-              {...(nativeCapabilityComputer ? { nativeComputer: nativeCapabilityComputer } : {})}
-              preserveExistingCapabilities={
-                !nativeCapabilityComputer?.agentless &&
-                (activeMembership?.computers.some(
-                  (entry) =>
-                    entry.id === (nativeCapabilityComputer?.id ?? capabilityComputer?.id) &&
-                    entry.capabilities.some((kind) =>
-                      OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind),
-                    ),
-                ) ??
-                  false)
-              }
-              onSave={saveCapabilities}
-              onDone={finishCapabilities}
-              onCancel={() => setAddMode(null)}
-            />
-          </SheetPanel>
-        </SheetPopup>
-      </Sheet>
-      <div className="px-3 sm:px-4">
-        {pendingComputerId ? (
-          <p role="status" className="text-sm">
-            Checking {pendingTarget?.label ?? "the connected computer"} and its coding tools…
-          </p>
-        ) : null}
-        {pendingComputerId && pendingInspection.error ? (
-          <div role="alert" className="text-sm text-destructive">
-            The computer did not report its coding tools. Check its connection and try again.
-            <Button variant="outline" onClick={() => setPendingComputerId(null)}>
-              Dismiss
-            </Button>
-          </div>
-        ) : null}
-      </div>
       <WorkjetComputersSettingsView
         configuration={configuration}
-        environments={workjetEnvironmentTargetOptions(environments)}
+        environments={targetOptions}
         environmentsReady={environmentsReady}
         harnessInspection={harnessInspectQuery.data ?? null}
         harnessInspections={harnessInspections}
         environmentId={environmentId}
         onChange={(workjet) => updateSettings({ workjet })}
         businessOsLabel={businessOsLabel}
-        onNativeCapabilities={
-          selectedInstanceId
-            ? (computer) => {
-                setCapabilityComputer(null);
-                setNativeCapabilityComputer(computer);
-                setAddMode("capabilities");
-              }
-            : undefined
-        }
-        onAdd={() => {
-          setCapabilityComputer(null);
-          setNativeCapabilityComputer(null);
-          setAddMode("choose");
-        }}
-        onCapabilities={
-          selectedInstanceId
-            ? (computer) => {
-                setNativeCapabilityComputer(
-                  activeMembership?.computers.find((entry) => entry.id === computer.id) ?? null,
-                );
-                setCapabilityComputer(computer);
-                setAddMode("capabilities");
-              }
-            : undefined
-        }
-        onUnassignNative={
-          selectedInstanceId
-            ? (computerId) => {
-                void membershipStore.unassign(
-                  selectedInstanceId,
-                  computerId,
-                  window.desktopBridge?.ctox,
-                );
-              }
-            : undefined
-        }
-        renderConnection={connections.renderConnection}
-        connectedEnvironmentIds={environments
-          .filter((entry) => entry.connection.phase === "connected")
-          .map((entry) => entry.environmentId)}
+        membership={activeMembership}
+        connectedEnvironmentIds={connectedIds}
         connectingEnvironmentIds={environments
           .filter(
             (entry) =>
               entry.connection.phase === "connecting" || entry.connection.phase === "reconnecting",
           )
           .map((entry) => entry.environmentId)}
-        pendingConnectionEnvironmentId={pendingComputerId}
-        onRemove={(computer) => {
-          void (async () => {
-            const result = await removeComputerConnection({
-              configuration,
-              computer,
-              selectedInstanceId,
-              membership: activeMembership ?? null,
-              savedEnvironmentIds: connections.savedEnvironments.map(
-                (entry) => entry.environmentId,
-              ),
-              removeConnection: (environmentId) => connections.removeConnection(environmentId),
-            });
-            if (result.status === "assigned") {
-              toastManager.add({
-                type: "error",
-                title: "Computer still assigned",
-                description:
-                  "Remove this computer from the selected Business OS before removing its connection.",
-              });
-              return;
+        pendingConnectionEnvironmentId={pending?.environmentId ?? null}
+        addPanel={addPanel}
+        capacities={Object.fromEntries(
+          configuration.computers.map((computer) => [
+            computer.id,
+            computerRecordFor(records, computer.id)?.capacity ?? null,
+          ]),
+        )}
+        checkingComputerIds={checkingComputerIds}
+        {...(control
+          ? {
+              onActiveChange: (row: ComputerMachineRow, active: boolean) => {
+                const id = row.computer?.id;
+                if (!id) return;
+                setPendingActive((current) => ({ ...current, [id]: active }));
+                void changeComputerActive({ control: runControl, row, active })
+                  .catch(() =>
+                    toastManager.add({ type: "error", title: "Schalter nicht gespeichert" }),
+                  )
+                  .finally(() =>
+                    setPendingActive((current) => {
+                      const next = { ...current };
+                      delete next[id];
+                      return next;
+                    }),
+                  );
+              },
             }
-            if (result.status === "removed") updateSettings({ workjet: result.configuration });
-          })();
+          : {})}
+        onRemove={removeRow}
+        remoteRemoveAvailable={control !== undefined}
+        onRecheck={(row) => {
+          recheckRow(row);
+          if (selectedInstanceId)
+            void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
+          const computer = row.computer;
+          if (!computer) return;
+          if (
+            !connectedIds.includes(computer.environmentId) &&
+            savedEnvironmentIds.includes(computer.environmentId)
+          ) {
+            void connections.reconnect(computer.environmentId).then((failure) => {
+              if (failure) toastManager.add({ type: "error", title: failure });
+            });
+            return;
+          }
+          setProbeRevision((current) => ({
+            ...current,
+            [computer.environmentId]: (current[computer.environmentId] ?? 0) + 1,
+          }));
         }}
-        membership={activeMembership}
         onAssign={
           selectedInstanceId
             ? (computer, assigned) => {
@@ -1278,55 +1641,81 @@ export function WorkjetComputersSettings({
               }
             : undefined
         }
+        onRetryMembership={
+          selectedInstanceId
+            ? () => void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox)
+            : undefined
+        }
+        renderRepair={(row, close) => {
+          const computer = row.computer;
+          if (!computer) return null;
+          const sshTarget = connections.savedSshTargets.get(computer.environmentId);
+          const online = connectedIds.includes(computer.environmentId);
+          const saved = savedEnvironmentIds.includes(computer.environmentId);
+          return (
+            <div className="space-y-3">
+              {saved ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={connections.busyEnvironmentId === computer.environmentId}
+                    onClick={() => {
+                      const action = online ? connections.disconnect : connections.reconnect;
+                      void action(computer.environmentId).then((failure) => {
+                        if (failure) toastManager.add({ type: "error", title: failure });
+                      });
+                    }}
+                  >
+                    {online ? "Trennen" : "Verbinden"}
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={close}>
+                    Schließen
+                  </Button>
+                </div>
+              ) : null}
+              <ComputerProvisioningSection
+                key={computer.id}
+                initialKind={computer.environmentId === environmentId ? "local" : "ssh"}
+                fixedTargetKind
+                {...(sshTarget
+                  ? {
+                      initialTarget: {
+                        host: sshTarget.hostname,
+                        username: sshTarget.username,
+                        port: sshTarget.port,
+                      },
+                    }
+                  : {})}
+              />
+            </div>
+          );
+        }}
+        renderEdit={(row, close) =>
+          row.computer ? (
+            <WorkjetComputerEditor
+              key={row.computer.id}
+              compact
+              computer={row.computer}
+              environments={targetOptions}
+              availability={harnessInspections[row.computer.environmentId]?.snapshot ?? null}
+              onCancel={close}
+              onSave={(computer) => {
+                const computers = configuration.computers.map((entry) =>
+                  entry.id === computer.id ? computer : entry,
+                );
+                updateSettings({
+                  workjet: applyAutomaticCurrentComputer(
+                    { ...configuration, computers },
+                    environmentId,
+                  ),
+                });
+                close();
+              }}
+            />
+          ) : null
+        }
       />
-      {selectedInstanceId ? (
-        <div className="space-y-2 px-3 sm:px-4">
-          <p className="text-sm">
-            Add a computer to the selected Business OS to make it available for coding tasks there.
-          </p>
-          {activeMembership?.phase === "loading" ? (
-            <p role="status" className="text-sm">
-              Checking assigned computers…
-            </p>
-          ) : null}
-          {activeMembership?.error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {activeMembership.error}
-            </p>
-          ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              activeMembership?.phase === "loading" || activeMembership?.pendingComputerId != null
-            }
-            onClick={() => {
-              void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
-            }}
-          >
-            Refresh assignments
-          </Button>
-        </div>
-      ) : (
-        <p className="px-3 text-sm sm:px-4">Select a Business OS to add computers to it.</p>
-      )}
-      <details className="mx-3 rounded-lg border border-border p-3 sm:mx-4">
-        <summary className="cursor-pointer text-sm font-medium">Advanced setup and repair</summary>
-        <ComputerProvisioningSection />
-      </details>
     </SettingsPageContainer>
   );
-}
-
-/** Probe reasons arrive as slugs; the row speaks prose (Befund F11). */
-function humanizeHarnessProbeReason(reason: string): string {
-  const known: Record<string, string> = {
-    "executable-not-found": "Executable not found",
-    "probe-failed": "Probe failed",
-    "not-supported": "Not supported on this computer",
-  };
-  const mapped = known[reason];
-  if (mapped !== undefined) return mapped;
-  const spaced = reason.replace(/-/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }

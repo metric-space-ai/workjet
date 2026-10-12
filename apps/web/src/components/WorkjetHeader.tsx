@@ -6,6 +6,7 @@ import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { isElectron } from "../env";
 import type { WorkjetProductMode } from "../workjetProductMode";
 import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
+import { VersionChip } from "./VersionChip";
 import { BrowserBusinessOsNavigation } from "./BrowserBusinessOsNavigation";
 import { WorkjetProductModeSwitch } from "./sidebar/SidebarChrome";
 import { SidebarTrigger } from "./ui/sidebar";
@@ -35,7 +36,7 @@ export function WorkjetHeaderFrame({
           className="flex min-w-0 items-center gap-2 pl-[var(--workspace-controls-left)]"
           data-workjet-header-navigation=""
         >
-          {sidebarAvailable ? <SidebarTrigger aria-label="Toggle main sidebar" /> : null}
+          {sidebarAvailable ? <SidebarTrigger aria-label="Seitenleiste ein-/ausblenden" /> : null}
           {isElectron ? <ActiveCtoxInstanceSelector placement="header" /> : null}
           {isElectron ? (
             <WorkjetProductModeSwitch
@@ -55,10 +56,11 @@ export function WorkjetHeaderFrame({
           className="relative flex min-w-0 flex-1 items-center"
           data-workjet-header-slot=""
         />
+        <VersionChip />
         <button
           type="button"
-          aria-label="Settings"
-          title="Settings"
+          aria-label="Einstellungen"
+          title="Einstellungen"
           className="no-drag mr-[var(--workspace-controls-right)] flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           data-workjet-header-settings=""
           onClick={() => void navigate({ to: "/settings" })}

@@ -47,8 +47,7 @@ export const WORKJET_SETTINGS_ROUTE = "/settings/workjet" as const;
 
 export const WORKJET_ROLE_FAILURE_TOAST = {
   type: "error",
-  title: "Could not change the Workjet role",
-  description: "This thread kept its previous role.",
+  title: "Workjet-Rolle nicht geändert",
   data: { hideCopyButton: true },
 } as const;
 
@@ -57,8 +56,7 @@ export const WORKJET_ROLE_FAILURE_TOAST = {
  * and as the compact menu's description, so the refusal always carries a
  * reason.
  */
-export const WORKJET_WORKER_ROLE_REASON =
-  "This thread was created as a Luma by its orchestrator. Its role travels with that dispatch and cannot be changed here.";
+export const WORKJET_WORKER_ROLE_REASON = "Rolle vom Orchestrator festgelegt";
 
 /**
  * The role is compiled into the managed system prompt when a provider session
@@ -66,8 +64,7 @@ export const WORKJET_WORKER_ROLE_REASON =
  * the next one begins. Saying so is cheaper than letting the user infer that
  * nothing happened.
  */
-export const WORKJET_ROLE_NEXT_SESSION_HINT =
-  "Takes effect for the next provider session started in this thread.";
+export const WORKJET_ROLE_NEXT_SESSION_HINT = "Gilt ab der nächsten Sitzung";
 
 const ROLE_LABELS = {
   standard: "Code",
@@ -87,8 +84,8 @@ const SELECTABLE_ROLES = [
 ] as const satisfies ReadonlyArray<WorkjetSelectableRole>;
 
 const ROLE_TOOLTIPS = {
-  standard: `Code — an ordinary thread. ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
-  orchestrator: `Orchestrator — this thread may delegate to Lumas. ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
+  standard: `Code · ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
+  orchestrator: `Orchestrator · ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
 } as const satisfies Record<WorkjetSelectableRole, string>;
 
 /**
@@ -179,7 +176,7 @@ function roleRadio(input: {
             type="button"
             role="radio"
             aria-checked={input.checked}
-            aria-label={`${label} thread`}
+            aria-label={`${label}-Unterhaltung`}
             aria-busy={input.busy || undefined}
             aria-disabled={input.readOnly || undefined}
             data-workjet-role={input.role}
@@ -240,7 +237,7 @@ export function WorkjetRoleMenuContent(props: WorkjetRoleControlProps) {
       <p className="max-w-72 px-2 pb-1.5 pt-1 text-muted-foreground text-xs leading-4">
         {isWorker ? WORKJET_WORKER_ROLE_REASON : WORKJET_ROLE_NEXT_SESSION_HINT}
       </p>
-      <MenuItem onClick={props.onOpenSettings}>Workjet settings…</MenuItem>
+      <MenuItem onClick={props.onOpenSettings}>Workjet-Einstellungen …</MenuItem>
     </MenuGroup>
   );
 }
@@ -257,7 +254,7 @@ export function WorkjetRoleControl(props: WorkjetRoleControlProps) {
     <>
       <div
         role="radiogroup"
-        aria-label="Workjet thread role"
+        aria-label="Workjet-Rolle"
         data-workjet-role-group="true"
         className="flex shrink-0 items-center gap-0.5"
       >
@@ -293,7 +290,7 @@ export function WorkjetRoleControl(props: WorkjetRoleControlProps) {
             <ComposerControl
               type="button"
               className="shrink-0 px-2"
-              aria-label="Workjet settings"
+              aria-label="Workjet-Einstellungen"
               data-workjet-settings-gear="true"
               onClick={props.onOpenSettings}
             />
@@ -301,7 +298,7 @@ export function WorkjetRoleControl(props: WorkjetRoleControlProps) {
         >
           <ComposerControlIcon icon={Settings2Icon} />
         </TooltipTrigger>
-        <TooltipPopup side="top">Open Workjet settings</TooltipPopup>
+        <TooltipPopup side="top">Workjet-Einstellungen öffnen</TooltipPopup>
       </Tooltip>
     </>
   );

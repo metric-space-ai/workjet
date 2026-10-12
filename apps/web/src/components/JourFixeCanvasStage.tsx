@@ -74,18 +74,18 @@ export default function JourFixeCanvasStage({
         >
           {loadError ? (
             <div className="grid justify-items-center gap-3">
-              <p>The slide canvas could not load: {loadError}</p>
+              <p>Folie nicht geladen: {loadError}</p>
               <Button
                 size="sm"
                 variant="outline"
                 className="border-[#d4d4d8] bg-white text-[#18181b] hover:bg-white"
                 onClick={() => setAttempt((count) => count + 1)}
               >
-                Try again
+                Erneut versuchen
               </Button>
             </div>
           ) : (
-            "Loading the slide…"
+            "Folie wird geladen …"
           )}
         </div>
       )}

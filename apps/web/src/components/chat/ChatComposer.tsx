@@ -80,7 +80,6 @@ import {
   useEffectiveComposerModelState,
 } from "../../composerDraftStore";
 import {
-  MAX_STASH_ENTRIES,
   partitionStashAttachments,
   usePromptStashStore,
   type PromptStashEntry,
@@ -131,6 +130,7 @@ import {
   WorkjetCapabilityMenu,
   type WorkjetSelectableRole,
 } from "./workjetSurfaces";
+import { workjetConnectionStatusLabel } from "./WorkjetCapabilityMenu";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -331,7 +331,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   return (
     <>
       {props.isPreparingWorktree ? (
-        <span className="text-secondary-label text-xs">Preparing worktree...</span>
+        <span className="text-secondary-label text-xs">Worktree wird vorbereitet …</span>
       ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
@@ -560,7 +560,6 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
-  const [customModelDrafts, setCustomModelDrafts] = useState<Readonly<Record<string, string>>>({});
   const [computerEditorState, setComputerEditorState] = useState<ComputerEditorState>({
     drafts: {},
     saving: false,
@@ -1108,7 +1107,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (draftWorkjetConfig.ctoxCrewChat !== undefined && workerId !== selectedWorkjetWorkerId) {
         toastManager.add({
           type: "info",
-          title: "Open a new thread to choose a different Luma.",
+          title: "Andere Luma nur in neuer Unterhaltung",
         });
         return;
       }
@@ -1253,7 +1252,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const composerComputerDisabledReason =
     computerChangeDisabledReason ??
-    (onDraftEnvironmentChange === undefined ? "Computer selection is unavailable here." : null);
+    (onDraftEnvironmentChange === undefined ? "Rechnerwahl hier nicht möglich" : null);
   const workerBoundComputer =
     selectedWorkjetWorker === null
       ? null
@@ -1274,9 +1273,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : selectedWorkjetWorker === null
       ? null
       : workerBoundComputer === null
-        ? "This Luma's computer is no longer in the Workjet catalog — the thread stays on its current environment."
+        ? "Rechner der Luma nicht mehr verfügbar"
         : workerBoundComputer.environmentId !== environmentId
-          ? `${workerBoundComputer.label} does not have this project — the thread stays on its current environment.`
+          ? `Projekt fehlt auf ${workerBoundComputer.label}`
           : null;
   const handleSelectComposerComputer = useCallback(
     (computerId: string) => {
@@ -1555,7 +1554,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (connection) applyCtoxBusinessOsConnection(connection);
   };
   const [ctoxBusinessOsConnecting, setCtoxBusinessOsConnecting] = useState(false);
-  const [ctoxBusinessOsConnectError, setCtoxBusinessOsConnectError] = useState<string | null>(null);
   const ctoxProvisioningRef = useRef(false);
   const ctoxBindingContextKey = `${environmentId}:${JSON.stringify(composerDraftTarget)}:${activeWorkjetScope.selectionRevision}`;
   const ctoxBindingContextRef = useRef({
@@ -1582,7 +1580,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     ctoxProvisioningRef.current = true;
     setCtoxBusinessOsConnecting(true);
-    setCtoxBusinessOsConnectError(null);
     const contextKey = ctoxBindingContextKey;
     try {
       const result = await provision({
@@ -1591,18 +1588,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         target: { _tag: "ctox_dev", tenantId: managedSourceTenant },
       });
       if (result._tag === "failed") {
-        setCtoxBusinessOsConnectError(
-          result.code === "signed_out"
-            ? "Sign in to CTOX to connect this Business OS."
-            : "Could not connect this Business OS. Check account permissions and MCP availability.",
-        );
+        toastManager.add({
+          type: "error",
+          title: result.code === "signed_out" ? "Bei CTOX anmelden" : "Instanz nicht verbunden",
+        });
         return;
       }
       decisionHubConnectionsQuery.refresh();
       if (ctoxBindingContextRef.current.key === contextKey)
         ctoxBindingContextRef.current.apply(result.connection);
     } catch {
-      setCtoxBusinessOsConnectError("Could not connect this Business OS. Try again.");
+      toastManager.add({ type: "error", title: "Instanz nicht verbunden" });
     } finally {
       ctoxProvisioningRef.current = false;
       setCtoxBusinessOsConnecting(false);
@@ -1626,11 +1622,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const ctoxSendDisabledReason = !effectiveEnabledCapabilityIds?.includes("ctox-business-os")
     ? null
     : !ctoxBinding?.target.instanceId
-      ? "Choose a CTOX Business OS connection before sending"
+      ? "Instanz für das Instanz-Werkzeug wählen"
       : !selectedCtoxConnection
-        ? "The bound CTOX instance is not available on this computer"
+        ? "Instanz auf diesem Rechner nicht verfügbar"
         : selectedCtoxConnection.status !== "ready"
-          ? `CTOX Business OS is ${selectedCtoxConnection.status}`
+          ? `Instanz-Werkzeug: ${workjetConnectionStatusLabel(selectedCtoxConnection.status)}`
           : null;
   const selectedDecisionHubConnection = decisionHubConnections.find(
     (connection) => connection.connectionId === decisionHubConnectionId,
@@ -1638,11 +1634,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const decisionHubSendDisabledReason = !effectiveEnabledCapabilityIds?.includes("decision-hub")
     ? null
     : decisionHubConnectionId === null
-      ? "Choose a Decision Hub CTOX connection before sending"
+      ? "Instanz für die Entscheidungszentrale wählen"
       : selectedDecisionHubConnection === undefined
-        ? "The selected Decision Hub connection does not belong to this environment"
+        ? "Instanz passt nicht zu diesem Rechner"
         : selectedDecisionHubConnection.status !== "ready"
-          ? `Decision Hub is ${selectedDecisionHubConnection.status}${selectedDecisionHubConnection.reason ? `: ${selectedDecisionHubConnection.reason}` : ""}`
+          ? `Entscheidungszentrale: ${workjetConnectionStatusLabel(selectedDecisionHubConnection.status)}`
           : null;
   const privateChatBinding = draftWorkjetConfig.ctoxCrewChat;
   const nativeDraftIntent = composerDraft.privateChatIntent;
@@ -1655,7 +1651,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         (nativeDraftIntent.projectId !== nativeProject.id ||
           nativeDraftIntent.workerProfileId !== selectedWorkjetWorker.id)) ||
       (privateChatBinding !== undefined && nativeDraftIntent === undefined))
-      ? "Choose the project and Luma belonging to this draft's private chat."
+      ? "Projekt und Luma wählen"
       : null;
   const privateChatSendDisabledReason =
     !composerTargetIsThread &&
@@ -1664,7 +1660,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       !nativeChatConnections.some(
         (connection) => connection.connectionId === privateChatBinding.connectionId,
       ))
-      ? "The private chat connection is no longer active."
+      ? "Private Chat-Verbindung nicht mehr aktiv"
       : null;
   const effectiveSendDisabledReason =
     sendDisabledReason ??
@@ -1676,7 +1672,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedWorkjetWorker !== null &&
     nativeProject !== undefined &&
     draftWorkjetConfig.ctoxCrewChat === undefined
-      ? "Open a private Luma chat before sending."
+      ? "Privaten Luma-Chat öffnen"
       : null);
   const isSendDisabled = effectiveSendDisabledReason !== null;
   // Live per-provider model discovery — the same source the settings pools
@@ -1718,11 +1714,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return [...concrete, ...remaining];
   }, [workjetGatewayCatalogQuery.data, workjetGatewayModelsQuery.data]);
   const manualModelsUnavailableReason = workjetGatewayCatalogQuery.isPending
-    ? "Loading the gateway model catalog…"
+    ? "Modellkatalog wird geladen …"
     : (workjetGatewayCatalogQuery.error ??
       (workjetGatewayCatalogQuery.data === null
-        ? "The Workjet gateway catalog is not available — type a model id."
-        : "The gateway catalog lists no models — type a model id."));
+        ? "Modellkatalog nicht verfügbar"
+        : "Keine Modelle im Katalog"));
   const greppyManualModels = useMemo(
     () =>
       getGreppyManualModelCatalog(
@@ -1778,7 +1774,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (model === null) {
         setHarnessModelNotice({
           target: JSON.stringify(composerDraftTarget),
-          text: "This harness has no checked default model. Refresh its models in Settings.",
+          text: "Kein geprüftes Standardmodell",
         });
         return;
       }
@@ -1788,7 +1784,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           ? null
           : {
               target: JSON.stringify(composerDraftTarget),
-              text: `The selected model is unavailable for this harness. Using its default: ${model}.`,
+              text: `Standardmodell aktiv: ${model}`,
             },
       );
     },
@@ -1949,7 +1945,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           type: "slash-command",
           command: "model",
           label: "/model",
-          description: "Switch response model for this thread",
+          description: "Modell wechseln",
         },
         ...(planModeUiEnabled
           ? ([
@@ -1958,14 +1954,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 type: "slash-command",
                 command: "plan",
                 label: "/plan",
-                description: "Switch this thread into plan mode",
+                description: "Planmodus",
               },
               {
                 id: "slash:default",
                 type: "slash-command",
                 command: "default",
                 label: "/default",
-                description: "Switch this thread back to normal build mode",
+                description: "Normaler Modus",
               },
             ] as const)
           : []),
@@ -1977,7 +1973,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           provider: selectedProvider,
           command,
           label: `/${command.name}`,
-          description: command.description ?? command.input?.hint ?? "Run provider command",
+          description: command.description ?? command.input?.hint ?? "Anbieterbefehl",
         }),
       );
       const query = composerTrigger.query.trim().toLowerCase();
@@ -1998,7 +1994,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           description:
             skill.shortDescription ??
             skill.description ??
-            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+            (skill.scope ? `${skill.scope}-Skill` : "Anbieter-Skill"),
         }),
       );
     }
@@ -2076,14 +2072,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending;
   const composerMenuEmptyState = useMemo(() => {
     if (composerTriggerKind === "skill") {
-      return "No skills found. Try / to browse provider commands.";
+      return "Keine Skills gefunden";
     }
     if (composerTriggerKind === "path") {
-      return pathTriggerQuery.length === 0
-        ? "Type to search project files."
-        : "No matching files or folders.";
+      return pathTriggerQuery.length === 0 ? "Projektdateien suchen" : "Keine Treffer";
     }
-    return "No matching command.";
+    return "Kein passender Befehl";
   }, [composerTriggerKind, pathTriggerQuery.length]);
 
   // ------------------------------------------------------------------
@@ -2138,7 +2132,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired ||
     environmentUnavailable !== null ||
     !composerSendState.hasSendableContent;
-  const collapsedComposerPrimaryActionLabel = "Send message";
+  const collapsedComposerPrimaryActionLabel = "Nachricht senden";
   const showMobilePendingAnswerActions =
     isMobileViewport && !isComposerCollapsedMobile && pendingPrimaryAction !== null;
 
@@ -2730,8 +2724,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         event?.preventDefault();
         toastManager.add({
           type: "info",
-          title: "Still compressing a pasted image.",
-          description: "Send again once its thumbnail appears.",
+          title: "Bild wird noch komprimiert",
         });
         return;
       }
@@ -2852,9 +2845,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!durable) {
         toastManager.add({
           type: "warning",
-          title: "Restored prompt may reappear in the stash",
-          description:
-            "Browser storage rejected the update, so this entry could still be there after a reload.",
+          title: "Eintrag bleibt evtl. gespeichert",
           data: { hideCopyButton: true },
         });
       }
@@ -2919,24 +2910,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // had no room to take back.
       const missingImageReasons: string[] = [];
       if (entry.droppedImageNames.length > 0) {
-        missingImageReasons.push(
-          `${entry.droppedImageNames.join(", ")} exceeded the stash size limit when this prompt was saved.`,
-        );
+        missingImageReasons.push(`${entry.droppedImageNames.join(", ")}: zu groß`);
       }
       if (entry.unreadableImageNames && entry.unreadableImageNames.length > 0) {
-        missingImageReasons.push(
-          `${entry.unreadableImageNames.join(", ")} could not be read when this prompt was saved.`,
-        );
+        missingImageReasons.push(`${entry.unreadableImageNames.join(", ")}: nicht lesbar`);
       }
       if (unrestoredImageNames.length > 0) {
         missingImageReasons.push(
-          `${unrestoredImageNames.join(", ")} could not be restored: the composer is at its ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}-image limit.`,
+          `${unrestoredImageNames.join(", ")}: Bildlimit (${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}) erreicht`,
         );
       }
       if (missingImageReasons.length > 0) {
         toastManager.add({
           type: "warning",
-          title: "Some images were not restored",
+          title: "Bilder nicht wiederhergestellt",
           description: missingImageReasons.join(" "),
         });
       }
@@ -2965,9 +2952,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!durable) {
         toastManager.add({
           type: "warning",
-          title: "Stash entry may come back",
-          description:
-            "Browser storage rejected the delete, so this prompt could reappear after a reload.",
+          title: "Eintrag kommt evtl. zurück",
           data: { hideCopyButton: true },
         });
       }
@@ -3020,9 +3005,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!written) {
         toastManager.add({
           type: "error",
-          title: "Could not stash this prompt",
-          description:
-            "Browser storage rejected the write, so the composer was left as-is. Free up site data and try again.",
+          title: "Zwischenspeichern fehlgeschlagen",
           data: { hideCopyButton: true },
         });
         return;
@@ -3033,9 +3016,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!durable) {
         toastManager.add({
           type: "warning",
-          title: "Stashed prompt will not survive a reload",
-          description:
-            "Browser storage is unavailable, so this stash is kept in memory only for this session.",
+          title: "Nur bis zum Neuladen gespeichert",
           data: { hideCopyButton: true },
         });
       }
@@ -3052,8 +3033,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (evicted) {
         toastManager.add({
           type: "warning",
-          title: "Oldest stashed prompt discarded",
-          description: `The stash holds ${MAX_STASH_ENTRIES} prompts; the oldest was removed to make room.`,
+          title: "Ältester Eintrag verworfen",
           data: { hideCopyButton: true },
         });
       }
@@ -3100,9 +3080,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (!imagesDurable && durable && images.length > 0) {
           toastManager.add({
             type: "warning",
-            title: "Stashed images were not saved",
-            description:
-              "The prompt was stashed, but browser storage rejected its images. They will be missing if you reload.",
+            title: "Bilder nicht gespeichert",
             data: { hideCopyButton: true },
           });
         }
@@ -3112,8 +3090,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // them evaporate.
         toastManager.add({
           type: "warning",
-          title: "Stashed images did not attach",
-          description: `That prompt was restored or deleted before ${kept.length} image${kept.length === 1 ? "" : "s"} finished saving. Re-attach ${kept.length === 1 ? "it" : "them"} if you still need ${kept.length === 1 ? "it" : "them"}.`,
+          title: "Bilder nicht angehängt",
           data: { hideCopyButton: true },
         });
       }
@@ -3194,7 +3171,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (pendingUserInputs.length > 0) {
       toastManager.add({
         type: "error",
-        title: "Attach images after answering plan questions.",
+        title: "Bilder erst nach den Planfragen",
       });
       return;
     }
@@ -3212,11 +3189,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     let error: string | null = null;
     for (const file of files) {
       if (!file.type.startsWith("image/")) {
-        error = `Unsupported file type for '${file.name}'. Please attach image files only.`;
+        error = `Dateityp nicht unterstützt: ${file.name}`;
         continue;
       }
       if (reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
+        error = `Höchstens ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} Bilder je Nachricht`;
         break;
       }
       acceptedFiles.push(file);
@@ -3236,8 +3213,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (!compressed.ok) {
           compressionError =
             compressed.reason === "unreadable"
-              ? `'${file.name}' could not be read as an image.`
-              : `'${file.name}' is too large to attach, even after compression.`;
+              ? `${file.name}: nicht lesbar`
+              : `${file.name}: zu groß`;
           continue;
         }
         const attachmentFile = compressed.file;
@@ -3358,8 +3335,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onInsertRejected: () => {
       toastManager.add({
         type: "error",
-        title: "Unable to add to chat",
-        description: "The composer is busy; try again once it is ready.",
+        title: "Hinzufügen fehlgeschlagen",
       });
     },
   });
@@ -3572,7 +3548,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           className="shrink-0 gap-2 px-2 text-secondary-label sm:px-3"
         >
           <CircleAlertIcon className="size-4" />
-          No provider available
+          Kein Anbieter verfügbar
         </Button>
       );
     }
@@ -3610,25 +3586,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerManualTargetControls = workerModeActive ? null : (
     <ComposerManualTargetControls
       key={manualModelDraftKey}
-      customModelEditor={{
-        draft: customModelDrafts[manualModelDraftKey] ?? null,
-        onDraftChange: (draft) => {
-          setCustomModelDrafts((previous) => {
-            const next = { ...previous };
-            if (draft === null) delete next[manualModelDraftKey];
-            else next[manualModelDraftKey] = draft;
-            return next;
-          });
-        },
-      }}
       disabledReason={getModelDisabledReason(selectedInstanceId, selectedModel)}
       configuredInstanceIds={configuredProviderInstanceIds}
       configuredDriverKinds={configuredProviderDriverKinds}
-      unavailableHint={
-        lockedProvider === null
-          ? undefined
-          : "Locked — this thread continues on its current provider"
-      }
+      unavailableHint={lockedProvider === null ? undefined : "Gesperrt"}
       selectedHarness={harnessForProviderInstanceId(selectedInstanceId, selectedProvider)}
       onSelectHarness={handleSelectManualHarness}
       modelSource={
@@ -3646,7 +3607,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         (manualModels.length === 0
           ? greppyManualModels === null
             ? manualModelsUnavailableReason
-            : "No models configured for this Greppy profile — enter a model ID."
+            : "Keine Modelle für dieses Greppy-Profil"
           : null)
       }
       selectedModelId={selectedModelForPickerWithCustomFallback}
@@ -3673,15 +3634,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       usage={activeContextWindow}
       providerDisplayName={activeThreadProviderDisplayName}
     />
-  ) : null;
-  const composerContextWindowMenuContent = composerContextWindowControl ? (
-    <div
-      className="flex items-center justify-between gap-2 px-2 py-1"
-      data-composer-context-window-menu="true"
-    >
-      <span className="text-sm text-muted-foreground">Context window</span>
-      {composerContextWindowControl}
-    </div>
   ) : null;
 
   const composerAttachmentControl =
@@ -3819,9 +3771,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     )}
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={expandMobileComposer}
-                    aria-label="Write custom answer"
+                    aria-label="Eigene Antwort"
                   >
-                    {activePendingProgress?.customAnswer || "Write custom answer"}
+                    {activePendingProgress?.customAnswer || "Eigene Antwort"}
                   </button>
                   {activePendingProgress?.activeQuestion?.multiSelect ? (
                     <ComposerPrimaryActions
@@ -3863,13 +3815,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={expandMobileComposer}
-                aria-label="Expand composer"
+                aria-label="Eingabe vergrößern"
               >
                 {activePendingProgress
-                  ? activePendingProgress.customAnswer ||
-                    "Type your own answer, or leave this blank to use the selected option"
-                  : prompt.trim() ||
-                    (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
+                  ? activePendingProgress.customAnswer || "Eigene Antwort …"
+                  : prompt.trim() || (noProviderAvailable ? "Kein Anbieter aktiv" : "Frag etwas …")}
               </button>
               <button
                 type="button"
@@ -4015,7 +3965,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           <button
                             type="button"
                             className="h-full w-full cursor-zoom-in"
-                            aria-label={`Preview ${image.name}`}
+                            aria-label={`Vorschau ${image.name}`}
                             onClick={() => {
                               const preview = buildExpandedImagePreview(composerImages, image.id);
                               if (!preview) return;
@@ -4039,7 +3989,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               render={
                                 <span
                                   role="img"
-                                  aria-label="Draft attachment may not persist"
+                                  aria-label="Nicht lokal gespeichert"
                                   className="absolute left-1 top-1 inline-flex items-center justify-center rounded bg-background/85 p-0.5 text-amber-600"
                                 >
                                   <CircleAlertIcon className="size-3" />
@@ -4050,8 +4000,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               side="top"
                               className="max-w-64 whitespace-normal leading-tight"
                             >
-                              Draft attachment could not be saved locally and may be lost on
-                              navigation.
+                              Nicht lokal gespeichert
                             </TooltipPopup>
                           </Tooltip>
                         )}
@@ -4060,7 +4009,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           size="icon-xs"
                           className="absolute right-1 top-1 bg-background/80 hover:bg-background/90"
                           onClick={() => removeComposerImage(image.id)}
-                          aria-label={`Remove ${image.name}`}
+                          aria-label={`${image.name} entfernen`}
                         >
                           <XIcon />
                         </Button>
@@ -4093,20 +4042,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 onPaste={onComposerPaste}
                 placeholder={
                   isComposerApprovalState
-                    ? (activePendingApproval?.detail ?? "Resolve this approval request to continue")
+                    ? (activePendingApproval?.detail ?? "Freigabe offen")
                     : activePendingProgress
-                      ? "Type your own answer, or leave this blank to use the selected option"
+                      ? "Eigene Antwort …"
                       : showPlanFollowUpPrompt && activeProposedPlan
-                        ? "Add feedback to refine the plan, or leave this blank to implement it"
+                        ? "Feedback zum Plan …"
                         : projectSelectionRequired
-                          ? "Choose a project above to start a thread"
+                          ? "Projekt wählen"
                           : noProviderAvailable
-                            ? "Enable a provider in Settings to send a message"
+                            ? "Kein Anbieter aktiv"
                             : activeThreadId === null
-                              ? "Describe what you want to build, or add images and project files"
+                              ? "Was soll gebaut werden?"
                               : phase === "disconnected"
-                                ? "Ask for follow-up changes or attach images"
-                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                ? "Nächste Änderung …"
+                                : "Frag etwas, @ Dateien, $ Skills, / Befehle"
                 }
                 disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
               />
@@ -4197,21 +4146,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                   environment.environmentId === computer.environmentId,
                               )?.connection;
                               const status =
-                                connection?.phase === "connected"
-                                  ? "Online"
-                                  : connection?.phase === "offline"
-                                    ? "Offline"
-                                    : "Not connected";
+                                connection?.phase === "connected" ? "verbunden" : "getrennt";
                               const reason = !businessOsCodeScopeContainsEnvironment(
                                 businessOsCodeScope,
                                 computer.environmentId,
                               )
-                                ? "This computer has no coding route in the selected Business OS."
+                                ? "In dieser Instanz nicht freigegeben"
                                 : connection?.phase !== "connected"
                                   ? (connection?.error ?? status)
                                   : !selectableEnvironmentIds.includes(computer.environmentId) &&
                                       computer.environmentId !== environmentId
-                                    ? `Project checkout missing on ${computer.label}.`
+                                    ? `Kein Checkout auf ${computer.label}`
                                     : null;
                               return [computer.id, { status, reason }];
                             }),
@@ -4277,6 +4222,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           }
                         />
                       ) : null}
+                      {/* Kontext als kleiner Chip in der Leiste, nie als Meter im Menü. */}
+                      {composerContextWindowControl}
                     </>
                   }
                   settings={
@@ -4287,7 +4234,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       onToggleInteractionMode={toggleInteractionMode}
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
-                      contextWindowMenuContent={composerContextWindowMenuContent}
                       systemPromptMenuContent={composerSystemPromptControl}
                       extraMenuContent={
                         <div className="flex max-w-sm flex-col items-start gap-2 px-2 py-1">
@@ -4321,7 +4267,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 : undefined
                             }
                             ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
-                            ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                             onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                             workjetRole={workerModeActive ? null : effectiveWorkjetRole}
                             onWorkjetRoleChange={effectiveWorkjetRoleChange}

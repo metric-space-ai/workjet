@@ -11,7 +11,7 @@ describe("WorkjetProductModeSwitch", () => {
     );
 
     expect(markup).toContain('role="radiogroup"');
-    expect(markup).toContain('aria-label="Workjet product mode"');
+    expect(markup).toContain('aria-label="Workjet-Modus"');
     expect(markup).toMatch(
       new RegExp(
         `<button[^>]*aria-checked="true"[^>]*data-product-mode="${mode}"[^>]*role="radio"[^>]*tabindex="0"`,

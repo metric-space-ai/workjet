@@ -36,16 +36,16 @@ import { ScrollArea } from "~/components/ui/scroll-area";
  * user problem). Only settled states differentiate.
  */
 const STATUS_VISUALS: Record<RuntimeSubagent["status"], { dotClass: string; label: string }> = {
-  pending: { dotClass: "bg-info", label: "Working" },
-  running: { dotClass: "bg-info", label: "Working" },
-  waiting: { dotClass: "bg-info", label: "Working" },
+  pending: { dotClass: "bg-info", label: "Arbeitet" },
+  running: { dotClass: "bg-info", label: "Arbeitet" },
+  waiting: { dotClass: "bg-info", label: "Arbeitet" },
   // Idle reads as settled (muted, not sky): a resting Codex child looks done
   // unless resumed — live-test: sky idle dots read as stuck in-progress.
-  idle: { dotClass: "bg-muted-foreground/50", label: "Idle · resumable" },
-  completed: { dotClass: "bg-success", label: "Completed" },
-  failed: { dotClass: "bg-destructive", label: "Failed" },
-  cancelled: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
-  interrupted: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
+  idle: { dotClass: "bg-muted-foreground/50", label: "Ruht · fortsetzbar" },
+  completed: { dotClass: "bg-success", label: "Fertig" },
+  failed: { dotClass: "bg-destructive", label: "Fehlgeschlagen" },
+  cancelled: { dotClass: "bg-muted-foreground/60", label: "Gestoppt" },
+  interrupted: { dotClass: "bg-muted-foreground/60", label: "Gestoppt" },
 };
 
 function StatusDot({ status }: { status: RuntimeSubagent["status"] }) {
@@ -148,8 +148,8 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
   const metadata = [
     modelLabel,
     agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : "— tok",
-    agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
-    agent.activationCount > 1 ? `run ${agent.activationCount}` : null,
+    agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} Werkzeuge` : null,
+    agent.activationCount > 1 ? `Lauf ${agent.activationCount}` : null,
   ].filter((value): value is string => value !== null);
 
   return (
@@ -285,7 +285,7 @@ function WorkflowScriptView({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close script"
+          aria-label="Skript schließen"
           className="ml-auto text-muted-foreground hover:text-foreground"
         >
           <X aria-hidden className="size-3" />
@@ -295,12 +295,12 @@ function WorkflowScriptView({
         {result._tag === "Success" ? (
           <pre className="whitespace-pre-wrap break-words font-mono text-[.7rem] leading-relaxed text-foreground/90">
             {result.value.contents}
-            {result.value.truncated ? "\n… (truncated)" : ""}
+            {result.value.truncated ? "\n… (gekürzt)" : ""}
           </pre>
         ) : result._tag === "Failure" ? (
-          <p className="text-xs text-destructive-foreground">Could not load the script.</p>
+          <p className="text-xs text-destructive-foreground">Skript nicht geladen.</p>
         ) : (
-          <p className="text-xs text-muted-foreground">Loading…</p>
+          <p className="text-xs text-muted-foreground">Wird geladen …</p>
         )}
       </div>
     </div>
@@ -353,10 +353,10 @@ function PhaseSection({
         <span>{phase.title}</span>
         <span className="font-normal normal-case text-muted-foreground/70">
           {phase.state === "pending" && phase.members.length === 0
-            ? "pending"
+            ? "wartet"
             : phase.state === "done"
-              ? `${phase.settledCount} done`
-              : `${phase.activeCount} active · ${phase.settledCount} done`}
+              ? `${phase.settledCount} fertig`
+              : `${phase.activeCount} aktiv · ${phase.settledCount} fertig`}
         </span>
         {!open && phase.members.length > 0 ? (
           <span className="ml-auto flex items-center gap-0.5">
@@ -411,16 +411,16 @@ function ExpandedWorkflowSection({
             )}
             aria-expanded={scriptOpen}
           >
-            {"{}"} script
+            {"{}"} Skript
           </button>
         ) : null}
         <span className="ml-auto font-mono normal-case text-muted-foreground/80">
-          {settled}/{members.length} settled
+          {settled}/{members.length} fertig
         </span>
         <button
           type="button"
           onClick={onCollapse}
-          aria-label="Collapse workflow"
+          aria-label="Workflow einklappen"
           className="text-muted-foreground hover:text-foreground"
         >
           <ChevronDown aria-hidden className="size-3" />
@@ -484,8 +484,10 @@ function CollapsedWorkflowSection({
           {group.workflow.workflowName ?? group.workflow.title}
         </span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[.7rem] text-muted-foreground/80">
-          {failed > 0 ? <span className="text-destructive-foreground">{failed} failed</span> : null}
-          <span>{members.length} agents</span>
+          {failed > 0 ? (
+            <span className="text-destructive-foreground">{failed} fehlgeschlagen</span>
+          ) : null}
+          <span>{members.length} Lumas</span>
           <span className="tabular-nums">· {formatSubagentTokenCount(totalTokens)} tok</span>
           {elapsed ? <span className="tabular-nums">· {elapsed}</span> : null}
           <ChevronRight aria-hidden className="size-3" />
@@ -531,11 +533,7 @@ export function AgentsPanel({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <Bot aria-hidden className="size-6 text-muted-foreground/60" />
-        <p className="text-sm font-medium">No agents yet</p>
-        <p className="max-w-56 text-xs text-muted-foreground">
-          When this thread spawns subagents or runs a workflow, they show up here with live status,
-          activity, and token usage.
-        </p>
+        <p className="text-sm font-medium">Noch keine Lumas</p>
       </div>
     );
   }
@@ -555,7 +553,7 @@ export function AgentsPanel({
           {model.directAgents.length > 0 ? (
             <section>
               <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                Direct spawns
+                Direkt gestartet
               </div>
               {model.directAgents.map((agent) => (
                 <AgentRow key={agent.id} agent={agent} />
@@ -568,11 +566,11 @@ export function AgentsPanel({
         <span className="flex items-center gap-2">
           {model.runningCount + model.waitingCount > 0 ? (
             <span className="text-info-foreground">
-              ● {model.runningCount + model.waitingCount} working
+              ● {model.runningCount + model.waitingCount} aktiv
             </span>
           ) : null}
-          {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
-          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
+          {model.idleCount > 0 ? <span>{model.idleCount} ruhend</span> : null}
+          {model.settledCount > 0 ? <span>{model.settledCount} fertig</span> : null}
         </span>
         <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
       </footer>

@@ -46,16 +46,21 @@ describe("compact project configuration", () => {
         onArchive={async () => true}
       />,
     );
-    expect(markup.match(/placeholder="Describe the metric in one sentence"/g)).toHaveLength(3);
-    expect(markup).toContain("KPI prompts need the CTOX KPI service");
+    expect(markup.match(/placeholder="Kennzahl in einem Satz"/g)).toHaveLength(3);
+    expect(markup).not.toContain("KPI-Angaben brauchen");
+    expect(markup).toContain("Git-Quelle");
+    expect(markup).toContain("Webseite");
+    expect(markup).toContain("Budget (Mrd.)");
     expect(markup).not.toContain("Entered metric");
     expect(markup).not.toContain("type</label>");
-    expect(markup).toContain("Jour fixe weekday");
+    expect(markup).toContain("Regeltermin Wochentag");
+    expect(markup).toContain("Regeltermin-Vorbereitung");
+    expect(markup).not.toContain("No meeting");
     expect(markup).toContain('value="13:00"');
     expect(markup).toContain("Keep the goal");
-    expect(markup).toContain("Archive project");
-    expect(markup).toContain("Cancel");
-    expect(markup).toContain("Save project");
+    expect(markup).toContain("Projekt archivieren");
+    expect(markup).toContain("Abbrechen");
+    expect(markup).toContain("Projekt speichern");
   });
   it("renders a native missing source instead of offering an entered value", () => {
     const markup = renderToStaticMarkup(
@@ -77,7 +82,8 @@ describe("compact project configuration", () => {
       />,
     );
     expect(markup).toContain("Count visits this week");
-    expect(markup).toContain("analytics_not_connected");
+    expect(markup).toContain("Quelle fehlt");
+    expect(markup).not.toContain(">analytics_not_connected<");
     expect(markup).not.toContain("KPI prompts need");
     expect(markup.match(/type="number"/g)).toHaveLength(1);
     expect(markup).toContain("Supervisor-Takt in Minuten");
@@ -92,6 +98,9 @@ describe("compact project configuration", () => {
         onSaveKpis={async () => true}
       />,
     );
-    expect(markup).toContain("KPI prompts need the CTOX KPI service");
+    expect(markup).not.toContain("KPI-Angaben brauchen");
+    expect(
+      markup.match(/<input[^>]*disabled=""[^>]*placeholder="Kennzahl in einem Satz"/g),
+    ).toHaveLength(3);
   });
 });

@@ -61,15 +61,15 @@ describe("Supervisor normal composer controls", () => {
         profiles={[profile, manual]}
       />,
     );
-    expect(html).toContain(">Manual</span>");
+    expect(html).toContain(">Manuell</span>");
     expect(html).toContain('aria-label="Harness"');
-    expect(html).toContain('aria-label="Model"');
-    expect(html).toContain('aria-label="Computer"');
+    expect(html).toContain('aria-label="Modell"');
+    expect(html).toContain('aria-label="Rechner"');
     expect(html).toContain("Claude Code");
     expect(html).toContain(profile.modelId);
     expect(html).toContain("MacBook Pro");
-    expect(html.indexOf('aria-label="Harness"')).toBeLessThan(html.indexOf('aria-label="Model"'));
-    expect(html.indexOf('aria-label="Model"')).toBeLessThan(html.indexOf('aria-label="Computer"'));
+    expect(html.indexOf('aria-label="Harness"')).toBeLessThan(html.indexOf('aria-label="Modell"'));
+    expect(html.indexOf('aria-label="Modell"')).toBeLessThan(html.indexOf('aria-label="Rechner"'));
   });
   it("keeps the pickers inspectable during an outage, with a concrete connection reason", () => {
     const html = renderToStaticMarkup(
@@ -81,7 +81,7 @@ describe("Supervisor normal composer controls", () => {
     );
     expect(html).toContain('aria-label="Luma"');
     expect(html).toContain('aria-label="Harness"');
-    expect(html).toContain('aria-label="Computer"');
+    expect(html).toContain('aria-label="Rechner"');
     expect(html).not.toContain("Instance default");
     expect(html).not.toContain("Instance model");
     expect(html).not.toContain("Configure Workers");

@@ -79,9 +79,7 @@ function SpeechRoom({
         onPartial: (partial) => change({ partial }),
         onAudio: (audio) => change({ audio }),
         onCommitted: () => {
-          void refresh
-            .current?.()
-            .catch(() => change({ error: "Transcript refresh failed. Refresh the meeting." }));
+          void refresh.current?.().catch(() => change({ error: "Transkript nicht aktualisiert" }));
         },
         onError: (error) => change({ error: error.message }),
       },

@@ -15,7 +15,7 @@ import {
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { toastManager } from "../ui/toast";
 import {
   ClerkUserProfilePage,
@@ -27,15 +27,13 @@ const linkedAtFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "mediu
 
 function linkedAtLabel(value: string): string {
   const linkedAt = new Date(value);
-  return Number.isNaN(linkedAt.getTime())
-    ? "Link date unavailable"
-    : `Linked ${linkedAtFormatter.format(linkedAt)}`;
+  return Number.isNaN(linkedAt.getTime()) ? "—" : `Verknüpft ${linkedAtFormatter.format(linkedAt)}`;
 }
 
 function endpointLabel(environment: RelayClientEnvironmentRecord): string {
   return environment.endpoint.providerKind === "cloudflare_tunnel"
-    ? "Managed tunnel"
-    : "Activity publishing only";
+    ? "Verwalteter Tunnel"
+    : "Nur Aktivitäten";
 }
 
 export function WorkjetConnectEnvironmentRow(props: {
@@ -66,7 +64,7 @@ export function WorkjetConnectEnvironmentRow(props: {
                 className="text-[0.8125rem]"
                 disabled={props.mutationPending}
               >
-                Deregister
+                Abmelden
               </Button>
             }
           />
@@ -77,17 +75,13 @@ export function WorkjetConnectEnvironmentRow(props: {
             <div
               className="rounded-lg border border-input bg-muted/32 px-5 py-4 shadow-xs/5"
               role="group"
-              aria-label={`Confirm deregistration of ${environment.label}`}
+              aria-label={`${environment.label} abmelden`}
             >
               <h4 className="text-[0.8125rem] leading-[1.125rem] font-semibold text-foreground">
-                Deregister server
+                Server abmelden
               </h4>
               <p className="mt-1 text-[0.8125rem] leading-[1.125rem] text-muted-foreground">
-                “{environment.label}” will be removed from this account.
-              </p>
-              <p className="mt-4 max-w-xl text-[0.8125rem] leading-[1.125rem] text-muted-foreground">
-                Workjet Connect access will be revoked, any managed tunnel will be removed, and a
-                host space will become available. Local connections on your devices are not changed.
+                „{environment.label}“ wird entfernt
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <Button
@@ -97,7 +91,7 @@ export function WorkjetConnectEnvironmentRow(props: {
                   disabled={props.mutationPending}
                   onClick={() => props.onConfirmationChange(false)}
                 >
-                  Cancel
+                  Abbrechen
                 </Button>
                 <Button
                   size="sm"
@@ -106,7 +100,7 @@ export function WorkjetConnectEnvironmentRow(props: {
                   disabled={props.mutationPending}
                   onClick={() => props.onDeregister(environment)}
                 >
-                  {props.mutationPending ? "Deregistering…" : "Deregister"}
+                  {props.mutationPending ? "Wird abgemeldet …" : "Abmelden"}
                 </Button>
               </div>
             </div>
@@ -156,15 +150,14 @@ export function WorkjetConnectUserProfilePage() {
       environmentsState.refresh();
       toastManager.add({
         type: "success",
-        title: "Server deregistered",
-        description: "Workjet Connect access was revoked and a host space is now available.",
+        title: "Server abgemeldet",
       });
       return;
     }
     if (isAtomCommandInterrupted(result)) return;
 
     const cause = squashAtomCommandFailure(result);
-    const message = cause instanceof Error ? cause.message : "Could not deregister the server.";
+    const message = cause instanceof Error ? cause.message : "Abmeldung fehlgeschlagen";
     const traceId = findErrorTraceId(cause);
     console.error("[workjet-connect] Could not deregister environment", {
       environmentId: environment.environmentId,
@@ -174,12 +167,12 @@ export function WorkjetConnectUserProfilePage() {
     });
     toastManager.add({
       type: "error",
-      title: "Could not deregister server",
+      title: "Server nicht abgemeldet",
       description: message,
       data: traceId
         ? {
             secondaryActionProps: {
-              children: "Copy trace ID",
+              children: "Trace-ID kopieren",
               onClick: () => void navigator.clipboard?.writeText(traceId),
             },
           }
@@ -201,7 +194,6 @@ export function WorkjetConnectUserProfilePage() {
   return (
     <ClerkUserProfilePage
       title="Workjet Connect"
-      description="Environments registered to your account. Connections on this device are managed in Settings."
       action={
         <ClerkUserProfileRefreshButton
           disabled={deregisteringEnvironmentId !== null}
@@ -213,16 +205,14 @@ export function WorkjetConnectUserProfilePage() {
       <div>
         {environmentsState.error ? (
           <div className="mb-4 border-t border-destructive/35 py-3 text-[0.8125rem]" role="alert">
-            <p className="font-medium text-destructive-foreground">
-              Could not load Workjet Connect environments
-            </p>
+            <p className="font-medium text-destructive-foreground">Instanzen nicht geladen</p>
             <p className="mt-1 text-xs text-muted-foreground">{environmentsState.error}</p>
           </div>
         ) : null}
 
         {isInitialLoad ? (
           <p className="border-t py-4 text-[0.8125rem] text-muted-foreground" role="status">
-            Loading environments…
+            Instanzen werden geladen …
           </p>
         ) : environments.length > 0 ? (
           <ul className="border-t">
@@ -245,13 +235,7 @@ export function WorkjetConnectUserProfilePage() {
               <ServerIcon />
             </EmptyMedia>
             <EmptyHeader>
-              <EmptyTitle className="text-[1.0625rem] leading-6">
-                No Workjet Connect environments
-              </EmptyTitle>
-              <EmptyDescription className="text-[0.8125rem] leading-[1.125rem]">
-                Link an environment from its local Settings to make it available through Workjet
-                Connect.
-              </EmptyDescription>
+              <EmptyTitle className="text-[1.0625rem] leading-6">Noch keine Instanzen</EmptyTitle>
             </EmptyHeader>
           </Empty>
         )}

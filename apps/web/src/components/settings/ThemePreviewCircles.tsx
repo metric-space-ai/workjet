@@ -178,7 +178,7 @@ export function ThemePreviewCircles({
             <TooltipTrigger
               render={
                 <button
-                  aria-label={`Use ${label} ${mode} mode`}
+                  aria-label={`${label} für ${mode === "light" ? "Hell" : "Dunkel"} verwenden`}
                   aria-pressed={isPicked}
                   className={cn(
                     "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-full p-1 outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
@@ -213,9 +213,7 @@ export function ThemePreviewCircles({
                 </button>
               }
             />
-            <TooltipPopup>
-              {mode === "light" ? "Use for light mode only" : "Use for dark mode only"}
-            </TooltipPopup>
+            <TooltipPopup>{mode === "light" ? "Nur für Hell" : "Nur für Dunkel"}</TooltipPopup>
           </Tooltip>
         );
       })}

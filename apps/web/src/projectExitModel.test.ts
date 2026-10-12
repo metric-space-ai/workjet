@@ -92,7 +92,7 @@ describe("project exit assessment", () => {
       .mockResolvedValue({ _tag: "failed", code: "unsupported" });
     expect(await requestProjectExitModel("managed:selected", request, port)).toEqual({
       _tag: "failed",
-      message: "The exit assessment service is unavailable. Update or reconnect this instance.",
+      message: "Bewertungsdienst nicht verfügbar.",
     });
     expect(exitModelPresentation(null, "project-one").value).toBe("—");
   });
@@ -100,12 +100,12 @@ describe("project exit assessment", () => {
   it("keeps dated values visible while explicitly labelling expired evidence", () => {
     expect(exitModelPresentation(exitModelFixture, "project-one", "2026-10-08")).toMatchObject({
       value: "800k EUR",
-      label: "Provisional",
+      label: "Vorläufig",
       stale: false,
     });
     expect(exitModelPresentation(exitModelFixture, "project-one", "2026-11-08")).toMatchObject({
       value: "800k EUR",
-      label: "Out of date",
+      label: "Veraltet",
       stale: true,
     });
     expect(
@@ -138,24 +138,24 @@ describe("project exit assessment", () => {
     };
     expect(exitModelPresentation(blocked, "project-one", "2026-10-08")).toMatchObject({
       value: "—",
-      label: "Inputs needed",
+      label: "Angaben fehlen",
       stale: false,
     });
   });
 
   it("explains missing inputs without exposing machine field names", () => {
     expect(formatExitMissingInput("confirmed_60_month_resource_plan")).toBe(
-      "Owner-confirmed monthly plan for five years",
+      "Bestätigter Monatsplan für fünf Jahre",
     );
     expect(formatExitMissingInput("current_source:fixture", exitModelFixture)).toBe(
-      "Current evidence: https://example.org/synthetic-evidence",
+      "Aktueller Beleg: https://example.org/synthetic-evidence",
     );
     expect(
       formatExitFinding({
         code: "resource_or_supervisor_missing",
         message: "raw implementation detail",
       }),
-    ).toBe("Add a resource plan and connect this project to its supervisor.");
+    ).toBe("Ressourcenplan oder Supervisor fehlt.");
   });
 
   it("uses forecast precision and links only ordinary credential-free web sources", () => {

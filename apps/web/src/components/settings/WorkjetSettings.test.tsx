@@ -1,7 +1,10 @@
 import {
   DEFAULT_WORKJET_CONFIGURATION,
   EnvironmentId,
+  WorkjetComputerId,
   WorkjetGreppyOperationError,
+  WorkjetLlmRouteId,
+  WorkjetWorkerProfileId,
   type GreppyRuntimeSnapshot,
 } from "@workjet/contracts";
 import * as Cause from "effect/Cause";
@@ -20,6 +23,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 });
 
 import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
+import { searchableSetting } from "./settingsSearch";
 import {
   automaticWorktreeStorageControlState,
   GreppyRuntimeSectionView,
@@ -32,6 +36,9 @@ import {
   WorkjetSettingsView,
   workjetSectionFromHash,
 } from "./WorkjetSettings";
+
+// Section titles come from the settings-search catalog (one source).
+const GREPPY_TITLE = searchableSetting("greppy-runtime").title;
 
 const baseSnapshot = {
   version: "0.3.1",
@@ -133,11 +140,53 @@ describe("Workjet configuration settings", () => {
       expect(markup).not.toContain(gone);
     }
     expect(markup).toContain('role="tablist"');
-    expect(markup).toContain("No saved Lumas");
+    // Page title is „Lumas“; the empty list is a title plus one primary action.
+    expect(markup).toContain(">Lumas</h1>");
+    expect(markup).toContain("Keine Lumas");
+    expect(markup).toContain("Luma hinzufügen");
     expect(markup).not.toContain("Connection targets");
     // The Greppy RUNTIME sits under Workers now — it supports composition.
-    expect(markup).toContain("Greppy Runtime");
+    expect(markup).toContain(GREPPY_TITLE);
     expect(markup).not.toContain("remote execution is implemented");
+    // No popups, no explanatory sentences, no wrench for the runtime.
+    expect(markup).not.toContain('role="dialog"');
+    expect(markup).not.toContain("Compose reusable Lumas");
+    expect(markup).not.toContain("lucide-wrench");
+  });
+
+  it("lists Lumas as rows with inline delete and a ⋯ menu, never a dialog", () => {
+    const worker = {
+      id: WorkjetWorkerProfileId.make("luma-1"),
+      name: "Umsetzung",
+      computerId: WorkjetComputerId.make("computer-missing"),
+      harness: "claude-code" as const,
+      llmRouteId: WorkjetLlmRouteId.make("route-1"),
+      modelId: "claude-opus-5-5",
+      reasoning: "high" as const,
+      role: "standard" as const,
+      capabilityIds: [],
+      capabilityBindings: [],
+    };
+    const markup = renderToStaticMarkup(
+      <WorkjetSettingsView
+        draftScopeKey="test-instance"
+        configuration={{ ...DEFAULT_WORKJET_CONFIGURATION, workerProfiles: [worker] }}
+        greppy={greppy}
+        gateway={gateway}
+        automaticWorktreeStorage={automaticWorktreeStorage}
+        onChange={() => undefined}
+      />,
+    );
+    expect(markup).toContain('data-slot="row"');
+    expect(markup).toContain(">Umsetzung<");
+    // Meta: Modell · Harness · Rechner (missing → „—“).
+    expect(markup).toContain("claude-opus-5-5 · Claude Code · —");
+    expect(markup).toContain('aria-label="Löschen"');
+    expect(markup).toContain("Weitere Aktionen");
+    expect(markup).toContain("Rechner fehlt");
+    expect(markup).not.toContain("computer-missing");
+    expect(markup).not.toContain('role="dialog"');
+    expect(markup).not.toContain("Keine Lumas");
   });
 
   it("keeps telemetry free of the Greppy runtime, which lives under Workers", () => {
@@ -152,10 +201,10 @@ describe("Workjet configuration settings", () => {
         onChange={() => undefined}
       />,
     );
-    expect(telemetryMarkup).toContain("Claude Code events");
-    expect(telemetryMarkup).toContain("Luma runtime events");
-    expect(telemetryMarkup).toContain("Workjet telemetry retention days");
-    expect(telemetryMarkup).not.toContain("Greppy Runtime");
+    expect(telemetryMarkup).toContain("Claude-Code-Ereignisse");
+    expect(telemetryMarkup).toContain("Luma-Ereignisse");
+    expect(telemetryMarkup).toContain("Aufbewahrung (Tage)");
+    expect(telemetryMarkup).not.toContain(GREPPY_TITLE);
 
     const capabilitiesMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
@@ -168,7 +217,7 @@ describe("Workjet configuration settings", () => {
         onChange={() => undefined}
       />,
     );
-    expect(capabilitiesMarkup).toContain("Greppy Runtime");
+    expect(capabilitiesMarkup).toContain(GREPPY_TITLE);
   });
 
   it("shows selected-server automatic storage health in Execution", () => {
@@ -194,17 +243,17 @@ describe("Workjet configuration settings", () => {
       />,
     );
 
-    expect(markup).toContain("Automatic worktree storage");
+    expect(markup).toContain(searchableSetting("automatic-worktree-storage").title);
     // The label alone, never the raw environment id beside it.
-    expect(markup).toContain("Selected server: Code server");
+    expect(markup).toContain("Rechner: Code server");
     expect(markup).not.toContain("code-server</");
-    expect(markup).toContain("Writable · 125 GB available");
-    expect(markup).toContain("Effective canonical path:");
-    expect(markup).toContain("Use default");
-    expect(markup).toContain(
-      "Only newly created automatic worktrees use the location; existing worktrees are not moved.",
-    );
+    expect(markup).toContain("Beschreibbar · 125 GB frei");
+    expect(markup).toContain("Standard");
+    // No explanatory sentences and no raw canonical paths beside the input.
+    expect(markup).not.toContain("Effective canonical path");
+    expect(markup).not.toContain("existing worktrees are not moved");
     expect(formatAvailableBytes(1_500_000_000)).toBe("1.50 GB");
+    expect(formatAvailableBytes(Number.NaN)).toBe("—");
   });
 
   it("checks, applies, and resets storage only through valid selected-server controls", () => {
@@ -276,13 +325,13 @@ describe("Workjet Greppy runtime settings", () => {
   });
 
   it("renders loading, available, unavailable, unsupported, and typed failure states", () => {
-    expect(render(null, { loading: true })).toContain("Checking the selected server");
+    expect(render(null, { loading: true })).toContain("Prüft …");
     expect(render({ ...baseSnapshot, availability: "available", source: "managed" })).toContain(
-      "Pinned version 0.3.1",
+      "Verfügbar · Von Workjet verwaltet · 0.3.1",
     );
     expect(
       render({ ...baseSnapshot, availability: "unavailable", reason: "path-unavailable" }),
-    ).toContain("Unavailable");
+    ).toContain("Nicht verfügbar");
     expect(
       render({
         ...baseSnapshot,
@@ -290,8 +339,11 @@ describe("Workjet Greppy runtime settings", () => {
         reason: "unsupported-host",
         installSupported: false,
       }),
-    ).toContain("Managed install unsupported");
+    ).toContain("Installation hier nicht unterstützt");
     expect(render(null, { failure: true })).toContain('role="alert"');
+    // A runtime icon, never the wrench (UI-Vertrag §5).
+    expect(render(null)).toContain("lucide-terminal");
+    expect(render(null)).not.toContain("lucide-wrench");
   });
 
   it("offers install, repair, refresh, and override guidance without exposing store paths", () => {
@@ -300,15 +352,15 @@ describe("Workjet Greppy runtime settings", () => {
       availability: "unavailable",
       reason: "path-unavailable",
     });
-    expect(installMarkup).toContain("Install Greppy");
-    expect(installMarkup).toContain("Check again");
+    expect(installMarkup).toContain("Greppy installieren");
+    expect(installMarkup).toContain("Erneut prüfen");
 
     const repairMarkup = render({
       ...baseSnapshot,
       availability: "unavailable",
       reason: "managed-invalid",
     });
-    expect(repairMarkup).toContain("Repair Greppy");
+    expect(repairMarkup).toContain("Greppy reparieren");
 
     const overrideMarkup = render({
       ...baseSnapshot,
@@ -316,12 +368,13 @@ describe("Workjet Greppy runtime settings", () => {
       reason: "override-invalid",
     });
     expect(overrideMarkup).toContain("WORKJET_GREPPY_EXECUTABLE");
-    expect(overrideMarkup).not.toContain("Install Greppy");
-    expect(overrideMarkup).not.toContain("Repair Greppy");
+    expect(overrideMarkup).not.toContain("Greppy installieren");
+    expect(overrideMarkup).not.toContain("Greppy reparieren");
     expect(overrideMarkup).not.toContain("/greppy");
 
-    expect(installMarkup).toContain("all Codex, Claude, and Grok threads on this server");
-    expect(installMarkup).toContain("activation remains configured per thread");
+    // Status line only: the old explanatory row is gone.
+    expect(installMarkup).not.toContain("Codex, Claude, and Grok threads");
+    expect(installMarkup).not.toContain("Shared server capability");
   });
 
   it("derives the correct action from authoritative snapshots", () => {
@@ -363,8 +416,7 @@ describe("Workjet Greppy runtime settings", () => {
     });
     expect(addToast).toHaveBeenCalledWith({
       type: "success",
-      title: "Greppy installed",
-      description: "Server runtime status was refreshed.",
+      title: "Greppy installiert",
     });
 
     const internalText = "/private/state stderr=https://credential.example.test";
@@ -384,8 +436,8 @@ describe("Workjet Greppy runtime settings", () => {
     const failureToast = addToast.mock.calls.at(-1)?.[0];
     expect(failureToast).toMatchObject({
       type: "error",
-      title: "Could not repair Greppy",
-      description: "The managed Greppy runtime operation failed.",
+      title: "Greppy-Reparatur fehlgeschlagen",
+      description: "Greppy-Vorgang fehlgeschlagen.",
     });
     expect(JSON.stringify(failureToast)).not.toContain(internalText);
     expect(greppyOperationFailureDescription(new Error(internalText))).not.toContain(internalText);

@@ -22,7 +22,7 @@ describe("Project Supervisor Luma selection", () => {
     const ready = renderToStaticMarkup(
       <ProjectSupervisorLumaSummaryView lumaId={profile.id} phase="ready" profiles={[profile]} />,
     );
-    expect(ready).toContain(`Configured · Claude Code · ${profile.modelId}`);
+    expect(ready).toContain(`Konfiguriert · Claude Code · ${profile.modelId}`);
     const unavailable = renderToStaticMarkup(
       <ProjectSupervisorLumaSummaryView
         lumaId={profile.id}
@@ -30,7 +30,7 @@ describe("Project Supervisor Luma selection", () => {
         profiles={[profile]}
       />,
     );
-    expect(unavailable).toContain("Configured Luma unavailable");
+    expect(unavailable).toContain("Luma nicht verfügbar");
     expect(unavailable).not.toContain(profile.modelId);
   });
 
@@ -46,7 +46,7 @@ describe("Project Supervisor Luma selection", () => {
       />,
     );
     expect(html).toContain("Molecularity supervisor");
-    expect(html).toContain("Configured ·");
+    expect(html).toContain("Konfiguriert ·");
     expect(html).toContain(profile.modelId);
     expect(html).toContain(profile.computerId);
     expect(html).not.toContain("Executed");
@@ -64,7 +64,7 @@ describe("Project Supervisor Luma selection", () => {
     );
     expect(html).toContain('disabled=""');
     expect(html).toContain(`value="${profile.id}"`);
-    expect(html).toContain("The saved selection is retained");
+    expect(html).toContain("Auswahl bleibt");
     expect(html).not.toContain(profile.modelId);
   });
 });

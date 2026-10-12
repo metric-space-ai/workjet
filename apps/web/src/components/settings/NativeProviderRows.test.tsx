@@ -107,19 +107,17 @@ describe("Native provider account rows", () => {
     });
     expect(rendered).toContain("Z.ai (GLM) · Welsch");
     expect(rendered).toContain("glm-5.3-flash");
-    expect(rendered).toContain('aria-label="Models for zai on CTOX"');
+    expect(rendered).toContain('aria-label="Modelle für zai"');
     expect(rendered).not.toContain("OAuth");
     expect(rendered).not.toContain('role="switch"');
-    expect(control(rendered, "Check glm-5.3-flash")).toContain("disabled");
-    expect(rendered).toContain(
-      "Hi checks are not yet available for this provider on this CTOX instance",
-    );
-    expect(rendered).not.toContain("Model check passed");
-    expect(control(rendered, "Permanently remove instance account native-api-fixture")).toContain(
-      "disabled",
-    );
-    expect(rendered).toContain("Removal is not available for this account.");
-    expect(rendered).not.toContain("Update CTOX");
+    expect(control(rendered, "glm-5.3-flash prüfen")).toContain("disabled");
+    expect(rendered).toContain("Prüfung nicht verfügbar");
+    expect(rendered).not.toContain("Prüfung bestanden");
+    expect(control(rendered, "Konto 1 entfernen")).toContain("disabled");
+    expect(rendered).toContain("Entfernen nicht möglich");
+    // The raw account id stays in non-visible automation hooks only.
+    expect(rendered).not.toMatch(/>[^<]*native-api-fixture/);
+    expect(rendered).not.toContain("CTOX aktualisieren");
   });
   it("keeps provider model fields separate and shows a shared refresh failure once", () => {
     const rendered = registryHtml(
@@ -131,8 +129,8 @@ describe("Native provider account rows", () => {
       false,
       "The instance refresh failed.",
     );
-    expect(rendered).toContain('aria-label="Models for claude on CTOX"');
-    expect(rendered).toContain('aria-label="Models for zai on CTOX"');
+    expect(rendered).toContain('aria-label="Modelle für claude"');
+    expect(rendered).toContain('aria-label="Modelle für zai"');
     expect(rendered).toContain("claude-opus-5-5");
     expect(rendered).toContain("glm-5.3-flash");
     expect(rendered.match(/role="alert"/g)).toHaveLength(1);
@@ -146,7 +144,7 @@ describe("Native provider account rows", () => {
       providers: [{ ...apiSelection, provider: "ctox_proxy" }],
     });
     expect(rendered).toContain("ctox_proxy · Welsch");
-    expect(rendered).toContain('aria-label="Models for ctox_proxy on CTOX"');
+    expect(rendered).toContain('aria-label="Modelle für ctox_proxy"');
     expect(rendered).toContain("glm-5.3-flash");
   });
 
@@ -166,10 +164,10 @@ describe("Native provider account rows", () => {
         },
       ],
     });
-    expect(rendered).toContain("Model check passed");
+    expect(rendered).toContain("Prüfung bestanden");
     expect(rendered).toContain("123 ms");
-    expect(rendered).toContain("Check all");
-    expect(rendered).not.toContain("Inference not checked");
+    expect(rendered).toContain("Alle prüfen");
+    expect(rendered).not.toContain("Nicht geprüft");
   });
   it("shows real model failure with a fix and local cooldown as a separate unavailable state", () => {
     const base = {
@@ -183,8 +181,8 @@ describe("Native provider account rows", () => {
       ...registry.accounts[0]!,
       modelChecks: [{ ...base, status: "failed", source: "upstream", failure: "model_not_found" }],
     });
-    expect(red).toContain("Model check failed: model_not_found");
-    expect(red).toContain("Refresh the live model list");
+    expect(red).toContain("Prüfung fehlgeschlagen: model_not_found");
+    expect(red).toContain("Modellliste neu laden");
     const local = html({
       ...registry.accounts[0]!,
       modelChecks: [
@@ -198,9 +196,9 @@ describe("Native provider account rows", () => {
         },
       ],
     });
-    expect(local).toContain("Model check unavailable: gateway_cooldown");
-    expect(local).toContain("Gateway retry after");
-    expect(local).not.toContain("Model check failed");
+    expect(local).toContain("Prüfung nicht verfügbar: gateway_cooldown");
+    expect(local).toContain("Neuversuch ab");
+    expect(local).not.toContain("Prüfung fehlgeschlagen");
     expect(local).not.toContain("Credentials rejected");
   });
 
@@ -219,8 +217,8 @@ describe("Native provider account rows", () => {
       const rendered = renderToStaticMarkup(
         <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
       );
-      expect(rendered).toContain("Accounts not loaded");
-      expect(rendered).not.toContain("0 instance accounts");
+      expect(rendered).toContain("Konten nicht geladen");
+      expect(rendered).not.toContain("0 Konten");
       if (error) expect(rendered).toContain(error);
     },
   );
@@ -237,33 +235,32 @@ describe("Native provider account rows", () => {
     const rendered = renderToStaticMarkup(
       <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
     );
-    expect(rendered).toContain("0 instance accounts");
-    expect(rendered).not.toContain("Accounts not loaded");
+    expect(rendered).toContain("0 Konten");
+    expect(rendered).not.toContain("Konten nicht geladen");
   });
   it("keeps previously observed accounts visible when refreshing fails", () => {
     const rendered = html(registry.accounts[0]!, false, "guest_failed");
-    expect(rendered).toContain("1 instance accounts");
-    expect(rendered).toContain(`Account ${accountId.slice(0, 8)}`);
-    expect(rendered).not.toContain("Accounts not loaded");
+    expect(rendered).toContain("1 Konten");
+    expect(rendered).toContain("Konto 1");
+    expect(rendered).not.toMatch(new RegExp(`>[^<]*${accountId.slice(0, 8)}`));
+    expect(rendered).not.toContain("Konten nicht geladen");
   });
   it("places the account toggle and permanent removal beside the full model name", () => {
     const rendered = html();
     expect(rendered).toContain('role="switch"');
-    expect(rendered).toContain(`aria-label="Use instance account ${accountId}"`);
-    expect(rendered).toContain(`aria-label="Permanently remove instance account ${accountId}"`);
+    expect(rendered).toContain(`aria-label="Konto 1 aktiv"`);
+    expect(rendered).toContain(`aria-label="Konto 1 entfernen"`);
     expect(rendered).toContain("claude-opus-5-5");
-    expect(rendered).toContain("Inference not checked");
+    expect(rendered).toContain("Nicht geprüft");
     expect(rendered).not.toContain("Inference verified");
-    expect(rendered).not.toContain("Remove account</button>");
+    expect(rendered).not.toContain("Entfernen</button>");
   });
   it("does not offer a writable toggle or enabled trash action from an older holder", () => {
     const { controls: _controls, ...older } = registry.accounts[0]!;
     const rendered = html(older);
     expect(rendered).not.toContain('role="switch"');
-    expect(rendered).toContain("Update CTOX to remove this account here.");
-    expect(control(rendered, `Permanently remove instance account ${accountId}`)).toContain(
-      "disabled",
-    );
+    expect(rendered).toContain("CTOX aktualisieren");
+    expect(control(rendered, "Konto 1 entfernen")).toContain("disabled");
   });
   it("keeps a failed account visible and disables duplicate mutations while awaiting the holder", () => {
     const rendered = html(
@@ -273,17 +270,16 @@ describe("Native provider account rows", () => {
     );
     expect(rendered).toContain('role="alert"');
     expect(rendered).toContain("has not confirmed this account change");
-    expect(rendered).toContain(`Account ${accountId.slice(0, 8)}`);
-    expect(control(rendered, `Use instance account ${accountId}`)).toContain("disabled");
-    expect(control(rendered, `Permanently remove instance account ${accountId}`)).toContain(
-      "disabled",
-    );
+    expect(rendered).toContain("Konto 1");
+    expect(rendered).not.toMatch(new RegExp(`>[^<]*${accountId.slice(0, 8)}`));
+    expect(control(rendered, "Konto 1 aktiv")).toContain("disabled");
+    expect(control(rendered, "Konto 1 entfernen")).toContain("disabled");
   });
   it("renders the actual disabled state without claiming a credential or inference failure", () => {
     const rendered = html({ ...registry.accounts[0]!, enabled: false });
-    expect(rendered).toContain("Enable this CTOX account");
-    expect(control(rendered, `Use instance account ${accountId}`)).not.toContain("checked");
-    expect(rendered).toContain("has not reported limits");
+    expect(rendered).toContain("Konto aktivieren");
+    expect(control(rendered, "Konto 1 aktiv")).not.toContain("checked");
+    expect(rendered).toContain("Keine Limits gemeldet");
     expect(rendered).not.toContain("Credentials rejected");
   });
 });

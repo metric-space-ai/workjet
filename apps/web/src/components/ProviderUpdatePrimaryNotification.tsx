@@ -20,7 +20,7 @@ import {
   providerUpdateNotificationKey,
   type ProviderUpdateToastView,
 } from "./ProviderUpdateLaunchNotification.logic";
-import { stackedThreadToast, toastManager } from "./ui/toast";
+import { toastManager } from "./ui/toast";
 import { useAtomCommand } from "../state/use-atom-command";
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
@@ -66,7 +66,8 @@ function updateProviderUpdateToast(input: {
     toastManager.update(input.toastId, {
       type: input.view.type,
       title: input.view.title,
-      description: input.view.description,
+      // Eine Zeile (UI-Vertrag): nur der Titel, keine Erklärzeile.
+      description: undefined,
       timeout: 0,
       // Base UI merges toast updates with the existing toast. Explicitly clear
       // the prompt action so its guarded Update handler cannot linger as a
@@ -82,23 +83,21 @@ function updateProviderUpdateToast(input: {
     return;
   }
 
-  toastManager.update(
-    input.toastId,
-    stackedThreadToast({
-      type: input.view.type,
-      title: input.view.title,
-      description: input.view.description,
-      timeout: 0,
-      actionProps: {
-        children: "Settings",
-        onClick: input.openSettings,
-      },
+  // Eine Zeile mit der Aktion daneben (kein gestapeltes Layout).
+  toastManager.update(input.toastId, {
+    type: input.view.type,
+    title: input.view.title,
+    description: undefined,
+    timeout: 0,
+    actionProps: {
+      children: "Harnesses",
+      onClick: input.openSettings,
+    },
+    data: {
+      hideCopyButton: true,
       actionVariant: "outline",
-      data: {
-        hideCopyButton: true,
-      },
-    }),
-  );
+    },
+  });
 }
 
 function isTerminalProviderUpdateToastView(view: ProviderUpdateToastView) {
@@ -283,42 +282,31 @@ export function ProviderUpdatePrimaryNotification() {
       })();
     };
 
-    toastId = toastManager.add(
-      stackedThreadToast({
-        type: initialView.type,
-        title: initialView.title,
-        description: initialView.description,
-        timeout: 8_000,
-        actionProps:
-          oneClickProviders.length > 0
-            ? {
-                children: "Update",
-                onClick: runUpdates,
-              }
-            : {
-                children: "Settings",
-                onClick: openSettings,
-              },
+    // Eine Zeile, eine Aktion: „OpenCode 1.19.0 verfügbar · [Aktualisieren]“.
+    toastId = toastManager.add({
+      type: initialView.type,
+      title: initialView.title,
+      timeout: 8_000,
+      actionProps:
+        oneClickProviders.length > 0
+          ? {
+              children: "Aktualisieren",
+              onClick: runUpdates,
+            }
+          : {
+              children: "Harnesses",
+              onClick: openSettings,
+            },
+      data: {
         actionVariant: oneClickProviders.length > 0 ? "default" : "outline",
-        data: {
-          leadingIcon:
-            updateProviders.length === 1 ? (
-              <ProviderUpdateToastIcon provider={updateProviders[0]!.driver} />
-            ) : undefined,
-          hideCopyButton: true,
-          onClose: dismissPrompt,
-          ...(oneClickProviders.length > 0
-            ? {
-                secondaryActionProps: {
-                  children: "Settings",
-                  onClick: openSettings,
-                },
-                secondaryActionVariant: "outline" as const,
-              }
-            : {}),
-        },
-      }),
-    );
+        leadingIcon:
+          updateProviders.length === 1 ? (
+            <ProviderUpdateToastIcon provider={updateProviders[0]!.driver} />
+          ) : undefined,
+        hideCopyButton: true,
+        onClose: dismissPrompt,
+      },
+    });
     activeToastRef.current = { kind: "prompt", key: notificationKey, toastId };
   }, [
     updateProvider,

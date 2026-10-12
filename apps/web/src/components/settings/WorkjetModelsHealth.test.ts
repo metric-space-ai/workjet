@@ -57,7 +57,7 @@ describe("Models account recovery", () => {
       };
       const fresh = modelsAccountHealth({ ...account, provider: "kimi", balance }, 1001);
       expect(fresh.status).toBe("unavailable");
-      expect(fresh.message).toContain("balance is exhausted");
+      expect(fresh.message).toContain("Guthaben aufgebraucht");
       expect(fresh.retryAtMs).toBeNull();
       const stale = modelsAccountHealth({ ...account, provider: "kimi", balance }, 301000);
       expect(stale.balance?.fresh).toBe(false);
@@ -240,7 +240,7 @@ describe("Models account recovery", () => {
       expect(health.retryAtMs).toBe(5000);
       expect(health.message).toContain(`HTTP ${generationHttpStatus}`);
       expect(health.message).not.toContain("Sign-in expired");
-      expect(health.message).not.toContain("Limit reached");
+      expect(health.message).not.toContain("Limit erreicht");
     },
   );
 

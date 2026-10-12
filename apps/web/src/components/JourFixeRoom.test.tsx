@@ -15,11 +15,11 @@ describe("Jour fixe room states", () => {
   it("opens native review in the main area without claiming the goal is confirmed", () => {
     const html = renderToStaticMarkup(<JourFixeRoom {...props} onConfirmTodos={async () => {}} />);
     expect(html).toContain('data-workjet-meeting-review=""');
-    expect(html).toContain("Proposed to-dos");
+    expect(html).toContain("Vorgeschlagene Aufgaben");
     expect(html).toContain("Verify persistence");
     expect(html).toContain("Comment 1 · Slide 1");
     expect(html).toContain("Transcript 1");
-    expect(html).not.toContain("Confirmed to-dos");
+    expect(html).not.toContain("Bestätigte Aufgaben");
   });
   it("requires explicit task owners and rejects an empty Core goal proposal", () => {
     const render = (
@@ -34,16 +34,16 @@ describe("Jour fixe room states", () => {
         />,
       );
     const unowned = render(meeting.todos!.items.map((todo) => ({ ...todo, owner: "" })));
-    expect(unowned).toContain('aria-label="Todo 1 owner"');
-    expect(unowned).toContain("Assign an owner to each to-do before confirming.");
+    expect(unowned).toContain('aria-label="Aufgabe 1 Verantwortlich"');
+    expect(unowned).toContain("Jede Aufgabe braucht Verantwortliche.");
     const empty = render([]);
-    expect(empty).toContain("Add at least one to-do before confirming.");
+    expect(empty).toContain("Mindestens eine Aufgabe nötig.");
     expect(empty).not.toContain("Confirm no to-dos for this meeting");
     const owned = render(
       meeting.todos!.items.map((todo) => ({ ...todo, owner: "Project supervisor" })),
     );
     expect(owned).toContain('value="Project supervisor"');
-    expect(owned).not.toContain("Assign an owner to each to-do before confirming.");
+    expect(owned).not.toContain("Jede Aufgabe braucht Verantwortliche.");
   });
   it("renders planned/preparing without live editing controls or narration", () => {
     for (const state of ["planned", "preparing"] as const) {
@@ -55,9 +55,9 @@ describe("Jour fixe room states", () => {
           onMessage={async () => {}}
         />,
       );
-      expect(html).not.toContain("Place a comment on the slide");
-      expect(html).not.toContain("Message to supervisor");
-      expect(html).toContain(state === "preparing" ? "preparing the deck" : "No deck is available");
+      expect(html).not.toContain("Kommentar auf Folie setzen");
+      expect(html).not.toContain("Nachricht an Supervisor");
+      expect(html).toContain(state === "preparing" ? "bereitet Folien vor" : "Keine Folien");
     }
   });
   it("does not execute HTML or fetch arbitrary remote images from slide markdown", () => {
@@ -94,7 +94,7 @@ describe("Jour fixe room states", () => {
     const html = renderToStaticMarkup(
       <JourFixeRoom {...props} meeting={{ ...meeting, state: "live", transcript }} />,
     );
-    expect(html).toContain("Show earlier messages");
+    expect(html).toContain("Frühere anzeigen");
     expect(html).not.toContain("Evidence turn 19.");
     expect(html).toContain("Evidence turn 119.");
     expect(html.indexOf("Evidence turn 21.")).toBeLessThan(html.indexOf("Evidence turn 22."));
@@ -110,9 +110,9 @@ describe("Jour fixe room states", () => {
           onMessage={async () => {}}
         />,
       );
-      expect(html).not.toContain("Place a comment on the slide");
-      expect(html).not.toContain("Message to supervisor");
-      expect(html).not.toContain("Confirm 1 to-dos");
+      expect(html).not.toContain("Kommentar auf Folie setzen");
+      expect(html).not.toContain("Nachricht an Supervisor");
+      expect(html).not.toContain("1 Aufgaben bestätigen");
     }
   });
   it("shows presentation slides on the canvas stage and keeps comments behind an explicit mode", () => {
@@ -129,9 +129,9 @@ describe("Jour fixe room states", () => {
         presentation={{ document, editable: true, onSave: async () => {} }}
       />,
     );
-    expect(html).toContain("Loading the slide…");
-    expect(html).toContain("Comment on slide");
-    expect(html).not.toContain("Place a comment on the slide");
+    expect(html).toContain("Folie wird geladen …");
+    expect(html).toContain("Folie kommentieren");
+    expect(html).not.toContain("Kommentar auf Folie setzen");
     expect(html).not.toContain(first.markdown.split("\n")[0]!.slice(0, 24));
   });
   it("keeps the markdown stage for slides that are not in the presentation", () => {
@@ -143,7 +143,7 @@ describe("Jour fixe room states", () => {
         presentation={{ document: jourFixeDeck, editable: true, onSave: async () => {} }}
       />,
     );
-    expect(html).toContain("Place a comment on the slide");
-    expect(html).not.toContain("Comment on slide");
+    expect(html).toContain("Kommentar auf Folie setzen");
+    expect(html).not.toContain("Folie kommentieren");
   });
 });

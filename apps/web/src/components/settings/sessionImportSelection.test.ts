@@ -129,7 +129,7 @@ describe("complete conversation selection", () => {
             : { ...lastPage([candidate(2), candidate(4)]), discoveryVersion: "b".repeat(64) },
         onCandidates,
       }),
-    ).rejects.toThrow("changed during selection");
+    ).rejects.toThrow("während der Auswahl geändert");
     expect(onCandidates).toHaveBeenCalledOnce();
     expect(onCandidates).toHaveBeenCalledWith([candidate(1), candidate(2)], 2);
   });

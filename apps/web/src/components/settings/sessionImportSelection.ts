@@ -30,25 +30,17 @@ export async function selectAllSessionImportCandidates(input: {
     });
     if (!input.isActive()) return;
     if (!page.discoveryVersion)
-      throw new Error(
-        "The connected server cannot detect source changes. Update it before selecting all.",
-      );
+      throw new Error("Server erkennt keine Änderungen. Server aktualisieren.");
     if (discoveryVersion !== undefined && page.discoveryVersion !== discoveryVersion)
-      throw new Error(
-        "The source conversations changed during selection. Refresh and select all again.",
-      );
+      throw new Error("Unterhaltungen während der Auswahl geändert. Neu laden.");
     discoveryVersion = page.discoveryVersion;
     if (page.discoveryLimitReached)
-      throw new Error(
-        "The source scan is incomplete. Refresh or update the connected server before selecting all.",
-      );
+      throw new Error("Suche unvollständig. Neu laden oder Server aktualisieren.");
     const nextOffset = page.nextOffset;
     if (nextOffset == null && page.truncated)
-      throw new Error(
-        "The connected server cannot continue this selection. Update it and try again.",
-      );
+      throw new Error("Server kann die Auswahl nicht fortsetzen. Server aktualisieren.");
     if (nextOffset != null && (!Number.isSafeInteger(nextOffset) || nextOffset <= offset))
-      throw new Error("The conversation page did not advance. Refresh and try again.");
+      throw new Error("Seite rückt nicht vor. Neu laden.");
     const candidates = page.candidates.filter((candidate) => {
       if (seen.has(candidate.candidateId)) return false;
       seen.add(candidate.candidateId);

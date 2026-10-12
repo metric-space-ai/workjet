@@ -40,7 +40,7 @@ export function SupervisorTurnKindPicker(props: {
   const supported = supervisorConversationSupported(props.scope, props.capability);
   return (
     <select
-      aria-label="Supervisor message type"
+      aria-label="Nachrichtenart"
       value={props.value}
       disabled={props.disabled}
       onChange={(event) => {
@@ -49,9 +49,9 @@ export function SupervisorTurnKindPicker(props: {
       }}
       className="rounded border border-border bg-background px-2 py-1 text-xs"
     >
-      <option value="work">Task</option>
+      <option value="work">Aufgabe</option>
       <option value="conversation" disabled={!supported}>
-        {supported ? "Chat" : "Chat (unavailable)"}
+        {supported ? "Chat" : "Chat (nicht verfügbar)"}
       </option>
     </select>
   );

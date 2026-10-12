@@ -73,9 +73,9 @@ describe("native Supervisor conversation display", () => {
     });
     expect(html).toContain("&lt;script&gt;owner context&lt;/script&gt;");
     expect(html).not.toContain("<script>");
-    expect(html).toContain("Context receipt pending");
-    expect(html).toContain("running · Attempt 1");
-    expect(html).not.toContain("Saved for the task’s next step");
+    expect(html).toContain("Unbestätigt");
+    expect(html).toContain("running · Versuch 1");
+    expect(html).not.toContain("Gespeichert");
   });
   it("renders streamed emphasis and lists with the existing chat typography", () => {
     const html = render([{ ...reply, text: "**Belegt**\n\n- Erstens\n- Zweitens" }]);
@@ -84,7 +84,7 @@ describe("native Supervisor conversation display", () => {
     expect(html).toContain("<li>Erstens</li>");
     expect(html).toContain("chat-markdown");
     expect(html).not.toContain("**Belegt**");
-    expect(html).toContain("running · Attempt 1");
+    expect(html).toContain("running · Versuch 1");
   });
   it("renders retained final answers as Markdown too", () => {
     const html = render([], {
@@ -109,22 +109,22 @@ describe("native Supervisor conversation display", () => {
   });
   it("renders public text as a reply without declaring a running task completed", () => {
     const html = render([reply]);
-    expect(html).toContain('aria-label="Supervisor reply"');
+    expect(html).toContain('aria-label="Supervisor-Antwort"');
     expect(html).toContain("Actual partial model reply");
-    expect(html).toContain("running · Attempt 1");
+    expect(html).toContain("running · Versuch 1");
     expect(html).not.toContain("Awaiting confirmation");
   });
   it("labels actual commentary separately and escapes text", () => {
     const html = render([{ ...reply, phase: "commentary", text: "<script>unsafe()</script>" }]);
-    expect(html).toContain('aria-label="Supervisor commentary"');
-    expect(html).toContain("Supervisor · Progress");
+    expect(html).toContain('aria-label="Supervisor-Kommentar"');
+    expect(html).toContain("Supervisor · Fortschritt");
     expect(html).toContain("&lt;script&gt;unsafe()&lt;/script&gt;");
     expect(html).not.toContain("<script>");
   });
   it("keeps an incomplete reply visible with an explicit recovery action", () => {
     const html = render([{ ...reply, incomplete: true }]);
     expect(html).toContain("Actual partial model reply");
-    expect(html).toContain("Reply incomplete. Reload execution history.");
+    expect(html).toContain("Antwort unvollständig");
   });
   it("does not duplicate an identical authoritative terminal result", () => {
     const html = render([reply], {
@@ -140,6 +140,6 @@ describe("native Supervisor conversation display", () => {
     expect(html.split(reply.text).length - 1).toBe(1);
   });
   it("does not fabricate a reply from an empty item completion", () => {
-    expect(render([{ ...reply, text: "" }])).not.toContain('aria-label="Supervisor reply"');
+    expect(render([{ ...reply, text: "" }])).not.toContain('aria-label="Supervisor-Antwort"');
   });
 });

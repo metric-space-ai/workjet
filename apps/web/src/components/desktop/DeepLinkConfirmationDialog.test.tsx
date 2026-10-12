@@ -1,8 +1,10 @@
 import type { DesktopPendingDeepLink } from "@workjet/contracts";
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { DeepLinkConfirmationPrompt } from "./DeepLinkConfirmationDialog";
+import type { InlineConfirmBarProps } from "../InlineNoticeSlot";
+import { DeepLinkConfirmationPrompt, describeDeepLinkTarget } from "./DeepLinkConfirmationDialog";
 
 const link: DesktopPendingDeepLink = {
   linkId: "deep-link-1",
@@ -13,45 +15,33 @@ const link: DesktopPendingDeepLink = {
   hash: "",
 };
 
-type ClickableProps = Record<string, unknown> & { readonly onClick?: () => void };
-
-function findByMarker(node: ReactNode, marker: string): ClickableProps | null {
-  for (const child of Children.toArray(node)) {
-    if (!isValidElement(child)) continue;
-    const props = (child as ReactElement<ClickableProps>).props;
-    if (props[marker] !== undefined) return props;
-    const found = findByMarker(props["children"] as ReactNode, marker);
-    if (found) return found;
-  }
-  return null;
-}
-
-function collectText(node: ReactNode): string {
-  return Children.toArray(node)
-    .map((child) => {
-      if (typeof child === "string" || typeof child === "number") return String(child);
-      if (!isValidElement(child)) return "";
-      return collectText((child as ReactElement<ClickableProps>).props["children"] as ReactNode);
-    })
-    .join(" ");
-}
-
 describe("DeepLinkConfirmationPrompt", () => {
-  // The dialog body renders through a portal, so static markup is empty here;
-  // the element tree is the observable surface in this environment.
-  it("shows the canonical target the confirmation applies to", () => {
-    const element = DeepLinkConfirmationPrompt({
-      link,
-      onConfirm: () => undefined,
-      onDismiss: () => undefined,
-    });
+  it("names the target as a place, never as a raw URL", () => {
+    expect(describeDeepLinkTarget("/")).toBe("Projekte");
+    expect(describeDeepLinkTarget("/settings/usage")).toBe("Einstellungen");
+    expect(describeDeepLinkTarget("/pull-requests")).toBe("Pull Requests");
+    expect(describeDeepLinkTarget("/draft/abc")).toBe("Neue Unterhaltung");
+    expect(describeDeepLinkTarget("/env-1/thread-1")).toBe("Unterhaltung");
+  });
 
-    const target = findByMarker(element, "data-deep-link-target");
-    expect(target).not.toBeNull();
-    expect(collectText(target?.["children"] as ReactNode)).toContain(
-      "workjet://app/threads/abc?tab=diff",
+  it("asks inline (no modal) and shows the target place the confirmation applies to", () => {
+    const markup = renderToStaticMarkup(
+      <DeepLinkConfirmationPrompt
+        link={link}
+        onConfirm={() => undefined}
+        onDismiss={() => undefined}
+      />,
     );
-    expect(collectText(element)).toContain("ctox-desktop");
+
+    expect(markup).toContain("data-deep-link-confirmation");
+    expect(markup).toContain("Externen Link öffnen?");
+    expect(markup).toMatch(/data-deep-link-target[^>]*>Unterhaltung</);
+    expect(markup).not.toContain("workjet://");
+    expect(markup).toContain(">Öffnen<");
+    expect(markup).toContain(">Abbrechen<");
+    expect(markup).not.toContain('role="dialog"');
+    expect(markup).not.toContain('role="alertdialog"');
+    expect(markup).not.toContain("aria-modal");
   });
 
   it("navigates through the supplied callback only when the user confirms", () => {
@@ -61,17 +51,13 @@ describe("DeepLinkConfirmationPrompt", () => {
       link,
       onConfirm: () => navigated.push(link.canonicalUrl),
       onDismiss: () => dismissed.push(link.linkId),
-    });
+    }) as ReactElement<InlineConfirmBarProps>;
 
-    const dismiss = findByMarker(element, "data-deep-link-dismiss");
-    expect(dismiss).not.toBeNull();
-    dismiss?.onClick?.();
+    element.props.onCancel();
     expect(navigated).toEqual([]);
     expect(dismissed).toEqual([link.linkId]);
 
-    const confirm = findByMarker(element, "data-deep-link-confirm");
-    expect(confirm).not.toBeNull();
-    confirm?.onClick?.();
+    element.props.onConfirm();
     expect(navigated).toEqual([link.canonicalUrl]);
   });
 });

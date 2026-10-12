@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind, type ProviderOptionDescriptor } from "@workjet/contracts";
-import { buildTraitsTriggerDisplay } from "./TraitsPicker";
+import { buildTraitsTriggerDisplay, traitDisplayLabel } from "./TraitsPicker";
 
 function selectDescriptor(
   id: string,
@@ -47,14 +47,14 @@ function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>) {
 describe("buildTraitsTriggerDisplay", () => {
   it("omits fast mode from the label entirely when it is off", () => {
     expect(display([EFFORT, fastModeDescriptor(false), CONTEXT_WINDOW])).toEqual({
-      label: "Effort High · Context 1M",
+      label: "Aufwand Hoch · Kontext 1M",
       showFastModeIcon: false,
     });
   });
 
   it("shows the bolt instead of a text label when fast mode is on", () => {
     expect(display([EFFORT, fastModeDescriptor(true), CONTEXT_WINDOW])).toEqual({
-      label: "Effort High · Context 1M",
+      label: "Aufwand Hoch · Kontext 1M",
       showFastModeIcon: true,
     });
   });
@@ -70,11 +70,11 @@ describe("buildTraitsTriggerDisplay", () => {
     );
 
     expect(display([EFFORT, serviceTier])).toEqual({
-      label: "Effort High",
+      label: "Aufwand Hoch",
       showFastModeIcon: false,
     });
     expect(display([EFFORT, { ...serviceTier, currentValue: "priority" }])).toEqual({
-      label: "Effort High",
+      label: "Aufwand Hoch",
       showFastModeIcon: true,
     });
   });
@@ -87,14 +87,14 @@ describe("buildTraitsTriggerDisplay", () => {
       currentValue: true,
     };
     expect(display([EFFORT, thinking])).toEqual({
-      label: "Effort High · Thinking On",
+      label: "Aufwand Hoch · Denken An",
       showFastModeIcon: false,
     });
   });
 
   it("falls back to a text label when fast mode is the only trait", () => {
     expect(display([fastModeDescriptor(true)])).toEqual({
-      label: "Fast",
+      label: "Schnell",
       showFastModeIcon: false,
     });
     expect(display([fastModeDescriptor(false)])).toEqual({
@@ -127,6 +127,18 @@ describe("buildTraitsTriggerDisplay", () => {
         primarySelectDescriptorId: "reasoningEffort",
         ultrathinkPromptControlled: true,
       }),
-    ).toEqual({ label: "Effort Ultrathink", showFastModeIcon: true });
+    ).toEqual({ label: "Aufwand Ultrathink", showFastModeIcon: true });
+  });
+});
+
+describe("traitDisplayLabel", () => {
+  it("shows provider option labels in German and keeps proper names", () => {
+    expect(traitDisplayLabel("Reasoning")).toBe("Denken");
+    expect(traitDisplayLabel("Fast Mode")).toBe("Schnellmodus");
+    expect(traitDisplayLabel("Context Window")).toBe("Kontextfenster");
+    expect(traitDisplayLabel("Extra high")).toBe("Sehr hoch");
+    expect(traitDisplayLabel("Max")).toBe("Maximal");
+    expect(traitDisplayLabel("Ultrathink")).toBe("Ultrathink");
+    expect(traitDisplayLabel("1M")).toBe("1M");
   });
 });

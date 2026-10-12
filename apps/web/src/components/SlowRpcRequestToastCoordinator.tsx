@@ -1,62 +1,29 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { type SlowRpcAckRequest, useSlowRpcAckRequests } from "../rpc/requestLatencyState";
 import { toastManager } from "./ui/toast";
 
-export type SlowRequestLocale = "de" | "en";
-
-export function resolveSlowRequestLocale(language?: string): SlowRequestLocale {
-  const resolved = language ?? globalThis.navigator?.language ?? "en";
-  return resolved.toLowerCase().startsWith("de") ? "de" : "en";
-}
-
-export function describeSlowRequests(
-  requests: ReadonlyArray<SlowRpcAckRequest>,
-  locale: SlowRequestLocale,
-): string {
+/**
+ * Eine Zeile (UI-Vertrag): „2 Anfragen warten länger als 15 s“. Die einzelnen
+ * Anfragen (Rohdaten) gehören in Einstellungen › Diagnose, nicht in den Toast.
+ */
+export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>): string {
   const count = requests.length;
   // Thresholds vary per method, so report the smallest one the batch has passed.
   const thresholdSeconds = Math.round(
     Math.min(...requests.map((request) => request.thresholdMs)) / 1000,
   );
-
-  if (locale === "de") {
-    return count === 1
-      ? `1 Anfrage wartet länger als ${thresholdSeconds} s.`
-      : `${count} Anfragen warten länger als ${thresholdSeconds} s.`;
-  }
-  return `${count} request${count === 1 ? "" : "s"} waiting longer than ${thresholdSeconds}s.`;
-}
-
-function SlowRequestDetails({
-  requests,
-  locale,
-}: {
-  requests: ReadonlyArray<SlowRpcAckRequest>;
-  locale: SlowRequestLocale;
-}) {
-  return (
-    <ul className="space-y-2.5 text-xs text-muted-foreground">
-      {requests.map((request) => (
-        <li
-          className="min-w-0 border-border/50 border-b pb-2 last:border-b-0 last:pb-0"
-          key={request.requestId}
-        >
-          <div className="wrap-break-word font-medium text-foreground">{request.tag}</div>
-          <div className="mt-0.5 text-[10px] opacity-75">
-            {locale === "de" ? "Gestartet" : "Started"}{" "}
-            {new Date(request.startedAt).toLocaleTimeString(locale === "de" ? "de-DE" : "en-US")}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
+  // Zahl und Einheit bleiben bei 420 px zusammen (geschütztes Leerzeichen).
+  return count === 1
+    ? `1 Anfrage wartet länger als ${thresholdSeconds}\u00a0s`
+    : `${count} Anfragen warten länger als ${thresholdSeconds}\u00a0s`;
 }
 
 export function SlowRpcRequestToastCoordinator() {
   const slowRequests = useSlowRpcAckRequests();
+  const navigate = useNavigate();
   const toastIdRef = useRef<ReturnType<typeof toastManager.add> | null>(null);
-  const locale = resolveSlowRequestLocale();
 
   useEffect(() => {
     if (slowRequests.length === 0) {
@@ -67,19 +34,15 @@ export function SlowRpcRequestToastCoordinator() {
       return;
     }
 
+    // Die eine erlaubte Aktion: die Einzelheiten stehen in Einstellungen › Diagnose.
     const nextToast = {
-      data: {
-        expandableContent: <SlowRequestDetails locale={locale} requests={slowRequests} />,
-        expandableDescriptionTrigger: true,
-        expandableLabels:
-          locale === "de"
-            ? { collapse: "Anfragen ausblenden", expand: "Anfragen anzeigen" }
-            : { collapse: "Hide requests", expand: "Show requests" },
-      },
-      description: describeSlowRequests(slowRequests, locale),
       timeout: 0,
-      title: locale === "de" ? "Einige Anfragen dauern länger" : "Some requests are slow",
+      title: describeSlowRequests(slowRequests),
       type: "warning" as const,
+      actionProps: {
+        children: "Diagnose",
+        onClick: () => void navigate({ to: "/settings/diagnostics" }),
+      },
     };
 
     if (toastIdRef.current === null) {
@@ -87,7 +50,7 @@ export function SlowRpcRequestToastCoordinator() {
     } else {
       toastManager.update(toastIdRef.current, nextToast);
     }
-  }, [locale, slowRequests]);
+  }, [navigate, slowRequests]);
 
   useEffect(
     () => () => {

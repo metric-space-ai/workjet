@@ -4,11 +4,12 @@ import type {
   WorkjetLlmRoute,
 } from "@workjet/contracts";
 import { Fragment, useState } from "react";
-import { PencilIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
+import { Row } from "../ui/row";
 import { searchableSetting } from "./settingsSearch";
-import { ConfirmingDeleteButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsSection } from "./settingsLayout";
 import { WorkjetGatewayModelRoutes } from "./WorkjetGatewayModelRoutes";
 import { WorkjetLlmRouteEditor } from "./WorkjetLlmRouteEditor";
 import { toastManager } from "../ui/toast";
@@ -27,19 +28,14 @@ import { toastManager } from "../ui/toast";
  * settings search and old `#workjet-llm-routes` links keep landing here.
  */
 /**
- * Name the account, not its id. The row used to print the raw
- * `gatewayAccountId` — an opaque hash the operator cannot recognise, on a
- * page whose whole point is telling accounts apart. The id appears only when
- * the catalog cannot resolve it, because then it is the only truthful thing
- * left to show — together with the fact that the account is gone.
+ * Name the account, never its raw id: an opaque hash the operator cannot
+ * recognise. A missing account says so in one short line.
  */
 function describeRouteAccount(accountId: string, catalog: WorkjetGatewayCatalog | null): string {
   const account = catalog?.accounts.find((candidate) => candidate.id === accountId);
-  if (account === undefined) {
-    return `Account not in the gateway catalog (${accountId}). The route cannot serve until it exists again.`;
-  }
+  if (account === undefined) return "Konto fehlt im Katalog";
   const suffix = account.credentialSuffix ? ` · …${account.credentialSuffix}` : "";
-  return `Account: ${account.label} · ${account.provider}${suffix}`;
+  return `${account.label} · ${account.provider}${suffix}`;
 }
 
 export function WorkjetLlmRoutesSection(props: {
@@ -71,11 +67,7 @@ export function WorkjetLlmRoutesSection(props: {
           setEditingRouteId(null);
           // Same reason as the worker save: the saved row may sit below the
           // fold, so the viewport needs evidence (Befund K-A14).
-          toastManager.add({
-            type: "success",
-            title: "LLM route saved",
-            description: route.label,
-          });
+          toastManager.add({ type: "success", title: "Route gespeichert" });
         }}
       />
     </div>
@@ -103,51 +95,40 @@ export function WorkjetLlmRoutesSection(props: {
           }}
         >
           <PlusIcon className="size-3.5" />
-          Add route
+          Route hinzufügen
         </Button>
       }
     >
-      <SettingsRow
-        title="Provider-gateway accounts"
-        description="An LLM route references one Workjet provider-gateway account. The Codex, Claude, and Grok CODE HARNESSES are not routes — a route names the account that answers, a harness runs the session. Models remain selected on Lumas."
-      />
       {addingRoute ? routeEditor : null}
       {props.configuration.llmRoutes.map((route) => (
         <Fragment key={route.id}>
-          <SettingsRow
-            title={route.label}
-            description={
+          <Row
+            name={route.label}
+            meta={
               route.gatewayAccountId === undefined
-                ? "CTOX instance account; manage its models in Settings → Models."
+                ? "Instanz-Konto"
                 : describeRouteAccount(route.gatewayAccountId, props.catalog)
             }
-            control={
-              <span className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Edit LLM route ${route.label}`}
-                  onClick={() => {
-                    setAddingRoute(false);
-                    setEditingRouteId(route.id);
-                  }}
-                >
-                  <PencilIcon className="size-3.5" />
-                </Button>
-                <ConfirmingDeleteButton
-                  label={`LLM route ${route.label}`}
-                  onDelete={() =>
-                    props.onChange({
-                      ...props.configuration,
-                      llmRoutes: props.configuration.llmRoutes.filter(
-                        (candidate) => candidate.id !== route.id,
-                      ),
-                    })
-                  }
-                />
-              </span>
+            onDelete={() =>
+              props.onChange({
+                ...props.configuration,
+                llmRoutes: props.configuration.llmRoutes.filter(
+                  (candidate) => candidate.id !== route.id,
+                ),
+              })
             }
+            deleteLabel="Entfernen"
+            deleteConfirmTitle="Route entfernen?"
+            menuActions={[
+              {
+                label: "Bearbeiten",
+                onSelect: () => {
+                  setAddingRoute(false);
+                  setEditingRouteId(route.id);
+                },
+              },
+            ]}
+            menuLabel={`Aktionen für ${route.label}`}
           />
           {editingRoute?.id === route.id ? routeEditor : null}
         </Fragment>

@@ -15,6 +15,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 import {
   BusinessOsSettingsView,
   importBusinessOsSettingsInvite,
+  formatInviteValidity,
   manualConnectionCredentialText,
   resolveActiveBusinessOsInstanceId,
   visibleBusinessOsInstances,
@@ -82,7 +83,7 @@ describe("Business OS settings scope", () => {
     };
     expect(
       await importBusinessOsSettingsInvite(bridge, "fixture-invite", select, refresh),
-    ).toContain("could not be added");
+    ).toContain("nicht hinzugefügt");
     expect(select).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
@@ -110,18 +111,22 @@ describe("Business OS settings scope", () => {
     ).toEqual(["gpu3-a4500", "WELSCH"]);
   });
 
-  it("fails closed when no active instance exists and keeps the device action visible", () => {
+  it("shows an empty list with the inline add panel and no device section without a selection", () => {
     const markup = renderToStaticMarkup(
-      <BusinessOsSettingsView instances={[]} activeInstanceId={null} />,
+      <BusinessOsSettingsView
+        instances={[]}
+        activeInstanceId={null}
+        addPanel={<span data-testid="add-panel">Instanz hinzufügen</span>}
+      />,
     );
-    expect(markup).toContain("No CTOX instance connected");
-    expect(markup).toContain("Add instance");
-    expect(markup).toContain("Add device");
-    expect(markup).toContain("disabled");
+    expect(markup).toContain("Keine Instanz verbunden");
+    expect(markup).toContain('data-testid="add-panel"');
+    expect(markup).not.toContain("Gerät hinzufügen");
     expect(markup).not.toContain("environment-alpha");
+    expect(markup).not.toContain('role="dialog"');
   });
 
-  it("distinguishes a discovery failure from an empty registry and explains retry", () => {
+  it("distinguishes a discovery failure from an empty registry and offers a retry", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
         instances={[]}
@@ -131,50 +136,56 @@ describe("Business OS settings scope", () => {
       />,
     );
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain("Could not load CTOX instances");
-    expect(markup).toContain("Refresh");
-    expect(markup).not.toContain("No CTOX instance connected");
+    expect(markup).toContain("Instanzen nicht erreichbar");
+    expect(markup).toContain("Erneut versuchen");
+    expect(markup).not.toContain("Keine Instanz verbunden");
   });
 
-  it("keeps the connected-host settings hub available without native discovery", () => {
-    const markup = renderToStaticMarkup(
-      <BusinessOsSettingsView
-        instances={[]}
-        activeInstanceId={null}
-        requiresInstanceSelection={false}
-      />,
-    );
-    expect(markup).toContain("Modelle");
-    expect(markup).toContain("Harnesses");
-    expect(markup).toContain("Rechner");
-    expect(markup).toContain("Lumas");
-    expect(markup).not.toContain("Wähle zuerst eine Instanz aus.");
-  });
-
-  it("makes instance management primary and links to the selected instance settings", () => {
+  it("is one page: no settings grid that duplicates the sidebar, no English captions", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
         instances={[instance("paired:backend-alpha", "WELSCH")]}
         activeInstanceId="paired:backend-alpha"
       />,
     );
-    expect(markup).toContain('aria-label="CTOX instances"');
-    expect(markup).toContain('aria-label="Selected"');
+    for (const duplicate of [">Modelle<", ">Harnesses<", ">Lumas<", "instance-hub:"])
+      expect(markup).not.toContain(duplicate);
+    for (const english of [
+      "Settings for",
+      "Disabled instances retain",
+      "Connected devices",
+      "Add instance",
+      "Refresh",
+      "Select an instance",
+    ])
+      expect(markup).not.toContain(english);
+  });
+
+  it("makes instance management primary with one compact row per instance", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[instance("paired:backend-alpha", "WELSCH")]}
+        activeInstanceId="paired:backend-alpha"
+        network={<span data-testid="network-canvas" />}
+      />,
+    );
+    expect(markup).toContain('aria-label="Instanzen"');
+    expect(markup).toContain("Ausgewählt");
     expect(markup).toContain("WELSCH");
-    expect(markup).toContain("Devices for WELSCH");
-    expect(markup).toContain("Modelle");
-    expect(markup).toContain("Harnesses");
-    expect(markup).toContain("Rechner");
-    expect(markup).toContain("Lumas");
-    expect(markup).not.toContain("globalen Computer-Inventar");
-    expect(markup).not.toContain("Rechner für Code");
-    expect(markup).toContain("<details");
-    expect(markup).not.toContain("<details open");
+    expect(markup).toContain("Geräte · WELSCH");
+    expect(markup).toContain('data-slot="row"');
+    expect(markup).not.toContain("<details");
     expect(markup).not.toContain("Technische Details");
     expect(markup).not.toContain("Darstellungs-ID");
     expect(markup).not.toContain("ctox_dev");
-    expect(markup.indexOf("CTOX instances")).toBeLessThan(markup.indexOf(">Modelle<"));
-    expect(markup.indexOf(">Modelle<")).toBeLessThan(markup.indexOf("Connected devices"));
+    // Netzwerk is a collapsed section; its canvas mounts only when opened.
+    expect(markup).toContain(">Netzwerk<");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("network-canvas");
+    expect(markup.indexOf('aria-label="Instanzen"')).toBeLessThan(
+      markup.indexOf("Geräte · WELSCH"),
+    );
+    expect(markup.indexOf("Geräte · WELSCH")).toBeLessThan(markup.indexOf(">Netzwerk<"));
   });
 
   it("keeps opaque authority identifiers out of regular instance labels", () => {
@@ -188,23 +199,22 @@ describe("Business OS settings scope", () => {
     expect(markup).not.toContain("biz_2a75d5c5-da16-4a17-90d2-a941ad53f095");
   });
 
-  it("shows the exact managed-control blocker instead of choosing a Code computer", () => {
+  it("shows the exact managed-control blocker and keeps the device action disabled", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
         instances={[instance("managed:welsch", "WELSCH", "ctox_dev")]}
         activeInstanceId="managed:welsch"
-        deviceManagementBlockedReason="WELSCH konnte noch nicht bestätigt werden."
+        deviceManagementBlockedReason="WELSCH zuerst einmal in Ops öffnen."
       />,
     );
-    expect(markup).toContain("Add device");
-    expect(markup).toContain("WELSCH konnte noch nicht bestätigt werden");
-    expect(markup).toContain("disabled");
+    expect(markup).toContain("Gerät hinzufügen");
+    expect(markup).toContain("WELSCH zuerst einmal in Ops öffnen.");
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*Gerät hinzufügen/);
     expect(markup).not.toContain("serverautoritativ");
-    expect(markup).not.toContain("Erneuern");
     expect(markup).not.toContain("primaryEnvironment");
   });
 
-  it("renders only sanitized device-edge summaries when a control path is available", () => {
+  it("renders only sanitized device rows with an inline revoke confirmation", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
         instances={[instance("local:welsch", "WELSCH", "local_daemon")]}
@@ -221,10 +231,55 @@ describe("Business OS settings scope", () => {
         onRevokeDevice={() => undefined}
       />,
     );
-    expect(markup).toContain("Workjet device · abcdefgh");
-    expect(markup).toContain("Revoke");
+    expect(markup).toContain("Gerät 1");
+    expect(markup).toContain('aria-label="Trennen"');
     expect(markup).not.toContain("welsch-authority");
     expect(markup).not.toContain("pairing-1");
+    expect(markup).not.toContain("workjet-device-abcdefgh");
+  });
+
+  it("shows device pairing inline, never as a dialog", () => {
+    const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[instance("local:welsch", "WELSCH", "local_daemon")]}
+        activeInstanceId="local:welsch"
+        onAddDevice={() => undefined}
+        activeInvite={{
+          inviteId: "invite-1",
+          link: "workjet://pair?payload=abc",
+          expiresAt,
+          manualConnection: {
+            signalingUrls: ["wss://signal.example.test"],
+            room: "room-1",
+            browserToken: "token",
+            browserTokenHash: "hash",
+            authVersion: "ctox-role-bound-v1",
+            expiresAt,
+          } as never,
+        }}
+        onCloseInvite={() => undefined}
+        onRenewInvite={() => undefined}
+      />,
+    );
+    expect(markup).toContain('data-slot="inline-panel"');
+    expect(markup).toContain("Neuer QR-Code");
+    expect(markup).toContain("QR-Code");
+    expect(markup).toContain("Verbindungsdaten");
+    expect(markup).toContain("Gültig bis");
+    expect(markup).toContain("noch 30 Min.");
+    expect(markup).not.toContain('role="dialog"');
+    expect(markup).not.toContain("Connect a Workjet device");
+  });
+
+  it("states the invite validity with the remaining time", () => {
+    const expiresAt = "2026-10-11T23:30:00Z";
+    const now = Date.parse(expiresAt);
+    expect(formatInviteValidity(expiresAt, now - 23 * 60_000)).toMatch(
+      /^Gültig bis .+ · noch 23 Min\.$/u,
+    );
+    expect(formatInviteValidity(expiresAt, now - 3 * 3_600_000)).toMatch(/noch 3 Std\.$/u);
+    expect(formatInviteValidity(expiresAt, now + 1)).toBe("Abgelaufen");
   });
 
   it("keeps the manual browser credential masked until the user explicitly reveals it", () => {

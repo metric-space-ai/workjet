@@ -11,14 +11,14 @@ export function WorkerSourceConnectionPicker(props: {
 }) {
   return (
     <select
-      aria-label="Choose worker access"
+      aria-label="Luma-Zugang wählen"
       className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1 text-xs disabled:opacity-50 sm:max-w-64"
       value=""
       disabled={props.disabled}
       onChange={(event) => props.choice.select(event.target.value)}
     >
       <option value="" disabled>
-        Choose worker access…
+        Luma-Zugang wählen …
       </option>
       {props.choice.connections.map((entry) => (
         <option key={entry.connectionId} value={entry.connectionId}>

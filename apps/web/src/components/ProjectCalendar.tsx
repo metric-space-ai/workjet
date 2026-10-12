@@ -57,10 +57,10 @@ const MEETING_MINUTES = 60;
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const VIEWS: readonly { readonly value: CalendarView; readonly label: string }[] = [
-  { value: "day", label: "Day" },
-  { value: "week", label: "Week" },
-  { value: "month", label: "Month" },
-  { value: "year", label: "Year" },
+  { value: "day", label: "Tag" },
+  { value: "week", label: "Woche" },
+  { value: "month", label: "Monat" },
+  { value: "year", label: "Jahr" },
 ];
 const WEEKDAY_OFFSETS = Array.from({ length: 7 }, (_, index) => index);
 
@@ -167,7 +167,7 @@ export function buildSessionEvents(
       {
         id: `session:${session.id}`,
         calendarId: SESSION_CALENDAR_ID,
-        title: `${project.title} · Session (${session.runStatus})`,
+        title: `${project.title} · Sitzung (${session.runStatus})`,
         startMs: session.createdAtMs,
         endMs: session.createdAtMs,
         point: true,
@@ -243,7 +243,7 @@ function EventButton({
   readonly event: CalendarEvent;
   readonly placement: "block" | "chip";
 }) {
-  const label = `${event.title}, ${event.allDay ? "all-day" : formatTime(event.startMs)}`;
+  const label = `${event.title}, ${event.allDay ? "ganztägig" : formatTime(event.startMs)}`;
   if (placement === "chip") {
     return (
       <button
@@ -387,9 +387,9 @@ function TimeGrid({
         <div
           className="grid border-b border-border py-1 text-xs"
           style={{ gridTemplateColumns: columns }}
-          aria-label="All-day events"
+          aria-label="Ganztägige Termine"
         >
-          <span className="px-1 text-right text-muted-foreground">all-day</span>
+          <span className="px-1 text-right text-muted-foreground">ganztägig</span>
           {days.map((date) => (
             <div
               key={date}
@@ -501,7 +501,7 @@ function MonthGrid({
                   onClick={() => onOpenDay(date)}
                   className="px-1 text-left text-xs text-muted-foreground hover:text-foreground"
                 >
-                  {dayEvents.length - 3} more
+                  {dayEvents.length - 3} weitere
                 </button>
               ) : null}
             </div>
@@ -605,20 +605,20 @@ export function ProjectCalendar({
 
   return (
     <section
-      aria-label="Project calendar"
+      aria-label="Projektkalender"
       data-workjet-project-calendar=""
       className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]"
     >
       <aside className="order-2 space-y-6 lg:order-1">
         <label className="block text-sm">
-          Project
+          Projekt
           <select
-            aria-label="Calendar project"
+            aria-label="Kalenderprojekt"
             value={projectKey}
             onChange={(event) => setProjectKey(event.target.value)}
             className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2"
           >
-            <option value="all">All projects</option>
+            <option value="all">Alle Projekte</option>
             {projects.map((project) => (
               <option key={project.key} value={project.key}>
                 {project.title}
@@ -633,8 +633,8 @@ export function ProjectCalendar({
           eventDates={eventDates}
           onSelect={setAnchor}
         />
-        <section aria-label="Calendars">
-          <h2 className="mb-2 text-sm font-medium">Calendars</h2>
+        <section aria-label="Kalender">
+          <h2 className="mb-2 text-sm font-medium">Kalender</h2>
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -650,7 +650,7 @@ export function ProjectCalendar({
               }}
             />
             <span className="size-2.5 shrink-0 rounded-full bg-primary" aria-hidden />
-            <span className="min-w-0 break-words">Project meetings</span>
+            <span className="min-w-0 break-words">Regeltermine</span>
           </label>
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
             <input
@@ -666,18 +666,18 @@ export function ProjectCalendar({
                 })
               }
             />
-            Project sessions
+            Projektsitzungen
           </label>
           {sessionsStatus !== undefined && sessionsStatus !== "ready" && (
             <p role="status" className="mt-2 text-xs text-muted-foreground">
               {sessionsStatus === "loading"
-                ? "Loading sessions…"
-                : "Sessions unavailable. Previously loaded sessions may be out of date."}
+                ? "Sitzungen werden geladen …"
+                : "Sitzungen nicht erreichbar. Geladene Sitzungen können veraltet sein."}
             </p>
           )}
           {sessions.some((session) => session.createdAtMs === undefined) && (
             <p role="status" className="mt-2 text-xs text-muted-foreground">
-              Some sessions have no recorded start time.
+              Einige Sitzungen haben keine Startzeit.
             </p>
           )}
           {onRefreshSessions && (
@@ -687,24 +687,22 @@ export function ProjectCalendar({
               disabled={sessionsStatus === "loading"}
               onClick={onRefreshSessions}
             >
-              Refresh sessions
+              Sitzungen aktualisieren
             </Button>
           )}
-          <h3 className="mt-4 text-sm font-medium">Connected accounts</h3>
+          <h3 className="mt-4 text-sm font-medium">Verbundene Konten</h3>
           {accountsLoading && (
             <p role="status" className="text-xs text-muted-foreground">
-              Loading calendar accounts…
+              Kalenderkonten werden geladen …
             </p>
           )}
           {accountsUnavailable && (
             <p role="status" className="text-xs text-muted-foreground">
-              Account calendars unavailable.
+              Kontokalender nicht erreichbar.
             </p>
           )}
           {!accountsLoading && !accountsUnavailable && accountCalendars.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              No calendar accounts connected to this instance.
-            </p>
+            <p className="text-xs text-muted-foreground">Keine Kalenderkonten verbunden.</p>
           )}
           {accountCalendars.map((calendar) => (
             <div key={calendar.id} className="mt-2 text-xs">
@@ -726,35 +724,32 @@ export function ProjectCalendar({
               <p role="status" className="ml-6 text-muted-foreground">
                 {calendar.status === "ready"
                   ? calendar.truncated
-                    ? "Partial sync · more events on the account"
+                    ? "Teilweise abgeglichen · weitere Termine im Konto"
                     : calendar.syncedAtMs === null
-                      ? "Synced"
-                      : `Synced ${new Date(calendar.syncedAtMs).toLocaleTimeString()}`
+                      ? "Abgeglichen"
+                      : `Abgeglichen ${new Date(calendar.syncedAtMs).toLocaleTimeString()}`
                   : calendar.status === "loading"
-                    ? "Syncing…"
+                    ? "Wird abgeglichen …"
                     : calendar.status === "unsupported"
-                      ? "Calendar connection not supported for this account"
-                      : "Sync failed"}
+                      ? "Kalender für dieses Konto nicht unterstützt"
+                      : "Abgleich fehlgeschlagen"}
               </p>
             </div>
           ))}
           {accountsTruncated && (
             <p role="status" className="text-xs text-muted-foreground">
-              The account list is incomplete.
+              Kontenliste unvollständig.
             </p>
           )}
           {onRefreshAccounts && (
             <Button size="sm" variant="ghost" onClick={onRefreshAccounts}>
-              Sync accounts
+              Konten abgleichen
             </Button>
           )}
         </section>
         {unscheduled.length > 0 && (
-          <section aria-label="Projects without a regular meeting">
-            <h2 className="text-sm font-medium">No regular meeting</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Set a project's regular meeting in its settings.
-            </p>
+          <section aria-label="Projekte ohne Regeltermin">
+            <h2 className="text-sm font-medium">Ohne Regeltermin</h2>
             <div className="mt-2 flex flex-wrap gap-1">
               {unscheduled.map((project) => (
                 <Button
@@ -775,14 +770,14 @@ export function ProjectCalendar({
       <div className="order-1 min-w-0 lg:order-2">
         {selectedEvent !== null && (
           <section
-            role="dialog"
-            aria-label="Calendar event details"
+            aria-label="Termindetails"
             className="mb-4 rounded-md border border-border p-4"
+            data-workjet-calendar-event-details=""
           >
             <div className="flex items-start justify-between gap-2">
               <h2 className="font-semibold">{selectedEvent.title}</h2>
               <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
-                Close
+                Schließen
               </Button>
             </div>
             <p className="mt-2 text-sm">
@@ -793,17 +788,17 @@ export function ProjectCalendar({
             {selectedEvent.notes && (
               <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
             )}
-            <p className="mt-2 text-xs text-muted-foreground">Synced account event · read only</p>
+            <p className="mt-2 text-xs text-muted-foreground">Kontotermin · nur lesen</p>
           </section>
         )}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
-            Today
+            Heute
           </Button>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Previous"
+            aria-label="Zurück"
             onClick={() => setAnchor((previous) => shiftAnchor(view, previous, -1))}
           >
             <ChevronLeftIcon />
@@ -811,7 +806,7 @@ export function ProjectCalendar({
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Next"
+            aria-label="Weiter"
             onClick={() => setAnchor((previous) => shiftAnchor(view, previous, 1))}
           >
             <ChevronRightIcon />
@@ -821,7 +816,7 @@ export function ProjectCalendar({
           </h2>
           <div
             role="group"
-            aria-label="Calendar view"
+            aria-label="Kalenderansicht"
             className="inline-flex gap-1 rounded-md border border-border p-1"
           >
             {VIEWS.map((option) => (

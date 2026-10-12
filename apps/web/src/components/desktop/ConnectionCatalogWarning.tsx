@@ -19,12 +19,7 @@ export function ConnectionCatalogWarning() {
   useEffect(
     () =>
       subscribeConnectionCatalogWarning(window.desktopBridge, () => {
-        toastManager.add({
-          type: "info",
-          title: "Saved connections could not be read",
-          description:
-            "Workjet will try the local service for worker access. Saved connections have been preserved.",
-        });
+        toastManager.add({ type: "info", title: "Gespeicherte Verbindungen nicht lesbar" });
       }),
     [],
   );

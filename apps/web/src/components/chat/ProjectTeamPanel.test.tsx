@@ -82,19 +82,19 @@ describe("ProjectTeamPanel directory", () => {
     expect(markup).not.toContain("data-workjet-team-group");
     expect(markup).not.toContain("One-time PR threads");
     expect(markup).not.toContain("gpt-6.1-sol");
-    expect(markup).toContain("Team goal");
-    expect(markup).toContain("Add persistent worker");
+    expect(markup).toContain("Teamziel");
+    expect(markup).toContain("Feste Luma hinzufügen");
   });
   it("shows all three persisted team roles from the supervisor, including its grandchild worker", () => {
     const markup = render(supervisor, [worker, specialist, supervisor]);
     expect(markup).toContain('data-workjet-team-group="supervisor"');
     expect(markup).toContain('data-workjet-team-group="specialist"');
     expect(markup).toContain('data-workjet-team-group="worker"');
-    expect(markup).toContain("Persistent Worker");
-    expect(markup).toContain("One-Shot Worker");
+    expect(markup).toContain("Feste Luma");
+    expect(markup).toContain("Einmal-Luma");
     expect(markup).toContain("Interface specialist");
     expect(markup).toContain("Fix gallery navigation");
-    expect(markup).toContain("Parent: Interface specialist");
+    expect(markup).toContain("Eltern: Interface specialist");
     expect(markup).toContain('aria-current="page"');
   });
 
@@ -121,8 +121,8 @@ describe("ProjectTeamPanel directory", () => {
       "Fach-Lumas title is not a role",
     ])
       expect(markup).not.toContain(title);
-    expect(markup).toContain("No persistent workers yet.");
-    expect(markup).toContain("No one-shot workers yet.");
+    expect(markup).toContain("Noch keine festen Lumas");
+    expect(markup).toContain("Noch keine Einmal-Lumas");
   });
 
   it("retains team navigation from an unclassified legacy conversation without inventing membership", () => {
@@ -134,9 +134,9 @@ describe("ProjectTeamPanel directory", () => {
       workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
     };
     const markup = render(legacy, [legacy, supervisor, specialist, worker]);
-    expect(markup).toContain("Open project supervisor");
+    expect(markup).toContain("Supervisor öffnen");
     expect(markup).toContain("Fix gallery navigation");
-    expect(markup).not.toContain("Create project supervisor");
+    expect(markup).not.toContain("Supervisor erstellen");
     expect(markup).not.toContain("Legacy imported conversation");
   });
 });

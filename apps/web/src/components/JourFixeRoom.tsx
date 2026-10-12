@@ -43,6 +43,23 @@ import { jourFixeShortcut } from "../lib/jourFixeShortcuts";
 // The canvas, its 3D scenes and the Excalidraw runtime load only when a meeting has a presentation.
 const JourFixeCanvasStage = lazy(() => import("./JourFixeCanvasStage"));
 
+const MEETING_STATE_LABELS: Record<string, string> = {
+  planned: "Geplant",
+  preparing: "In Vorbereitung",
+  ready: "Bereit",
+  live: "Live",
+  review: "Prüfung",
+  confirmed: "Bestätigt",
+  cancelled: "Abgesagt",
+  failed: "Fehlgeschlagen",
+};
+
+const PANEL_LABELS = {
+  conversation: "Unterhaltung",
+  comments: "Kommentare",
+  agenda: "Agenda",
+} as const;
+
 const MEETING_MARKDOWN_COMPONENTS: Components = {
   img: () => null,
   a: ({ children }) => <span className="underline">{children}</span>,
@@ -198,7 +215,7 @@ function JourFixeRoomContent({
       await action();
       done?.();
     } catch {
-      setError("This change has not been confirmed. Your draft is preserved.");
+      setError("Änderung nicht bestätigt · Entwurf bleibt erhalten.");
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -257,26 +274,26 @@ function JourFixeRoomContent({
       data-workjet-jour-fixe-room={meeting.id}
     >
       <WorkjetHeaderContent className="flex min-w-0 items-center">
-        <WorkspaceBreadcrumb ariaLabel="Meeting breadcrumb">
+        <WorkspaceBreadcrumb ariaLabel="Regeltermin-Pfad">
           <WorkspaceBreadcrumbItem>
             <button type="button" onClick={onBack} className="truncate hover:underline">
               {projectTitle}
             </button>
           </WorkspaceBreadcrumbItem>
           <WorkspaceBreadcrumbSeparator />
-          <WorkspaceBreadcrumbItem current>Jour fixe</WorkspaceBreadcrumbItem>
+          <WorkspaceBreadcrumbItem current>Regeltermin</WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </WorkjetHeaderContent>
       <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <Button variant="ghost" size="icon-sm" aria-label="Back to overview" onClick={onBack}>
+        <Button variant="ghost" size="icon-sm" aria-label="Zur Übersicht" onClick={onBack}>
           <ArrowLeftIcon />
         </Button>
-        <h1 className="text-sm font-medium">{projectTitle} · Jour fixe</h1>
+        <h1 className="text-sm font-medium">{projectTitle} · Regeltermin</h1>
         <time
           className="text-xs text-muted-foreground"
           dateTime={new Date(meeting.scheduledAt).toISOString()}
         >
-          {new Intl.DateTimeFormat("en", {
+          {new Intl.DateTimeFormat("de-DE", {
             dateStyle: "medium",
             timeStyle: "short",
             timeZone: meeting.timezone,
@@ -288,7 +305,7 @@ function JourFixeRoomContent({
           data-meeting-state={meeting.state}
         >
           {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
-          {meeting.state}
+          {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
         </span>
         {meeting.state === "ready" && onStartMeeting && (
           <Button
@@ -296,7 +313,7 @@ function JourFixeRoomContent({
             disabled={busy}
             onClick={() => void perform(() => onStartMeeting(meeting.id, meeting.revision))}
           >
-            Start meeting
+            Termin starten
           </Button>
         )}
         {meeting.state === "live" && onEndMeeting && (
@@ -311,7 +328,7 @@ function JourFixeRoomContent({
               )
             }
           >
-            End meeting
+            Termin beenden
           </Button>
         )}
         {meeting.todos && (
@@ -321,7 +338,7 @@ function JourFixeRoomContent({
             aria-pressed={review}
             onClick={() => setView(review ? "slides" : "review")}
           >
-            {review ? "Slides" : "Review"}
+            {review ? "Folien" : "Prüfen"}
           </Button>
         )}
       </header>
@@ -338,7 +355,7 @@ function JourFixeRoomContent({
               disabled={busy}
               onClick={() => void perform(onRefresh)}
             >
-              Refresh
+              Aktualisieren
             </Button>
           )}
         </div>
@@ -349,13 +366,10 @@ function JourFixeRoomContent({
             <div className="mx-auto max-w-4xl space-y-4" data-workjet-meeting-review="">
               <div>
                 <h2 className="text-base font-semibold">
-                  {meeting.todos?.status === "confirmed" ? "Confirmed to-dos" : "Proposed to-dos"}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
                   {meeting.todos?.status === "confirmed"
-                    ? "This list was confirmed by the project owner."
-                    : "Review the acceptance criteria and sources. Confirming sets the supervisor’s goal."}
-                </p>
+                    ? "Bestätigte Aufgaben"
+                    : "Vorgeschlagene Aufgaben"}
+                </h2>
               </div>
               {todos.map((todo, number) => (
                 <fieldset
@@ -368,15 +382,15 @@ function JourFixeRoomContent({
                   </span>
                   <div className="min-w-0 flex-1 space-y-2">
                     <Input
-                      aria-label={`Todo ${number + 1} title`}
+                      aria-label={`Aufgabe ${number + 1} Titel`}
                       maxLength={512}
                       value={todo.title}
                       onChange={(event) => updateTodo(todo.id, "title", event.target.value)}
                     />
                     <label className="block text-xs text-muted-foreground">
-                      Owner
+                      Verantwortlich
                       <Input
-                        aria-label={`Todo ${number + 1} owner`}
+                        aria-label={`Aufgabe ${number + 1} Verantwortlich`}
                         maxLength={256}
                         value={todo.owner ?? ""}
                         onChange={(event) => updateTodo(todo.id, "owner", event.target.value)}
@@ -384,7 +398,7 @@ function JourFixeRoomContent({
                       />
                     </label>
                     <label className="block text-xs text-muted-foreground">
-                      Acceptance
+                      Abnahme
                       <textarea
                         className="mt-1 block min-h-16 w-full resize-y rounded-md border border-input bg-transparent p-2 text-sm text-foreground"
                         maxLength={4096}
@@ -398,14 +412,14 @@ function JourFixeRoomContent({
                         ? todo.evidenceIds
                             .map((id) => jourFixeEvidenceLabel(meeting, id))
                             .join(" · ")
-                        : "Owner addition"}
+                        : "Eigene Ergänzung"}
                     </p>
                   </div>
                   {canRevise && (
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      aria-label={`Remove todo ${number + 1}`}
+                      aria-label={`Aufgabe ${number + 1} entfernen`}
                       onClick={() => editTodos(todos.filter((item) => item.id !== todo.id))}
                     >
                       <Trash2Icon />
@@ -415,7 +429,7 @@ function JourFixeRoomContent({
               ))}
               {todoDraft && !hasTodoEdits && (
                 <p role="status" className="text-sm text-amber-500">
-                  The proposal changed. Review the updated list before editing again.
+                  Vorschlag geändert. Liste erneut prüfen.
                 </p>
               )}
               {meeting.todos?.status === "proposed" && meeting.state === "review" && (
@@ -439,7 +453,7 @@ function JourFixeRoomContent({
                       }
                     >
                       <PlusIcon />
-                      Add todo
+                      Aufgabe hinzufügen
                     </Button>
                   )}
                   {hasTodoEdits && onReviseTodos && (
@@ -460,14 +474,14 @@ function JourFixeRoomContent({
                         )
                       }
                     >
-                      Save edits
+                      Speichern
                     </Button>
                   )}
                   {onConfirmTodos && !proposalHasOwners(todos) && (
                     <p role="status" className="mr-auto text-xs text-muted-foreground">
                       {todos.length === 0
-                        ? "Add at least one to-do before confirming."
-                        : "Assign an owner to each to-do before confirming."}
+                        ? "Mindestens eine Aufgabe nötig."
+                        : "Jede Aufgabe braucht Verantwortliche."}
                     </p>
                   )}
                   {onConfirmTodos && (
@@ -489,7 +503,7 @@ function JourFixeRoomContent({
                         )
                       }
                     >
-                      Confirm {todos.length} to-dos
+                      {todos.length} Aufgaben bestätigen
                     </Button>
                   )}
                 </div>
@@ -513,7 +527,7 @@ function JourFixeRoomContent({
                         onClick={discardCanvasEdit}
                       >
                         <XIcon className="size-3" />
-                        Cancel
+                        Abbrechen
                       </Button>
                       <Button
                         size="sm"
@@ -548,7 +562,7 @@ function JourFixeRoomContent({
                               setSlideSaveError(
                                 reason instanceof Error
                                   ? reason.message
-                                  : "The slide could not be saved.",
+                                  : "Folie nicht gespeichert.",
                               );
                               setSavingSlide(false);
                             },
@@ -556,7 +570,7 @@ function JourFixeRoomContent({
                         }}
                       >
                         <SaveIcon className="size-3" />
-                        {savingSlide ? "Saving…" : "Save slide"}
+                        {savingSlide ? "Wird gespeichert …" : "Folie speichern"}
                       </Button>
                     </>
                   ) : (
@@ -570,9 +584,7 @@ function JourFixeRoomContent({
                           onClick={() => setPlacingComment((value) => !value)}
                         >
                           <MessageSquarePlusIcon className="size-3" />
-                          {placingComment
-                            ? "Click the slide to place the comment"
-                            : "Comment on slide"}
+                          {placingComment ? "Auf Folie klicken" : "Folie kommentieren"}
                         </Button>
                       )}
                       {presentation.editable && (
@@ -590,7 +602,7 @@ function JourFixeRoomContent({
                           }}
                         >
                           <PencilIcon className="size-3" />
-                          Edit slide
+                          Folie bearbeiten
                         </Button>
                       )}
                     </>
@@ -609,7 +621,7 @@ function JourFixeRoomContent({
                         role="status"
                         className="absolute inset-0 grid place-items-center text-sm text-[#52525b]"
                       >
-                        Loading the slide…
+                        Folie wird geladen …
                       </p>
                     }
                   >
@@ -656,7 +668,7 @@ function JourFixeRoomContent({
                 {onComment && editable && (!canvasSlide || (placingComment && !canvasEditing)) && (
                   <button
                     type="button"
-                    aria-label="Place a comment on the slide"
+                    aria-label="Kommentar auf Folie setzen"
                     className="absolute inset-0 z-10 cursor-crosshair focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-primary"
                     onClick={(event) => {
                       const bounds = event.currentTarget.getBoundingClientRect();
@@ -675,7 +687,7 @@ function JourFixeRoomContent({
                   <button
                     key={item.id}
                     type="button"
-                    aria-label={`Comment ${number + 1}: ${item.text}`}
+                    aria-label={`Kommentar ${number + 1}: ${item.text}`}
                     className="absolute z-10 grid size-[22px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-primary text-xs text-primary-foreground ring-2 ring-primary/25"
                     style={{ left: `${item.x * 100}%`, top: `${item.y * 100}%` }}
                     onClick={() => setPanel("comments")}
@@ -692,7 +704,7 @@ function JourFixeRoomContent({
                       {comments.length + 1}
                     </span>
                     <form
-                      aria-label="Slide comment"
+                      aria-label="Folienkommentar"
                       className="absolute z-10 grid w-64 max-w-[calc(100%-16px)] gap-2 rounded-lg border border-border bg-card p-2.5 text-foreground shadow-xl"
                       style={{
                         left: `clamp(8px, calc(${currentDraft.x * 100}% - 128px), calc(100% - 264px))`,
@@ -713,9 +725,7 @@ function JourFixeRoomContent({
                       <textarea
                         autoFocus
                         aria-label={
-                          commentDelivery === "saved"
-                            ? "Slide comment text"
-                            : "Comment to supervisor"
+                          commentDelivery === "saved" ? "Kommentartext" : "Kommentar an Supervisor"
                         }
                         maxLength={4096}
                         value={comment}
@@ -734,10 +744,10 @@ function JourFixeRoomContent({
                           disabled={busy}
                         >
                           <XIcon className="size-3" />
-                          Cancel
+                          Abbrechen
                         </Button>
                         <Button size="sm" type="submit" disabled={busy || !comment.trim()}>
-                          {commentDelivery === "saved" ? "Save comment" : "To supervisor"}
+                          {commentDelivery === "saved" ? "Kommentar speichern" : "An Supervisor"}
                         </Button>
                       </div>
                     </form>
@@ -746,7 +756,7 @@ function JourFixeRoomContent({
               </div>
               {draft && !currentDraft && (
                 <p role="status" className="text-sm text-amber-500">
-                  The meeting changed. Place your comment again on the current deck.
+                  Termin geändert. Kommentar neu setzen.
                 </p>
               )}
               <JourFixePlayer
@@ -762,12 +772,12 @@ function JourFixeRoomContent({
                 controlRef={playerControl}
                 onFullscreen={toggleFullscreen}
               />
-              <nav aria-label="Slides" className="flex gap-2 overflow-x-auto pb-1">
+              <nav aria-label="Folien" className="flex gap-2 overflow-x-auto pb-1">
                 {slides.map((item, number) => (
                   <button
                     key={item.id}
                     type="button"
-                    aria-label={`Slide ${number + 1}: ${item.title}`}
+                    aria-label={`Folie ${number + 1}: ${item.title}`}
                     aria-current={item.id === slide.id ? "step" : undefined}
                     onClick={() => selectSlide(item.id)}
                     className={`relative aspect-video w-[92px] shrink-0 overflow-hidden rounded-md border-2 bg-[#e9e6df] px-2 py-1 text-left text-[#18181b] ${item.id === slide.id ? "border-primary" : "border-transparent"}`}
@@ -788,14 +798,12 @@ function JourFixeRoomContent({
               role="status"
               className="grid aspect-video place-items-center rounded-lg border border-border px-6 text-center text-sm text-muted-foreground"
             >
-              {meeting.state === "preparing"
-                ? "Supervisor is preparing the deck…"
-                : "No deck is available for this meeting."}
+              {meeting.state === "preparing" ? "Supervisor bereitet Folien vor …" : "Keine Folien"}
             </div>
           )}
         </div>
         <aside className="flex min-h-80 min-w-0 flex-col border-t border-border bg-muted/10 @min-[900px]:border-t-0 @min-[900px]:border-l">
-          <nav aria-label="Meeting panels" className="flex gap-1 border-b border-border px-3 py-2">
+          <nav aria-label="Terminbereiche" className="flex gap-1 border-b border-border px-3 py-2">
             {(["conversation", "comments", "agenda"] as const).map((name) => (
               <Button
                 key={name}
@@ -803,9 +811,8 @@ function JourFixeRoomContent({
                 size="sm"
                 aria-pressed={panel === name}
                 onClick={() => setPanel(name)}
-                className="capitalize"
               >
-                {name}
+                {PANEL_LABELS[name]}
                 {name === "comments" && meeting.comments.length > 0
                   ? ` ${meeting.comments.length}`
                   : ""}
@@ -821,13 +828,13 @@ function JourFixeRoomContent({
                     variant="ghost"
                     onClick={() => setVisibleTurns((count) => count + 100)}
                   >
-                    Show earlier messages
+                    Frühere anzeigen
                   </Button>
                 )}
                 {meeting.transcript.slice(-visibleTurns).map((turn) => (
                   <div key={turn.id}>
                     <p className="text-xs text-muted-foreground">
-                      {turn.speaker === "owner" ? "You" : "Supervisor"}
+                      {turn.speaker === "owner" ? "Du" : "Supervisor"}
                     </p>
                     <p className="mt-1 whitespace-pre-wrap text-sm">{turn.text}</p>
                   </div>
@@ -879,9 +886,9 @@ function JourFixeRoomContent({
               }}
             >
               <Input
-                aria-label="Message to supervisor"
+                aria-label="Nachricht an Supervisor"
                 maxLength={16384}
-                placeholder="Write or speak…"
+                placeholder="Schreiben oder sprechen …"
                 value={message}
                 disabled={busy}
                 onChange={(event) => setMessage(event.target.value)}
@@ -891,7 +898,7 @@ function JourFixeRoomContent({
                 <Button
                   size="icon-sm"
                   variant={microphoneActive ? "destructive" : "outline"}
-                  aria-label={microphoneActive ? "Stop microphone" : "Start microphone"}
+                  aria-label={microphoneActive ? "Mikrofon aus" : "Mikrofon an"}
                   aria-pressed={microphoneActive}
                   onClick={onToggleMicrophone}
                 >
@@ -901,7 +908,7 @@ function JourFixeRoomContent({
               <Button
                 type="submit"
                 size="icon-sm"
-                aria-label="Send message"
+                aria-label="Senden"
                 disabled={busy || !message.trim()}
               >
                 <SendIcon />

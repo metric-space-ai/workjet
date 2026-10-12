@@ -11,7 +11,7 @@ describe("theme import size guard", () => {
 
   it("rejects a file too large to be a theme and names its size", () => {
     const message = describeOversizedThemeFile(100 * 1024 * 1024);
-    expect(message).toContain("100.0 MB");
+    expect(message).toContain("100,0 MB");
     expect(message).toContain("256 KB");
   });
 

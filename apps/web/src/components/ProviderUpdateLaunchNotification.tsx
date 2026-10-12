@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBusinessOsScopedEnvironments } from "~/state/environments";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
-import { ProviderUpdateEnvironmentRows } from "./ProviderUpdateEnvironmentRows";
 import { useLocalEnvironmentUpdateGroups } from "./ProviderUpdateLaunchNotification.environments";
 import {
   collectProviderUpdateCandidates,
@@ -14,7 +13,7 @@ import {
   localEnvironmentUpdateNotificationKey,
 } from "./ProviderUpdateLaunchNotification.logic";
 import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotification";
-import { stackedThreadToast, toastManager } from "./ui/toast";
+import { toastManager } from "./ui/toast";
 
 /**
  * True when a desktop-local secondary backend (the parallel WSL backend) is
@@ -33,9 +32,9 @@ function useHasLocalSecondaryEnvironment(): boolean {
 }
 
 /**
- * The provider update popover. With a WSL backend present it splits the update
- * trigger per environment; without one (the common case) it falls back to the
- * single-prompt flow so non-WSL users see no change.
+ * Provider update toast (one line, one action). With a WSL backend present the
+ * per-environment update lives in Settings › Harnesses and the toast links
+ * there; without one (the common case) the single-prompt flow updates in place.
  */
 export function ProviderUpdateLaunchNotification() {
   const hasLocalSecondary = useHasLocalSecondaryEnvironment();
@@ -157,37 +156,25 @@ function ProviderUpdateEnvironmentsNotification() {
       activeToastRef.current = null;
     };
 
-    const toastId = toastManager.add(
-      stackedThreadToast({
-        type: "warning",
-        title: getProviderUpdateInitialToastView({
-          updateProviders: candidateUnion,
-          oneClickProviders: candidateUnion,
-        }).title,
-        description: (
-          <ProviderUpdateEnvironmentRows
-            onInteract={() => {
-              hasInteractedRef.current = true;
-              const active = activeToastRef.current;
-              if (active) {
-                toastManager.update(active.toastId, { timeout: 0 });
-              }
-            }}
-          />
-        ),
-        timeout: 8_000,
-        actionProps: {
-          children: "Settings",
-          onClick: openProviderSettings,
-        },
-        actionVariant: "outline",
-        data: {
-          hideCopyButton: true,
-          leadingIcon: <DownloadIcon aria-hidden="true" className="size-4 text-success" />,
-          onClose: dismissPrompt,
-        },
-      }),
-    );
+    // Eine Zeile, eine Aktion: „2 Updates verfügbar · [Harnesses]“.
+    const toastId = toastManager.add({
+      type: "warning",
+      title: getProviderUpdateInitialToastView({
+        updateProviders: candidateUnion,
+        oneClickProviders: candidateUnion,
+      }).title,
+      timeout: 8_000,
+      actionProps: {
+        children: "Harnesses",
+        onClick: openProviderSettings,
+      },
+      data: {
+        actionVariant: "default",
+        hideCopyButton: true,
+        leadingIcon: <DownloadIcon aria-hidden="true" className="size-4 text-success" />,
+        onClose: dismissPrompt,
+      },
+    });
     activeToastRef.current = { toastId, key: notificationKey };
   }, [
     notificationKey,

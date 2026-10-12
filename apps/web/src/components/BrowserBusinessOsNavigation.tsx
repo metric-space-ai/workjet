@@ -177,7 +177,7 @@ function BrowserBusinessOsEnvironmentNavigation({
       ) : null}
       {!connections.isPending && rows.length === 0 ? (
         <Button size="sm" variant="ghost" onClick={() => openInstanceSetup("connect")}>
-          Connect instance
+          Instanz verbinden
         </Button>
       ) : null}
     </div>

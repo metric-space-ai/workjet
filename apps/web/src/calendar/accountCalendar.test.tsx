@@ -47,7 +47,7 @@ describe("connected account calendar", () => {
       );
       expect(html).toContain("Account appointment");
       expect(html).toContain("My account");
-      expect(html).toContain("Partial sync");
+      expect(html).toContain("Teilweise abgeglichen");
     }
   });
   it("binds provider project IDs to local project keys without admitting foreign projects", () => {
@@ -121,7 +121,7 @@ describe("connected account calendar", () => {
         accountEvents={[{ ...event, all_day: true }]}
       />,
     );
-    expect(html).toContain('aria-label="All-day events"');
-    expect(html).toContain("all-day");
+    expect(html).toContain('aria-label="Ganztägige Termine"');
+    expect(html).toContain("ganztägig");
   });
 });

@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
+import { GitPullRequestIcon } from "lucide-react";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { useProjectOverviewSources } from "../hooks/useProjectOverviewSources";
+import { useProjectOverviewTokenBudgetSource } from "../hooks/useProjectOverviewTokenBudgetSource";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { useSupervisorProjectMetadata } from "../hooks/useSupervisorProjectMetadata";
 import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOverviewModel";
@@ -19,9 +21,9 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "./WorkspaceBreadcrumb";
 import { SidebarInset } from "./ui/sidebar";
-import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
-import { Button } from "./ui/button";
+import { InlinePanel } from "./ui/inline-panel";
 import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 
 type Props = {
   readonly project: GalleryProject;
@@ -31,6 +33,8 @@ type Props = {
   readonly ctoxInstanceId?: string | null;
   readonly openMeeting?: boolean;
   readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
+  /** Öffnet die Pull-Request-Liste dieses Projekts. */
+  readonly onOpenPullRequests?: () => void;
 };
 export function ProjectWorkspace(props: Props) {
   return (
@@ -46,6 +50,7 @@ function ProjectWorkspaceContent({
   onOpenChat,
   onAddParent,
   onOpenJourFixe,
+  onOpenPullRequests,
   ctoxInstanceId,
   openMeeting = false,
 }: Props) {
@@ -54,6 +59,7 @@ function ProjectWorkspaceContent({
   const text = PROJECT_OVERVIEW_TEXT[language];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;
   const sources = useProjectOverviewSources(nativeInstance, project.id);
+  const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
   const exit = useProjectExitModel(nativeInstance, project.id, project.configuration?.exitModel);
   const [pullRequests, setPullRequests] = useState<Record<string, ProjectOverviewPr | null>>({});
   const onReadPr = useCallback(
@@ -71,6 +77,7 @@ function ProjectWorkspaceContent({
     meeting: sources.meeting,
     kpis: sources.kpis,
     pullRequests: Object.values(pullRequests).filter((pr): pr is ProjectOverviewPr => pr !== null),
+    projectTokenBudgetSource: tokenBudgetSource,
   });
   const [editingParent, setEditingParent] = useState(false);
   const [meetingKey, setMeetingKey] = useState<string | null>(null);
@@ -79,6 +86,22 @@ function ProjectWorkspaceContent({
   const [goal, setGoal] = useState("");
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  const submitParent = async () => {
+    if (saving || !domain.trim() || !goal.trim()) return;
+    setSaving(true);
+    setFailed(false);
+    try {
+      if (await onAddParent(domain.trim(), goal.trim())) {
+        setEditingParent(false);
+        setDomain("");
+        setGoal("");
+      } else setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
   const roomKey = `${ctoxInstanceId}:${project.id}`;
   const nativeRoom =
     project.native && ctoxInstanceId != null && project.configuration !== undefined;
@@ -106,7 +129,7 @@ function ProjectWorkspaceContent({
     );
   return (
     <SidebarInset className="min-h-0 min-w-0 overflow-auto">
-      <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-sm">
+      <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-[13.5px]">
         <WorkspaceBreadcrumb ariaLabel={text.overview}>
           <WorkspaceBreadcrumbItem className="min-w-0 shrink">
             <span className="truncate">{project.title}</span>
@@ -121,13 +144,52 @@ function ProjectWorkspaceContent({
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
         actions={
-          <button
-            type="button"
-            onClick={() => setEditingParent(true)}
-            className="mt-2 rounded-full border border-border px-2.5 py-1 text-xs hover:bg-muted"
-          >
-            + {text.addParent}
-          </button>
+          <>
+            {onOpenPullRequests ? (
+              <Button size="sm" variant="outline" onClick={onOpenPullRequests}>
+                <GitPullRequestIcon />
+                Pull Requests
+              </Button>
+            ) : null}
+            <InlinePanel
+              // The header row wraps; an open panel takes its own full line.
+              {...(editingParent
+                ? { className: "mt-2 basis-full text-[13.5px] text-foreground" }
+                : {})}
+              triggerLabel={text.addParent}
+              open={editingParent}
+              onOpenChange={(open) => {
+                setEditingParent(open);
+                if (!open) setFailed(false);
+              }}
+              submitLabel={saving ? text.saving : text.addParent}
+              submitDisabled={!domain.trim() || !goal.trim()}
+              busy={saving}
+              status={failed ? text.addFailed : undefined}
+              statusTone="error"
+              onSubmit={() => void submitParent()}
+            >
+              <label className="grid gap-1 text-[13.5px]">
+                {text.name}
+                <Input
+                  required
+                  maxLength={256}
+                  value={domain}
+                  onChange={(event) => setDomain(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-1 text-[13.5px]">
+                {text.goal}
+                <textarea
+                  required
+                  maxLength={4096}
+                  value={goal}
+                  onChange={(event) => setGoal(event.target.value)}
+                  className="min-h-24 rounded-md border border-input bg-transparent p-2"
+                />
+              </label>
+            </InlinePanel>
+          </>
         }
         {...(data.decisions.length
           ? {
@@ -156,63 +218,6 @@ function ProjectWorkspaceContent({
             onRead={onReadPr}
           />
         ))}
-      <Dialog open={editingParent} onOpenChange={setEditingParent}>
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>{text.addParent}</DialogTitle>
-          </DialogHeader>
-          <DialogPanel>
-            <form
-              className="grid gap-3"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                if (saving || !domain.trim() || !goal.trim()) return;
-                setSaving(true);
-                setFailed(false);
-                try {
-                  if (await onAddParent(domain.trim(), goal.trim())) {
-                    setEditingParent(false);
-                    setDomain("");
-                    setGoal("");
-                  } else setFailed(true);
-                } catch {
-                  setFailed(true);
-                } finally {
-                  setSaving(false);
-                }
-              }}
-            >
-              <label className="grid gap-1 text-sm">
-                {text.name}
-                <Input
-                  required
-                  maxLength={256}
-                  value={domain}
-                  onChange={(event) => setDomain(event.target.value)}
-                />
-              </label>
-              <label className="grid gap-1 text-sm">
-                {text.goal}
-                <textarea
-                  required
-                  maxLength={4096}
-                  value={goal}
-                  onChange={(event) => setGoal(event.target.value)}
-                  className="min-h-24 rounded-md border border-input bg-transparent p-2"
-                />
-              </label>
-              {failed && (
-                <p role="alert" className="text-sm text-muted-foreground">
-                  {text.addFailed}
-                </p>
-              )}
-              <Button type="submit" disabled={saving}>
-                {saving ? text.saving : text.addParent}
-              </Button>
-            </form>
-          </DialogPanel>
-        </DialogPopup>
-      </Dialog>
     </SidebarInset>
   );
 }

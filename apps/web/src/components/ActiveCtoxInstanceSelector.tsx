@@ -1,36 +1,39 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  LinkIcon,
-  NetworkIcon,
-  PlusIcon,
-  SearchIcon,
-  SettingsIcon,
-} from "lucide-react";
-import { openInstanceSetup } from "../instanceSetup";
-import { Button } from "./ui/button";
-import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+import { CheckIcon, ChevronDownIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import {
+  INSTANCES_SETTINGS_PATH,
+  openInstanceSetup,
+  registerInstanceSetupNavigator,
+} from "../instanceSetup";
+import { Button } from "./ui/button";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "./ui/menu";
+import { RowStatusDot, type RowStatus } from "./ui/row";
+import { Spinner } from "./ui/spinner";
 import { canActivateCtoxInstance, useCtoxMode } from "./ctox/CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctox/ctoxInstanceDisplayTitle";
+import { dedupeCtoxInstances } from "./settings/InstancesTable";
 import { useActiveWorkjetScope } from "../activeWorkjetScope";
 import { cn } from "../lib/utils";
 
 type InstanceDiscovery = "loading" | CtoxDiscoveryResult;
 
+/** Ab dieser Zahl erscheint ein Suchfeld; bis dahin ist alles ohne Scrollen sichtbar. */
+export const INSTANCE_PICKER_SEARCH_THRESHOLD = 12;
+
 export function selectableCtoxInstances(
   discovery: InstanceDiscovery,
+  preferredId: string | null = null,
 ): readonly CtoxManagedInstance[] {
   if (discovery === "loading" || discovery._tag !== "ready") return [];
-  // Identity comes from the instance id, never a shared label or hostname.
-  const unique = new Map<string, CtoxManagedInstance>();
-  for (const instance of discovery.instances) {
-    if (!unique.has(instance.id)) unique.set(instance.id, instance);
-  }
-  return [...unique.values()].toSorted((left, right) =>
-    left.displayName.localeCompare(right.displayName),
+  // Identity comes from the instance id (or its domain), never a shared label.
+  return dedupeCtoxInstances(
+    discovery.instances
+      .filter((instance) => instance.workjetState !== "removed")
+      .toSorted((left, right) => left.displayName.localeCompare(right.displayName)),
+    preferredId,
   );
 }
 
@@ -50,7 +53,7 @@ export function filterCtoxInstances(
   const query = search.trim().toLocaleLowerCase();
   return query
     ? instances.filter((instance) =>
-        `${ctoxInstanceDisplayTitle(instance)} ${instance.domain ?? ""} ${instance.source === "local_daemon" ? "local this computer lokal dieser computer" : ""}`
+        `${ctoxInstanceDisplayTitle(instance)} ${instance.domain ?? ""} ${instance.source === "local_daemon" ? "local this computer lokal dieser rechner computer" : ""}`
           .toLocaleLowerCase()
           .includes(query),
       )
@@ -58,11 +61,21 @@ export function filterCtoxInstances(
 }
 
 export function ctoxInstancePickerStatus(instance: CtoxManagedInstance): string {
-  if (instance.status === "pairing_expired") return "Invitation expired";
-  if (!canActivateCtoxInstance(instance)) return "Unavailable";
-  return instance.healthSummary.dataPlaneReady ? "Connected" : "Connection not confirmed";
+  if (instance.status === "pairing_expired") return "Kopplung abgelaufen";
+  if (!canActivateCtoxInstance(instance)) return "Nicht erreichbar";
+  return instance.healthSummary.dataPlaneReady ? "Verbunden" : "Nicht bestätigt";
 }
 
+function pickerDot(instance: CtoxManagedInstance): RowStatus {
+  if (!canActivateCtoxInstance(instance)) return "off";
+  return instance.healthSummary.dataPlaneReady ? "ok" : "busy";
+}
+
+/**
+ * Instanz-Dropdown im Kopf (drei Orte): eine reine Auswahl. Eine Zeile je
+ * Instanz, darunter „Instanz hinzufügen“ und „Instanzen verwalten“; beide
+ * führen nach Einstellungen › Instanzen. Kein Popover mit Inhalt.
+ */
 export function ActiveCtoxInstanceSelector({
   placement = "sidebar",
 }: {
@@ -70,49 +83,55 @@ export function ActiveCtoxInstanceSelector({
   readonly placement?: "header" | "sidebar" | "settings";
 } = {}) {
   const navigate = useNavigate();
-  const { discovery, selectedId, select, showNetwork, refresh } = useCtoxMode();
+  const { discovery, selectedId, select, refresh } = useCtoxMode();
   const { selectionRevision } = useActiveWorkjetScope();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [returning, setReturning] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const instances = useMemo(() => selectableCtoxInstances(discovery), [discovery]);
+  const instances = useMemo(
+    () => selectableCtoxInstances(discovery, selectedId),
+    [discovery, selectedId],
+  );
   const activeId = resolveActiveCtoxInstanceId(instances, selectedId);
   const active = instances.find((instance) => instance.id === activeId);
-  const filtered = filterCtoxInstances(instances, search);
+  const searchable = instances.length > INSTANCE_PICKER_SEARCH_THRESHOLD;
+  const visible = searchable ? filterCtoxInstances(instances, search) : instances;
   const loading = discovery === "loading";
   const failed = discovery !== "loading" && discovery._tag === "failed";
-  const close = () => {
-    setOpen(false);
-    setSearch("");
-    setError(null);
-  };
-  const returnToNetwork = async () => {
-    setReturning(true);
-    setError(null);
-    try {
-      if (await showNetwork()) {
-        close();
-        await navigate({ to: "/" });
-      } else setError("Could not leave the instance. Please try again.");
-    } catch {
-      setError("Could not open the network overview.");
-    } finally {
-      setReturning(false);
+
+  // Der Kopf ist immer da: hier meldet sich die Navigation für
+  // openInstanceSetup() an, damit jeder Aufruf nach Einstellungen › Instanzen führt.
+  useEffect(
+    () => registerInstanceSetupNavigator((path) => void navigate({ to: path })),
+    [navigate],
+  );
+
+  const setMenuOpen = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setSearch("");
+      setError(null);
     }
   };
+
   const chooseInstance = async (instance: CtoxManagedInstance) => {
-    setReturning(true);
+    if (instance.id === activeId) {
+      setMenuOpen(false);
+      return;
+    }
+    setPendingId(instance.id);
     setError(null);
     try {
-      if (await select(instance)) close();
-      else setError("Instance switch not confirmed. Please try again.");
+      if (await select(instance)) setMenuOpen(false);
+      else setError("Wechsel nicht bestätigt.");
     } catch {
-      setError("Could not select the instance.");
+      setError("Wechsel fehlgeschlagen.");
     } finally {
-      setReturning(false);
+      setPendingId(null);
     }
   };
+
   return (
     <div
       className={
@@ -126,157 +145,113 @@ export function ActiveCtoxInstanceSelector({
       data-active-ctox-instance-id={activeId ?? ""}
       data-active-workjet-selection-revision={selectionRevision}
     >
-      <Popover
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) {
-            setSearch("");
-            setError(null);
-          }
-        }}
-      >
-        <PopoverTrigger
+      <Menu open={open} onOpenChange={setMenuOpen}>
+        <MenuTrigger
           render={
             <Button
               variant="ghost"
               className={cn(
                 "min-w-0 px-2 text-sm",
                 placement === "header"
-                  ? "h-7 max-w-full justify-start gap-1 font-normal text-muted-foreground hover:text-foreground sm:h-7"
+                  ? "h-7 max-w-full justify-start gap-1.5 font-normal text-muted-foreground hover:text-foreground sm:h-7"
                   : "w-full justify-between gap-2",
               )}
-              aria-label="Select CTOX instance"
+              aria-label="Instanz wählen"
             />
           }
         >
+          {active ? (
+            <RowStatusDot status={pickerDot(active)} label={ctoxInstancePickerStatus(active)} />
+          ) : null}
           <span className="truncate">
-            {active ? ctoxInstanceDisplayTitle(active) : "Network overview"}
+            {active ? ctoxInstanceDisplayTitle(active) : "Instanz wählen"}
           </span>
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        </PopoverTrigger>
-        <PopoverPopup
+        </MenuTrigger>
+        <MenuPopup
           align="start"
-          className="w-80 max-w-[calc(100vw-24px)]"
-          viewportClassName="p-2"
-          aria-label="Instances"
+          className="w-60 max-w-[calc(100vw-24px)]"
+          aria-label="Instanzen"
+          data-workjet-instance-picker=""
         >
-          <label className="mb-2 flex items-center gap-2 border-b border-border px-2 pb-3 pt-1">
-            <SearchIcon className="size-4 text-muted-foreground" aria-hidden />
-            <input
-              autoFocus
-              aria-label="Search instances"
-              placeholder="Search instance or host…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-            />
-          </label>
-          <button
-            type="button"
-            className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
-            aria-current={activeId === null ? "page" : undefined}
-            disabled={returning}
-            onClick={() => void returnToNetwork()}
-          >
-            <NetworkIcon className="size-4 text-muted-foreground" />{" "}
-            <span className="flex-1">{returning ? "Opening network…" : "Network overview"}</span>
-            {activeId === null && <CheckIcon className="size-4" />}
-          </button>
-          <div
-            className="my-2 max-h-64 overflow-y-auto"
-            aria-label="Available instances"
-            aria-busy={loading}
-          >
-            {loading ? (
-              <p role="status" className="px-2 py-3 text-xs text-muted-foreground">
-                Loading instances…
-              </p>
-            ) : failed ? (
-              <div className="px-2 py-3">
-                <p role="alert" className="text-xs text-muted-foreground">
-                  Could not load instances.
-                </p>
-                <Button size="sm" variant="ghost" className="mt-2" onClick={refresh}>
-                  Try again
-                </Button>
-              </div>
-            ) : filtered.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-muted-foreground">
-                {search.trim() ? "No matching instance." : "No instance connected yet."}
-              </p>
-            ) : (
-              filtered.map((instance) => (
-                <button
-                  key={instance.id}
-                  type="button"
-                  disabled={!canActivateCtoxInstance(instance) || returning}
-                  aria-current={activeId === instance.id ? "page" : undefined}
-                  className="flex min-h-14 w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
-                  onClick={() => void chooseInstance(instance)}
-                >
-                  <span
-                    aria-hidden
-                    className={`size-1.5 shrink-0 rounded-full ${instance.healthSummary.dataPlaneReady && canActivateCtoxInstance(instance) ? "bg-primary" : "bg-muted-foreground"}`}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
-                      {ctoxInstanceDisplayTitle(instance)}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {instance.source === "local_daemon"
-                        ? "Dieser Computer"
-                        : (instance.domain ?? "Remote")}{" "}
-                      · {ctoxInstancePickerStatus(instance)}
-                    </span>
-                  </span>
-                  {activeId === instance.id && <CheckIcon className="size-4 shrink-0" />}
-                </button>
-              ))
-            )}
-          </div>
-          {error && (
-            <p role="alert" className="px-2 py-2 text-xs text-destructive">
+          {searchable ? (
+            <label className="mb-1 flex items-center gap-2 border-b border-border px-2 pb-1.5 pt-1">
+              <SearchIcon className="size-3.5 text-muted-foreground" aria-hidden />
+              <input
+                aria-label="Instanz suchen"
+                placeholder="Instanz suchen"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </label>
+          ) : null}
+          {loading ? (
+            <MenuItem disabled>
+              <Spinner className="size-3.5" />
+              Instanzen werden geladen …
+            </MenuItem>
+          ) : failed ? (
+            <MenuItem closeOnClick={false} onClick={refresh}>
+              Erneut laden
+            </MenuItem>
+          ) : visible.length === 0 ? (
+            <MenuItem disabled>
+              {search.trim() ? "Keine Instanz gefunden" : "Keine Instanz verbunden"}
+            </MenuItem>
+          ) : (
+            visible.map((instance) => (
+              <MenuItem
+                key={instance.id}
+                closeOnClick={false}
+                disabled={!canActivateCtoxInstance(instance) || pendingId !== null}
+                data-workjet-instance-option={instance.id}
+                data-selected={activeId === instance.id ? "" : undefined}
+                title={ctoxInstancePickerStatus(instance)}
+                onClick={() => void chooseInstance(instance)}
+              >
+                <RowStatusDot
+                  status={pickerDot(instance)}
+                  label={ctoxInstancePickerStatus(instance)}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  {ctoxInstanceDisplayTitle(instance)}
+                </span>
+                {pendingId === instance.id ? (
+                  <Spinner className="size-3.5" />
+                ) : activeId === instance.id ? (
+                  <CheckIcon className="size-4 text-foreground" aria-label="Ausgewählt" />
+                ) : null}
+              </MenuItem>
+            ))
+          )}
+          {error ? (
+            <p role="alert" className="px-2 py-1 text-xs text-destructive">
               {error}
             </p>
-          )}
-          <div className="space-y-1 border-t border-border pt-2">
-            <Button
-              variant="ghost"
-              className="w-full justify-start"
-              onClick={() => {
-                close();
-                openInstanceSetup("create");
-              }}
-            >
-              <PlusIcon className="size-4" />
-              Create instance
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start"
-              onClick={() => {
-                close();
-                openInstanceSetup("connect");
-              }}
-            >
-              <LinkIcon className="size-4" />
-              Connect instance
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start"
-              onClick={() => {
-                close();
-                void navigate({ to: "/settings/business-os" });
-              }}
-            >
-              <SettingsIcon className="size-4" />
-              Manage instances
-            </Button>
-          </div>
-        </PopoverPopup>
-      </Popover>
+          ) : null}
+          <MenuSeparator />
+          <MenuItem
+            onClick={() => {
+              setMenuOpen(false);
+              openInstanceSetup("choose");
+            }}
+          >
+            <PlusIcon />
+            Instanz hinzufügen
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setMenuOpen(false);
+              void navigate({ to: INSTANCES_SETTINGS_PATH });
+            }}
+          >
+            <SettingsIcon />
+            Instanzen verwalten
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
     </div>
   );
 }

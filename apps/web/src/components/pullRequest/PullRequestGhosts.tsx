@@ -9,7 +9,12 @@
  * container is a single opacity animation however many bars sit under it, and the bars take
  * their tone from `muted-foreground` at low alpha, which reads on both themes.
  */
+import { ClockIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+
 import { cn } from "~/lib/utils";
+
+import { Banner } from "../ui/banner";
 
 function GhostBar({ className }: { className?: string | undefined }) {
   return <div aria-hidden className={cn("h-3 rounded bg-muted-foreground/15", className)} />;
@@ -31,7 +36,7 @@ export function PullRequestListGhost({
   return (
     <div
       role="status"
-      aria-label={caption ?? "Loading pull requests"}
+      aria-label={caption ?? "Pull Requests laden"}
       className="animate-ghost-pulse space-y-0.5"
     >
       {caption ? (
@@ -64,7 +69,7 @@ export function PullRequestDetailGhost() {
   return (
     <div
       role="status"
-      aria-label="Loading pull request"
+      aria-label="Pull Request lädt"
       className="animate-ghost-pulse space-y-6 px-4 py-5"
     >
       <div className="space-y-2">
@@ -93,7 +98,7 @@ export function PullRequestDetailGhost() {
 /** People-shaped: an avatar and a name, in the reviewer picker's own row height. */
 export function PullRequestPeopleGhost({ rows = 4 }: { rows?: number }) {
   return (
-    <div role="status" aria-label="Loading people" className="animate-ghost-pulse space-y-1 p-1">
+    <div role="status" aria-label="Personen laden" className="animate-ghost-pulse space-y-1 p-1">
       {Array.from({ length: rows }, (_, index) => (
         <div key={index} className="flex h-7 items-center gap-2 rounded-md px-2">
           <GhostBar className="size-4 rounded-full" />
@@ -107,7 +112,7 @@ export function PullRequestPeopleGhost({ rows = 4 }: { rows?: number }) {
 /** The timeline's own shape: dots on the rail, a line and a date to each. */
 export function PullRequestTimelineGhost({ rows = 6 }: { rows?: number }) {
   return (
-    <div role="status" aria-label="Loading timeline" className="animate-ghost-pulse px-4 py-5">
+    <div role="status" aria-label="Verlauf lädt" className="animate-ghost-pulse px-4 py-5">
       <div className="relative ml-2 border-l border-border/70 pl-5">
         {Array.from({ length: rows }, (_, index) => (
           <div key={index} className="relative pb-5">
@@ -126,7 +131,7 @@ export function PullRequestConversationGhost({ rows = 3 }: { rows?: number }) {
   return (
     <div
       role="status"
-      aria-label="Loading pull request conversation"
+      aria-label="Unterhaltung lädt"
       className="animate-ghost-pulse space-y-4 py-2"
     >
       {Array.from({ length: rows }, (_, index) => (
@@ -141,4 +146,49 @@ export function PullRequestConversationGhost({ rows = 3 }: { rows?: number }) {
       ))}
     </div>
   );
+}
+
+/** Nach dieser Zeit endet das Laden sichtbar (UI-Vertrag §1.3). */
+export const PULL_REQUEST_LIST_LOADING_TIMEOUT_MS = 10_000;
+
+/**
+ * Laden mit Ende: höchstens 10 s Platzhalterzeilen, danach EINE Statuszeile
+ * mit „Erneut versuchen“, nie ein endloses Skeleton. Ein Klick auf „Erneut
+ * versuchen“ fragt neu und startet die Frist von vorn.
+ */
+export function PullRequestListLoading({
+  rows = 7,
+  caption,
+  onRetry,
+  timeoutMs = PULL_REQUEST_LIST_LOADING_TIMEOUT_MS,
+}: {
+  rows?: number;
+  caption?: string;
+  onRetry: () => void;
+  timeoutMs?: number;
+}) {
+  const [attempt, setAttempt] = useState(0);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), timeoutMs);
+    return () => clearTimeout(timer);
+  }, [attempt, timeoutMs]);
+  if (slow) {
+    return (
+      <Banner
+        icon={ClockIcon}
+        action={{
+          label: "Erneut versuchen",
+          onClick: () => {
+            onRetry();
+            setSlow(false);
+            setAttempt((value) => value + 1);
+          },
+        }}
+      >
+        Pull Requests laden länger als erwartet.
+      </Banner>
+    );
+  }
+  return <PullRequestListGhost rows={rows} {...(caption === undefined ? {} : { caption })} />;
 }

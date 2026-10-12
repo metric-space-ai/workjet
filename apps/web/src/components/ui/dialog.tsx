@@ -49,17 +49,27 @@ function DialogViewport({ className, ...props }: DialogPrimitive.Viewport.Props)
   );
 }
 
+const DIALOG_WIDTH_CLASS = {
+  /** Standardbreite (UI-Vertrag §1.1). */
+  default: "max-w-lg",
+  /** Benannte Ausnahme für reine Auswahldialoge. */
+  wide: "max-w-xl",
+} as const;
+
 function DialogPopup({
   className,
   children,
   showCloseButton = true,
   bottomStickOnMobile = true,
   viewportClassName,
+  width = "default",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
   bottomStickOnMobile?: boolean;
   viewportClassName?: string;
+  /** Eine Breite (Standard); Ausnahmen nur über diese benannte Variante. */
+  width?: keyof typeof DIALOG_WIDTH_CLASS;
 }) {
   return (
     <DialogPortal>
@@ -73,7 +83,8 @@ function DialogPopup({
         <DialogPrimitive.Popup
           className={cn(
             DIALOG_POPUP_CLASS,
-            "row-start-2 max-h-full max-w-lg text-popover-foreground",
+            "row-start-2 max-h-full text-popover-foreground",
+            DIALOG_WIDTH_CLASS[width],
             bottomStickOnMobile && DIALOG_MOBILE_SHEET_CLASS,
             className,
           )}
@@ -140,6 +151,10 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   );
 }
 
+/**
+ * Nur für Fehler- und Statuszeilen (höchstens 12 Wörter, UI-Vertrag §2).
+ * Erklärsätze sind verboten; der Wächter (uiContract.test.ts) prüft das.
+ */
 function DialogDescription({ className, ...props }: DialogPrimitive.Description.Props) {
   return (
     <DialogPrimitive.Description
@@ -147,6 +162,38 @@ function DialogDescription({ className, ...props }: DialogPrimitive.Description.
       data-slot="dialog-description"
       {...props}
     />
+  );
+}
+
+/**
+ * Standard-Dialogfuß (UI-Vertrag §1.1): „Abbrechen“ plus eine Primäraktion.
+ */
+function DialogFooterActions({
+  cancelLabel = "Abbrechen",
+  confirmLabel,
+  confirmVariant = "default",
+  onCancel,
+  onConfirm,
+  confirmDisabled,
+  className,
+}: {
+  readonly cancelLabel?: string;
+  readonly confirmLabel: string;
+  readonly confirmVariant?: "default" | "destructive";
+  readonly onCancel?: () => void;
+  readonly onConfirm?: () => void;
+  readonly confirmDisabled?: boolean;
+  readonly className?: string;
+}) {
+  return (
+    <DialogFooter className={className}>
+      <DialogClose render={<Button variant="outline" />} onClick={onCancel}>
+        {cancelLabel}
+      </DialogClose>
+      <Button disabled={confirmDisabled} variant={confirmVariant} onClick={onConfirm}>
+        {confirmLabel}
+      </Button>
+    </DialogFooter>
   );
 }
 
@@ -183,6 +230,7 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
+  DialogFooterActions,
   DialogPanel,
   DialogViewport,
 };

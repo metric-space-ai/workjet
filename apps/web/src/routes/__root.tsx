@@ -1,6 +1,5 @@
 import { type ServerLifecycleWelcomePayload } from "@workjet/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@workjet/client-runtime/environment";
-import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import {
   Outlet,
   createRootRoute,
@@ -22,7 +21,6 @@ import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstall
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
-import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { Button } from "../components/ui/button";
 import {
   AnchoredToastProvider,
@@ -54,6 +52,7 @@ import {
 } from "../state/server";
 import { readProject, setActiveEnvironmentId, useActiveEnvironmentId } from "../state/entities";
 import {
+  KEYBINDINGS_UPDATE_TOAST_COPY,
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
@@ -155,7 +154,6 @@ function RootRouteView() {
         {appShell}
         {/* Above the router: a theme draft is judged by walking the app, so the
             editor has to survive navigation away from settings. */}
-        <ThemeEditorHost />
       </AnchoredToastProvider>
     </ToastProvider>
   );
@@ -255,23 +253,23 @@ function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
           {APP_DISPLAY_NAME}
         </p>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
-          Something went wrong.
+          Etwas ist schiefgelaufen.
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{message}</p>
 
         <div className="mt-5 flex flex-wrap gap-2">
           <Button size="sm" onClick={() => reset()}>
-            Try again
+            Erneut versuchen
           </Button>
           <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-            Reload app
+            Neu laden
           </Button>
         </div>
 
         <details className="group mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
           <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground">
-            <span className="group-open:hidden">Show error details</span>
-            <span className="hidden group-open:inline">Hide error details</span>
+            <span className="group-open:hidden">Details anzeigen</span>
+            <span className="hidden group-open:inline">Details ausblenden</span>
           </summary>
           <pre className="max-h-56 overflow-auto border-t border-border/70 bg-background/80 px-3 py-2 text-xs text-foreground/85">
             {details}
@@ -291,7 +289,7 @@ function errorMessage(error: unknown): string {
     return error;
   }
 
-  return "An unexpected router error occurred.";
+  return "Unerwarteter Fehler.";
 }
 
 function errorDetails(error: unknown): string {
@@ -306,7 +304,7 @@ function errorDetails(error: unknown): string {
   try {
     return JSON.stringify(error, null, 2);
   } catch {
-    return "No additional error details are available.";
+    return "—";
   }
 }
 
@@ -386,8 +384,7 @@ function EventRouter() {
     if (decision._tag === "Success") {
       toastManager.add({
         type: "success",
-        title: "Keybindings updated",
-        description: "Keybindings configuration reloaded successfully.",
+        title: KEYBINDINGS_UPDATE_TOAST_COPY.success.title,
       });
       return;
     }
@@ -395,11 +392,10 @@ function EventRouter() {
     toastManager.add(
       stackedThreadToast({
         type: "warning",
-        title: "Invalid keybindings configuration",
-        description: decision.message,
+        title: KEYBINDINGS_UPDATE_TOAST_COPY.invalid.title,
         actionVariant: "outline",
         actionProps: {
-          children: "Open keybindings.json",
+          children: KEYBINDINGS_UPDATE_TOAST_COPY.invalid.action,
           onClick: () => {
             if (!serverConfig || !primaryEnvironment) {
               return;
@@ -420,13 +416,10 @@ function EventRouter() {
               if (result._tag === "Success") {
                 return;
               }
-              const error = squashAtomCommandFailure(result);
               toastManager.add(
                 stackedThreadToast({
                   type: "error",
-                  title: "Unable to open keybindings file",
-                  description:
-                    error instanceof Error ? error.message : "Unknown error opening file.",
+                  title: "keybindings.json lässt sich nicht öffnen",
                 }),
               );
             })();

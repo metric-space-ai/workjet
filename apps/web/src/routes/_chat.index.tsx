@@ -3,7 +3,8 @@ import {
   canMountSelectedInstance,
   resolveInstanceOnboardingState,
 } from "../components/ctox/InstanceOnboarding";
-import { useCtoxMode } from "../components/ctox/CtoxModeShell";
+import { canActivateCtoxInstance, useCtoxMode } from "../components/ctox/CtoxModeShell";
+import { ctoxInstanceDisplayTitle } from "../components/ctox/ctoxInstanceDisplayTitle";
 import { scopeProjectRef } from "@workjet/client-runtime/environment";
 import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
 import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
@@ -13,6 +14,7 @@ import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   ProjectId,
   type CommandId,
+  type CtoxDiscoveryResult,
   type ProjectOverview,
 } from "@workjet/contracts";
 import {
@@ -28,14 +30,10 @@ import { ProjectTokenBudget } from "../components/ProjectTokenBudget";
 import { ConnectedProjectCalendar } from "../components/ConnectedProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverviewSelection";
-import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
 import {
-  configureWorkjetProject,
   describeWorkjetProjectControlFailure,
-  workjetUiLanguage,
   readWorkjetGalleryOrder,
   readWorkjetProjectKpis,
-  saveWorkjetProjectKpis,
   saveWorkjetGalleryOrder,
 } from "../workjetProjectControl";
 import {
@@ -44,7 +42,7 @@ import {
   moveGalleryItem,
   orderGalleryProjects,
 } from "../projectGalleryOrder";
-import type { PromptedProjectKpis, ProjectKpiPromptInput } from "../projectKpis";
+import type { PromptedProjectKpis } from "../projectKpis";
 import { mergeProjectKpiRead, readGalleryProjectKpis } from "../projectKpiProjection";
 import { SortableProjectTile } from "../components/SortableProjectTile";
 import {
@@ -67,10 +65,27 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { openCommandPalette } from "../commandPaletteBus";
+import { consumeProjectCreateRequest, onProjectCreateRequest } from "../commandPaletteBus";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
+import { InlinePanel } from "../components/ui/inline-panel";
+import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { toastManager } from "../components/ui/toast";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyLoading,
+  EmptyTitle,
+} from "../components/ui/empty";
+import { useSettingsProjectGroups } from "../components/settings/ProjectSettingsPanel";
 import { NoInstanceHero } from "../components/NoInstanceHero";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
@@ -89,12 +104,28 @@ import {
 import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveNativeProjectOpening } from "../nativeProjectOpening";
-import { resolveProjectTeamModelSelection } from "../providerInstances";
+import {
+  resolveDefaultProviderModelSelection,
+  resolveProjectTeamModelSelection,
+} from "../providerInstances";
 import { createPersistentWorkerConfig } from "./-projectWorkerConfig";
+import {
+  ProjectCloneFields,
+  ProjectComputerSelect,
+  ProjectCreateRequirementLine,
+  ProjectCreateSourceSegment,
+  ProjectFolderFields,
+} from "../components/ProjectCreateSources";
+import {
+  defaultCloneBaseDirectory,
+  knownCloneTargetFolders,
+  type ProjectCreateSource,
+} from "../components/ProjectCreateSources.logic";
+import { useProjectCreateSources } from "../components/useProjectCreateSources";
 import { threadEnvironment } from "../state/threads";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { cn, newCommandId, newThreadId } from "~/lib/utils";
+import { cn, newCommandId, newProjectId, newThreadId } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import {
   readWorkjetProjectRegistry,
@@ -154,6 +185,7 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const navigate = useNavigate();
+  const settingsProjectGroups = useSettingsProjectGroups();
   const selectedLegacyProject = useProjectOverviewRef(activeCtoxInstanceId);
   const selectedNative =
     registry.projects.find((project) => project.id === registry.selectedProjectId) ?? null;
@@ -265,9 +297,7 @@ function IndexDraftLanding() {
           )?.defaultModelSelection,
         );
         if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)
-          throw new Error(
-            "Configure an available account with a concrete model in Models to create this project’s Lumas.",
-          );
+          throw new Error("In Modelle ein Konto mit konkretem Modell einrichten.");
         if (plan._tag === "create") {
           const result = await createProject({
             environmentId: target.environmentId,
@@ -290,7 +320,7 @@ function IndexDraftLanding() {
             input: {
               threadId,
               projectId: target.projectId,
-              title: "Project supervisor",
+              title: "Projekt-Supervisor",
               modelSelection,
               runtimeMode: DEFAULT_RUNTIME_MODE,
               interactionMode: "default",
@@ -332,8 +362,7 @@ function IndexDraftLanding() {
         )
           setNativeOpenState({
             pending: false,
-            error:
-              error instanceof Error ? error.message : "Couldn’t open this supervisor. Try again.",
+            error: error instanceof Error ? error.message : "Supervisor nicht geöffnet.",
           });
         return false;
       } finally {
@@ -391,6 +420,17 @@ function IndexDraftLanding() {
           ctoxInstanceId={activeCtoxInstanceId}
           openMeeting={meetingProjectKey === project.key}
           threads={threads}
+          onOpenPullRequests={() =>
+            void navigate({
+              to: "/pull-requests",
+              search: {
+                involvement: "all",
+                state: "open",
+                projectId: landingProject.id,
+                environmentId: landingProject.environmentId,
+              },
+            })
+          }
           onAddParent={async (domain, goal) => {
             if (
               !supervisor ||
@@ -474,31 +514,24 @@ function IndexDraftLanding() {
               environment.connection.phase === "connected" &&
               environment.serverConfig?.projectArchive === true,
           ),
-          onSaveConfiguration:
-            project.configuration && activeCtoxInstanceId !== null
-              ? async (values: ProjectConfigurationValues) => {
-                  if (
-                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId ||
-                    !project.configuration
-                  )
-                    return false;
-                  const result = await configureWorkjetProject(activeCtoxInstanceId, {
-                    action: "project.configure",
-                    commandId: newCommandId(),
-                    projectId: project.configuration.id,
-                    title: project.title,
-                    ...values,
-                  });
-                  if (
-                    result._tag !== "completed" ||
-                    result.response.action !== "project.configure" ||
-                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
-                  )
-                    return false;
-                  refreshWorkjetProjectRegistry(activeCtoxInstanceId);
-                  return true;
-                }
-              : undefined,
+          onConfigure: () => {
+            const local = project.local;
+            const group =
+              local === null
+                ? undefined
+                : settingsProjectGroups.find((candidate) =>
+                    candidate.memberProjects.some(
+                      (member) =>
+                        member.environmentId === local.environmentId && member.id === local.id,
+                    ),
+                  );
+            void (group
+              ? navigate({
+                  to: "/settings/projects/$projectKey",
+                  params: { projectKey: group.projectKey },
+                })
+              : navigate({ to: "/settings/projects" }));
+          },
           onOpenJourFixe: project.native
             ? () => {
                 if (
@@ -563,21 +596,37 @@ function IndexDraftLanding() {
       />
     );
   if (activeCtoxInstanceId === null && bootstrapped) return <NoInstanceHero />;
-  if ((!bootstrapped && registry.phase !== "ready") || registry.phase === "loading") return null;
+  if ((!bootstrapped && registry.phase !== "ready") || registry.phase === "loading")
+    return (
+      <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
+        <EmptyLoading
+          className="flex-1"
+          title="Projekte werden geladen …"
+          slowMessage="Projekte noch nicht geladen"
+          onRetry={() => refreshWorkjetProjectRegistry(activeCtoxInstanceId)}
+        />
+      </SidebarInset>
+    );
   if (registry.phase === "blocked")
     return (
       <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
-        <Empty className="flex-1">
+        <Empty className="flex-1" data-workjet-project-state="blocked">
           <EmptyHeader>
-            <EmptyTitle>Couldn’t load projects</EmptyTitle>
-            <EmptyDescription>
+            <EmptyTitle className="text-[22px]">Projekte nicht geladen</EmptyTitle>
+            <EmptyDescription className="text-xs">
               {registry.refreshError
                 ? describeWorkjetProjectControlFailure(registry.refreshError, activeCtoxInstanceId)
-                : workjetUiLanguage() === "de"
-                  ? "Die Instanz ist zurzeit nicht erreichbar."
-                  : "The instance is currently unavailable."}
+                : "Instanz nicht erreichbar"}
             </EmptyDescription>
           </EmptyHeader>
+          <Button
+            size="sm"
+            variant="outline"
+            data-workjet-action="project.registry.retry"
+            onClick={() => refreshWorkjetProjectRegistry(activeCtoxInstanceId)}
+          >
+            Erneut versuchen
+          </Button>
         </Empty>
       </SidebarInset>
     );
@@ -598,15 +647,12 @@ function ProjectGallery({
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
     readonly onOpenJourFixe?: (() => void) | undefined;
-    readonly onSaveConfiguration?:
-      | ((next: ProjectConfigurationValues) => Promise<boolean>)
-      | undefined;
+    readonly onConfigure?: (() => void) | undefined;
     readonly canArchive: boolean;
     readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
 }) {
-  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"gallery" | "calendar">("gallery");
   const [galleryOrder, setGalleryOrder] = useState<{
@@ -725,39 +771,6 @@ function ProjectGallery({
     };
   }, [instanceId, nativeProjectIds, readKpis]);
 
-  const saveKpis = useCallback(
-    async (
-      projectId: string,
-      prompts: readonly ProjectKpiPromptInput[],
-      expectedRevision: number,
-    ) => {
-      const scope = kpiScope.current;
-      if (
-        instanceId === null ||
-        !scope.active ||
-        scope.instanceId !== instanceId ||
-        !nativeProjectIds.split("\n").includes(projectId)
-      )
-        return false;
-      const kpis = await saveWorkjetProjectKpis(instanceId, {
-        action: "project.kpis.configure",
-        commandId: newCommandId(),
-        operationId: newCommandId(),
-        projectId: ProjectId.make(projectId),
-        expectedRevision,
-        prompts,
-      });
-      if (!kpis || !scope.active || kpiScope.current !== scope) return false;
-      setKpiProjection((previous) =>
-        previous.instanceId === instanceId
-          ? { instanceId, records: { ...previous.records, [projectId]: kpis } }
-          : previous,
-      );
-      return true;
-    },
-    [instanceId, nativeProjectIds],
-  );
-
   const reorderProjects = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
@@ -783,64 +796,50 @@ function ProjectGallery({
     <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
       <main className="flex-1 overflow-auto px-5 py-6 sm:px-6" data-workjet-project-gallery="">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold">
-                {showArchived ? "Archived projects" : "All projects"}
-              </h1>
-              <p className="mt-2 text-sm text-muted-foreground">Choose a project to continue.</p>
-            </div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-[22px] font-semibold">
+              {showArchived ? "Archivierte Projekte" : "Alle Projekte"}
+            </h1>
             <div className="flex flex-wrap items-center gap-2">
+              <div
+                className="inline-flex gap-1 rounded-md border border-border p-1"
+                role="group"
+                aria-label="Projektansicht"
+              >
+                <Button
+                  size="sm"
+                  variant={view === "gallery" ? "secondary" : "ghost"}
+                  aria-pressed={view === "gallery"}
+                  data-workjet-action="project.view.gallery"
+                  onClick={() => setView("gallery")}
+                >
+                  Projekte
+                </Button>
+                <Button
+                  size="sm"
+                  variant={view === "calendar" ? "secondary" : "ghost"}
+                  aria-pressed={view === "calendar"}
+                  data-workjet-action="project.view.calendar"
+                  onClick={() => setView("calendar")}
+                >
+                  Kalender
+                </Button>
+              </div>
               <Button size="sm" variant="outline" onClick={() => setShowArchived((show) => !show)}>
-                {showArchived ? "All projects" : `Archived projects (${archivedCount})`}
-              </Button>
-              <Button size="sm" onClick={openAddProject}>
-                <PlusIcon className="size-4" />
-                Add project
+                {showArchived ? "Alle Projekte" : `Archiv (${archivedCount})`}
               </Button>
             </div>
           </div>
-          <div
-            className="mb-5 inline-flex gap-1 rounded-md border border-border p-1"
-            aria-label="Project view"
-          >
-            <Button
-              size="sm"
-              variant={view === "gallery" ? "secondary" : "ghost"}
-              aria-pressed={view === "gallery"}
-              data-workjet-action="project.view.gallery"
-              onClick={() => setView("gallery")}
-            >
-              Projects
-            </Button>
-            <Button
-              size="sm"
-              variant={view === "calendar" ? "secondary" : "ghost"}
-              aria-pressed={view === "calendar"}
-              data-workjet-action="project.view.calendar"
-              onClick={() => setView("calendar")}
-            >
-              Calendar
-            </Button>
-          </div>
+          <InlineProjectCreate className="mb-5" />
           {projectsUnavailable ? (
             <div
               role="status"
               className="mb-4 text-xs text-muted-foreground"
               data-workjet-project-registry-stale=""
             >
-              <span>
-                {registryStatus ??
-                  (workjetUiLanguage() === "de"
-                    ? "Die Instanz ist zurzeit nicht erreichbar."
-                    : "The instance is currently unavailable.")}
-              </span>
+              <span>{registryStatus ?? "Instanz nicht erreichbar"}</span>
               {lastUpdatedAt !== undefined && (
-                <span>
-                  {" "}
-                  · {workjetUiLanguage() === "de" ? "Letzter Stand" : "Last updated"}:{" "}
-                  {new Date(lastUpdatedAt).toLocaleString()}
-                </span>
+                <span> · Letzter Stand: {new Date(lastUpdatedAt).toLocaleString()}</span>
               )}
             </div>
           ) : null}
@@ -857,7 +856,7 @@ function ProjectGallery({
                 strategy={rectSortingStrategy}
               >
                 <div
-                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1"
+                  className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4 max-sm:grid-cols-1 [&>*:has([data-workjet-project-card-expanded])]:col-span-full"
                   data-workjet-project-gallery-grid=""
                 >
                   {visibleProjects.map((project) => (
@@ -874,7 +873,7 @@ function ProjectGallery({
                           ctoxInstanceId={instanceId}
                           onOpen={project.onOpen}
                           onSave={project.onSave}
-                          onSaveConfiguration={project.onSaveConfiguration}
+                          onConfigure={project.onConfigure}
                           canArchive={project.canArchive}
                           statistics={project.statistics}
                           kpis={
@@ -882,12 +881,6 @@ function ProjectGallery({
                               ? kpiProjection.records[project.id]
                               : undefined
                           }
-                          onSaveKpis={
-                            project.native && instanceId !== null
-                              ? (prompts, revision) => saveKpis(project.id, prompts, revision)
-                              : undefined
-                          }
-                          onReadKpis={project.native && instanceId !== null ? readKpis : undefined}
                           reorderHandle={reorderHandle}
                         />
                       )}
@@ -903,6 +896,8 @@ function ProjectGallery({
   );
 }
 
+const PROJECT_OPENING_TIMEOUT_MS = 10_000;
+
 function WorkjetProjectOpening({
   projectTitle,
   onOpenSupervisor,
@@ -914,18 +909,41 @@ function WorkjetProjectOpening({
   readonly pending: boolean;
   readonly error: string | null;
 }) {
+  // Ein Laden endet immer (UI-Vertrag §1.3): nach 10 s Statuszeile mit „Erneut versuchen“.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (error) return;
+    setSlow(false);
+    const timer = setTimeout(() => setSlow(true), PROJECT_OPENING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [error, pending]);
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <Empty className="flex-1" data-workjet-project-state={error ? "opening-error" : "opening"}>
+      <Empty
+        className="flex-1"
+        data-workjet-project-state={error ? "opening-error" : slow ? "opening-slow" : "opening"}
+      >
         <EmptyHeader className="max-w-md">
-          <EmptyTitle className="text-foreground text-xl">{projectTitle}</EmptyTitle>
+          <EmptyTitle className="text-[22px] text-foreground">{projectTitle}</EmptyTitle>
           {!error && (
-            <p role="status" className="mt-2 text-sm text-muted-foreground/78">
-              Opening supervisor…
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
+              {slow ? "Supervisor noch nicht geöffnet" : "Supervisor wird geöffnet …"}
             </p>
           )}
+          {!error && slow && (
+            <div className="mt-5 flex justify-center">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onOpenSupervisor}
+                data-workjet-action="project.open.supervisor.retry"
+              >
+                Erneut versuchen
+              </Button>
+            </div>
+          )}
           {error ? (
-            <p role="alert" className="mt-3 text-sm text-destructive">
+            <p role="alert" className="mt-3 text-xs text-destructive">
               {error}
             </p>
           ) : null}
@@ -937,11 +955,11 @@ function WorkjetProjectOpening({
                 disabled={pending}
                 data-workjet-action="project.open.supervisor"
               >
-                {pending ? "Opening supervisor…" : "Retry opening supervisor"}
+                {pending ? "Supervisor wird geöffnet …" : "Erneut versuchen"}
               </Button>
-              <Button render={<Link to="/settings/computers" />} size="sm">
+              <Button render={<Link to="/settings/computers" />} size="sm" variant="outline">
                 <ServerIcon className="size-4" />
-                Choose computer
+                Rechner wählen
               </Button>
             </div>
           )}
@@ -952,35 +970,366 @@ function WorkjetProjectOpening({
 }
 
 function NoProjectsHero() {
-  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
-
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         <Empty className="flex-1">
-          <div className="w-full max-w-lg px-8 py-12">
+          <div className="flex w-full max-w-md flex-col items-stretch gap-4 px-6 py-12">
             <EmptyHeader className="max-w-none">
-              <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Workjet Collective
-              </p>
-              <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                Your instance is ready.
-              </EmptyTitle>
-              <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Create your first project by name. Its supervisor keeps your work together; you can
-                attach a computer and working copy later.
-              </EmptyDescription>
-              <div className="mt-6 flex justify-center">
-                <Button size="sm" data-workjet-action="project.add.hero" onClick={openAddProject}>
-                  <PlusIcon className="size-4" />
-                  Add project
-                </Button>
-              </div>
+              <EmptyTitle className="text-[22px] text-foreground">Noch keine Projekte</EmptyTitle>
             </EmptyHeader>
+            <InlineProjectCreate
+              defaultOpen
+              className="self-center text-left"
+              triggerAction="project.add.hero"
+            />
           </div>
         </Empty>
       </div>
     </SidebarInset>
+  );
+}
+
+interface ProjectInstanceOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** Connected (activatable) instances, plus the active one when discovery lags. */
+function resolveProjectInstanceOptions(
+  discovery: "loading" | CtoxDiscoveryResult,
+  activeInstanceId: string | null,
+  workspaceNames: ReadonlyMap<string, string> = new Map(),
+): readonly ProjectInstanceOption[] {
+  const options: ProjectInstanceOption[] =
+    discovery !== "loading" && discovery._tag === "ready"
+      ? discovery.instances.filter(canActivateCtoxInstance).map((instance) => ({
+          id: instance.id,
+          label: ctoxInstanceDisplayTitle(instance, workspaceNames.get(instance.id) ?? null),
+        }))
+      : [];
+  if (activeInstanceId !== null && !options.some((option) => option.id === activeInstanceId))
+    options.unshift({ id: activeInstanceId, label: "Aktive Instanz" });
+  return options;
+}
+
+/** Preselect when exactly one instance is connected, else the active one. */
+function resolvePreselectedProjectInstance(
+  options: readonly ProjectInstanceOption[],
+  activeInstanceId: string | null,
+): string | null {
+  if (options.length === 1) return options[0]!.id;
+  if (activeInstanceId !== null && options.some((option) => option.id === activeInstanceId))
+    return activeInstanceId;
+  return null;
+}
+
+/**
+ * Inline „Projekt anlegen“ (drei Orte, keine Popups). A segment picks the
+ * source: „Neu“ (name only), „Aus Ordner“ (a folder on a connected computer,
+ * via the system folder chooser or path suggestions) or „Repository klonen“
+ * (URL or provider repository into a target folder). The project is saved
+ * with a pending CTOX registration (the native registration loop confirms
+ * it), then its overview opens. Other places ask for this panel via the bus.
+ */
+function InlineProjectCreate({
+  className,
+  defaultOpen = false,
+  triggerAction = "project.add.gallery",
+}: {
+  readonly className?: string;
+  readonly defaultOpen?: boolean;
+  readonly triggerAction?: string;
+}) {
+  const mode = useCtoxMode();
+  const navigate = useNavigate();
+  const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
+  const primaryEnvironment = usePrimaryEnvironment();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const projectStore = useContext(RegistryContext);
+  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
+  const [open, setOpen] = useState(() => consumeProjectCreateRequest() || defaultOpen);
+  useEffect(() => onProjectCreateRequest(() => setOpen(true)), []);
+  const [source, setSource] = useState<ProjectCreateSource>("new");
+  const sources = useProjectCreateSources({ active: open, source });
+  const knownProjects = useProjects();
+  const { environments: scopedEnvironments } = useBusinessOsScopedEnvironments();
+  const cloneTargetFolders = useMemo(() => {
+    const environment = scopedEnvironments.find(
+      (candidate) => candidate.environmentId === sources.environmentId,
+    );
+    return knownCloneTargetFolders(
+      defaultCloneBaseDirectory(environment?.serverConfig?.settings?.addProjectBaseDirectory),
+      knownProjects
+        .filter((project) => project.environmentId === sources.environmentId)
+        .map((project) => project.workspaceRoot),
+    );
+  }, [knownProjects, scopedEnvironments, sources.environmentId]);
+  // „Ordner wählen“ für den Zielordner nutzt dieselbe Ordnerwahl wie „Aus
+  // Ordner“ und übernimmt den gewählten Pfad als Zielordner.
+  const cloneTargetPick = useRef(false);
+  const { folderPath: sourcesFolderPath, setBaseDirectory: setSourcesBaseDirectory } = sources;
+  useEffect(() => {
+    if (!cloneTargetPick.current) return;
+    cloneTargetPick.current = false;
+    setSourcesBaseDirectory(sourcesFolderPath);
+  }, [setSourcesBaseDirectory, sourcesFolderPath]);
+  const [title, setTitle] = useState("");
+  const [titleEdited, setTitleEdited] = useState(false);
+  const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const attemptRef = useRef<{
+    key: string;
+    projectId: ReturnType<typeof newProjectId>;
+    commandId: CommandId;
+  } | null>(null);
+  const options = useMemo(
+    () => resolveProjectInstanceOptions(mode.discovery, activeCtoxInstanceId, mode.workspaceNames),
+    [activeCtoxInstanceId, mode.discovery, mode.workspaceNames],
+  );
+  const instanceId =
+    chosenInstanceId !== null && options.some((option) => option.id === chosenInstanceId)
+      ? chosenInstanceId
+      : resolvePreselectedProjectInstance(options, activeCtoxInstanceId);
+  const instanceLabel = options.find((option) => option.id === instanceId)?.label ?? null;
+  const effectiveTitle = source === "new" || titleEdited ? title : sources.derivedTitle;
+
+  const activateInstance = async (targetInstanceId: string) => {
+    if (targetInstanceId === readActiveWorkjetScope().selectedInstanceId) return;
+    const instance =
+      mode.discovery !== "loading" && mode.discovery._tag === "ready"
+        ? mode.discovery.instances.find((candidate) => candidate.id === targetInstanceId)
+        : undefined;
+    if (instance === undefined || !(await mode.select(instance)))
+      throw new Error("Instanz nicht erreichbar.");
+  };
+
+  const submit = async () => {
+    const trimmed = title.trim();
+    if (!trimmed || pending || instanceId === null) return;
+    setPending(true);
+    setError(null);
+    try {
+      await activateInstance(instanceId);
+      const environmentId = primaryEnvironmentId;
+      if (
+        environmentId === null ||
+        !canCreateProjectInEnvironment(primaryEnvironment?.connection.phase)
+      )
+        throw new Error("Lokale Umgebung nicht verbunden.");
+      const key = JSON.stringify([instanceId, environmentId, trimmed]);
+      if (attemptRef.current?.key !== key)
+        attemptRef.current = { key, projectId: newProjectId(), commandId: newCommandId() };
+      const attempt = attemptRef.current;
+      const existing = projectStore
+        .get(environmentProjects.projectsAtom)
+        .some(
+          (project) => project.environmentId === environmentId && project.id === attempt.projectId,
+        );
+      if (!existing) {
+        const result = await createProject({
+          environmentId,
+          input: {
+            projectId: attempt.projectId,
+            commandId: attempt.commandId,
+            title: trimmed,
+            workspaceRoot: null,
+            ctoxRegistration: { instanceId, commandId: attempt.commandId, status: "pending" },
+            defaultModelSelection: resolveDefaultProviderModelSelection(
+              primaryEnvironment?.serverConfig?.providers ?? [],
+              null,
+            ),
+          },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      }
+      attemptRef.current = null;
+      setTitle("");
+      setOpen(false);
+      toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
+      if (readActiveWorkjetScope().selectedInstanceId === instanceId)
+        selectProjectOverviewRef(instanceId, scopeProjectRef(environmentId, attempt.projectId));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  /** „Aus Ordner“ and „Repository klonen“: working copy first, then the project. */
+  const submitFromSource = async () => {
+    const trimmed = effectiveTitle.trim();
+    if (!trimmed || pending || instanceId === null || !sources.ready) return;
+    setPending(true);
+    setError(null);
+    try {
+      await activateInstance(instanceId);
+      setProgress(source === "clone" ? "Repository wird geklont …" : "Projekt wird angelegt …");
+      const workspaceRoot = await sources.resolveWorkspaceRoot();
+      setProgress("Projekt wird angelegt …");
+      const created = await sources.createWorkspaceProject({
+        title: trimmed,
+        workspaceRoot,
+        instanceId,
+      });
+      setTitle("");
+      setTitleEdited(false);
+      sources.reset();
+      setSource("new");
+      setOpen(false);
+      toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
+      if (readActiveWorkjetScope().selectedInstanceId === instanceId)
+        selectProjectOverviewRef(
+          instanceId,
+          scopeProjectRef(created.environmentId, created.projectId),
+        );
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
+    } finally {
+      setProgress(null);
+      setPending(false);
+    }
+  };
+
+  const pickFolder = async () => {
+    setError(null);
+    try {
+      await sources.pickFolder();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Ordner nicht gewählt.");
+    }
+  };
+
+  const pickCloneTarget = async () => {
+    setError(null);
+    cloneTargetPick.current = true;
+    try {
+      if ((await sources.pickFolder()) === null) cloneTargetPick.current = false;
+    } catch (failure) {
+      cloneTargetPick.current = false;
+      setError(failure instanceof Error ? failure.message : "Ordner nicht gewählt.");
+    }
+  };
+
+  const computerSelect = (
+    <ProjectComputerSelect
+      options={sources.computerOptions}
+      value={sources.environmentId}
+      onChange={sources.setEnvironmentId}
+    />
+  );
+  const needsComputer = source !== "new" && !sources.hasConnectedComputer;
+  const requirement =
+    options.length === 0 ? (
+      <ProjectCreateRequirementLine
+        text="Keine Instanz verbunden"
+        actionLabel="Einstellungen › Instanzen"
+        onAction={() => void navigate({ to: "/settings/business-os" })}
+      />
+    ) : needsComputer ? (
+      <ProjectCreateRequirementLine
+        text="Kein Rechner verbunden"
+        actionLabel="Einstellungen › Rechner"
+        onAction={() => void navigate({ to: "/settings/computers" })}
+      />
+    ) : null;
+  const status = error ?? progress ?? requirement ?? undefined;
+  const submitDisabled =
+    effectiveTitle.trim().length === 0 ||
+    instanceId === null ||
+    (source !== "new" && !sources.ready);
+
+  return (
+    <div className={cn("w-full", className)}>
+      <InlinePanel
+        triggerLabel="Projekt anlegen"
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setError(null);
+        }}
+        segment={
+          <ProjectCreateSourceSegment
+            value={source}
+            disabled={pending}
+            onChange={(next) => {
+              setSource(next);
+              setError(null);
+            }}
+          />
+        }
+        submitLabel="Anlegen"
+        submitDisabled={submitDisabled}
+        busy={pending}
+        status={status}
+        statusTone={error !== null ? "error" : "neutral"}
+        onSubmit={() => void (source === "new" ? submit() : submitFromSource())}
+      >
+        {source === "folder" ? (
+          <ProjectFolderFields
+            computer={computerSelect}
+            path={sources.folderPath}
+            onPathChange={sources.setFolderPath}
+            onPick={sources.canPickFolder ? () => void pickFolder() : null}
+            picking={sources.picking}
+            suggestions={sources.folderSuggestions}
+            onSuggestion={sources.selectFolderSuggestion}
+          />
+        ) : source === "clone" ? (
+          <ProjectCloneFields
+            computer={computerSelect}
+            providers={sources.cloneProviders}
+            provider={sources.cloneProvider}
+            onProviderChange={sources.setCloneProvider}
+            repository={sources.repository}
+            onRepositoryChange={sources.setRepository}
+            baseDirectory={sources.baseDirectory}
+            onBaseDirectoryChange={sources.setBaseDirectory}
+            targetFolders={cloneTargetFolders}
+            onPickTarget={sources.canPickFolder ? () => void pickCloneTarget() : null}
+            picking={sources.picking}
+          />
+        ) : null}
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]">
+          <label className="grid min-w-0 gap-1 text-[13.5px]">
+            Name
+            <Input
+              autoFocus={source === "new"}
+              aria-label="Projektname"
+              maxLength={256}
+              value={effectiveTitle}
+              data-workjet-action={triggerAction}
+              onChange={(event) => {
+                setTitle(event.target.value);
+                setTitleEdited(true);
+              }}
+            />
+          </label>
+          <div className="grid min-w-0 gap-1 text-[13.5px]">
+            <span>Instanz</span>
+            <Select
+              value={instanceId ?? ""}
+              onValueChange={(value) =>
+                setChosenInstanceId(typeof value === "string" && value !== "" ? value : null)
+              }
+            >
+              <SelectTrigger aria-label="Instanz" disabled={options.length === 0}>
+                <SelectValue>{instanceLabel ?? "Keine Instanz verbunden"}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="start" alignItemWithTrigger={false}>
+                {options.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </div>
+        </div>
+      </InlinePanel>
+    </div>
   );
 }
 
@@ -1001,7 +1350,7 @@ function HostedStaticOnboardingState() {
           )}
         >
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
+            <span className="text-[13.5px] font-medium text-foreground md:text-muted-foreground/60">
               {APP_DISPLAY_NAME}
             </span>
           </div>
@@ -1013,18 +1362,11 @@ function HostedStaticOnboardingState() {
               <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground">
                 <LinkIcon className="size-5" />
               </div>
-              <EmptyTitle className="text-foreground text-xl">
-                Connect an environment to get started
-              </EmptyTitle>
-              <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
-                {cloudEnabled
-                  ? "Sign in to Workjet Connect to connect a linked environment through its managed tunnel, or add a reachable backend manually."
-                  : "Add a reachable backend manually to start working from this browser."}
-              </EmptyDescription>
+              <EmptyTitle className="text-[22px] text-foreground">Umgebung verbinden</EmptyTitle>
               <div className="mt-6 flex justify-center">
                 <Button render={<Link to="/settings/computers" />} size="sm">
                   <PlusIcon className="size-4" />
-                  {cloudEnabled ? "Open Computers" : "Add computer"}
+                  {cloudEnabled ? "Rechner öffnen" : "Rechner hinzufügen"}
                 </Button>
               </div>
             </EmptyHeader>

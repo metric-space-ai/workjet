@@ -1,20 +1,36 @@
-import { memo } from "react";
+import type { PullRequestMergeability, PullRequestState } from "@workjet/contracts";
+import { memo, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
+import { Row, type RowStatus } from "../ui/row";
+import { PullRequestChecksChip, PullRequestChecksList } from "./PullRequestChecksPopover";
 import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
-import {
-  PullRequestActorLabel,
-  PullRequestDiffStat,
-  PullRequestMetaLine,
-  PullRequestStateGlyph,
-} from "./pullRequestPresentation";
+import { PullRequestDiffStat, resolvePullRequestState } from "./pullRequestPresentation";
 
+/**
+ * Statuspunkt der Zeile: offen grün, Entwurf gelb (in Arbeit), Konflikt rot,
+ * zusammengeführt oder geschlossen grau (erledigt).
+ */
+export function pullRequestRowStatus(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly mergeability?: PullRequestMergeability | undefined;
+}): RowStatus {
+  if (input.state !== "open") return "off";
+  if (input.isDraft) return "busy";
+  if (input.mergeability === "conflicting") return "error";
+  return "ok";
+}
+
+/**
+ * Eine PR als Zeile (UI-Vertrag §1.2): Statuspunkt, Nummer und Titel, Branch
+ * als Meta, Checks als Chip. Der Name ist der Button, der die PR öffnet; der
+ * Checks-Chip klappt die Checks inline unter der Zeile auf.
+ */
 function PullRequestRowImpl({
   entry,
   selected,
@@ -27,119 +43,131 @@ function PullRequestRowImpl({
   entry: EnvironmentPullRequestEntry;
   selected: boolean;
   showProjectTitle: boolean;
-  /** Only when the list spans more than one host, where the repository alone is ambiguous. */
+  /** Nur bei mehreren Hosts; der Host steht dann in der Meta-Zeile. */
   showProvider: boolean;
-  /** Names the server this row was read from, where the list spans more than one. */
+  /** Der Server, von dem die Zeile kommt, wenn die Liste mehrere umfasst. */
   environmentLabel?: string;
-  /**
-   * A search found this, but in something the row does not show — a description, a comment, a
-   * commit message. Saying so is the difference between a result and an apparently random row.
-   */
+  /** Die Suche traf etwas, das die Zeile nicht zeigt (Beschreibung, Kommentar). */
   matchedElsewhere?: boolean;
   onSelect: (entry: EnvironmentPullRequestEntry) => void;
 }) {
-  const { Icon, providerName } = getSourceControlPresentationForKind(entry.provider);
+  const [checksOpen, setChecksOpen] = useState(false);
+  const status = pullRequestRowStatus(entry);
+  const statusLabel = resolvePullRequestState({
+    state: entry.state,
+    isDraft: entry.isDraft,
+    ...(entry.mergeability ? { mergeability: entry.mergeability } : {}),
+    baseBranch: entry.baseBranch,
+  }).label;
+  const metaParts = [
+    entry.headBranch,
+    showProvider ? getSourceControlPresentationForKind(entry.provider).providerName : null,
+    showProjectTitle ? entry.repository : null,
+    environmentLabel ?? null,
+    entry.author?.login ?? null,
+  ].filter((part): part is string => part !== null && part.length > 0);
+
   return (
-    <button
-      type="button"
-      aria-current={selected ? "true" : undefined}
-      onClick={() => onSelect(entry)}
+    <div
       className={cn(
-        "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        // Offscreen rows are skipped for style, layout and paint: a long list costs what the
-        // viewport shows, not what the pages have loaded. The intrinsic size keeps the
-        // scrollbar honest while a row is skipped.
-        "[contain-intrinsic-block-size:54px] [content-visibility:auto]",
+        "rounded-lg transition-colors",
+        // Zeilen außerhalb des Sichtfelds überspringen Stil, Layout und Malen.
+        "[contain-intrinsic-block-size:52px] [content-visibility:auto]",
         selected ? "bg-accent" : "hover:bg-accent/60",
       )}
+      data-slot="pull-request-row"
+      data-selected={selected ? "true" : undefined}
     >
-      <PullRequestStateGlyph
-        state={entry.state}
-        isDraft={entry.isDraft}
-        mergeability={entry.mergeability}
-        baseBranch={entry.baseBranch}
-      />
-      <span className="min-w-0">
-        <span
-          className="line-clamp-2 text-sm font-medium text-foreground sm:block sm:truncate"
-          title={entry.title}
-        >
-          {entry.title}
-        </span>
-        <PullRequestMetaLine className="mt-0.5 text-xs text-muted-foreground/70">
-          <span className="flex shrink-0 items-center gap-1">
-            {showProvider ? (
-              <Tooltip>
-                <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-                  <Icon aria-label={providerName} className="size-3" />
-                </TooltipTrigger>
-                <TooltipPopup>{providerName}</TooltipPopup>
-              </Tooltip>
-            ) : null}
-            {/* The number carries the link, here as much as on the detail: a right-click on it
-                copies the pull request's own address rather than opening the editing menu. */}
-            <span
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void showPullRequestLinkContextMenu({
-                  url: entry.url,
-                  openLabel: openOnHostLabel(entry.provider),
-                  position: { x: event.clientX, y: event.clientY },
-                });
-              }}
-            >
+      <Row
+        className="relative"
+        status={status}
+        statusLabel={statusLabel}
+        name={
+          <button
+            type="button"
+            aria-current={selected ? "true" : undefined}
+            onClick={() => onSelect(entry)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void showPullRequestLinkContextMenu({
+                url: entry.url,
+                openLabel: openOnHostLabel(entry.provider),
+                position: { x: event.clientX, y: event.clientY },
+              });
+            }}
+            className="min-w-0 max-w-full text-left break-words whitespace-normal outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-1 focus-visible:after:ring-ring sm:truncate sm:whitespace-nowrap"
+          >
+            <span className="mr-1.5 font-normal text-muted-foreground tabular-nums">
               #{entry.number}
             </span>
+            {entry.title}
+          </button>
+        }
+        meta={
+          // Bei 420 px steht, was rechts keinen Platz hat (Zeit, Diff, Freigabe), unter dem
+          // Titel und bricht um, statt zu verschwinden.
+          <span className="flex flex-wrap items-center gap-x-1.5 whitespace-normal sm:block sm:whitespace-nowrap">
+            <span className="font-mono text-[12px] break-words">{metaParts.join(" · ")}</span>
+            <span className="inline-flex flex-wrap items-center gap-x-1.5 text-[12px] whitespace-nowrap tabular-nums sm:hidden">
+              <span>{formatRelativeTimeLabel(entry.updatedAt)}</span>
+              <PullRequestDiffStat additions={entry.additions} deletions={entry.deletions} />
+              {entry.reviewDecision === "approved" ? (
+                <span className="text-emerald-600 dark:text-emerald-400/90">Freigegeben</span>
+              ) : entry.reviewDecision === "changes-requested" ? (
+                <span className="text-amber-600 dark:text-amber-400/90">Änderungen</span>
+              ) : null}
+            </span>
           </span>
-          {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
-          {environmentLabel ? (
-            <span className="max-w-32 shrink-0 truncate">{environmentLabel}</span>
-          ) : null}
-          <PullRequestActorLabel actor={entry.author} className="max-w-40 shrink-0" />
-          {/* Only a verdict somebody has actually given: "review required" is the absence of
-              one, and saying so on every unreviewed row would say nothing. */}
-          {entry.reviewDecision === "approved" || entry.reviewDecision === "changes-requested" ? (
-            <span
-              className={cn(
-                "shrink-0",
-                entry.reviewDecision === "approved"
-                  ? "text-emerald-600/90 dark:text-emerald-400/80"
-                  : "text-amber-600/90 dark:text-amber-400/80",
-              )}
-            >
-              {entry.reviewDecision === "approved" ? "Approved" : "Changes requested"}
+        }
+        chips={
+          <>
+            {entry.reviewDecision === "approved" ? (
+              <span className="hidden rounded-full border border-emerald-500/40 px-1.5 text-[11px] text-emerald-600 sm:inline dark:text-emerald-400/90">
+                Freigegeben
+              </span>
+            ) : entry.reviewDecision === "changes-requested" ? (
+              <span className="hidden rounded-full border border-amber-500/40 px-1.5 text-[11px] text-amber-600 sm:inline dark:text-amber-400/90">
+                Änderungen
+              </span>
+            ) : null}
+            {matchedElsewhere ? (
+              <span className="hidden rounded-full border border-border/60 px-1.5 text-[11px] text-muted-foreground sm:inline">
+                Treffer im Text
+              </span>
+            ) : null}
+            {entry.checksState === undefined ? null : (
+              <PullRequestChecksChip
+                className="relative z-10"
+                checksState={entry.checksState}
+                expanded={checksOpen}
+                onToggle={() => setChecksOpen((open) => !open)}
+              />
+            )}
+            <span className="hidden flex-col items-end text-[11px] text-muted-foreground tabular-nums sm:flex">
+              <span>{formatRelativeTimeLabel(entry.updatedAt)}</span>
+              <PullRequestDiffStat additions={entry.additions} deletions={entry.deletions} />
             </span>
-          ) : null}
-          {entry.checksState === undefined ? null : (
-            <PullRequestChecksPopover
-              checksState={entry.checksState}
-              environmentId={entry.environmentId}
-              reference={{
-                projectId: entry.projectId,
-                repository: entry.repository,
-                number: entry.number,
-              }}
-            />
-          )}
-          {matchedElsewhere ? (
-            <span className="shrink-0 rounded-full border border-border/60 px-1.5 text-[10px]">
-              matched in the description
-            </span>
-          ) : null}
-        </PullRequestMetaLine>
-      </span>
-      <span className="flex shrink-0 flex-col items-end gap-0.5 text-xs text-muted-foreground/70 tabular-nums">
-        <span>{formatRelativeTimeLabel(entry.updatedAt)}</span>
-        <PullRequestDiffStat additions={entry.additions} deletions={entry.deletions} />
-      </span>
-    </button>
+          </>
+        }
+      />
+      {checksOpen && entry.checksState !== undefined ? (
+        <PullRequestChecksList
+          className="pl-8"
+          environmentId={entry.environmentId}
+          reference={{
+            projectId: entry.projectId,
+            repository: entry.repository,
+            number: entry.number,
+          }}
+        />
+      ) : null}
+    </div>
   );
 }
 
 /**
- * Memoized: the list re-renders on every keystroke of a search and every status poll, and a
- * row whose entry, selection and match state are unchanged has nothing new to say. Effective
- * because the route hands it a stable `onSelect`.
+ * Memoisiert: die Liste rendert bei jedem Tastendruck der Suche neu; eine
+ * Zeile mit unveränderter PR, Auswahl und Trefferlage hat nichts Neues.
  */
 export const PullRequestRow = memo(PullRequestRowImpl);

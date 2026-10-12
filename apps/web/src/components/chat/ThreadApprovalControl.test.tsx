@@ -12,9 +12,9 @@ describe("thread approval policy control", () => {
         onChange={async () => true}
       />,
     );
-    expect(markup).toContain('aria-label="Thread approval policy"');
+    expect(markup).toContain('aria-label="Freigaberegel"');
     expect(markup).toContain('value="project" selected');
-    expect(markup).toContain("Require approvals");
+    expect(markup).toContain("Freigabe nötig");
     const overridden = renderToStaticMarkup(
       <ThreadApprovalControl
         runtimeMode="approval-required"

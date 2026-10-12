@@ -55,7 +55,7 @@ describe("desktop update button state", () => {
     };
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
-    expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("Erneut versuchen");
   });
 
   it("keeps install action available after an install error", () => {
@@ -70,7 +70,7 @@ describe("desktop update button state", () => {
     };
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(resolveDesktopUpdateButtonAction(state)).toBe("install");
-    expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("Erneut versuchen");
   });
 
   it("prefers install when a downloaded version already exists", () => {
@@ -210,7 +210,7 @@ describe("desktop update UI helpers", () => {
 
     expect(shouldShowArm64IntelBuildWarning(state)).toBe(true);
     expect(getArm64IntelBuildWarningDescription(state)).toContain("Apple Silicon");
-    expect(getArm64IntelBuildWarningDescription(state)).toContain("Intel build");
+    expect(getArm64IntelBuildWarningDescription(state)).toContain("Intel-Build");
   });
 
   it("changes the warning copy when a native build update is ready to download", () => {
@@ -223,7 +223,7 @@ describe("desktop update UI helpers", () => {
       availableVersion: "1.1.0",
     };
 
-    expect(getArm64IntelBuildWarningDescription(state)).toContain("Download the available update");
+    expect(getArm64IntelBuildWarningDescription(state)).toContain("Update lädt Apple Silicon");
   });
 
   it("includes the downloaded version in the install confirmation copy", () => {
@@ -232,7 +232,7 @@ describe("desktop update UI helpers", () => {
         availableVersion: "1.1.0",
         downloadedVersion: "1.1.1",
       }),
-    ).toContain("Install update 1.1.1 and restart Workjet?");
+    ).toContain("Update 1.1.1 installieren und Workjet neu starten?");
   });
 
   it("falls back to generic install confirmation copy when no version is available", () => {
@@ -241,7 +241,7 @@ describe("desktop update UI helpers", () => {
         availableVersion: null,
         downloadedVersion: null,
       }),
-    ).toContain("Install update and restart Workjet?");
+    ).toContain("Update installieren und Workjet neu starten?");
   });
 
   it("warns Windows users that a silent installation can take several minutes", () => {
@@ -253,9 +253,9 @@ describe("desktop update UI helpers", () => {
       "Win32",
     );
 
-    expect(message).toContain("may remain closed for several minutes");
-    expect(message).toContain("no installer window may appear");
-    expect(message).toContain("will reopen automatically");
+    expect(message).toContain("einige Minuten geschlossen");
+    expect(message).toContain("ohne Installationsfenster");
+    expect(message).toContain("startet danach neu");
   });
 
   it("keeps the additional silent installation warning Windows-specific", () => {
@@ -267,7 +267,7 @@ describe("desktop update UI helpers", () => {
       "MacIntel",
     );
 
-    expect(message).not.toContain("may remain closed for several minutes");
+    expect(message).not.toContain("einige Minuten geschlossen");
   });
 });
 
@@ -329,9 +329,7 @@ describe("canCheckForUpdate", () => {
 
 describe("getDesktopUpdateButtonTooltip", () => {
   it("returns 'Up to date' for non-actionable states", () => {
-    expect(getDesktopUpdateButtonTooltip({ ...baseState, status: "idle" })).toBe("Up to date");
-    expect(getDesktopUpdateButtonTooltip({ ...baseState, status: "up-to-date" })).toBe(
-      "Up to date",
-    );
+    expect(getDesktopUpdateButtonTooltip({ ...baseState, status: "idle" })).toBe("Aktuell");
+    expect(getDesktopUpdateButtonTooltip({ ...baseState, status: "up-to-date" })).toBe("Aktuell");
   });
 });

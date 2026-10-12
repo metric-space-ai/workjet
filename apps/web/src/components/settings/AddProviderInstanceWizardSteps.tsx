@@ -1,73 +1,96 @@
-import { CheckIcon } from "lucide-react";
+/**
+ * Harness-Auswahl oben im Inline-Panel „Harness hinzufügen“. Ersetzt den
+ * früheren dreistufigen Assistenten (Driver/Identity/Config): eine Ebene,
+ * oben die Auswahl, darunter nur die Felder des gewählten Harness.
+ */
+import { ProviderDriverKind } from "@workjet/contracts";
 
-import { cn } from "../../lib/utils";
-import {
-  ADD_PROVIDER_WIZARD_STEPS,
-  resolveWizardNavigation,
-  type WizardNavigation,
-} from "./AddProviderInstanceDialog.logic";
+import { ACPRegistryIcon, Gemini, GithubCopilotIcon, type Icon } from "../Icons";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { DRIVER_OPTION_BY_VALUE, DRIVER_OPTIONS } from "./providerDriverMeta";
 
-interface AddProviderInstanceWizardStepsProps {
-  readonly currentStep: number;
-  readonly summaries: readonly (string | null)[];
-  readonly instanceIdError: string | null;
-  readonly onNavigation: (navigation: WizardNavigation) => void;
+interface ComingSoonDriverOption {
+  readonly value: ProviderDriverKind;
+  readonly label: string;
+  readonly icon: Icon;
 }
 
-export function AddProviderInstanceWizardSteps({
-  currentStep,
-  summaries,
-  instanceIdError,
-  onNavigation,
-}: AddProviderInstanceWizardStepsProps) {
+export const COMING_SOON_DRIVER_OPTIONS: readonly ComingSoonDriverOption[] = [
+  {
+    value: ProviderDriverKind.make("githubCopilot"),
+    label: "GitHub Copilot",
+    icon: GithubCopilotIcon,
+  },
+  {
+    value: ProviderDriverKind.make("gemini"),
+    label: "Gemini",
+    icon: Gemini,
+  },
+  {
+    value: ProviderDriverKind.make("acpRegistry"),
+    label: "ACP Registry",
+    icon: ACPRegistryIcon,
+  },
+  // Pi is NOT coming soon: Pi Code is already listed as a usable runtime on
+  // the Harnesses page. Advertising it here again — under a second name with
+  // a second icon — split one product into two brands (Befund K-B7).
+];
+
+interface AddProviderInstanceDriverSelectProps {
+  readonly driver: ProviderDriverKind;
+  readonly onDriverChange: (driver: ProviderDriverKind) => void;
+}
+
+export function AddProviderInstanceDriverSelect({
+  driver,
+  onDriverChange,
+}: AddProviderInstanceDriverSelectProps) {
+  const selected = DRIVER_OPTION_BY_VALUE[driver];
+  const SelectedIcon = selected?.icon;
   return (
-    <ol
-      className="grid grid-cols-3 gap-1 rounded-xl bg-zinc-25 p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
-      role="list"
+    <Select
+      value={driver}
+      onValueChange={(value) => {
+        const next = DRIVER_OPTIONS.find((option) => option.value === value)?.value;
+        if (next !== undefined) onDriverChange(next);
+      }}
     >
-      {ADD_PROVIDER_WIZARD_STEPS.map((step, index) => (
-        <li key={step} className="min-w-0">
-          <button
-            type="button"
-            className={cn(
-              "flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left outline-none hover:bg-card focus-visible:ring-2 focus-visible:ring-ring max-sm:justify-center max-sm:px-2",
-              index === currentStep &&
-                "bg-card text-foreground shadow-xs ring-1 ring-black/5 hover:bg-card dark:shadow-none dark:ring-white/5",
-            )}
-            aria-current={index === currentStep ? "step" : undefined}
-            aria-label={`${step}, step ${index + 1}${index < currentStep && summaries[index] ? `, ${summaries[index]}` : ""}`}
-            onClick={() =>
-              onNavigation(
-                resolveWizardNavigation(currentStep, index, ADD_PROVIDER_WIZARD_STEPS.length, {
-                  instanceIdError,
-                }),
-              )
-            }
-          >
-            <span
-              className={cn(
-                "grid size-5 shrink-0 place-items-center rounded-full text-sm font-medium ring-1",
-                index < currentStep
-                  ? "bg-primary text-primary-foreground ring-primary"
-                  : index === currentStep
-                    ? "bg-primary/10 text-primary ring-primary/30"
-                    : "bg-card text-muted-foreground ring-black/10 dark:bg-white/5 dark:ring-white/10",
-              )}
-              aria-hidden
-            >
-              {index < currentStep ? <CheckIcon className="size-4 shrink-0" /> : index + 1}
-            </span>
-            <span
-              className={cn(
-                "min-w-0 truncate text-sm font-medium max-sm:hidden",
-                index === currentStep ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {step}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ol>
+      <SelectTrigger className="w-full sm:w-64" aria-label="Harness">
+        <SelectValue>
+          <span className="flex min-w-0 items-center gap-2">
+            {SelectedIcon ? <SelectedIcon className="size-4 shrink-0" aria-hidden /> : null}
+            <span className="truncate">{selected?.label ?? String(driver)}</span>
+          </span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="start" alignItemWithTrigger={false}>
+        {DRIVER_OPTIONS.map((option) => {
+          const OptionIcon = option.icon;
+          return (
+            <SelectItem key={option.value} hideIndicator value={option.value}>
+              <span className="flex min-w-0 items-center gap-2">
+                <OptionIcon className="size-4 shrink-0" aria-hidden />
+                <span className="truncate">{option.label}</span>
+                {option.badgeLabel ? (
+                  <span className="text-[11px] text-muted-foreground">{option.badgeLabel}</span>
+                ) : null}
+              </span>
+            </SelectItem>
+          );
+        })}
+        {COMING_SOON_DRIVER_OPTIONS.map((option) => {
+          const OptionIcon = option.icon;
+          return (
+            <SelectItem key={option.value} hideIndicator disabled value={option.value}>
+              <span className="flex min-w-0 items-center gap-2">
+                <OptionIcon className="size-4 shrink-0" aria-hidden />
+                <span className="truncate">{option.label}</span>
+                <span className="text-[11px] text-muted-foreground">Bald</span>
+              </span>
+            </SelectItem>
+          );
+        })}
+      </SelectPopup>
+    </Select>
   );
 }

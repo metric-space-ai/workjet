@@ -7,11 +7,20 @@ import { ThemeEditorPanel } from "./ThemeEditorPanel";
 import { useThemeEditorStore } from "./themeEditorStore";
 
 /**
- * Renders the theme editor above the router. The editor paints its draft on
- * the live app, so it has to outlive the settings route: the point is to walk
- * through threads, panels, and pages while the colors are being tuned.
+ * Früher schwebte der Editor über dem Router. Er sitzt jetzt inline auf der
+ * Seite Darstellung (ThemeEditorSection in ThemeLibrary); dieser Host rendert
+ * nichts mehr und bleibt nur, bis die Einbindung in routes/__root.tsx entfällt.
  */
 export function ThemeEditorHost() {
+  return null;
+}
+
+/**
+ * Der Theme-Editor als Abschnitt auf der Seite Darstellung. Die Sitzung liegt
+ * im Store, damit ein Befehl (Befehlspalette) den Editor öffnen kann; sichtbar
+ * ist er nur dort, wo dieser Abschnitt gerendert wird.
+ */
+export function ThemeEditorSection() {
   const session = useThemeEditorStore((store) => store.session);
   const closeThemeEditor = useThemeEditorStore((store) => store.closeThemeEditor);
   const { theme, setTheme, themeHalves, refreshTheme } = useTheme();
@@ -28,21 +37,11 @@ export function ThemeEditorHost() {
       // whole theme shows the new palette right away.
       if (mergedAppearance) {
         if (!setTheme(savedTheme.id)) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not save your theme",
-              description: "Browser storage is unavailable, so the change was not kept.",
-            }),
-          );
+          toastManager.add(stackedThreadToast({ type: "error", title: "Theme nicht gespeichert" }));
           return false;
         }
         toastManager.add(
-          stackedThreadToast({
-            type: "success",
-            title: `${savedTheme.label} updated`,
-            description: `Its ${mergedAppearance} palette was added.`,
-          }),
+          stackedThreadToast({ type: "success", title: `${savedTheme.label} aktualisiert` }),
         );
         return true;
       }
@@ -56,31 +55,17 @@ export function ThemeEditorHost() {
           themeHalves?.dark === savedTheme.id;
         if (wasActive) refreshTheme();
         toastManager.add(
-          stackedThreadToast({
-            type: "success",
-            title: `${savedTheme.label} saved`,
-            description: wasActive ? "Your changes are now active." : "Your changes are saved.",
-          }),
+          stackedThreadToast({ type: "success", title: `${savedTheme.label} gespeichert` }),
         );
         return true;
       }
 
       if (!setTheme(savedTheme.id)) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not save your theme",
-            description: "Browser storage is unavailable, so the change was not kept.",
-          }),
-        );
+        toastManager.add(stackedThreadToast({ type: "error", title: "Theme nicht gespeichert" }));
         return false;
       }
       toastManager.add(
-        stackedThreadToast({
-          type: "success",
-          title: `${savedTheme.label} created`,
-          description: "It’s now active.",
-        }),
+        stackedThreadToast({ type: "success", title: `${savedTheme.label} erstellt` }),
       );
       return true;
     },

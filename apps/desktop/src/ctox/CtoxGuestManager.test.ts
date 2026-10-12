@@ -4320,12 +4320,12 @@ describe("pooled Shell recovery", () => {
       expect(harness.views[0]!.close).toHaveBeenCalledOnce();
       expect(
         harness.views[0]!.executeJavaScript.mock.calls.filter(([code]) =>
-          code.includes("workjetProjectControl("),
+          code.includes('"action":"project.list"'),
         ),
       ).toHaveLength(3);
       expect(
         harness.views[1]!.executeJavaScript.mock.calls.filter(([code]) =>
-          code.includes("workjetProjectControl("),
+          code.includes('"action":"project.list"'),
         ),
       ).toHaveLength(1);
     }).pipe(Effect.provide(harness.layer));
@@ -4403,4 +4403,28 @@ describe("pooled Shell recovery", () => {
       expect(harness.addChildView).toHaveBeenCalledTimes(2);
     }).pipe(Effect.provide(harness.layer));
   });
+});
+
+it.effect("counts a shared failed list only once across concurrent subscribers", () => {
+  const harness = makeGuestHarness();
+  harness.setLoadURLImplementation(async (url, emit) => {
+    harness.views.at(-1)!.executeJavaScript.mockResolvedValue({ status: "failed" });
+    queueMicrotask(() => emit("did-frame-navigate", {}, url, 200, "OK", true, 1, 1));
+  });
+  return Effect.gen(function* () {
+    const manager = yield* CtoxGuestManager.CtoxGuestManager;
+    for (let group = 0; group < 2; group++)
+      yield* Effect.all(
+        Array.from({ length: 3 }, () =>
+          manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        ),
+        { concurrency: "unbounded" },
+      );
+    expect(harness.createView).toHaveBeenCalledOnce();
+    expect(
+      harness.views[0]!.executeJavaScript.mock.calls.filter(([code]) =>
+        code.includes('"action":"project.list"'),
+      ),
+    ).toHaveLength(2);
+  }).pipe(Effect.provide(harness.layer));
 });

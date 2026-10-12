@@ -1044,7 +1044,10 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const pendingLists = new Map<string, Deferred.Deferred<CtoxWorkjetProjectControlResult>>();
     const generationOf = (instance: CtoxManagedInstance) =>
       instance.shellUpdate?.activeVersion
-        ? JSON.stringify([instance.shellUpdate.activeVersion, instance.shellUpdate.lastActivatedAt])
+        ? encodeUnknownJson([
+            instance.shellUpdate.activeVersion,
+            instance.shellUpdate.lastActivatedAt,
+          ])
         : undefined;
     const observeShellGenerations = (instances: readonly CtoxManagedInstance[]) =>
       Effect.sync(() => {
@@ -2520,7 +2523,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       Effect.gen(function* () {
         if (request.action !== "project.list")
           return yield* projectControlWithRecovery(instanceId, request);
-        const key = JSON.stringify([instanceId, projectControlReadKey(request)]);
+        const key = encodeUnknownJson([instanceId, projectControlReadKey(request)]);
         const existing = pendingLists.get(key);
         if (existing) return yield* Deferred.await(existing);
         const receipt = Deferred.makeUnsafe<CtoxWorkjetProjectControlResult>();

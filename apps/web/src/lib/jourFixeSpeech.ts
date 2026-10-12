@@ -47,6 +47,8 @@ export class JourFixeSpeechSession {
   private stopListening: (() => Promise<void>) | undefined;
   private narration: AbortController | undefined;
   private audioUrl: string | undefined;
+  private narrationSlide: string | undefined;
+  private narrationLoad: Promise<void> | undefined;
 
   constructor(
     private readonly provider: JourFixeSpeechProvider,
@@ -139,7 +141,18 @@ export class JourFixeSpeechSession {
     }
   }
 
-  async prepareNarration(slideId: string): Promise<void> {
+  prepareNarration(slideId: string): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    if (this.narrationSlide === slideId && this.narrationLoad) return this.narrationLoad;
+    this.narrationSlide = slideId;
+    const pending = this.loadNarration(slideId).finally(() => {
+      if (this.narrationLoad === pending) this.narrationLoad = undefined;
+    });
+    this.narrationLoad = pending;
+    return pending;
+  }
+
+  private async loadNarration(slideId: string): Promise<void> {
     if (this.closed) return;
     this.narration?.abort();
     const controller = new AbortController();
@@ -176,6 +189,7 @@ export class JourFixeSpeechSession {
     this.listening = undefined;
     void stop?.().catch(() => {});
     this.releaseAudio();
+    this.events.onAudio(undefined);
   }
 
   private releaseAudio() {

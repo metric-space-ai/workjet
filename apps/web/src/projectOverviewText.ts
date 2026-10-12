@@ -1,11 +1,13 @@
 export type ProjectOverviewLanguage = "de" | "en";
+/**
+ * Workjet spricht Deutsch. Englisch nur bei ausdrücklicher Wahl: Electron
+ * meldet als Browsersprache oft „en-US“, auch wenn macOS deutsch eingestellt ist.
+ */
 export function projectOverviewLanguage(
   preference: string = "system",
-  browserLanguage: string = "de",
+  _browserLanguage: string = "de",
 ): ProjectOverviewLanguage {
-  return (preference === "system" ? browserLanguage : preference).toLowerCase().startsWith("de")
-    ? "de"
-    : "en";
+  return preference === "en" ? "en" : "de";
 }
 export const PROJECT_OVERVIEW_TEXT = {
   de: {

@@ -39,14 +39,10 @@ export class WorkjetProjectControlError extends Error {
   }
 }
 
+/** Workjet spricht Deutsch; die Electron-Browsersprache („en-US“) zählt nicht. */
 export function workjetUiLanguage(): "de" | "en" {
-  const language =
-    typeof navigator !== "undefined" && navigator.language
-      ? navigator.language
-      : typeof document !== "undefined"
-        ? document.documentElement.lang
-        : "en";
-  return language.toLowerCase().startsWith("de") ? "de" : "en";
+  const language = typeof document !== "undefined" ? document.documentElement.lang : "de";
+  return language.toLowerCase().startsWith("en") ? "en" : "de";
 }
 
 export function describeGuestPreparationStage(

@@ -61,7 +61,7 @@ describe("account calendars on the authenticated guest", () => {
       .mockResolvedValue({ _tag: "failed", code: "unsupported" });
     await expect(
       new NativeAccountCalendar("instance-1", () => true, control).accounts(),
-    ).rejects.toThrow("Business OS shell");
+    ).rejects.toThrow("Business-OS-Shell");
     expect(control).toHaveBeenCalledTimes(1);
   });
   it("rejects foreign command IDs, account receipts and unknown sensitive fields", async () => {

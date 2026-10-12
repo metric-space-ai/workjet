@@ -27,34 +27,42 @@ describe("project instance failure display", () => {
 
   it("distinguishes hosted sign-in from accountless paired authentication", () => {
     const failure = { _tag: "failed", code: "authentication_required" } as const;
-    expect(describeWorkjetProjectControlFailure(failure, "managed:tenant")).toContain(
+    expect(describeWorkjetProjectControlFailure(failure, "managed:tenant", "en")).toContain(
       "Sign in to ctox.dev",
     );
-    expect(describeWorkjetProjectControlFailure(failure, "paired:tenant")).not.toContain(
+    expect(describeWorkjetProjectControlFailure(failure, "paired:tenant", "en")).not.toContain(
       "ctox.dev",
     );
   });
   it("explains discovery failure without exposing its raw code", () => {
     expect(
-      describeWorkjetProjectControlFailure({
-        _tag: "failed",
-        code: "guest_failed",
-        discovery: { code: "http_error", httpStatus: 503 },
-      }),
+      describeWorkjetProjectControlFailure(
+        {
+          _tag: "failed",
+          code: "guest_failed",
+          discovery: { code: "http_error", httpStatus: 503 },
+        },
+        null,
+        "en",
+      ),
     ).toBe("The instance could not be reached.");
   });
   it("asks for the connected shell update when its action is unsupported", () => {
-    expect(describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" })).toBe(
-      "The connected instance does not support this action. Update its Business OS shell.",
-    );
+    expect(
+      describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" }, null, "en"),
+    ).toBe("The connected instance does not support this action. Update its Business OS shell.");
   });
   it("explains a classified data-plane timeout without showing guest exception text", () => {
     expect(
-      describeWorkjetProjectControlFailure({
-        _tag: "failed",
-        code: "guest_failed",
-        diagnostic: { stage: "execute", reason: "request_timeout" },
-      }),
+      describeWorkjetProjectControlFailure(
+        {
+          _tag: "failed",
+          code: "guest_failed",
+          diagnostic: { stage: "execute", reason: "request_timeout" },
+        },
+        null,
+        "en",
+      ),
     ).toBe("The instance data request timed out.");
   });
 });

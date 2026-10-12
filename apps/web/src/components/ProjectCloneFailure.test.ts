@@ -16,9 +16,7 @@ describe("cloneFailureMessage", () => {
 
   it("names the host for network failures", () => {
     const failure = { detail: "clone-failed:network fatal: unable to access" };
-    expect(cloneFailureMessage(failure, repo, "en")).toBe(
-      "Can't reach github.com. Check the internet connection and try again.",
-    );
+    expect(cloneFailureMessage(failure, repo, "en")).toBe("github.com unreachable.");
   });
 
   it("keeps git's reason for unknown failures instead of a generic sentence", () => {

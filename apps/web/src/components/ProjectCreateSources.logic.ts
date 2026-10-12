@@ -235,19 +235,17 @@ export async function cloneProjectRepository(
 
 const CLONE_FAILURE_TEXT = {
   de: {
-    auth: "Kein Zugriff auf {repo}. Ist das Repository privat? Melde dich auf diesem Rechner bei GitHub an (z. B. `gh auth login`) und versuche es erneut.",
-    "not-found": "{repo} wurde nicht gefunden. Prüfe die Adresse und versuche es erneut.",
-    "destination-exists":
-      "Der Zielordner existiert bereits und ist nicht leer. Wähle einen anderen Ordner.",
-    network: "Keine Verbindung zu {host}. Prüfe die Internetverbindung und versuche es erneut.",
+    auth: "Kein Zugriff auf {repo} – auf diesem Rechner bei GitHub anmelden.",
+    "not-found": "{repo} nicht gefunden.",
+    "destination-exists": "Zielordner ist nicht leer.",
+    network: "{host} nicht erreichbar.",
     unknown: "Klonen von {repo} fehlgeschlagen.",
   },
   en: {
-    auth: "No access to {repo}. Is the repository private? Sign in to GitHub on this computer (e.g. `gh auth login`) and try again.",
-    "not-found": "{repo} was not found. Check the address and try again.",
-    "destination-exists":
-      "The target folder already exists and is not empty. Choose another folder.",
-    network: "Can't reach {host}. Check the internet connection and try again.",
+    auth: "No access to {repo} – sign in to GitHub on this computer.",
+    "not-found": "{repo} not found.",
+    "destination-exists": "Target folder is not empty.",
+    network: "{host} unreachable.",
     unknown: "Cloning {repo} failed.",
   },
 } as const;

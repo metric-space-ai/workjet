@@ -19,6 +19,8 @@ import { ProjectMeetingPreparationField } from "./ProjectMeetingPreparationField
 import { ProjectSupervisorLumaSelect, type LumaFieldProps } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
+import { workjetUiLanguage } from "../workjetProjectControl";
 
 const decodeProjectConfiguration = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
   onExcessProperty: "error",
@@ -226,7 +228,7 @@ export function ProjectOverviewEditor({
             if (!savedKpis) {
               setState({
                 pending: false,
-                message: "KPIs nicht gespeichert",
+                message: workjetUiLanguage() === "en" ? "KPIs not saved" : "KPIs nicht gespeichert",
               });
               return;
             }
@@ -503,11 +505,16 @@ export function ProjectOverviewEditor({
             <label htmlFor={`${id}-kpi-${index}`} className="text-xs text-muted-foreground">
               KPI {index + 1}
             </label>
-            <Input
+            <Textarea
               id={`${id}-kpi-${index}`}
               maxLength={1024}
+              rows={2}
               value={prompts[index]}
-              placeholder="Kennzahl in einem Satz"
+              placeholder={
+                workjetUiLanguage() === "en"
+                  ? "Describe the KPI in one sentence"
+                  : "Kennzahl in einem Satz"
+              }
               disabled={state.pending || !canConfigureKpis}
               onChange={(event) =>
                 setPrompts((current) =>

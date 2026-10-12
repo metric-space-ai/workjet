@@ -93,6 +93,7 @@ import { ProjectSupervisorLumaField } from "../ProjectSupervisorLumaField";
 import type { ProjectConfigurationValues } from "../ProjectOverviewEditor";
 import { buildProjectGallery } from "../../projectOverview";
 import { configureWorkjetProject } from "../../workjetProjectControl";
+import { useProjectKpiSettings } from "../../hooks/useProjectKpiSettings";
 import {
   recordWorkjetProjectProjection,
   refreshWorkjetProjectRegistry,
@@ -774,6 +775,8 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     [activeCtoxInstanceId, group.displayName, nativeConfiguration],
   );
 
+  const projectKpis = useProjectKpiSettings(activeCtoxInstanceId, nativeConfiguration?.id);
+
   const removeLabel =
     group.memberProjects.length > 1 ? "Alle Einträge entfernen" : "Projekt entfernen";
 
@@ -853,6 +856,8 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             overview={representative.overview}
             configuration={nativeConfiguration}
             onSaveConfiguration={nativeConfiguration ? saveNativeConfiguration : undefined}
+            kpis={projectKpis.kpis}
+            onSaveKpis={projectKpis.save}
             renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
             onSave={async (overview) => {
               if (

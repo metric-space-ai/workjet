@@ -35,7 +35,13 @@ async function verifiedFile(input: {
     if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
   }
 
-  const response = await input.fetchArtifact(input.url, { signal: AbortSignal.timeout(120_000) });
+  // Release downloads occasionally answer 5xx (a 504 failed release run 38242160372); retry those
+  // a few times before failing the build. Client errors still fail immediately.
+  let response = await input.fetchArtifact(input.url, { signal: AbortSignal.timeout(120_000) });
+  for (let attempt = 1; attempt < 4 && response.status >= 500; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, attempt * 5_000));
+    response = await input.fetchArtifact(input.url, { signal: AbortSignal.timeout(120_000) });
+  }
   if (!response.ok || !response.body) {
     throw new Error(`Provider-gateway artifact download failed: HTTP ${response.status}.`);
   }

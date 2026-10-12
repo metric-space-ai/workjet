@@ -1041,7 +1041,10 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     let guestUseSequence = 0;
     const shellGenerations = new Map<string, string>();
     const listFailures = new WeakMap<WebContents, number>();
-    const pendingLists = new Map<string, Deferred.Deferred<CtoxWorkjetProjectControlResult>>();
+    const pendingLists = new WeakMap<
+      WebContents,
+      Map<string, Deferred.Deferred<CtoxWorkjetProjectControlResult>>
+    >();
     const generationOf = (instance: CtoxManagedInstance) =>
       instance.shellUpdate?.activeVersion
         ? encodeUnknownJson([
@@ -2175,6 +2178,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const requestProjectControlOnce = (
       instanceId: string,
       request: CtoxWorkjetProjectControlRequest,
+      preparation?: CtoxManagedGuestResult,
     ): Effect.Effect<CtoxWorkjetProjectControlResult> =>
       Effect.gen(function* (): Generator<
         Effect.Effect<unknown>,
@@ -2183,7 +2187,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       > {
         // Project control is required by native Dev chats and the meeting room,
         // even when the Ops surface has never been shown in this window.
-        const prepared = yield* ensurePooled(instanceId);
+        const prepared = preparation ?? (yield* ensurePooled(instanceId));
         if (prepared._tag !== "ready") {
           yield* Effect.logWarning("CTOX project control preparation failed", {
             instanceId,
@@ -2523,16 +2527,25 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       Effect.gen(function* () {
         if (request.action !== "project.list")
           return yield* projectControlWithRecovery(instanceId, request);
-        const key = encodeUnknownJson([instanceId, projectControlReadKey(request)]);
-        const existing = pendingLists.get(key);
+        const prepared = yield* ensurePooled(instanceId);
+        if (prepared._tag !== "ready")
+          return yield* requestProjectControlOnce(instanceId, request, prepared);
+        const state = yield* SynchronizedRef.get(stateRef);
+        const guest = state.pool.get(instanceId);
+        if (!guest) return { _tag: "failed", code: "not_active" };
+        let lists = pendingLists.get(guest.view.webContents);
+        if (!lists) pendingLists.set(guest.view.webContents, (lists = new Map()));
+        const currentLists = lists;
+        const key = projectControlReadKey(request)!;
+        const existing = currentLists.get(key);
         if (existing) return yield* Deferred.await(existing);
         const receipt = Deferred.makeUnsafe<CtoxWorkjetProjectControlResult>();
-        pendingLists.set(key, receipt);
+        currentLists.set(key, receipt);
         yield* Deferred.into(
           projectControlWithRecovery(instanceId, request).pipe(
             Effect.ensuring(
               Effect.sync(() => {
-                pendingLists.delete(key);
+                currentLists.delete(key);
               }),
             ),
           ),

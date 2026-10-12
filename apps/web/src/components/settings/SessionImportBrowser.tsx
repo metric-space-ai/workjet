@@ -82,7 +82,7 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
   const resultsByCandidate = new Map(props.results.map((item) => [item.candidateId, item]));
   return (
     <div
-      className="flex h-[min(720px,80dvh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-card/40"
+      className="flex h-[min(520px,60dvh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-card/40"
       data-workjet-action="session-import.browser"
       role="region"
       aria-label="Sitzungen importieren"

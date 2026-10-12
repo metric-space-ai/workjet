@@ -9,7 +9,7 @@
  * - Always an obvious way back: a chevron "Zuklappen" control and Esc.
  */
 import { ChevronUpIcon } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 const COLLAPSE_FALLBACK_MS = 260;
 
@@ -18,6 +18,7 @@ import { cn } from "~/lib/utils";
 type CloseHandler = () => void;
 
 const openRegistry = new Map<string, CloseHandler>();
+let inlineExpandSequence = 0;
 
 /** Marks `id` as the open element and closes every other open one. */
 export function claimInlineExpand(id: string, close: CloseHandler): void {
@@ -58,7 +59,10 @@ export function useSingleInlineExpand(
   open: boolean,
   onOpenChange: (open: boolean) => void,
 ): string {
-  const id = useId();
+  // Counter instead of useId: works in hook-mocking unit tests too.
+  const idRef = useRef<string | null>(null);
+  if (idRef.current === null) idRef.current = `inline-expand-${++inlineExpandSequence}`;
+  const id = idRef.current;
   const closeRef = useRef(onOpenChange);
   closeRef.current = onOpenChange;
   useEffect(() => {

@@ -235,11 +235,11 @@ function SourceStatusBadge({
 function LastSampleLabel({ sampledAt }: { sampledAt: DateTime.Utc | null }) {
   useRelativeTimeTick();
   if (!sampledAt) {
-    return <span className="text-[11px] text-muted-foreground/55">Wartet …</span>;
+    return <span className="text-[11px] text-muted-foreground/55">—</span>;
   }
   const relative = formatRelativeTime(DateTime.formatIso(sampledAt));
   if (!relative) {
-    return <span className="text-[11px] text-muted-foreground/55">Wartet …</span>;
+    return <span className="text-[11px] text-muted-foreground/55">—</span>;
   }
   return (
     <span className="text-[11px] text-muted-foreground/60">

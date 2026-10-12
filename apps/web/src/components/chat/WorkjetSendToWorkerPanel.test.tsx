@@ -579,14 +579,17 @@ describe("recipient choices", () => {
     expect(choices[1]?.disabledReason).toBe("nur Übergabe");
   });
 
-  it("names a peer by its computer name, otherwise a dash, never a shortened ID", () => {
+  it("names a peer by its computer name, otherwise „Rechner ohne Namen“, never a shortened ID", () => {
     const unnamed = workjetSendRecipientChoices({
       draft: validHandoffDraft,
       threads: [],
       roster: ROSTER,
     });
     const peers = unnamed.filter((choice) => choice.group === "peer");
-    expect(peers.map((choice) => choice.label)).toEqual(["—", "—"]);
+    expect(peers.map((choice) => choice.label)).toEqual([
+      "Rechner ohne Namen",
+      "Rechner ohne Namen",
+    ]);
     for (const choice of peers) expect(choice.label).not.toContain("environment");
     const named = workjetSendRecipientChoices({
       draft: validHandoffDraft,
@@ -597,7 +600,9 @@ describe("recipient choices", () => {
     expect(named.find((choice) => choice.value === "peer:environment-newer")?.label).toBe(
       "gpu3-a4500",
     );
-    expect(named.find((choice) => choice.value === "peer:environment-older")?.label).toBe("—");
+    expect(named.find((choice) => choice.value === "peer:environment-older")?.label).toBe(
+      "Rechner ohne Namen",
+    );
   });
 
   it("makes peers reachable for a handoff and offers a new chat here", () => {

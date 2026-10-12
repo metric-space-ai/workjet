@@ -176,7 +176,7 @@ export function ProjectOverviewView(props: {
               >
                 <dd
                   className={
-                    "break-words text-[22px] font-semibold tabular-nums [overflow-wrap:anywhere]" +
+                    "break-words text-[22px] font-semibold tabular-nums" +
                     (kpi.value === "—" ? " text-muted-foreground/60" : "")
                   }
                 >

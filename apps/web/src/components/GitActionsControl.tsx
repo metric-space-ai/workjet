@@ -1538,7 +1538,12 @@ export default function GitActionsControl({
                         className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
                         onClick={() => openChangedFileInEditor(file.path)}
                       >
-                        <span className={cn("truncate", isExcluded && "text-muted-foreground")}>
+                        <span
+                          className={cn(
+                            "min-w-0 [overflow-wrap:anywhere]",
+                            isExcluded && "text-muted-foreground",
+                          )}
+                        >
                           {file.path}
                         </span>
                         {isExcluded ? null : (

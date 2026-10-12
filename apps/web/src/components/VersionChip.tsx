@@ -29,9 +29,12 @@ export function formatVersionChipLabel(
   instanceLabel: string | null,
   instanceBuild: string | null = null,
 ): string {
-  const parts = [`Workjet ${appVersion}`, `Host ${hostVersion ?? "—"}`];
+  // Unbekannte Teile entfallen, statt als „—“ in der Zeile zu stehen.
+  const parts = [`Workjet ${appVersion}`];
+  if (hostVersion) parts.push(`Host ${hostVersion}`);
   if (instanceLabel) {
-    parts.push(`${instanceLabel} ${shortBuild(instanceBuild) ?? "—"}`);
+    const build = shortBuild(instanceBuild);
+    parts.push(build ? `${instanceLabel} ${build}` : instanceLabel);
   }
   return parts.join(" · ");
 }

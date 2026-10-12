@@ -556,7 +556,7 @@ export function PullRequestSummaryTab({
             <div className="flex items-start gap-1">
               <PullRequestMarkdown
                 className="min-w-0 flex-1"
-                text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
+                text={detail.body.trim().length > 0 ? detail.body : "_Keine Beschreibung._"}
                 cwd={detail.workspaceRoot}
               />
               {canEditPullRequestChangeRequest(detail) ? (

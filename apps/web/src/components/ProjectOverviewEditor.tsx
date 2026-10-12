@@ -376,7 +376,7 @@ export function ProjectOverviewEditor({
               />
             )}
             <span className="text-xs text-muted-foreground">Regeltermin</span>
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2 max-sm:grid-cols-1">
               <select
                 aria-label="Regeltermin Wochentag"
                 className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs"

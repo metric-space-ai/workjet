@@ -518,14 +518,14 @@ export interface WorkjetSendToWorkerPanelProps {
 
 /**
  * Sichtbarer Name eines anderen Rechners aus dem Mesh: der Anzeigename des
- * Rechners, sonst „—“. Nie die (gekürzte) environmentId.
+ * Rechners, sonst „Rechner ohne Namen“. Nie die (gekürzte) environmentId.
  */
 export function workjetPeerLabel(
   peer: WorkjetMeshRosterPeer,
   computerLabels?: Readonly<Record<string, string>> | undefined,
 ): string {
   const label = computerLabels?.[peer.environmentId]?.trim();
-  return label !== undefined && label.length > 0 ? label : "—";
+  return label !== undefined && label.length > 0 ? label : "Rechner ohne Namen";
 }
 
 const HERE_RECIPIENT = "here";

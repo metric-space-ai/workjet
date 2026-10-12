@@ -84,16 +84,6 @@ const TOAST_ICONS = {
 } as const;
 
 /** Visually shorten long error bodies. */
-const ERROR_DESCRIPTION_CLAMP_MIN_CHARS = 180;
-function errorDescriptionClampClass(type: unknown, description: unknown): string | undefined {
-  if (type !== "error" || typeof description !== "string") {
-    return undefined;
-  }
-  if (description.length < ERROR_DESCRIPTION_CLAMP_MIN_CHARS) {
-    return undefined;
-  }
-  return "line-clamp-4";
-}
 
 /** Dismiss-only: circular control overlapping the card corner (iOS notification–style). */
 const toastCornerDismissClass = "absolute z-20 -top-1.5 -right-1.5";
@@ -113,18 +103,12 @@ function handleToastDismissClick(
 }
 
 /** Die Beschreibung als Statuszeile; keine Aufklapper, kein Kopierknopf (UI-Vertrag §1 Toast). */
-function ToastDescriptionLine({
-  toastDescription,
-  toastType,
-}: {
-  toastDescription: unknown;
-  toastType: unknown;
-}) {
+function ToastDescriptionLine(_props: { toastDescription: unknown; toastType: unknown }) {
   return (
     <Toast.Description
       className={cn(
-        "min-w-0 select-text wrap-break-word text-muted-foreground",
-        errorDescriptionClampClass(toastType, toastDescription),
+        // Eine fortlaufende Zeile: „Titel · Beschreibung“, bei Platzmangel umbrechend.
+        "inline min-w-0 select-text wrap-break-word text-muted-foreground empty:hidden before:content-['_·_']",
       )}
       data-slot="toast-description"
     />
@@ -215,11 +199,11 @@ function ToastBodyContent({
         ) : null}
         <div
           className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col gap-0.5",
+            "line-clamp-3 min-h-0 min-w-0 flex-1 wrap-break-word",
             stackedActionLayout && "pr-5",
           )}
         >
-          <Toast.Title className="min-w-0 wrap-break-word font-medium" data-slot="toast-title" />
+          <Toast.Title className="inline min-w-0 font-medium" data-slot="toast-title" />
           <ToastDescriptionLine toastDescription={toastDescription} toastType={toastType} />
         </div>
       </div>

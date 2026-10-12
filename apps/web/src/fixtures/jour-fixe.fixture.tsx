@@ -89,8 +89,7 @@ function Fixture() {
         id: "slide-fixture-agenda",
         position: 0,
         title: "Tagesordnung",
-        markdown:
-          "1. Stand gegen Ziele\n2. Entscheidungen\n3. Nächste Ziele\n4. Freie Themen",
+        markdown: "1. Stand gegen Ziele\n2. Entscheidungen\n3. Nächste Ziele\n4. Freie Themen",
       },
       { ...contractMeeting.slides[0]!, position: 1 },
       {

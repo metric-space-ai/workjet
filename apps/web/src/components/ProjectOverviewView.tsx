@@ -83,7 +83,13 @@ function zonedStartMs(date: string, time: string, timeZone: string): number {
       hourCycle: "h23",
     }).formatToParts(new Date(ms));
     const value = (key: string) => Number(parts.find((part) => part.type === key)?.value);
-    const shown = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"));
+    const shown = Date.UTC(
+      value("year"),
+      value("month") - 1,
+      value("day"),
+      value("hour"),
+      value("minute"),
+    );
     ms = ms - (shown - guess);
   }
   return ms;
@@ -105,7 +111,9 @@ export function jourFixeJoinLocked(
       return false;
   }
   if (nextMeetingDate === null) return false;
-  return now < zonedStartMs(nextMeetingDate, recurring.time, recurring.timezone) - JOUR_FIXE_JOIN_LEAD_MS;
+  return (
+    now < zonedStartMs(nextMeetingDate, recurring.time, recurring.timezone) - JOUR_FIXE_JOIN_LEAD_MS
+  );
 }
 export function ProjectOverviewView(props: {
   readonly data: ProjectOwnerOverview;

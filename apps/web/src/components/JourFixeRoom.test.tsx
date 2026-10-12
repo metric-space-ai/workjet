@@ -148,7 +148,8 @@ describe("Jour fixe room states", () => {
   });
 });
 
-describe("Jour fixe start lock", () => {const inMinutes = (minutes: number) => Date.now() + minutes * 60_000;
+describe("Jour fixe start lock", () => {
+  const inMinutes = (minutes: number) => Date.now() + minutes * 60_000;
   const render = (state: JourFixeRoomSnapshot["state"], scheduledAt: number) =>
     renderToStaticMarkup(
       <JourFixeRoom
@@ -205,7 +206,7 @@ describe("Tagesordnung und freie Themen", () => {
         meeting={{ ...meeting, state: "live", slides: items }}
         onMessage={async () => {}}
         {...extra}
-      />
+      />,
     );
   it("zeigt über den Folien-Kacheln Punkt, Gesamtzahl und Titel", () => {
     const html = render(slides);

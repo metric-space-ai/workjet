@@ -26,9 +26,9 @@ describe("project instance failure display", () => {
     const failure = { _tag: "failed", code: "instance_disabled" } as const;
     expect(describeWorkjetProjectControlFailure(failure, null, "en")).toBe("Instanz deaktiviert.");
     expect(describeWorkjetProjectControlFailure(failure, null)).toBe("Instanz deaktiviert.");
-    expect(describeWorkjetProjectControlFailure({ _tag: "failed", code: "timeout" }, null, "en")).toBe(
-      "Die Instanz hat nicht rechtzeitig geantwortet.",
-    );
+    expect(
+      describeWorkjetProjectControlFailure({ _tag: "failed", code: "timeout" }, null, "en"),
+    ).toBe("Die Instanz hat nicht rechtzeitig geantwortet.");
   });
 
   it("distinguishes hosted sign-in from accountless paired authentication", () => {
@@ -54,9 +54,9 @@ describe("project instance failure display", () => {
     ).toBe("Die Instanz konnte nicht erreicht werden.");
   });
   it("asks for the connected shell update when its action is unsupported", () => {
-    expect(describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" }, null, "en")).toBe(
-      "Die Instanz unterstützt diese Aktion noch nicht. Business-OS-Shell aktualisieren.",
-    );
+    expect(
+      describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" }, null, "en"),
+    ).toBe("Die Instanz unterstützt diese Aktion noch nicht. Business-OS-Shell aktualisieren.");
   });
   it("explains a classified data-plane timeout without showing guest exception text", () => {
     expect(

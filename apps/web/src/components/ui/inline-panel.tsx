@@ -33,6 +33,8 @@ export interface InlinePanelProps {
   readonly status?: ReactNode;
   readonly statusTone?: "neutral" | "error";
   readonly className?: string;
+  /** Opened from elsewhere (e.g. a menu item): no own trigger button. */
+  readonly hideTrigger?: boolean;
 }
 
 function InlinePanel({
@@ -48,11 +50,12 @@ function InlinePanel({
   status,
   statusTone = "neutral",
   className,
+  hideTrigger = false,
 }: InlinePanelProps) {
   const labels = inlineExpandLabels();
   return (
     <>
-      {open ? null : (
+      {open || hideTrigger ? null : (
         <Button
           className={cn("self-start", className)}
           data-slot="inline-panel-trigger"

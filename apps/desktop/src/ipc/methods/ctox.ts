@@ -79,12 +79,7 @@ const finishKeyRecovery = (
 ) =>
   Effect.gen(function* () {
     const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
-    if (
-      Option.isNone(recovery) ||
-      ((yield* recovery.value.inspect)?.pendingLogin !== true && successfulLoginId === undefined) ||
-      discovery._tag !== "ready" ||
-      discovery.sessionVerified !== true
-    )
+    if (Option.isNone(recovery) || discovery._tag !== "ready" || discovery.sessionVerified !== true)
       return;
     const launch = yield* Effect.serviceOption(CtoxManagedLaunch.CtoxManagedLaunch);
     const sessions = yield* Effect.serviceOption(CtoxElectronSessions.CtoxElectronSessions);
@@ -602,6 +597,11 @@ export const activate: DesktopIpc.DesktopIpcMethod<never, CtoxGuestManager.CtoxG
       const input = yield* Schema.decodeUnknownEffect(CtoxManagedActivationInput)(raw).pipe(
         Effect.option,
       );
+      if (Option.isSome(input) && input.value.repair === true) {
+        const recovery = yield* Effect.serviceOption(DesktopKeyRecovery);
+        if (Option.isSome(recovery) && recovery.value.prepareManagedRetry !== undefined)
+          yield* recovery.value.prepareManagedRetry(input.value.instanceId).pipe(Effect.ignore);
+      }
       const result =
         input._tag === "None"
           ? ({ _tag: "failed", code: "invalid_input" } as const)

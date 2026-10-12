@@ -23,18 +23,44 @@ const RecoveryRecord = Schema.Struct({
   clerkRetired: Schema.optionalKey(Schema.Boolean),
   ctoxRetired: Schema.optionalKey(Schema.Boolean),
   managedRepairStarted: Schema.optionalKey(Schema.Boolean),
-  managedRepairVersion: Schema.optionalKey(Schema.Literal(2)),
+  managedRepairVersion: Schema.optionalKey(Schema.Literals([2, 3])),
+  attempt: Schema.optionalKey(Schema.Int),
+  nextAt: Schema.optionalKey(Schema.Number),
+  repairTargets: Schema.optionalKey(Schema.Array(Schema.String)),
+  deviceRecoveryGeneration: Schema.optionalKey(Schema.String),
+  discoveryRetry: Schema.optionalKey(Schema.Boolean),
+  manualRetryAt: Schema.optionalKey(Schema.Number),
   lastRepairLoginId: Schema.optionalKey(Schema.String),
   instanceRepairs: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
         instanceId: Schema.String,
-        state: Schema.Literals(["repairing", "repaired", "repair_failed", "login_required"]),
+        state: Schema.Literals([
+          "repairing",
+          "repaired",
+          "repair_failed",
+          "login_required",
+          "retryable",
+        ]),
+        failureClass: Schema.optionalKey(
+          Schema.Literals(["repair_failed", "login_required", "retryable"]),
+        ),
+        operation: Schema.optionalKey(Schema.String),
+        httpStatus: Schema.optionalKey(Schema.Int),
       }),
     ),
   ),
 });
 type RecoveryRecord = typeof RecoveryRecord.Type;
+export interface RepairFailure {
+  readonly failureClass: "repair_failed" | "login_required" | "retryable";
+  readonly operation: string;
+  readonly httpStatus?: number;
+}
+const retryDelay = (attempt: number) =>
+  [1, 2, 5, 15, 30, 60][Math.min(Math.max(attempt - 1, 0), 5)]! * 60_000;
+/** An explicit reconnect may skip the backoff, but at most once per minute. */
+const MANUAL_RETRY_INTERVAL_MS = 60_000;
 const RecordJson = Schema.fromJsonString(RecoveryRecord);
 const CatalogEnvelope = Schema.fromJsonString(
   Schema.Struct({
@@ -83,10 +109,23 @@ export class DesktopKeyRecovery extends Context.Service<
     readonly restartManagedRepairAfterLogin?: (
       loginId: string,
     ) => Effect.Effect<boolean, DesktopKeyRecoveryError>;
+    readonly prepareManagedRetry?: (
+      instanceId?: string,
+    ) => Effect.Effect<boolean, DesktopKeyRecoveryError>;
+    readonly claimDeviceRecovery?: Effect.Effect<boolean, DesktopKeyRecoveryError>;
+    readonly noteManagedLaunchFailure?: (
+      instanceId: string,
+      failure: RepairFailure,
+    ) => Effect.Effect<void, DesktopKeyRecoveryError>;
+    readonly deferManagedDiscovery?: (
+      generation: string,
+      loginRequired: boolean,
+    ) => Effect.Effect<void, DesktopKeyRecoveryError>;
     readonly recordInstanceRepair?: (
       instanceId: string,
-      state: "repaired" | "repair_failed" | "login_required",
+      state: "repaired" | "repair_failed" | "login_required" | "retryable",
       generation?: string,
+      failure?: RepairFailure,
     ) => Effect.Effect<void, DesktopKeyRecoveryError>;
   }
 >()("@workjet/desktop/app/DesktopKeyRecovery") {}
@@ -155,7 +194,14 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           record = {
             ...record,
             instanceRepairs: record.instanceRepairs.map((entry) =>
-              entry.state === "repairing" ? { ...entry, state: "repair_failed" as const } : entry,
+              entry.state === "repairing"
+                ? {
+                    ...entry,
+                    state: "retryable" as const,
+                    failureClass: "retryable" as const,
+                    operation: "interrupted",
+                  }
+                : entry,
             ),
           };
           yield* persist(record);
@@ -178,6 +224,30 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           };
           yield* persist(record);
         }
+      }
+      if (
+        record?.managedRepairVersion === 2 &&
+        record.instanceRepairs?.some(
+          (entry) => entry.state === "repair_failed" && entry.failureClass === undefined,
+        )
+      ) {
+        record = {
+          ...record,
+          managedRepairVersion: 3,
+          pendingLogin: record.instanceRepairs.some((entry) => entry.state === "login_required"),
+          nextAt: yield* Clock.currentTimeMillis,
+          instanceRepairs: record.instanceRepairs.map((entry) =>
+            entry.state === "repair_failed" && entry.failureClass === undefined
+              ? {
+                  ...entry,
+                  state: "retryable" as const,
+                  failureClass: "retryable" as const,
+                  operation: "legacy-unclassified",
+                }
+              : entry,
+          ),
+        };
+        yield* persist(record);
       }
       const failures: Array<"session" | "catalog" | "ctox"> = [];
       const session = yield* readOptional(`${input.baseDir}/runtime/desktop-auth/session.enc`);
@@ -292,13 +362,23 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
               return false;
             const updated = {
               ...record,
-              pendingLogin: false,
+              pendingLogin: (record.instanceRepairs ?? []).some(
+                (entry) =>
+                  entry.state === "login_required" && !instanceIds.includes(entry.instanceId),
+              ),
               managedRepairStarted: true,
-              managedRepairVersion: 2 as const,
-              instanceRepairs: instanceIds.map((instanceId) => ({
-                instanceId,
-                state: "repairing" as const,
-              })),
+              managedRepairVersion: 3 as const,
+              attempt: (record.attempt ?? 0) + 1,
+              nextAt: (yield* Clock.currentTimeMillis) + retryDelay((record.attempt ?? 0) + 1),
+              instanceRepairs: [
+                ...(record.instanceRepairs ?? []).filter(
+                  (entry) => !instanceIds.includes(entry.instanceId),
+                ),
+                ...instanceIds.map((instanceId) => ({
+                  instanceId,
+                  state: "repairing" as const,
+                })),
+              ],
             };
             yield* persist(updated);
             record = updated;
@@ -313,9 +393,10 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           Effect.gen(function* () {
             if (record === undefined || record.lastRepairLoginId === loginId) return false;
             if (
-              !record.instanceRepairs?.some(
-                (entry) => entry.state === "repair_failed" || entry.state === "login_required",
-              )
+              !record.instanceRepairs?.some((entry) =>
+                ["repair_failed", "login_required", "retryable"].includes(entry.state),
+              ) &&
+              !(record.pendingLogin && record.managedRepairStarted)
             ) {
               const updated = { ...record, lastRepairLoginId: loginId };
               yield* persist(updated);
@@ -327,9 +408,142 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
               generation: `${yield* Clock.currentTimeMillis}-${NodeCrypto.randomUUID()}`,
               pendingLogin: true,
               managedRepairStarted: false,
-              managedRepairVersion: 2 as const,
+              managedRepairVersion: 3 as const,
+              attempt: 0,
+              repairTargets:
+                record.instanceRepairs
+                  ?.filter((entry) => entry.state !== "repaired")
+                  .map((entry) => entry.instanceId) ?? [],
               lastRepairLoginId: loginId,
-              instanceRepairs: [],
+            };
+            if (updated.repairTargets.length === 0)
+              delete (updated as { repairTargets?: string[] }).repairTargets;
+            yield* persist(updated);
+            record = updated;
+            return true;
+          }),
+        ),
+      ),
+    noteManagedLaunchFailure: (instanceId, failure) =>
+      Effect.andThen(
+        inspect,
+        lock.withPermit(
+          Effect.gen(function* () {
+            const existing = record?.instanceRepairs?.find(
+              (entry) => entry.instanceId === instanceId,
+            );
+            // A repair owns its own result; a blocked launch must not move its durable retry window.
+            if (existing !== undefined && existing.state !== "repaired") return;
+            const now = yield* Clock.currentTimeMillis;
+            const current = record ?? {
+              version: 1 as const,
+              generation: `${now}-${NodeCrypto.randomUUID()}`,
+              pendingLogin: false,
+              unreadableStores: [],
+            };
+            // The window is record-wide: a later launch failure never shortens it.
+            const updated = {
+              ...current,
+              managedRepairStarted: true,
+              managedRepairVersion: 3 as const,
+              attempt: Math.max(current.attempt ?? 0, 1),
+              nextAt: Math.max(current.nextAt ?? 0, now + retryDelay(1)),
+              pendingLogin: current.pendingLogin || failure.failureClass === "login_required",
+              instanceRepairs: [
+                ...(current.instanceRepairs ?? []).filter(
+                  (entry) => entry.instanceId !== instanceId,
+                ),
+                { instanceId, state: failure.failureClass, ...failure },
+              ],
+            };
+            yield* persist(updated);
+            record = updated;
+          }),
+        ),
+      ),
+    deferManagedDiscovery: (generation, loginRequired) =>
+      Effect.andThen(
+        inspect,
+        lock.withPermit(
+          Effect.gen(function* () {
+            if (
+              record === undefined ||
+              record.generation !== generation ||
+              record.managedRepairStarted
+            )
+              return;
+            const attempt = (record.attempt ?? 0) + 1;
+            const updated = {
+              ...record,
+              managedRepairStarted: true,
+              discoveryRetry: !loginRequired,
+              pendingLogin: loginRequired,
+              attempt,
+              nextAt: (yield* Clock.currentTimeMillis) + retryDelay(attempt),
+              instanceRepairs: (record.instanceRepairs ?? []).map((entry) =>
+                ["retryable", "login_required"].includes(entry.state)
+                  ? {
+                      ...entry,
+                      state: loginRequired ? ("login_required" as const) : ("retryable" as const),
+                      failureClass: loginRequired
+                        ? ("login_required" as const)
+                        : ("retryable" as const),
+                      operation: "discovery",
+                    }
+                  : entry,
+              ),
+            };
+            yield* persist(updated);
+            record = updated;
+          }),
+        ),
+      ),
+    prepareManagedRetry: (instanceId) =>
+      Effect.andThen(
+        inspect,
+        lock.withPermit(
+          Effect.gen(function* () {
+            if (
+              record === undefined ||
+              record.instanceRepairs?.some((entry) => entry.state === "repairing")
+            )
+              return false;
+            const now = yield* Clock.currentTimeMillis;
+            const targets =
+              record.instanceRepairs
+                ?.filter((entry) =>
+                  instanceId === undefined
+                    ? entry.state === "retryable" && now >= (record!.nextAt ?? 0)
+                    : entry.instanceId === instanceId &&
+                      ["repair_failed", "retryable"].includes(entry.state),
+                )
+                .map((entry) => entry.instanceId) ?? [];
+            if (
+              (targets.length === 0 &&
+                !(
+                  instanceId === undefined &&
+                  record.discoveryRetry &&
+                  now >= (record.nextAt ?? 0)
+                )) ||
+              !record.managedRepairStarted ||
+              (instanceId !== undefined &&
+                record.manualRetryAt !== undefined &&
+                now - record.manualRetryAt < MANUAL_RETRY_INTERVAL_MS)
+            )
+              return false;
+            const updated = {
+              ...record,
+              generation: `${now}-${NodeCrypto.randomUUID()}`,
+              managedRepairStarted: false,
+              managedRepairVersion: 3 as const,
+              discoveryRetry: false,
+              ...(targets.length > 0 ? { repairTargets: targets } : {}),
+              ...(instanceId === undefined ? {} : { manualRetryAt: now }),
+              pendingLogin:
+                record.instanceRepairs?.some(
+                  (entry) =>
+                    entry.state === "login_required" && !targets.includes(entry.instanceId),
+                ) ?? false,
             };
             yield* persist(updated);
             record = updated;
@@ -337,7 +551,20 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
           }),
         ),
       ),
-    recordInstanceRepair: (instanceId, state, generation) =>
+    claimDeviceRecovery: Effect.andThen(
+      inspect,
+      lock.withPermit(
+        Effect.gen(function* () {
+          if (record === undefined) return true;
+          if (record.deviceRecoveryGeneration === record.generation) return false;
+          const updated = { ...record, deviceRecoveryGeneration: record.generation };
+          yield* persist(updated);
+          record = updated;
+          return true;
+        }),
+      ),
+    ),
+    recordInstanceRepair: (instanceId, state, generation, failure) =>
       Effect.andThen(
         inspect,
         lock.withPermit(
@@ -352,7 +579,7 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
               ...record,
               pendingLogin: record.pendingLogin || state === "login_required",
               instanceRepairs: (record.instanceRepairs ?? []).map((entry) =>
-                entry.instanceId === instanceId ? { instanceId, state } : entry,
+                entry.instanceId === instanceId ? { instanceId, state, ...failure } : entry,
               ),
             };
             yield* persist(updated);

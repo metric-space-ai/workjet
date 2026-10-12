@@ -1717,6 +1717,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
                     ...(recovery.ctoxRetired || recovery.managedRepairStarted
                       ? {
                           generation: recovery.generation,
+                          ...(recovery.attempt === undefined ? {} : { attempt: recovery.attempt }),
+                          ...(recovery.nextAt === undefined ? {} : { nextAt: recovery.nextAt }),
                           repairingInstanceIds: (recovery.instanceRepairs ?? [])
                             .filter((entry) => entry.state === "repairing")
                             .map((entry) => entry.instanceId),
@@ -1728,14 +1730,23 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
                               .filter(
                                 (entry) =>
                                   entry.state === "repair_failed" ||
-                                  entry.state === "login_required",
+                                  entry.state === "login_required" ||
+                                  entry.state === "retryable",
                               )
                               .map((entry) => ({
                                 instanceId: entry.instanceId,
                                 reason:
-                                  entry.state === "login_required"
-                                    ? ("login_required" as const)
-                                    : ("repair_failed" as const),
+                                  entry.state === "retryable"
+                                    ? ("retryable" as const)
+                                    : entry.state === "login_required"
+                                      ? ("login_required" as const)
+                                      : ("repair_failed" as const),
+                                ...(entry.operation === undefined
+                                  ? {}
+                                  : { operation: entry.operation }),
+                                ...(entry.httpStatus === undefined
+                                  ? {}
+                                  : { httpStatus: entry.httpStatus }),
                               })),
                             ...(recovery.pendingLogin
                               ? [
@@ -1751,7 +1762,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
                                             (issue) =>
                                               issue.instanceId === entry.id &&
                                               (issue.state === "repair_failed" ||
-                                                issue.state === "login_required"),
+                                                issue.state === "login_required" ||
+                                                issue.state === "retryable"),
                                           ),
                                       )
                                       .map((entry) => [entry.id, entry]),

@@ -14,7 +14,7 @@ vi.mock("electron", () => ({ session: {} }));
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
 import { CtoxControlDevice } from "./CtoxControlDevice.ts";
-import { makeControlDeviceClient } from "./CtoxControlDeviceClient.ts";
+import { makeControlDeviceClient, CtoxControlDeviceError } from "./CtoxControlDeviceClient.ts";
 
 const UnknownJson = Schema.fromJsonString(Schema.Unknown);
 const decodeUnknownJson = Schema.decodeUnknownSync(UnknownJson);
@@ -78,6 +78,67 @@ function harness(
 }
 
 describe("CtoxManagedLaunch", () => {
+  for (const [status, reason, code] of [
+    [400, "retryable", "DEVICE_SERVICE_UNAVAILABLE"],
+    [503, "retryable", "DEVICE_SERVICE_UNAVAILABLE"],
+    [401, "login_required", "DEVICE_SERVICE_UNAVAILABLE"],
+    [403, "login_required", "DEVICE_SERVICE_UNAVAILABLE"],
+    [403, "repair_failed", "DEVICE_SCOPE_DENIED"],
+    [404, "repair_failed", "DEVICE_SERVICE_UNAVAILABLE"],
+  ] as const) {
+    it.effect(`retains device-auth launch-token status ${status} (${code})`, () => {
+      const device = makeControlDeviceClient({
+        baseUrl: "https://ctox.dev",
+        read: async () => undefined,
+        write: async () => undefined,
+        fetch: async () => new Response(),
+      });
+      const proof = {
+        ...device,
+        request: async () => {
+          throw new CtoxControlDeviceError(code, status);
+        },
+      };
+      return Effect.gen(function* () {
+        const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+        const error = yield* launches.launch(descriptor).pipe(Effect.flip);
+        assert.equal(error.reason, reason);
+        assert.equal(error.operation, "launch-token");
+        assert.equal(error.httpStatus, status);
+      }).pipe(
+        Effect.provide(
+          harness(
+            vi.fn(async () => response({ error: "AUTH_REQUIRED" }, 401)),
+            "https://ctox.dev",
+            undefined,
+            proof,
+          ),
+        ),
+      );
+    });
+  }
+  for (const [status, reason] of [
+    [400, "retryable"],
+    [503, "retryable"],
+    [401, "login_required"],
+    [404, "repair_failed"],
+  ] as const) {
+    it.effect(`classifies launch-config ${status} without exposing upstream text`, () => {
+      const fetchImpl = vi.fn(async (url: string) =>
+        url.endsWith("/launch-token")
+          ? response({ launchConfigUrl: "https://ctox.dev/api/desktop/launch/fixture" })
+          : response({ error: "upstream fixture text secret-must-not-be-exposed" }, status),
+      );
+      return Effect.gen(function* () {
+        const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+        const error = yield* launches.launch(descriptor).pipe(Effect.flip);
+        assert.equal(error.reason, reason);
+        assert.equal(error.operation, "launch-config");
+        assert.equal(error.httpStatus, status);
+        assert.notInclude(error.message, "secret-must-not-be-exposed");
+      }).pipe(Effect.provide(harness(fetchImpl)));
+    });
+  }
   it.effect("malformed error objects remain typed launch failures", () => {
     const fetchImpl = vi.fn(async () =>
       response({ error: { toString: "invalid fixture member" } }),
@@ -86,7 +147,8 @@ describe("CtoxManagedLaunch", () => {
       const launch = yield* CtoxManagedLaunch.CtoxManagedLaunch;
       const error = yield* launch.launch(descriptor).pipe(Effect.flip);
       assert.equal(error.operation, "launch-token");
-      assert.isUndefined(error.reason);
+      assert.equal(error.reason, "repair_failed");
+      assert.equal(error.httpStatus, 200);
     }).pipe(Effect.provide(harness(fetchImpl)));
   });
   it.effect("activates a recovered tenant through device auth and the one-use exchange", () => {
@@ -227,6 +289,7 @@ describe("CtoxManagedLaunch", () => {
       yield* TestClock.adjust("10 millis");
       const error = yield* Fiber.join(request).pipe(Effect.flip);
       assert.equal(error.operation, "launch-token");
+      assert.equal(error.reason, "retryable");
       assert.equal(fetchImpl.mock.calls.length, 1);
       assert.isTrue(aborted);
     }).pipe(

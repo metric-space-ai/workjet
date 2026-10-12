@@ -18,6 +18,7 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import { CtoxControlDevice } from "./CtoxControlDevice.ts";
+import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 import { makeControlDeviceClient } from "./CtoxControlDeviceClient.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 
@@ -217,6 +218,29 @@ afterEach(() => {
 });
 
 describe("CtoxDevAuth", () => {
+  it.effect("authenticated refresh retries device enrollment without opening login", () => {
+    const engine = makeControlDeviceClient({
+      baseUrl: "https://ctox.dev",
+      read: async () => undefined,
+      write: async () => undefined,
+      fetch: async () => new Response(),
+    });
+    const retryEnrollment = vi.fn(async () => {});
+    const h = makeHarness({
+      device: { ...engine, retryEnrollment },
+      fetchImpl: vi.fn(async () =>
+        response(200, {
+          account: { tenants: [{ id: "fixture", businessName: "Fixture", status: "active" }] },
+        }),
+      ),
+    });
+    return Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      assert.equal((yield* auth.refresh)._tag, "ready");
+      assert.equal(retryEnrollment.mock.calls.length, 1);
+      assert.equal(h.created.length, 0);
+    }).pipe(Effect.provide(h.layer));
+  });
   it.effect("enrolls only after an ordinary login completes using the account session", () => {
     const engine = makeControlDeviceClient({
       baseUrl: "https://ctox.dev",
@@ -267,14 +291,39 @@ describe("CtoxDevAuth", () => {
           }),
         ),
     );
-    const h = makeHarness({ device: { ...device, recoverOnce: recover } });
+    let claims = 0;
+    const recovery = DesktopKeyRecovery.of({
+      inspect: Effect.succeed({
+        version: 1,
+        generation: "1-11111111-1111-4111-8111-111111111111",
+        pendingLogin: false,
+        unreadableStores: ["ctox"],
+      }),
+      completeLogin: Effect.void,
+      claimDeviceRecovery: Effect.sync(() => ++claims === 1),
+    });
+    const h = makeHarness({
+      device: {
+        ...device,
+        recoverOnce: recover,
+        status: async () => ({
+          state: "active",
+          createdAt: "2026-10-11T17:00:00Z",
+          lastUsedAt: null,
+          expiresAt: "2026-11-10T17:00:00Z",
+        }),
+      },
+    });
     return Effect.gen(function* () {
       const auth = yield* CtoxDevAuth.CtoxDevAuth;
       const result = yield* auth.refresh;
       assert.equal(result._tag, "ready");
+      assert.equal((yield* auth.refresh)._tag, "ready");
       assert.equal(h.created.length, 0);
       assert.equal(recover.mock.calls.length, 1);
-    }).pipe(Effect.provide(h.layer));
+    }).pipe(
+      Effect.provide(h.layer.pipe(Layer.provide(Layer.succeed(DesktopKeyRecovery, recovery)))),
+    );
   });
   it.effect(
     "refreshes through the account session fetch and preserves redacted discovery states",

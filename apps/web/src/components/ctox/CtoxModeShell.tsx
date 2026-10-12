@@ -190,6 +190,8 @@ interface CtoxModeContextValue {
     instance: CtoxManagedInstance,
   ) => Promise<CtoxMutationOutcome>;
   readonly select: (instance: CtoxManagedInstance) => Promise<boolean>;
+  /** One-shot: true when the pending activation of this instance came from a user gesture. */
+  readonly takeRepairRequest: (instanceId: string) => boolean;
   readonly showNetwork: () => Promise<boolean>;
   /** Re-check async mutations against the live selected instance ref. */
   readonly isSelected: (instanceId: string) => boolean;
@@ -284,9 +286,12 @@ export function activateCtoxInstance(
   bridge: DesktopCtoxBridge | undefined,
   instance: CtoxManagedInstance,
   bounds: CtoxGuestBounds,
+  repair = false,
 ): Promise<CtoxManagedGuestResult> | undefined {
   if (bridge === undefined || !canActivateCtoxInstance(instance)) return undefined;
-  return bridge.activate(instance.id, bounds);
+  // Only an explicit gesture asks Desktop Main to retry a failed repair now;
+  // automatic re-activation keeps the durable backoff intact.
+  return repair ? bridge.activate(instance.id, bounds, true) : bridge.activate(instance.id, bounds);
 }
 
 export async function submitCtoxInvite(
@@ -690,6 +695,15 @@ export function CtoxModeProvider({
     [bridge, clearSelection, refresh],
   );
 
+  // Every select() is a user gesture (click, retry, link, login); mode entry
+  // and restored selections activate without it.
+  const repairRequestRef = useRef<string | null>(null);
+  const takeRepairRequest = useCallback((instanceId: string) => {
+    if (repairRequestRef.current !== instanceId) return false;
+    repairRequestRef.current = null;
+    return true;
+  }, []);
+
   const select = useCallback(
     async (instance: CtoxManagedInstance, forceReconnect = false) => {
       if (!canActivateCtoxInstance(instance)) return false;
@@ -697,6 +711,7 @@ export function CtoxModeProvider({
       // attached without a needless reload.
       if (selectedIdRef.current === instance.id) {
         if (forceReconnect || connection !== "ready") {
+          repairRequestRef.current = instance.id;
           setActivationKey((current) => current + 1);
           setConnection("connecting");
         }
@@ -705,6 +720,7 @@ export function CtoxModeProvider({
       try {
         const accepted = await requestActiveWorkjetSelection(instance.id);
         if (!accepted || !mountedRef.current) return false;
+        repairRequestRef.current = instance.id;
         setActivationKey((current) => current + 1);
         setConnection("connecting");
         return true;
@@ -981,6 +997,7 @@ export function CtoxModeProvider({
       addSshManagedInstance,
       removeSshManagedInstance,
       select,
+      takeRepairRequest,
       showNetwork: () => clearSelection("idle"),
       isSelected,
       setConnection,
@@ -1016,6 +1033,7 @@ export function CtoxModeProvider({
       select,
       selectedId,
       setAppDocked,
+      takeRepairRequest,
       workspaceNames,
       reportWorkspaceName,
     ],
@@ -2390,6 +2408,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
     setConnection,
     reportGuestBounds,
     select,
+    takeRepairRequest,
   } = useCtoxMode();
   const hostRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
@@ -2451,7 +2470,12 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       modeReady,
       selectedId,
     };
-    const activation = activateCtoxInstance(bridge, instance, bounds);
+    const activation = activateCtoxInstance(
+      bridge,
+      instance,
+      bounds,
+      takeRepairRequest(instance.id),
+    );
     if (activation === undefined) {
       setConnection("error");
       return;
@@ -2466,7 +2490,16 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
         ),
       setConnection,
     );
-  }, [activationKey, bounds, bridge, instance, modeReady, selectedId, setConnection]);
+  }, [
+    activationKey,
+    bounds,
+    bridge,
+    instance,
+    modeReady,
+    selectedId,
+    setConnection,
+    takeRepairRequest,
+  ]);
 
   useEffect(() => {
     if (bridge === undefined || bounds === null || connection !== "ready") return;

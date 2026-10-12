@@ -1305,7 +1305,12 @@ export interface DesktopCtoxBridge {
   removeSshManagedInstance: (instanceId: string) => Promise<CtoxSshManagedInstanceRemoveResult>;
   enterBusinessOsMode: () => Promise<CtoxManagedActionResult>;
   exitBusinessOsMode: () => Promise<CtoxManagedActionResult>;
-  activate: (instanceId: string, bounds: CtoxGuestBounds) => Promise<CtoxManagedGuestResult>;
+  /** Set repair only for an explicit reconnect/selection gesture; automatic activation preserves backoff. */
+  activate: (
+    instanceId: string,
+    bounds: CtoxGuestBounds,
+    repair?: true,
+  ) => Promise<CtoxManagedGuestResult>;
   /** Load the selected CTOX instance for control without attaching its native view. */
   ensurePooled?: (instanceId: string) => Promise<CtoxManagedGuestResult>;
   /** Detach the active native guest while keeping it warm for later re-attachment. */

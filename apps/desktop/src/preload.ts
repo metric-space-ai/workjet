@@ -313,8 +313,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.CTOX_REMOVE_SSH_MANAGED_INSTANCE_CHANNEL, { instanceId }),
     enterBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_ENTER_BUSINESS_OS_MODE_CHANNEL),
     exitBusinessOsMode: () => ipcRenderer.invoke(IpcChannels.CTOX_EXIT_BUSINESS_OS_MODE_CHANNEL),
-    activate: (instanceId, bounds) =>
-      ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, { instanceId, bounds }),
+    activate: (instanceId, bounds, repair) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_ACTIVATE_CHANNEL, {
+        instanceId,
+        bounds,
+        ...(repair === true ? { repair } : {}),
+      }),
     ensurePooled: (instanceId) =>
       ipcRenderer.invoke(IpcChannels.CTOX_ENSURE_POOLED_CHANNEL, {
         instanceId,

@@ -844,6 +844,11 @@ describe("CTOX bridge actions", () => {
     });
     expect(activate).toHaveBeenLastCalledWith("managed:alpha", bounds);
     expect(activate).toHaveBeenCalledTimes(2);
+
+    // Only an explicit gesture may reset the repair backoff in Desktop Main.
+    await activateCtoxInstance(bridge, managed, bounds, true);
+    expect(activate).toHaveBeenLastCalledWith("managed:alpha", bounds, true);
+    expect(activate.mock.calls[1]).toHaveLength(2);
   });
 
   it("rejects managed removal before calling the paired-instance bridge", async () => {

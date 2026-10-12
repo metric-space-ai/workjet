@@ -20,38 +20,47 @@ import { Button } from "./ui/button";
 export function ProjectExitModelSummary({
   projectId,
   assessment,
-  onOpen,
 }: {
   readonly projectId: string;
   readonly assessment?: WorkjetExitModelAssessment | null;
-  readonly onOpen: () => void;
 }) {
   const view = exitModelPresentation(assessment, projectId);
-  // Ohne Wert kein Stempel über der Vorschau; die Bewertung öffnet dann das ⋯-Menü der Karte.
-  if (view.value === "—") return null;
+  const valued = view.value !== "—";
+  // Der Stempel ist immer sichtbar und bleibt reine Anzeige: nicht klickbar,
+  // damit ein Klick auf die Vorschau weiter das Projekt öffnet.
+  // „Nicht bewertet“ trägt dieselbe Stempelform mit festem Grund wie der
+  // Wertstempel; nur Text und Rahmen sind gedämpft, damit der Stempel auf
+  // hellen wie dunklen Vorschauen lesbar bleibt (Kontrast ≥ 4,5:1).
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Fünf-Jahres-Exit-Bewertung ansehen"
-      aria-description={view.value + " · " + view.label}
-      title={
-        view.value +
-        " · " +
-        view.label +
-        (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
+    <div
+      role="img"
+      aria-label={
+        valued
+          ? view.value +
+            " · " +
+            view.label +
+            (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
+          : "Nicht bewertet"
       }
-      data-workjet-action={"project.exit_model.open:" + projectId}
-      className="absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double border-foreground/70 bg-background/90 px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums shadow-sm hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+      className={
+        "pointer-events-none absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap tabular-nums shadow-sm " +
+        (valued
+          ? "border-foreground/70 bg-background/90 text-foreground"
+          : "border-neutral-500/70 bg-background/90 text-neutral-600 dark:border-neutral-400/70 dark:text-neutral-400")
+      }
       data-workjet-exit-model-status={view.status}
       data-workjet-exit-model-stamp=""
     >
-      {view.value}
-    </button>
+      {valued ? view.value : "Nicht bewertet"}
+    </div>
   );
 }
 
-export function ProjectExitModelPanel({
+/**
+ * Kompakte Rückseite der Galeriekarte: Ressourcen eingeben, bewerten, Stand lesen.
+ * Szenarien, Quellen und Verlauf bleiben auf der Projektseite (ProjectExitModelReport).
+ */
+export function ProjectExitModelCardPanel({
   projectId,
   instanceId,
   assessment,
@@ -61,14 +70,127 @@ export function ProjectExitModelPanel({
   readonly assessment?: WorkjetExitModelAssessment | null;
 }) {
   const state = useProjectExitModel(instanceId, projectId, assessment);
+  const current = state.assessment;
+  const view = exitModelPresentation(current, projectId);
+  const proposal = current?.resource_proposal;
+  const draftFor = (source: typeof proposal): ExitResourcesDraft => ({
+    source,
+    hours: source ? String(source.hours_per_week) : "",
+    budget: source ? String(source.monthly_budget_eur) : "",
+    mode: source?.comparison_mode ?? null,
+  });
+  const [storedDraft, setDraft] = useState<ExitResourcesDraft>(() => draftFor(proposal));
+  const draft = storedDraft.source === proposal ? storedDraft : draftFor(proposal);
+  const hoursValue = parseExitHoursPerWeek(draft.hours);
+  const budgetValue = parseExitMonthlyBudget(draft.budget);
+  const hoursInvalid = draft.hours.trim() !== "" && hoursValue === null;
+  const budgetInvalid = draft.budget.trim() !== "" && budgetValue === null;
+  const resourcesReady = hoursValue !== null && budgetValue !== null && draft.mode !== null;
+  const busy = state.pending !== null || current?.status === "researching";
+  const fieldsDisabled = !state.connected || busy;
+  const missing = current?.missing_inputs ?? [];
   return (
-    <ProjectExitModelReport
-      projectId={projectId}
-      assessment={state.assessment}
-      pending={state.pending}
-      error={state.error}
-      {...(state.connected ? { onRefresh: state.refresh, onCheck: state.check } : {})}
-    />
+    <div
+      className="flex size-full min-h-0 flex-col gap-2 p-3"
+      data-workjet-exit-model-project={projectId}
+      data-workjet-exit-model-status={view.status}
+      data-workjet-project-card-exit=""
+    >
+      <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
+        <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+          Std./Woche
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={168}
+            step={1}
+            value={draft.hours}
+            disabled={fieldsDisabled}
+            aria-label="Std./Woche"
+            aria-invalid={hoursInvalid || undefined}
+            onChange={(event) => setDraft({ ...draft, hours: event.currentTarget.value })}
+            data-workjet-exit-model-input="hours"
+            className="h-7 w-16 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive"
+          />
+        </label>
+        <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+          €/Monat
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={50}
+            value={draft.budget}
+            disabled={fieldsDisabled}
+            aria-label="€/Monat"
+            aria-invalid={budgetInvalid || undefined}
+            onChange={(event) => setDraft({ ...draft, budget: event.currentTarget.value })}
+            data-workjet-exit-model-input="budget"
+            className="h-7 w-20 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive"
+          />
+        </label>
+        <div role="group" aria-label="Vergleichsmodus" className="flex gap-1">
+          <Button
+            size="xs"
+            variant={draft.mode === "equal_resources" ? "default" : "outline"}
+            aria-pressed={draft.mode === "equal_resources"}
+            disabled={fieldsDisabled}
+            onClick={() => setDraft({ ...draft, mode: "equal_resources" })}
+            data-workjet-action={"project.exit_model.mode.equal:" + projectId}
+          >
+            Gleich
+          </Button>
+          <Button
+            size="xs"
+            variant={draft.mode === "project_specific" ? "default" : "outline"}
+            aria-pressed={draft.mode === "project_specific"}
+            disabled={fieldsDisabled}
+            onClick={() => setDraft({ ...draft, mode: "project_specific" })}
+            data-workjet-action={"project.exit_model.mode.specific:" + projectId}
+          >
+            Projekt
+          </Button>
+        </div>
+        <Button
+          size="xs"
+          disabled={fieldsDisabled || !resourcesReady}
+          onClick={() => {
+            if (hoursValue === null || budgetValue === null || draft.mode === null) return;
+            void state.refresh({
+              hoursPerWeek: hoursValue,
+              monthlyBudgetEur: budgetValue,
+              comparisonMode: draft.mode,
+            });
+          }}
+          data-workjet-action={"project.exit_model.refresh:" + projectId}
+        >
+          {state.pending === "refresh" ? "Bewerten …" : "Bewerten"}
+        </Button>
+      </div>
+      <p
+        role="status"
+        className="min-w-0 break-words text-xs text-muted-foreground"
+        data-workjet-exit-model-card-status=""
+      >
+        <span className="font-medium text-foreground tabular-nums">{view.value}</span>
+        {" · "}
+        {state.pending === "read" && current === null ? "Bewertung wird geladen …" : view.label}
+        {missing.length > 0
+          ? " · fehlt: " +
+            missing
+              .slice(0, 3)
+              .map((input) => formatExitMissingInput(input, current))
+              .join(", ")
+          : ""}
+        {!state.connected ? " · Instanz nicht verbunden" : ""}
+      </p>
+      {state.error && (
+        <p role="alert" className="text-xs text-destructive">
+          {state.error}
+        </p>
+      )}
+    </div>
   );
 }
 

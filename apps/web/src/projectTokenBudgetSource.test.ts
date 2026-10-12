@@ -78,4 +78,40 @@ describe("token budget calendar source", () => {
     expect(updates(unknown)).toEqual([]);
     expect(updates({ ...source, id: ProjectId.make("foreign"), jourFixe: null })).toEqual([]);
   });
+  it("starts from the domain fallback instead of inventing a cleared website when no overview exists", () => {
+    const unconfigured: GalleryLocalProject = {
+      id: ProjectId.make("fzul"),
+      environmentId: EnvironmentId.make("isolated"),
+      title: "fzul.app",
+      updatedAt: "2026-10-11T10:00:00Z",
+      faviconPath: null,
+      ctoxRegistration: {
+        instanceId: "fixture-instance",
+        commandId: CommandId.make("register"),
+        status: "confirmed",
+      },
+    };
+    const update = tokenBudgetCalendarUpdates({
+      instanceId: "fixture-instance",
+      projects: [unconfigured],
+      nativeProjects: [
+        { id: unconfigured.id, title: unconfigured.title, workingCopies: [], jourFixe: meeting },
+      ],
+      computers: [],
+    })[0]!;
+    expect(update.input.overview.websiteUrl).toBe("https://fzul.app");
+    expect(update.input.overview).not.toHaveProperty("websiteUrlCleared");
+    expect(update.input.overview.tokenBudget?.jourFixe).toEqual(meeting);
+    // Non-domain projects without an overview keep a null website without a clear marker.
+    const plain = tokenBudgetCalendarUpdates({
+      instanceId: "fixture-instance",
+      projects: [{ ...unconfigured, id: ProjectId.make("plain"), title: "Plain" }],
+      nativeProjects: [
+        { id: ProjectId.make("plain"), title: "Plain", workingCopies: [], jourFixe: meeting },
+      ],
+      computers: [],
+    })[0]!;
+    expect(plain.input.overview.websiteUrl).toBeNull();
+    expect(plain.input.overview).not.toHaveProperty("websiteUrlCleared");
+  });
 });

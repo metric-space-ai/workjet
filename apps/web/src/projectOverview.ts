@@ -22,6 +22,8 @@ export type OverviewDraft = {
   regularMeeting?: ProjectOverview["regularMeeting"];
   repositoryUrl?: string | undefined;
   websiteUrl: string;
+  /** True once the editor consciously emptied the website field; survives later saves. */
+  websiteUrlCleared: boolean;
   slots: [OverviewSlotDraft, OverviewSlotDraft, OverviewSlotDraft];
 };
 const emptySlot = (): OverviewSlotDraft => ({ kind: "empty", label: "", value: "", unit: "" });
@@ -51,8 +53,13 @@ export function overviewDraft(overview: ProjectOverview | null | undefined): Ove
     repositoryUrl:
       overview?.repositoryUrl === undefined ? undefined : (overview.repositoryUrl ?? ""),
     websiteUrl: overview?.websiteUrl ?? "",
+    websiteUrlCleared: overview?.websiteUrlCleared === true,
     slots: [draft(0), draft(1), draft(2)],
   };
+}
+/** The editor's website field: entering a URL clears the marker, emptying it sets the marker. */
+export function websiteDraftChange(current: OverviewDraft, value: string): OverviewDraft {
+  return { ...current, websiteUrl: value, websiteUrlCleared: value.trim() === "" };
 }
 const decodeOverview = Schema.decodeUnknownSync(ProjectOverview);
 export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
@@ -64,6 +71,7 @@ export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
     if (item.value.trim() === "") throw new Error("Enter a number for each metric.");
     return { kind: item.kind, label: item.label, value: Number(item.value), unit: item.unit };
   };
+  const websiteUrl = draft.websiteUrl.trim() || null;
   return decodeOverview({
     ...(draft.archived === undefined ? {} : { archived: draft.archived }),
     ...(draft.supervisorTick === undefined ? {} : { supervisorTick: draft.supervisorTick }),
@@ -74,7 +82,9 @@ export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
     ...(draft.repositoryUrl === undefined
       ? {}
       : { repositoryUrl: draft.repositoryUrl.trim() || null }),
-    websiteUrl: draft.websiteUrl.trim() || null,
+    websiteUrl,
+    // Only an empty website can be consciously cleared; a set URL drops the marker.
+    ...(websiteUrl === null && draft.websiteUrlCleared ? { websiteUrlCleared: true } : {}),
     slots: draft.slots.map(slot),
   });
 }
@@ -143,13 +153,26 @@ export function resolveGalleryProjectStatistics(
 }
 /** Saved metadata wins, including an explicitly cleared website. Domain-named native projects can preview their website before a local history exists. */
 
-export function resolveGalleryProjectOverview(project: GalleryProject): ProjectOverview {
-  const title = project.title.trim().toLowerCase();
-  const isDomain = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(title);
-  const saved = project.local?.overview ?? {
-    websiteUrl: isDomain ? `https://${title}` : null,
-    slots: [null, null, null] as ProjectOverview["slots"],
+/** The starting overview for projects without one: domain-titled projects fall back to their website. */
+export function fallbackProjectOverview(title: string): ProjectOverview {
+  const name = title.trim().toLowerCase();
+  const isDomain = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(name);
+  return {
+    websiteUrl: isDomain ? `https://${name}` : null,
+    slots: [null, null, null],
   };
+}
+export function resolveGalleryProjectOverview(project: GalleryProject): ProjectOverview {
+  const fallback = fallbackProjectOverview(project.title);
+  const stored = project.local?.overview;
+  // An unmarked null website was never set (legacy or automatic writes), so the
+  // domain fallback applies; only the editor's explicit clear marker suppresses it.
+  const saved =
+    stored == null
+      ? fallback
+      : stored.websiteUrl !== null || stored.websiteUrlCleared === true
+        ? stored
+        : { ...stored, websiteUrl: fallback.websiteUrl };
   if (
     project.configuration?.repoUrl === undefined &&
     project.configuration?.publicUrl === undefined

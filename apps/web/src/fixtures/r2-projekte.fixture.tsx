@@ -55,6 +55,26 @@ const galleryProjects: GalleryProject[] = [
     local: null,
     native: true,
   },
+  {
+    // Regression coverage: automatic syncs stored an unmarked websiteUrl: null;
+    // the card must still fall back to the domain preview.
+    key: "local:kunstmen",
+    id: "kunstmen",
+    title: "kunstmen.com",
+    local: {
+      id: ProjectId.make("kunstmen"),
+      title: "kunstmen.com",
+      environmentId: EnvironmentId.make("environment-local"),
+      updatedAt: "2026-10-12T00:00:00.000Z",
+      ctoxRegistration: null,
+      overview: {
+        tokenBudget: { limitBillions: null, revision: 0, jourFixe: null },
+        websiteUrl: null,
+        slots: [null, null, null],
+      },
+    },
+    native: false,
+  },
 ];
 
 const computers = buildProjectComputerOptions([

@@ -72,7 +72,9 @@ export async function verifyBundledServerSource(input: {
         await fileDigest(input.providerGatewayHost.executablePath),
       );
     for (const [entry, expectedDigest] of expectedEntries) {
-      const { stdout } = await execFile("tar", ["-xOf", archivePath, `package/dist/${entry}`], {
+      // A relative archive name keeps GNU tar on Windows from reading "C:" as a remote host.
+      const { stdout } = await execFile("tar", ["-xOf", filename, `package/dist/${entry}`], {
+        cwd: input.archiveDirectory,
         encoding: "buffer",
         timeout: 30_000,
         maxBuffer:

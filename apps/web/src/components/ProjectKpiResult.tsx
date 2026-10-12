@@ -32,6 +32,7 @@ export function ProjectKpiResult({
     >
       {calculatedAt ? (
         <>
+          {result.label ? <span className="text-muted-foreground">{result.label}: </span> : null}
           <strong className="font-semibold text-foreground">{result.value}</strong>
           <span className="text-muted-foreground"> · {result.source} · </span>
           <time className="text-muted-foreground" dateTime={calculatedAt.toISOString()}>

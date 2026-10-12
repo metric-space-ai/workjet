@@ -19,6 +19,8 @@ import { ProjectMeetingPreparationField } from "./ProjectMeetingPreparationField
 import { ProjectSupervisorLumaSelect, type LumaFieldProps } from "./ProjectSupervisorLumaField";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
+import { workjetUiLanguage } from "../workjetProjectControl";
 
 const decodeProjectConfiguration = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
   onExcessProperty: "error",
@@ -39,6 +41,7 @@ export function ProjectOverviewEditor({
   onCancel,
   kpis,
   onSaveKpis,
+  kpisLoadFailed = false,
   renderLumaField,
 }: {
   readonly overview: ProjectOverview | null | undefined;
@@ -48,6 +51,8 @@ export function ProjectOverviewEditor({
   readonly onCancel?: (() => void) | undefined;
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
+  /** Lesen über project.kpis.read ist fehlgeschlagen: Felder bleiben gesperrt, mit Hinweis. */
+  readonly kpisLoadFailed?: boolean | undefined;
   readonly configuration?: CtoxWorkjetProjectMetadataProjection | undefined;
   readonly renderLumaField?: ((props: LumaFieldProps) => ReactNode) | undefined;
   readonly onSaveConfiguration?:
@@ -226,7 +231,7 @@ export function ProjectOverviewEditor({
             if (!savedKpis) {
               setState({
                 pending: false,
-                message: "KPIs nicht gespeichert",
+                message: workjetUiLanguage() === "en" ? "KPIs not saved" : "KPIs nicht gespeichert",
               });
               return;
             }
@@ -495,6 +500,13 @@ export function ProjectOverviewEditor({
         )}
       </div>
       <div className="grid gap-2 border-t border-border pt-3" data-workjet-prompted-kpis="">
+        {kpisLoadFailed ? (
+          <p role="alert" className="text-xs text-destructive" data-workjet-kpis-load-failed="">
+            {workjetUiLanguage() === "en"
+              ? "KPIs could not be loaded from the instance. Reopen the settings to try again."
+              : "KPIs konnten nicht von der Instanz geladen werden. Einstellungen erneut öffnen, um es noch einmal zu versuchen."}
+          </p>
+        ) : null}
         {([0, 1, 2] as const).map((index) => (
           <div
             key={index}
@@ -503,11 +515,16 @@ export function ProjectOverviewEditor({
             <label htmlFor={`${id}-kpi-${index}`} className="text-xs text-muted-foreground">
               KPI {index + 1}
             </label>
-            <Input
+            <Textarea
               id={`${id}-kpi-${index}`}
               maxLength={1024}
+              rows={2}
               value={prompts[index]}
-              placeholder="Kennzahl in einem Satz"
+              placeholder={
+                workjetUiLanguage() === "en"
+                  ? "Describe the KPI in one sentence"
+                  : "Kennzahl in einem Satz"
+              }
               disabled={state.pending || !canConfigureKpis}
               onChange={(event) =>
                 setPrompts((current) =>

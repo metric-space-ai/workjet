@@ -88,6 +88,62 @@ describe("compact project configuration", () => {
     expect(markup.match(/type="number"/g)).toHaveLength(1);
     expect(markup).toContain("Supervisor-Takt in Minuten");
   });
+  it("shows the prompt as editable text and the Supervisor-resolved label with its value", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewEditor
+        overview={null}
+        configuration={{ id: ProjectId.make("project"), title: "Project" }}
+        onSave={async () => true}
+        kpis={{
+          project_id: "project",
+          revision: 2,
+          items: [
+            {
+              prompt: { kpi_id: "kpi-1", prompt: "Steam wishlists in total", revision: 2 },
+              result: {
+                status: "ready",
+                snapshot: {
+                  project_id: "project",
+                  kpi_id: "kpi-1",
+                  prompt_revision: 2,
+                  label: "Wishlists",
+                  display_value: "1.204",
+                  unit: "",
+                  sources: [
+                    {
+                      kind: "connected_metric",
+                      project_id: "project",
+                      connection_id: "steam",
+                      metric_key: "wishlists",
+                    },
+                  ],
+                  freshness: { calculated_at_ms: 1, refresh_at_ms: 2, fresh_until_ms: 3 },
+                },
+              },
+            },
+          ],
+        }}
+        onSaveKpis={async () => true}
+      />,
+    );
+    expect(markup.match(/<textarea[^>]*maxLength="1024"/g)).toHaveLength(3);
+    expect(markup).toContain("Steam wishlists in total</textarea>");
+    expect(markup).toContain("Wishlists: </span>");
+    expect(markup).toContain("1.204");
+  });
+  it("says so when the KPIs could not be loaded", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewEditor
+        overview={null}
+        configuration={{ id: ProjectId.make("project"), title: "Project" }}
+        onSave={async () => true}
+        onSaveKpis={async () => true}
+        kpisLoadFailed
+      />,
+    );
+    expect(markup).toContain("KPIs konnten nicht von der Instanz geladen werden.");
+    expect(markup.match(/<textarea[^>]*disabled=""/g)).toHaveLength(3);
+  });
   it("does not expose KPI configuration for a foreign project", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewEditor
@@ -100,7 +156,7 @@ describe("compact project configuration", () => {
     );
     expect(markup).not.toContain("KPI-Angaben brauchen");
     expect(
-      markup.match(/<input[^>]*disabled=""[^>]*placeholder="Kennzahl in einem Satz"/g),
+      markup.match(/<textarea[^>]*disabled=""[^>]*placeholder="Kennzahl in einem Satz"/g),
     ).toHaveLength(3);
   });
 });

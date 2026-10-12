@@ -250,6 +250,19 @@ jobs:
             args+=(--skip-build)
             node scripts/build-desktop-artifact.ts "${args[@]}"
           fi
+      - name: Retain Windows server source after a failed installer build
+        if: failure() && matrix.platform == 'win'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-server-source-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            apps/server/dist/bin.mjs
+            apps/server/dist/bin.mjs.map
+            apps/server/dist/service-launcher.mjs
+            apps/server/dist/service-launcher.mjs.map
+            apps/server/package.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify macOS signatures
         if: matrix.platform == 'mac'
         env:

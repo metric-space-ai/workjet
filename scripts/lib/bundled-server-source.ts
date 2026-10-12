@@ -16,6 +16,29 @@ async function fileDigest(path: string) {
   return hash.digest("hex");
 }
 
+function describeFirstByteDifference(current: Buffer, archived: Buffer, binary: boolean) {
+  let offset = 0;
+  const sharedLength = Math.min(current.length, archived.length);
+  while (offset < sharedLength && current[offset] === archived[offset]) offset += 1;
+  const context = (bytes: Buffer) =>
+    binary
+      ? bytes.subarray(Math.max(0, offset - 40), offset + 40).toString("hex")
+      : bytes
+          .subarray(Math.max(0, offset - 320), offset)
+          .toString("utf8")
+          .slice(-80) +
+        bytes
+          .subarray(offset, offset + 320)
+          .toString("utf8")
+          .slice(0, 80);
+  return (
+    `First differing byte offset ${offset} (zero-based); ` +
+    `current length ${current.length}, archive length ${archived.length}; ` +
+    `current context ${JSON.stringify(context(current))}; ` +
+    `archive context ${JSON.stringify(context(archived))}.`
+  );
+}
+
 /** Refuse a release that would install older server code than its fresh build. */
 export async function verifyBundledServerSource(input: {
   readonly serverDist: string;
@@ -84,8 +107,18 @@ export async function verifyBundledServerSource(input: {
       });
       const actual = NodeCrypto.createHash("sha256").update(stdout).digest("hex");
       if (actual !== expectedDigest) {
+        const sourcePath =
+          entry === "workjet-provider-gateway-host" && input.providerGatewayHost
+            ? input.providerGatewayHost.executablePath
+            : NodePath.join(input.serverDist, entry);
+        const current = await NodeFSP.readFile(sourcePath);
+        const difference = describeFirstByteDifference(
+          current,
+          stdout,
+          entry === "workjet-provider-gateway-host",
+        );
         throw new Error(
-          `Stale bundled server ${filename}: dist/${entry} differs from the current server build. Run scripts/build-ssh-server.mjs on the matching host after building the server.`,
+          `Stale bundled server ${filename}: dist/${entry} differs from the current server build. ${difference} Run scripts/build-ssh-server.mjs on the matching host after building the server.`,
         );
       }
     }

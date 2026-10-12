@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../workjetProjectControl";
 import {
   InstanceOnboarding,
   canMountSelectedInstance,
@@ -663,6 +664,9 @@ function ProjectGallery({
   const orderWriter = useRef<ReturnType<typeof createGalleryOrderWriter> | null>(null);
   const [orderLoaded, setOrderLoaded] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [kpiFailures, setKpiFailures] = useState<ReadonlySet<string>>(() => new Set());
+  const [kpiReload, setKpiReload] = useState(0);
+  const [kpiReloading, setKpiReloading] = useState(false);
   const [kpiProjection, setKpiProjection] = useState<{
     readonly instanceId: string | null;
     readonly records: Readonly<Record<string, PromptedProjectKpis>>;
@@ -751,9 +755,20 @@ function ProjectGallery({
         kpiScope.current !== scope ||
         result._tag !== "completed" ||
         !("kpis" in result.response)
-      )
+      ) {
+        if (scope.active && kpiScope.current === scope)
+          setKpiFailures((previous) =>
+            previous.has(projectId) ? previous : new Set(previous).add(projectId),
+          );
         return null;
+      }
       const kpis = result.response.kpis;
+      setKpiFailures((previous) => {
+        if (!previous.has(projectId)) return previous;
+        const next = new Set(previous);
+        next.delete(projectId);
+        return next;
+      });
       setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
       return kpis;
     },
@@ -765,11 +780,14 @@ function ProjectGallery({
     const scope = { instanceId, active: true };
     kpiScope.current = scope;
     const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
-    void readGalleryProjectKpis(projectIds, readKpis, () => scope.active);
+    setKpiReloading(kpiReload > 0);
+    void readGalleryProjectKpis(projectIds, readKpis, () => scope.active).finally(() => {
+      if (scope.active) setKpiReloading(false);
+    });
     return () => {
       scope.active = false;
     };
-  }, [instanceId, nativeProjectIds, readKpis]);
+  }, [instanceId, nativeProjectIds, readKpis, kpiReload]);
 
   const reorderProjects = useCallback(
     (event: DragEndEvent) => {
@@ -843,6 +861,34 @@ function ProjectGallery({
               )}
             </div>
           ) : null}
+          {!projectsUnavailable && kpiFailures.size > 0 ? (
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+              data-workjet-project-kpis-unavailable=""
+            >
+              <span>
+                {workjetUiLanguage() === "en"
+                  ? `KPIs for ${kpiFailures.size} project(s) could not be loaded.`
+                  : `Kennzahlen für ${kpiFailures.size} Projekt(e) nicht geladen.`}
+              </span>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={kpiReloading}
+                onClick={() => setKpiReload((count) => count + 1)}
+                data-workjet-action="project.kpis.retry"
+              >
+                {kpiReloading
+                  ? workjetUiLanguage() === "en"
+                    ? "Loading …"
+                    : "Wird geladen …"
+                  : workjetUiLanguage() === "en"
+                    ? "Retry"
+                    : "Erneut versuchen"}
+              </Button>
+            </div>
+          ) : null}
           {view === "calendar" ? (
             <ConnectedProjectCalendar projects={visibleProjects} />
           ) : (
@@ -881,6 +927,7 @@ function ProjectGallery({
                               ? kpiProjection.records[project.id]
                               : undefined
                           }
+                          kpisUnavailable={kpiFailures.has(project.id)}
                           reorderHandle={reorderHandle}
                         />
                       )}

@@ -257,7 +257,7 @@ export function buildProjectOwnerOverview(input: {
     (slot) => slot?.kind === "metric" && !/^(sessions?|latency|errors?)$/iu.test(slot.label.trim()),
   );
   const primary = metric
-    ? { label: metric.label, value: metric.value }
+    ? { label: metric.label ?? text.projectKpi, value: metric.value }
     : configuredMetric?.kind === "metric"
       ? {
           label: configuredMetric.label,

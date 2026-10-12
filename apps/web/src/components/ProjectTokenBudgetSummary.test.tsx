@@ -25,9 +25,19 @@ describe("project budget overview", () => {
         view={{ totals: null, cycle, unknown: ["worker · gpu3"], threads: [], limitBillions: 2.3 }}
       />,
     );
-    expect(markup).toContain("unbekannt/2.3B");
+    expect(markup).toContain("–/2.3B");
+    expect(markup).not.toContain("· ?");
     expect(markup).toContain("Verbrauch teilweise unbekannt");
     expect(markup).toContain("worker · gpu3");
+  });
+  it("renders nothing when neither usage nor a limit is known", () => {
+    expect(
+      renderToStaticMarkup(
+        <ProjectTokenBudgetSummary
+          view={{ totals: null, cycle, unknown: ["worker"], threads: [], limitBillions: null }}
+        />,
+      ),
+    ).toBe("");
   });
   it("highlights 80% without a blocking control", () => {
     const markup = renderToStaticMarkup(

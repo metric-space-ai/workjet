@@ -19,16 +19,22 @@ describe("project instance failure display", () => {
       expect(describeWorkjetProjectControlFailure(failure, null, "de")).toBe(
         code === "instance_disabled" ? "Instanz deaktiviert." : "Instanz entfernt.",
       );
-      expect(describeWorkjetProjectControlFailure(failure, null, "en")).toBe(
-        code === "instance_disabled" ? "Instance disabled." : "Instance removed.",
-      );
     },
   );
+
+  it("answers every language request with the German wording", () => {
+    const failure = { _tag: "failed", code: "instance_disabled" } as const;
+    expect(describeWorkjetProjectControlFailure(failure, null, "en")).toBe("Instanz deaktiviert.");
+    expect(describeWorkjetProjectControlFailure(failure, null)).toBe("Instanz deaktiviert.");
+    expect(
+      describeWorkjetProjectControlFailure({ _tag: "failed", code: "timeout" }, null, "en"),
+    ).toBe("Die Instanz hat nicht rechtzeitig geantwortet.");
+  });
 
   it("distinguishes hosted sign-in from accountless paired authentication", () => {
     const failure = { _tag: "failed", code: "authentication_required" } as const;
     expect(describeWorkjetProjectControlFailure(failure, "managed:tenant", "en")).toContain(
-      "Sign in to ctox.dev",
+      "Bei ctox.dev anmelden",
     );
     expect(describeWorkjetProjectControlFailure(failure, "paired:tenant", "en")).not.toContain(
       "ctox.dev",
@@ -45,12 +51,12 @@ describe("project instance failure display", () => {
         null,
         "en",
       ),
-    ).toBe("The instance could not be reached.");
+    ).toBe("Die Instanz konnte nicht erreicht werden.");
   });
   it("asks for the connected shell update when its action is unsupported", () => {
     expect(
       describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" }, null, "en"),
-    ).toBe("The connected instance does not support this action. Update its Business OS shell.");
+    ).toBe("Die Instanz unterstützt diese Aktion noch nicht. Business-OS-Shell aktualisieren.");
   });
   it("explains a classified data-plane timeout without showing guest exception text", () => {
     expect(
@@ -63,7 +69,7 @@ describe("project instance failure display", () => {
         null,
         "en",
       ),
-    ).toBe("The instance data request timed out.");
+    ).toBe("Die Datenabfrage hat zu lange gedauert.");
   });
 });
 
@@ -140,6 +146,9 @@ describe("classified project list failures", () => {
     await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
     expect(request).toHaveBeenCalledOnce();
     expect(describeWorkjetProjectControlFailure(failure, null, "de")).toContain(
+      "Sitzung vorbereiten",
+    );
+    expect(describeWorkjetProjectControlFailure(failure, null, "en")).toContain(
       "Sitzung vorbereiten",
     );
     expect(describeWorkjetProjectControlFailure(failure, null, "en")).not.toContain("guest_failed");

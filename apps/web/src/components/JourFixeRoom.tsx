@@ -65,6 +65,33 @@ const MEETING_MARKDOWN_COMPONENTS: Components = {
   a: ({ children }) => <span className="underline">{children}</span>,
 };
 
+/** Der Raum öffnet frühestens fünf Minuten vor dem geplanten Beginn. */
+export const JOUR_FIXE_START_LEAD_MS = 5 * 60_000;
+
+/** Minutentakt für die Zeitsperre; kein Sekundenzeiger in der Kopfzeile. */
+function useMinuteNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+function meetingTimeLabel(meeting: JourFixeRoomSnapshot): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    timeStyle: "short",
+    timeZone: meeting.timezone,
+  }).format(meeting.scheduledAt);
+}
+
+/** Server-Ablehnungen erscheinen als deutsche Zeile im Raum, nie als Toast. */
+export function jourFixeActionError(reason: unknown, meeting: JourFixeRoomSnapshot): string {
+  return reason instanceof Error && reason.message.includes("meeting_not_started")
+    ? `Der Termin beginnt erst um ${meetingTimeLabel(meeting)}.`
+    : "Änderung nicht bestätigt · Entwurf bleibt erhalten.";
+}
+
 export interface JourFixeRoomProps {
   readonly projectTitle: string;
   readonly meeting: JourFixeRoomSnapshot;
@@ -174,6 +201,10 @@ function JourFixeRoomContent({
   const [visibleTurns, setVisibleTurns] = useState(100);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const now = useMinuteNow();
+  const startLocked =
+    ["planned", "preparing", "ready"].includes(meeting.state) &&
+    now < meeting.scheduledAt - JOUR_FIXE_START_LEAD_MS;
   // Presenter mode: Auto plays every slide's narration in turn; keys and full screen as in
   // learnordie's live presenter.
   const [autoAdvance, setAutoAdvance] = useState(false);
@@ -197,6 +228,9 @@ function JourFixeRoomContent({
     meeting.state === "review" &&
     meeting.todos?.status === "proposed";
   const partial = jourFixeVisiblePartial(meeting, partialTranscript);
+  /** Die letzte Folie „Freie Themen“ öffnet den offenen Teil der Runde. */
+  const freeTopics =
+    slide !== undefined && index === slides.length - 1 && slide.title === "Freie Themen";
   const narration =
     slide &&
     audio?.meetingId === meeting.id &&
@@ -214,8 +248,8 @@ function JourFixeRoomContent({
     try {
       await action();
       done?.();
-    } catch {
-      setError("Änderung nicht bestätigt · Entwurf bleibt erhalten.");
+    } catch (reason) {
+      setError(jourFixeActionError(reason, meeting));
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -268,6 +302,44 @@ function JourFixeRoomContent({
   function updateTodo(id: string, key: "title" | "acceptance" | "owner", value: string) {
     editTodos(todos.map((todo) => (todo.id === id ? { ...todo, [key]: value } : todo)));
   }
+  /** Bei „Freie Themen“ steht das Eingabefeld vorne, sonst am Ende der Seitenleiste. */
+  const messageForm = onMessage && editable && (
+    <form
+      className={`flex items-center gap-2 ${freeTopics ? "border-b" : "border-t"} border-border p-3`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!message.trim() || busy) return;
+        void perform(
+          () => onMessage(meeting.id, meeting.revision, message.trim()),
+          () => setMessage(""),
+        );
+      }}
+    >
+      <Input
+        aria-label="Nachricht an Supervisor"
+        maxLength={16384}
+        placeholder="Schreiben oder sprechen …"
+        value={message}
+        disabled={busy}
+        onChange={(event) => setMessage(event.target.value)}
+        className="min-w-0 flex-1"
+      />
+      {onToggleMicrophone && (
+        <Button
+          size="icon-sm"
+          variant={microphoneActive ? "destructive" : "outline"}
+          aria-label={microphoneActive ? "Mikrofon aus" : "Mikrofon an"}
+          aria-pressed={microphoneActive}
+          onClick={onToggleMicrophone}
+        >
+          <MicIcon />
+        </Button>
+      )}
+      <Button type="submit" size="icon-sm" aria-label="Senden" disabled={busy || !message.trim()}>
+        <SendIcon />
+      </Button>
+    </form>
+  );
   return (
     <section
       className="@container flex min-h-0 flex-1 flex-col overflow-auto"
@@ -307,14 +379,29 @@ function JourFixeRoomContent({
           {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
           {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
         </span>
-        {meeting.state === "ready" && onStartMeeting && (
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => void perform(() => onStartMeeting(meeting.id, meeting.revision))}
+        {startLocked ? (
+          <span
+            className="text-xs text-muted-foreground"
+            data-workjet-meeting-start-lock={meeting.state}
           >
-            Termin starten
-          </Button>
+            Beginnt um {meetingTimeLabel(meeting)}
+            {meeting.state === "preparing"
+              ? " · Vorbereitung läuft"
+              : meeting.state === "ready"
+                ? " · Vorbereitet"
+                : ""}
+          </span>
+        ) : (
+          meeting.state === "ready" &&
+          onStartMeeting && (
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => void perform(() => onStartMeeting(meeting.id, meeting.revision))}
+            >
+              Termin starten
+            </Button>
+          )
         )}
         {meeting.state === "live" && onEndMeeting && (
           <Button
@@ -772,6 +859,11 @@ function JourFixeRoomContent({
                 controlRef={playerControl}
                 onFullscreen={toggleFullscreen}
               />
+              <p className="text-xs text-muted-foreground" data-workjet-agenda-line="">
+                {freeTopics
+                  ? "Freie Themen"
+                  : `Tagesordnung · Punkt ${index + 1} von ${slides.length} · ${slide.title}`}
+              </p>
               <nav aria-label="Folien" className="flex gap-2 overflow-x-auto pb-1">
                 {slides.map((item, number) => (
                   <button
@@ -819,6 +911,7 @@ function JourFixeRoomContent({
               </Button>
             ))}
           </nav>
+          {freeTopics && messageForm}
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 @min-[900px]:max-h-[calc(100dvh-220px)]">
             {panel === "conversation" && (
               <>
@@ -873,48 +966,7 @@ function JourFixeRoomContent({
                 </button>
               ))}
           </div>
-          {onMessage && editable && (
-            <form
-              className="flex items-center gap-2 border-t border-border p-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!message.trim() || busy) return;
-                void perform(
-                  () => onMessage(meeting.id, meeting.revision, message.trim()),
-                  () => setMessage(""),
-                );
-              }}
-            >
-              <Input
-                aria-label="Nachricht an Supervisor"
-                maxLength={16384}
-                placeholder="Schreiben oder sprechen …"
-                value={message}
-                disabled={busy}
-                onChange={(event) => setMessage(event.target.value)}
-                className="min-w-0 flex-1"
-              />
-              {onToggleMicrophone && (
-                <Button
-                  size="icon-sm"
-                  variant={microphoneActive ? "destructive" : "outline"}
-                  aria-label={microphoneActive ? "Mikrofon aus" : "Mikrofon an"}
-                  aria-pressed={microphoneActive}
-                  onClick={onToggleMicrophone}
-                >
-                  <MicIcon />
-                </Button>
-              )}
-              <Button
-                type="submit"
-                size="icon-sm"
-                aria-label="Senden"
-                disabled={busy || !message.trim()}
-              >
-                <SendIcon />
-              </Button>
-            </form>
-          )}
+          {onMessage && editable && !freeTopics && messageForm}
         </aside>
       </div>
     </section>

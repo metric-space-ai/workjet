@@ -130,6 +130,8 @@ describe("project exit assessment display", () => {
       expect(markup).toContain('data-workjet-exit-model-stamp=""');
       expect(markup).toContain("Nicht bewertet");
       expect(markup).toContain("pointer-events-none");
+      // Derselbe feste Grund wie der Wertstempel, nur Text und Rahmen gedämpft.
+      expect(markup).toContain("bg-background/90");
       expect(markup).not.toContain("<button");
     }
   });

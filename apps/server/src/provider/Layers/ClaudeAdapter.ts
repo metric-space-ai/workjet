@@ -86,6 +86,12 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { readWorkerSourceHarness } from "../../workjet/WorkerSourceHarness.ts";
+import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
+import { prepareWorkerSourceNamespace } from "../../workjet/WorkerSourceNamespace.ts";
+import {
+  prepareClaudeNamespaceSpawn,
+  spawnAdmittedClaudeProcess,
+} from "../Drivers/ClaudeNamespaceSpawn.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
@@ -1729,6 +1735,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   options?: ClaudeAdapterLiveOptions,
 ) {
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("claudeAgent");
+  const namespaceContext = yield* Effect.context<never>();
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig;
@@ -3913,6 +3920,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           })
         : undefined;
       const workerSource = readWorkerSourceHarness(input.threadId);
+      const namespaceCapture = yield* prepareWorkerSourceNamespace(input, PROVIDER).pipe(
+        Effect.provideContext(namespaceContext),
+      );
+      const namespaceProfile = namespaceCapture
+        ? yield* admitWorkerSourceNativeProfile(input, PROVIDER)
+        : undefined;
+      if (namespaceCapture && options?.createQuery !== undefined)
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue: "Claude namespace execution requires the actual SDK process hook.",
+        });
       if (input.workjetConfig?.role === "worker") {
         const environment = yield* Effect.serviceOption(ServerEnvironment);
         const localEnvironmentId = Option.isSome(environment)
@@ -4461,38 +4480,46 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // The resolver returns the per-instance merge only, so the Claude home
       // isolation (CLAUDE_CONFIG_DIR) is re-applied on top of it exactly as
       // it is for the construction-time environment.
-      const sessionEnvironment = workerSource
-        ? {
-            PATH: process.env.PATH,
-            HOME: process.env.HOME,
-            TMPDIR: process.env.TMPDIR,
-            LANG: process.env.LANG,
-            CLAUDE_CONFIG_DIR: path.join(
-              serverConfig.stateDir,
-              "worker-harnesses",
-              input.threadId,
-              "claude",
-            ),
-            ANTHROPIC_BASE_URL: workerSource.baseUrl.slice(0, -3),
-            ANTHROPIC_API_KEY: workerSource.apiKey,
-            WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
-            WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
-            ANTHROPIC_AUTH_TOKEN: undefined,
-            CLAUDE_CODE_OAUTH_TOKEN: undefined,
-            CLAUDE_CODE_USE_BEDROCK: undefined,
-            CLAUDE_CODE_USE_VERTEX: undefined,
-            CLAUDE_CODE_USE_FOUNDRY: undefined,
-            ANTHROPIC_CUSTOM_HEADERS: undefined,
-          }
-        : options?.resolveSessionEnvironment
-          ? yield* makeClaudeEnvironment(
-              claudeSettings,
-              // The API model id is what actually travels on the wire, so it is
-              // the identity the gateway catalog has to be matched against.
-              yield* options.resolveSessionEnvironment({ model: apiModelId }),
-            ).pipe(Effect.provideService(Path.Path, path))
-          : claudeEnvironment;
+      const sessionEnvironment =
+        namespaceProfile?.environment ??
+        (workerSource
+          ? {
+              PATH: process.env.PATH,
+              HOME: process.env.HOME,
+              TMPDIR: process.env.TMPDIR,
+              LANG: process.env.LANG,
+              CLAUDE_CONFIG_DIR: path.join(
+                serverConfig.stateDir,
+                "worker-harnesses",
+                input.threadId,
+                "claude",
+              ),
+              ANTHROPIC_BASE_URL: workerSource.baseUrl.slice(0, -3),
+              ANTHROPIC_API_KEY: workerSource.apiKey,
+              WORKJET_WORKER_SOURCE_URL: workerSource.baseUrl,
+              WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
+              ANTHROPIC_AUTH_TOKEN: undefined,
+              CLAUDE_CODE_OAUTH_TOKEN: undefined,
+              CLAUDE_CODE_USE_BEDROCK: undefined,
+              CLAUDE_CODE_USE_VERTEX: undefined,
+              CLAUDE_CODE_USE_FOUNDRY: undefined,
+              ANTHROPIC_CUSTOM_HEADERS: undefined,
+            }
+          : options?.resolveSessionEnvironment
+            ? yield* makeClaudeEnvironment(
+                claudeSettings,
+                // The API model id is what actually travels on the wire, so it is
+                // the identity the gateway catalog has to be matched against.
+                yield* options.resolveSessionEnvironment({ model: apiModelId }),
+              ).pipe(Effect.provideService(Path.Path, path))
+            : claudeEnvironment);
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      if (namespaceCapture && mcpSession)
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue: "Claude namespace MCP execution requires a confined server.",
+        });
       const oneShotPolicy =
         mcpSession?.projectTeamRole === "worker" && input.cwd
           ? oneShotClaudePolicy(input.cwd)
@@ -4507,7 +4534,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ];
       const processes: Array<ProviderTrackedProcess> = [];
       const hostPlatform = yield* HostProcessPlatform;
-      const spawnClaudeCodeProcess = (spawnOptions: SpawnOptions): SpawnedProcess => {
+      const startClaudeChild = (spawnOptions: SpawnOptions) => {
         const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
           cwd: spawnOptions.cwd,
           env: spawnOptions.env,
@@ -4533,8 +4560,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               }),
           });
         }
-        return child as SpawnedProcess;
+        return child;
       };
+      const spawnClaudeCodeProcess = (spawnOptions: SpawnOptions): SpawnedProcess =>
+        namespaceCapture
+          ? spawnAdmittedClaudeProcess(
+              spawnOptions,
+              (spawn) => runPromise(prepareClaudeNamespaceSpawn(spawn, namespaceCapture)),
+              startClaudeChild,
+            )
+          : startClaudeChild(spawnOptions);
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -4587,7 +4622,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         canUseTool,
         onElicitation,
         env: sessionEnvironment,
-        additionalDirectories: oneShotPolicy?.additionalDirectories ?? additionalDirectories,
+        additionalDirectories: namespaceCapture
+          ? [input.cwd!]
+          : (oneShotPolicy?.additionalDirectories ?? additionalDirectories),
         ...(options?.createQuery === undefined ? { spawnClaudeCodeProcess } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(mcpSession

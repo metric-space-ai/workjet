@@ -83,6 +83,7 @@ import {
   type ProjectScriptEditorRequest,
 } from "../projectScriptEditor";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -489,6 +490,13 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
   // ----- favicon -----
   const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
+  // Selten gebrauchte Abschnitte sind zugeklappt; immer nur einer offen.
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const sectionToggle = (key: string) => ({
+    open: openSection === key,
+    onOpenChange: (open: boolean) =>
+      setOpenSection((current) => (open ? key : current === key ? null : current)),
+  });
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);
   const setFaviconPath = useCallback(
@@ -883,17 +891,24 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             </Button>
           }
         />
-        {faviconPickerOpen && representative.workspaceRoot !== null ? (
-          <div className="px-3 pb-3 sm:px-4">
-            <ProjectFaviconPicker
-              key={`${representative.environmentId}:${representative.workspaceRoot}`}
-              cwd={representative.workspaceRoot}
-              environmentId={representative.environmentId}
-              onClose={() => setFaviconPickerOpen(false)}
-              onSelect={(path) => void setFaviconPath(path)}
-            />
-          </div>
-        ) : null}
+        <InlineExpand
+          hideCollapseControl
+          label="Symbol"
+          open={faviconPickerOpen && representative.workspaceRoot !== null}
+          onOpenChange={setFaviconPickerOpen}
+        >
+          {faviconPickerOpen && representative.workspaceRoot !== null ? (
+            <div className="px-3 pb-3 sm:px-4">
+              <ProjectFaviconPicker
+                key={`${representative.environmentId}:${representative.workspaceRoot}`}
+                cwd={representative.workspaceRoot}
+                environmentId={representative.environmentId}
+                onClose={() => setFaviconPickerOpen(false)}
+                onSelect={(path) => void setFaviconPath(path)}
+              />
+            </div>
+          ) : null}
+        </InlineExpand>
       </SettingsSection>
 
       <SettingsSection title="Regeltermin, Budget und Supervisor">
@@ -929,7 +944,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Neue Unterhaltungen">
+      <SettingsSection
+        title="Neue Unterhaltungen"
+        collapsible={sectionToggle("Neue Unterhaltungen")}
+      >
         <SettingsRow
           title="Modell"
           resetAction={
@@ -1024,6 +1042,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
       <SettingsSection
         title="Arbeitskopie"
+        collapsible={sectionToggle("Arbeitskopie")}
         headerAction={
           group.memberProjects.length > 1 ? (
             <Select
@@ -1142,6 +1161,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
       <SettingsSection
         title="Skripte"
+        collapsible={sectionToggle("Skripte")}
         headerAction={
           <div className="flex flex-wrap gap-1.5">
             {importableScripts.length > 0 ? (
@@ -1271,7 +1291,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         ) : null}
       </SettingsSection>
 
-      <SettingsSection title="Entfernen">
+      <SettingsSection title="Entfernen" collapsible={sectionToggle("Entfernen")}>
         <SettingsRow
           title={removeLabel}
           control={

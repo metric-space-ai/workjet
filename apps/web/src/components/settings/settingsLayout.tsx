@@ -1,4 +1,4 @@
-import { InfoIcon, Undo2Icon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, InfoIcon, Undo2Icon, Trash2Icon } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   createContext,
@@ -13,6 +13,7 @@ import {
 
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface SettingsSearchTargetContextValue {
@@ -166,6 +167,7 @@ export function SettingsSection({
   title,
   icon,
   headerAction,
+  collapsible,
   children,
   className,
   ...sectionProps
@@ -173,6 +175,8 @@ export function SettingsSection({
   title: string;
   icon?: ReactNode;
   headerAction?: ReactNode;
+  /** Abschnitt klappt über die Überschrift auf (immer nur einer offen). */
+  collapsible?: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void };
   children: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
@@ -186,12 +190,47 @@ export function SettingsSection({
     >
       <div className="flex min-h-8 items-center justify-between gap-4 px-3 sm:px-4">
         <h2 className="flex items-center gap-2 text-[13.5px] font-semibold text-foreground">
-          {icon}
-          {title}
+          {collapsible ? (
+            <button
+              type="button"
+              aria-expanded={collapsible.open}
+              className="-mx-1 flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
+              data-slot="settings-section-toggle"
+              onClick={() => collapsible.onOpenChange(!collapsible.open)}
+            >
+              {icon}
+              {title}
+              <ChevronDownIcon
+                aria-hidden
+                className={cn(
+                  "size-4 text-muted-foreground transition-transform duration-200",
+                  collapsible.open && "rotate-180",
+                )}
+              />
+            </button>
+          ) : (
+            <>
+              {icon}
+              {title}
+            </>
+          )}
         </h2>
-        <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
+        {collapsible && !collapsible.open ? null : (
+          <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
+        )}
       </div>
-      <div className="relative space-y-1 overflow-visible text-foreground">{children}</div>
+      {collapsible ? (
+        <InlineExpand
+          hideCollapseControl
+          label={title}
+          open={collapsible.open}
+          onOpenChange={collapsible.onOpenChange}
+        >
+          <div className="relative space-y-1 overflow-visible text-foreground">{children}</div>
+        </InlineExpand>
+      ) : (
+        <div className="relative space-y-1 overflow-visible text-foreground">{children}</div>
+      )}
     </section>
   );
 }

@@ -54,7 +54,13 @@ function NativeJourFixeRoomContent({
     if (!meetingId) return;
     let cancelled = false;
     const controller = new AbortController();
-    void readJourFixePresentation(instanceId, projectId, meetingId, undefined, controller.signal).then(
+    void readJourFixePresentation(
+      instanceId,
+      projectId,
+      meetingId,
+      undefined,
+      controller.signal,
+    ).then(
       (value) => {
         if (!cancelled) setPresentation(value);
       },

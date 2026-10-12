@@ -11,7 +11,11 @@ import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema
 import { requestWorkjetProjectControl } from "../workjetProjectControl";
 import { newCommandId } from "./utils";
 
-import { retryJourFixeRead, jourFixeReadDeadline, jourFixeTransportError } from "./jourFixeReadRetry";
+import {
+  retryJourFixeRead,
+  jourFixeReadDeadline,
+  jourFixeTransportError,
+} from "./jourFixeReadRetry";
 
 type Control = typeof requestWorkjetProjectControl;
 
@@ -91,12 +95,17 @@ export async function readJourFixePresentation(
   signal?: AbortSignal,
 ): Promise<JourFixePresentation | null> {
   const options = { signal, deadline: jourFixeReadDeadline() };
-  const read = await confirmed(control, instanceId, {
-    action: "project.presentation.read",
-    commandId: newCommandId(),
-    projectId,
-    meetingId,
-  }, options);
+  const read = await confirmed(
+    control,
+    instanceId,
+    {
+      action: "project.presentation.read",
+      commandId: newCommandId(),
+      projectId,
+      meetingId,
+    },
+    options,
+  );
   if (read.action !== "project.presentation.read") throw new Error("Unexpected answer.");
   const manifest = read.presentation;
   if (manifest === null) return null;
@@ -104,16 +113,21 @@ export async function readJourFixePresentation(
   let offset = 0;
   while (offset < manifest.document_bytes) {
     const length = Math.min(WORKJET_PRESENTATION_RANGE_BYTES, manifest.document_bytes - offset);
-    const part = await confirmed(control, instanceId, {
-      action: "project.presentation.content.read",
-      commandId: newCommandId(),
-      projectId,
-      meetingId,
-      presentationId: manifest.presentation_id,
-      revision: manifest.revision,
-      offset,
-      length,
-    }, options);
+    const part = await confirmed(
+      control,
+      instanceId,
+      {
+        action: "project.presentation.content.read",
+        commandId: newCommandId(),
+        projectId,
+        meetingId,
+        presentationId: manifest.presentation_id,
+        revision: manifest.revision,
+        offset,
+        length,
+      },
+      options,
+    );
     if (part.action !== "project.presentation.content.read") throw new Error("Unexpected answer.");
     const chunk = base64Bytes(part.range.data_base64);
     if (

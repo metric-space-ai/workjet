@@ -35,7 +35,10 @@ function bounded<T>(promise: Promise<T>, signal: AbortSignal | undefined, deadli
       settle();
     };
     signal?.addEventListener("abort", abort, { once: true });
-    promise.then(value => finish(() => resolve(value)), error => finish(() => reject(error)));
+    promise.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
     if (signal?.aborted) abort();
   });
 }
@@ -57,11 +60,18 @@ export async function retryJourFixeRead<T>(
         !(error instanceof JourFixeReadError) ||
         !["timeout", "request_timeout", "guest_failed"].includes(error.code) ||
         Date.now() >= deadline
-      ) throw error;
+      )
+        throw error;
       const delay = [5_000, 10_000, 20_000][failures++] ?? 30_000;
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await bounded(new Promise<void>(resolve => { timer = setTimeout(resolve, delay); }), options.signal, deadline);
+        await bounded(
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, delay);
+          }),
+          options.signal,
+          deadline,
+        );
       } finally {
         if (timer !== undefined) clearTimeout(timer);
       }

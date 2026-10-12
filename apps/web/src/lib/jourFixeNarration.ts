@@ -18,7 +18,12 @@ export interface JourFixeNarrationOptions {
   readonly signal: AbortSignal;
   readonly port?: WorkjetProjectControlPort;
 }
-import { retryJourFixeRead, jourFixeReadDeadline, jourFixeTransportError, JourFixeReadError } from "./jourFixeReadRetry";
+import {
+  retryJourFixeRead,
+  jourFixeReadDeadline,
+  jourFixeTransportError,
+  JourFixeReadError,
+} from "./jourFixeReadRetry";
 
 const canceled = () => new DOMException("Narration scope canceled.", "AbortError");
 async function digest(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
@@ -43,11 +48,14 @@ export async function prepareJourFixeNarration(options: JourFixeNarrationOptions
     if (Date.now() >= deadline) throw new JourFixeReadError("timeout");
   };
   const invoke = (request: Parameters<WorkjetProjectControlPort>[1]) =>
-    retryJourFixeRead(async () => {
-      const result = await requestWorkjetProjectControl(scope.instanceId, request, port);
-      if (result._tag !== "completed") throw jourFixeTransportError(result);
-      return result;
-    }, { signal, deadline });
+    retryJourFixeRead(
+      async () => {
+        const result = await requestWorkjetProjectControl(scope.instanceId, request, port);
+        if (result._tag !== "completed") throw jourFixeTransportError(result);
+        return result;
+      },
+      { signal, deadline },
+    );
   try {
     do {
       current();

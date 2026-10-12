@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
@@ -291,4 +291,23 @@ describe("the room's confirmed presentation-save workflow", () => {
     expect(saved.reloadError).toContain("not_active");
     expect(server.calls).toHaveLength(1);
   });
+});
+
+it("retries a transient manifest failure and still validates the complete document", async () => {
+  const f = control(await manifest());
+  vi.useFakeTimers();
+  try {
+    const retrying = vi
+      .fn()
+      .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
+      .mockImplementation(f.port);
+    const loaded = readJourFixePresentation("instance", projectId, "meeting-1", retrying);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect((await loaded)?.document).toEqual(jourFixeDeck);
+    expect(
+      retrying.mock.calls.filter(([, r]) => r.action === "project.presentation.read"),
+    ).toHaveLength(2);
+  } finally {
+    vi.useRealTimers();
+  }
 });

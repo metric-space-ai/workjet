@@ -8,9 +8,7 @@ import {
   isWorkjetJourFixeReceiptForRequest,
   isWorkjetJourFixeReadReceiptForRequest,
 } from "@workjet/contracts";
-import {
-  requestWorkjetProjectControl,
-} from "../workjetProjectControl";
+import { requestWorkjetProjectControl } from "../workjetProjectControl";
 import { retryJourFixeRead, jourFixeTransportError } from "./jourFixeReadRetry";
 import { newCommandId, randomUUID } from "./utils";
 import type { JourFixeCommentDraft, JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
@@ -115,7 +113,10 @@ export class JourFixeNativeSession {
     this.reads.set(key, pending);
     return pending;
   }
-  private async readSnapshot(meetingId?: string, signal?: AbortSignal): Promise<WorkjetJourFixeReadResponse> {
+  private async readSnapshot(
+    meetingId?: string,
+    signal?: AbortSignal,
+  ): Promise<WorkjetJourFixeReadResponse> {
     this.assertCurrent();
     const request = {
       action: "project.jour_fixe.meeting.read" as const,
@@ -123,13 +124,16 @@ export class JourFixeNativeSession {
       projectId: this.projectId,
       ...(meetingId ? { meetingId } : {}),
     };
-    const result = await retryJourFixeRead(async () => {
-      this.assertCurrent();
-      const value = await this.control(this.instanceId, request);
-      this.assertCurrent();
-      if (value._tag !== "completed") throw jourFixeTransportError(value);
-      return value;
-    }, { signal });
+    const result = await retryJourFixeRead(
+      async () => {
+        this.assertCurrent();
+        const value = await this.control(this.instanceId, request);
+        this.assertCurrent();
+        if (value._tag !== "completed") throw jourFixeTransportError(value);
+        return value;
+      },
+      { signal },
+    );
     this.assertCurrent();
     if (
       result.response.action !== request.action ||

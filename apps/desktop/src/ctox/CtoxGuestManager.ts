@@ -214,7 +214,9 @@ export class CtoxGuestManager extends Context.Service<
     /** Load an instance guest into the warm pool without attaching its native view. */
     readonly ensurePooled: (instanceId: string) => Effect.Effect<CtoxManagedGuestResult>;
     /** Public discovery metadata only; no extra network/auth refresh per room read. */
-    readonly observeShellGenerations?: (instances: readonly CtoxManagedInstance[]) => Effect.Effect<void>;
+    readonly observeShellGenerations?: (
+      instances: readonly CtoxManagedInstance[],
+    ) => Effect.Effect<void>;
     /** Detach the active guest without destroying its warm renderer state. */
     readonly suspend: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivate: Effect.Effect<CtoxManagedActionResult>;
@@ -1052,7 +1054,6 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }
       });
     const staleShell = (guest: ActiveGuest) =>
-      guest.shellGeneration !== undefined &&
       shellGenerations.has(guest.instanceId) &&
       guest.shellGeneration !== shellGenerations.get(guest.instanceId);
     const sessionEventDecoders = new Map<string, CtoxSessionTransferEventDecoder>();
@@ -1441,7 +1442,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           view,
           bounds,
           browserSession: resolvedSession.value,
-          ...(generationOf(authoritativeDescriptor) === undefined ? {} : { shellGeneration: generationOf(authoritativeDescriptor)! }),
+          ...(generationOf(authoritativeDescriptor) === undefined
+            ? {}
+            : { shellGeneration: generationOf(authoritativeDescriptor)! }),
           lease,
           ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
           awaitRelease: awaitLaunchRelease,
@@ -1726,9 +1729,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           emitGuestState(instanceId, "loading");
           const [result, prepared] = yield* prepareGuest(
             instanceId,
-            CTOX_POOLED_GUEST_BOUNDS,
-            undefined,
-            false,
+            warm?.bounds ?? CTOX_POOLED_GUEST_BOUNDS,
+            warm?.browserSession,
+            state.activeId === instanceId,
           ).pipe(Effect.onInterrupt(() => Effect.sync(() => emitGuestState(instanceId, "none"))));
           if (prepared === undefined) {
             emitGuestState(instanceId, "none");
@@ -2140,20 +2143,31 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       });
 
     const rebuildPooled = (instanceId: string, expected: PooledGuest) =>
-      SynchronizedRef.modifyEffect(stateRef, state => Effect.gen(function* () {
-        if (state.pool.get(instanceId)?.view !== expected.view) return [undefined, state] as const;
-        const attached = state.activeId === instanceId;
-        destroyPooledGuest(expected);
-        const pool = new Map(state.pool);
-        pool.delete(instanceId);
-        emitGuestState(instanceId, "loading");
-        const [, replacement] = yield* prepareGuest(instanceId, expected.bounds, expected.browserSession, attached);
-        if (replacement) {
-          pool.set(instanceId, { ...replacement, lastUsedAt: ++guestUseSequence });
-          emitGuestState(instanceId, "warm");
-        } else emitGuestState(instanceId, "none");
-        return [undefined, { ...state, pool, activeId: attached && !replacement ? undefined : state.activeId }] as const;
-      }));
+      SynchronizedRef.modifyEffect(stateRef, (state) =>
+        Effect.gen(function* () {
+          if (state.pool.get(instanceId)?.view !== expected.view)
+            return [undefined, state] as const;
+          const attached = state.activeId === instanceId;
+          destroyPooledGuest(expected);
+          const pool = new Map(state.pool);
+          pool.delete(instanceId);
+          emitGuestState(instanceId, "loading");
+          const [, replacement] = yield* prepareGuest(
+            instanceId,
+            expected.bounds,
+            expected.browserSession,
+            attached,
+          );
+          if (replacement) {
+            pool.set(instanceId, { ...replacement, lastUsedAt: ++guestUseSequence });
+            emitGuestState(instanceId, "warm");
+          } else emitGuestState(instanceId, "none");
+          return [
+            undefined,
+            { ...state, pool, activeId: attached && !replacement ? undefined : state.activeId },
+          ] as const;
+        }),
+      );
 
     const requestProjectControlOnce = (
       instanceId: string,
@@ -2477,38 +2491,52 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       });
 
     const projectControlWithRecovery = (
-      instanceId: string, request: CtoxWorkjetProjectControlRequest,
-    ): Effect.Effect<CtoxWorkjetProjectControlResult> => Effect.gen(function* () {
-      const result = yield* requestProjectControlOnce(instanceId, request);
-      const state = yield* SynchronizedRef.get(stateRef);
-      const guest = state.pool.get(instanceId);
-      if (!guest) return result;
-      let failures = 0;
-      if (request.action === "project.list") {
-        failures = result._tag === "failed" && result.code === "guest_failed"
-          ? (listFailures.get(guest.view.webContents) ?? 0) + 1 : 0;
-        listFailures.set(guest.view.webContents, failures);
-      }
-      if (staleShell(guest) || failures >= 3) {
-        yield* rebuildPooled(instanceId, guest);
-        return yield* requestProjectControlOnce(instanceId, request);
-      }
-      return result;
-    });
+      instanceId: string,
+      request: CtoxWorkjetProjectControlRequest,
+    ): Effect.Effect<CtoxWorkjetProjectControlResult> =>
+      Effect.gen(function* () {
+        const result = yield* requestProjectControlOnce(instanceId, request);
+        const state = yield* SynchronizedRef.get(stateRef);
+        const guest = state.pool.get(instanceId);
+        if (!guest) return result;
+        let failures = 0;
+        if (request.action === "project.list") {
+          failures =
+            result._tag === "failed" && result.code === "guest_failed"
+              ? (listFailures.get(guest.view.webContents) ?? 0) + 1
+              : 0;
+          listFailures.set(guest.view.webContents, failures);
+        }
+        if (staleShell(guest) || failures >= 3) {
+          yield* rebuildPooled(instanceId, guest);
+          return yield* requestProjectControlOnce(instanceId, request);
+        }
+        return result;
+      });
     const requestProjectControl = (
-      instanceId: string, request: CtoxWorkjetProjectControlRequest,
-    ): Effect.Effect<CtoxWorkjetProjectControlResult> => Effect.gen(function* () {
-      if (request.action !== "project.list") return yield* projectControlWithRecovery(instanceId, request);
-      const key = JSON.stringify([instanceId, projectControlReadKey(request)]);
-      const existing = pendingLists.get(key);
-      if (existing) return yield* Deferred.await(existing);
-      const receipt = Deferred.makeUnsafe<CtoxWorkjetProjectControlResult>();
-      pendingLists.set(key, receipt);
-      yield* Deferred.into(projectControlWithRecovery(instanceId, request).pipe(
-        Effect.ensuring(Effect.sync(() => { pendingLists.delete(key); })),
-      ), receipt).pipe(Effect.forkIn(ownerScope));
-      return yield* Deferred.await(receipt);
-    });
+      instanceId: string,
+      request: CtoxWorkjetProjectControlRequest,
+    ): Effect.Effect<CtoxWorkjetProjectControlResult> =>
+      Effect.gen(function* () {
+        if (request.action !== "project.list")
+          return yield* projectControlWithRecovery(instanceId, request);
+        const key = JSON.stringify([instanceId, projectControlReadKey(request)]);
+        const existing = pendingLists.get(key);
+        if (existing) return yield* Deferred.await(existing);
+        const receipt = Deferred.makeUnsafe<CtoxWorkjetProjectControlResult>();
+        pendingLists.set(key, receipt);
+        yield* Deferred.into(
+          projectControlWithRecovery(instanceId, request).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                pendingLists.delete(key);
+              }),
+            ),
+          ),
+          receipt,
+        ).pipe(Effect.forkIn(ownerScope));
+        return yield* Deferred.await(receipt);
+      });
 
     const registerSessionTransferEvents = (
       computerIds: readonly string[],

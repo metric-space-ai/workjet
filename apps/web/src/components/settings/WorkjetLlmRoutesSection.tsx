@@ -135,6 +135,7 @@ export function WorkjetLlmRoutesSection(props: {
             }}
           />
           <InlineExpand
+            hideCollapseControl
             label={route.label}
             open={editingRoute?.id === route.id}
             onOpenChange={(open) => {

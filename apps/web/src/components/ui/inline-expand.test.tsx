@@ -96,3 +96,36 @@ describe("InlinePanel", () => {
     expect(html).toContain('data-slot="inline-expand-collapse"');
   });
 });
+
+describe("Row click-to-edit", () => {
+  it("makes name and meta a toggle with a chevron instead of a ⋯ → Bearbeiten entry", async () => {
+    const { Row } = await import("./row");
+    const closed = renderToStaticMarkup(
+      <Row name="gpu4" meta="SSH" onToggleExpanded={() => undefined} />,
+    );
+    expect(closed).toContain('data-slot="row-open"');
+    expect(closed).toContain('aria-expanded="false"');
+    const open = renderToStaticMarkup(
+      <Row name="gpu4" meta="SSH" expanded onToggleExpanded={() => undefined} />,
+    );
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("rotate-180");
+  });
+
+  it("stays a plain row without a toggle", async () => {
+    const { Row } = await import("./row");
+    expect(renderToStaticMarkup(<Row name="gpu4" />)).not.toContain("row-open");
+  });
+});
+
+describe("InlineExpand independent", () => {
+  it("does not join the single-open registry", () => {
+    const before = openInlineExpandCount();
+    renderToStaticMarkup(
+      <InlineExpand independent label="Apps" open onOpenChange={() => undefined}>
+        <span />
+      </InlineExpand>,
+    );
+    expect(openInlineExpandCount()).toBe(before);
+  });
+});

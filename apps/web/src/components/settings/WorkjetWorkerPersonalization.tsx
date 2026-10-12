@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
@@ -362,6 +363,8 @@ export function WorkjetWorkerPersonalizationEditor({
                 onClick={() => {
                   setCustomizing((current) => !current);
                   setActiveTargetId(null);
+                  // Nur ein Unterbereich offen: Matrizen schließen mit.
+                  setShowMatrices(false);
                 }}
               >
                 Anpassen
@@ -578,7 +581,12 @@ export function WorkjetWorkerPersonalizationEditor({
               ))}
           </div>
 
-          {showMatrices ? (
+          <InlineExpand
+            hideCollapseControl
+            label="W/A"
+            open={showMatrices}
+            onOpenChange={setShowMatrices}
+          >
             <div className="mt-3 space-y-2 rounded-lg border border-border/60 bg-muted/10 p-2.5">
               <div className="grid gap-2 lg:grid-cols-2">
                 <label className="space-y-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -586,7 +594,7 @@ export function WorkjetWorkerPersonalizationEditor({
                   <Textarea
                     value={matrixW}
                     onChange={(event) => setMatrixW(event.target.value)}
-                    className="min-h-56 font-mono text-[10px] normal-case"
+                    className="min-h-32 max-h-64 font-mono text-[10px] normal-case"
                     aria-label="Gewichte Meta zu Detail"
                   />
                 </label>
@@ -595,7 +603,7 @@ export function WorkjetWorkerPersonalizationEditor({
                   <Textarea
                     value={matrixA}
                     onChange={(event) => setMatrixA(event.target.value)}
-                    className="min-h-56 font-mono text-[10px] normal-case"
+                    className="min-h-32 max-h-64 font-mono text-[10px] normal-case"
                     aria-label="Gewichte Detail zu Detail"
                   />
                 </label>
@@ -615,7 +623,7 @@ export function WorkjetWorkerPersonalizationEditor({
                 </Button>
               </div>
             </div>
-          ) : null}
+          </InlineExpand>
         </div>
       ) : null}
     </section>

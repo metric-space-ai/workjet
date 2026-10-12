@@ -29,6 +29,7 @@ const RecoveryRecord = Schema.Struct({
   repairTargets: Schema.optionalKey(Schema.Array(Schema.String)),
   deviceRecoveryGeneration: Schema.optionalKey(Schema.String),
   discoveryRetry: Schema.optionalKey(Schema.Boolean),
+  manualRetryAt: Schema.optionalKey(Schema.Number),
   lastRepairLoginId: Schema.optionalKey(Schema.String),
   instanceRepairs: Schema.optionalKey(
     Schema.Array(
@@ -58,6 +59,8 @@ export interface RepairFailure {
 }
 const retryDelay = (attempt: number) =>
   [1, 2, 5, 15, 30, 60][Math.min(Math.max(attempt - 1, 0), 5)]! * 60_000;
+/** An explicit reconnect may skip the backoff, but at most once per minute. */
+const MANUAL_RETRY_INTERVAL_MS = 60_000;
 const RecordJson = Schema.fromJsonString(RecoveryRecord);
 const CatalogEnvelope = Schema.fromJsonString(
   Schema.Struct({
@@ -438,12 +441,13 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
               pendingLogin: false,
               unreadableStores: [],
             };
+            // The window is record-wide: a later launch failure never shortens it.
             const updated = {
               ...current,
               managedRepairStarted: true,
               managedRepairVersion: 3 as const,
-              attempt: 1,
-              nextAt: now + retryDelay(1),
+              attempt: Math.max(current.attempt ?? 0, 1),
+              nextAt: Math.max(current.nextAt ?? 0, now + retryDelay(1)),
               pendingLogin: current.pendingLogin || failure.failureClass === "login_required",
               instanceRepairs: [
                 ...(current.instanceRepairs ?? []).filter(
@@ -521,7 +525,10 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
                   record.discoveryRetry &&
                   now >= (record.nextAt ?? 0)
                 )) ||
-              !record.managedRepairStarted
+              !record.managedRepairStarted ||
+              (instanceId !== undefined &&
+                record.manualRetryAt !== undefined &&
+                now - record.manualRetryAt < MANUAL_RETRY_INTERVAL_MS)
             )
               return false;
             const updated = {
@@ -531,7 +538,7 @@ export const makeRecovery = Effect.fn("desktop.keyRecovery.make")(function* (inp
               managedRepairVersion: 3 as const,
               discoveryRetry: false,
               ...(targets.length > 0 ? { repairTargets: targets } : {}),
-              ...(instanceId === undefined ? {} : { attempt: 0 }),
+              ...(instanceId === undefined ? {} : { manualRetryAt: now }),
               pendingLogin:
                 record.instanceRepairs?.some(
                   (entry) =>

@@ -78,13 +78,15 @@ function harness(
 }
 
 describe("CtoxManagedLaunch", () => {
-  for (const [status, reason] of [
-    [400, "retryable"],
-    [503, "retryable"],
-    [401, "login_required"],
-    [404, "repair_failed"],
+  for (const [status, reason, code] of [
+    [400, "retryable", "DEVICE_SERVICE_UNAVAILABLE"],
+    [503, "retryable", "DEVICE_SERVICE_UNAVAILABLE"],
+    [401, "login_required", "DEVICE_SERVICE_UNAVAILABLE"],
+    [403, "login_required", "DEVICE_SERVICE_UNAVAILABLE"],
+    [403, "repair_failed", "DEVICE_SCOPE_DENIED"],
+    [404, "repair_failed", "DEVICE_SERVICE_UNAVAILABLE"],
   ] as const) {
-    it.effect(`retains device-auth launch-token status ${status}`, () => {
+    it.effect(`retains device-auth launch-token status ${status} (${code})`, () => {
       const device = makeControlDeviceClient({
         baseUrl: "https://ctox.dev",
         read: async () => undefined,
@@ -94,7 +96,7 @@ describe("CtoxManagedLaunch", () => {
       const proof = {
         ...device,
         request: async () => {
-          throw new CtoxControlDeviceError("DEVICE_SERVICE_UNAVAILABLE", status);
+          throw new CtoxControlDeviceError(code, status);
         },
       };
       return Effect.gen(function* () {

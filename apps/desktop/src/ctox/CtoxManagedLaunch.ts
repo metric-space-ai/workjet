@@ -378,15 +378,18 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
             catch: (error) =>
               new CtoxManagedLaunchError({
                 operation: "launch-token",
+                // A revoked tenant scope is final even when it arrives as 403.
                 reason:
                   error instanceof CtoxControlDeviceError &&
-                  ([401, 403].includes(error.httpStatus ?? 0) ||
-                    ["DEVICE_AUTH_REQUIRED", "DEVICE_FRESH_LOGIN_REQUIRED"].includes(error.code))
-                    ? "login_required"
+                  (error.httpStatus === 404 ||
+                    ["DEVICE_SCOPE_DENIED", "DEVICE_TENANT_DENIED"].includes(error.code))
+                    ? "repair_failed"
                     : error instanceof CtoxControlDeviceError &&
-                        (error.httpStatus === 404 ||
-                          ["DEVICE_SCOPE_DENIED", "DEVICE_TENANT_DENIED"].includes(error.code))
-                      ? "repair_failed"
+                        ([401, 403].includes(error.httpStatus ?? 0) ||
+                          ["DEVICE_AUTH_REQUIRED", "DEVICE_FRESH_LOGIN_REQUIRED"].includes(
+                            error.code,
+                          ))
+                      ? "login_required"
                       : "retryable",
                 ...(error instanceof CtoxControlDeviceError && error.httpStatus !== undefined
                   ? { httpStatus: error.httpStatus }

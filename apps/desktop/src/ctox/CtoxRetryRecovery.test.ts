@@ -190,8 +190,75 @@ it.effect(
           (yield* h.owner.inspect)?.instanceRepairs?.map((entry) => entry.state),
           ["repaired", "repaired"],
         );
+        // Repeated clicks cannot bypass the backoff faster than once per minute.
+        const again = yield* h.owner.inspect;
+        yield* h.owner.beginManagedRepair!([h.ids[0]!], again?.generation);
+        yield* h.owner.recordInstanceRepair!(h.ids[0]!, "retryable", again?.generation, {
+          failureClass: "retryable",
+          operation: "launch-token",
+          httpStatus: 503,
+        });
+        const attemptBefore = (yield* h.owner.inspect)?.attempt;
+        assert.isFalse(yield* h.owner.prepareManagedRetry!(h.ids[0]!));
+        yield* TestClock.adjust("1 minute");
+        assert.isTrue(yield* h.owner.prepareManagedRetry!(h.ids[0]!));
+        assert.equal((yield* h.owner.inspect)?.attempt, attemptBefore);
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("a later launch failure never shortens the record-wide retry window", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const h = yield* fixture(2);
+      yield* h.owner.beginManagedRepair!(h.ids);
+      for (const id of h.ids)
+        yield* h.owner.recordInstanceRepair!(id, "retryable", undefined, {
+          failureClass: "retryable",
+          operation: "launch-token",
+          httpStatus: 503,
+        });
+      yield* TestClock.adjust("2 minutes");
+      for (let round = 0; round < 6; round++) {
+        yield* TestClock.adjust("2 hours");
+        assert.isTrue(yield* h.owner.prepareManagedRetry!());
+        const next = yield* h.owner.inspect;
+        yield* h.owner.beginManagedRepair!(h.ids, next?.generation);
+        yield* h.owner.recordInstanceRepair!(h.ids[0]!, "repaired", next?.generation);
+        yield* h.owner.recordInstanceRepair!(h.ids[1]!, "retryable", next?.generation, {
+          failureClass: "retryable",
+          operation: "launch-token",
+          httpStatus: 503,
+        });
+      }
+      const before = yield* h.owner.inspect;
+      yield* h.owner.noteManagedLaunchFailure!(h.ids[0]!, {
+        failureClass: "retryable",
+        operation: "launch-token",
+        httpStatus: 503,
+      });
+      const after = yield* h.owner.inspect;
+      assert.equal(after?.attempt, before?.attempt);
+      assert.equal(after?.nextAt, before?.nextAt);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("a defect during reconnect settles the entry as retryable", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const h = yield* fixture(1);
+      yield* recoverManagedAfterLogin({
+        recovery: h.owner,
+        discovery: h.discovery,
+        reconnect: () => Effect.die("fixture defect"),
+      });
+      assert.deepEqual(
+        (yield* h.owner.inspect)?.instanceRepairs?.map((entry) => entry.state),
+        ["retryable"],
+      );
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect(

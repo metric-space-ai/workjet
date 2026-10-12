@@ -74,9 +74,12 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
           generation: state.generation,
           instanceId: instance.id,
         });
-        const result = yield* input
-          .reconnect(instance)
-          .pipe(Effect.timeout(Duration.seconds(30)), Effect.result);
+        // A defect must still settle the entry; otherwise it stays "repairing" until restart.
+        const result = yield* input.reconnect(instance).pipe(
+          Effect.timeout(Duration.seconds(30)),
+          Effect.catchDefect(() => Effect.fail("defect" as const)),
+          Effect.result,
+        );
         const launchError =
           Result.isFailure(result) && isLaunchError(result.failure) ? result.failure : undefined;
         const failure: RepairFailure | undefined = Result.isSuccess(result)

@@ -154,6 +154,14 @@ function memberKey(member: { environmentId: string; id: string }): string {
  * Einstellungen › Projekte: every project as one Row. A click on the name
  * opens Einstellungen › Projekte › <Projekt>.
  */
+function compareByName(a: { readonly name: string }, b: { readonly name: string }) {
+  return a.name.localeCompare(b.name);
+}
+
+function instanceProjectRow(project: Parameters<typeof InstanceProjectRow>[0]["project"]) {
+  return <InstanceProjectRow key={project.key} project={project} />;
+}
+
 export function ProjectsSettingsList() {
   const groups = useSettingsProjectGroups();
   const instanceProjects = useInstanceOnlyProjects().projects;
@@ -163,9 +171,9 @@ export function ProjectsSettingsList() {
     ...groups.map((group) => ({ name: group.displayName, row: localProjectRow(group, localCopy) })),
     ...instanceProjects.map((project) => ({
       name: project.title,
-      row: <InstanceProjectRow key={project.key} project={project} />,
+      row: instanceProjectRow(project),
     })),
-  ].toSorted((a, b) => a.name.localeCompare(b.name));
+  ].toSorted(compareByName);
   return (
     <SettingsPageContainer>
       <SettingsSection title="Projekte">

@@ -3608,6 +3608,52 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("accepts a full base64 narration range above the generic project limit", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const request = {
+        action: "project.jour_fixe.narration.read" as const,
+        commandId: CommandId.make("read-narration"),
+        projectId: ProjectId.make("project-1"),
+        meetingId: "meeting-1",
+        slideId: "slide-goal",
+        deckRevision: 1,
+        offset: 0,
+        length: 256 * 1024,
+      };
+      const response = {
+        ...request,
+        meetingRevision: 6,
+        audio: {
+          file_id: "workjet_audio_1",
+          generation_id: "native_audio_1",
+          sha256: "a".repeat(64),
+          narration_text_sha256: "b".repeat(64),
+          mime_type: "audio/wav" as const,
+          format: "wav" as const,
+          duration_ms: 22_840,
+          source_run_id: "run-1",
+          model: "voxtral-mini-tts-2603",
+          synthesis_duration_ms: 2191,
+          provenance: "native_gateway" as const,
+        },
+        totalBytes: 731_000,
+        bytesBase64: Buffer.alloc(256 * 1024, 7).toString("base64"),
+        rangeSha256: "c".repeat(64),
+      };
+      harness.views[0]?.executeJavaScript.mockResolvedValue({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("correlates native private chat creation before returning its ID", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ProjectExitModelPanel, ProjectExitModelSummary } from "./ProjectExitModel";
 import type { ProjectOverview } from "@workjet/contracts";
-import { ArrowUpRightIcon, EllipsisIcon, XIcon } from "lucide-react";
+import { ArrowUpRightIcon, EllipsisIcon, ExternalLinkIcon, XIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -12,8 +12,11 @@ import {
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
 import { projectKpiPresentation, type PromptedProjectKpis } from "../projectKpis";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
+import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
+import { workjetUiLanguage } from "../workjetProjectControl";
 
 export function ProjectOverviewCard({
   project,
@@ -23,6 +26,7 @@ export function ProjectOverviewCard({
   statistics,
   onConfigure,
   kpis,
+  kpisUnavailable = false,
   ctoxInstanceId = null,
   reorderHandle,
   tokenBudget,
@@ -31,6 +35,8 @@ export function ProjectOverviewCard({
   readonly tokenBudget?: ReactNode;
   readonly ctoxInstanceId?: string | null;
   readonly kpis?: PromptedProjectKpis | undefined;
+  /** The KPI read failed or timed out; show the fallback slots instead of a skeleton. */
+  readonly kpisUnavailable?: boolean | undefined;
   readonly reorderHandle?: ReactNode;
   readonly onOpen: () => void;
   /** Projekt-Einstellungen leben unter Einstellungen › Projekte (Ort C). */
@@ -39,15 +45,22 @@ export function ProjectOverviewCard({
   readonly canArchive?: boolean | undefined;
   readonly statistics?: GalleryProjectStatistics | undefined;
 }) {
+  const en = workjetUiLanguage() === "en";
+  const t = (de: string, english: string) => (en ? english : de);
   const [assessing, setAssessing] = useState(false);
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const text = PROJECT_OVERVIEW_TEXT[useProjectOverviewLanguage()];
+  const openProjectLabel = projectOverviewFormat(text.cardOpenProjectLabel, {
+    title: project.title,
+  });
   const overview = resolveGalleryProjectOverview(project);
   const website = overview.websiteUrl;
   const cachedPreview = resolveCachedProjectPreview(website);
   const repository = overview.repositoryUrl;
-  const defaultSlots: ProjectOverview["slots"] = suggestedProjectKpis(project.title) ?? [
+  const suggestedSlots = suggestedProjectKpis(project.title);
+  const defaultSlots: ProjectOverview["slots"] = suggestedSlots ?? [
     {
       kind: "text",
       label: "Chats",
@@ -55,10 +68,10 @@ export function ProjectOverviewCard({
     },
     {
       kind: "text",
-      label: "Aktiv",
+      label: t("Aktiv", "Active"),
       value: statistics?.activeChatCount == null ? "—" : String(statistics.activeChatCount),
     },
-    { kind: "updated", label: "Aktivität" },
+    { kind: "updated", label: t("Aktivität", "Activity") },
   ];
   const activityAt = statistics?.lastActivityAt ?? project.local?.updatedAt ?? null;
   const slots: ProjectOverview["slots"] = [
@@ -67,14 +80,13 @@ export function ProjectOverviewCard({
     overview.slots[2] ?? defaultSlots[2],
   ];
   const scopedKpis = kpis?.project_id === project.id ? kpis : undefined;
+  const websiteHost =
+    website
+      ?.replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/\/$/, "") ?? null;
   const titleIsWebsite =
-    website != null &&
-    project.title.trim().toLowerCase() ===
-      website
-        .replace(/^https?:\/\//, "")
-        .replace(/^www\./, "")
-        .replace(/\/$/, "")
-        .toLowerCase();
+    websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
   // Der Exit öffnet inline in der Karte; das Raster lässt die Karte die Zeile füllen.
   const expanded = assessing;
@@ -84,10 +96,10 @@ export function ProjectOverviewCard({
     setArchiveError(null);
     try {
       if (!(await onSave({ ...overview, archived: !archived })))
-        throw new Error("Projekt nicht gespeichert.");
+        throw new Error("project not saved");
       return true;
     } catch {
-      setArchiveError("Projekt nicht gespeichert.");
+      setArchiveError(t("Projekt nicht gespeichert.", "Project not saved."));
       return false;
     } finally {
       setArchivePending(false);
@@ -106,37 +118,44 @@ export function ProjectOverviewCard({
             title={project.title}
             data-workjet-project-title=""
           >
-            {titleIsWebsite ? (
-              <a
-                href={website ?? undefined}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="hover:text-primary focus-visible:outline focus-visible:outline-ring"
-              >
-                {project.title}
-              </a>
-            ) : (
-              project.title
-            )}
+            {/* The title is the card's primary action: it opens the project in Workjet. */}
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={openProjectLabel}
+              data-workjet-action={`project.open.gallery-title:${project.key}`}
+              className="text-left hover:text-primary focus-visible:outline focus-visible:outline-ring"
+            >
+              {project.title}
+            </button>
           </h2>
           {website && !titleIsWebsite && (
-            <a
-              href={website}
-              target="_blank"
-              rel="noreferrer noopener"
-              title={website}
-              className="block truncate text-xs text-muted-foreground hover:text-primary focus-visible:outline focus-visible:outline-ring"
-            >
-              {website}
-            </a>
+            <p title={website} className="truncate text-xs text-muted-foreground">
+              {websiteHost}
+            </p>
           )}
         </div>
+        {website && (
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            render={<a href={website} target="_blank" rel="noreferrer noopener" />}
+            title={text.cardOpenWebsite}
+            aria-label={projectOverviewFormat(text.cardOpenWebsiteLabel, {
+              title: project.title,
+              url: website,
+            })}
+            data-workjet-action={`project.open.website:${project.key}`}
+          >
+            <ExternalLinkIcon className="size-4" aria-hidden="true" />
+          </Button>
+        )}
         {tokenBudget}
         {reorderHandle}
         {
           <Menu>
             <MenuTrigger
-              aria-label={`Aktionen für ${project.title}`}
+              aria-label={t(`Aktionen für ${project.title}`, `Actions for ${project.title}`)}
               render={<Button size="icon-xs" variant="ghost" />}
             >
               <EllipsisIcon className="size-4" aria-hidden="true" />
@@ -146,35 +165,39 @@ export function ProjectOverviewCard({
                 onClick={() => setAssessing(true)}
                 data-workjet-action={`project.exit_model.menu:${project.key}`}
               >
-                Exit-Bewertung
+                {t("Exit-Bewertung", "Exit valuation")}
               </MenuItem>
               {onConfigure && (
                 <MenuItem
                   onClick={onConfigure}
-                  aria-label={`${project.title} konfigurieren`}
+                  aria-label={t(`${project.title} konfigurieren`, `Configure ${project.title}`)}
                   data-workjet-action={`project.configure.gallery:${project.key}`}
                 >
-                  Projekt konfigurieren
+                  {t("Projekt konfigurieren", "Configure project")}
                 </MenuItem>
               )}
               {repository && (
                 <MenuItem
                   render={<a href={repository} target="_blank" rel="noreferrer noopener" />}
                 >
-                  Repository öffnen
+                  {t("Repository öffnen", "Open repository")}
                 </MenuItem>
               )}
               {onSave && canArchive && (
                 <MenuItem
                   disabled={archivePending}
                   onClick={() => void changeArchive()}
-                  aria-label={`${project.title} ${archived ? "wiederherstellen" : "archivieren"}`}
+                  aria-label={
+                    archived
+                      ? t(`${project.title} wiederherstellen`, `Restore ${project.title}`)
+                      : t(`${project.title} archivieren`, `Archive ${project.title}`)
+                  }
                 >
                   {archivePending
-                    ? "Speichern …"
+                    ? t("Speichern …", "Saving …")
                     : archived
-                      ? "Projekt wiederherstellen"
-                      : "Projekt archivieren"}
+                      ? t("Projekt wiederherstellen", "Restore project")
+                      : t("Projekt archivieren", "Archive project")}
                 </MenuItem>
               )}
             </MenuPopup>
@@ -187,29 +210,41 @@ export function ProjectOverviewCard({
             className="relative aspect-video overflow-hidden bg-muted/40"
             data-workjet-project-preview=""
           >
+            {/* The whole preview opens the project; buttons on top keep their own actions. */}
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={openProjectLabel}
+              tabIndex={-1}
+              data-workjet-action={`project.open.gallery-preview:${project.key}`}
+              className="absolute inset-0 z-0 cursor-pointer"
+            />
             {!archived && cachedPreview && failedCachedWebsite !== website ? (
               <img
                 src={cachedPreview.image}
                 alt={
                   cachedPreview.kind === "logo"
-                    ? `Logo von ${project.title}`
-                    : `Gespeicherte Vorschau von ${project.title}`
+                    ? t(`Logo von ${project.title}`, `${project.title} logo`)
+                    : t(
+                        `Gespeicherte Vorschau von ${project.title}`,
+                        `Saved preview of ${project.title}`,
+                      )
                 }
-                title={`Gespeicherte Vorschau · ${cachedPreview.capturedOn}`}
+                title={`${t("Gespeicherte Vorschau", "Saved preview")} · ${cachedPreview.capturedOn}`}
                 loading="lazy"
                 decoding="async"
                 onError={() => setFailedCachedWebsite(website ?? null)}
                 className={
                   cachedPreview.kind === "logo"
-                    ? "size-full object-contain p-12"
-                    : "size-full object-cover object-top"
+                    ? "pointer-events-none size-full object-contain p-12"
+                    : "pointer-events-none size-full object-cover object-top"
                 }
               />
             ) : (
               <div
                 role="img"
-                aria-label={`Logo von ${project.title}`}
-                className="flex size-full items-center justify-center"
+                aria-label={t(`Logo von ${project.title}`, `${project.title} logo`)}
+                className="pointer-events-none flex size-full items-center justify-center"
                 data-workjet-project-logo=""
               >
                 {project.local?.workspaceRoot ? (
@@ -229,8 +264,8 @@ export function ProjectOverviewCard({
             <Button
               size="icon-sm"
               onClick={onOpen}
-              title="Projekt öffnen"
-              aria-label={`${project.title} öffnen`}
+              title={text.cardOpenProject}
+              aria-label={openProjectLabel}
               data-workjet-action={`project.open.gallery:${project.key}`}
               className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
             >
@@ -249,6 +284,27 @@ export function ProjectOverviewCard({
                 const metric = scopedKpis
                   ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)
                   : null;
+                // Native KPIs still loading, or configured but without a resolved label yet:
+                // show a skeleton instead of a placeholder that flips to the real name (#470).
+                if (
+                  project.native &&
+                  kpis === undefined &&
+                  !kpisUnavailable &&
+                  !overview.slots[index] &&
+                  !suggestedSlots
+                )
+                  return (
+                    <div
+                      key={position}
+                      className="flex min-w-0 flex-col gap-1"
+                      data-workjet-project-card-slot={index + 1}
+                      data-workjet-kpi-loading=""
+                      aria-busy="true"
+                    >
+                      <span className="h-7 w-14 animate-pulse rounded bg-muted" />
+                      <span className="h-3 w-20 animate-pulse rounded bg-muted" />
+                    </div>
+                  );
                 return (
                   <div
                     key={position}
@@ -276,7 +332,10 @@ export function ProjectOverviewCard({
                       ) : slot === null ? (
                         <span
                           className="text-muted-foreground"
-                          aria-label={`KPI ${index + 1} nicht eingerichtet`}
+                          aria-label={t(
+                            `KPI ${index + 1} nicht eingerichtet`,
+                            `KPI ${index + 1} not set up`,
+                          )}
                         >
                           —
                         </span>
@@ -286,7 +345,7 @@ export function ProjectOverviewCard({
                           variant="outline"
                           render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
                         >
-                          Link öffnen
+                          {t("Link öffnen", "Open link")}
                         </Button>
                       ) : slot.kind === "updated" ? (
                         <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
@@ -312,16 +371,18 @@ export function ProjectOverviewCard({
       )}
       {assessing && (
         <section
-          aria-label={`Exit in fünf Jahren · ${project.title}`}
+          aria-label={`${t("Exit in fünf Jahren", "Exit in five years")} · ${project.title}`}
           className="border-t border-border px-3 py-3"
           data-workjet-project-card-section="exit"
         >
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-[13.5px] font-medium">Exit in fünf Jahren</h3>
+            <h3 className="text-[13.5px] font-medium">
+              {t("Exit in fünf Jahren", "Exit in five years")}
+            </h3>
             <Button
               size="icon-xs"
               variant="ghost"
-              aria-label="Schließen"
+              aria-label={t("Schließen", "Close")}
               onClick={() => setAssessing(false)}
             >
               <XIcon className="size-4" aria-hidden="true" />

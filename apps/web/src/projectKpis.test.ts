@@ -109,7 +109,7 @@ describe("native project KPI presentation", () => {
   });
   it("does not invent a number when no KPI has been configured", () => {
     expect(projectKpiPresentation(undefined, "project", 3)).toMatchObject({
-      label: "KPI 3",
+      label: null,
       value: "—",
       status: "unconfigured",
       detail: "—",

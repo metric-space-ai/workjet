@@ -1,5 +1,6 @@
 import type { WorkjetExitModelAssessment, WorkjetExitModelResources } from "@workjet/contracts";
 import { RotateCcwIcon } from "lucide-react";
+import { useState } from "react";
 import {
   EXIT_MODEL_STATUS_LABELS,
   exitModelPresentation,
@@ -10,6 +11,8 @@ import {
   formatExitFinding,
   formatExitMissingInput,
   formatExitPercent,
+  parseExitHoursPerWeek,
+  parseExitMonthlyBudget,
 } from "../projectExitModel";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { Button } from "./ui/button";
@@ -92,6 +95,23 @@ export function ProjectExitModelReport({
   const busy = pending !== null;
   const researching = current?.status === "researching";
 
+  // Ressourcen-Eingabe: Vorbelegung aus dem Vorschlag des Eigentümers, keine Standardwerte.
+  // Ein neu geladener Vorschlag (andere Objektidentität) ersetzt den Entwurf.
+  const draftFor = (source: typeof proposal): ExitResourcesDraft => ({
+    source,
+    hours: source ? String(source.hours_per_week) : "",
+    budget: source ? String(source.monthly_budget_eur) : "",
+    mode: source?.comparison_mode ?? null,
+  });
+  const [storedDraft, setDraft] = useState<ExitResourcesDraft>(() => draftFor(proposal));
+  const draft = storedDraft.source === proposal ? storedDraft : draftFor(proposal);
+  const hoursValue = parseExitHoursPerWeek(draft.hours);
+  const budgetValue = parseExitMonthlyBudget(draft.budget);
+  const hoursInvalid = draft.hours.trim() !== "" && hoursValue === null;
+  const budgetInvalid = draft.budget.trim() !== "" && budgetValue === null;
+  const resourcesReady = hoursValue !== null && budgetValue !== null && draft.mode !== null;
+  const fieldsDisabled = busy || researching;
+
   return (
     <section
       className="mb-6 min-w-0 border-y border-border py-5"
@@ -103,14 +123,76 @@ export function ProjectExitModelReport({
         <div className="min-w-0">
           <h2 className="text-[13.5px] font-medium">Kennzahl · Exit in 5 Jahren</h2>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           {onRefresh && (
             <>
+              <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+                Std./Woche
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={168}
+                  step={1}
+                  value={draft.hours}
+                  disabled={fieldsDisabled}
+                  aria-label="Std./Woche"
+                  aria-invalid={hoursInvalid || undefined}
+                  onChange={(event) => setDraft({ ...draft, hours: event.currentTarget.value })}
+                  data-workjet-exit-model-input="hours"
+                  className="h-8 w-20 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive sm:h-7"
+                />
+              </label>
+              <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+                €/Monat
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={50}
+                  value={draft.budget}
+                  disabled={fieldsDisabled}
+                  aria-label="€/Monat"
+                  aria-invalid={budgetInvalid || undefined}
+                  onChange={(event) => setDraft({ ...draft, budget: event.currentTarget.value })}
+                  data-workjet-exit-model-input="budget"
+                  className="h-8 w-24 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive sm:h-7"
+                />
+              </label>
+              <div role="group" aria-label="Vergleichsmodus" className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant={draft.mode === "equal_resources" ? "default" : "outline"}
+                  aria-pressed={draft.mode === "equal_resources"}
+                  disabled={fieldsDisabled}
+                  onClick={() => setDraft({ ...draft, mode: "equal_resources" })}
+                  data-workjet-action={"project.exit_model.mode.equal:" + projectId}
+                >
+                  Gleiche Ressourcen
+                </Button>
+                <Button
+                  size="sm"
+                  variant={draft.mode === "project_specific" ? "default" : "outline"}
+                  aria-pressed={draft.mode === "project_specific"}
+                  disabled={fieldsDisabled}
+                  onClick={() => setDraft({ ...draft, mode: "project_specific" })}
+                  data-workjet-action={"project.exit_model.mode.specific:" + projectId}
+                >
+                  Projektspezifisch
+                </Button>
+              </div>
               <Button
                 size="sm"
                 variant="outline"
-                disabled={busy || researching}
-                onClick={() => void onRefresh()}
+                disabled={fieldsDisabled || !resourcesReady}
+                onClick={() => {
+                  if (hoursValue === null || budgetValue === null || draft.mode === null) return;
+                  void onRefresh({
+                    hoursPerWeek: hoursValue,
+                    monthlyBudgetEur: budgetValue,
+                    comparisonMode: draft.mode,
+                  });
+                }}
                 data-workjet-action={"project.exit_model.refresh:" + projectId}
               >
                 <RotateCcwIcon className="size-3.5" aria-hidden="true" />
@@ -405,6 +487,13 @@ export function ProjectExitModelReport({
     </section>
   );
 }
+
+type ExitResourcesDraft = {
+  readonly source: WorkjetExitModelAssessment["resource_proposal"];
+  readonly hours: string;
+  readonly budget: string;
+  readonly mode: WorkjetExitModelResources["comparisonMode"] | null;
+};
 
 function Metric({ label, value }: { readonly label: string; readonly value: string }) {
   return (

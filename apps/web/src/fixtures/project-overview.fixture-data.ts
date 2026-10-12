@@ -94,6 +94,40 @@ function thread(
     },
   } as unknown as EnvironmentThreadShell;
 }
+export type ExitFixtureState = "empty" | "missing" | "provisional";
+
+/** Exit-Bewertungsstände für Screenshots der Ressourcen-Eingabe; nur synthetische Daten. */
+export function exitAssessmentFixture(state: ExitFixtureState) {
+  if (state === "provisional") return { ...exitModelFixture, project_id: projectId };
+  if (state === "missing")
+    return {
+      ...exitModelFixture,
+      project_id: projectId,
+      status: "blocked" as const,
+      result: null,
+      plan_summary: null,
+      scenarios: [],
+      diagnostics: [],
+      missing_inputs: ["resource_proposal"],
+      findings: [],
+      history: [],
+    };
+  return {
+    ...exitModelFixture,
+    project_id: projectId,
+    status: "not_started" as const,
+    resource_proposal: null,
+    result: null,
+    plan_summary: null,
+    scenarios: [],
+    diagnostics: [],
+    sources: [],
+    missing_inputs: [],
+    findings: [],
+    history: [],
+  };
+}
+
 export function overviewFixture(
   variant: OverviewFixtureVariant,
 ): Parameters<typeof buildProjectOwnerOverview>[0] {

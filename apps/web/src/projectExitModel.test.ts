@@ -5,13 +5,18 @@ import {
   exitSourceUrl,
   exitModelChange,
   formatExitChange,
+  formatExitDate,
   formatExitEur,
   formatExitMissingInput,
   formatExitFinding,
+  formatExitPercent,
   requestProjectExitModel,
 } from "./projectExitModel";
 import { exitModelFixture } from "./test/exitModelFixture";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
+
+/** Intl schreibt je nach Umgebung U+00A0 oder U+202F; Tests vergleichen normalisiert. */
+const de = (text: string) => text.replace(/[\u00A0\u202F]/g, " ");
 
 const request = {
   action: "project.exit_model.read",
@@ -39,8 +44,10 @@ describe("project exit assessment", () => {
       ],
     };
     expect(exitModelChange(assessment)).toEqual({ percent: 100, asOf: "2026-09-08" });
-    expect(formatExitChange(100)).toBe("+100%");
-    expect(formatExitChange(-52.981)).toBe("-53%");
+    expect(de(formatExitChange(100))).toBe("+100 %");
+    expect(de(formatExitChange(12.5))).toBe("+12,5 %");
+    expect(de(formatExitChange(-52.981))).toBe("-53 %");
+    expect(de(formatExitChange(-3))).toBe("-3 %");
     expect(exitModelChange({ ...assessment, result: null })).toBeNull();
     expect(exitModelChange({ ...assessment, history: [] })).toBeNull();
     expect(
@@ -99,12 +106,12 @@ describe("project exit assessment", () => {
 
   it("keeps dated values visible while explicitly labelling expired evidence", () => {
     expect(exitModelPresentation(exitModelFixture, "project-one", "2026-10-08")).toMatchObject({
-      value: "800k EUR",
+      value: formatExitEur(800_000),
       label: "Vorläufig",
       stale: false,
     });
     expect(exitModelPresentation(exitModelFixture, "project-one", "2026-11-08")).toMatchObject({
-      value: "800k EUR",
+      value: formatExitEur(800_000),
       label: "Veraltet",
       stale: true,
     });
@@ -159,9 +166,19 @@ describe("project exit assessment", () => {
   });
 
   it("uses forecast precision and links only ordinary credential-free web sources", () => {
-    expect(formatExitEur(3_163_500)).toBe("3.2m EUR");
-    expect(formatExitEur(0)).toBe("0 EUR");
+    expect(de(formatExitEur(3_163_500))).toBe("3,2 Mio. €");
+    expect(de(formatExitEur(800_000))).toBe("800 Tsd. €");
+    expect(de(formatExitEur(8_050))).toBe("8,1 Tsd. €");
+    expect(de(formatExitEur(950))).toBe("950 €");
+    expect(de(formatExitEur(0))).toBe("0 €");
+    expect(formatExitEur(3_163_500, "en")).toBe("€3.2M");
+    expect(formatExitEur(800_000, "en")).toBe("€800K");
+    expect(formatExitEur(950, "en")).toBe("€950");
     expect(formatExitEur(Number.NaN)).toBe("—");
+    expect(formatExitEur(null)).toBe("—");
+    expect(de(formatExitPercent(0.8))).toBe("80 %");
+    expect(formatExitDate("2026-10-08")).toBe("08.10.2026");
+    expect(formatExitDate(null)).toBe("—");
     expect(exitSourceUrl("https://example.org/evidence")).toBe("https://example.org/evidence");
     for (const reference of [
       "javascript:alert(1)",

@@ -46,6 +46,7 @@ import { randomUUID } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
+import { InlineExpand } from "../ui/inline-expand";
 import { Input } from "../ui/input";
 import { Row } from "../ui/row";
 import { Spinner } from "../ui/spinner";
@@ -824,9 +825,19 @@ export function WorkjetSettingsView({
           {/* Inline-Panel-Muster: der Auslöser steht dort, wo das Formular
               aufklappt; Bearbeiten klappt direkt unter der Zeile auf. Kein
               Dialog, kein Popover. */}
-          {addingWorker ? (
-            workerEditor
-          ) : configuration.workerProfiles.length === 0 ? null : (
+          <InlineExpand
+            label="Luma hinzufügen"
+            open={addingWorker}
+            onOpenChange={(open) => {
+              if (!open) {
+                setAddingWorker(false);
+                setPendingWorkerParentId(null);
+              }
+            }}
+          >
+            {addingWorker ? workerEditor : null}
+          </InlineExpand>
+          {addingWorker ? null : configuration.workerProfiles.length === 0 ? null : (
             <div className="px-3 sm:px-4">
               <Button type="button" size="sm" variant="outline" onClick={openAddWorker}>
                 <PlusIcon className="size-3.5" />
@@ -917,7 +928,15 @@ export function WorkjetSettingsView({
                         { label: "Duplizieren", onSelect: duplicateWorker },
                       ]}
                     />
-                    {editingWorker?.id === worker.id ? workerEditor : null}
+                    <InlineExpand
+                      label={worker.name}
+                      open={editingWorker?.id === worker.id}
+                      onOpenChange={(open) => {
+                        if (!open && editingWorkerId === worker.id) setEditingWorkerId(null);
+                      }}
+                    >
+                      {editingWorker?.id === worker.id ? workerEditor : null}
+                    </InlineExpand>
                   </Fragment>
                 );
               })}

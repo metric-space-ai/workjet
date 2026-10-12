@@ -148,8 +148,7 @@ describe("Jour fixe room states", () => {
   });
 });
 
-describe("Jour fixe start lock", () => {
-  const inMinutes = (minutes: number) => Date.now() + minutes * 60_000;
+describe("Jour fixe start lock", () => {const inMinutes = (minutes: number) => Date.now() + minutes * 60_000;
   const render = (state: JourFixeRoomSnapshot["state"], scheduledAt: number) =>
     renderToStaticMarkup(
       <JourFixeRoom
@@ -189,6 +188,45 @@ describe("Jour fixe start lock", () => {
     );
     expect(jourFixeActionError("meeting_not_started", scheduled)).toBe(
       "Änderung nicht bestätigt · Entwurf bleibt erhalten.",
+    );
+  });
+});
+
+describe("Tagesordnung und freie Themen", () => {
+  const slides = [
+    { id: "s1", position: 0, title: "Tagesordnung", markdown: "1. Stand\n2. Freie Themen" },
+    { id: "s2", position: 1, title: "Stand gegen Ziele", markdown: "PR merged." },
+    { id: "s3", position: 2, title: "Freie Themen", markdown: "Offene Punkte." },
+  ];
+  const render = (items: typeof slides, extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={{ ...meeting, state: "live", slides: items }}
+        onMessage={async () => {}}
+        {...extra}
+      />
+    );
+  it("zeigt über den Folien-Kacheln Punkt, Gesamtzahl und Titel", () => {
+    const html = render(slides);
+    expect(html).toContain('data-workjet-agenda-line=""');
+    expect(html).toContain("Tagesordnung · Punkt 1 von 3 · Tagesordnung");
+    expect(html.indexOf("Tagesordnung · Punkt 1 von 3")).toBeLessThan(
+      html.indexOf('aria-label="Folien"'),
+    );
+  });
+  it("wechselt auf der letzten Folie auf „Freie Themen“ und stellt das Eingabefeld vorne", () => {
+    const html = render([slides[2]!]);
+    expect(html).not.toContain("Tagesordnung · Punkt");
+    expect(html.indexOf("Freie Themen")).toBeGreaterThan(-1);
+    expect(html.indexOf('aria-label="Nachricht an Supervisor"')).toBeLessThan(
+      html.indexOf("Das übernehmen wir."),
+    );
+  });
+  it("lässt das Eingabefeld bei Tagesordnungspunkten am Ende", () => {
+    const html = render(slides);
+    expect(html.indexOf('aria-label="Nachricht an Supervisor"')).toBeGreaterThan(
+      html.indexOf("Das übernehmen wir."),
     );
   });
 });

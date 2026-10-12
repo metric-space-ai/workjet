@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-// @effect-diagnostics nodeBuiltinImport:off - Build-time verified release staging.
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off - Build-time verified release staging.
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";

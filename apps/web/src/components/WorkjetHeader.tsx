@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { SettingsIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -24,6 +24,9 @@ export function WorkjetHeaderFrame({
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const navigateAcrossModes = useCrossModeNavigator();
+  const inSettings = useLocation({
+    select: (location) => location.pathname.startsWith("/settings"),
+  });
 
   return (
     <WorkjetHeaderSlotContext value={slot}>
@@ -43,6 +46,9 @@ export function WorkjetHeaderFrame({
               mode={mode}
               onBackdrop={false}
               onModeChange={(nextMode) => {
+                // Aus den Einstellungen führen Dev und Ops immer zurück auf die
+                // Arbeitsfläche, auch wenn der Modus schon gewählt ist.
+                if (inSettings) void navigate({ to: "/" });
                 if (nextMode === mode) return;
                 void navigateAcrossModes({ mode: nextMode === "ctox" ? "business-os" : "code" });
               }}

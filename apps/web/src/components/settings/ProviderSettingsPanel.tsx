@@ -324,8 +324,7 @@ export function ProviderSettingsPanel({
           <LoadingStatusRow
             key={loadAttempt}
             title="Rechner werden geladen"
-            slowStatus="Keine Rechner gemeldet"
-            slowAction={<AddComputerLinkButton />}
+            slowStatus="Rechner nicht geladen"
             onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
           />
         </SettingsSection>
@@ -419,8 +418,7 @@ export function WorkjetGatewayAccountsSection({
           <LoadingStatusRow
             key={loadAttempt}
             title="Rechner werden geladen"
-            slowStatus="Keine Rechner gemeldet"
-            slowAction={<AddComputerLinkButton />}
+            slowStatus="Rechner nicht geladen"
             onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
           />
         ) : (

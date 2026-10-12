@@ -44,14 +44,14 @@ function instance(
 describe("Business OS settings scope", () => {
   it("explains safe device-control failures without showing guest exception text", () => {
     const fallback = "Geräteanfrage fehlgeschlagen.";
-    expect(businessOsDeviceControlErrorMessage(new Error("unsupported"), fallback)).toContain(
-      "Backend",
+    expect(businessOsDeviceControlErrorMessage(new Error("unsupported"), fallback)).toBe(
+      "Instanz unterstützt die Geräteverwaltung noch nicht.",
     );
-    expect(businessOsDeviceControlErrorMessage(new Error("sync_unavailable"), fallback)).toContain(
-      "CTOX Sync",
+    expect(businessOsDeviceControlErrorMessage(new Error("sync_unavailable"), fallback)).toBe(
+      "Instanz nicht erreichbar.",
     );
-    expect(businessOsDeviceControlErrorMessage(new Error("forbidden"), fallback)).toContain(
-      "darf Geräte",
+    expect(businessOsDeviceControlErrorMessage(new Error("forbidden"), fallback)).toBe(
+      "Keine Berechtigung für Geräte dieser Instanz.",
     );
     expect(businessOsDeviceControlErrorMessage(new Error("private credential"), fallback)).toBe(
       fallback,

@@ -198,6 +198,22 @@ export function formatExitEur(value: number | null): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(value) + " EUR";
 }
 
+/** Eingabe „Std./Woche": ganze Zahl von 0 bis 168, leer oder ungültig → null. */
+export function parseExitHoursPerWeek(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0 || value > 168) return null;
+  return value;
+}
+
+/** Eingabe „€/Monat": endliche Zahl ≥ 0, leer oder ungültig → null. */
+export function parseExitMonthlyBudget(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
 export function formatExitPercent(value: number): string {
   return new Intl.NumberFormat("en-GB", { style: "percent", maximumFractionDigits: 1 }).format(
     value,

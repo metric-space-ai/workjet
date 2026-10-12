@@ -2,9 +2,14 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ProjectOverviewView } from "../components/ProjectOverviewView";
 import { ProjectOverviewQuestion } from "../components/ProjectOverviewDecisions";
+import { ProjectExitModelReport } from "../components/ProjectExitModel";
 import { ApprovalRequestId } from "@workjet/contracts";
 import { buildProjectOwnerOverview } from "../projectOverviewModel";
-import { overviewFixture } from "./project-overview.fixture-data";
+import {
+  exitAssessmentFixture,
+  overviewFixture,
+  type ExitFixtureState,
+} from "./project-overview.fixture-data";
 import "../index.css";
 
 function OverviewFixture() {
@@ -16,6 +21,11 @@ function OverviewFixture() {
         ? "empty"
         : "molecularity";
   const language = query.get("language") === "en" ? "en" : "de";
+  const exitParam = query.get("exit");
+  const exitState: ExitFixtureState | null =
+    exitParam === "empty" || exitParam === "missing" || exitParam === "provisional"
+      ? exitParam
+      : null;
   const input = overviewFixture(variant);
   const [action, setAction] = useState("");
   const data = buildProjectOwnerOverview({ ...input, language });
@@ -73,6 +83,16 @@ function OverviewFixture() {
           ) : undefined
         }
       />
+      {exitState !== null && (
+        <div className="px-4 pb-10 sm:px-6">
+          <ProjectExitModelReport
+            projectId="overview-fixture"
+            assessment={exitAssessmentFixture(exitState)}
+            onRefresh={async () => true}
+            onCheck={async () => true}
+          />
+        </div>
+      )}
       <output hidden data-fixture-action={action} />
     </div>
   );

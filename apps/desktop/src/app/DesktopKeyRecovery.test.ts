@@ -165,7 +165,7 @@ it.layer(NodeServices.layer)("local key loss detection", (it) => {
       const restarted = yield* open();
       assert.equal((yield* restarted.inspect)?.generation, state?.generation);
       assert.deepEqual((yield* restarted.inspect)?.instanceRepairs, [
-        { instanceId: "managed:fixture", state: "repair_failed" },
+        { instanceId: "managed:fixture", state: "retryable", failureClass: "retryable", operation: "interrupted" },
       ]);
       assert.isFalse(yield* restarted.beginManagedRepair!(["managed:fixture"]));
       assert.equal(

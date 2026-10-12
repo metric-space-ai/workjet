@@ -39,6 +39,7 @@ import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
 import * as CtoxShellFleet from "./ctox/CtoxShellFleet.ts";
 import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
+import * as CtoxKeyRecovery from "./ctox/CtoxKeyRecovery.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronCrashReporter from "./electron/ElectronCrashReporter.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
@@ -242,7 +243,7 @@ const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
 // The local-daemon launch service resolves its target through the one
 // registry instance, so the registry is provided to (and re-exported by) the
 // merged control layer rather than merged beside it.
-const desktopCtoxControlLayer = Layer.mergeAll(
+const desktopCtoxControlServices = Layer.mergeAll(
   CtoxNativeIdentityResolver.layer(),
   CtoxBusinessOsShell.layer,
   CtoxDevAuth.layer(),
@@ -268,6 +269,8 @@ const desktopCtoxControlLayer = Layer.mergeAll(
   Layer.provideMerge(CtoxElectronSessions.layer),
   Layer.provideMerge(desktopFoundationLayer),
 );
+
+const desktopCtoxControlLayer = CtoxKeyRecovery.layer.pipe(Layer.provideMerge(desktopCtoxControlServices));
 
 const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
   // Reuse both the registry and the exact password-prompt instance whose

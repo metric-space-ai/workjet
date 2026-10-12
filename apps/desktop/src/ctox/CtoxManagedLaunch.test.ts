@@ -86,7 +86,8 @@ describe("CtoxManagedLaunch", () => {
       const launch = yield* CtoxManagedLaunch.CtoxManagedLaunch;
       const error = yield* launch.launch(descriptor).pipe(Effect.flip);
       assert.equal(error.operation, "launch-token");
-      assert.isUndefined(error.reason);
+      assert.equal(error.reason, "repair_failed");
+      assert.equal(error.httpStatus, 200);
     }).pipe(Effect.provide(harness(fetchImpl)));
   });
   it.effect("activates a recovered tenant through device auth and the one-use exchange", () => {
@@ -227,6 +228,7 @@ describe("CtoxManagedLaunch", () => {
       yield* TestClock.adjust("10 millis");
       const error = yield* Fiber.join(request).pipe(Effect.flip);
       assert.equal(error.operation, "launch-token");
+      assert.equal(error.reason, "retryable");
       assert.equal(fetchImpl.mock.calls.length, 1);
       assert.isTrue(aborted);
     }).pipe(

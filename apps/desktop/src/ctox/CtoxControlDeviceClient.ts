@@ -58,9 +58,11 @@ const decodeEnrollment = Schema.decodeUnknownSync(Enrollment);
 const DAY = 86_400_000;
 export class CtoxControlDeviceError extends Error {
   readonly code: string;
-  constructor(code: string) {
+  readonly httpStatus: number | undefined;
+  constructor(code: string, httpStatus?: number) {
     super(code);
     this.code = code;
+    this.httpStatus = httpStatus;
   }
 }
 
@@ -77,6 +79,8 @@ export function makeControlDeviceClient(input: {
   const now = input.now ?? (() => DateTime.toEpochMillis(DateTime.nowUnsafe()));
   let notice: string | undefined;
   let recovery: Promise<Response | undefined> | undefined;
+  let recoveryGeneration: string | undefined;
+  let enrollmentNextAt = 0;
   let queue = Promise.resolve();
   const exclusive = <A>(operation: () => Promise<A>): Promise<A> => {
     const next = queue.then(operation);
@@ -129,7 +133,7 @@ export function makeControlDeviceClient(input: {
           ? "DEVICE_AUTH_REQUIRED"
           : decoded.value.error
         : "DEVICE_SERVICE_UNAVAILABLE";
-    throw new CtoxControlDeviceError(code);
+    throw new CtoxControlDeviceError(code, response.status);
   };
   const request = (
     pathname: string,
@@ -293,19 +297,18 @@ export function makeControlDeviceClient(input: {
     status,
     enroll,
     request,
-    recoverOnce: () => {
+    retryEnrollment: async (cookieFetch: typeof input.fetch) => {
+      if (now() < enrollmentNextAt) return;
+      enrollmentNextAt = now() + 60_000;
+      if (active(await read())) return;
+      await enroll(cookieFetch);
+    },
+    recoverOnce: (generation?: string) => {
+      if (generation !== recoveryGeneration) { recovery = undefined; recoveryGeneration = generation; }
       recovery ??= (async () => {
-        for (let attempt = 0; attempt < 2; attempt++) {
           try {
             return await request("/api/desktop/session-package", { method: "GET" });
-          } catch (error) {
-            if (
-              error instanceof CtoxControlDeviceError &&
-              ["DEVICE_AUTH_REQUIRED", "DEVICE_SCOPE_DENIED"].includes(error.code)
-            )
-              break;
-          }
-        }
+          } catch { /* A later durable generation may try again. */ }
         return undefined;
       })();
       return recovery.then(async (response) => (active(await read()) ? response : undefined));

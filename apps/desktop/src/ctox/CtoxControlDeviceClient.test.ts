@@ -118,7 +118,7 @@ function fixture() {
     },
     challenges: () => challenges,
     bytes: () => bytes,
-    error: (value: string) => {
+    error: (value: string | undefined) => {
       enrollmentError = value;
     },
     revoke: () => {
@@ -134,6 +134,24 @@ function fixture() {
 }
 
 describe("control-plane device client", () => {
+  it("retries enrollment after the upstream table failure without another login, bounded per minute", async () => {
+    const f = fixture();
+    f.error("relation device_keys missing fixture");
+    const client = f.open();
+    await client.enroll(f.fetcher);
+    expect((await client.status()).state).toBe("not_configured");
+    await client.retryEnrollment(f.fetcher);
+    const attempts = f.enrollments.length;
+    await client.retryEnrollment(f.fetcher);
+    expect(f.enrollments).toHaveLength(attempts);
+    f.error(undefined);
+    f.advance(1 / 1440);
+    await client.retryEnrollment(f.fetcher);
+    expect((await client.status()).state).toBe("active");
+    expect(f.enrollments).toHaveLength(attempts + 1);
+    await client.retryEnrollment(f.fetcher);
+    expect(f.enrollments).toHaveLength(attempts + 1);
+  });
   it("enrolls on fresh login and uses a new key after a duplicate", async () => {
     const f = fixture();
     f.error("DEVICE_THUMBPRINT_ALREADY_REGISTERED");
@@ -208,6 +226,8 @@ describe("control-plane device client", () => {
     const restored = f.open();
     await restored.recoverOnce();
     await restored.recoverOnce();
+    expect(f.challenges()).toBe(1);
+    await restored.recoverOnce("next-generation");
     expect(f.challenges()).toBe(2);
     f.advance(31);
     expect((await client.status()).state).toBe("not_configured");

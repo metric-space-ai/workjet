@@ -567,8 +567,11 @@ describe("CTOX IPC methods", () => {
       ),
     );
   });
-  it.effect("rejects malformed activation input before calling the guest manager", () => {
-    const activateGuest = vi.fn(() => Effect.succeed({ _tag: "ready" as const, instanceId: "x" }));
+  it.effect("valid explicit activation rearms recovery before the guest, malformed input does not", () => {
+    const events: string[] = [];
+    const activateGuest = vi.fn(() => Effect.sync(() => { events.push("activate"); return { _tag: "failed" as const, code: "launch_failed" as const }; }));
+    const repair = vi.fn((instanceId: string | undefined) => Effect.sync(() => { events.push(`repair:${instanceId}`); return true; }));
+    const recovery = DesktopKeyRecovery.of({ inspect: Effect.succeed(undefined), completeLogin: Effect.void, prepareManagedRetry: repair });
     const guests = CtoxGuestManager.CtoxGuestManager.of({
       enterBusinessOsMode: Effect.succeed({ _tag: "completed" }),
       exitBusinessOsMode: Effect.succeed({ _tag: "completed" }),
@@ -599,7 +602,10 @@ describe("CTOX IPC methods", () => {
       assert.deepEqual(result, { _tag: "failed", code: "invalid_input" });
       expect(activateGuest).not.toHaveBeenCalled();
       assert.notInclude(encodeUnknownJson(result), "secret");
-    }).pipe(Effect.provide(Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests)));
+      expect(repair).not.toHaveBeenCalled();
+      yield* activate.handler({ instanceId: "managed:tenant", bounds: { x: 0, y: 0, width: 800, height: 600 } });
+      assert.deepEqual(events, ["repair:managed:tenant", "activate"]);
+    }).pipe(Effect.provide(Layer.merge(Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests), Layer.succeed(DesktopKeyRecovery, recovery))));
   });
 
   it.effect("registers and delegates the ensure-pooled channel", () => {

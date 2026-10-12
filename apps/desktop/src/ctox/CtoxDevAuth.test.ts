@@ -217,6 +217,17 @@ afterEach(() => {
 });
 
 describe("CtoxDevAuth", () => {
+  it.effect("authenticated refresh retries device enrollment without opening login", () => {
+    const engine = makeControlDeviceClient({ baseUrl: "https://ctox.dev", read: async () => undefined, write: async () => undefined, fetch: async () => new Response() });
+    const retryEnrollment = vi.fn(async () => {});
+    const h = makeHarness({ device: { ...engine, retryEnrollment }, fetchImpl: vi.fn(async () => response(200, { account: { tenants: [{ id: "fixture", businessName: "Fixture", status: "active" }] } })) });
+    return Effect.gen(function* () {
+      const auth = yield* CtoxDevAuth.CtoxDevAuth;
+      assert.equal((yield* auth.refresh)._tag, "ready");
+      assert.equal(retryEnrollment.mock.calls.length, 1);
+      assert.equal(h.created.length, 0);
+    }).pipe(Effect.provide(h.layer));
+  });
   it.effect("enrolls only after an ordinary login completes using the account session", () => {
     const engine = makeControlDeviceClient({
       baseUrl: "https://ctox.dev",
@@ -267,7 +278,7 @@ describe("CtoxDevAuth", () => {
           }),
         ),
     );
-    const h = makeHarness({ device: { ...device, recoverOnce: recover } });
+    const h = makeHarness({ device: { ...device, recoverOnce: recover, status: async () => ({ state: "active", createdAt: "2026-10-11T17:00:00Z", lastUsedAt: null, expiresAt: "2026-11-10T17:00:00Z" }) } });
     return Effect.gen(function* () {
       const auth = yield* CtoxDevAuth.CtoxDevAuth;
       const result = yield* auth.refresh;

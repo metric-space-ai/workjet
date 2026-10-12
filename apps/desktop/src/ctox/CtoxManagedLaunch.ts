@@ -13,6 +13,7 @@ import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as Option from "effect/Option";
 import { CtoxControlDevice } from "./CtoxControlDevice.ts";
+import { CtoxControlDeviceError } from "./CtoxControlDeviceClient.ts";
 import { DesktopKeyRecovery } from "../app/DesktopKeyRecovery.ts";
 
 const DEFAULT_CTOX_DEV_BASE_URL = "https://ctox.dev";
@@ -53,7 +54,7 @@ export class CtoxManagedLaunchError extends Schema.TaggedErrorClass<CtoxManagedL
   "CtoxManagedLaunchError",
   {
     operation: CtoxManagedLaunchOperation,
-    reason: Schema.optionalKey(Schema.Literals(["login_required", "repair_failed"])),
+    reason: Schema.optionalKey(Schema.Literals(["login_required", "repair_failed", "retryable"])),
     httpStatus: Schema.optionalKey(
       Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 })),
     ),
@@ -237,6 +238,14 @@ async function fetchJson(
 
 const { logInfo } = makeComponentLogger("ctox-managed-launch");
 
+function exchangeFailure(operation: "launch-token" | "launch-config", exchange: { readonly response: FetchResponse; readonly payload: unknown } | undefined) {
+  const status = exchange?.response.status;
+  return new CtoxManagedLaunchError({ operation,
+    reason: requiresLogin(exchange) ? "login_required" : status === undefined || [400, 408, 409, 422, 425, 429].includes(status) || status >= 500 ? "retryable" : "repair_failed",
+    ...(status === undefined ? {} : { httpStatus: status }),
+  });
+}
+
 function requiresLogin(
   exchange: { readonly response: FetchResponse; readonly payload: unknown } | undefined,
 ): boolean {
@@ -275,21 +284,16 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
       const recovery = yield* (keyRecovery?.inspect ?? Effect.succeed(undefined)).pipe(
         Effect.mapError(() => new CtoxManagedLaunchError({ operation: "launch-contract" })),
       );
-      if (recovery?.pendingLogin === true)
+      const blocked = recovery?.instanceRepairs?.find((entry) => entry.instanceId === descriptor.id && ["repair_failed", "login_required", "retryable"].includes(entry.state));
+      if (recovery?.pendingLogin === true && !recovery.instanceRepairs?.length && device === undefined)
         return yield* new CtoxManagedLaunchError({
           operation: "launch-contract",
           reason: "login_required",
         });
-      if (
-        recovery?.instanceRepairs?.some(
-          (entry) =>
-            entry.instanceId === descriptor.id &&
-            (entry.state === "repair_failed" || entry.state === "login_required"),
-        )
-      )
+      if (blocked !== undefined && !(blocked.state === "login_required" && device !== undefined))
         return yield* new CtoxManagedLaunchError({
           operation: "launch-contract",
-          reason: "repair_failed",
+          reason: blocked.state === "retryable" ? "retryable" : blocked.state === "login_required" ? "login_required" : "repair_failed",
         });
       if ((yield* accessState(descriptor.id)) !== "enabled")
         return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
@@ -308,10 +312,10 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
       ) =>
         Effect.tryPromise({
           try: (signal) => fetchJson(browserSession, url, { ...init, signal }),
-          catch: () => new CtoxManagedLaunchError({ operation }),
+          catch: () => new CtoxManagedLaunchError({ operation, reason: "retryable" }),
         }).pipe(
           Effect.timeout(Duration.millis(requestTimeoutMs)),
-          Effect.mapError(() => new CtoxManagedLaunchError({ operation })),
+          Effect.mapError(() => new CtoxManagedLaunchError({ operation, reason: "retryable" })),
         );
 
       let token = yield* request(
@@ -337,8 +341,8 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
             });
             return { response, payload: await response.json().catch(() => undefined) };
           },
-          catch: () =>
-            new CtoxManagedLaunchError({ operation: "launch-token", reason: "login_required" }),
+          catch: (error) =>
+            new CtoxManagedLaunchError({ operation: "launch-token", reason: error instanceof CtoxControlDeviceError && ["DEVICE_AUTH_REQUIRED", "DEVICE_SCOPE_DENIED", "DEVICE_TENANT_DENIED"].includes(error.code) ? "login_required" : "retryable", ...(error instanceof CtoxControlDeviceError && error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}) }),
         });
       }
       if (requiresLogin(token))
@@ -348,25 +352,25 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
           ...(token === undefined ? {} : { httpStatus: token.response.status }),
         });
       if (token === undefined || !token.response.ok || !isRecord(token.payload)) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
+        return yield* exchangeFailure("launch-token", token);
       }
 
       const rawLaunchConfigUrl = token.payload.launchConfigUrl;
       if (typeof rawLaunchConfigUrl !== "string") {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
+        return yield* new CtoxManagedLaunchError({ operation: "launch-token", reason: "repair_failed", httpStatus: token.response.status });
       }
       let launchConfigUrl: URL;
       try {
         launchConfigUrl = new URL(rawLaunchConfigUrl);
       } catch {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
+        return yield* new CtoxManagedLaunchError({ operation: "launch-token", reason: "repair_failed", httpStatus: token.response.status });
       }
       if (
         launchConfigUrl.origin !== controlOrigin ||
         launchConfigUrl.username !== "" ||
         launchConfigUrl.password !== ""
       ) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
+        return yield* new CtoxManagedLaunchError({ operation: "launch-token", reason: "repair_failed", httpStatus: token.response.status });
       }
 
       const exchange = yield* request(
@@ -386,7 +390,7 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
           ...(exchange === undefined ? {} : { httpStatus: exchange.response.status }),
         });
       if (exchange === undefined || !exchange.response.ok || !isRecord(exchange.payload)) {
-        return yield* new CtoxManagedLaunchError({ operation: "launch-config" });
+        return yield* exchangeFailure("launch-config", exchange);
       }
 
       const serverLaunchUrl = safeLaunchUrl(exchange.payload.launchUrl);
@@ -428,7 +432,10 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         return yield* new CtoxManagedLaunchError({ operation: "launch-contract" });
       }
       return { launchUrl, launchOrigin: serverLaunchUrl.origin };
-    });
+    }, (effect, descriptor) => effect.pipe(Effect.tapError((error) => keyRecovery?.noteManagedLaunchFailure?.(descriptor.id, {
+      failureClass: error.reason ?? "repair_failed", operation: error.operation,
+      ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
+    }).pipe(Effect.ignore) ?? Effect.void)));
 
     const resolveBusinessOsInstanceId = Effect.fn("CtoxManagedLaunch.resolveBusinessOsInstanceId")(
       function* (descriptor: CtoxManagedInstance) {

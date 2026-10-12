@@ -11,11 +11,14 @@ export function useProjectKpiSettings(
   projectId: string | undefined,
 ): {
   readonly kpis: PromptedProjectKpis | undefined;
+  readonly loadFailed: boolean;
   readonly save: SaveProjectKpiPrompts | undefined;
 } {
   const [kpis, setKpis] = useState<PromptedProjectKpis | undefined>(undefined);
+  const [loadFailed, setLoadFailed] = useState(false);
   useEffect(() => {
     setKpis(undefined);
+    setLoadFailed(false);
     if (instanceId === null || projectId === undefined) return;
     let active = true;
     void readWorkjetProjectKpis(instanceId, ProjectId.make(projectId)).then(
@@ -28,8 +31,11 @@ export function useProjectKpiSettings(
           "kpis" in result.response
         )
           setKpis(result.response.kpis);
+        else if (active) setLoadFailed(true);
       },
-      () => {},
+      () => {
+        if (active) setLoadFailed(true);
+      },
     );
     return () => {
       active = false;
@@ -53,5 +59,9 @@ export function useProjectKpiSettings(
     },
     [instanceId, projectId],
   );
-  return { kpis, save: instanceId !== null && projectId !== undefined ? save : undefined };
+  return {
+    kpis,
+    loadFailed,
+    save: instanceId !== null && projectId !== undefined ? save : undefined,
+  };
 }

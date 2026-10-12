@@ -858,6 +858,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             onSaveConfiguration={nativeConfiguration ? saveNativeConfiguration : undefined}
             kpis={projectKpis.kpis}
             onSaveKpis={projectKpis.save}
+            kpisLoadFailed={projectKpis.loadFailed}
             renderLumaField={(props) => <ProjectSupervisorLumaField {...props} />}
             onSave={async (overview) => {
               if (

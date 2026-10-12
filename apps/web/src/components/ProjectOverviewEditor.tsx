@@ -41,6 +41,7 @@ export function ProjectOverviewEditor({
   onCancel,
   kpis,
   onSaveKpis,
+  kpisLoadFailed = false,
   renderLumaField,
 }: {
   readonly overview: ProjectOverview | null | undefined;
@@ -50,6 +51,8 @@ export function ProjectOverviewEditor({
   readonly onCancel?: (() => void) | undefined;
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
+  /** Lesen über project.kpis.read ist fehlgeschlagen: Felder bleiben gesperrt, mit Hinweis. */
+  readonly kpisLoadFailed?: boolean | undefined;
   readonly configuration?: CtoxWorkjetProjectMetadataProjection | undefined;
   readonly renderLumaField?: ((props: LumaFieldProps) => ReactNode) | undefined;
   readonly onSaveConfiguration?:
@@ -497,6 +500,13 @@ export function ProjectOverviewEditor({
         )}
       </div>
       <div className="grid gap-2 border-t border-border pt-3" data-workjet-prompted-kpis="">
+        {kpisLoadFailed ? (
+          <p role="alert" className="text-xs text-destructive" data-workjet-kpis-load-failed="">
+            {workjetUiLanguage() === "en"
+              ? "KPIs could not be loaded from the instance. Reopen the settings to try again."
+              : "KPIs konnten nicht von der Instanz geladen werden. Einstellungen erneut öffnen, um es noch einmal zu versuchen."}
+          </p>
+        ) : null}
         {([0, 1, 2] as const).map((index) => (
           <div
             key={index}

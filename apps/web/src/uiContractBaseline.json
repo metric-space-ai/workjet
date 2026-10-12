@@ -21,7 +21,7 @@
     "d|components/settings/ProviderModelsSection.tsx|; /** Server-returned model slugs hidden from the model picker. */ readonly hiddenModels: ReadonlyArray",
     "d|components/settings/ProviderSettingsPanel.tsx|String(defaultInstanceIdForDriver(providerSettings.provider)), ), ); const rows: InstanceRow[] = []; const visibleDriver",
     "d|components/settings/ProviderSettingsPanel.tsx|buildProviderEnvironmentOptions(environments, primaryEnvironmentId), [environments, primaryEnvironmentId], ); // Raw use",
-    "d|components/settings/ProviderSettingsPanel.tsx|new Set()); const [openInstanceDetails, setOpenInstanceDetails] = useState",
+    "d|components/settings/ProviderSettingsPanel.tsx|new Set()); // Immer nur eine Harness-Karte offen. const [openInstanceId, setOpenInstanceId] = useState",
     "d|components/settings/ResourceTelemetryDiagnostics.tsx|error.includes(\"'web' mode\")); return (",
     "d|components/settings/ResourceTelemetryDiagnostics.tsx|new Set()); const signalingKeysRef = useRef",
     "d|components/settings/SessionImportBrowser.tsx|void; readonly selected: ReadonlyMap",

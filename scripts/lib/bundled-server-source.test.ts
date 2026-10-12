@@ -86,6 +86,38 @@ it("refuses stale remote archives included beside the native runtime", () =>
       /Stale bundled server workjet-server-linux-x64/,
     );
   }));
+it("reports the first differing byte and both source contexts on Windows", () =>
+  withFixture(async ({ archive, options }) => {
+    const archived = "//#region src/bin.ts\nexport const value = 1;\n";
+    const current = "//#region src\\bin.ts\nexport const value = 1;\n";
+    const file = NodePath.join(options.serverDist, "bin.mjs");
+    await NodeFSP.writeFile(file, archived);
+    await archive();
+    await NodeFSP.writeFile(file, current);
+    await NodeAssert.rejects(
+      verifyBundledServerSource({ ...options, platform: "win" }),
+      (cause: unknown) => {
+        NodeAssert.ok(cause instanceof Error);
+        NodeAssert.match(cause.message, /First differing byte offset 13 \(zero-based\)/);
+        NodeAssert.ok(cause.message.includes(JSON.stringify(current)));
+        NodeAssert.ok(cause.message.includes(JSON.stringify(archived)));
+        return true;
+      },
+    );
+  }));
+it("reports the end-of-file offset for otherwise identical source", () =>
+  withFixture(async ({ archive, options }) => {
+    const file = NodePath.join(options.serverDist, "bin.mjs");
+    const current = await NodeFSP.readFile(file);
+    await archive("darwin-arm64", "bin.mjs");
+    await archive("linux-x64");
+    await NodeAssert.rejects(verifyBundledServerSource(options), (cause: unknown) => {
+      NodeAssert.ok(cause instanceof Error);
+      NodeAssert.ok(cause.message.includes(`First differing byte offset ${current.length} `));
+      NodeAssert.ok(cause.message.includes("// obsolete source"));
+      return true;
+    });
+  }));
 it("refuses changed archive bytes before reading server entries", () =>
   withFixture(async ({ archive, options }) => {
     const path = await archive();

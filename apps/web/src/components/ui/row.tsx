@@ -11,7 +11,7 @@
  * (drei Orte: Dev, Ops, Einstellungen; keine Popups). Unter 640 px rutscht
  * sie unter die Zeile, damit alle Knöpfe ganz sichtbar bleiben.
  */
-import { EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -74,6 +74,12 @@ export interface RowProps {
   /** Seltene Aktionen hinter dem ⋯-Menü. */
   readonly menuActions?: ReadonlyArray<RowMenuAction>;
   readonly menuLabel?: string;
+  /**
+   * Klick auf Name/Meta klappt die Zeile zum Bearbeiten auf (InlineExpand
+   * darunter). Ersetzt „⋯ → Bearbeiten“.
+   */
+  readonly onToggleExpanded?: () => void;
+  readonly expanded?: boolean;
   readonly className?: string;
 }
 
@@ -93,6 +99,8 @@ function Row({
   deleteConfirmTitle,
   menuActions,
   menuLabel = "Weitere Aktionen",
+  onToggleExpanded,
+  expanded = false,
   className,
 }: RowProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -108,16 +116,46 @@ function Row({
       data-slot="row"
     >
       {status !== undefined ? <RowStatusDot status={status} label={statusLabel} /> : null}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-medium" data-slot="row-name">
-          {name}
-        </span>
-        {meta ? (
-          <span className="truncate text-muted-foreground text-xs" data-slot="row-meta">
-            {meta}
+      {onToggleExpanded ? (
+        <button
+          aria-expanded={expanded}
+          className="group/row-open -my-1 flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
+          data-slot="row-open"
+          type="button"
+          onClick={onToggleExpanded}
+        >
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-medium" data-slot="row-name">
+              {name}
+            </span>
+            {meta ? (
+              <span className="truncate text-muted-foreground text-xs" data-slot="row-meta">
+                {meta}
+              </span>
+            ) : null}
           </span>
-        ) : null}
-      </div>
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+              expanded
+                ? "rotate-180"
+                : "opacity-0 group-hover/row-open:opacity-100 group-focus-visible/row-open:opacity-100",
+            )}
+          />
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate font-medium" data-slot="row-name">
+            {name}
+          </span>
+          {meta ? (
+            <span className="truncate text-muted-foreground text-xs" data-slot="row-meta">
+              {meta}
+            </span>
+          ) : null}
+        </div>
+      )}
       {chips ? (
         <div className="flex shrink-0 items-center gap-1.5" data-slot="row-chips">
           {chips}

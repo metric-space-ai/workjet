@@ -15,6 +15,7 @@ import {
   resolveGalleryProjectHistory,
   resolveGalleryProjectOverview,
   visibleGalleryProjects,
+  websiteDraftChange,
   type GalleryLocalProject,
 } from "./projectOverview";
 const local = (
@@ -77,13 +78,78 @@ describe("real project overview", () => {
     ]) {
       expect(resolveGalleryProjectOverview({ ...card, title }).websiteUrl).toBeNull();
     }
-    const saved: ProjectOverview = { websiteUrl: null, slots: [null, null, null] };
+    const saved: ProjectOverview = {
+      websiteUrl: null,
+      websiteUrlCleared: true,
+      slots: [null, null, null],
+    };
     expect(
       resolveGalleryProjectOverview({
         ...card,
         local: { ...local("native", "a"), overview: saved },
       }),
     ).toBe(saved);
+  });
+
+  it("treats an unmarked null website from automatic syncs as never set and falls back to the domain", () => {
+    const card = {
+      key: "a:kunstmen",
+      id: "kunstmen",
+      title: "kunstmen.com",
+      local: null,
+      native: true,
+    };
+    const automatic: ProjectOverview = {
+      tokenBudget: { limitBillions: null, revision: 0, jourFixe: null },
+      websiteUrl: null,
+      slots: [null, null, null],
+    };
+    expect(
+      resolveGalleryProjectOverview({
+        ...card,
+        local: { ...local("kunstmen", "a"), overview: automatic },
+      }),
+    ).toEqual({ ...automatic, websiteUrl: "https://kunstmen.com" });
+    // Non-domain titles keep a null website; the fallback only covers domains.
+    expect(
+      resolveGalleryProjectOverview({
+        ...card,
+        title: "Milton Ticket",
+        local: { ...local("milton", "a"), overview: automatic },
+      }).websiteUrl,
+    ).toBeNull();
+  });
+
+  it("keeps a website cleared in the editor empty and drops the marker once a URL is entered", () => {
+    const draft = overviewDraft({ websiteUrl: "https://example.org", slots: [null, null, null] });
+    const cleared = decodeOverviewDraft(websiteDraftChange(draft, "  "));
+    expect(cleared).toEqual({
+      websiteUrl: null,
+      websiteUrlCleared: true,
+      slots: [null, null, null],
+    });
+    // The explicit marker survives later unrelated edits.
+    const reopened = overviewDraft(cleared);
+    expect(decodeOverviewDraft(reopened)).toEqual(cleared);
+    // Entering a URL again removes the marker.
+    expect(decodeOverviewDraft(websiteDraftChange(reopened, "https://example.org"))).toEqual({
+      websiteUrl: "https://example.org",
+      slots: [null, null, null],
+    });
+    // Clearing suppresses the domain fallback; an untouched empty field does not mark a clear.
+    const card = {
+      key: "a:example",
+      id: "example",
+      title: "example.org",
+      local: { ...local("example", "a"), overview: cleared },
+      native: false,
+    };
+    expect(resolveGalleryProjectOverview(card).websiteUrl).toBeNull();
+    const untouchable = overviewDraft({ websiteUrl: null, slots: [null, null, null] });
+    expect(decodeOverviewDraft(untouchable)).toEqual({
+      websiteUrl: null,
+      slots: [null, null, null],
+    });
   });
 
   it("uses confirmed CTOX URLs and explicit clearing while preserving local KPI values", () => {

@@ -6,7 +6,7 @@ import {
   type ProjectOverview,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
-import { decodeOverviewDraft, overviewDraft } from "../projectOverview";
+import { decodeOverviewDraft, overviewDraft, websiteDraftChange } from "../projectOverview";
 import { parseTokenBudgetBillions } from "@workjet/shared/projectTokenBudget";
 import { deferTokenBudgetCalendarSource } from "../projectTokenBudgetSource";
 import {
@@ -293,7 +293,7 @@ export function ProjectOverviewEditor({
           maxLength={2048}
           value={draft.websiteUrl}
           onChange={(event) =>
-            setDraft((current) => ({ ...current, websiteUrl: event.target.value }))
+            setDraft((current) => websiteDraftChange(current, event.target.value))
           }
           placeholder="https://example.com"
           disabled={state.pending}

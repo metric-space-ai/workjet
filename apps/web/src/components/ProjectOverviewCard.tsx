@@ -179,7 +179,7 @@ export function ProjectOverviewCard({
                 url: website,
               })}
               data-workjet-action={`project.open.website:${project.key}`}
-              className="block truncate text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              className="block truncate text-xs text-muted-foreground hover:text-foreground"
             >
               {titleIsWebsite
                 ? website.replace(/^https?:\/\//, "").replace(/\/$/, "")

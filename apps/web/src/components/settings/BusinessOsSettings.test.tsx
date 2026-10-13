@@ -173,7 +173,7 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain('aria-label="Instanzen"');
     expect(markup).toContain('aria-current="true"');
     expect(markup).toContain("WELSCH");
-    expect(markup).toContain("Geräte · WELSCH");
+    expect(markup).toContain("Gekoppelte Workjet-Apps · WELSCH");
     expect(markup).toContain('data-slot="row"');
     expect(markup).not.toContain("<details");
     expect(markup).not.toContain("Technische Details");
@@ -184,9 +184,11 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("network-canvas");
     expect(markup.indexOf('aria-label="Instanzen"')).toBeLessThan(
-      markup.indexOf("Geräte · WELSCH"),
+      markup.indexOf("Gekoppelte Workjet-Apps · WELSCH"),
     );
-    expect(markup.indexOf("Geräte · WELSCH")).toBeLessThan(markup.indexOf(">Netzwerk<"));
+    expect(markup.indexOf("Gekoppelte Workjet-Apps · WELSCH")).toBeLessThan(
+      markup.indexOf(">Netzwerk<"),
+    );
   });
 
   it("keeps opaque authority identifiers out of regular instance labels", () => {
@@ -218,6 +220,7 @@ describe("Business OS settings scope", () => {
   it("renders only sanitized device rows with an inline revoke confirmation", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
+        devicesDefaultOpen
         instances={[instance("local:welsch", "WELSCH", "local_daemon")]}
         activeInstanceId="local:welsch"
         devices={[

@@ -149,39 +149,21 @@ describe("WorkjetWorkerEditor", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Luma hinzufügen"');
-    expect(markup).toContain('aria-label="Luma-Persönlichkeit"');
-    expect(markup).toContain('type="range"');
-    expect(markup).toContain('aria-label="Persönlichkeit aktiv"');
-
-    // Name and task lead; the retained slider profile is directly discoverable.
-    const sections = [
-      ">Luma hinzufügen</div>",
-      ">Name</label>",
-      ">Aufgabe</label>",
-      ">Persönlichkeit</h4>",
-      "Persönlichkeitsregler",
-      ">Harness</h4>",
-      ">LLM-Zugang</h4>",
-      ">Modell</label>",
-      ">Denkstufe</h4>",
-      ">Werkzeuge</h4>",
-      ">Rechner</h4>",
-      ">Abbrechen</button>",
-      ">Speichern</button>",
-    ] as const;
-    const order = sections.map((section) => markup.indexOf(section));
-    expect(sections.filter((_s, i) => order[i]! < 0)).toEqual([]);
-    expect(order).toEqual([...order].sort((a, b) => a - b));
-
+    expect(markup).toContain('aria-label="Preset hinzufügen"');
+    // #615: compact tabs; the open editor stays within ~30% of the viewport.
+    expect(markup).toContain('role="tablist"');
+    expect(markup).toContain("max-h-[30vh]");
+    for (const tab of [">Aufgabe<", ">Persönlichkeit<", ">Harness · Modell · Rechner<"])
+      expect(markup).toContain(tab);
+    // No heading or labels used as titles.
+    expect(markup).not.toContain("Luma bearbeiten");
+    expect(markup).not.toContain(">Name</label>");
+    expect(markup).toContain('aria-label="Name"');
+    expect(markup).toContain('aria-label="Aufgabe"');
+    expect(markup).toContain(">Speichern</button>");
     // Options visible, not hidden behind a trigger.
     expect(markup).not.toContain("Orchestrator");
     expect(markup).not.toContain("Root role");
-    expect(markup).toContain("Claude Code");
-    expect(markup).toContain("OpenCode");
-    expect(markup).toContain("Web Stack Browser");
-    // With a route chosen the panel shows it as the selected choice.
-    expect(markup).toMatch(/aria-pressed="true"[^>]*>Codex work</);
     // No disclosure, no raw ids, no explanatory sentences, no popup.
     expect(markup).not.toContain("<details");
     expect(markup).not.toContain("computer-1");

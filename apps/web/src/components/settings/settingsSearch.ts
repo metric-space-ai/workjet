@@ -1,6 +1,7 @@
 export type SettingsPath =
   | "/settings/business-os"
   | "/settings/general"
+  | "/settings/prompts"
   | "/settings/appearance"
   | "/settings/models"
   | "/settings/speech"
@@ -34,7 +35,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   // Worker composition sits beside the pages it references (Models,
   // Computers); Source Control follows the workflow pages. Coding agents
   // (formerly the Harnesses page) live on Rechner since #554.
-  "/settings/workjet": "Lumas",
+  "/settings/workjet": "Worker-Presets",
+  "/settings/prompts": "System-Prompts",
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
@@ -224,8 +226,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-workers",
     // Match the page title to keep one result, while preserving old search vocabulary.
-    title: "Lumas",
-    searchAliases: ["worker", "workers", "agent", "agents"],
+    title: "Worker-Presets",
+    searchAliases: ["worker", "workers", "presets", "lumas", "agent", "agents"],
     to: "/settings/workjet",
   },
   {
@@ -256,18 +258,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/models",
   },
   {
-    id: "workjet-organigram",
-    title: "Organigramm",
-    to: "/settings/workjet",
-  },
-  {
     id: "workjet-prompt",
-    title: "Prompt",
-    to: "/settings/workjet",
+    title: "System-Prompts",
+    to: "/settings/prompts",
   },
   {
     id: "workjet-telemetry",
-    title: "Telemetrie",
+    title: "Protokoll",
     to: "/settings/workjet",
   },
   {

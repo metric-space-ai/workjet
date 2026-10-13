@@ -99,6 +99,15 @@ export function InstanceProjectRow({
           />
         </button>
       }
+      status="off"
+      statusLabel={
+        workjetUiLanguage() === "en" ? "No working copy here" : "Keine Arbeitskopie hier"
+      }
+      meta={
+        workjetUiLanguage() === "en"
+          ? "In CTOX · no working copy on this computer"
+          : "In CTOX · keine Arbeitskopie auf diesem Rechner"
+      }
     />
   );
 }

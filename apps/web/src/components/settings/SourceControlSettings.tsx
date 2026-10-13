@@ -1,4 +1,5 @@
-import { ChevronDownIcon, GitPullRequestIcon, RefreshCwIcon } from "lucide-react";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import { GitPullRequestIcon, RefreshCwIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
@@ -23,9 +24,7 @@ import { cn } from "../../lib/utils";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { Badge } from "../ui/badge";
-import { useSingleInlineExpand } from "../ui/inline-expand";
 import { Button } from "../ui/button";
-import { Collapsible, CollapsibleContent } from "../ui/collapsible";
 import {
   Empty,
   EmptyContent,
@@ -42,7 +41,6 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "../ui/number-field";
-import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   AzureDevOpsIcon,
@@ -234,21 +232,16 @@ function itemSummary({
 
 function DiscoveryItemRow({
   item,
-  children,
+  control,
 }: {
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
-  readonly children?: ReactNode;
+  /** A single setting sits directly in the row; no expand for one field (#601). */
+  readonly control?: ReactNode;
 }) {
   const version = optionLabel(item.version);
-  const enabled = isProviderDiscoveryItem(item)
-    ? item.status === "available" && item.auth.status === "authenticated"
-    : item.status === "available" && item.implemented;
   const auth = isProviderDiscoveryItem(item) ? item.auth : null;
   const authStatus = auth ? authPresentation(auth) : null;
   const authAccount = auth ? optionLabel(auth.account) : null;
-  const [isExpanded, setIsExpanded] = useState(false);
-  useSingleInlineExpand(isExpanded, setIsExpanded);
-  const hasDetails = children !== undefined;
 
   return (
     <div
@@ -281,35 +274,14 @@ function DiscoveryItemRow({
               {itemSummary({ item, auth, authAccount })}
             </p>
           </div>
-          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
-            {hasDetails ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setIsExpanded((open) => !open)}
-                aria-expanded={isExpanded}
-                aria-label={`${item.label}: Details`}
-              >
-                <ChevronDownIcon
-                  className={cn("size-3.5 transition-transform", isExpanded && "rotate-180")}
-                />
-              </Button>
-            ) : null}
-            {!isVcsNotReady(item) ? (
-              <Switch checked={enabled} disabled aria-label={`${item.label} verfügbar`} />
-            ) : null}
-          </div>
+          {/* No read-only switch: the summary already says whether it is usable (#601). */}
+          {control ? (
+            <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+              {control}
+            </div>
+          ) : null}
         </div>
       </div>
-
-      {hasDetails ? (
-        <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-          <CollapsibleContent>
-            <div className="px-3 pb-4 pt-1 sm:px-4">{children}</div>
-          </CollapsibleContent>
-        </Collapsible>
-      ) : null}
     </div>
   );
 }
@@ -333,58 +305,50 @@ function GitFetchIntervalSettings({
   const canResetFetchInterval =
     automaticGitFetchIntervalSeconds !== defaultAutomaticGitFetchIntervalSeconds;
 
+  const en = workjetUiLanguage() === "en";
+  const label = en ? "Fetch interval" : "Abrufintervall";
   return (
-    <div className="grid gap-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex min-w-0 items-center gap-1">
-            <span className="text-xs font-medium text-foreground">Abrufintervall</span>
-            <span
-              className={cn(
-                "inline-flex size-5 shrink-0 items-center justify-center transition-opacity",
-                canResetFetchInterval ? "opacity-100" : "pointer-events-none opacity-0",
-              )}
-              aria-hidden={!canResetFetchInterval}
-            >
-              {canResetFetchInterval ? (
-                <SettingResetButton
-                  label="Abrufintervall"
-                  onClick={() =>
-                    updateSettings(
-                      backgroundActivityOverrideSettings(settings.backgroundActivity, {
-                        automaticGitFetchInterval: undefined,
-                      }),
-                    )
-                  }
-                />
-              ) : null}
-            </span>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <NumberField
-            value={automaticGitFetchIntervalSeconds}
-            min={0}
-            step={GIT_FETCH_INTERVAL_STEP_SECONDS}
-            size="sm"
-            className="w-32"
-            onValueChange={(value) =>
-              updateSettings(
-                backgroundActivityOverrideSettings(settings.backgroundActivity, {
-                  automaticGitFetchInterval: Duration.seconds(normalizeFetchIntervalSeconds(value)),
-                }),
-              )
-            }
-          >
-            <NumberFieldGroup>
-              <NumberFieldDecrement aria-label="Abrufintervall verringern" />
-              <NumberFieldInput aria-label="Abrufintervall (Sekunden)" />
-              <NumberFieldIncrement aria-label="Abrufintervall erhöhen" />
-            </NumberFieldGroup>
-          </NumberField>
-          <span className="text-xs text-muted-foreground">s</span>
-        </div>
-      </div>
+    <div className="flex shrink-0 items-center gap-2">
+      {canResetFetchInterval ? (
+        <SettingResetButton
+          label={label}
+          onClick={() =>
+            updateSettings(
+              backgroundActivityOverrideSettings(settings.backgroundActivity, {
+                automaticGitFetchInterval: undefined,
+              }),
+            )
+          }
+        />
+      ) : null}
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <NumberField
+        value={automaticGitFetchIntervalSeconds}
+        min={0}
+        step={GIT_FETCH_INTERVAL_STEP_SECONDS}
+        size="sm"
+        className="w-28"
+        onValueChange={(value) =>
+          updateSettings(
+            backgroundActivityOverrideSettings(settings.backgroundActivity, {
+              automaticGitFetchInterval: Duration.seconds(normalizeFetchIntervalSeconds(value)),
+            }),
+          )
+        }
+      >
+        <NumberFieldGroup>
+          <NumberFieldDecrement
+            aria-label={en ? "Decrease fetch interval" : "Abrufintervall verringern"}
+          />
+          <NumberFieldInput
+            aria-label={en ? "Fetch interval (seconds)" : "Abrufintervall (Sekunden)"}
+          />
+          <NumberFieldIncrement
+            aria-label={en ? "Increase fetch interval" : "Abrufintervall erhöhen"}
+          />
+        </NumberFieldGroup>
+      </NumberField>
+      <span className="text-xs text-muted-foreground">s</span>
     </div>
   );
 }
@@ -587,11 +551,15 @@ function ScopedSourceControlSettingsPanel({
               {result.versionControlSystems
                 .filter((item) => item.implemented && item.status === "available")
                 .map((item) => (
-                  <DiscoveryItemRow key={`vcs:${item.kind}`} item={item}>
-                    {item.kind === "git" ? (
-                      <GitFetchIntervalSettings environmentId={environmentId} />
-                    ) : undefined}
-                  </DiscoveryItemRow>
+                  <DiscoveryItemRow
+                    key={`vcs:${item.kind}`}
+                    item={item}
+                    control={
+                      item.kind === "git" ? (
+                        <GitFetchIntervalSettings environmentId={environmentId} />
+                      ) : undefined
+                    }
+                  />
                 ))}
             </SettingsSection>
           ) : null}

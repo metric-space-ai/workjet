@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import type { UsageProviderKind } from "@workjet/contracts";
 import { CheckIcon, ClockIcon, RefreshCwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -112,7 +113,10 @@ export function UsagePage() {
       : `${formatUsageDay(window.sinceDay)} – ${formatUsageDay(window.untilDay)}`;
 
   return (
-    <SettingsPageContainer className="gap-5">
+    <SettingsPageContainer
+      className="gap-5"
+      title={workjetUiLanguage() === "en" ? "Usage" : "Verbrauch"}
+    >
       <div className="flex flex-wrap items-center gap-2" data-usage-toolbar="">
         <ToggleGroup
           aria-label="Zeitraum"

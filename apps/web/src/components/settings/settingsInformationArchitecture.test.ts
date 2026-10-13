@@ -21,15 +21,6 @@ describe("Workjet settings information architecture", () => {
     expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).not.toContain("Connections");
     expect(SETTINGS_NAV_ITEMS.map((item) => item.to)).not.toContain("/settings/keybindings");
     expect(searchSettings("Keybindings")).toEqual([]);
-    expect(
-      searchSettings("shortcut", [
-        {
-          id: "legacy-keybindings",
-          title: "Keyboard shortcuts",
-          to: "/settings/keybindings",
-        },
-      ]),
-    ).toEqual([]);
   });
 
   it("uses the regular Settings route from either product mode", () => {

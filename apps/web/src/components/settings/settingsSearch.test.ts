@@ -162,6 +162,11 @@ describe("searchSettings", () => {
       },
     ]);
 
+    // System-Prompts are their own page (#618).
+    expect(searchSettings("system-prompts")[0]).toMatchObject({
+      id: "workjet-prompt",
+      to: "/settings/prompts",
+    });
     const workjetIds = SETTINGS_SEARCH_ITEMS.filter((item) => item.to === "/settings/workjet").map(
       (item) => item.id,
     );
@@ -170,7 +175,6 @@ describe("searchSettings", () => {
     // only the five tabs plus their nested anchors resolve to the Worker page.
     expect(workjetIds).toEqual([
       "workjet-workers",
-      "workjet-prompt",
       "workjet-telemetry",
       "workjet-execution",
       "automatic-worktree-storage",

@@ -1,12 +1,6 @@
 import type { WorkjetWorkerPersonalization } from "@workjet/contracts";
 import { OptionSelect } from "../ui/option-select";
-import {
-  ArrowLeftRightIcon,
-  PencilIcon,
-  PlusIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
+import { ArrowLeftRightIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";

@@ -623,7 +623,6 @@ function uiText(de: string, en: string): string {
   return workjetUiLanguage() === "en" ? en : de;
 }
 
-
 export function WorkjetSettingsView({
   configuration,
   draftScopeKey,

@@ -19,6 +19,8 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { closeOpenInlineExpand } from "~/components/ui/inline-expand";
+import { collapseExpandedSettingsRow } from "~/components/settings/settingsEscape";
 
 function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
@@ -99,6 +101,11 @@ function SettingsContentLayout() {
         if (document.querySelector("[data-settings-inline-editor]") !== null) {
           return;
         }
+
+        // Esc only collapses what is open (an expanded row, an inline editor);
+        // it never leaves Einstellungen while something is expanded.
+        if (closeOpenInlineExpand()) return;
+        if (collapseExpandedSettingsRow()) return;
 
         navigateBackWithinApp();
       }

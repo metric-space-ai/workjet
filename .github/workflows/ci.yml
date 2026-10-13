@@ -136,7 +136,6 @@ jobs:
           python3 -B scripts/main-auto-install.test.py
           python3 -B scripts/main-auto-install-verify.test.py
 
-
       - name: Publish transfer budget report
 
         if: always()

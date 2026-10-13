@@ -186,7 +186,19 @@ class Deployment(unittest.TestCase):
         self.assertEqual(result["reason"], "deployment_receipt_unavailable")
         self.assertEqual(self.asar.read_bytes(), b"previous verified app")
 
+    def test_foreign_app_after_install_is_not_replaced_by_rollback(self):
+        def changed(config, phase, context, result, gated=True):
+            answer = self.adapter(config, phase, context, result, gated)
+            if phase == "verify":
+                self.asar.write_bytes(b"foreign update")
+            return answer
+        result = self.run_agent(adapter=changed)
+        self.assertEqual(result["phase"], "recovery_required")
+        self.assertNotIn("rollback", self.calls)
+        self.assertEqual(self.asar.read_bytes(), b"foreign update")
+
     def test_uncertain_recovery_never_starts_a_second_writer(self):
+
         def pending(config, phase, context, result, gated=True):
             if phase == "install":
                 self.calls.append(phase)

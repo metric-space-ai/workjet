@@ -329,6 +329,11 @@ def execute(config, head, evidence, state_path, api_main=current_main, api_ci=ma
             record["phase"] = "rolling_back"
             atomic_json(receipt, record)
             try:
+                if digest(config["installedAsar"]) != artifact["asarSha256"]:
+                    # Preserve a foreign install or an uncertain partial swap.
+                    # The protected install adapter owns its own interrupted
+                    # transaction recovery; a second writer must not guess.
+                    raise Refused("rollback_candidate_no_longer_installed")
                 rollback = adapter(config, "rollback", context_path,
                                    evidence / (head + "-rollback.json"))
                 if (rollback.get("normalRestart") is not True

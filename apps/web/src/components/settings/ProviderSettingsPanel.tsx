@@ -39,7 +39,11 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
-import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
@@ -625,6 +629,7 @@ export function EnvironmentProviderSettings({
    */
   readonly readOnly?: boolean;
 }) {
+  const sessionImportVisible = useClientSettings((settings) => settings.developerMode);
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
@@ -1213,11 +1218,8 @@ export function EnvironmentProviderSettings({
         ) : null}
       </SettingsSection>
 
-      {readOnly ? (
-        <SettingsSection title="Sitzungen importieren">
-          <SettingsRow title="Import nicht erlaubt" />
-        </SettingsSection>
-      ) : (
+      {/* Session import is a developer tool until it moves to the project list (#619). */}
+      {readOnly || !sessionImportVisible ? null : (
         <SessionImportSection environmentId={environmentId} readOnly={false} />
       )}
     </>

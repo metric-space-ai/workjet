@@ -4504,17 +4504,17 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("rejects a cross-origin websocket upgrade authenticated by a browser cookie", () =>
+  it.effect("accepts same-origin and rejects cross-origin cookie websocket upgrades", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
       const { cookie, url } = parseSessionCookieFromWsUrl(yield* getWsServerUrl("/ws"));
       assert.isDefined(cookie);
 
-      const handshakeStatus = yield* Effect.promise(
-        () =>
+      const handshakeStatus = (origin: string) =>
+        Effect.promise(() =>
           new Promise<number>((resolve, reject) => {
             const socket = new NodeSocket.NodeWS.WebSocket(url, {
-              headers: { cookie: cookie ?? "", origin: "http://evil.example.test" },
+              headers: { cookie: cookie ?? "", origin },
             });
             socket.once("unexpected-response", (_request, response) => {
               resolve(response.statusCode ?? 0);
@@ -4526,9 +4526,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             });
             socket.once("error", reject);
           }),
-      );
+        );
 
-      assert.equal(handshakeStatus, 401);
+      assert.equal(yield* handshakeStatus(`http://${new URL(url).host}`), 101);
+      assert.equal(yield* handshakeStatus("http://evil.example.test"), 401);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

@@ -104,7 +104,7 @@ const fixturePresentation: SlideDocument = {
 
 function Fixture() {
   const [view, setView] = useState<"overview" | "calendar" | "meeting">(
-    withSpeech || params.get("room") === "1" ? "meeting" : "overview",
+    withSpeech || params.get("view") === "meeting" ? "meeting" : "overview",
   );
   const [chipDismissed, setChipDismissed] = useState(false);
   const [presentation, setPresentation] = useState<SlideDocument>(fixturePresentation);

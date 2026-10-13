@@ -4338,6 +4338,33 @@ describe("pooled Shell recovery", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("never rebuilds a live Shell that reports slow or not-ready lists", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const execute = harness.views[0]!.executeJavaScript;
+      const slow = (reason: string, phase?: string) => ({
+        status: "failed",
+        diagnostic: { stage: "execute", reason, ...(phase ? { phase } : {}) },
+      });
+      execute
+        .mockResolvedValueOnce(slow("request_timeout", "command"))
+        .mockResolvedValueOnce(slow("request_timeout", "native_projection"))
+        .mockResolvedValueOnce(slow("peer_unavailable"))
+        .mockResolvedValueOnce(slow("project_control_not_ready"))
+        .mockResolvedValue(slow("request_timeout", "collections"));
+      for (let i = 0; i < 6; i++) {
+        const result = yield* manager.requestProjectControl(descriptor.id, {
+          action: "project.list",
+        });
+        expect(result._tag).toBe("failed");
+      }
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.views[0]!.close).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("a successful list resets the failure streak", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {

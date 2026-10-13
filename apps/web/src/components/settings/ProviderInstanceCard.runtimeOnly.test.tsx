@@ -151,4 +151,23 @@ describe("harness cards show runtime state, never login state", () => {
       getProviderRuntimeSummary({ ...base, installed: false } as unknown as ServerProvider),
     ).toEqual({ headline: "Nicht installiert", detail: "Nicht im PATH" });
   });
+
+  it("never shows an uninstalled harness as switched on (#475)", () => {
+    const provider = {
+      ...liveProvider(),
+      installed: false,
+      status: "error",
+    } as unknown as ServerProvider;
+    const switches: Array<Record<string, unknown>> = [];
+    visitElements(renderCard(provider, true), (element) => {
+      const props = element.props as Record<string, unknown>;
+      if (typeof props["aria-label"] === "string" && props["aria-label"] === "Claude aktiv") {
+        switches.push(props);
+      }
+      return false;
+    });
+    expect(switches).toHaveLength(1);
+    expect(switches[0]?.checked).toBe(false);
+    expect(switches[0]?.disabled).toBe(true);
+  });
 });

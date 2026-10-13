@@ -393,7 +393,10 @@ export function ProviderInstanceCard({
   onInstallPinnedRuntime,
   isUpdating = false,
 }: ProviderInstanceCardProps) {
-  const enabled = instance.enabled ?? true;
+  // A harness the probe could not find can't run, so it never reads as on (#475).
+  // The stored intent is kept untouched; it applies again once the CLI is installed.
+  const notInstalled = liveProvider?.installed === false;
+  const enabled = notInstalled ? false : (instance.enabled ?? true);
   // The server-reported status wins when present; otherwise fall back to
   // "disabled"/"warning" based on the local `enabled` flag so the dot
   // reflects the persisted intent even before the first probe completes.
@@ -402,7 +405,7 @@ export function ProviderInstanceCard({
   // One meaning per dot (#617): only problems get one. Ready is the normal state and
   // disabled is already shown by the switch.
   const statusStyle =
-    statusKey === "error" || statusKey === "warning"
+    !notInstalled && (statusKey === "error" || statusKey === "warning")
       ? PROVIDER_STATUS_STYLES[statusKey]
       : { dot: "hidden" };
   const rawSummary = runtimeOnly
@@ -611,6 +614,7 @@ export function ProviderInstanceCard({
           ) : null}
           <Switch
             checked={enabled}
+            disabled={notInstalled}
             onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
             aria-label={`${displayName} aktiv`}
           />

@@ -2450,6 +2450,13 @@ export default function Sidebar() {
     () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
   );
+  // The search also finds projects (#581): "met" must reach "Metric".
+  const projectSearchQuery = threadSearchQuery.trim().toLocaleLowerCase();
+  const projectSearchResults = isSearchingThreads
+    ? selectableWorkjetProjects.filter((project) =>
+        project.title.toLocaleLowerCase().includes(projectSearchQuery),
+      )
+    : [];
   const threadSearchResultOrderKey = threadSearchResults
     .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
     .join("\0");
@@ -4037,6 +4044,27 @@ export default function Sidebar() {
               }}
             />
           ) : null}
+          {projectSearchResults.length > 0 ? (
+            <ul
+              aria-label={overviewText.allProjects}
+              className="mb-1 flex flex-col gap-px"
+              data-sidebar-project-search-results=""
+            >
+              {projectSearchResults.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+                    data-workjet-action={`project.open.search:${project.id}`}
+                    onClick={() => void handleWorkjetProjectSelection(project.id)}
+                  >
+                    <FolderIcon className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
+                    <span className="min-w-0 truncate">{project.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -4084,14 +4112,7 @@ export default function Sidebar() {
                   })}
                 </ul>
               </TooltipProvider>
-            ) : (
-              <p
-                role="status"
-                className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
-              >
-                {overviewText.noThreads}
-              </p>
-            )
+            ) : null
           ) : null}
           {!isSearchActive ? (
             <TooltipProvider

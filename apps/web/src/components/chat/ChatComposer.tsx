@@ -33,6 +33,8 @@ import {
 import { bindWorkjetPrivateChat } from "../../workjetPrivateChat";
 import { ctoxConnectionMatchesSelectedInstance } from "../../workjetCtoxConnections";
 import { resolvePrivateChatDraftProject } from "../../workjetPrivateChatScope";
+import { InlineExpand } from "../ui/inline-expand";
+import { WorkjetComputersSettings } from "../settings/WorkjetComputersSettings";
 import { NativePrivateChatControl } from "./NativePrivateChatControl";
 import { serializeComposerFileLink } from "@workjet/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@workjet/shared/model";
@@ -48,7 +50,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { workjetComputerMembership } from "../../workjetComputerMembership";
@@ -920,7 +921,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * optional chain: the one at the footer never had one either.
    */
   const businessOsCodeScope = useBusinessOsCodeScope();
-  const navigate = useNavigate();
   const primaryWorkjet = usePrimarySettings((primary) => primary.workjet);
   const { environments: computerEnvironments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -1850,6 +1850,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [isStashMenuOpen, setIsStashMenuOpen] = useState(false);
+  const [isAddComputerOpen, setIsAddComputerOpen] = useState(false);
   const [stashPulse, setStashPulse] = useState<{ key: number; active: boolean }>({
     key: 0,
     active: false,
@@ -3654,6 +3655,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       className="mx-auto w-full min-w-0 max-w-5xl"
       data-chat-composer-form="true"
     >
+      <InlineExpand
+        open={isAddComputerOpen}
+        onOpenChange={setIsAddComputerOpen}
+        label={inlineAddComputerLabel()}
+        className="mb-2 rounded-2xl border bg-card p-3 pe-9"
+      >
+        <WorkjetComputersSettings setupOnly onCompleted={() => setIsAddComputerOpen(false)} />
+      </InlineExpand>
       <div
         className={cn(
           "group rounded-[22px] p-px transition-colors duration-200",
@@ -4167,9 +4176,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           disabledReason={composerComputerDisabledReason}
                           mismatchNote={composerComputerMismatchNote}
                           onSelectComputer={handleSelectComposerComputer}
-                          onAddComputer={() => {
-                            void navigate({ to: "/settings/computers" });
-                          }}
+                          onAddComputer={() => setIsAddComputerOpen(true)}
                         />
                       </>
                     )
@@ -4328,3 +4335,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     </form>
   );
 });
+
+/** Accessible name of the inline "add computer" panel above the composer. */
+export function inlineAddComputerLabel(language: "de" | "en" = composerUiLanguage()): string {
+  return language === "en" ? "Add computer" : "Rechner hinzufügen";
+}
+
+function composerUiLanguage(): "de" | "en" {
+  const lang = typeof document === "undefined" ? "de" : document.documentElement.lang;
+  return lang.toLowerCase().startsWith("en") ? "en" : "de";
+}

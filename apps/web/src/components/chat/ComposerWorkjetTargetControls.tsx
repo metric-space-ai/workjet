@@ -198,7 +198,7 @@ export interface ComposerComputerControlProps {
   /** Worker-mode mismatch, e.g. the worker's computer is not paired here. */
   readonly mismatchNote: string | null;
   readonly onSelectComputer: (computerId: string) => void;
-  /** Einstellungen → Rechner öffnen. */
+  /** Opens the inline "Rechner hinzufügen" panel above the composer. */
   readonly onAddComputer?: (() => void) | undefined;
 }
 
@@ -331,7 +331,7 @@ export function ComposerComputerMenuItems(
           <MenuSeparator />
           <MenuItem disabled={props.busy} onClick={props.onAddComputer}>
             <SettingsIcon aria-hidden="true" />
-            Rechner verwalten
+            {composerAddComputerMenuLabel()}
           </MenuItem>
         </>
       ) : null}
@@ -896,4 +896,13 @@ export function ComposerWorkjetCompactMenuContent(
       ) : null}
     </>
   );
+}
+
+export function composerAddComputerMenuLabel(
+  language: "de" | "en" = typeof document !== "undefined" &&
+  document.documentElement.lang.toLowerCase().startsWith("en")
+    ? "en"
+    : "de",
+): string {
+  return language === "en" ? "Add computer" : "Rechner hinzufügen";
 }

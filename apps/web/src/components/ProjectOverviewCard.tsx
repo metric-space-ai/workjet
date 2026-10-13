@@ -21,6 +21,7 @@ import {
 } from "../projectKpis";
 import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { ProjectInitProgress } from "./ProjectInitProgress";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
 import { Button } from "./ui/button";
@@ -391,6 +392,14 @@ export function ProjectOverviewCard({
           />
         </div>
       )}
+      {project.native ? (
+        <ProjectInitProgress
+          instanceId={ctoxInstanceId}
+          projectId={project.id}
+          kpiCount={scopedKpis?.items.length ?? 0}
+          exitStatus={project.configuration?.exitModel?.status ?? null}
+        />
+      ) : null}
       <div className="border-t border-border px-3 py-3">
         <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
           {(["first", "second", "third"] as const).map((position, index) => {

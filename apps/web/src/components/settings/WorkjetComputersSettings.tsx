@@ -1568,7 +1568,7 @@ export function WorkjetComputersSettings({
   };
 
   return (
-    <SettingsPageContainer wide className="gap-6">
+    <SettingsPageContainer className="gap-6">
       {[...new Set(configuration.computers.map((computer) => computer.environmentId))]
         .filter((target) =>
           environments.some(

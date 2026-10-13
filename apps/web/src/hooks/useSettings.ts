@@ -1,3 +1,4 @@
+import { notifySettingsSaved } from "../settingsSavedSignal";
 /**
  * Environment-scoped settings hooks.
  *
@@ -305,10 +306,12 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
 
       if (Object.keys(serverPatch).length > 0) {
         if (environmentId) {
-          void persistServerSettings({
-            environmentId,
-            input: { patch: serverPatch },
-          });
+          void Promise.resolve(
+            persistServerSettings({
+              environmentId,
+              input: { patch: serverPatch },
+            }),
+          ).then(notifySettingsSaved, () => undefined);
         }
       }
       if (Object.keys(clientPatch).length > 0) {
@@ -316,6 +319,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           ...getClientSettingsSnapshot(),
           ...clientPatch,
         });
+        notifySettingsSaved();
       }
     },
     [environmentId, persistServerSettings],

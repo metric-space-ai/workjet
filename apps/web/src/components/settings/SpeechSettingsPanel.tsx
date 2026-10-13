@@ -24,11 +24,11 @@ const remedies: Readonly<Record<string, string>> = {
 export function SpeechSettingsPanel() {
   const { selectedId } = useCtoxMode();
   return (
-    <SettingsPageContainer wide>
+    <SettingsPageContainer>
       {selectedId ? (
         <InstanceSpeechSettings key={selectedId} instanceId={selectedId} />
       ) : (
-        <SettingsSection title="Sprache" id="speech">
+        <SettingsSection title="Sprachausgabe" id="speech">
           <SettingsRow
             title="Keine Instanz"
             control={
@@ -124,25 +124,51 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const loadingSlow = useLoadingSlow(busy === "speech.settings.read");
   return (
     <SettingsSection
-      title="Sprache"
+      title="Sprachausgabe"
       id="speech"
       headerAction={
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy !== undefined}
-          onClick={() => void run({ action: "speech.settings.read" })}
-        >
-          <RefreshCwIcon className="size-3.5" /> Aktualisieren
-        </Button>
+        !config ? undefined : (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy !== undefined}
+            onClick={() => void run({ action: "speech.settings.read" })}
+          >
+            <RefreshCwIcon className="size-3.5" /> Aktualisieren
+          </Button>
+        )
       }
     >
-      {error && (
+      {error && config && (
         <p role="alert" className="px-4 text-sm text-destructive">
           {error}
         </p>
       )}
-      {loadingSlow ? (
+      {!config ? (
+        <div
+          role={error ? "alert" : "status"}
+          className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground"
+          data-workjet-speech-unloaded=""
+        >
+          <span>
+            {busy === "speech.settings.read"
+              ? loadingSlow
+                ? "Laden dauert länger"
+                : "Lädt …"
+              : "Spracheinstellungen der Instanz nicht geladen"}
+          </span>
+          {busy === "speech.settings.read" && !loadingSlow ? null : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void run({ action: "speech.settings.read" })}
+            >
+              Erneut laden
+            </Button>
+          )}
+        </div>
+      ) : null}
+      {config && loadingSlow ? (
         <div role="status" className="flex items-center gap-3 px-4 text-sm text-muted-foreground">
           <span>Laden dauert länger</span>
           <Button
@@ -154,284 +180,290 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           </Button>
         </div>
       ) : null}
-      <div className="divide-y divide-border rounded-lg border border-border">
-        <SettingsRow
-          title="Mistral API"
-          control={
-            <span
-              className="flex items-center gap-2 text-xs"
-              role="status"
-              title={
-                !config
-                  ? "Nicht geladen"
-                  : check
-                    ? "Geprüft " + check.checkedAt
-                    : "Noch nicht geprüft"
-              }
-            >
-              {pending ? (
-                <CircleDashedIcon className="size-4 animate-spin text-muted-foreground" />
-              ) : checked ? (
-                <CheckIcon className="size-4 text-emerald-500" />
-              ) : check ? (
-                <XIcon className="size-4 text-destructive" />
-              ) : (
-                <CircleDashedIcon className="size-4 text-muted-foreground" />
-              )}
-              {!config
-                ? unloadedLabel
-                : pending
-                  ? "Prüft …"
-                  : checked
-                    ? "Stimme geprüft · " + check.latencyMs + " ms"
-                    : check
-                      ? check.errorClass
-                      : "Nicht geprüft"}
-            </span>
-          }
-        />
-        <SettingsRow
-          title="API-Schlüssel"
-          status={
-            !settings
-              ? "—"
-              : settings.status.mistral_credential_present
-                ? "Gespeichert"
-                : "Kein Schlüssel"
-          }
-          control={
-            <form
-              className="flex w-full items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const secret = key;
-                setKey("");
-                void run({ action: "speech.settings.key", secret }).then((result) => {
-                  if (result?.status.mistral_credential_present)
-                    void run({ action: "speech.settings.voices" });
-                });
-              }}
-            >
-              <input
-                aria-label="Mistral-Schlüssel"
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                value={key}
-                maxLength={4096}
-                className={controlClass + " w-full sm:w-64"}
-                placeholder={
-                  !settings
-                    ? "—"
-                    : settings.status.mistral_credential_present
-                      ? "Schlüssel ersetzen"
-                      : "Schlüssel eingeben"
-                }
-                disabled={disabled}
-                onChange={(event) => setKey(event.target.value)}
-              />
-              <Button type="submit" size="sm" disabled={disabled || key.trim().length === 0}>
-                Speichern
-              </Button>
-            </form>
-          }
-        />
-        <SettingsRow
-          title="Vorlesen"
-          control={
-            <select
-              aria-label="Vorlesen"
-              className={controlClass + " w-full sm:w-64"}
-              value={config?.synthesis ?? ""}
-              disabled={disabled}
-              onChange={(event) =>
-                config &&
-                configure({
-                  ...config,
-                  synthesis: event.target.value === "mistral" ? "mistral" : "runtime",
-                })
-              }
-            >
-              {!config && <option value="">{unloadedLabel}</option>}
-              <option value="runtime">Lokale Laufzeit</option>
-              <option value="mistral">Mistral API</option>
-              {config?.synthesis === "computer" && <option value="computer">Sprach-Rechner</option>}
-            </select>
-          }
-        />
-        <SettingsRow
-          title="Transkription"
-          control={
-            <select
-              aria-label="Transkription"
-              className={controlClass + " w-full sm:w-64"}
-              value={config?.transcription ?? ""}
-              disabled={disabled}
-              onChange={(event) =>
-                config &&
-                configure({
-                  ...config,
-                  transcription: event.target.value === "mistral" ? "mistral" : "runtime",
-                })
-              }
-            >
-              {!config && <option value="">{unloadedLabel}</option>}
-              <option value="runtime">Lokale Laufzeit</option>
-              <option value="mistral">Mistral API</option>
-              {config?.transcription === "computer" && (
-                <option value="computer">Sprach-Rechner</option>
-              )}
-            </select>
-          }
-        />
-        <SettingsRow
-          title="Stimme"
-          control={
-            <div className="flex w-full items-center gap-2">
-              <select
-                aria-label="Stimme"
-                className={controlClass + " w-full sm:w-64"}
-                value={config?.voice_id ?? ""}
-                disabled={disabled || config?.synthesis !== "mistral"}
-                onChange={(event) =>
-                  config && configure({ ...config, voice_id: event.target.value || null })
-                }
-              >
-                <option value="">{config ? "Stimme wählen" : unloadedLabel}</option>
-                {config?.voice_id && !voices.some((voice) => voice.id === config.voice_id) && (
-                  <option value={config.voice_id}>Aktuelle Stimme</option>
-                )}
-                {voices.map((voice) => (
-                  <option key={voice.id} value={voice.id}>
-                    {voice.name || voice.id}
-                  </option>
-                ))}
-              </select>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={disabled || !settings?.status.mistral_credential_present}
-                onClick={() => void run({ action: "speech.settings.voices" })}
-              >
-                Stimmen laden
-              </Button>
-            </div>
-          }
-        />
-        <SettingsRow
-          title="Sprechtempo"
-          control={
-            <div className="flex items-center gap-2">
-              <input
-                aria-label="Sprechtempo"
-                type="number"
-                min={0.8}
-                max={1.5}
-                step={0.01}
-                value={config ? rate : ""}
-                placeholder="—"
-                disabled={disabled}
-                className={controlClass + " w-24 text-right tabular-nums"}
-                onChange={(event) => setRate(event.target.value)}
-                onBlur={() => {
-                  const value = Number(rate);
-                  if (!config) return;
-                  if (!Number.isFinite(value) || value < 0.8 || value > 1.5) {
-                    setRate(String(config.rate));
-                    setError("Sprechtempo: 0,8× bis 1,5×");
-                  } else if (value !== config.rate) configure({ ...config, rate: value });
-                }}
-              />
-              <span className="text-sm text-muted-foreground">×</span>
-            </div>
-          }
-        />
-        <SettingsRow
-          title="Stimmtest"
-          status={
-            check?.state === "error"
-              ? (remedies[check.errorClass ?? ""] ?? "Test fehlgeschlagen")
-              : undefined
-          }
-          control={
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={disabled || config?.synthesis !== "mistral"}
-              onClick={() => void run({ action: "speech.settings.check" })}
-            >
-              {pending ? "Prüft …" : "Stimme testen"}
-            </Button>
-          }
-        >
-          {recording && (
-            <audio
-              ref={audio}
-              controls
-              src={recording}
-              className="mt-2 h-9 w-full"
-              onLoadedMetadata={(event) => {
-                event.currentTarget.preservesPitch = true;
-                event.currentTarget.playbackRate = config?.rate ?? 1.15;
-              }}
-            />
-          )}
-        </SettingsRow>
-        <SettingsRow
-          title="Transkriptionstest"
-          status={
-            !config
-              ? "Nicht geladen"
-              : sttCheck?.state === "error"
-                ? (remedies[sttCheck.errorClass ?? ""] ?? "Test fehlgeschlagen")
-                : undefined
-          }
-          control={
-            <div className="flex items-center gap-3">
+      {config ? (
+        <div className="divide-y divide-border rounded-lg border border-border">
+          <SettingsRow
+            title="Mistral API"
+            control={
               <span
+                className="flex items-center gap-2 text-xs"
                 role="status"
-                className="flex items-center gap-1.5 text-xs"
                 title={
                   !config
                     ? "Nicht geladen"
-                    : sttCheck
-                      ? "Geprüft " + sttCheck.checkedAt
+                    : check
+                      ? "Geprüft " + check.checkedAt
                       : "Noch nicht geprüft"
                 }
               >
-                {sttPending ? (
+                {pending ? (
                   <CircleDashedIcon className="size-4 animate-spin text-muted-foreground" />
-                ) : sttCheck?.state === "ok" ? (
+                ) : checked ? (
                   <CheckIcon className="size-4 text-emerald-500" />
-                ) : sttCheck ? (
+                ) : check ? (
                   <XIcon className="size-4 text-destructive" />
                 ) : (
                   <CircleDashedIcon className="size-4 text-muted-foreground" />
                 )}
                 {!config
                   ? unloadedLabel
-                  : sttPending
+                  : pending
                     ? "Prüft …"
-                    : sttCheck?.state === "ok"
-                      ? sttCheck.latencyMs + " ms"
-                      : (sttCheck?.errorClass ?? "Nicht geprüft")}
+                    : checked
+                      ? "Stimme geprüft · " + check.latencyMs + " ms"
+                      : check
+                        ? check.errorClass
+                        : "Nicht geprüft"}
               </span>
+            }
+          />
+          <SettingsRow
+            title="API-Schlüssel"
+            status={
+              !settings
+                ? "—"
+                : settings.status.mistral_credential_present
+                  ? "Gespeichert"
+                  : "Kein Schlüssel"
+            }
+            control={
+              <form
+                className="flex w-full items-center gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const secret = key;
+                  setKey("");
+                  void run({ action: "speech.settings.key", secret }).then((result) => {
+                    if (result?.status.mistral_credential_present)
+                      void run({ action: "speech.settings.voices" });
+                  });
+                }}
+              >
+                <input
+                  aria-label="Mistral-Schlüssel"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={key}
+                  maxLength={4096}
+                  className={controlClass + " w-full sm:w-64"}
+                  placeholder={
+                    !settings
+                      ? "—"
+                      : settings.status.mistral_credential_present
+                        ? "Schlüssel ersetzen"
+                        : "Schlüssel eingeben"
+                  }
+                  disabled={disabled}
+                  onChange={(event) => setKey(event.target.value)}
+                />
+                <Button type="submit" size="sm" disabled={disabled || key.trim().length === 0}>
+                  Speichern
+                </Button>
+              </form>
+            }
+          />
+          <SettingsRow
+            title="Vorlesen"
+            control={
+              <select
+                aria-label="Vorlesen"
+                className={controlClass + " w-full sm:w-64"}
+                value={config?.synthesis ?? ""}
+                disabled={disabled}
+                onChange={(event) =>
+                  config &&
+                  configure({
+                    ...config,
+                    synthesis: event.target.value === "mistral" ? "mistral" : "runtime",
+                  })
+                }
+              >
+                {!config && <option value="">{unloadedLabel}</option>}
+                <option value="runtime">Lokale Laufzeit</option>
+                <option value="mistral">Mistral API</option>
+                {config?.synthesis === "computer" && (
+                  <option value="computer">Sprach-Rechner</option>
+                )}
+              </select>
+            }
+          />
+          <SettingsRow
+            title="Transkription"
+            control={
+              <select
+                aria-label="Transkription"
+                className={controlClass + " w-full sm:w-64"}
+                value={config?.transcription ?? ""}
+                disabled={disabled}
+                onChange={(event) =>
+                  config &&
+                  configure({
+                    ...config,
+                    transcription: event.target.value === "mistral" ? "mistral" : "runtime",
+                  })
+                }
+              >
+                {!config && <option value="">{unloadedLabel}</option>}
+                <option value="runtime">Lokale Laufzeit</option>
+                <option value="mistral">Mistral API</option>
+                {config?.transcription === "computer" && (
+                  <option value="computer">Sprach-Rechner</option>
+                )}
+              </select>
+            }
+          />
+          <SettingsRow
+            title="Stimme"
+            control={
+              <div className="flex w-full items-center gap-2">
+                <select
+                  aria-label="Stimme"
+                  className={controlClass + " w-full sm:w-64"}
+                  value={config?.voice_id ?? ""}
+                  disabled={disabled || config?.synthesis !== "mistral"}
+                  onChange={(event) =>
+                    config && configure({ ...config, voice_id: event.target.value || null })
+                  }
+                >
+                  <option value="">{config ? "Stimme wählen" : unloadedLabel}</option>
+                  {config?.voice_id && !voices.some((voice) => voice.id === config.voice_id) && (
+                    <option value={config.voice_id}>Aktuelle Stimme</option>
+                  )}
+                  {voices.map((voice) => (
+                    <option key={voice.id} value={voice.id}>
+                      {voice.name || voice.id}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={disabled || !settings?.status.mistral_credential_present}
+                  onClick={() => void run({ action: "speech.settings.voices" })}
+                >
+                  Stimmen laden
+                </Button>
+              </div>
+            }
+          />
+          <SettingsRow
+            title="Sprechtempo"
+            control={
+              <div className="flex items-center gap-2">
+                <input
+                  aria-label="Sprechtempo"
+                  type="number"
+                  min={0.8}
+                  max={1.5}
+                  step={0.01}
+                  value={config ? rate : ""}
+                  placeholder="—"
+                  disabled={disabled}
+                  className={controlClass + " w-24 text-right tabular-nums"}
+                  onChange={(event) => setRate(event.target.value)}
+                  onBlur={() => {
+                    const value = Number(rate);
+                    if (!config) return;
+                    if (!Number.isFinite(value) || value < 0.8 || value > 1.5) {
+                      setRate(String(config.rate));
+                      setError("Sprechtempo: 0,8× bis 1,5×");
+                    } else if (value !== config.rate) configure({ ...config, rate: value });
+                  }}
+                />
+                <span className="text-sm text-muted-foreground">×</span>
+              </div>
+            }
+          />
+          <SettingsRow
+            title="Stimmtest"
+            status={
+              check?.state === "error"
+                ? (remedies[check.errorClass ?? ""] ?? "Test fehlgeschlagen")
+                : undefined
+            }
+            control={
               <Button
                 size="sm"
                 variant="outline"
-                disabled={
-                  disabled || config?.transcription !== "mistral" || config?.synthesis !== "mistral"
-                }
-                onClick={() => void run({ action: "speech.settings.check.transcription" })}
+                disabled={disabled || config?.synthesis !== "mistral"}
+                onClick={() => void run({ action: "speech.settings.check" })}
               >
-                Transkription testen
+                {pending ? "Prüft …" : "Stimme testen"}
               </Button>
-            </div>
-          }
-        >
-          {transcript && <p className="mt-2 text-sm">{transcript}</p>}
-        </SettingsRow>
-      </div>
+            }
+          >
+            {recording && (
+              <audio
+                ref={audio}
+                controls
+                src={recording}
+                className="mt-2 h-9 w-full"
+                onLoadedMetadata={(event) => {
+                  event.currentTarget.preservesPitch = true;
+                  event.currentTarget.playbackRate = config?.rate ?? 1.15;
+                }}
+              />
+            )}
+          </SettingsRow>
+          <SettingsRow
+            title="Transkriptionstest"
+            status={
+              !config
+                ? "Nicht geladen"
+                : sttCheck?.state === "error"
+                  ? (remedies[sttCheck.errorClass ?? ""] ?? "Test fehlgeschlagen")
+                  : undefined
+            }
+            control={
+              <div className="flex items-center gap-3">
+                <span
+                  role="status"
+                  className="flex items-center gap-1.5 text-xs"
+                  title={
+                    !config
+                      ? "Nicht geladen"
+                      : sttCheck
+                        ? "Geprüft " + sttCheck.checkedAt
+                        : "Noch nicht geprüft"
+                  }
+                >
+                  {sttPending ? (
+                    <CircleDashedIcon className="size-4 animate-spin text-muted-foreground" />
+                  ) : sttCheck?.state === "ok" ? (
+                    <CheckIcon className="size-4 text-emerald-500" />
+                  ) : sttCheck ? (
+                    <XIcon className="size-4 text-destructive" />
+                  ) : (
+                    <CircleDashedIcon className="size-4 text-muted-foreground" />
+                  )}
+                  {!config
+                    ? unloadedLabel
+                    : sttPending
+                      ? "Prüft …"
+                      : sttCheck?.state === "ok"
+                        ? sttCheck.latencyMs + " ms"
+                        : (sttCheck?.errorClass ?? "Nicht geprüft")}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    disabled ||
+                    config?.transcription !== "mistral" ||
+                    config?.synthesis !== "mistral"
+                  }
+                  onClick={() => void run({ action: "speech.settings.check.transcription" })}
+                >
+                  Transkription testen
+                </Button>
+              </div>
+            }
+          >
+            {transcript && <p className="mt-2 text-sm">{transcript}</p>}
+          </SettingsRow>
+        </div>
+      ) : null}
     </SettingsSection>
   );
 }

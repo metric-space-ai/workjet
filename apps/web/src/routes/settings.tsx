@@ -15,10 +15,13 @@ import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { useCtoxMode } from "../components/ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "../components/settings/settingsInstanceContext";
 import { Button } from "../components/ui/button";
+import { useClientSettings } from "../hooks/useSettings";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { closeOpenInlineExpand } from "~/components/ui/inline-expand";
+import { collapseExpandedSettingsRow } from "~/components/settings/settingsEscape";
 
 function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
@@ -70,8 +73,12 @@ function SettingsContentLayout() {
   const isInstanceManagement =
     location.pathname === "/settings/business-os" || location.pathname === "/settings/usage";
   const canShowSettings = isInstanceManagement || instanceContext.canEditInstanceSettings;
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  // „Standard wiederherstellen“ ist ein Entwicklerwerkzeug: nur im Entwicklermodus.
   const showRestoreDefaults =
-    location.pathname === "/settings/general" && instanceContext.canEditInstanceSettings;
+    developerMode &&
+    location.pathname === "/settings/general" &&
+    instanceContext.canEditInstanceSettings;
   const handleRestored = () => setRestoreSignal((value) => value + 1);
   const navigateBackWithinApp = useCallback(() => {
     if (canGoBack) {
@@ -99,6 +106,11 @@ function SettingsContentLayout() {
         if (document.querySelector("[data-settings-inline-editor]") !== null) {
           return;
         }
+
+        // Esc only collapses what is open (an expanded row, an inline editor);
+        // it never leaves Einstellungen while something is expanded.
+        if (closeOpenInlineExpand()) return;
+        if (collapseExpandedSettingsRow()) return;
 
         navigateBackWithinApp();
       }

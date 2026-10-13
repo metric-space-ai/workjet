@@ -1,5 +1,7 @@
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeTest from "node:test";
+import * as NodeURL from "node:url";
 
 import {
   FORBIDDEN_TERMS,
@@ -18,6 +20,42 @@ NodeTest.test("the current Workjet product surfaces pass the vocabulary guard", 
   NodeAssert.deepEqual(result.forbiddenTerms, FORBIDDEN_TERMS);
   NodeAssert.deepEqual(result.productTerms, PRODUCT_TERMS);
 });
+
+NodeTest.test(
+  "the meeting room carries no operation-identity jargon or English status copy, and no banners",
+  async () => {
+    const roomFiles = [
+      "apps/web/src/components/NativeJourFixeRoom.tsx",
+      "apps/web/src/components/JourFixeRoom.tsx",
+      "apps/web/src/components/JourFixeSpeechRoom.tsx",
+      "apps/web/src/components/JourFixePlayer.tsx",
+      "apps/web/src/lib/jourFixeNative.ts",
+    ];
+    const englishStatusCopy =
+      /operation identity|has not been confirmed|still catching up|waiting for retry|Earlier deck|Retry preserves/iu;
+    const read = (file) =>
+      NodeFSP.readFile(NodeURL.fileURLToPath(new URL(`../${file}`, import.meta.url)), "utf8");
+    for (const file of roomFiles) {
+      NodeAssert.doesNotMatch(
+        await read(file),
+        englishStatusCopy,
+        `${file} must word every room state in German`,
+      );
+    }
+    // Die Raum-Hüllen rendern ihre Zustände am Bereich; eine Kopfleiste über dem
+    // Raum (role="alert" in der Hülle) ist verboten.
+    for (const file of [
+      "apps/web/src/components/NativeJourFixeRoom.tsx",
+      "apps/web/src/components/JourFixeSpeechRoom.tsx",
+    ]) {
+      NodeAssert.doesNotMatch(
+        await read(file),
+        /role="alert"/u,
+        `${file} must not stack an alert bar above the room`,
+      );
+    }
+  },
+);
 
 NodeTest.test("visible JSX, labels, and ARIA copy are rejected outside diagnostics", () => {
   const findings = auditSourceText(

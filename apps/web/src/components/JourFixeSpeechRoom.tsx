@@ -7,7 +7,6 @@ import {
 } from "../lib/jourFixeSpeech";
 import { JourFixeReadError } from "../lib/jourFixeReadRetry";
 import type { JourFixePartialTranscript } from "../lib/jourFixeRoom";
-import { Button } from "./ui/button";
 
 /** Sichtbarer Ton-Zustand: die Bibliothek meldet nur Fehlercodes, der Raum formuliert. */
 interface SpeechErrorView {
@@ -23,6 +22,16 @@ interface SpeechErrorView {
 export function jourFixeSpeechErrorView(error: Error): SpeechErrorView {
   if (error instanceof JourFixeReadError) return { text: "Ton nicht verfügbar", canRetry: true };
   return { text: error.message, canRetry: false };
+}
+
+/** Eine deutsche Zeile am Eingabefeld, wenn das Diktat nicht startet oder abbricht. */
+export function jourFixeMicrophoneErrorLine(error: Error): string {
+  const message = error.message.toLowerCase();
+  if (/denied|permission|notallowed|freigabe/.test(message))
+    return "Keine Mikrofon-Freigabe – bitte Zugriff erlauben.";
+  if (/unavailable|unsupported|transport|nicht verfügbar|not found|no microphone/.test(message))
+    return "Spracheingabe derzeit nicht verfügbar.";
+  return error.message;
 }
 
 type Props = JourFixeRoomProps & {
@@ -56,6 +65,8 @@ function SpeechRoom({
     provider.kind,
   ]);
   const session = useRef<JourFixeSpeechSession | null>(null);
+  const micRequested = useRef(false);
+  const currentMicrophone = useRef(false);
   const refresh = useRef(props.onRefresh);
   useEffect(() => {
     refresh.current = props.onRefresh;
@@ -64,6 +75,7 @@ function SpeechRoom({
     key: string;
     provider?: JourFixeSpeechProvider;
     microphone?: boolean;
+    micError?: string | undefined;
     partial?: JourFixePartialTranscript | undefined;
     audio?: JourFixeSpeechAudio | undefined;
     error?: SpeechErrorView | undefined;
@@ -74,6 +86,8 @@ function SpeechRoom({
     : [...meeting.slides].sort((a, b) => a.position - b.position)[0]?.id;
   useEffect(() => {
     let active = true;
+    micRequested.current = false;
+    currentMicrophone.current = false;
     function change(patch: Partial<Omit<typeof speech, "key">>) {
       if (active)
         setSpeech((current) => ({
@@ -92,8 +106,14 @@ function SpeechRoom({
         deckRevision: meeting.deckRevision,
       },
       {
-        onMicrophone: (microphone) =>
-          change({ microphone, ...(microphone ? { error: undefined } : {}) }),
+        onMicrophone: (microphone) => {
+          currentMicrophone.current = microphone;
+          if (microphone) micRequested.current = false;
+          change({
+            microphone,
+            ...(microphone ? { error: undefined, micError: undefined } : {}),
+          });
+        },
         onPartial: (partial) => change({ partial }),
         onAudio: (audio) => change({ audio }),
         onCommitted: () => {
@@ -103,7 +123,16 @@ function SpeechRoom({
               change({ error: { text: "Transkript nicht aktualisiert", canRetry: false } }),
             );
         },
-        onError: (error) => change({ error: jourFixeSpeechErrorView(error) }),
+        onError: (error) => {
+          // Fehler während einer Mikrofon-Anfrage oder Aufnahme gehören ans
+          // Eingabefeld, nicht an den Player.
+          if (micRequested.current || currentMicrophone.current) {
+            micRequested.current = false;
+            change({ microphone: false, micError: jourFixeMicrophoneErrorLine(error) });
+          } else {
+            change({ error: jourFixeSpeechErrorView(error) });
+          }
+        },
       },
     );
     session.current = value;
@@ -119,56 +148,47 @@ function SpeechRoom({
   }, [provider, scopeKey, slideId, meeting.state]);
   const current = speech.key === scopeKey && speech.provider === provider ? speech : undefined;
   // Solange die Bibliothek den Ton (mit Wiederholungen) liest, steht ein ruhiger
-  // Ladezustand; die rote Zeile kommt erst nach dem endgültigen Fehlschlag.
+  // Ladezustand am Player; die Fehlerzeile kommt erst nach dem endgültigen Fehlschlag.
   const narrationExpected =
     slideId !== undefined && ["ready", "live", "review"].includes(meeting.state);
   const audioCurrent =
     current?.audio !== undefined && slideId !== undefined && current.audio.slideId === slideId;
+  const retryNarration = () => {
+    const id = slideId;
+    if (!id) return;
+    setSpeech((state) => ({ ...state, error: undefined }));
+    void session.current?.prepareNarration(id);
+  };
+  const narrationStatus = current?.error
+    ? {
+        state: "failed" as const,
+        text: current.error.text,
+        ...(current.error.canRetry && slideId ? { onRetry: retryNarration } : {}),
+      }
+    : narrationExpected && !audioCurrent
+      ? { state: "loading" as const, text: "Ton wird geladen …" }
+      : undefined;
   return (
-    <>
-      {current?.error ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-3 border-b border-destructive/30 px-4 py-2 text-sm text-destructive"
-          data-workjet-narration-state="failed"
-        >
-          <span className="min-w-0 flex-1">{current.error.text}</span>
-          {current.error.canRetry && slideId ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const id = slideId;
-                setSpeech((state) => ({ ...state, error: undefined }));
-                void session.current?.prepareNarration(id);
-              }}
-            >
-              Erneut laden
-            </Button>
-          ) : null}
-        </div>
-      ) : narrationExpected && !audioCurrent ? (
-        <p
-          role="status"
-          className="border-b border-border px-4 py-2 text-xs text-muted-foreground"
-          data-workjet-narration-state="loading"
-        >
-          Ton wird geladen …
-        </p>
-      ) : null}
-      <JourFixeRoom
-        {...props}
-        {...(current?.audio ? { audio: current.audio } : {})}
-        partialTranscript={current?.partial}
-        microphoneActive={current?.microphone === true}
-        {...(meeting.state === "live" && provider.microphoneAvailable !== false
-          ? { onToggleMicrophone: () => void session.current?.toggleMicrophone() }
-          : {})}
-        onSlideChange={(id) => {
-          setSelectedSlide(id);
-          props.onSlideChange?.(id);
-        }}
-      />
-    </>
+    <JourFixeRoom
+      {...props}
+      {...(narrationStatus ? { narrationStatus } : {})}
+      {...(current?.audio ? { audio: current.audio } : {})}
+      partialTranscript={current?.partial}
+      microphoneActive={current?.microphone === true}
+      {...(current?.micError ? { microphoneError: current.micError } : {})}
+      {...(meeting.state === "live" && provider.microphoneAvailable !== false
+        ? {
+            onToggleMicrophone: () => {
+              micRequested.current = currentMicrophone.current !== true;
+              setSpeech((state) => ({ ...state, micError: undefined }));
+              void session.current?.toggleMicrophone();
+            },
+          }
+        : {})}
+      onSlideChange={(id) => {
+        setSelectedSlide(id);
+        props.onSlideChange?.(id);
+      }}
+    />
   );
 }

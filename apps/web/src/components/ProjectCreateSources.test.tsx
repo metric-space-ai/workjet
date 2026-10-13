@@ -15,6 +15,7 @@ import {
   buildProjectComputerOptions,
   cloneProjectRepository,
   deriveRepositoryFolderName,
+  findDuplicateProjectForName,
   joinCloneDestination,
   knownCloneTargetFolders,
   pickProjectFolder,
@@ -302,5 +303,28 @@ describe("Rechner und fehlende Voraussetzungen", () => {
     expect(html).toContain("Keine Instanz verbunden");
     expect(html).toContain("Einstellungen › Instanzen");
     expect(html).toContain("<button");
+  });
+});
+
+describe("onboarding duplicates and names", () => {
+  it("does not derive a name from a bare scheme or host", () => {
+    expect(deriveRepositoryFolderName("https")).toBe("");
+    expect(deriveRepositoryFolderName("https://")).toBe("");
+    expect(deriveRepositoryFolderName("https://github.com")).toBe("");
+    expect(deriveRepositoryFolderName("https://github.com/metric-space-ai/Metric.git")).toBe(
+      "Metric",
+    );
+    expect(deriveRepositoryFolderName("git@github.com:metric-space-ai/metric.git")).toBe("metric");
+    expect(deriveRepositoryFolderName("metric-space-ai/metric")).toBe("metric");
+  });
+
+  it("finds the existing project case-insensitively by title or folder", () => {
+    const projects = [
+      { title: "Metric", workspaceRoot: "/home/box/Metric" },
+      { title: "Light Gun Heroes", workspaceRoot: "/home/box/vcop2-test" },
+    ];
+    expect(findDuplicateProjectForName(projects, "metric")?.title).toBe("Metric");
+    expect(findDuplicateProjectForName(projects, "vcop2-test")?.title).toBe("Light Gun Heroes");
+    expect(findDuplicateProjectForName(projects, "other")).toBeUndefined();
   });
 });

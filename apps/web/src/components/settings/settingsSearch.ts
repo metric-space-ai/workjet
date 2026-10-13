@@ -2,7 +2,6 @@ export type SettingsPath =
   | "/settings/business-os"
   | "/settings/general"
   | "/settings/appearance"
-  | "/settings/keybindings"
   | "/settings/harnesses"
   | "/settings/models"
   | "/settings/speech"
@@ -30,10 +29,9 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/business-os": "Instanzen",
   "/settings/general": "Allgemein",
   "/settings/appearance": "Darstellung",
-  "/settings/keybindings": "Tastenkürzel",
   "/settings/harnesses": "Harnesses",
   "/settings/models": "Modelle",
-  "/settings/speech": "Sprache",
+  "/settings/speech": "Sprachausgabe",
   "/settings/computers": "Rechner",
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
@@ -201,6 +199,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "developer-mode",
+    title: "Entwicklermodus",
+    to: "/settings/general",
+    searchAliases: ["developer", "entwickler"],
+  },
+  {
     id: "legacy-plan-mode",
     title: "Plan-Modus",
     to: "/settings/general",
@@ -288,8 +292,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "greppy-runtime",
-    title: "Greppy-Laufzeit",
+    title: "Code-Suche",
     to: "/settings/workjet",
+    searchAliases: ["greppy", "greppy-laufzeit"],
   },
   {
     id: "archive",
@@ -333,14 +338,12 @@ function normalizeSearchText(value: string): string {
  */
 const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
   Object.entries(SETTINGS_SECTION_LABELS) as ReadonlyArray<[SettingsPath, string]>
-)
-  .filter(([path]) => path !== "/settings/keybindings")
-  .map(([path, label]) => ({
-    id: path,
-    title: label,
-    to: path,
-    searchAliases: SETTINGS_SECTION_SEARCH_ALIASES[path] ?? [],
-  }));
+).map(([path, label]) => ({
+  id: path,
+  title: label,
+  to: path,
+  searchAliases: SETTINGS_SECTION_SEARCH_ALIASES[path] ?? [],
+}));
 
 export function searchSettings(
   query: string,
@@ -349,12 +352,10 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  const matches = items.filter(
-    (item) =>
-      item.to !== "/settings/keybindings" &&
-      [item.title, ...(item.searchAliases ?? [])].some((label) =>
-        normalizeSearchText(label).includes(normalizedQuery),
-      ),
+  const matches = items.filter((item) =>
+    [item.title, ...(item.searchAliases ?? [])].some((label) =>
+      normalizeSearchText(label).includes(normalizedQuery),
+    ),
   );
   // Page results lead, minus pages an equally titled item already represents
   // (e.g. the "Computers" catalog entry that lands on /settings/computers).

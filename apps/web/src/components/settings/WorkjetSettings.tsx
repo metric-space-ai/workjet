@@ -948,7 +948,7 @@ export function WorkjetSettingsView({
             graph={configuration.workerGraph}
             onChange={(workerGraph) => onChange({ ...configuration, workerGraph })}
             // Bearbeiten bleibt im Organigramm: der Editor klappt direkt
-            // darunter auf, kein Wechsel in die Lumas-Liste.
+            // am angeklickten Knoten auf, kein Wechsel in die Lumas-Liste.
             onAddWorker={(parentId) => {
               setPendingWorkerParentId(parentId);
               setEditingWorkerId(null);
@@ -969,19 +969,18 @@ export function WorkjetSettingsView({
                 workerGraph: sanitizeWorkjetWorkerGraph(configuration.workerGraph, workerProfiles),
               });
             }}
-          />
-          <InlineExpand
-            label={editingWorker?.name ?? "Luma hinzufügen"}
-            open={editingWorker !== null || addingWorker}
-            onOpenChange={(open) => {
-              if (open) return;
-              setAddingWorker(false);
-              setEditingWorkerId(null);
-              setPendingWorkerParentId(null);
+            editor={{
+              open: editingWorker !== null || addingWorker,
+              anchorWorkerId: editingWorker?.id ?? pendingWorkerParentId,
+              label: editingWorker?.name ?? "Luma hinzufügen",
+              content: editingWorker !== null || addingWorker ? workerEditor : null,
+              onClose: () => {
+                setAddingWorker(false);
+                setEditingWorkerId(null);
+                setPendingWorkerParentId(null);
+              },
             }}
-          >
-            {editingWorker !== null || addingWorker ? workerEditor : null}
-          </InlineExpand>
+          />
         </div>
       ) : null}
 
@@ -1355,7 +1354,9 @@ export function WorkjetSettings({
         ) : (
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>{noInstance ? "Keine Instanz" : "Instanz nicht verbunden"}</EmptyTitle>
+              <EmptyTitle>
+                {noInstance ? "Keine Instanz" : "Lumas der Instanz nicht abrufbar"}
+              </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
               {noInstance ? (

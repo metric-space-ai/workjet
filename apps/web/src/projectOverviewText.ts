@@ -1,7 +1,7 @@
 export type ProjectOverviewLanguage = "de" | "en";
 export const SUPPORTED_UI_LANGUAGES: readonly ProjectOverviewLanguage[] = ["de", "en"];
 /** Fallback when the OS/browser asks for a language Workjet does not ship yet. */
-export const FALLBACK_UI_LANGUAGE: ProjectOverviewLanguage = "en";
+export const FALLBACK_UI_LANGUAGE: ProjectOverviewLanguage = "de";
 
 /** Maps a BCP 47 tag ("de-AT", "en_US") to a supported UI language, or null. */
 export function matchSupportedUiLanguage(tag: string | null | undefined) {
@@ -10,22 +10,15 @@ export function matchSupportedUiLanguage(tag: string | null | undefined) {
 }
 
 /**
- * Resolves the UI language. An explicit setting wins; "system" walks the OS /
- * browser preference list (most preferred first) and picks the first language
- * Workjet supports, falling back to English.
+ * Resolves the UI language. Only an explicit "en" switches to English; every
+ * other value, including the retired "system" preference, means German (#567).
+ * The OS language no longer decides, so the UI never ends up half English.
  */
 export function projectOverviewLanguage(
-  preference: string = "system",
-  systemLanguages: string | readonly string[] = [],
+  preference: string = "de",
+  _systemLanguages: string | readonly string[] = [],
 ): ProjectOverviewLanguage {
-  const explicit = preference === "system" ? null : matchSupportedUiLanguage(preference);
-  if (explicit) return explicit;
-  const candidates = typeof systemLanguages === "string" ? [systemLanguages] : systemLanguages;
-  for (const candidate of candidates) {
-    const match = matchSupportedUiLanguage(candidate);
-    if (match) return match;
-  }
-  return FALLBACK_UI_LANGUAGE;
+  return matchSupportedUiLanguage(preference) ?? FALLBACK_UI_LANGUAGE;
 }
 
 /** OS languages from the desktop bridge, else the browser's preference list. */

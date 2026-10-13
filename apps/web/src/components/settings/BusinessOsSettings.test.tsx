@@ -18,6 +18,7 @@ import {
   formatInviteValidity,
   manualConnectionCredentialText,
   resolveActiveBusinessOsInstanceId,
+  networkInstancesForSelection,
   visibleBusinessOsInstances,
 } from "./BusinessOsSettings";
 import { businessOsDeviceControlErrorMessage } from "./businessOsDeviceControl";
@@ -119,7 +120,7 @@ describe("Business OS settings scope", () => {
         addPanel={<span data-testid="add-panel">Instanz hinzufügen</span>}
       />,
     );
-    expect(markup).toContain("Keine Instanz verbunden");
+    expect(markup).toContain("Keine CTOX-Instanz verbunden");
     expect(markup).toContain('data-testid="add-panel"');
     expect(markup).not.toContain("Gerät hinzufügen");
     expect(markup).not.toContain("environment-alpha");
@@ -138,7 +139,7 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("Instanzen nicht erreichbar");
     expect(markup).toContain("Erneut versuchen");
-    expect(markup).not.toContain("Keine Instanz verbunden");
+    expect(markup).not.toContain("Keine CTOX-Instanz verbunden");
   });
 
   it("is one page: no settings grid that duplicates the sidebar, no English captions", () => {
@@ -285,5 +286,14 @@ describe("Business OS settings scope", () => {
   it("keeps the manual browser credential masked until the user explicitly reveals it", () => {
     expect(manualConnectionCredentialText("browser-token", false)).toBe("••••••••••••");
     expect(manualConnectionCredentialText("browser-token", true)).toBe("browser-token");
+  });
+});
+
+describe("networkInstancesForSelection", () => {
+  it("shows only the selected instance's network", () => {
+    const instances = [{ id: "miltonticket" }, { id: "welsch" }];
+    expect(networkInstancesForSelection(instances, "welsch")).toEqual([{ id: "welsch" }]);
+    expect(networkInstancesForSelection(instances, null)).toEqual(instances);
+    expect(networkInstancesForSelection(instances, "gone")).toEqual(instances);
   });
 });

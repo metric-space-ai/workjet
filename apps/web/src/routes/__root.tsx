@@ -1,4 +1,5 @@
 import { type ServerLifecycleWelcomePayload } from "@workjet/contracts";
+import { installPrivacyMode } from "../privacyMode";
 import { scopedProjectKey, scopeProjectRef } from "@workjet/client-runtime/environment";
 import {
   Outlet,
@@ -205,6 +206,12 @@ function DocumentTitleSync() {
   useEffect(() => {
     document.title = APP_DISPLAY_NAME;
   }, []);
+  // Privacy mode (#526): stored flag, Cmd/Ctrl+Shift+B. The window title is
+  // always the app name, so it never names a project.
+  useEffect(
+    () => installPrivacyMode(typeof navigator !== "undefined" && /mac/i.test(navigator.platform)),
+    [],
+  );
 
   return null;
 }

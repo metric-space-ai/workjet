@@ -177,7 +177,7 @@ describe("computer dropdown entries", () => {
       onSelectComputer: () => undefined,
       onAddComputer,
     });
-    expect(textOf(tree)).toContain("Rechner verwalten");
+    expect(textOf(tree)).toContain("Rechner hinzufügen");
     const manage = flatten(tree).find((element) => element.props.onClick === onAddComputer);
     (manage!.props.onClick as () => void)();
     expect(onAddComputer).toHaveBeenCalledOnce();

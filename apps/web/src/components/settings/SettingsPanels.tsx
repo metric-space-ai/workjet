@@ -1,5 +1,5 @@
+import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
-import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,7 +9,6 @@ import {
   type DesktopUpdateChannel,
   ProviderDriverKind,
   type ScopedThreadRef,
-  type SidebarProjectGroupingMode,
 } from "@workjet/contracts";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import {
@@ -112,10 +111,6 @@ import { ThemeLibrary } from "./ThemeSettings";
 import {
   getChangedTypographySettingLabels,
   hasChangedBackgroundActivitySettings,
-  isProjectGroupingEnabled,
-  projectGroupingModeFromToggle,
-  readLastEnabledProjectGroupingMode,
-  rememberEnabledProjectGroupingMode,
   resolveBackgroundActivityProfileOption,
 } from "./SettingsPanels.logic";
 import {
@@ -135,27 +130,8 @@ const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, s
 };
 
 const INTERFACE_LANGUAGE_LABELS = {
-  system: "System",
   de: "Deutsch",
   en: "English",
-} as const;
-
-/** Wochenbeginn texts per UI language; new languages add an entry. */
-const CALENDAR_WEEK_START_TEXT = {
-  de: {
-    title: "Wochenbeginn",
-    labels: { locale: "Automatisch", monday: "Montag", sunday: "Sonntag" },
-  },
-  en: {
-    title: "Week starts on",
-    labels: { locale: "Automatic", monday: "Monday", sunday: "Sunday" },
-  },
-} as const;
-
-const TIMESTAMP_FORMAT_LABELS = {
-  locale: "System",
-  "12-hour": "12 Stunden",
-  "24-hour": "24 Stunden",
 } as const;
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
@@ -1398,13 +1374,10 @@ function LegacyFeaturesSection() {
 }
 
 export function GeneralSettingsPanel() {
-  const weekStartText = CALENDAR_WEEK_START_TEXT[useProjectOverviewLanguage()];
+  const t = useUiText();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
-  const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
-    readLastEnabledProjectGroupingMode(),
-  );
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
@@ -1442,20 +1415,21 @@ export function GeneralSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection title="Allgemein">
         <SettingsRow
-          title="Projektsprache"
+          title="Sprache"
           control={
             <Select
-              value={settings.interfaceLanguage}
+              value={settings.interfaceLanguage === "en" ? "en" : "de"}
               onValueChange={(value) => {
-                if (value === "system" || value === "de" || value === "en")
+                if (value === "de" || value === "en")
                   updateClientSettings({ interfaceLanguage: value });
               }}
             >
-              <SelectTrigger aria-label="Projektsprache" className="w-40">
-                <SelectValue>{INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage]}</SelectValue>
+              <SelectTrigger aria-label="Sprache" className="w-40">
+                <SelectValue>
+                  {INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage === "en" ? "en" : "de"]}
+                </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="system">System</SelectItem>
                 <SelectItem value="de">Deutsch</SelectItem>
                 <SelectItem value="en">English</SelectItem>
               </SelectPopup>
@@ -1472,358 +1446,6 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          {...searchableSetting("project-grouping")}
-          resetAction={
-            settings.sidebarProjectGroupingMode !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode ? (
-              <SettingResetButton
-                label="Projekte gruppieren"
-                onClick={() =>
-                  updateSettings({
-                    sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={isProjectGroupingEnabled(settings.sidebarProjectGroupingMode)}
-              onCheckedChange={(checked) => {
-                if (!checked && settings.sidebarProjectGroupingMode !== "separate") {
-                  lastEnabledProjectGroupingMode.current = settings.sidebarProjectGroupingMode;
-                  rememberEnabledProjectGroupingMode(settings.sidebarProjectGroupingMode);
-                }
-                updateSettings({
-                  sidebarProjectGroupingMode: projectGroupingModeFromToggle(
-                    checked,
-                    lastEnabledProjectGroupingMode.current,
-                  ),
-                });
-              }}
-              aria-label="Projekte gruppieren"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("auto-settle-merged-threads")}
-          resetAction={
-            settings.sidebarAutoSettleOnMerge !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge ? (
-              <SettingResetButton
-                label="Zusammengeführte ablegen"
-                onClick={() =>
-                  updateSettings({
-                    sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.sidebarAutoSettleOnMerge}
-              onCheckedChange={(checked) =>
-                updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
-              }
-              aria-label="Zusammengeführte ablegen"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("auto-settle-inactive-threads")}
-          resetAction={
-            settings.sidebarAutoSettleAfterDays !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
-              <SettingResetButton
-                label="Inaktive ablegen"
-                onClick={() =>
-                  updateSettings({
-                    sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.sidebarAutoSettleAfterDays !== null}
-              onCheckedChange={(checked) =>
-                updateSettings({
-                  sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
-                })
-              }
-              aria-label="Inaktive ablegen"
-            />
-          }
-        />
-        {settings.sidebarAutoSettleAfterDays !== null ? (
-          <SettingsRow
-            title="Tage ohne Aktivität"
-            control={
-              <AutoSettleDaysInput
-                value={settings.sidebarAutoSettleAfterDays}
-                onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
-              />
-            }
-          />
-        ) : null}
-
-        <SettingsRow
-          {...searchableSetting("time-format")}
-          resetAction={
-            settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
-              <SettingResetButton
-                label="Zeitformat"
-                onClick={() =>
-                  updateSettings({
-                    timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.timestampFormat}
-              onValueChange={(value) => {
-                if (value === "locale" || value === "12-hour" || value === "24-hour") {
-                  updateSettings({ timestampFormat: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Zeitformat">
-                <SelectValue>{TIMESTAMP_FORMAT_LABELS[settings.timestampFormat]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {TIMESTAMP_FORMAT_LABELS.locale}
-                </SelectItem>
-                <SelectItem hideIndicator value="12-hour">
-                  {TIMESTAMP_FORMAT_LABELS["12-hour"]}
-                </SelectItem>
-                <SelectItem hideIndicator value="24-hour">
-                  {TIMESTAMP_FORMAT_LABELS["24-hour"]}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("calendar-week-start")}
-          title={weekStartText.title}
-          resetAction={
-            settings.calendarWeekStart !== DEFAULT_UNIFIED_SETTINGS.calendarWeekStart ? (
-              <SettingResetButton
-                label={weekStartText.title}
-                onClick={() =>
-                  updateSettings({
-                    calendarWeekStart: DEFAULT_UNIFIED_SETTINGS.calendarWeekStart,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.calendarWeekStart}
-              onValueChange={(value) => {
-                if (value === "locale" || value === "monday" || value === "sunday") {
-                  updateSettings({ calendarWeekStart: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label={weekStartText.title}>
-                <SelectValue>{weekStartText.labels[settings.calendarWeekStart]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {weekStartText.labels.locale}
-                </SelectItem>
-                <SelectItem hideIndicator value="monday">
-                  {weekStartText.labels.monday}
-                </SelectItem>
-                <SelectItem hideIndicator value="sunday">
-                  {weekStartText.labels.sunday}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("hide-whitespace-changes")}
-          resetAction={
-            settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace ? (
-              <SettingResetButton
-                label="Leerraum ausblenden"
-                onClick={() =>
-                  updateSettings({
-                    diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.diffIgnoreWhitespace}
-              onCheckedChange={(checked) =>
-                updateSettings({ diffIgnoreWhitespace: Boolean(checked) })
-              }
-              aria-label="Leerraum ausblenden"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("provider-update-checks")}
-          resetAction={
-            settings.enableProviderUpdateChecks !==
-            DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
-              <SettingResetButton
-                label="Update-Prüfung"
-                onClick={() =>
-                  updateSettings({
-                    enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.enableProviderUpdateChecks}
-              onCheckedChange={(checked) =>
-                updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
-              }
-              aria-label="Update-Prüfung"
-            />
-          }
-        />
-
-        <SettingsRow
-          title="Hintergrundaktivität"
-          resetAction={
-            canResetBackgroundActivity ? (
-              <SettingResetButton
-                label="Hintergrundaktivität"
-                onClick={() => updateSettings(resetBackgroundActivitySettings())}
-              />
-            ) : null
-          }
-          control={
-            <>
-              <Select
-                value={backgroundActivityProfile}
-                onValueChange={(value) => {
-                  if (
-                    value === "balanced" ||
-                    value === "performance" ||
-                    value === "battery-saver"
-                  ) {
-                    updateSettings(backgroundActivityProfileSettings(value));
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-40" aria-label="Hintergrundaktivität">
-                  <SelectValue>
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS[backgroundActivityProfile]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="balanced">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="performance">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="battery-saver">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            </>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("new-threads")}
-          resetAction={
-            settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode ||
-            settings.newWorktreesStartFromOrigin !==
-              DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
-              <SettingResetButton
-                label="Neue Unterhaltungen"
-                onClick={() =>
-                  updateSettings({
-                    defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
-                    newWorktreesStartFromOrigin:
-                      DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.defaultThreadEnvMode}
-              onValueChange={(value) => {
-                if (value === "local" || value === "worktree") {
-                  updateSettings({ defaultThreadEnvMode: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-44" aria-label="Neue Unterhaltungen">
-                <SelectValue>
-                  {settings.defaultThreadEnvMode === "worktree" ? "Neue Arbeitskopie" : "Lokal"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="local">
-                  Lokal
-                </SelectItem>
-                <SelectItem hideIndicator value="worktree">
-                  Neue Arbeitskopie
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        {settings.defaultThreadEnvMode === "worktree" ? (
-          <SettingsRow
-            className="bg-muted/20 sm:pl-9"
-            title={searchableSetting("start-from-origin").title}
-            resetAction={
-              settings.newWorktreesStartFromOrigin !==
-              DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
-                <SettingResetButton
-                  label={searchableSetting("start-from-origin").title}
-                  onClick={() =>
-                    updateSettings({
-                      newWorktreesStartFromOrigin:
-                        DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.newWorktreesStartFromOrigin}
-                onCheckedChange={(checked) =>
-                  updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
-                }
-                aria-label={searchableSetting("start-from-origin").title}
-              />
-            }
-          />
-        ) : null}
 
         <SettingsRow
           {...searchableSetting("add-project-starts-in")}
@@ -1851,57 +1473,6 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-
-        <SettingsRow
-          {...searchableSetting("archive-confirmation")}
-          resetAction={
-            settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
-              <SettingResetButton
-                label="Archivieren bestätigen"
-                onClick={() =>
-                  updateSettings({
-                    confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.confirmThreadArchive}
-              onCheckedChange={(checked) =>
-                updateSettings({ confirmThreadArchive: Boolean(checked) })
-              }
-              aria-label="Archivieren bestätigen"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("delete-confirmation")}
-          resetAction={
-            settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
-              <SettingResetButton
-                label="Löschen bestätigen"
-                onClick={() =>
-                  updateSettings({
-                    confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.confirmThreadDelete}
-              onCheckedChange={(checked) =>
-                updateSettings({ confirmThreadDelete: Boolean(checked) })
-              }
-              aria-label="Löschen bestätigen"
-            />
-          }
-        />
-
         <SettingsRow
           {...searchableSetting("text-generation-model")}
           resetAction={
@@ -1974,7 +1545,316 @@ export function GeneralSettingsPanel() {
             </div>
           }
         />
+
+        <SettingsRow
+          {...searchableSetting("developer-mode")}
+          control={
+            <Switch
+              checked={settings.developerMode}
+              onCheckedChange={(checked) =>
+                updateClientSettings({ developerMode: Boolean(checked) })
+              }
+              aria-label={searchableSetting("developer-mode").title}
+            />
+          }
+        />
       </SettingsSection>
+
+      {settings.developerMode ? (
+        <>
+          <SettingsSection title="Entwickler">
+            <SettingsRow
+              title={t("Hintergrundaktivität", "Background activity")}
+              resetAction={
+                canResetBackgroundActivity ? (
+                  <SettingResetButton
+                    label={t("Hintergrundaktivität", "Background activity")}
+                    onClick={() => updateSettings(resetBackgroundActivitySettings())}
+                  />
+                ) : null
+              }
+              control={
+                <>
+                  <Select
+                    value={backgroundActivityProfile}
+                    onValueChange={(value) => {
+                      if (
+                        value === "balanced" ||
+                        value === "performance" ||
+                        value === "battery-saver"
+                      ) {
+                        updateSettings(backgroundActivityProfileSettings(value));
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      className="w-full sm:w-40"
+                      aria-label={t("Hintergrundaktivität", "Background activity")}
+                    >
+                      <SelectValue>
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS[backgroundActivityProfile]}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      <SelectItem hideIndicator value="balanced">
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
+                      </SelectItem>
+                      <SelectItem hideIndicator value="performance">
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
+                      </SelectItem>
+                      <SelectItem hideIndicator value="battery-saver">
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
+                      </SelectItem>
+                    </SelectPopup>
+                  </Select>
+                </>
+              }
+            />
+            <SettingsRow
+              {...searchableSetting("auto-settle-merged-threads")}
+              resetAction={
+                settings.sidebarAutoSettleOnMerge !==
+                DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge ? (
+                  <SettingResetButton
+                    label="Zusammengeführte ablegen"
+                    onClick={() =>
+                      updateSettings({
+                        sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.sidebarAutoSettleOnMerge}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
+                  }
+                  aria-label="Zusammengeführte ablegen"
+                />
+              }
+            />
+
+            <SettingsRow
+              {...searchableSetting("auto-settle-inactive-threads")}
+              resetAction={
+                settings.sidebarAutoSettleAfterDays !==
+                DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
+                  <SettingResetButton
+                    label="Inaktive ablegen"
+                    onClick={() =>
+                      updateSettings({
+                        sidebarAutoSettleAfterDays:
+                          DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.sidebarAutoSettleAfterDays !== null}
+                  onCheckedChange={(checked) =>
+                    updateSettings({
+                      sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
+                    })
+                  }
+                  aria-label="Inaktive ablegen"
+                />
+              }
+            />
+            {settings.sidebarAutoSettleAfterDays !== null ? (
+              <SettingsRow
+                title="Tage ohne Aktivität"
+                control={
+                  <AutoSettleDaysInput
+                    value={settings.sidebarAutoSettleAfterDays}
+                    onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
+                  />
+                }
+              />
+            ) : null}
+
+            <SettingsRow
+              {...searchableSetting("hide-whitespace-changes")}
+              resetAction={
+                settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace ? (
+                  <SettingResetButton
+                    label="Leerraum ausblenden"
+                    onClick={() =>
+                      updateSettings({
+                        diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.diffIgnoreWhitespace}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ diffIgnoreWhitespace: Boolean(checked) })
+                  }
+                  aria-label="Leerraum ausblenden"
+                />
+              }
+            />
+
+            <SettingsRow
+              {...searchableSetting("provider-update-checks")}
+              resetAction={
+                settings.enableProviderUpdateChecks !==
+                DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (
+                  <SettingResetButton
+                    label="Update-Prüfung"
+                    onClick={() =>
+                      updateSettings({
+                        enableProviderUpdateChecks:
+                          DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.enableProviderUpdateChecks}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
+                  }
+                  aria-label="Update-Prüfung"
+                />
+              }
+            />
+
+            <SettingsRow
+              {...searchableSetting("new-threads")}
+              resetAction={
+                settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode ||
+                settings.newWorktreesStartFromOrigin !==
+                  DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
+                  <SettingResetButton
+                    label="Neue Unterhaltungen"
+                    onClick={() =>
+                      updateSettings({
+                        defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
+                        newWorktreesStartFromOrigin:
+                          DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Select
+                  value={settings.defaultThreadEnvMode}
+                  onValueChange={(value) => {
+                    if (value === "local" || value === "worktree") {
+                      updateSettings({ defaultThreadEnvMode: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full sm:w-44" aria-label="Neue Unterhaltungen">
+                    <SelectValue>
+                      {settings.defaultThreadEnvMode === "worktree" ? "Neue Arbeitskopie" : "Lokal"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem hideIndicator value="local">
+                      Lokal
+                    </SelectItem>
+                    <SelectItem hideIndicator value="worktree">
+                      Neue Arbeitskopie
+                    </SelectItem>
+                  </SelectPopup>
+                </Select>
+              }
+            />
+
+            {settings.defaultThreadEnvMode === "worktree" ? (
+              <SettingsRow
+                className="bg-muted/20 sm:pl-9"
+                title={searchableSetting("start-from-origin").title}
+                resetAction={
+                  settings.newWorktreesStartFromOrigin !==
+                  DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
+                    <SettingResetButton
+                      label={searchableSetting("start-from-origin").title}
+                      onClick={() =>
+                        updateSettings({
+                          newWorktreesStartFromOrigin:
+                            DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+                        })
+                      }
+                    />
+                  ) : null
+                }
+                control={
+                  <Switch
+                    checked={settings.newWorktreesStartFromOrigin}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
+                    }
+                    aria-label={searchableSetting("start-from-origin").title}
+                  />
+                }
+              />
+            ) : null}
+
+            <SettingsRow
+              {...searchableSetting("archive-confirmation")}
+              resetAction={
+                settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
+                  <SettingResetButton
+                    label="Archivieren bestätigen"
+                    onClick={() =>
+                      updateSettings({
+                        confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.confirmThreadArchive}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ confirmThreadArchive: Boolean(checked) })
+                  }
+                  aria-label="Archivieren bestätigen"
+                />
+              }
+            />
+
+            <SettingsRow
+              {...searchableSetting("delete-confirmation")}
+              resetAction={
+                settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
+                  <SettingResetButton
+                    label="Löschen bestätigen"
+                    onClick={() =>
+                      updateSettings({
+                        confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.confirmThreadDelete}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ confirmThreadDelete: Boolean(checked) })
+                  }
+                  aria-label="Löschen bestätigen"
+                />
+              }
+            />
+          </SettingsSection>
+          <LegacyFeaturesSection />
+        </>
+      ) : null}
 
       <SettingsSection title="Über Workjet">
         {isElectron || HOSTED_APP_CHANNEL ? (
@@ -1982,17 +1862,7 @@ export function GeneralSettingsPanel() {
         ) : (
           <SettingsRow title={<AboutVersionTitle />} />
         )}
-        <SettingsRow
-          {...searchableSetting("diagnostics")}
-          control={
-            <Button render={<Link to="/settings/diagnostics" />} size="xs" variant="outline">
-              Diagnose öffnen
-            </Button>
-          }
-        />
       </SettingsSection>
-
-      <LegacyFeaturesSection />
     </SettingsPageContainer>
   );
 }

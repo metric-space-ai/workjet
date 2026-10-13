@@ -96,7 +96,6 @@ import {
 import { WorkjetModelsProviders } from "./WorkjetModelsProviders";
 import { useInstanceGrokAccount } from "./useInstanceGrokAccount";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
-import { WorkjetModelsUsage } from "./WorkjetModelsUsage";
 import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
@@ -316,9 +315,7 @@ export function ProviderSettingsPanel({
   const showDevicePicker = options.length > 0 && !onlyPrimaryDevice;
 
   return (
-    <SettingsPageContainer
-      {...(sections === "models" ? { className: "mx-0 max-w-[75rem] gap-8" } : {})}
-    >
+    <SettingsPageContainer>
       {devicesLoading && sections === "harnesses" ? (
         <SettingsSection title="Harnesses">
           <LoadingStatusRow
@@ -444,7 +441,7 @@ function ScopedWorkjetGatewayAccountsSection({
       ) : (
         <WorkjetModelsProviders {...gateway} />
       )}
-      <WorkjetModelsUsage environmentId={environmentId} />
+      {/* Verbrauch has its own page (Einstellungen › Verbrauch); no second copy here. */}
     </>
   );
 }

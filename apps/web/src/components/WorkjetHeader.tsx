@@ -9,6 +9,7 @@ import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
 import { ProviderUpdateHeaderChip } from "./ProviderUpdateLaunchNotification";
 import { SlowRpcRequestChip } from "./SlowRpcRequestToastCoordinator";
 import { VersionChip } from "./VersionChip";
+import { PrivacyModeToggle } from "./ui/sensitive";
 import { BrowserBusinessOsNavigation } from "./BrowserBusinessOsNavigation";
 import { WorkjetProductModeSwitch } from "./sidebar/SidebarChrome";
 import { SidebarTrigger } from "./ui/sidebar";
@@ -67,6 +68,7 @@ export function WorkjetHeaderFrame({
         <ProviderUpdateHeaderChip />
         <SlowRpcRequestChip />
         <VersionChip />
+        <PrivacyModeToggle mac={isMacPlatform()} />
         <button
           type="button"
           aria-label="Einstellungen"
@@ -83,4 +85,8 @@ export function WorkjetHeaderFrame({
       </div>
     </WorkjetHeaderSlotContext>
   );
+}
+
+function isMacPlatform(): boolean {
+  return typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 }

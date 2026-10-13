@@ -270,7 +270,7 @@ describe("exit card back panel", () => {
     expect(markup).toContain(">Gleich<");
     expect(markup).toContain(">Projekt<");
     expect(markup).toContain("Bewerten");
-    expect(markup).toContain("Nicht bewertet");
+    expect(markup).not.toContain("— · Nicht bewertet");
     expect(markup).toContain("Instanz nicht verbunden");
     expect(markup).not.toContain("Szenarien");
     expect(markup).not.toContain("Quellen");

@@ -38,12 +38,19 @@ function ProviderCustomColorInput(props: {
       className={cn(
         "size-6 shrink-0 cursor-pointer appearance-none overflow-hidden rounded-full border-0 bg-transparent p-0",
         "[&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-full [&::-moz-color-swatch]:border-0",
+        !props.selected && "[&::-webkit-color-swatch]:opacity-0 [&::-moz-color-swatch]:opacity-0",
       )}
+      // Without a custom colour the field must not look like the first
+      // swatch (QA 0.0.95 E: two identical blue dots); it shows a colour wheel.
       style={
         props.selected
           ? { boxShadow: `inset 0 0 0 2px var(--card), 0 0 0 2px ${normalized}` }
-          : undefined
+          : {
+              background:
+                "conic-gradient(#dc2626, #ea580c, #eab308, #16a34a, #0891b2, #2563eb, #7c3aed, #dc2626)",
+            }
       }
+      data-custom-color={props.selected ? "" : undefined}
       aria-label={`Eigene Farbe für ${props.displayName}`}
     />
   );

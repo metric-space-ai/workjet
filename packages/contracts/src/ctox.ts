@@ -800,6 +800,17 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     projectId: ProjectId,
   }),
   Schema.Struct({
+    action: Schema.Literal("project.init"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.refresh"),
+    commandId: CommandId,
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.kpis.configure"),
     commandId: CommandId,
     projectId: ProjectId,
@@ -963,6 +974,15 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
   }),
 );
 
+// ctox.workjet.project.init progress (ctox #653). Unknown ids/states are kept
+// as text so a newer CTOX step never breaks the card.
+export const CtoxWorkjetProjectInitStep = Schema.Struct({
+  id: CtoxProjectText(64),
+  state: CtoxProjectText(32),
+  detail: Schema.String.check(Schema.isMaxLength(256)),
+});
+export type CtoxWorkjetProjectInitStep = typeof CtoxWorkjetProjectInitStep.Type;
+
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetInstanceGrokResponse,
   WorkjetNativeProviderResponse,
@@ -1050,11 +1070,42 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     ),
   ),
   Schema.Struct({
+    action: Schema.Literal("project.init"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+    steps: Schema.Array(CtoxWorkjetProjectInitStep).check(Schema.isMaxLength(12)),
+  }),
+  Schema.Struct({
     action: Schema.Literals(["project.kpis.read", "project.kpis.configure"]),
     commandId: CommandId,
     projectId: ProjectId,
     contract: Schema.Literal("ctox.workjet.project_kpis.v1"),
     kpis: CtoxWorkjetProjectKpis,
+  }).check(
+    Schema.makeFilter((response) =>
+      response.kpis.project_id === response.projectId
+        ? true
+        : "KPI result belongs to another project.",
+    ),
+  ),
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.refresh"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.project_kpis.v1"),
+    kpis: CtoxWorkjetProjectKpis,
+    refresh: Schema.Struct({
+      completed: Schema.Boolean,
+      reasonCode: Schema.optionalKey(CtoxProjectText(128)),
+      items: Schema.Array(
+        Schema.Struct({
+          kpiId: CtoxProjectText(128),
+          status: Schema.Literals(["fresh", "stale", "blocked", "missing"]),
+          reasonCode: Schema.optionalKey(CtoxProjectText(128)),
+        }),
+      ).check(Schema.isMaxLength(3)),
+    }),
   }).check(
     Schema.makeFilter((response) =>
       response.kpis.project_id === response.projectId

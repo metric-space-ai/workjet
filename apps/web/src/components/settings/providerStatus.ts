@@ -1,24 +1,17 @@
 import type { ServerProvider, ServerProviderVersionAdvisory } from "@workjet/contracts";
 
 import { getRelativeTimeState } from "../../timestampFormat";
+import { WORKJET_STATUS_DOT_CLASS, workjetStatusFromProvider } from "../../workjetStatus";
 
 /**
  * Visual treatment for each server-reported provider status. Centralized so
  * the default-driver card and per-instance cards share the same language.
  */
 export const PROVIDER_STATUS_STYLES = {
-  disabled: {
-    dot: "bg-amber-400",
-  },
-  error: {
-    dot: "bg-destructive",
-  },
-  ready: {
-    dot: "bg-success",
-  },
-  warning: {
-    dot: "bg-warning",
-  },
+  disabled: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("disabled")] },
+  error: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("error")] },
+  ready: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("ready")] },
+  warning: { dot: WORKJET_STATUS_DOT_CLASS[workjetStatusFromProvider("warning")] },
 } as const;
 
 export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;

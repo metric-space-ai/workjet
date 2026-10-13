@@ -45,6 +45,24 @@ const model = (slug: string, isCustom = false, isDefault = false) => ({
   ...(isDefault ? { isDefault: true } : {}),
   capabilities: {},
 });
+describe("supervisor default harness", () => {
+  it("prefers Claude Code with Opus over an earlier Codex instance", () => {
+    const codex = provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex",
+      models: [model("gpt-5.6-sol", false, true)],
+    });
+    const claude = provider({
+      provider: ProviderDriverKind.make("claudeAgent"),
+      instanceId: "claudeAgent",
+      models: [model("claude-sonnet-5", false, true), model("claude-opus-5")],
+    });
+    const expected = { instanceId: claude.instanceId, model: "claude-opus-5" };
+    expect(resolveProjectTeamModelSelection([codex, claude])).toEqual(expected);
+    expect(resolveDefaultProviderModelSelection([codex, claude], null)).toEqual(expected);
+  });
+});
+
 describe("resolveProjectTeamModelSelection", () => {
   it("does not manufacture a model from gateway wildcard declarations", () => {
     const account = provider({

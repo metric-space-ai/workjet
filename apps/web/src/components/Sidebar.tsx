@@ -3886,13 +3886,24 @@ export default function Sidebar() {
                       </MenuItem>
                     </MenuPopup>
                   </Menu>
-                  {scopedProjectGroup ? (
+                  {scopedProjectGroup || selectedWorkjetProject ? (
                     <SidebarMenuButton
                       type="button"
                       size="icon"
                       className="size-9 text-sidebar-muted-foreground/70 hover:text-sidebar-foreground"
-                      aria-label={`${overviewText.projectSettingsFor} ${scopedProjectGroup.displayName}`}
-                      onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
+                      data-workjet-action="project.settings.sidebar"
+                      aria-label={`${overviewText.projectSettingsFor} ${
+                        scopedProjectGroup?.displayName ?? selectedWorkjetProject?.title ?? ""
+                      }`}
+                      onClick={(event) => {
+                        if (scopedProjectGroup) {
+                          void handleProjectSettings(event, scopedProjectGroup);
+                          return;
+                        }
+                        setProjectScopeMenuOpen(false);
+                        if (isMobile) setOpenMobile(false);
+                        void router.navigate({ to: "/settings/projects" });
+                      }}
                     >
                       <SettingsIcon aria-hidden className="size-4" />
                     </SidebarMenuButton>
@@ -4316,8 +4327,6 @@ export default function Sidebar() {
                     for (const { section } of PROJECT_TEAM_SECTIONS) {
                       const archived = section === "supervisor" ? [] : archivedTeam[section];
                       const showDraft = section === "workers";
-                      if (team[section].length === 0 && archived.length === 0 && !showDraft)
-                        continue;
                       items.push(
                         <li
                           key={`team-${section}-header`}
@@ -4489,6 +4498,11 @@ export default function Sidebar() {
             </TooltipProvider>
           ) : null}
           {!isSearchActive &&
+          // A project shows its three category headers even when empty (#629).
+          ((selectedWorkjetProject === null && scopedProjectGroup === null) ||
+            (workjetProjects.length > 0 &&
+              (sidebarAvailableProjectCount === 0 ||
+                (projects.length === 0 && !hasResolvableSidebarComputer)))) &&
           visibleDraftSessionCount === 0 &&
           pinnedThreads.length +
             activeThreads.length +

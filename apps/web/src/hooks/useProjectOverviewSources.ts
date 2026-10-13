@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ProjectId, type WorkjetJourFixeMeeting } from "@workjet/contracts";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession } from "../lib/jourFixeNative";
+import { prefetchJourFixeMeeting } from "../lib/jourFixePrefetch";
 import { readWorkjetProjectKpis } from "../workjetProjectControl";
 
 import type { PromptedProjectKpis } from "../projectKpis";
@@ -27,8 +28,15 @@ export function useProjectOverviewSources(instanceId: string | null, projectId: 
         active = false;
       };
     const session = new JourFixeNativeSession(instanceId, ProjectId.make(projectId), current);
+    let confirmed = false;
+    void session.readCached().then((cached) => {
+      if (!confirmed && cached?.meeting && current())
+        setState((value) => ({ ...value, meeting: cached.meeting ?? null }));
+    });
     void session.read().then(
       (result) => {
+        confirmed = true;
+        if (result.meeting) void prefetchJourFixeMeeting(instanceId, result.meeting);
         if (current()) setState((value) => ({ ...value, meeting: result.meeting ?? null }));
       },
       () => {

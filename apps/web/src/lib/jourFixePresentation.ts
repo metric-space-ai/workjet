@@ -10,6 +10,7 @@ import { validateSlideDocument, type SlideDocument } from "@workjet/slide-engine
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
 import { requestWorkjetProjectControl } from "../workjetProjectControl";
 import { newCommandId } from "./utils";
+import { jourFixeCacheKey, readJourFixeCache, writeJourFixeCache } from "./jourFixeCache";
 
 import {
   retryJourFixeRead,
@@ -82,6 +83,29 @@ async function confirmed(
   return result.response;
 }
 
+interface CachedPresentation {
+  readonly manifest: WorkjetPresentationManifest;
+  readonly document: unknown;
+}
+
+/**
+ * The last presentation CTOX confirmed for this meeting, validated again by
+ * the slide engine, for an immediate first render. Null when none is stored.
+ */
+export async function readCachedJourFixePresentation(
+  instanceId: string,
+  projectId: ProjectId,
+  meetingId: string,
+): Promise<JourFixePresentation | null> {
+  const cached = await readJourFixeCache<CachedPresentation>(
+    jourFixeCacheKey.presentation(instanceId, projectId, meetingId),
+  );
+  if (!cached || cached.manifest?.meeting_id !== meetingId) return null;
+  if (cached.manifest.project_id !== projectId) return null;
+  const validation = validateSlideDocument(cached.document);
+  return validation.ok ? { manifest: cached.manifest, document: validation.document } : null;
+}
+
 /**
  * Reads the meeting's presentation: the manifest, then the stored revision in
  * bounded ranges. The assembled bytes must match the manifest hash and the
@@ -109,6 +133,15 @@ export async function readJourFixePresentation(
   if (read.action !== "project.presentation.read") throw new Error("Unexpected answer.");
   const manifest = read.presentation;
   if (manifest === null) return null;
+  // The stored copy is only reused for byte-identical content of the same revision.
+  const cached = await readCachedJourFixePresentation(instanceId, projectId, meetingId);
+  if (
+    cached &&
+    cached.manifest.presentation_id === manifest.presentation_id &&
+    cached.manifest.revision === manifest.revision &&
+    cached.manifest.document_sha256 === manifest.document_sha256
+  )
+    return { manifest, document: cached.document };
   const bytes = new Uint8Array(manifest.document_bytes);
   let offset = 0;
   while (offset < manifest.document_bytes) {
@@ -151,6 +184,10 @@ export async function readJourFixePresentation(
         .map((issue) => issue.message)
         .join("; ")}`,
     );
+  void writeJourFixeCache(jourFixeCacheKey.presentation(instanceId, projectId, meetingId), {
+    manifest,
+    document: parsed,
+  } satisfies CachedPresentation);
   return { manifest, document: validation.document };
 }
 

@@ -3,6 +3,7 @@ import type { ProjectId, WorkjetJourFixeReadResponse } from "@workjet/contracts"
 import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
 import {
+  readCachedJourFixePresentation,
   readJourFixePresentation,
   saveJourFixePresentationSlide,
   type JourFixePresentation,
@@ -11,7 +12,13 @@ import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema
 import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { nativeJourFixeNarrationProvider } from "../lib/nativeJourFixeNarrationProvider";
+import { createJourFixeGatewayMicrophoneProvider } from "../lib/jourFixeGatewayMicrophone";
 import { Button } from "./ui/button";
+
+/** Retained narration plus the owner's microphone through the CTOX speech gateway. */
+const nativeJourFixeSpeechProvider = createJourFixeGatewayMicrophoneProvider({
+  prepareNarration: nativeJourFixeNarrationProvider.prepareNarration,
+});
 
 export function NativeJourFixeRoom(props: {
   readonly instanceId: string;
@@ -60,6 +67,9 @@ function NativeJourFixeRoomContent({
     let cancelled = false;
     const controller = new AbortController();
     setPresentationPending(true);
+    void readCachedJourFixePresentation(instanceId, projectId, meetingId).then((cached) => {
+      if (!cancelled && cached) setPresentation((value) => value ?? cached);
+    });
     void readJourFixePresentation(
       instanceId,
       projectId,
@@ -118,8 +128,14 @@ function NativeJourFixeRoomContent({
     const controller = new AbortController();
     readAbort.current = controller;
     let cancelled = false;
+    let confirmed = false;
+    // Render the last confirmed snapshot at once; CTOX's answer replaces it.
+    void session.readCached().then((cached) => {
+      if (!cancelled && !confirmed && cached) setResult((value) => value ?? cached);
+    });
     void session.read(undefined, controller.signal).then(
       (value) => {
+        confirmed = true;
         if (!cancelled) {
           setResult(value);
           setError(null);
@@ -214,8 +230,9 @@ function NativeJourFixeRoomContent({
         if (pendingAbort.current === controller) pendingAbort.current = null;
       });
   }
+  // A shown deck (also from the cache) is never covered by a load or refresh status.
   const presentationStatus =
-    presentationFailed || (presentationPending && presentation === null)
+    presentation === null && (presentationFailed || presentationPending)
       ? {
           state: presentationFailed ? ("failed" as const) : ("loading" as const),
           text: presentationFailed ? "Folien nicht verfügbar" : "Folien werden geladen …",
@@ -226,7 +243,7 @@ function NativeJourFixeRoomContent({
     <div className="flex min-h-0 flex-1 flex-col">
       <JourFixeSpeechRoom
         instanceId={instanceId}
-        speechProvider={speechProvider ?? nativeJourFixeNarrationProvider}
+        speechProvider={speechProvider ?? nativeJourFixeSpeechProvider}
         projectTitle={projectTitle}
         meeting={meeting}
         commentDelivery="saved"

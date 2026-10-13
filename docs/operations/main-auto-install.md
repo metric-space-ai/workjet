@@ -45,6 +45,10 @@ Keep config.json private (0600, owned by the logged-in user). Its fields are:
 - installedAsar: /Applications/Workjet.app/Contents/Resources/app.asar;
 - calendarSnapshot: a fresh public calendar export;
 - projectIds: the complete set of active project IDs covered by that export;
+- afterPullRequests: PRs that must be merged into main before it may replace an
+  integration install. For 0.0.97-pre these are [608, 626]. Their actual merge
+  commits must be ancestors of the selected main head, including squash merges;
+
 - lastGreenReceipt: a controller-shaped receipt from an actually measured green
   installation, with a retained signed rollback zip and verified hashes;
 - adapters: prepare, build, install, verify, rollback and notify. Each contains

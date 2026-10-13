@@ -25,9 +25,10 @@ UTC = dt.timezone.utc
 
 
 class Refused(Exception):
-    def __init__(self, code):
+    def __init__(self, code, public=None):
         super().__init__(code)
         self.code = code
+        self.public = public or {}
 
 
 def now():
@@ -94,18 +95,38 @@ def green_ci(head, runs):
     if not matching:
         raise Refused("main_ci_missing")
     run = max(matching, key=lambda item: (item["run_number"], item.get("run_attempt", 1)))
+    identity = {key: run.get(key) for key in
+                ("id", "run_number", "run_attempt", "html_url", "head_sha", "status", "conclusion")}
     if run.get("status") != "completed":
-        raise Refused("main_ci_pending")
+        raise Refused("main_ci_pending", {"ci": identity})
     if run.get("conclusion") != "success":
-        raise Refused("main_ci_not_green")
-    return {key: run.get(key) for key in
-            ("id", "run_number", "run_attempt", "html_url", "head_sha", "conclusion")}
+        raise Refused("main_ci_not_green", {"ci": identity})
+    return identity
 
 
 def main_ci(head):
     response = github_json("repos/" + REPOSITORY +
                            "/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=100")
     return green_ci(head, response["workflow_runs"])
+
+
+def required_merges(head, numbers, api=github_json):
+    result = []
+    for number in numbers:
+        if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+            raise Refused("required_pull_request_invalid")
+        pr = api("repos/" + REPOSITORY + "/pulls/" + str(number))
+        if (pr.get("merged") is not True or pr.get("base", {}).get("ref") != "main"
+                or pr.get("base", {}).get("repo", {}).get("full_name") != REPOSITORY):
+            raise Refused("required_pull_request_not_merged", {"pendingPullRequest": number})
+        merge = pr.get("merge_commit_sha", "")
+        if not SHA.fullmatch(merge):
+            raise Refused("required_pull_request_invalid")
+        comparison = api("repos/" + REPOSITORY + "/compare/" + merge + "..." + head)
+        if comparison.get("status") not in ("ahead", "identical"):
+            raise Refused("main_missing_required_merge")
+        result.append({"number": number, "mergeCommit": merge})
+    return result
 
 
 def calendar_gate(snapshot, expected, at):
@@ -195,7 +216,9 @@ def invoke_adapter(config, phase, context_path, result_path, gated=True):
         try:
             child.wait(timeout=450)
         except subprocess.TimeoutExpired:
-            raise Refused("deployment_adapter_recovery_pending") from None
+            raise Refused("deployment_adapter_recovery_pending", {
+                "remainingOwned": [{"pid": child.pid, "phase": phase,
+                                    "purpose": "adapter must finish its bounded orderly recovery"}]}) from None
         raise Refused("deployment_adapter_interrupted") from None
     if code == 75:
         raise Refused("resource_admission_deferred")
@@ -209,16 +232,23 @@ def invoke_adapter(config, phase, context_path, result_path, gated=True):
 
 
 def execute(config, head, evidence, state_path, api_main=current_main, api_ci=main_ci,
-            adapter=invoke_adapter, clock=now):
+            adapter=invoke_adapter, clock=now, api_merges=required_merges):
     record = {"source": head, "repository": REPOSITORY, "phase": "checking",
               "startedAt": clock().isoformat(), "pass": False, "steps": [],
               "protectedFilesRead": False, "keychainOperations": False,
               "uiClicks": False, "loginPerformed": False}
     receipt = evidence / (head + ".json")
+    history = []
+    if receipt.exists():
+        previous = json.loads(receipt.read_text())
+        history = previous.get("attemptHistory", []) + [{key: previous.get(key) for key in
+            ("phase", "reason", "ci", "startedAt", "finishedAt", "pass")}]
+    record["attemptHistory"] = history
     atomic_json(receipt, record)
     installation_started = False
     try:
         record["ci"] = api_ci(head)
+        record["requiredPullRequests"] = api_merges(head, config.get("afterPullRequests", []))
         if config.get("enabled") is not True:
             raise Refused("activation_requires_supervisor_review")
         if api_main() != head:
@@ -284,12 +314,18 @@ def execute(config, head, evidence, state_path, api_main=current_main, api_ci=ma
         return record
     except Exception as error:
         code = error.code if isinstance(error, Refused) else "deployment_receipt_unavailable"
+        if isinstance(error, Refused):
+            record.update(error.public)
         record["reason"] = code
         record["phase"] = "deferred" if code in (
             "main_ci_missing", "main_ci_pending", "resource_admission_deferred",
-            "main_superseded", "meeting_installation_blackout") else "refused"
+            "main_superseded", "meeting_installation_blackout",
+            "required_pull_request_not_merged") else "refused"
         # An exit75 from the gate guarantees the install adapter never ran.
-        if installation_started and code != "resource_admission_deferred":
+        if code == "deployment_adapter_recovery_pending":
+            # Never start a second writer while the first one's recovery runs.
+            record["phase"] = "recovery_required"
+        elif installation_started and code != "resource_admission_deferred":
             record["phase"] = "rolling_back"
             atomic_json(receipt, record)
             try:

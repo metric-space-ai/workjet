@@ -42,7 +42,22 @@ class Gates(unittest.TestCase):
         with self.assertRaisesRegex(agent.Refused, "main_ci_missing"):
             agent.green_ci(HEAD, [ci(event="pull_request"), ci(head_sha=OLD)])
 
+    def test_old_green_main_cannot_replace_a_newer_integration(self):
+        with self.assertRaisesRegex(agent.Refused, "not_merged"):
+            agent.required_merges(HEAD, [608], api=lambda _: {"merged": False})
+        responses = iter([{"merged": True, "base": {"ref": "main", "repo": {
+            "full_name": agent.REPOSITORY}}, "merge_commit_sha": OLD}, {"status": "diverged"}])
+        with self.assertRaisesRegex(agent.Refused, "missing_required_merge"):
+            agent.required_merges(HEAD, [608], api=lambda _: next(responses))
+
+    def test_squash_merge_identity_is_supported(self):
+        responses = iter([{"merged": True, "base": {"ref": "main", "repo": {
+            "full_name": agent.REPOSITORY}}, "merge_commit_sha": OLD}, {"status": "ahead"}])
+        self.assertEqual(agent.required_merges(HEAD, [608], api=lambda _: next(responses)),
+                         [{"number": 608, "mergeCommit": OLD}])
+
     def test_queued_main_is_not_green(self):
+
         with self.assertRaisesRegex(agent.Refused, "main_ci_pending"):
             agent.green_ci(HEAD, [ci(status="queued", conclusion=None)])
 
@@ -171,14 +186,36 @@ class Deployment(unittest.TestCase):
         self.assertEqual(result["reason"], "deployment_receipt_unavailable")
         self.assertEqual(self.asar.read_bytes(), b"previous verified app")
 
+    def test_uncertain_recovery_never_starts_a_second_writer(self):
+        def pending(config, phase, context, result, gated=True):
+            if phase == "install":
+                self.calls.append(phase)
+                raise agent.Refused("deployment_adapter_recovery_pending", {"remainingOwned": [{"pid": 123}]})
+            return self.adapter(config, phase, context, result, gated)
+        result = self.run_agent(adapter=pending)
+        self.assertEqual(result["phase"], "recovery_required")
+        self.assertNotIn("rollback", self.calls)
+        self.assertEqual(result["remainingOwned"], [{"pid": 123}])
+
     def test_success_is_only_adopted_after_installed_readback(self):
+
         result = self.run_agent()
         self.assertTrue(result["pass"])
         self.assertEqual(result["phase"], "accepted")
         self.assertEqual(json.loads(self.state.read_text())["source"], HEAD)
         self.assertNotIn("rollback", self.calls)
 
+    def test_reconsidering_a_deferred_head_preserves_its_negative_evidence(self):
+        def pending(_):
+            raise agent.Refused("main_ci_pending")
+        self.run_agent(api_ci=pending)
+        accepted = self.run_agent()
+        self.assertTrue(accepted["pass"])
+        self.assertEqual(accepted["attemptHistory"][0]["reason"], "main_ci_pending")
+        self.assertFalse(accepted["attemptHistory"][0]["pass"])
+
     def test_foreign_install_is_never_overwritten(self):
+
         self.asar.write_bytes(b"some other owner's install")
         result = self.run_agent()
         self.assertEqual(result["reason"], "installed_app_changed")

@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
@@ -211,6 +212,33 @@ import {
   projectTeamParentTitle,
   duplicateProjectTeamTitles,
 } from "../lib/projectTeamSections";
+
+/** Actions whose failure the sidebar reports with one shared toast (#558). */
+const SIDEBAR_ACTIONS = {
+  copy: { en: "Copy", de: "Kopieren" },
+  rename: { en: "Rename", de: "Umbenennen" },
+  settle: { en: "Mark done", de: "Erledigen" },
+  reopen: { en: "Reopen", de: "Wieder öffnen" },
+  wake: { en: "Wake", de: "Wecken" },
+  pin: { en: "Pin", de: "Anheften" },
+  unpin: { en: "Unpin", de: "Lösen" },
+  reorder: { en: "Reorder", de: "Sortieren" },
+  snooze: { en: "Snooze", de: "Zurückstellen" },
+  title: { en: "Generate title", de: "Titel erzeugen" },
+  delete: { en: "Delete", de: "Löschen" },
+} as const;
+
+/** One error toast for every sidebar action: "<Action> failed" plus the reason. */
+function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, error: unknown, stacked = true) {
+  const en = workjetUiLanguage() === "en";
+  const toast = {
+    type: "error" as const,
+    title: `${SIDEBAR_ACTIONS[action][en ? "en" : "de"]} ${en ? "failed" : "fehlgeschlagen"}`,
+    description:
+      error instanceof Error ? error.message : en ? "Unknown error" : "Unbekannter Fehler",
+  };
+  return stacked ? stackedThreadToast(toast) : toast;
+}
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -1764,13 +1792,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
@@ -1783,13 +1805,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
@@ -1801,13 +1817,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyDeepLinkToClipboard } = useCopyToClipboard<{ link: string }>({
@@ -1819,13 +1829,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
@@ -2747,13 +2751,7 @@ export default function Sidebar() {
         });
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Umbenennen fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("rename", error));
         }
       })();
     },
@@ -2830,13 +2828,7 @@ export default function Sidebar() {
             // Never navigate away from a thread that did not settle.
             if (!isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Erledigen fehlgeschlagen",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                }),
-              );
+              toastManager.add(sidebarFailureToast("settle", error));
             }
             return;
           }
@@ -2858,13 +2850,7 @@ export default function Sidebar() {
         const result = await unsettleThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Wieder öffnen fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("reopen", error));
         }
       })();
     },
@@ -2876,13 +2862,7 @@ export default function Sidebar() {
         const result = await unsnoozeThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Wecken fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("wake", error));
         }
       })();
     },
@@ -2969,13 +2949,7 @@ export default function Sidebar() {
         const result = await pinThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Anheften fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("pin", error));
         }
       })();
     },
@@ -2987,13 +2961,7 @@ export default function Sidebar() {
         const result = await unpinThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Lösen fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("unpin", error));
         }
       })();
     },
@@ -3052,13 +3020,7 @@ export default function Sidebar() {
             setOptimisticPinnedOrder(null);
             if (isAtomCommandInterrupted(result)) return;
             const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Sortieren fehlgeschlagen",
-                description: error instanceof Error ? error.message : "Unbekannter Fehler",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("reorder", error));
             return;
           }
         }
@@ -3111,14 +3073,7 @@ export default function Sidebar() {
       void (async () => {
         const outcome = await performSnooze(threadRef, preset, opts);
         if (outcome.status === "failure") {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Zurückstellen fehlgeschlagen",
-              description:
-                outcome.error instanceof Error ? outcome.error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("snooze", outcome.error));
           return;
         }
         if (outcome.status !== "success") return;
@@ -3248,14 +3203,7 @@ export default function Sidebar() {
             );
           } else if (failures.length > 0) {
             const firstError = failures[0];
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Zurückstellen fehlgeschlagen",
-                description:
-                  firstError instanceof Error ? firstError.message : "Unbekannter Fehler",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("snooze", firstError));
           }
         }
         return;
@@ -3269,13 +3217,7 @@ export default function Sidebar() {
           if (result._tag === "Success") continue;
           if (!isAtomCommandInterrupted(result)) {
             const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Titel erzeugen fehlgeschlagen",
-                description: error instanceof Error ? error.message : "Unbekannter Fehler",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("title", error));
           }
           return;
         }
@@ -3329,13 +3271,7 @@ export default function Sidebar() {
         if (result._tag === "Failure") {
           if (!isAtomCommandInterrupted(result)) {
             const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Löschen fehlgeschlagen",
-                description: error instanceof Error ? error.message : "Unbekannter Fehler",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("delete", error));
           }
           return;
         }
@@ -3474,13 +3410,7 @@ export default function Sidebar() {
             });
             if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Titel erzeugen fehlgeschlagen",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                }),
-              );
+              toastManager.add(sidebarFailureToast("title", error));
             }
             return;
           }
@@ -3527,13 +3457,7 @@ export default function Sidebar() {
             const result = await deleteThread(threadRef);
             if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Löschen fehlgeschlagen",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                }),
-              );
+              toastManager.add(sidebarFailureToast("delete", error));
               return;
             }
             return;

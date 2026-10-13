@@ -1,6 +1,7 @@
 export type SettingsPath =
   | "/settings/business-os"
   | "/settings/general"
+  | "/settings/prompts"
   | "/settings/appearance"
   | "/settings/models"
   | "/settings/speech"
@@ -35,6 +36,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   // Computers); Source Control follows the workflow pages. Coding agents
   // (formerly the Harnesses page) live on Rechner since #554.
   "/settings/workjet": "Worker-Presets",
+  "/settings/prompts": "System-Prompts",
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
@@ -257,8 +259,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-prompt",
-    title: "Prompt",
-    to: "/settings/workjet",
+    title: "System-Prompts",
+    to: "/settings/prompts",
   },
   {
     id: "workjet-telemetry",

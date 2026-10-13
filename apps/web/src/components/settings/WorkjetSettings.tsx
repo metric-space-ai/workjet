@@ -408,19 +408,24 @@ function PositiveIntegerInput({
  * tab bar disappears.
  */
 export function visibleWorkjetSettingsSections(developerMode: boolean) {
-  return WORKJET_SETTINGS_SECTIONS.filter((section) => developerMode || section.id === "workers");
+  // System-Prompts are their own settings page (#618), never a preset tab.
+  return WORKJET_SETTINGS_SECTIONS.filter(
+    (section) => section.id !== "prompt" && (developerMode || section.id === "workers"),
+  );
 }
 
 function SectionNavigation({
   activeSection,
   onSelect,
+  hidden = false,
 }: {
+  readonly hidden?: boolean;
   readonly activeSection: WorkjetSettingsSectionId;
   readonly onSelect: (section: WorkjetSettingsSectionId) => void;
 }) {
   const developerMode = useClientSettings().developerMode;
   const sections = visibleWorkjetSettingsSections(developerMode);
-  if (sections.length < 2) return null;
+  if (hidden || sections.length < 2) return null;
   return (
     <nav
       aria-label="Bereiche"
@@ -818,9 +823,12 @@ export function WorkjetSettingsView({
   const locationHash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
   const t = useUiText();
-  const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
-    () => workjetSectionFromHash(locationHash) ?? defaultSection,
-  );
+  const promptPage = defaultSection === "prompt";
+  const [selectedSection, setActiveSection] = useState<WorkjetSettingsSectionId>(() => {
+    const fromHash = workjetSectionFromHash(locationHash);
+    return fromHash === "prompt" ? defaultSection : (fromHash ?? defaultSection);
+  });
+  const activeSection: WorkjetSettingsSectionId = promptPage ? "prompt" : selectedSection;
   // A stashed draft means the operator left via "Add LLM route…" and came
   // back — reopen the editor they were in so the stash gets consumed (K-A7).
   const stashedWorkerEditor = useMemo(() => {
@@ -954,9 +962,13 @@ export function WorkjetSettingsView({
   }, [locationHash]);
 
   return (
-    <SettingsPageContainer className="gap-6" title={searchableSetting("workjet-workers").title}>
+    <SettingsPageContainer
+      className="gap-6"
+      title={promptPage ? undefined : searchableSetting("workjet-workers").title}
+    >
       <div className="space-y-3">
         <SectionNavigation
+          hidden={promptPage}
           activeSection={activeSection}
           onSelect={(section) => {
             setActiveSection(section);

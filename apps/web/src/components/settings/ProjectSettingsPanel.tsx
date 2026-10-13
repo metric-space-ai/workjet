@@ -278,6 +278,13 @@ function localProjectRow(
           />
         </button>
       }
+      status="ok"
+      statusLabel={workjetUiLanguage() === "en" ? "Ready here" : "Hier bereit"}
+      meta={
+        workjetUiLanguage() === "en"
+          ? "In CTOX · working copy on this computer"
+          : "In CTOX · Arbeitskopie auf diesem Rechner"
+      }
       chips={
         group.memberProjects.length > 1 ? (
           <span className="rounded-sm border border-border/60 px-1.5 py-px text-[11px] text-muted-foreground">

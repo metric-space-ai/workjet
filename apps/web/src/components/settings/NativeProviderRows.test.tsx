@@ -51,7 +51,7 @@ const registry = Schema.decodeUnknownSync(RegistrySchema)({
 });
 function control(rendered: string, label: string) {
   return rendered
-    .match(/<(?:input|button)\b[^>]*>/g)
+    .match(/<(?:input|button|span)\b[^>]*>/g)
     ?.find((tag) => tag.includes(`aria-label="${label}"`));
 }
 function html(
@@ -277,9 +277,8 @@ describe("Native provider account rows", () => {
   });
   it("renders the actual disabled state without claiming a credential or inference failure", () => {
     const rendered = html({ ...registry.accounts[0]!, enabled: false });
-    expect(rendered).toContain("Konto aktivieren");
-    expect(control(rendered, "Konto 1 aktiv")).not.toContain("checked");
-    expect(rendered).toContain("Keine Limits gemeldet");
+    expect(control(rendered, "Konto 1 aktiv")).toContain('aria-checked="false"');
+    expect(rendered).not.toContain("Keine Limits gemeldet");
     expect(rendered).not.toContain("Credentials rejected");
   });
 });

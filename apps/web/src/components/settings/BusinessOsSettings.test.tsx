@@ -120,7 +120,7 @@ describe("Business OS settings scope", () => {
         addPanel={<span data-testid="add-panel">Instanz hinzufügen</span>}
       />,
     );
-    expect(markup).toContain("Keine Instanz verbunden");
+    expect(markup).toContain("Keine CTOX-Instanz verbunden");
     expect(markup).toContain('data-testid="add-panel"');
     expect(markup).not.toContain("Gerät hinzufügen");
     expect(markup).not.toContain("environment-alpha");
@@ -139,7 +139,7 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("Instanzen nicht erreichbar");
     expect(markup).toContain("Erneut versuchen");
-    expect(markup).not.toContain("Keine Instanz verbunden");
+    expect(markup).not.toContain("Keine CTOX-Instanz verbunden");
   });
 
   it("is one page: no settings grid that duplicates the sidebar, no English captions", () => {
@@ -171,7 +171,7 @@ describe("Business OS settings scope", () => {
       />,
     );
     expect(markup).toContain('aria-label="Instanzen"');
-    expect(markup).toContain("Ausgewählt");
+    expect(markup).toContain('aria-current="true"');
     expect(markup).toContain("WELSCH");
     expect(markup).toContain("Geräte · WELSCH");
     expect(markup).toContain('data-slot="row"');

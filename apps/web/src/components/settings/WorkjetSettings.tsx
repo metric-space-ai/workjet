@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useInstanceProviders } from "./useInstanceProviders";
 import { nativeLumaRoutes, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import type {
@@ -623,16 +624,8 @@ export function AutomaticWorktreeStorageSettings({
   );
 }
 
-/** Seitentitel „Worker-Presets“ – derselbe in allen Zuständen der Seite. */
-function LumasPageTitle() {
-  const t = useUiText();
-  return (
-    <div className="px-3 sm:px-4">
-      <h1 className="text-xl font-semibold tracking-[-0.025em]">
-        {t("Worker-Presets", "Worker presets")}
-      </h1>
-    </div>
-  );
+function uiText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
 }
 
 export function WorkjetSettingsView({
@@ -808,9 +801,11 @@ export function WorkjetSettingsView({
   }, [locationHash]);
 
   return (
-    <SettingsPageContainer className="gap-6">
+    <SettingsPageContainer
+      className="gap-6"
+      title={promptPage ? undefined : searchableSetting("workjet-workers").title}
+    >
       <div className="space-y-3">
-        {promptPage ? null : <LumasPageTitle />}
         <SectionNavigation
           hidden={promptPage}
           activeSection={activeSection}
@@ -1319,26 +1314,34 @@ export function WorkjetSettings({
     const resolving = scope.phase === "resolving" || connections.isPending;
     const noInstance = scope.phase === "blocked" && scope.blocker === "no-active-instance";
     return (
-      <SettingsPageContainer>
-        <LumasPageTitle />
+      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {resolving ? (
           <EmptyLoading
-            title="Instanz wird geladen"
-            slowMessage="Keine Antwort von der Instanz."
+            title={uiText("Instanz wird geladen", "Loading instance")}
+            slowMessage={uiText(
+              "Keine Antwort von der Instanz.",
+              "The instance is not responding.",
+            )}
             onRetry={connections.refresh}
           />
         ) : (
           <Empty>
             <EmptyHeader>
               <EmptyTitle>
-                {noInstance ? "Keine Instanz" : "Lumas der Instanz nicht abrufbar"}
+                {noInstance
+                  ? uiText("Keine Instanz", "No instance")
+                  : uiText("Worker-Presets nicht abrufbar", "Worker presets unavailable")}
               </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
               {noInstance ? (
-                <Button render={<Link to="/settings/business-os" />}>Instanz auswählen</Button>
+                <Button render={<Link to="/settings/business-os" />}>
+                  {uiText("Instanz auswählen", "Choose instance")}
+                </Button>
               ) : (
-                <Button render={<Link to="/settings/business-os" />}>Instanzen verwalten</Button>
+                <Button render={<Link to="/settings/business-os" />}>
+                  {uiText("Instanzen verwalten", "Manage instances")}
+                </Button>
               )}
             </EmptyContent>
           </Empty>
@@ -1396,9 +1399,12 @@ function ScopedWorkjetSettings({
       });
       const failure =
         result._tag === "Failure"
-          ? "Lumas nicht gespeichert."
+          ? uiText("Worker-Presets nicht gespeichert.", "Worker presets not saved.")
           : result.value.status === "conflict"
-            ? "Lumas wurden anderswo geändert. Bitte neu laden."
+            ? uiText(
+                "Worker-Presets wurden anderswo geändert. Bitte neu laden.",
+                "Worker presets changed elsewhere. Please reload.",
+              )
             : null;
       if (failure !== null) {
         setSaveError(failure);
@@ -1520,21 +1526,25 @@ function ScopedWorkjetSettings({
 
   if (instance.data === null)
     return (
-      <SettingsPageContainer>
-        <LumasPageTitle />
+      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {instance.isPending ? (
           <EmptyLoading
-            title="Lumas werden geladen"
-            slowMessage="Keine Antwort von der Instanz."
+            title={uiText("Worker-Presets werden geladen", "Loading worker presets")}
+            slowMessage={uiText(
+              "Keine Antwort von der Instanz.",
+              "The instance is not responding.",
+            )}
             onRetry={instance.refresh}
           />
         ) : (
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>Konfiguration nicht verfügbar</EmptyTitle>
+              <EmptyTitle>
+                {uiText("Konfiguration nicht verfügbar", "Configuration unavailable")}
+              </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
-              <Button onClick={instance.refresh}>Erneut laden</Button>
+              <Button onClick={instance.refresh}>{uiText("Erneut laden", "Reload")}</Button>
             </EmptyContent>
           </Empty>
         )}

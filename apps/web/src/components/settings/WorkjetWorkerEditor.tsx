@@ -1,4 +1,5 @@
 import type { WorkjetNativeProviderAccount } from "@workjet/contracts";
+import { InlineSaveFooter } from "../ui/inline-panel";
 import { nativeAccountForRoute, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import {
   WorkjetComputerId,
@@ -299,6 +300,7 @@ export function WorkjetWorkerEditor({
   initialDraft,
   onDraftChange,
   compact = false,
+  initialTab = "task",
 }: {
   readonly worker?: WorkjetWorkerProfile | null;
   /** Prevents an unfinished worker from one Business OS leaking into another. */
@@ -321,6 +323,8 @@ export function WorkjetWorkerEditor({
   readonly initialDraft?: WorkjetWorkerDraft | undefined;
   readonly onDraftChange?: ((draft: WorkjetWorkerDraft) => void) | undefined;
   readonly compact?: boolean;
+  /** Tab shown first; defaults to the task. */
+  readonly initialTab?: "task" | "personality" | "execution";
   /** Opens the place where an access is created. Optional so existing callers keep working. */
   readonly onAddRoute?: (() => void) | undefined;
   /** Creates an access in place, inside this editor; preferred over onAddRoute. */
@@ -328,7 +332,7 @@ export function WorkjetWorkerEditor({
 }) {
   const [creatingRoute, setCreatingRoute] = useState(false);
   const t = useUiText();
-  const [editorTab, setEditorTab] = useState<"task" | "personality" | "execution">("task");
+  const [editorTab, setEditorTab] = useState<"task" | "personality" | "execution">(initialTab);
   const [draft, setDraft] = useState(() => {
     if (initialDraft) return initialDraft;
     // "Add LLM route…" navigates AWAY to the Models page; without this stash
@@ -1043,28 +1047,16 @@ export function WorkjetWorkerEditor({
             {error}
           </p>
         ) : null}
-        <div
-          className={cn(
-            "flex items-center justify-end gap-2",
-            // The compact editor scrolls inside the chat composer's panel.
-            compact && "sticky bottom-0 bg-popover py-2",
-          )}
-        >
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              clearDraftStash();
-              onCancel();
-            }}
-          >
-            {compact ? "Verwerfen" : "Abbrechen"}
-          </Button>
-          <Button type="submit" size="sm" disabled={computers.length === 0 || routes.length === 0}>
-            {saving ? "Speichert …" : "Speichern"}
-          </Button>
-        </div>
+        <InlineSaveFooter
+          // The compact editor scrolls inside the chat composer's panel.
+          className={cn(compact && "sticky bottom-0 bg-popover py-2")}
+          saving={saving}
+          submitDisabled={computers.length === 0 || routes.length === 0}
+          onCancel={() => {
+            clearDraftStash();
+            onCancel();
+          }}
+        />
       </fieldset>
     </form>
   );

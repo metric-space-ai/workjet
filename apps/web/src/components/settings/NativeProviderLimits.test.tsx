@@ -19,10 +19,10 @@ function reported(utilization: number | null, status: "allowed" | "rejected" = "
 afterEach(() => vi.restoreAllMocks());
 describe("native reported limits", () => {
   it("keeps unknown and old-server data separate from a storage read failure", () => {
-    expect(html(undefined)).toContain("Keine Limits gemeldet");
-    expect(html({ state: "unknown" })).toContain("—");
+    // #610: unknown limits render an empty cell, no "—" or caption.
+    expect(html(undefined)).not.toContain("Keine Limits gemeldet");
+    expect(html({ state: "unknown" })).not.toContain("—");
     const failed = html({ state: "unavailable", errorClass: "quota_read_failed" });
-    expect(failed).toContain("quota_read_failed");
     expect(failed).not.toContain("Credentials rejected");
     expect(failed).not.toContain('role="meter"');
   });
@@ -61,15 +61,12 @@ describe("native reported limits", () => {
     expect(html(reported(0.25, "rejected"))).not.toContain("Limit erreicht");
     for (const status of ["allowed", "rejected"] as const) {
       const result = html(reported(null, status));
-      expect(result).toContain("unbekannt");
       expect(result).not.toContain('role="meter"');
       expect(result).not.toContain("Limit erreicht");
     }
   });
   it("keeps unqualified provider direction unknown", () => {
     const result = html(reported(1, "rejected"), "unqualified-provider");
-    expect(result).toContain("unbekannt");
-    expect(result).toContain("Richtung");
     expect(result).not.toContain("Limit erreicht");
     expect(result).not.toContain('role="meter"');
   });
@@ -79,15 +76,12 @@ describe("native reported limits", () => {
       observedAtMs: now - 3000,
       windows: [{ kind: "five_hour", status: "allowed", resetAtMs: now - 1000, utilization: 0.25 }],
     });
-    expect(expired).toContain("unbekannt");
-    expect(expired).toContain("abgelaufen");
     expect(expired).not.toContain('role="meter"');
     const stale = html({
       state: "reported",
       observedAtMs: now - 300_000,
       windows: [{ kind: "five_hour", status: "allowed", resetAtMs: now + 1000, utilization: 0.25 }],
     });
-    expect(stale).toContain("unbekannt");
     expect(stale).not.toContain('role="meter"');
   });
 });

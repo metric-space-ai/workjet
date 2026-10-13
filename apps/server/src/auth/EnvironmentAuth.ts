@@ -930,11 +930,12 @@ export const make = Effect.gen(function* () {
 
   const issueWebSocketTicket: EnvironmentAuth["Service"]["issueWebSocketTicket"] = (session) =>
     sessions
-      .issueWebSocketToken(session.sessionId, {
-        ...(session.localDesktopEnvironmentId === undefined
+      .issueWebSocketToken(
+        session.sessionId,
+        session.localDesktopEnvironmentId === undefined
           ? {}
-          : { localDesktopEnvironmentId: session.localDesktopEnvironmentId }),
-      })
+          : { localDesktopEnvironmentId: session.localDesktopEnvironmentId },
+      )
       .pipe(
         Effect.mapError((cause) => new ServerAuthWebSocketTokenIssueError({ cause })),
         Effect.map(

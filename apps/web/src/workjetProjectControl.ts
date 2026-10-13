@@ -129,6 +129,9 @@ export function describeWorkjetProjectControlFailure(
       owner_session_not_ready: "Die Sitzung des Eigentümers ist noch nicht bereit.",
       project_control_not_ready: "Die Projektverbindung wird noch aufgebaut.",
       supervisor_control_not_ready: "Die Supervisor-Verbindung wird noch aufgebaut.",
+      core_outdated:
+        "Der CTOX-Core der Instanz ist zu alt für diese Funktion. CTOX auf der Instanz aktualisieren.",
+      access_denied: "Dafür braucht dein Konto auf der Instanz die Rolle Owner oder Admin.",
     };
     return messages[failure.diagnostic.reason];
   }

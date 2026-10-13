@@ -11,7 +11,6 @@ import {
   MonitorIcon,
   PaletteIcon,
   ServerIcon,
-  TerminalIcon,
   Settings2Icon,
   UserRoundIcon,
 } from "lucide-react";
@@ -23,7 +22,6 @@ export const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/business-os": ServerIcon,
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
-  "/settings/harnesses": TerminalIcon,
   "/settings/models": CpuIcon,
   "/settings/speech": AudioLinesIcon,
   "/settings/computers": MonitorIcon,

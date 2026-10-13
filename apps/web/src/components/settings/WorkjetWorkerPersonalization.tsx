@@ -1,4 +1,5 @@
 import type { WorkjetWorkerPersonalization } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import { ArrowLeftRightIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -382,17 +383,16 @@ export function WorkjetWorkerPersonalizationEditor({
                 {flat[activeTargetIndex]?.detail.left} ↔ {flat[activeTargetIndex]?.detail.right}
               </span>
               <span className="ml-auto">Richtung</span>
-              <select
+              <OptionSelect
                 aria-label="Richtung"
+                className="w-auto"
                 value={weightDirection}
-                onChange={(event) =>
-                  setWeightDirection(event.target.value as "to-target" | "from-target")
-                }
-                className="rounded-md border border-border/70 bg-background px-2 py-1 text-foreground"
-              >
-                <option value="to-target">Andere → Ziel</option>
-                <option value="from-target">Ziel → andere</option>
-              </select>
+                options={[
+                  { value: "to-target", label: "Andere → Ziel" },
+                  { value: "from-target", label: "Ziel → andere" },
+                ]}
+                onValueChange={setWeightDirection}
+              />
               <button
                 type="button"
                 aria-label="Gewichtung schließen"

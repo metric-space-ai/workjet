@@ -21,7 +21,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
     id: "harnesses",
     title: "Harnesses",
-    to: "/settings/harnesses",
+    to: "/settings/computers",
   },
   {
     id: "provider-updates",
@@ -56,7 +56,7 @@ describe("searchSettings", () => {
     // "Harnesses" is both the sidebar label and a catalog item landing on the
     // same page; one result, not two identical rows.
     expect(searchSettings("harnesses", ITEMS)).toEqual([
-      { id: "harnesses", title: "Harnesses", to: "/settings/harnesses" },
+      { id: "harnesses", title: "Harnesses", to: "/settings/computers" },
     ]);
     // "Computers" likewise resolves to the single catalog entry for the page.
     expect(searchSettings("computers").map((item) => item.id)).toEqual(["workjet-computers"]);
@@ -85,7 +85,7 @@ describe("searchSettings", () => {
         {
           id: "import-sessions",
           title: "Sitzungen importieren",
-          to: "/settings/harnesses",
+          to: "/settings/computers",
           searchAliases: ["import", "history", "histories"],
         },
       ]);

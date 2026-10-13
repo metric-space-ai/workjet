@@ -4,6 +4,7 @@ import {
   type WorkjetSessionImportItemResult,
   type WorkjetSessionImportSource,
 } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -369,21 +370,17 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
         <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-44 flex-1">
             <span className="mb-1.5 block text-xs font-medium">Zielprojekt</span>
-            <select
-              className={inputClass}
-              value={props.destination}
-              disabled={busy || props.readOnly}
+            <OptionSelect
               aria-label="Zielprojekt"
-              onChange={(event) => props.onDestinationChange(event.target.value)}
-            >
-              <option value="">Projekt wählen …</option>
-              {props.projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.title}
-                </option>
-              ))}
-              <option value="new">＋ Neues Projekt</option>
-            </select>
+              value={props.destination}
+              placeholder="Projekt wählen …"
+              disabled={busy || props.readOnly}
+              options={[
+                ...props.projects.map((project) => ({ value: project.id, label: project.title })),
+                { value: "new", label: "＋ Neues Projekt" },
+              ]}
+              onValueChange={props.onDestinationChange}
+            />
           </label>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground" aria-live="polite">

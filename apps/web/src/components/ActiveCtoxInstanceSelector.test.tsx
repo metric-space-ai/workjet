@@ -65,13 +65,13 @@ describe("instance picker identity and discovery", () => {
   });
   it("does not call a discoverable instance connected before the data plane is ready", () => {
     const ready = instance("one", "Ready");
-    expect(ctoxInstancePickerStatus(ready)).toBe("Verbunden");
+    expect(ctoxInstancePickerStatus(ready)).toBe("verbunden");
     expect(
       ctoxInstancePickerStatus({
         ...ready,
         healthSummary: { ...healthSummary, dataPlaneReady: false },
       }),
-    ).toBe("Nicht bestätigt");
+    ).toBe("verbindet");
     expect(ctoxInstancePickerStatus({ ...ready, status: "pairing_expired" })).toBe(
       "Kopplung abgelaufen",
     );

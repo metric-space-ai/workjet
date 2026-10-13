@@ -5,6 +5,7 @@ import {
   type WorkjetWorkerProfile,
   type WorkjetComputer,
   type WorkjetGatewayModelSummary,
+  type WorkjetHarness,
   type CtoxWorkjetComputerProjection,
   type EnvironmentId,
 } from "@workjet/contracts";
@@ -124,6 +125,7 @@ export function NativeSupervisorRouteControls(props: {
       : instance.data;
   const configuration =
     snapshot?.configuration ??
+    lumas.configuration ??
     (snapshot?.revision === 0 ? extractLumaInstanceDocument(local) : null);
   const profiles = configuration?.workerProfiles ?? lumas.profiles;
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null;
@@ -308,6 +310,12 @@ export function NativeSupervisorRouteControls(props: {
         onError={setError}
         onConfigureWorkers={() => void navigate({ to: "/settings/workjet" })}
         onAddComputer={() => setAddComputerOpen(true)}
+        onSetupHarness={() => void navigate({ to: "/settings/harnesses" })}
+        onHarnessMenuOpen={() => {
+          // Erkennung nach einer Installation ohne App-Neustart neu anstoßen.
+          instance.refresh();
+          catalog.refresh();
+        }}
       />
       {/* Full-width row under the controls; same panel as the chat composer (#528). */}
       <div className="w-full basis-full" data-supervisor-add-computer="true">
@@ -344,6 +352,8 @@ export function NativeSupervisorRouteControlsView(props: {
   readonly onError: (error: string) => void;
   readonly onConfigureWorkers: () => void;
   readonly onAddComputer: () => void;
+  readonly onSetupHarness?: ((harness: WorkjetHarness) => void) | undefined;
+  readonly onHarnessMenuOpen?: (() => void) | undefined;
 }) {
   const manual =
     props.selected === null || isSupervisorManualProfile(props.selected, props.projectId);
@@ -411,6 +421,8 @@ export function NativeSupervisorRouteControlsView(props: {
               }
               change({ ...selected, modelId });
             }}
+            onSetupHarness={props.onSetupHarness}
+            onHarnessMenuOpen={props.onHarnessMenuOpen}
           />
           {props.environmentId && (
             <ComposerComputerControl

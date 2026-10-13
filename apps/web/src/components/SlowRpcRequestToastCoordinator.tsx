@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 
+import { useClientSettings } from "../hooks/useSettings";
 import { type SlowRpcAckRequest, useSlowRpcAckRequests } from "../rpc/requestLatencyState";
 
 /**
@@ -19,13 +20,15 @@ export function describeSlowRequests(requests: ReadonlyArray<SlowRpcAckRequest>)
 }
 
 /**
- * Kleiner Chip in der Kopfzeile statt Toast. Die einzige Aktion ist der Klick
- * auf den Chip; er führt zu Einstellungen › Diagnose.
+ * Kleiner Chip in der Kopfzeile statt Toast — reine Diagnose, darum nur im
+ * Entwicklermodus (#574) sichtbar. Die einzige Aktion ist der Klick auf den
+ * Chip; er führt zu Einstellungen › Diagnose.
  */
 export function SlowRpcRequestChip() {
+  const developerMode = useClientSettings((settings) => settings.developerMode);
   const slowRequests = useSlowRpcAckRequests();
   const navigate = useNavigate();
-  if (slowRequests.length === 0) return null;
+  if (!developerMode || slowRequests.length === 0) return null;
   return (
     <button
       type="button"

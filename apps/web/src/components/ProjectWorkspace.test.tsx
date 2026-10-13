@@ -20,7 +20,7 @@ import {
   projectGoalSentence,
   projectOverviewWorkerState,
 } from "../projectOverviewModel";
-import { projectOverviewLanguage, readSystemLanguages } from "../projectOverviewText";
+import { projectOverviewLanguage } from "../projectOverviewText";
 import type { GalleryProject } from "../projectOverview";
 
 const source = EnvironmentId.make("desktop");
@@ -412,11 +412,8 @@ describe("owner project overview", () => {
       />,
     );
     expect(html).toContain('data-workjet-project-overview="real-project"');
-    expect(html).toContain(
-      projectOverviewLanguage("system", readSystemLanguages()) === "de"
-        ? "Regeltermin beitreten"
-        : "Join regular meeting",
-    );
+    // Default interfaceLanguage is German (#533); overview must show DE copy.
+    expect(html).toContain("Regeltermin beitreten");
   });
   it("resolves the saved UI setting before the browser language", () => {
     expect(projectOverviewLanguage("de", "en-US")).toBe("de");
@@ -428,8 +425,8 @@ describe("owner project overview", () => {
     expect(projectOverviewLanguage("system", ["de-AT", "en-US"])).toBe("de");
     expect(projectOverviewLanguage("system", ["de_CH"])).toBe("de");
     expect(projectOverviewLanguage("system", ["fr-FR", "de-DE"])).toBe("de");
-    expect(projectOverviewLanguage("system", ["fr-FR", "es-ES"])).toBe("en");
-    expect(projectOverviewLanguage("system", [])).toBe("en");
+    expect(projectOverviewLanguage("system", ["fr-FR", "es-ES"])).toBe("de");
+    expect(projectOverviewLanguage("system", [])).toBe("de");
     expect(projectOverviewLanguage("system", ["EN-gb"])).toBe("en");
   });
 });

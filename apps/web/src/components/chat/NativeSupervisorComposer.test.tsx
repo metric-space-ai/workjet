@@ -162,7 +162,8 @@ describe("native supervisor receipt display", () => {
         />,
       );
       expect(html).toContain("Real requested change");
-      expect(html).toContain("Warte auf CTOX-Bestätigung");
+      // Still erneut versucht: keine Zustandszeile, kein Fehlertext.
+      expect(html).not.toContain("Warte auf");
       expect(html).not.toContain("Nicht gesendet");
       expect(html).not.toContain("You can send a new request");
       expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
@@ -189,7 +190,8 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Warte auf CTOX-Bestätigung");
+    expect(html).toContain("Real requested change");
+    expect(html).not.toContain("Warte auf");
     expect(html).not.toContain("Awaiting confirmation");
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
     expect(html).not.toContain("Refresh task");
@@ -237,8 +239,9 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Actual native result");
-    expect(html).toContain("Versuch 2");
-    expect(html).toContain("native-task");
+    // Kein interner Zustand (Versuchszähler, Aufgaben-IDs) in der Fläche.
+    expect(html).not.toContain("Versuch");
+    expect(html).not.toContain("native-task");
     expect(html).not.toContain("Codex CLI");
     expect(html).not.toContain("gpt-6");
   });

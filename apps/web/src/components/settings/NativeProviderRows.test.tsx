@@ -278,7 +278,7 @@ describe("Native provider account rows", () => {
   it("renders the actual disabled state without claiming a credential or inference failure", () => {
     const rendered = html({ ...registry.accounts[0]!, enabled: false });
     expect(control(rendered, "Konto 1 aktiv")).toContain('aria-checked="false"');
-    expect(rendered).toContain("Keine Limits gemeldet");
+    expect(rendered).not.toContain("Keine Limits gemeldet");
     expect(rendered).not.toContain("Credentials rejected");
   });
 });

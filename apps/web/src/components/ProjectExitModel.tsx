@@ -603,7 +603,7 @@ export function ProjectExitModelReport({
                 </tr>
               </thead>
               <tbody>
-                {[...current.history].reverse().map((run) => (
+                {[...current.history].toReversed().map((run) => (
                   <tr key={run.run_id} className="border-t border-border">
                     <td className="py-2 pr-3 whitespace-nowrap">{formatExitDate(run.as_of)}</td>
                     <td className="px-2 whitespace-nowrap">{formatExitDate(run.exit_date)}</td>

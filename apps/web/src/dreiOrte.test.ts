@@ -46,7 +46,7 @@ const POPUP_ROLLE = /\srole=["']dialog["']/; // JSX-Attribut, nicht CSS-Selektor
 describe("drei Orte: Dev, Ops, Einstellungen", () => {
   it("hat keine Route außerhalb der drei Orte", () => {
     const routes = NodeFS.readdirSync(NodePath.join(SRC, "routes")).filter(
-      (file) => /\.tsx$/.test(file) && !file.startsWith("-") && !/\.test\.tsx$/.test(file),
+      (file) => file.endsWith(".tsx") && !file.startsWith("-") && !file.endsWith(".test.tsx"),
     );
     const fremd = routes.filter((file) => !ERLAUBTE_ROUTEN.some((pattern) => pattern.test(file)));
     expect(fremd, "Seiten außerhalb von Dev, Ops und Einstellungen").toEqual([]);

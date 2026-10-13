@@ -298,7 +298,7 @@ function IndexDraftLanding() {
           )?.defaultModelSelection,
         );
         if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)
-          throw new Error("In Modelle ein Konto mit konkretem Modell einrichten.");
+          throw new Error(MODEL_ACCOUNT_MISSING);
         if (plan._tag === "create") {
           const result = await createProject({
             environmentId: target.environmentId,
@@ -416,7 +416,14 @@ function IndexDraftLanding() {
     supervisor,
   ]);
 
-  if (landingProject !== null && !(selectedNative !== null && supervisor === null)) {
+  // Without a model account no Supervisor can start, but the project stays
+  // usable: history, organigram and settings open with a compact notice (QA 0.0.95 F).
+  const modelAccountMissing =
+    nativeOpenState.error === MODEL_ACCOUNT_MISSING && !nativeOpenState.pending;
+  if (
+    landingProject !== null &&
+    (!(selectedNative !== null && supervisor === null) || modelAccountMissing)
+  ) {
     const project = galleryProjects.find(
       (candidate) =>
         candidate.local?.id === landingProject.id &&
@@ -429,6 +436,7 @@ function IndexDraftLanding() {
           ctoxInstanceId={activeCtoxInstanceId}
           openMeeting={meetingProjectKey === project.key}
           threads={threads}
+          {...(modelAccountMissing ? { notice: <ModelAccountMissingNotice /> } : {})}
           onOpenPullRequests={() =>
             void navigate({
               to: "/pull-requests",
@@ -979,6 +987,20 @@ function ProjectGallery({
 
 const PROJECT_OPENING_TIMEOUT_MS = 10_000;
 
+const MODEL_ACCOUNT_MISSING =
+  "Kein Modell-Konto: Der Supervisor startet, sobald eines eingerichtet ist.";
+
+function ModelAccountMissingNotice() {
+  return (
+    <>
+      <span>{MODEL_ACCOUNT_MISSING}</span>
+      <Button size="xs" variant="outline" render={<Link to="/settings/models" />}>
+        Modell-Konto einrichten
+      </Button>
+    </>
+  );
+}
+
 function WorkjetProjectOpening({
   projectTitle,
   onOpenSupervisor,
@@ -1028,7 +1050,14 @@ function WorkjetProjectOpening({
               {error}
             </p>
           ) : null}
-          {error && (
+          {error === MODEL_ACCOUNT_MISSING ? (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button size="sm" render={<Link to="/settings/models" />}>
+                Modell-Konto einrichten
+              </Button>
+            </div>
+          ) : null}
+          {error && error !== MODEL_ACCOUNT_MISSING && (
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Button
                 size="sm"

@@ -85,6 +85,7 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "WorkerDecisionTool.ts", enforcer: "requireWorkjetMember" },
   { file: "WorkerKanbanTool.ts", enforcer: "requireWorkjetMember" },
   { file: "WorkerTool.ts", enforcer: "requireWorkjetOrchestrator" },
+  { file: "WorkerTool.ts", enforcer: "requireWorkjetOrchestrator" },
 ];
 
 const withoutComments = (body: string): string =>

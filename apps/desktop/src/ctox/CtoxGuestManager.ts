@@ -2508,8 +2508,15 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (!guest) return result;
         let failures = 0;
         if (request.action === "project.list") {
+          // A diagnosed failure (timeout, peer not yet open, startup not
+          // ready) comes from a live Shell that is still catching up. A
+          // replacement starts that catch-up from zero, so counting slowness
+          // here turned every cold start into a permanent rebuild loop.
+          // Only an undiagnosed failure suggests a broken renderer.
           failures =
-            result._tag === "failed" && result.code === "guest_failed"
+            result._tag === "failed" &&
+            result.code === "guest_failed" &&
+            result.diagnostic === undefined
               ? (listFailures.get(guest.view.webContents) ?? 0) + 1
               : 0;
           listFailures.set(guest.view.webContents, failures);

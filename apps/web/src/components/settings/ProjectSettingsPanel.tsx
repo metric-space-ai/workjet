@@ -94,7 +94,9 @@ import {
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
+  SettingsEmbeddedContext,
   SettingsSection,
+  useSettingsEmbedded,
 } from "./settingsLayout";
 import { ProjectFaviconPicker } from "./ProjectFaviconPicker";
 import { ProjectSupervisorLumaField } from "../ProjectSupervisorLumaField";
@@ -108,11 +110,12 @@ import {
   useWorkjetProjectRegistry,
 } from "../../workjetProjectRegistry";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
-import { newCommandId } from "../../lib/utils";
+import { cn, newCommandId } from "../../lib/utils";
 import {
   INSTANCE_PROJECT_KEY_PREFIX,
   InstanceProjectDetail,
   InstanceProjectRow,
+  instanceProjectSettingsKey,
   useInstanceOnlyProjects,
 } from "./InstanceProjectSettings";
 
@@ -159,21 +162,34 @@ function compareByName(a: { readonly name: string }, b: { readonly name: string 
   return a.name.localeCompare(b.name);
 }
 
-function instanceProjectRow(project: Parameters<typeof InstanceProjectRow>[0]["project"]) {
-  return <InstanceProjectRow key={project.key} project={project} />;
-}
-
 export function ProjectsSettingsList() {
   const groups = useSettingsProjectGroups();
   const instanceProjects = useInstanceOnlyProjects().projects;
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const localCopy =
     workjetUiLanguage() === "en" ? "Copy on this computer" : "Kopie auf diesem Rechner";
+  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
   const rows = [
-    ...groups.map((group) => ({ name: group.displayName, row: localProjectRow(group, localCopy) })),
-    ...instanceProjects.map((project) => ({
-      name: project.title,
-      row: instanceProjectRow(project),
+    ...groups.map((group) => ({
+      name: group.displayName,
+      key: group.projectKey,
+      row: localProjectRow(group, localCopy, openKey === group.projectKey, toggle),
     })),
+    ...instanceProjects.map((project) => {
+      const key = instanceProjectSettingsKey(project.id);
+      return {
+        name: project.title,
+        key,
+        row: (
+          <InstanceProjectRow
+            key={project.key}
+            project={project}
+            open={openKey === key}
+            onToggle={() => toggle(key)}
+          />
+        ),
+      };
+    }),
   ].toSorted(compareByName);
   return (
     <SettingsPageContainer>
@@ -190,7 +206,27 @@ export function ProjectsSettingsList() {
           </Empty>
         ) : (
           <div className="divide-y divide-border/60" data-workjet-settings-projects="">
-            {rows.map((entry) => entry.row)}
+            {rows.map((entry) => (
+              <div key={entry.key}>
+                {entry.row}
+                <InlineExpand
+                  hideCollapseControl
+                  label={entry.name}
+                  open={openKey === entry.key}
+                  onOpenChange={(open) => {
+                    if (!open) setOpenKey((current) => (current === entry.key ? null : current));
+                  }}
+                >
+                  {openKey === entry.key ? (
+                    <div className="px-3 sm:px-4" data-workjet-project-settings-inline="">
+                      <SettingsEmbeddedContext.Provider value={{ onClose: () => setOpenKey(null) }}>
+                        <ProjectSettingsPanel projectKey={entry.key} />
+                      </SettingsEmbeddedContext.Provider>
+                    </div>
+                  ) : null}
+                </InlineExpand>
+              </div>
+            ))}
           </div>
         )}
       </SettingsSection>
@@ -198,19 +234,24 @@ export function ProjectsSettingsList() {
   );
 }
 
-function localProjectRow(group: SidebarProjectSnapshot, localCopy: string) {
+function localProjectRow(
+  group: SidebarProjectSnapshot,
+  localCopy: string,
+  open: boolean,
+  toggle: (key: string) => void,
+) {
   const representative =
     group.memberProjects.find(
       (member) => member.environmentId === group.environmentId && member.id === group.id,
     ) ?? group.memberProjects[0];
   return (
     <Row
-      key={group.projectKey}
       name={
-        <Link
-          to="/settings/projects/$projectKey"
-          params={{ projectKey: group.projectKey }}
-          className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => toggle(group.projectKey)}
+          className="flex min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-workjet-action={`project.settings:${group.projectKey}`}
         >
           {representative ? (
@@ -229,7 +270,14 @@ function localProjectRow(group: SidebarProjectSnapshot, localCopy: string) {
           >
             <title>{localCopy}</title>
           </LaptopIcon>
-        </Link>
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </button>
       }
       meta={representative?.environmentLabel ?? undefined}
       chips={
@@ -303,6 +351,7 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
 }
 
 function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
+  const embedded = useSettingsEmbedded();
   const navigate = useNavigate();
   const { environments } = useEnvironments();
   const settings = usePrimarySettings();
@@ -837,7 +886,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
   return (
     <SettingsPageContainer>
-      <div className="flex min-w-0 items-center gap-2 px-1" data-workjet-project-settings-header="">
+      <div
+        className={cn("flex min-w-0 items-center gap-2 px-1", embedded && "hidden")}
+        data-workjet-project-settings-header=""
+      >
         <ProjectFavicon
           environmentId={representative.environmentId}
           cwd={representative.workspaceRoot}
@@ -915,6 +967,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <div className="px-3 py-3 sm:px-4" data-workjet-project-settings-overview="">
           <ProjectOverviewEditor
             key={group.projectKey}
+            onCancel={embedded?.onClose}
             overview={representative.overview}
             configuration={nativeConfiguration}
             onSaveConfiguration={nativeConfiguration ? saveNativeConfiguration : undefined}

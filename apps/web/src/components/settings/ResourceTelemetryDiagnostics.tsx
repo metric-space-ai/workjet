@@ -1142,7 +1142,12 @@ export function ResourceTelemetryDiagnostics() {
               icon={<GaugeIcon className="size-3.5" />}
               label="CPU-Drossel"
               value={snapshot ? (speedLimit === null ? "—" : `${speedLimit.toFixed(0)}%`) : "..."}
-              detail={snapshot ? `${snapshot.power.thermalState}` : undefined}
+              detail={
+                snapshot && snapshot.power.thermalState !== "unknown"
+                  ? (THERMAL_STATE_LABELS[snapshot.power.thermalState] ??
+                    snapshot.power.thermalState)
+                  : undefined
+              }
               tone={speedLimit !== null && speedLimit < 80 ? "warning" : "default"}
             />
           </div>

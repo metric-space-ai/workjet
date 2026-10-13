@@ -18,7 +18,7 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
 describe("ClientSettings project language", () => {
   it("keeps old settings compatible and persists explicit language choices", () => {
-    expect(decodeClientSettings({}).interfaceLanguage).toBe("system");
+    expect(decodeClientSettings({}).interfaceLanguage).toBe("de");
     for (const interfaceLanguage of ["system", "de", "en"] as const) {
       expect(decodeClientSettingsPatch({ interfaceLanguage }).interfaceLanguage).toBe(
         interfaceLanguage,

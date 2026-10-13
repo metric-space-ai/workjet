@@ -299,6 +299,7 @@ export function WorkjetWorkerEditor({
   initialDraft,
   onDraftChange,
   compact = false,
+  initialTab = "task",
 }: {
   readonly worker?: WorkjetWorkerProfile | null;
   /** Prevents an unfinished worker from one Business OS leaking into another. */
@@ -321,6 +322,8 @@ export function WorkjetWorkerEditor({
   readonly initialDraft?: WorkjetWorkerDraft | undefined;
   readonly onDraftChange?: ((draft: WorkjetWorkerDraft) => void) | undefined;
   readonly compact?: boolean;
+  /** Tab shown first; defaults to the task. */
+  readonly initialTab?: "task" | "personality" | "execution";
   /** Opens the place where an access is created. Optional so existing callers keep working. */
   readonly onAddRoute?: (() => void) | undefined;
   /** Creates an access in place, inside this editor; preferred over onAddRoute. */
@@ -328,7 +331,7 @@ export function WorkjetWorkerEditor({
 }) {
   const [creatingRoute, setCreatingRoute] = useState(false);
   const t = useUiText();
-  const [editorTab, setEditorTab] = useState<"task" | "personality" | "execution">("task");
+  const [editorTab, setEditorTab] = useState<"task" | "personality" | "execution">(initialTab);
   const [draft, setDraft] = useState(() => {
     if (initialDraft) return initialDraft;
     // "Add LLM route…" navigates AWAY to the Models page; without this stash

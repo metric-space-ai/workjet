@@ -129,13 +129,13 @@ describe("searchSettings", () => {
 
   it("registers the Workjet catalog areas before Greppy runtime", () => {
     // Both the current label and legacy vocabulary resolve to one catalog item.
-    for (const query of ["worker", "Luma", "Lumas"]) {
+    for (const query of ["worker", "Preset", "Lumas"]) {
       expect(searchSettings(query)).toEqual([
         {
           id: "workjet-workers",
-          title: "Lumas",
+          title: "Worker-Presets",
           to: "/settings/workjet",
-          searchAliases: ["worker", "workers", "agent", "agents"],
+          searchAliases: ["worker", "workers", "presets", "lumas", "agent", "agents"],
         },
       ]);
     }
@@ -162,6 +162,11 @@ describe("searchSettings", () => {
       },
     ]);
 
+    // System-Prompts are their own page (#618).
+    expect(searchSettings("system-prompts")[0]).toMatchObject({
+      id: "workjet-prompt",
+      to: "/settings/prompts",
+    });
     const workjetIds = SETTINGS_SEARCH_ITEMS.filter((item) => item.to === "/settings/workjet").map(
       (item) => item.id,
     );
@@ -170,8 +175,6 @@ describe("searchSettings", () => {
     // only the five tabs plus their nested anchors resolve to the Worker page.
     expect(workjetIds).toEqual([
       "workjet-workers",
-      "workjet-organigram",
-      "workjet-prompt",
       "workjet-telemetry",
       "workjet-execution",
       "automatic-worktree-storage",

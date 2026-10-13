@@ -1,13 +1,6 @@
 import type { WorkjetWorkerPersonalization } from "@workjet/contracts";
 import { OptionSelect } from "../ui/option-select";
-import {
-  ArrowLeftRightIcon,
-  ChevronRightIcon,
-  PencilIcon,
-  PlusIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
+import { ArrowLeftRightIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -286,10 +279,7 @@ export function WorkjetWorkerPersonalizationEditor({
 
   return (
     <section className="overflow-hidden rounded-xl border border-border/60 bg-background/20">
-      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
-        <h4 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          Persönlichkeitsregler
-        </h4>
+      <div className="flex items-center justify-end gap-3 border-b border-border/50 px-3 py-1.5">
         <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
           Aktiv
           <Switch
@@ -306,7 +296,7 @@ export function WorkjetWorkerPersonalizationEditor({
           return (
             <div
               key={group.id}
-              className="grid min-h-16 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_1.75rem] items-center gap-3 px-3 py-2"
+              className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1"
             >
               <span className="text-xs font-medium leading-tight">{group.meta.left}</span>
               <input
@@ -336,13 +326,11 @@ export function WorkjetWorkerPersonalizationEditor({
                   })
                 }
                 className={cn(
-                  "grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                  "min-h-7 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                   visible && "bg-primary/10 text-primary",
                 )}
               >
-                <ChevronRightIcon
-                  className={cn("size-3.5 transition-transform", visible && "rotate-90")}
-                />
+                Details
               </button>
             </div>
           );

@@ -1,3 +1,4 @@
+import { localizedThreadTitle } from "../localizedThreadTitle";
 import { workjetUiLanguage } from "../workjetProjectControl";
 import { autoAnimate } from "@formkit/auto-animate";
 import { scheduleUndoableThreadDelete } from "../lib/undoableDelete";
@@ -349,7 +350,7 @@ function SidebarThreadTooltip({
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
         <div className="min-w-0 truncate text-xs leading-none font-medium text-foreground">
-          {thread.title}
+          {localizedThreadTitle(thread.title)}
         </div>
         <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
           {projectTitle ? (
@@ -1151,7 +1152,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         isRegeneratingTitle && "opacity-[0.55]",
       )}
     >
-      {thread.title}
+      {localizedThreadTitle(thread.title)}
     </span>
   );
 
@@ -3846,7 +3847,15 @@ export default function Sidebar() {
               </SidebarMenuButton>
             ) : null}
             <div className="relative flex items-center gap-1">
-              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
+              {/* The whole row opens search, not only the text field. */}
+              <div
+                className="flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                onMouseDown={(event) => {
+                  if (event.target === threadSearchInputRef.current) return;
+                  event.preventDefault();
+                  threadSearchInputRef.current?.focus();
+                }}
+              >
                 <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
                 <Input
                   ref={threadSearchInputRef}

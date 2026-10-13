@@ -51,6 +51,10 @@ const WEEKDAY_LABELS = [
  * Dichte Rückseite der Galeriekarte. Speichert über denselben Pfad wie
  * Einstellungen › Projekt (project.configure bzw. Projektübersicht).
  */
+function editorText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 export function ProjectCardConfigEditor({
   title,
   websiteUrl,
@@ -442,8 +446,16 @@ export function ProjectOverviewEditor({
       }}
     >
       <div className="grid items-center gap-x-3 gap-y-2 sm:grid-cols-[6rem_minmax(0,1fr)]">
-        <label className="text-xs text-muted-foreground" htmlFor={`${id}-token-budget`}>
-          Token-Budget
+        <label
+          className="flex items-baseline gap-1.5 text-xs text-muted-foreground"
+          htmlFor={`${id}-token-budget`}
+        >
+          {editorText("Token-Budget", "Token budget")}
+          {budget.trim().length === 0 ? (
+            <span className="text-muted-foreground/70" data-project-field-default="">
+              {editorText("kein Limit", "no limit")}
+            </span>
+          ) : null}
         </label>
         <div className="grid gap-1">
           <div className="flex items-center gap-2">
@@ -452,12 +464,12 @@ export function ProjectOverviewEditor({
               inputMode="decimal"
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
-              placeholder="2,3"
-              title="Milliarden Tokens je Regeltermin-Zyklus · leer = kein Limit"
               disabled={state.pending}
               aria-invalid={errors.budget !== undefined}
             />
-            <span className="shrink-0 text-xs text-muted-foreground">Mrd. je Zyklus</span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {editorText("Mrd. Tokens je Regeltermin-Zyklus", "bn tokens per meeting cycle")}
+            </span>
           </div>
           {errors.budget !== undefined && (
             <p className="text-xs text-red-400" role="alert">
@@ -466,7 +478,7 @@ export function ProjectOverviewEditor({
           )}
         </div>
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-repository`}>
-          Git-Quelle
+          {editorText("Git-Quelle", "Git source")}
         </label>
         <Input
           id={`${id}-repository`}
@@ -480,7 +492,7 @@ export function ProjectOverviewEditor({
           disabled={state.pending}
         />
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-website`}>
-          Webseite
+          {editorText("Webseite", "Website")}
         </label>
         <Input
           id={`${id}-website`}

@@ -26,6 +26,7 @@ import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
 import { searchableSetting } from "./settingsSearch";
 import {
   automaticWorktreeStorageControlState,
+  WorktreeStorageInline,
   GreppyRuntimeSectionView,
   greppyOperationFailureDescription,
   greppyRuntimeAction,
@@ -117,7 +118,6 @@ describe("Workjet configuration settings", () => {
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         onChange={() => undefined}
       />,
     );
@@ -127,9 +127,9 @@ describe("Workjet configuration settings", () => {
     // and LLM routes live on Models, capabilities are toggled in the worker
     // editor, and the one-shot legacy import surface is gone. Every section
     // the catalog declares must actually render a tab.
-    for (const section of WORKJET_SETTINGS_SECTIONS) {
-      expect(markup).toContain(`>${section.label}<`);
-    }
+    // Without developer mode only the preset list remains, so no tab bar.
+    expect(WORKJET_SETTINGS_SECTIONS.map((section) => section.id)).not.toContain("organigram");
+    expect(markup).not.toContain('role="tablist"');
     for (const gone of [
       "Provider accounts",
       "LLM routes",
@@ -139,11 +139,10 @@ describe("Workjet configuration settings", () => {
     ]) {
       expect(markup).not.toContain(gone);
     }
-    expect(markup).toContain('role="tablist"');
-    // Page title is „Lumas“; the empty list is a title plus one primary action.
-    expect(markup).toContain(">Lumas</h1>");
-    expect(markup).toContain("Keine Lumas");
-    expect(markup).toContain("Luma hinzufügen");
+    // Page title is „Worker-Presets“; the empty list is a title plus one primary action.
+    expect(markup).toContain(">Worker-Presets</h1>");
+    expect(markup).toContain("Keine Worker-Presets");
+    expect(markup).toContain("Preset hinzufügen");
     expect(markup).not.toContain("Connection targets");
     // The Greppy RUNTIME sits under Workers now — it supports composition.
     expect(markup).toContain(GREPPY_TITLE);
@@ -173,14 +172,13 @@ describe("Workjet configuration settings", () => {
         configuration={{ ...DEFAULT_WORKJET_CONFIGURATION, workerProfiles: [worker] }}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         onChange={() => undefined}
       />,
     );
     expect(markup).toContain('data-slot="row"');
     expect(markup).toContain(">Umsetzung<");
-    // Meta: Modell · Harness · Rechner (missing → „—“).
-    expect(markup).toContain("claude-opus-5-5 · Claude Code · —");
+    // Meta: Modell · Harness · Rechner (missing → „Rechner: —“).
+    expect(markup).toContain("claude-opus-5-5 · Claude Code · Rechner: —");
     expect(markup).toContain('aria-label="Löschen"');
     expect(markup).toContain("Weitere Aktionen");
     expect(markup).toContain("Rechner fehlt");
@@ -196,7 +194,6 @@ describe("Workjet configuration settings", () => {
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         defaultSection="telemetry"
         onChange={() => undefined}
       />,
@@ -212,7 +209,6 @@ describe("Workjet configuration settings", () => {
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         defaultSection="workers"
         onChange={() => undefined}
       />,
@@ -220,38 +216,21 @@ describe("Workjet configuration settings", () => {
     expect(capabilitiesMarkup).toContain(GREPPY_TITLE);
   });
 
-  it("shows selected-server automatic storage health in Execution", () => {
+  it("keeps worktree storage out of Execution; it lives on the Rechner page (#619)", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
         draftScopeKey="test-instance"
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={{
-          ...automaticWorktreeStorage,
-          configuredRoot: "/Volumes/worktrees",
-          inspection: {
-            ...automaticWorktreeStorage.inspection,
-            requestedRoot: "/Volumes/worktrees",
-            configuredRoot: "/Volumes/worktrees",
-            effectiveRoot: "/Volumes/worktrees",
-            canonicalRoot: "/Volumes/worktrees",
-          },
-        }}
         defaultSection="execution"
         onChange={() => undefined}
       />,
     );
-
-    expect(markup).toContain(searchableSetting("automatic-worktree-storage").title);
-    // The label alone, never the raw environment id beside it.
-    expect(markup).toContain("Rechner: Code server");
-    expect(markup).not.toContain("code-server</");
-    expect(markup).toContain("Beschreibbar · 125 GB frei");
-    expect(markup).toContain("Standard");
-    // No explanatory sentences and no raw canonical paths beside the input.
-    expect(markup).not.toContain("Effective canonical path");
-    expect(markup).not.toContain("existing worktrees are not moved");
+    expect(markup).not.toContain(searchableSetting("automatic-worktree-storage").title);
+    expect(
+      renderToStaticMarkup(<WorktreeStorageInline storage={automaticWorktreeStorage} />),
+    ).toContain("125 GB frei");
     expect(formatAvailableBytes(1_500_000_000)).toBe("1.50 GB");
     expect(formatAvailableBytes(Number.NaN)).toBe("—");
   });
@@ -301,7 +280,7 @@ describe("Workjet configuration settings", () => {
     // Computers is its own page now; its anchor no longer selects a tab here.
     expect(workjetSectionFromHash("#workjet-computers")).toBeNull();
     expect(workjetSectionFromHash("workjet-telemetry")).toBe("telemetry");
-    expect(workjetSectionFromHash("#workjet-organigram")).toBe("organigram");
+    expect(workjetSectionFromHash("#workjet-organigram")).toBeNull();
     expect(workjetSectionFromHash("#greppy-runtime")).toBe("workers");
     expect(workjetSectionFromHash("#unknown")).toBeNull();
   });
@@ -318,7 +297,7 @@ describe("Workjet Greppy runtime settings", () => {
     // Computers stands beside Models and Harnesses.
     expect(SETTINGS_NAV_ITEMS).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Lumas", to: "/settings/workjet" }),
+        expect.objectContaining({ label: "Worker-Presets", to: "/settings/workjet" }),
         expect.objectContaining({ label: "Rechner", to: "/settings/computers" }),
       ]),
     );

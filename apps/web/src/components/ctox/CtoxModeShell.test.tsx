@@ -297,7 +297,7 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Keine Instanz gewählt");
+    expect(markup).toContain("Es ist noch keine Instanz gewählt.");
     expect(markup).not.toContain("Other");
   });
 
@@ -498,7 +498,7 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Gespeicherte Verbindungen nicht lesbar");
+    expect(markup).toContain("Die gespeicherten Verbindungen lassen sich nicht lesen.");
     expect(markup).toContain("Welsch");
   });
 
@@ -528,7 +528,7 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Instanz nicht erreichbar");
+    expect(markup).toContain("Die Instanz ist gerade nicht erreichbar.");
     expect(markup).toContain("Paired Office");
     expect(markup).toContain("Anmeldung nötig · Synchronisierung nicht verfügbar");
   });
@@ -1012,7 +1012,7 @@ describe("CtoxMainShell", () => {
 
     expect(markup).toContain('data-ctox-main-shell=""');
     expect(markup).toContain('data-ctox-main-chrome=""');
-    expect(markup).toContain("Keine Instanz gewählt");
+    expect(markup).toContain("Es ist noch keine Instanz gewählt.");
     expect(markup).toContain("Instanz auswählen");
     expect(ctoxModeShellSource).not.toContain("Managed Business OS guest");
     expect(ctoxModeShellSource).not.toContain("managed Business OS guest");
@@ -1042,9 +1042,9 @@ describe("CtoxMainShell", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Instanz nicht erreichbar");
+    expect(markup).toContain("Die Instanz ist gerade nicht erreichbar.");
     expect(markup).toContain("Erneut versuchen");
-    expect(markup).not.toContain("Keine Instanz gewählt");
+    expect(markup).not.toContain("Es ist noch keine Instanz gewählt.");
   });
 
   it("keeps exposed host copy in product language", () => {

@@ -477,19 +477,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
         ? ["Projektordner"]
         : []),
-      ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
-        ? ["Archivieren bestätigen"]
-        : []),
-      ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
-        ? ["Löschen bestätigen"]
-        : []),
       ...(isTextGenerationModelDirty ? ["Textmodell"] : []),
     ],
     [
       isTextGenerationModelDirty,
       isBackgroundActivityDirty,
-      settings.confirmThreadArchive,
-      settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,

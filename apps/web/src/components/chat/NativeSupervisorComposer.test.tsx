@@ -87,7 +87,7 @@ describe("native supervisor receipt display", () => {
     expect(html.indexOf("Letzte Ausführung")).toBeGreaterThan(
       html.indexOf('data-composer-bar="true"'),
     );
-    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Worker-Preset"');
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Modell"');
     expect(html.match(/<textarea/g)).toHaveLength(1);
@@ -114,8 +114,8 @@ describe("native supervisor receipt display", () => {
     // No gear with a single hidden choice: the mode sits inline once Chat is supported.
     expect(html).not.toContain('aria-label="Optionen"');
     expect(html).toContain('aria-label="Diktieren"');
-    expect(html).not.toContain('aria-label="Modus"');
-    expect(html).toContain('aria-label="Luma"');
+    expect(html).not.toContain('aria-label="Nachrichtenart"');
+    expect(html).toContain('aria-label="Worker-Preset"');
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Modell"');
     expect(html).not.toContain("Project instance");

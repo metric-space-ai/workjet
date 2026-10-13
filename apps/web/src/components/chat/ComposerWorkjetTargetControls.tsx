@@ -33,7 +33,7 @@ import type { WorkjetComputerDraft } from "../settings/WorkjetComputerEditor";
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
 import { ComposerControl, ComposerControlIcon, ComposerControlChevron } from "./ComposerControl";
 import {
-  MANUAL_WORKER_LABEL,
+  manualWorkerLabel,
   MANUAL_WORKER_VALUE,
   providerInstanceIdForHarness,
 } from "./ComposerWorkerControl";
@@ -844,7 +844,7 @@ export function ComposerWorkjetCompactMenuContent(
               props.onSelectWorker(value === MANUAL_WORKER_VALUE ? null : value);
             }}
           >
-            <MenuRadioItem value={MANUAL_WORKER_VALUE}>{MANUAL_WORKER_LABEL}</MenuRadioItem>
+            <MenuRadioItem value={MANUAL_WORKER_VALUE}>{manualWorkerLabel()}</MenuRadioItem>
             {props.workers.map((worker) => (
               <MenuRadioItem key={worker.id} value={worker.id}>
                 {worker.name}

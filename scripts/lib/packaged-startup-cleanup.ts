@@ -1,11 +1,13 @@
+// Native service administration uses the isolated profile only; it does not access app credentials.
+// @effect-diagnostics nodeBuiltinImport:off -- Native standalone smoke boundary.
 // oxlint-disable workjet/no-global-process-runtime -- Isolated packaged smoke process inventory and cleanup boundary.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { promisify } from "node:util";
+import * as NodeUtil from "node:util";
 
-const execFile = promisify(NodeChildProcess.execFile);
+const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const PROCESS_OPTIONS = { encoding: "utf8" as const, timeout: 5000, maxBuffer: 16 * 1024 * 1024 };
 
 export interface SmokeProcess {
@@ -62,9 +64,15 @@ export function findSmokeSurvivors(
       cwd !== undefined &&
       roots.some((root) => {
         const relative = NodePath.relative(root, cwd);
-        return relative === "" || (relative !== ".." && !relative.startsWith(`..${NodePath.sep}`) && !NodePath.isAbsolute(relative));
+        return (
+          relative === "" ||
+          (relative !== ".." &&
+            !relative.startsWith(`..${NodePath.sep}`) &&
+            !NodePath.isAbsolute(relative))
+        );
       })
-    ) matchedBy.push("cwd");
+    )
+      matchedBy.push("cwd");
     return matchedBy.length ? [{ pid: entry.pid, ppid: entry.ppid, matchedBy }] : [];
   });
   return { survivorCount: survivors.length, survivors, observedProcessCount: processes.length };
@@ -86,7 +94,7 @@ export async function inspectSmokeRootProcesses(root: string): Promise<SmokeProc
         directories.set(entry.pid, await NodeFSP.readlink(`/proc/${entry.pid}/cwd`));
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(code ?? '')) throw error;
+        if (!["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(code ?? "")) throw error;
       }
     }
   } else {
@@ -105,4 +113,33 @@ export const SMOKE_ROOT_REMOVAL_OPTIONS = {
 export async function removeStoppedSmokeRoot(root: string, inspection: SmokeProcessInspection) {
   if (inspection.survivorCount > 0) throw new Error("Smoke root still has surviving processes");
   await NodeFSP.rm(root, SMOKE_ROOT_REMOVAL_OPTIONS);
+}
+
+export async function stopSmokeService(executable: string, root: string) {
+  const cli = NodePath.join(
+    NodePath.dirname(executable),
+    "../Resources/app.asar/apps/server/dist/bin.mjs",
+  );
+  try {
+    await execFile(
+      executable,
+      [cli, "service", "stop", "--base-dir", NodePath.join(root, "home")],
+      {
+        ...PROCESS_OPTIONS,
+        timeout: 30000,
+        maxBuffer: 64 * 1024,
+        cwd: root,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      },
+    );
+    return { completed: true, exitCode: 0, errorCode: null };
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    return {
+      completed: false,
+      exitCode: typeof code === "number" ? code : null,
+      errorCode: typeof code === "string" ? code : "ServiceStopError",
+    };
+  }
 }

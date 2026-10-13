@@ -1,10 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off -- Captured native process fixture and evidence.
 // oxlint-disable workjet/no-global-process-runtime -- Captured synthetic smoke processes, never the installed App.
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { once } from "node:events";
+
 import {
   findSmokeSurvivors,
   inspectSmokeRootProcesses,
@@ -19,7 +20,9 @@ setInterval(()=>fs.writeFileSync(path.resolve('home/userdata/logs/heartbeat'),St
 
 describe("packaged startup process inventory", () => {
   it("parses cwd names with spaces without exposing commands in the report", () => {
-    const processes = parseSmokeProcesses(" 101 1 node --home=/tmp/profile\n102 1 node --token=secret\n");
+    const processes = parseSmokeProcesses(
+      " 101 1 node --home=/tmp/profile\n102 1 node --token=secret\n",
+    );
     const cwd = parseSmokeWorkingDirectories("p102\nn/tmp/profile/home with spaces\n");
     const report = findSmokeSurvivors(["/tmp/profile"], processes, cwd, 999);
     expect(report.survivorCount).toBe(2);
@@ -48,8 +51,22 @@ describe("packaged startup process inventory", () => {
 
   it("escapes special characters and includes cwd-only children with dot prefixes", () => {
     const roots = ["/tmp/profile.[1]"];
-    expect(findSmokeSurvivors(roots, [{ pid: 1, ppid: 0, command: "node --home=/tmp/profile.[1]/home" }], new Map(), 99).survivorCount).toBe(1);
-    expect(findSmokeSurvivors(roots, [{ pid: 2, ppid: 0, command: "node" }], new Map([[2, "/tmp/profile.[1]/..logs"]]), 99).survivorCount).toBe(1);
+    expect(
+      findSmokeSurvivors(
+        roots,
+        [{ pid: 1, ppid: 0, command: "node --home=/tmp/profile.[1]/home" }],
+        new Map(),
+        99,
+      ).survivorCount,
+    ).toBe(1);
+    expect(
+      findSmokeSurvivors(
+        roots,
+        [{ pid: 2, ppid: 0, command: "node" }],
+        new Map([[2, "/tmp/profile.[1]/..logs"]]),
+        99,
+      ).survivorCount,
+    ).toBe(1);
   });
 
   it("finds a real setsid escape after the captured parent process group is stopped", async () => {
@@ -63,26 +80,39 @@ console.log(child.pid);setInterval(()=>{},1000);`;
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const parentClosed = once(parent, "close");
+    const parentClosed = new Promise<void>((resolve) => parent.once("close", () => resolve()));
     try {
-      const [data] = await once(parent.stdout!, "data");
+      const data = await new Promise<Buffer>((resolve) => parent.stdout!.once("data", resolve));
       escapedPid = Number(String(data).trim());
       expect(Number.isSafeInteger(escapedPid)).toBe(true);
       expect(escapedPid).toBeGreaterThan(0);
       process.kill(-parent.pid!, "SIGTERM");
       await parentClosed;
-      try { process.kill(-parent.pid!, "SIGKILL"); } catch (error) {
+      try {
+        process.kill(-parent.pid!, "SIGKILL");
+      } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
       }
       const inspection = await inspectSmokeRootProcesses(root);
-      expect(inspection.survivors).toContainEqual(expect.objectContaining({ pid: escapedPid, matchedBy: ["cwd"] }));
+      expect(inspection.survivors).toContainEqual(
+        expect.objectContaining({ pid: escapedPid, matchedBy: ["cwd"] }),
+      );
       await expect(removeStoppedSmokeRoot(root, inspection)).rejects.toThrow("surviving processes");
       expect((await NodeFSP.stat(root)).isDirectory()).toBe(true);
-      console.log(JSON.stringify({ scenario: "setsid writer after parent SIGTERM/SIGKILL", survivorCount: inspection.survivorCount, survivors: inspection.survivors, rootRetained: true }));
+      console.log(
+        JSON.stringify({
+          scenario: "setsid writer after parent SIGTERM/SIGKILL",
+          survivorCount: inspection.survivorCount,
+          survivors: inspection.survivors,
+          rootRetained: true,
+        }),
+      );
     } finally {
       // Both IDs originate from this test's own spawn, not an inventory match.
       if (escapedPid !== undefined) {
-        try { process.kill(escapedPid, "SIGKILL"); } catch (error) {
+        try {
+          process.kill(escapedPid, "SIGKILL");
+        } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
         }
       }
@@ -93,7 +123,9 @@ console.log(child.pid);setInterval(()=>{},1000);`;
   });
 
   it("removes an actually stopped profile after a successful process inventory", async () => {
-    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-smoke-stopped-test-"));
+    const root = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "workjet-smoke-stopped-test-"),
+    );
     await NodeFSP.mkdir(NodePath.join(root, "home/userdata/logs"), { recursive: true });
     const inspection = await inspectSmokeRootProcesses(root);
     expect(inspection.survivorCount).toBe(0);

@@ -82,23 +82,24 @@ const document = {
   createdBy: { mode: "import" },
 };
 describe("persistent worker goal display", () => {
-  it("shows the saved objective, current loop and revision", () => {
+  it("shows the saved objective as one quiet line with the two actions", () => {
     const text = html();
     expect(text).toContain(goal.objective);
-    expect(text).toContain("Läuft · Durchlauf 2");
-    expect(text).toContain("Ziel gespeichert · Revision 4");
-    expect(text).toContain('dateTime="' + goal.updatedAt + '"');
     expect(text).toContain("Ziel ändern");
     expect(text).toContain("Pausieren");
+    expect(text).not.toContain("Durchlauf");
+    expect(text).not.toContain("Revision");
+    expect(text).not.toContain("Ziel gespeichert");
   });
   it("renders goal actions as real buttons, never underlined text", () => {
     const text = html();
     expect(text).not.toContain("underline");
-    expect(text).toMatch(/<button[^>]*data-slot="button"[^>]*>.*Ziel ändern/s);
+    expect(text).toMatch(/<button[^>]*data-slot="button"[^>]*>.*Ändern/s);
     expect(text).not.toContain("kein Abschlussnachweis");
   });
-  it("shows the same objective and state compactly", () => {
-    expect(html(config, true)).toContain("Läuft · Durchlauf 2");
+  it("shows the objective compactly without loop counters", () => {
+    expect(html(config, true)).toContain(goal.objective);
+    expect(html(config, true)).not.toContain("Durchlauf");
     expect(html(config, true)).not.toContain("Mini-Kanban");
   });
   it("shows an imported persistent worker's assigned objective without inventing a running loop", () => {
@@ -107,11 +108,9 @@ describe("persistent worker goal display", () => {
     void ignored;
     const text = html(idle);
     expect(text).toContain(goal.objective);
-    expect(text).toContain("Ziel noch nicht gesetzt");
-    expect(text).toContain("Schleife nicht gestartet");
     expect(text).toContain("Ziel festlegen");
     expect(text).not.toContain("Pausieren");
-    expect(text).not.toContain("Läuft");
+    expect(text).not.toContain("Schleife");
   });
   it.each(["supervisor", "worker"] as const)("never adds a loop or board to %s", (role) => {
     if (config.schemaVersion !== 2 || !config.team) throw new Error("Invalid fixture");
@@ -157,7 +156,7 @@ describe("persistent worker goal display", () => {
     expect(persistentWorkerGoalState({ ...goal, status: "complete" }, {})).toBe("Abgeschlossen");
     expect(html()).not.toContain("Verified");
   });
-  it("labels a previous iteration and does not render private legacy cards as a board", () => {
+  it("stays silent about a kanban without content instead of describing the empty state", () => {
     const text = html({
       ...config,
       goal: {
@@ -170,10 +169,8 @@ describe("persistent worker goal display", () => {
         },
       },
     });
-    expect(text).toContain("Mini-Kanban · Durchlauf 1");
-    expect(text).toContain("vorheriger Stand");
+    expect(text).not.toContain("Mini-Kanban");
     expect(text).not.toContain("Legacy card content");
-    expect(text).toContain("Noch kein Mini-Kanban des Workers");
   });
   it("renders the retained canonical SlideDocument through the engine", () => {
     const text = renderToStaticMarkup(

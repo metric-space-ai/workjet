@@ -93,7 +93,7 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
                 : { httpStatus: launchError.httpStatus }),
             };
         const outcome = failure?.failureClass ?? "repaired";
-        yield* Effect.annotateCurrentSpan({ outcome, ...(failure ?? {}) });
+        yield* Effect.annotateCurrentSpan({ outcome, ...failure });
         if (input.recovery.recordInstanceRepair !== undefined)
           yield* input.recovery.recordInstanceRepair(
             instance.id,
@@ -105,7 +105,7 @@ export const recoverManagedAfterLogin = Effect.fn("ctox.keyRecovery.afterLogin")
           generation: state.generation,
           instanceId: instance.id,
           outcome,
-          ...(failure ?? {}),
+          ...failure,
         });
       }).pipe(
         Effect.withSpan("ctox.keyRecovery.instance", {

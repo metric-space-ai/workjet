@@ -31,6 +31,7 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { useUiText } from "../../hooks/useUiText";
 import { cn } from "../../lib/utils";
 import { Textarea } from "../ui/textarea";
 import { InlineExpand } from "../ui/inline-expand";
@@ -326,6 +327,7 @@ export function WorkjetWorkerEditor({
   readonly onCreateRoute?: ((route: WorkjetLlmRoute) => void) | undefined;
 }) {
   const [creatingRoute, setCreatingRoute] = useState(false);
+  const t = useUiText();
   const [editorTab, setEditorTab] = useState<"task" | "personality" | "execution">("task");
   const [draft, setDraft] = useState(() => {
     if (initialDraft) return initialDraft;
@@ -454,7 +456,11 @@ export function WorkjetWorkerEditor({
     <form
       data-settings-inline-editor=""
       className={cn("space-y-4", !compact && "rounded-lg border bg-card/40 p-3")}
-      aria-label={worker ? `Preset ${worker.name} bearbeiten` : "Preset hinzufügen"}
+      aria-label={
+        worker
+          ? t(`Preset ${worker.name} bearbeiten`, `Edit preset ${worker.name}`)
+          : t("Preset hinzufügen", "Add preset")
+      }
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -472,7 +478,11 @@ export function WorkjetWorkerEditor({
             await onSave(saveWorkjetWorkerDraft(draft));
             clearDraftStash();
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "Preset nicht gespeichert.");
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : t("Preset nicht gespeichert.", "Preset not saved."),
+            );
           } finally {
             setSaving(false);
           }
@@ -481,12 +491,16 @@ export function WorkjetWorkerEditor({
     >
       <fieldset disabled={saving} className="min-w-0 space-y-3">
         {/* Compact tabs keep the open editor within ~30% of the viewport (#615). */}
-        <div role="tablist" aria-label="Preset" className="flex gap-1 border-b border-border/60">
+        <div
+          role="tablist"
+          aria-label={t("Preset", "Preset")}
+          className="flex gap-1 border-b border-border/60"
+        >
           {(
             [
-              ["task", "Aufgabe"],
-              ["personality", "Persönlichkeit"],
-              ["execution", "Harness · Modell · Rechner"],
+              ["task", t("Aufgabe", "Task")],
+              ["personality", t("Persönlichkeit", "Personality")],
+              ["execution", t("Harness · Modell · Rechner", "Harness · Model · Computer")],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -517,20 +531,20 @@ export function WorkjetWorkerEditor({
                 <div>
                   <Input
                     id="workjet-worker-name"
-                    aria-label="Name"
+                    aria-label={t("Name", "Name")}
                     nativeInput
                     value={draft.name}
                     onChange={(event) => patchDraft({ name: event.target.value })}
-                    placeholder="Name, z. B. Umsetzung"
+                    placeholder={t("Name, z. B. Umsetzung", "Name, e.g. Implementation")}
                   />
                 </div>
                 <div>
                   <Textarea
                     id="workjet-worker-instructions"
-                    aria-label="Aufgabe"
+                    aria-label={t("Aufgabe", "Task")}
                     value={draft.instructions}
                     onChange={(event) => patchDraft({ instructions: event.target.value })}
-                    placeholder="Aufgabe des Workers"
+                    placeholder={t("Aufgabe des Workers", "What the worker does")}
                     rows={5}
                   />
                 </div>
@@ -538,7 +552,7 @@ export function WorkjetWorkerEditor({
             </>
           ) : editorTab === "personality" ? (
             <>
-              <section aria-label="Persönlichkeit" className="space-y-2">
+              <section aria-label={t("Persönlichkeit", "Personality")} className="space-y-2">
                 <div>
                   <WorkjetWorkerPersonalizationEditor
                     value={draft.personalization}

@@ -64,6 +64,7 @@ import {
 import { sanitizeWorkjetWorkerGraph } from "./WorkjetWorkerOrganigram";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useUiText } from "../../hooks/useUiText";
 import { searchableSetting } from "./settingsSearch";
 import {
   joinManagedPrompt,
@@ -619,10 +620,11 @@ export function AutomaticWorktreeStorageSettings({
 
 /** Seitentitel „Worker-Presets“ – derselbe in allen Zuständen der Seite. */
 function LumasPageTitle() {
+  const t = useUiText();
   return (
     <div className="px-3 sm:px-4">
       <h1 className="text-xl font-semibold tracking-[-0.025em]">
-        {searchableSetting("workjet-workers").title}
+        {t("Worker-Presets", "Worker presets")}
       </h1>
     </div>
   );
@@ -661,6 +663,7 @@ export function WorkjetSettingsView({
   );
   const locationHash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
+  const t = useUiText();
   const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
     () => workjetSectionFromHash(locationHash) ?? defaultSection,
   );
@@ -827,7 +830,7 @@ export function WorkjetSettingsView({
               aufklappt; Bearbeiten klappt direkt unter der Zeile auf. Kein
               Dialog, kein Popover. */}
           <InlineExpand
-            label="Preset hinzufügen"
+            label={t("Preset hinzufügen", "Add preset")}
             open={addingWorker}
             onOpenChange={(open) => {
               if (!open) {
@@ -842,7 +845,7 @@ export function WorkjetSettingsView({
             <div className="px-3 sm:px-4">
               <Button type="button" size="sm" variant="outline" onClick={openAddWorker}>
                 <PlusIcon className="size-3.5" />
-                Preset hinzufügen
+                {t("Preset hinzufügen", "Add preset")}
               </Button>
             </div>
           )}
@@ -850,12 +853,14 @@ export function WorkjetSettingsView({
             addingWorker ? null : (
               <Empty className="p-4">
                 <EmptyHeader>
-                  <EmptyTitle className="text-base">Keine Worker-Presets</EmptyTitle>
+                  <EmptyTitle className="text-base">
+                    {t("Keine Worker-Presets", "No worker presets")}
+                  </EmptyTitle>
                 </EmptyHeader>
                 <EmptyContent>
                   <Button type="button" onClick={openAddWorker}>
                     <PlusIcon className="size-3.5" />
-                    Preset hinzufügen
+                    {t("Preset hinzufügen", "Add preset")}
                   </Button>
                 </EmptyContent>
               </Empty>
@@ -904,24 +909,29 @@ export function WorkjetSettingsView({
                       meta={[
                         worker.modelId,
                         workjetHarnessDisplayLabel(worker.harness),
-                        computer?.label ?? "Rechner: —",
+                        computer?.label ?? t("Rechner: —", "Computer: —"),
                       ].join(" · ")}
                       // One signal: a red dot only when the preset cannot run; the reason is its label.
                       {...(warning === null
                         ? {}
                         : {
                             status: "error" as const,
-                            statusLabel: computer === undefined ? "Rechner fehlt" : "Harness fehlt",
+                            statusLabel:
+                              computer === undefined
+                                ? t("Rechner fehlt", "Computer missing")
+                                : t("Harness fehlt", "Harness missing"),
                           })}
                       onDelete={deleteWorker}
-                      deleteConfirmTitle="Preset löschen?"
+                      deleteConfirmTitle={t("Preset löschen?", "Delete preset?")}
                       expanded={editingWorkerId === worker.id}
                       onToggleExpanded={() => {
                         setAddingWorker(false);
                         setPendingWorkerParentId(null);
                         setEditingWorkerId((current) => (current === worker.id ? null : worker.id));
                       }}
-                      menuActions={[{ label: "Duplizieren", onSelect: duplicateWorker }]}
+                      menuActions={[
+                        { label: t("Duplizieren", "Duplicate"), onSelect: duplicateWorker },
+                      ]}
                     />
                     <InlineExpand
                       hideCollapseControl

@@ -12,6 +12,7 @@ import type { SidebarSearchMode } from "~/commandPaletteBus";
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
+import { workjetUiLanguage } from "~/workjetProjectControl";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProjectContentSearch } from "~/state/queries";
 
@@ -29,10 +30,16 @@ export const SIDEBAR_SEARCH_MODES: ReadonlyArray<{
   readonly label: string;
   readonly placeholder: string;
 }> = [
-  { value: "threads", label: "Unterhaltungen", placeholder: "Suchen" },
+  { value: "threads", label: "Chats", placeholder: "Suchen" },
   { value: "files", label: "Dateien", placeholder: "Datei suchen" },
   { value: "content", label: "Inhalt", placeholder: "Im Projekt suchen" },
 ];
+
+const SEARCH_MODE_LABELS_EN: Record<SidebarSearchMode, string> = {
+  threads: "Chats",
+  files: "Files",
+  content: "Content",
+};
 
 export function sidebarSearchPlaceholder(mode: SidebarSearchMode, fallback: string): string {
   if (mode === "threads") return fallback;
@@ -47,10 +54,12 @@ export function SidebarSearchModeSegment(props: {
   readonly mode: SidebarSearchMode;
   readonly onModeChange: (mode: SidebarSearchMode) => void;
 }) {
+  const en = workjetUiLanguage() === "en";
   return (
+    // Three equal tabs inside the sidebar width, never overflowing it (#581).
     <ToggleGroup
-      aria-label="Suchbereich"
-      className="w-full"
+      aria-label={en ? "Search scope" : "Suchbereich"}
+      className="grid w-full grid-cols-3 gap-1"
       size="xs"
       variant="outline"
       value={[props.mode]}
@@ -64,9 +73,9 @@ export function SidebarSearchModeSegment(props: {
           key={entry.value}
           value={entry.value}
           data-sidebar-search-mode={entry.value}
-          className="min-w-0 flex-1 px-1 text-xs text-sidebar-muted-foreground data-pressed:bg-primary/15 data-pressed:text-sidebar-foreground"
+          className="min-w-0 px-1 text-xs text-sidebar-muted-foreground data-pressed:bg-primary/15 data-pressed:text-sidebar-foreground"
         >
-          {entry.label}
+          <span className="truncate">{en ? SEARCH_MODE_LABELS_EN[entry.value] : entry.label}</span>
         </Toggle>
       ))}
     </ToggleGroup>

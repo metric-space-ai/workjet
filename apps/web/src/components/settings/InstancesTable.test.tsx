@@ -25,7 +25,7 @@ const instance = (
 const count = (html: string, needle: string) => html.split(needle).length - 1;
 
 describe("Instances table", () => {
-  it("distinguishes selected from enabled and locks the selected switch", () => {
+  it("marks the selected row instead of a switch plus label (#598)", () => {
     const html = renderToStaticMarkup(
       <InstancesTable
         instances={[instance("selected")]}
@@ -33,13 +33,14 @@ describe("Instances table", () => {
         onStateChange={async () => null}
       />,
     );
-    expect(html).toContain("Ausgewählt");
-    expect(html).toContain('aria-label="Aktiv · selected"');
-    expect(html).toMatch(/role="switch"[^>]*disabled/);
+    expect(html).toContain('aria-current="true"');
+    expect(html).not.toContain("Ausgewählt");
+    expect(html).not.toContain('role="switch"');
+    expect(html).not.toContain(">Wechseln<");
     expect(html).toContain('data-slot="row"');
   });
 
-  it("has trash with inline confirmation for paired and managed connections, only a switch for local", () => {
+  it("has trash with inline confirmation for paired and managed connections, none for local", () => {
     const html = renderToStaticMarkup(
       <InstancesTable
         instances={[
@@ -52,8 +53,7 @@ describe("Instances table", () => {
       />,
     );
     expect(count(html, 'aria-label="Entfernen"')).toBe(2);
-    expect(count(html, 'role="switch"')).toBe(3);
-    expect(html).toContain('aria-label="Aktiv · local"');
+    expect(count(html, 'role="switch"')).toBe(0);
     expect(html).not.toContain('role="dialog"');
   });
 
@@ -68,11 +68,11 @@ describe("Instances table", () => {
         onStateChange={async () => null}
       />,
     );
-    // Deactivated: the switch says it; no extra status dot (one signal).
+    // Deactivated: one quiet word; no extra status dot (one signal).
     expect(html).not.toContain('aria-label="Deaktiviert"');
+    expect(html).toContain(">Deaktiviert<");
     expect(html).not.toContain("Fehler");
     expect(html).not.toContain("removed");
-    expect(html).toContain('aria-checked="false"');
   });
 
   it("shows one compact row per instance with the domain as meta and no explanation sentences", () => {

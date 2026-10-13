@@ -7,10 +7,10 @@ import {
   type WorkjetHarnessAvailabilitySnapshot,
   type WorkjetHarnessConfiguration,
 } from "@workjet/contracts";
+import { InlineSaveFooter } from "../ui/inline-panel";
 import { useEffect, useRef, useState } from "react";
 
 import { randomUUID } from "../../lib/utils";
-import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -378,14 +378,7 @@ export function WorkjetComputerEditor({
             {error}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-            Abbrechen
-          </Button>
-          <Button type="submit" size="sm">
-            {saving ? "Wird gespeichert …" : "Speichern"}
-          </Button>
-        </div>
+        <InlineSaveFooter saving={saving} onCancel={onCancel} />
       </fieldset>
     </form>
   );

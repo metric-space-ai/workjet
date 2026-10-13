@@ -2,20 +2,23 @@ import { useState, type ReactNode } from "react";
 import type { CtoxManagedInstance } from "@workjet/contracts";
 
 import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
-import { Switch } from "../ui/switch";
+import { Button } from "../ui/button";
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { canActivateCtoxInstance } from "../ctox/CtoxModeShell";
 import { openInstanceRePair } from "../../instanceSetup";
 
 /**
  * Instanzliste (UI-Vertrag §1.2): ein Objekt, eine Zeile. Statuspunkt, Name,
- * Adresse als Meta, Aktiv-Schalter, Papierkorb mit Inline-Bestätigung und
- * ⋯-Menü für Seltenes (Auswählen, Neu koppeln, Diagnose).
+ * Adresse als Meta. Eine Auswahl, kein Schalter (#598): die aktive Zeile ist
+ * hervorgehoben, andere bieten „Wechseln“. Papierkorb mit Inline-Bestätigung,
+ * ⋯-Menü für Seltenes (Aktivieren/Deaktivieren, Neu koppeln, Diagnose).
  */
 export const INSTANCE_LIST_TEXT = {
-  selected: "Ausgewählt",
-  select: "Auswählen",
-  active: "Aktiv",
+  select: "Wechseln",
+  disable: "Deaktivieren",
+  enable: "Aktivieren",
+  disabled: "Deaktiviert",
   remove: "Entfernen",
   removeConfirm: "Aus Workjet entfernen?",
   pair: "Neu koppeln",
@@ -23,6 +26,19 @@ export const INSTANCE_LIST_TEXT = {
   selectedStaysActive: "Ausgewählte Instanz bleibt aktiv.",
   error: "Änderung nicht gespeichert. Bitte erneut versuchen.",
 } as const;
+
+const INSTANCE_LIST_TEXT_EN: { readonly [K in keyof typeof INSTANCE_LIST_TEXT]: string } = {
+  select: "Switch",
+  disable: "Deactivate",
+  enable: "Activate",
+  disabled: "Deactivated",
+  remove: "Remove",
+  removeConfirm: "Remove from Workjet?",
+  pair: "Pair again",
+  diagnose: "Diagnostics",
+  selectedStaysActive: "The selected instance stays active.",
+  error: "Change not saved. Please try again.",
+};
 
 export interface InstanceRowState {
   readonly status: RowStatus;
@@ -158,7 +174,7 @@ export function InstancesTable({
   /** Geräte und Netzwerk der ausgewählten Instanz, inline unter ihrer Zeile. */
   readonly selectedDetails?: ReactNode;
 }) {
-  const text = INSTANCE_LIST_TEXT;
+  const text = workjetUiLanguage() === "en" ? INSTANCE_LIST_TEXT_EN : INSTANCE_LIST_TEXT;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [diagnosed, setDiagnosed] = useState<string | null>(null);
@@ -215,17 +231,20 @@ export function InstancesTable({
             instance.source === "ctox_dev";
           const deletable = instance.source !== "local_daemon" && onStateChange !== undefined;
           const menuActions: RowMenuAction[] = [];
-          if (
+          const switchable =
             !selected &&
             enabled &&
             onSelect !== undefined &&
             pending === null &&
-            canActivateCtoxInstance(instance)
-          ) {
-            menuActions.push({ label: text.select, onSelect: () => void choose(instance.id) });
-          }
+            canActivateCtoxInstance(instance);
           if (paired && enabled) {
             menuActions.push({ label: text.pair, onSelect: () => onRePair(instance) });
+          }
+          if (!selected && onStateChange !== undefined && pending === null) {
+            menuActions.push({
+              label: enabled ? text.disable : text.enable,
+              onSelect: () => void change(instance, enabled ? "disabled" : "enabled"),
+            });
           }
           menuActions.push({
             label: text.diagnose,
@@ -237,6 +256,8 @@ export function InstancesTable({
               key={instance.id}
               data-workjet-instance-row={instance.id}
               data-workjet-instance-selected={selected ? "" : undefined}
+              aria-current={selected ? "true" : undefined}
+              className={selected ? "rounded-lg bg-muted/40" : undefined}
             >
               <Row
                 name={name}
@@ -248,28 +269,24 @@ export function InstancesTable({
                   : {})}
                 chips={
                   <>
-                    {selected ? (
-                      <span className="rounded-full bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">
-                        {text.selected}
-                      </span>
-                    ) : null}
                     {state.chip !== null ? (
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
                         {state.chip}
                       </span>
                     ) : null}
-                    <Switch
-                      aria-label={`${text.active} · ${name}`}
-                      checked={enabled}
-                      disabled={selected || pending !== null || onStateChange === undefined}
-                      onCheckedChange={(checked) =>
-                        void change(instance, checked === true ? "enabled" : "disabled")
-                      }
-                    />
-                    {deletable ? null : (
-                      // Platzhalter in Papierkorb-Breite: Schalter bleiben in einer Spalte.
-                      <span aria-hidden className="w-[30px] shrink-0 sm:w-[26px]" />
+                    {enabled ? null : (
+                      <span className="text-[11px] text-muted-foreground">{text.disabled}</span>
                     )}
+                    {switchable ? (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        data-workjet-action={`instance.select:${instance.id}`}
+                        onClick={() => void choose(instance.id)}
+                      >
+                        {text.select}
+                      </Button>
+                    ) : null}
                   </>
                 }
                 {...(deletable ? { onDelete: () => void change(instance, "removed") } : {})}

@@ -53,8 +53,8 @@ export function openInlineExpandCount(): number {
 
 export function inlineExpandLabels(language: "de" | "en" = uiLanguage()) {
   return language === "en"
-    ? { collapse: "Collapse", cancel: "Cancel" }
-    : { collapse: "Zuklappen", cancel: "Abbrechen" };
+    ? { collapse: "Collapse", cancel: "Cancel", save: "Save", saving: "Saving …" }
+    : { collapse: "Zuklappen", cancel: "Abbrechen", save: "Speichern", saving: "Speichert …" };
 }
 
 function uiLanguage(): "de" | "en" {

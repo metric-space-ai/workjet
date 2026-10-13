@@ -1,4 +1,5 @@
 import { openInstanceSetup, openInstanceRePair } from "../../instanceSetup";
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import type {
@@ -140,23 +141,52 @@ const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
   ssh_managed: "SSH-Instanz",
 };
 
-/** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
-const CONNECTION_LABELS: Record<string, string> = {
-  idle: "Nicht verbunden",
-  connecting: "Wird verbunden…",
-  ready: "Geöffnet",
-  error: "Verbindungsfehler",
-  revoked: "Zugriff entzogen",
+/**
+ * The instance shell knows exactly four connection states (#559): connected,
+ * connecting, disconnected, login needed. Every status enum maps onto them.
+ */
+export type CtoxInstanceConnectionState =
+  | "connected"
+  | "connecting"
+  | "disconnected"
+  | "needsLogin";
+
+const INSTANCE_STATE_WORDS: Record<"de" | "en", Record<CtoxInstanceConnectionState, string>> = {
+  de: {
+    connected: "Verbunden",
+    connecting: "Verbindet …",
+    disconnected: "Getrennt",
+    needsLogin: "Anmeldung nötig",
+  },
+  en: {
+    connected: "Connected",
+    connecting: "Connecting …",
+    disconnected: "Disconnected",
+    needsLogin: "Login needed",
+  },
 };
 
-const STATUS_LABELS: Record<CtoxManagedInstance["status"], string> = {
-  available: "Verfügbar",
-  offline: "Offline",
-  needs_auth: "Anmeldung erforderlich",
-  pairing_expired: "Verbindung abgelaufen",
-  paired: "Verbunden",
-  installing: "Wird eingerichtet",
-  error: "Fehler",
+export function ctoxInstanceStateWord(state: CtoxInstanceConnectionState): string {
+  return INSTANCE_STATE_WORDS[workjetUiLanguage()][state];
+}
+
+/** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
+const CONNECTION_STATES: Record<string, CtoxInstanceConnectionState> = {
+  idle: "disconnected",
+  connecting: "connecting",
+  ready: "connected",
+  error: "disconnected",
+  revoked: "needsLogin",
+};
+
+const INSTANCE_STATES: Record<CtoxManagedInstance["status"], CtoxInstanceConnectionState> = {
+  available: "connected",
+  paired: "connected",
+  installing: "connecting",
+  offline: "disconnected",
+  error: "disconnected",
+  needs_auth: "needsLogin",
+  pairing_expired: "needsLogin",
 };
 
 interface CtoxModeContextValue {
@@ -1054,7 +1084,7 @@ export function ctoxInstanceStatusLabel(
     ? "Synchronisierung verfügbar"
     : "Synchronisierung nicht verfügbar";
   const opened = guestOpened ? " · Geöffnet · Datenstand unbestätigt" : "";
-  return `${STATUS_LABELS[instance.status]} · ${health}${opened}`;
+  return `${ctoxInstanceStateWord(INSTANCE_STATES[instance.status])} · ${health}${opened}`;
 }
 
 export function ctoxShellUpdateLabel(instance: CtoxManagedInstance): string {
@@ -2680,7 +2710,7 @@ export function CtoxMainShell() {
               )}
               aria-hidden
             />
-            {CONNECTION_LABELS[connection]}
+            {ctoxInstanceStateWord(CONNECTION_STATES[connection] ?? "disconnected")}
           </span>
         ) : null}
       </WorkjetHeaderContent>

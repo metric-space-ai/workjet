@@ -60,8 +60,18 @@ describe("InlineExpand markup", () => {
   });
 
   it("localizes the controls, German by default", () => {
-    expect(inlineExpandLabels("de")).toEqual({ collapse: "Zuklappen", cancel: "Abbrechen" });
-    expect(inlineExpandLabels("en")).toEqual({ collapse: "Collapse", cancel: "Cancel" });
+    expect(inlineExpandLabels("de")).toEqual({
+      collapse: "Zuklappen",
+      cancel: "Abbrechen",
+      save: "Speichern",
+      saving: "Speichert …",
+    });
+    expect(inlineExpandLabels("en")).toEqual({
+      collapse: "Collapse",
+      cancel: "Cancel",
+      save: "Save",
+      saving: "Saving …",
+    });
   });
 });
 

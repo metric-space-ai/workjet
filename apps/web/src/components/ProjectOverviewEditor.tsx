@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
+import { InlineSaveFooter } from "./ui/inline-panel";
 import {
   CtoxWorkjetProjectControlRequest,
   DEFAULT_SUPERVISOR_TICK_CONFIGURATION,
@@ -197,18 +198,12 @@ export function ProjectCardConfigEditor({
         className="flex flex-none items-center gap-1.5 border-t border-border px-2 py-1.5"
         data-workjet-project-card-config-actions=""
       >
-        <Button type="submit" size="xs" disabled={state.pending}>
-          {state.pending ? "Speichern …" : "Speichern"}
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          disabled={state.pending}
-          onClick={onCancel}
-        >
-          Abbrechen
-        </Button>
+        <InlineSaveFooter
+          className="order-last ms-auto"
+          saving={state.pending}
+          cancelDisabled={state.pending}
+          onCancel={onCancel}
+        />
         <p
           className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground"
           role="status"

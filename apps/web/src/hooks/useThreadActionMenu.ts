@@ -20,6 +20,7 @@ import {
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { scheduleUndoableThreadDelete } from "../lib/undoableDelete";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -81,7 +82,6 @@ export function useThreadActionMenu(input: {
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
-  const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
@@ -253,25 +253,20 @@ export function useThreadActionMenu(input: {
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
           case "delete": {
-            if (confirmThreadDelete) {
-              const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(`Unterhaltung „${thread.title}“ löschen?`, {
-                  variant: "destructive",
-                }),
-              );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
-            }
-            const deleted = await deleteThread(threadRef);
-            if (
-              deleted._tag === "Failure" &&
-              !isAtomCommandInterrupted(deleted) &&
-              // A failure with the thread already gone is worktree cleanup
-              // failing after a successful delete — deleteThread has toasted
-              // that itself, and "Failed to delete thread" would be a lie.
-              readThreadShell(threadRef) !== null
-            ) {
-              failureToast("Löschen fehlgeschlagen", squashAtomCommandFailure(deleted));
-            }
+            // Undo instead of confirm (#637).
+            scheduleUndoableThreadDelete(1, async () => {
+              const deleted = await deleteThread(threadRef);
+              if (
+                deleted._tag === "Failure" &&
+                !isAtomCommandInterrupted(deleted) &&
+                // A failure with the thread already gone is worktree cleanup
+                // failing after a successful delete — deleteThread has toasted
+                // that itself, and "Failed to delete thread" would be a lie.
+                readThreadShell(threadRef) !== null
+              ) {
+                failureToast("Löschen fehlgeschlagen", squashAtomCommandFailure(deleted));
+              }
+            });
             return;
           }
           default:
@@ -283,7 +278,6 @@ export function useThreadActionMenu(input: {
       autoSettleAfterDays,
       autoSettleOnMerge,
       changeRequestState,
-      confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,

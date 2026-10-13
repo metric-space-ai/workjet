@@ -22,7 +22,6 @@ import {
 import { ArrowUpIcon, PlusIcon } from "lucide-react";
 import { ComposerBar } from "./ComposerBar";
 import { ComposerDictationButton } from "./ComposerDictationButton";
-import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import { shouldSubmitComposerOnEnter } from "../../composer-logic";
 import { createPortal } from "react-dom";
@@ -960,21 +959,12 @@ export function NativeSupervisorComposer(props: {
             />
           }
           settings={
-            <CompactComposerControlsMenu
-              interactionMode="default"
-              showInteractionModeToggle={false}
-              onToggleInteractionMode={() => {}}
-              extraMenuContent={
-                <div className="max-w-64 space-y-2 px-2 py-1 text-xs text-muted-foreground">
-                  <SupervisorTurnKindPicker
-                    scope={scope}
-                    capability={capability}
-                    value={turnKind}
-                    disabled={disabled || busy || inputting || (pending && !confirmedPending)}
-                    onChange={setTurnKind}
-                  />
-                </div>
-              }
+            <SupervisorTurnKindPicker
+              scope={scope}
+              capability={capability}
+              value={turnKind}
+              disabled={disabled || busy || inputting || (pending && !confirmedPending)}
+              onChange={setTurnKind}
             />
           }
           dictation={

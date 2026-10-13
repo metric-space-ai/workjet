@@ -6,7 +6,11 @@ import type { WorkjetSpeechConfig, WorkjetSpeechSettingsResponse } from "@workje
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { Button } from "../ui/button";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import { requestSpeechSettings, speechCheckAudio } from "../../lib/workjetSpeechSettings";
+import {
+  requestSpeechSettings,
+  speechCheckAudio,
+  speechErrorText,
+} from "../../lib/workjetSpeechSettings";
 
 const controlClass = "h-8 min-w-0 rounded-md border border-border bg-background px-2 text-sm";
 const remedies: Readonly<Record<string, string>> = {
@@ -21,6 +25,12 @@ const remedies: Readonly<Record<string, string>> = {
   invalid_transcript: "Kein Transkript erhalten",
   backend_unavailable: "Nur über Mistral API",
 };
+
+function uiLanguage(): "de" | "en" {
+  return typeof document !== "undefined" && document.documentElement.lang.startsWith("en")
+    ? "en"
+    : "de";
+}
 
 export function SpeechSettingsPanel() {
   const { selectedId } = useCtoxMode();
@@ -85,8 +95,8 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
         setRecording(url.current);
       }
       return result;
-    } catch {
-      if (!active.signal.aborted) setError("Nicht geladen oder gespeichert");
+    } catch (failure) {
+      if (!active.signal.aborted) setError(speechErrorText(failure, uiLanguage()));
     } finally {
       if (controller.current === active && !active.signal.aborted) setBusy(undefined);
     }
@@ -156,7 +166,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               ? loadingSlow
                 ? "Laden dauert länger"
                 : "Lädt …"
-              : "Spracheinstellungen der Instanz nicht geladen"}
+              : (error ?? "Spracheinstellungen der Instanz nicht geladen")}
           </span>
           {busy === "speech.settings.read" && !loadingSlow ? null : (
             <Button

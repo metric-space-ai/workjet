@@ -131,7 +131,11 @@ jobs:
           WORKJET_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
         run: vp run test
 
+      - name: Test the main installation controller
+        run: python3 -B scripts/main-auto-install.test.py
+
       - name: Publish transfer budget report
+
         if: always()
         run: |
           if test -f "${{ runner.temp }}/workjet-transfer-budget.md"; then

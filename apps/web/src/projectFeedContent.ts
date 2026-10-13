@@ -116,7 +116,9 @@ export function prSummaryFromBody(body: string | null | undefined): string | nul
     .join("\n");
   const plain = plainPreview(cleaned, 2000);
   if (!plain) return null;
-  const sentences = plain.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [plain];
+  const sentences = (plain.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [plain]).filter(
+    (sentence) => !/^\s*(closes|fixes|resolves|refs?)\s+#?\d+[.!?]?\s*$/i.test(sentence),
+  );
   const summary = sentences.slice(0, 2).join("").trim();
   return summary.length > 320 ? `${summary.slice(0, 319).trimEnd()}…` : summary || null;
 }

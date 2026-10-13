@@ -151,6 +151,8 @@ export type ProjectOverviewPr = {
   readonly title: string;
   readonly state: "open" | "closed" | "merged";
   readonly mergedAt?: string | null;
+  /** Who opened the PR (GitHub login), when the source delivers it. */
+  readonly author?: string | null;
   /** PR description, when the PR source delivers it. */
   readonly body?: string | null;
 };

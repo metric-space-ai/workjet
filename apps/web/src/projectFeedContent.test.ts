@@ -42,3 +42,11 @@ describe("project feed content", () => {
     expect(prSummaryFromBody("")).toBeNull();
   });
 });
+
+describe("prSummaryFromBody issue refs", () => {
+  it("drops a leading 'Closes 698.' sentence", () => {
+    expect(prSummaryFromBody("Closes 698. Overview names the reason. More. Even more.")).toBe(
+      "Overview names the reason. More.",
+    );
+  });
+});

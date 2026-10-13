@@ -202,149 +202,139 @@ export function ProjectOverviewView(props: {
       </div>
       <aside className="flex min-h-0 min-w-0 flex-col gap-2.5 overflow-y-auto rounded-xl border border-border bg-card p-4">
         <h2 className="mb-1 text-[17px] font-semibold tracking-tight">{text.sideTitle}</h2>
-        <section
-          className="rounded-xl bg-muted/50 px-3.5 py-3"
-          data-workjet-overview-section="live"
-        >
-          <h3 className="mb-1.5 text-[13.5px] font-semibold text-foreground">{text.liveTitle}</h3>
-          {live.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{text.liveEmpty}</p>
-          ) : (
-            <ul className="space-y-1">
-              {live.map(({ thread, state }) => (
-                <li key={thread.id}>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="h-auto w-full justify-start gap-2 px-1 py-1 text-left whitespace-normal"
-                    onClick={() => open(thread)}
-                  >
-                    <span
-                      aria-hidden
-                      className={
-                        "size-1.5 shrink-0 rounded-full " +
-                        (state === "running"
-                          ? "bg-emerald-400"
-                          : state === "disrupted"
-                            ? "bg-red-400"
-                            : "bg-amber-400")
-                      }
-                    />
-                    <span className="min-w-0 flex-1 break-words">
-                      {localizedWorkerName(
-                        projectOverviewWorkerName(thread.title, data.title).name,
-                        language,
-                      )}
-                    </span>
-                    <span className="text-muted-foreground">{text[state]}</span>
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-        <section className="rounded-xl bg-muted/50 px-3.5 py-3">
-          <h3 className="text-[13.5px] font-semibold text-foreground">{text.nextMeeting}</h3>
-          {data.recurring && weekday !== null ? (
-            <p className="mt-1 font-semibold">
-              {weekday} · {data.recurring.time}
-              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                {data.recurring.timezone}
-              </span>
-            </p>
-          ) : (
-            <p className="mt-1 text-muted-foreground">{text.noNextMeeting}</p>
-          )}
-          <Button
-            size="xs"
-            className="mt-2.5"
-            onClick={props.onOpenJourFixe}
-            disabled={!props.onOpenJourFixe || joinLocked}
-            data-workjet-action="project.jour-fixe.open"
-          >
-            {joinLocked && data.recurring ? data.recurring.time : text.join}
-          </Button>
-          {!props.onOpenJourFixe ? (
-            <p className="mt-1 text-xs text-muted-foreground">{text.meetingConnectionRequired}</p>
-          ) : null}
-        </section>
-        <section
-          className="rounded-xl bg-muted/50 px-3.5 py-3"
-          data-workjet-overview-section="kpis"
-        >
-          <h3 className="mb-1.5 text-[13.5px] font-semibold text-foreground">{text.metrics}</h3>
-          {missingKpis ? (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">{text.kpisMissing}</p>
-              {props.onRecomputeKpis ? (
-                <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
-                  <RefreshCwIcon aria-hidden className="size-3.5" />
-                  {text.recompute}
-                </Button>
-              ) : null}
-            </div>
-          ) : (
-            <dl
-              className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-xs"
-              data-workjet-overview-kpis=""
-            >
-              {data.kpis
-                .filter((kpi) => kpi.value !== "—")
-                .map((kpi) => (
-                  <div key={kpi.id} className="contents" data-workjet-overview-kpi={kpi.id}>
-                    <dt className="min-w-0 break-words text-muted-foreground">
-                      {kpi.label}
-                      {kpi.note !== null && (
-                        <span className="block text-[11px] text-amber-400">{kpi.note}</span>
-                      )}
-                    </dt>
-                    <dd className="text-right font-semibold tabular-nums">{kpi.value}</dd>
-                  </div>
-                ))}
-            </dl>
-          )}
-        </section>
-        {data.goals.length === 0 ? null : (
-          <section
-            className="rounded-xl bg-muted/50 px-3.5 py-3"
-            data-workjet-overview-section="goals"
-          >
-            <h3 className="mb-1.5 text-[13.5px] font-semibold text-foreground">{text.goals}</h3>
-            {data.goals.length === 0 ? (
-              <p className="text-xs text-muted-foreground">{text.noGoals}</p>
+        <div className="divide-y divide-border/70 rounded-xl bg-muted/40">
+          <section className="px-3.5 py-3" data-workjet-overview-section="live">
+            <h3 className="mb-1.5 text-[13.5px] font-semibold text-foreground">{text.liveTitle}</h3>
+            {live.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{text.liveEmpty}</p>
             ) : (
-              <ul className="space-y-2 text-xs">
-                {data.goals.map((goal) => (
-                  <li key={goal.id} className="min-w-0">
-                    <p className="line-clamp-2 break-words text-foreground">{goal.title}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
-                      <span>{text.who}:</span>
-                      {goal.thread ? (
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          className="h-auto p-0 text-xs"
-                          onClick={() => open(goal.thread!)}
-                        >
-                          {goal.owner}
-                        </Button>
-                      ) : (
-                        <span>{goal.owner}</span>
-                      )}
-                      <span>· {text.status}:</span>
-                      <StatusChip status={goal.status} label={goal.state} />
-                    </p>
+              <ul className="space-y-1">
+                {live.map(({ thread, state }) => (
+                  <li key={thread.id}>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="h-auto w-full justify-start gap-2 px-1 py-1 text-left whitespace-normal"
+                      onClick={() => open(thread)}
+                    >
+                      <span
+                        aria-hidden
+                        className={
+                          "size-1.5 shrink-0 rounded-full " +
+                          (state === "running"
+                            ? "bg-emerald-400"
+                            : state === "disrupted"
+                              ? "bg-red-400"
+                              : "bg-amber-400")
+                        }
+                      />
+                      <span className="min-w-0 flex-1 break-words">
+                        {localizedWorkerName(
+                          projectOverviewWorkerName(thread.title, data.title).name,
+                          language,
+                        )}
+                      </span>
+                      <span className="text-muted-foreground">{text[state]}</span>
+                    </Button>
                   </li>
                 ))}
               </ul>
             )}
           </section>
-        )}
+          <section className="px-3.5 py-3">
+            <h3 className="text-[13.5px] font-semibold text-foreground">{text.nextMeeting}</h3>
+            {data.recurring && weekday !== null ? (
+              <p className="mt-1 font-semibold">
+                {weekday} · {data.recurring.time}
+                <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                  {data.recurring.timezone}
+                </span>
+              </p>
+            ) : (
+              <p className="mt-1 text-muted-foreground">{text.noNextMeeting}</p>
+            )}
+            <Button
+              size="xs"
+              className="mt-2.5"
+              onClick={props.onOpenJourFixe}
+              disabled={!props.onOpenJourFixe || joinLocked}
+              data-workjet-action="project.jour-fixe.open"
+            >
+              {joinLocked && data.recurring ? data.recurring.time : text.join}
+            </Button>
+            {!props.onOpenJourFixe ? (
+              <p className="mt-1 text-xs text-muted-foreground">{text.meetingConnectionRequired}</p>
+            ) : null}
+          </section>
+          <section className="px-3.5 py-3" data-workjet-overview-section="kpis">
+            <h3 className="mb-1.5 text-[13.5px] font-semibold text-foreground">{text.metrics}</h3>
+            {missingKpis ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">{text.kpisMissing}</p>
+                {props.onRecomputeKpis ? (
+                  <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
+                    <RefreshCwIcon aria-hidden className="size-3.5" />
+                    {text.recompute}
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              <dl
+                className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-xs"
+                data-workjet-overview-kpis=""
+              >
+                {data.kpis
+                  .filter((kpi) => kpi.value !== "—")
+                  .map((kpi) => (
+                    <div key={kpi.id} className="contents" data-workjet-overview-kpi={kpi.id}>
+                      <dt className="min-w-0 break-words text-muted-foreground">
+                        {kpi.label}
+                        {kpi.note !== null && (
+                          <span className="block text-[11px] text-amber-400">{kpi.note}</span>
+                        )}
+                      </dt>
+                      <dd className="text-right font-semibold tabular-nums">{kpi.value}</dd>
+                    </div>
+                  ))}
+              </dl>
+            )}
+          </section>
+          {data.goals.length === 0 ? null : (
+            <section className="px-3.5 py-3" data-workjet-overview-section="goals">
+              <h3 className="mb-1.5 text-[13.5px] font-semibold text-foreground">{text.goals}</h3>
+              {data.goals.length === 0 ? (
+                <p className="text-xs text-muted-foreground">{text.noGoals}</p>
+              ) : (
+                <ul className="space-y-2 text-xs">
+                  {data.goals.map((goal) => (
+                    <li key={goal.id} className="min-w-0">
+                      <p className="line-clamp-2 break-words text-foreground">{goal.title}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
+                        <span>{text.who}:</span>
+                        {goal.thread ? (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            className="h-auto p-0 text-xs"
+                            onClick={() => open(goal.thread!)}
+                          >
+                            {goal.owner}
+                          </Button>
+                        ) : (
+                          <span>{goal.owner}</span>
+                        )}
+                        <span>· {text.status}:</span>
+                        <StatusChip status={goal.status} label={goal.state} />
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+        </div>
         {props.actions ? (
-          <section className="rounded-xl bg-muted/50 px-3.5 py-3">
-            <h3 className="mb-1.5 text-[13.5px] font-semibold text-foreground">
-              {text.projectActions}
-            </h3>
+          <section className="mt-auto px-1 pt-2">
             <div className="flex flex-wrap items-center gap-2">{props.actions}</div>
           </section>
         ) : null}
@@ -514,6 +504,7 @@ function buildFeed(
             number: pr.number,
             title: pr.title,
             url: pr.url,
+            body: pr.body ?? null,
             language: data.language,
           })
         : event.kind === "step" && event.thread
@@ -528,7 +519,11 @@ function buildFeed(
     items.push({
       id: `event:${event.id}`,
       at: event.at,
-      ...(event.thread ? who(event.thread) : { author: text.feedSystem, harness: null }),
+      ...(event.thread
+        ? who(event.thread)
+        : pr?.author
+          ? { author: pr.author, harness: "GitHub" }
+          : { author: text.feedSystem, harness: null }),
       body: event.sentence,
       ...(content ?? {}),
       tone: "normal",
@@ -536,6 +531,34 @@ function buildFeed(
       badge: null,
       thread: event.thread,
       url: content?.sources.some((source) => source.url === event.url) ? undefined : event.url,
+    });
+  }
+  const shown = new Set([
+    ...covered,
+    ...items.flatMap((item) => [
+      ...(item.url ? [item.url] : []),
+      ...(item.sources ?? []).flatMap((source) => (source.url ? [source.url] : [])),
+    ]),
+  ]);
+  for (const pr of data.merged) {
+    if (shown.has(pr.url) || !pr.mergedAt || !Number.isFinite(Date.parse(pr.mergedAt))) continue;
+    items.push({
+      id: `pr:${pr.url}`,
+      at: pr.mergedAt,
+      author: pr.author ?? "GitHub",
+      harness: "GitHub",
+      ...mergedPrContent({
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        body: pr.body ?? null,
+        language: data.language,
+      }),
+      tone: "normal",
+      kind: "pr",
+      badge: null,
+      thread: undefined,
+      url: undefined,
     });
   }
   return items.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -637,9 +660,10 @@ function FeedSection(props: {
   // Related cards (same chat) form one thread: first card shows, the rest on request.
   const groups: FeedItem[][] = [];
   for (const item of items) {
-    const key = item.thread?.id;
+    const keyOf = (entry: FeedItem) => entry.thread?.id;
+    const key = keyOf(item);
     const last = groups.at(-1);
-    if (key && last && last[0]!.thread?.id === key) last.push(item);
+    if (key && last && keyOf(last[0]!) === key) last.push(item);
     else groups.push([item]);
   }
   return (
@@ -808,7 +832,7 @@ function FeedCard(props: {
             </span>
           ) : null}
         </p>
-        {item.headline ? (
+        {item.headline && !(preview?.url && preview.type === "pr") ? (
           <p className="mt-0.5 text-[15px] font-semibold break-words leading-6 [overflow-wrap:anywhere]">
             {item.headline}
           </p>
@@ -845,18 +869,12 @@ function FeedCard(props: {
             <span
               aria-hidden
               className={
-                "flex h-28 items-end bg-gradient-to-br p-3 " +
+                "block h-[120px] bg-gradient-to-br " +
                 (preview.type === "pr"
-                  ? "from-emerald-900/70 via-slate-900 to-blue-950"
-                  : "from-blue-900/70 via-slate-900 to-slate-950")
+                  ? "from-[#1e3a6e] via-[#1b2f55] to-[#151d33]"
+                  : "from-[#1f4d4a] via-[#18323a] to-[#141c26]")
               }
-            >
-              {preview.type === "pr" ? (
-                <GitPullRequestIcon className="size-7 text-white/70" />
-              ) : (
-                <MessageSquareIcon className="size-7 text-white/70" />
-              )}
-            </span>
+            ></span>
             <span className="block px-3 py-2">
               <span className="block text-xs text-muted-foreground">{sourceHost(preview.url)}</span>
               <span className="block text-[14px] break-words text-foreground">

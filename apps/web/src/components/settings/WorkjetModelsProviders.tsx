@@ -801,6 +801,7 @@ function ProviderModelsField({
 }
 
 export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & ModelsManagementState) {
+  const t = useUiText();
   const [adding, setAdding] = useState<WorkjetGatewayProvider | null>(null);
   const [keyProvider, setKeyProvider] = useState<WorkjetGatewayApiKeyProvider | null>(null);
   const accounts = state.catalog?.accounts ?? [];
@@ -836,7 +837,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
   return (
     <section className="space-y-3" aria-label="Anbieter" data-testid="models-providers">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Anbieter</h2>
+        <h2 className="text-lg font-semibold">{t("Anbieter", "Providers")}</h2>
         <div className="flex items-center gap-2">
           <Button
             size="sm"

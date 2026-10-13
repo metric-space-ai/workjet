@@ -18,6 +18,7 @@ import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSna
 import { layerTest as settingsLayer } from "../serverSettings.ts";
 import { layer as storeLayer } from "./RemoteWorkerStore.ts";
 import { make } from "./RemoteWorkerBroker.ts";
+import { layer as ledgerLayer, WorkerRunLedger } from "./WorkerRunLedger.ts";
 
 const request: RemoteWorkerRequest = {
   schemaVersion: 1,
@@ -88,6 +89,7 @@ function runtime(parentCapabilities = ["greppy"], computers = true) {
   } as unknown as OrchestrationThread;
   return Layer.mergeAll(
     storeLayer,
+    ledgerLayer,
     settingsLayer({
       workjet: {
         selectedComputerId: null,
@@ -165,3 +167,33 @@ for (const [label, capabilities, computers] of [
     }).pipe(Effect.provide(runtime([...capabilities], computers))),
   );
 }
+it.effect("records a source start only after a validated remote acknowledgement", () =>
+  Effect.gen(function* () {
+    const ledger = yield* WorkerRunLedger;
+    const broker = yield* make;
+    yield* ledger.queue(
+      {
+        runId: request.requestId,
+        parent: { threadId: request.parent.threadId, sessionId: null, model: null, harness: null },
+        worker: { model: null, harness: null, providerRoute: null, reasoning: null },
+        briefSha256: "a".repeat(64),
+        taskType: "backend",
+        difficulty: "standard",
+        selection: "manual",
+      },
+      request.createdAt,
+    );
+    yield* broker.enqueue(request);
+    assert.isNull(Option.getOrThrow(yield* ledger.get(request.requestId)).startedAt);
+    yield* broker.respond(response);
+    const started = Option.getOrThrow(yield* ledger.get(request.requestId));
+    assert.isNotNull(started.startedAt);
+    assert.isNull(started.terminalAt);
+    assert.isNull(started.execution);
+    yield* broker.respond(response);
+    assert.equal(
+      Option.getOrThrow(yield* ledger.get(request.requestId)).startedAt,
+      started.startedAt,
+    );
+  }).pipe(Effect.provide(runtime())),
+);

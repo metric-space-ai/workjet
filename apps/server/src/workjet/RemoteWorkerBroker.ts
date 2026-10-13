@@ -9,6 +9,8 @@ import {
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
+import { WorkerRunLedger } from "./WorkerRunLedger.ts";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
@@ -22,6 +24,7 @@ export const make = Effect.gen(function* () {
   const store = yield* RemoteWorkerStore;
   const query = yield* ProjectionSnapshotQuery;
   const settings = yield* ServerSettingsService;
+  const ledger = yield* Effect.serviceOption(WorkerRunLedger);
   const pending = Effect.gen(function* () {
     const catalog = (yield* settings.getSettings).workjet.computers;
     const requests = yield* store.pendingOutbound;
@@ -93,6 +96,23 @@ export const make = Effect.gen(function* () {
     yield* store
       .complete("outbound", response)
       .pipe(Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "request-conflict" })));
+    if (Option.isSome(ledger)) {
+      // The target acknowledged its first turn; this is the source observation time,
+      // not an invented target execution/model timestamp. Lost replies remain pending.
+      const observedAt = DateTime.formatIso(yield* DateTime.now);
+      const outcome = response.outcome;
+      if (outcome.status === "dispatched")
+        yield* ledger.value.observe({ runId: response.requestId, startedAt: observedAt });
+      else if (outcome.reason !== "rollback-failed")
+        yield* ledger.value.observe({
+          runId: response.requestId,
+          terminalAt: observedAt,
+          abortClass:
+            outcome.reason === "source-unavailable" || outcome.reason === "computer-unavailable"
+              ? "transport"
+              : "task",
+        });
+    }
   });
   const awaitResponse = Effect.fn("RemoteWorkerBroker.awaitResponse")(function* (
     requestId: ThreadId,

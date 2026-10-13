@@ -487,6 +487,7 @@ const IsolatedWorkerWorktreeLayerLive = IsolatedWorkerWorktree.layer.pipe(
   Layer.provide(NativeWorkerWorktreeRemoverLayerLive),
 );
 const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
+  Layer.provide(WorkerRunLedger.layer),
   Layer.provide(RemoteWorkerStore.layer),
 );
 const RemoteWorkerComputerEnrollmentLayerLive = RemoteWorkerComputerEnrollmentLive.layer.pipe(

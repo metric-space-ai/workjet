@@ -290,3 +290,33 @@ export function projectOverviewFormat(
 ) {
   return template.replace(/\{(\w+)\}/gu, (match, key: string) => String(values[key] ?? match));
 }
+
+/** Plain-language DE/EN for raw CLI session errors, plus the action the button should offer. */
+export function projectOverviewSessionError(
+  raw: string,
+  language: ProjectOverviewLanguage,
+): { readonly text: string; readonly action: string | null } {
+  const de = language === "de";
+  if (
+    /not logged in|please run \/login|unauthori[sz]ed|authentication required|invalid api key/i.test(
+      raw,
+    )
+  )
+    return {
+      text: de
+        ? "Der Coding-Agent ist auf der Instanz nicht angemeldet."
+        : "The coding agent is not signed in on the instance.",
+      action: de ? "Im Chat anmelden" : "Sign in via chat",
+    };
+  if (/rate.?limit|quota|usage limit/i.test(raw))
+    return {
+      text: de ? "Nutzungslimit des Anbieters erreicht." : "Provider usage limit reached.",
+      action: null,
+    };
+  if (/timed? ?out|ETIMEDOUT|ECONNREFUSED|network/i.test(raw))
+    return {
+      text: de ? "Anbieter nicht erreichbar." : "Provider unreachable.",
+      action: null,
+    };
+  return { text: raw.length > 160 ? `${raw.slice(0, 159)}…` : raw, action: null };
+}

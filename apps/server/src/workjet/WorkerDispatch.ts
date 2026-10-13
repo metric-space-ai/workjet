@@ -1,4 +1,5 @@
 import * as NodeUtil from "node:util";
+import * as NodeCrypto from "node:crypto";
 import {
   canCoordinateWorkjet,
   workjetParentBindingMatchesTeam,
@@ -52,9 +53,12 @@ import type { OrchestrationDispatchOptions } from "../orchestration/Services/Orc
 import { makeWorkerOrdinal } from "./WorkerOrdinal.ts";
 import { LocalWorkerWorktree } from "./LocalWorkerWorktree.ts";
 import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
+import { WorkerRunLedger, type WorkerTaskType, type WorkerDifficulty } from "./WorkerRunLedger.ts";
 
 export interface WorkerDispatchInput {
   readonly task: string;
+  readonly taskType?: typeof WorkerTaskType.Type;
+  readonly difficulty?: typeof WorkerDifficulty.Type;
   readonly workerProfileId?: WorkjetWorkerProfileId;
   /** Retry only this saved remote request after a lost acknowledgement. */
   readonly remoteRequestId?: ThreadId;
@@ -220,6 +224,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const lumaConnections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
   const remoteBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
   const sourceGit = yield* Effect.serviceOption(GitVcsDriver);
+  const ledger = yield* Effect.serviceOption(WorkerRunLedger);
 
   const nativeMutex = yield* Semaphore.make(1);
   const dispatch: (
@@ -344,6 +349,36 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     }
 
     let modelSelection = input.modelSelection ?? parent.modelSelection;
+    const queueRun = (
+      runId: string,
+      queuedAt: string,
+      harness: string | null,
+      route: string,
+      reasoning: string | null,
+    ) =>
+      Option.isNone(ledger)
+        ? Effect.void
+        : ledger.value
+            .queue(
+              {
+                runId,
+                parent: {
+                  threadId: parent.id,
+                  sessionId: invocation.providerSessionId || null,
+                  model: parent.modelSelection.model,
+                  harness: parent.session?.providerName ?? null,
+                },
+                worker: { model: modelSelection.model, harness, providerRoute: route, reasoning },
+                briefSha256: NodeCrypto.createHash("sha256")
+                  .update(input.task, "utf8")
+                  .digest("hex"),
+                taskType: input.taskType ?? "other",
+                difficulty: input.difficulty ?? "standard",
+                selection: "manual",
+              },
+              queuedAt,
+            )
+            .pipe(Effect.mapError(() => failure("create-failed")));
     if (targetEnvironmentId !== invocation.environmentId) {
       const profiles =
         configuration?.workerProfiles.filter(
@@ -499,6 +534,13 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             DateTime.formatIso,
           ),
         }).pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+        yield* queueRun(
+          request.requestId,
+          request.createdAt,
+          profile.harness,
+          profile.llmRouteId,
+          profile.reasoning,
+        );
         yield* broker
           .enqueue(request)
           .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
@@ -537,6 +579,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     const turnStartCommandId = CommandId.make(yield* sources.randomUUID);
     const messageId = MessageId.make(yield* sources.randomUUID);
     const createdAt = yield* sources.nowIso;
+    yield* queueRun(workerThreadId, createdAt, null, modelSelection.instanceId, null);
     const ordinal = yield* sources
       .nextWorkerOrdinal(parentReference, workerThreadId)
       .pipe(Effect.mapError(() => failure("create-failed")));

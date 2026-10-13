@@ -6,6 +6,7 @@ import type {
   WorkjetWorkerPullRequest,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -106,13 +107,18 @@ export const make = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.observe")));
   const markExecutionStopped = (threadId: ThreadId) =>
-    sql`
-      UPDATE workjet_worker_pull_requests SET execution_stopped = 1
-      WHERE thread_id = ${threadId}
-    `.pipe(
-      Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.markExecutionStopped")),
-      Effect.asVoid,
-    );
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const at = DateTime.formatIso(yield* DateTime.now);
+          yield* sql`UPDATE workjet_worker_pull_requests SET execution_stopped = 1 WHERE thread_id = ${threadId}`;
+          yield* sql`UPDATE workjet_worker_runs SET terminal_at = COALESCE(terminal_at, ${at})
+        WHERE run_id = ${threadId} AND EXISTS (
+          SELECT 1 FROM workjet_worker_pull_requests WHERE thread_id = ${threadId} AND execution_stopped = 1
+        )`;
+        }),
+      )
+      .pipe(Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.markExecutionStopped")));
   const listStopped = (afterThreadId: string) =>
     sql<WorkerPullRequestReceipt>`
       SELECT thread_id AS "threadId", worktree_path AS "worktreePath",

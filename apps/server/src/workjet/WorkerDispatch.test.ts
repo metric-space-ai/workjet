@@ -1,3 +1,37 @@
+import { WorkerRunLedger, type WorkerRunIdentity } from "./WorkerRunLedger.ts";
+
+it.effect("persists the queued assignment before creating its worker thread", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const queued: WorkerRunIdentity[] = [];
+    const service = yield* harness.service.pipe(
+      Effect.provideService(WorkerRunLedger, {
+        queue: (identity) =>
+          Effect.sync(() => {
+            expect(harness.commands).toHaveLength(0);
+            queued.push(identity);
+          }),
+        observe: () => Effect.void,
+        list: () => Effect.succeed([]),
+        get: () => Effect.succeed(Option.none()),
+      }),
+    );
+    const result = yield* service.dispatch(invocation, {
+      task: "Check the assigned backend change.",
+      taskType: "tests",
+      difficulty: "hard",
+    });
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.runId).toBe(result.workerThreadId);
+    expect(queued[0]?.parent.threadId).toBe(invocation.threadId);
+    expect(queued[0]?.parent.sessionId).toBe(invocation.providerSessionId);
+    expect(queued[0]?.taskType).toBe("tests");
+    expect(queued[0]?.difficulty).toBe("hard");
+    expect(queued[0]?.selection).toBe("manual");
+    expect(queued[0]?.briefSha256).toMatch(/^[a-f0-9]{64}$/);
+  }),
+);
+
 for (const requestedHarness of [
   "claude-code",
   "grok-cli",

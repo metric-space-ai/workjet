@@ -45,6 +45,8 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 import { goalExecutionObservation } from "../../workjet/goalExecutionObservation.ts";
+import { WorkerRunLedger } from "../../workjet/WorkerRunLedger.ts";
+import { workerRunProgressFromEvent } from "../../workjet/WorkerRunRuntime.ts";
 import {
   routeWorkerDecision,
   routeWorkerTerminalQuestion,
@@ -882,6 +884,7 @@ const make = Effect.gen(function* () {
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
   const crewAdmission = yield* Effect.serviceOption(CtoxCrewTurnAdmission);
+  const workerLedger = yield* Effect.serviceOption(WorkerRunLedger);
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
@@ -1694,6 +1697,19 @@ const make = Effect.gen(function* () {
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
+      const workerProgress = shouldApplyThreadLifecycle
+        ? workerRunProgressFromEvent(event)
+        : undefined;
+      if (workerProgress && thread.workjetConfig.role === "worker" && Option.isSome(workerLedger)) {
+        yield* workerLedger.value.observe(workerProgress).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("Worker run ledger observation failed", {
+              runId: thread.id,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
+      }
       if (assistantDelta && assistantDelta.length > 0) {
         const turnId = toTurnId(event.turnId);
         const assistantMessageId = yield* getOrCreateAssistantMessageId({

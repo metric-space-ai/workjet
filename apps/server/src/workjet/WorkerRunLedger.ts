@@ -48,9 +48,16 @@ export const WorkerRunIdentity = Schema.Struct({
   selection: Schema.Literals(["manual", "pool"]),
 });
 export type WorkerRunIdentity = typeof WorkerRunIdentity.Type;
+export const WorkerRunExecution = Schema.Struct({
+  model: optionalFact,
+  harness: Schema.NonEmptyString,
+  providerRoute: optionalFact,
+  reasoning: optionalFact,
+});
 export const WorkerRunProgress = Schema.Struct({
   runId: Schema.NonEmptyString,
   startedAt: Schema.optional(IsoDateTime),
+  execution: Schema.optional(WorkerRunExecution),
   firstOutputAt: Schema.optional(IsoDateTime),
   terminalAt: Schema.optional(IsoDateTime),
   abortClass: Schema.optional(WorkerAbortClass),
@@ -60,6 +67,7 @@ export const WorkerRunProgress = Schema.Struct({
 });
 export type WorkerRunProgress = typeof WorkerRunProgress.Type;
 export interface WorkerRunRecord extends WorkerRunIdentity {
+  readonly execution: typeof WorkerRunExecution.Type | null;
   readonly queuedAt: string;
   readonly startedAt: string | null;
   readonly firstOutputAt: string | null;
@@ -111,14 +119,26 @@ export const make = Effect.gen(function* () {
   const observe = Effect.fn("WorkerRunLedger.observe")(
     function* (input: WorkerRunProgress) {
       const value = yield* validateProgress(input);
+      const executionJson =
+        value.execution === undefined
+          ? null
+          : yield* Schema.encodeEffect(Schema.fromJsonString(WorkerRunExecution))(value.execution);
       // Event replay fills only previously unknown milestones. A late event cannot reopen a run.
       yield* sql`UPDATE workjet_worker_runs SET
       started_at = COALESCE(started_at, ${value.startedAt ?? null}),
       first_output_at = COALESCE(first_output_at, ${value.firstOutputAt ?? null}),
-      abort_class = CASE WHEN terminal_at IS NULL THEN ${value.abortClass ?? "none"} ELSE abort_class END,
+      abort_class = CASE WHEN terminal_at IS NULL THEN COALESCE(${value.abortClass ?? null}, abort_class) ELSE abort_class END,
+      execution_json = COALESCE(execution_json, ${executionJson}),
       terminal_at = COALESCE(terminal_at, ${value.terminalAt ?? null}),
       result_commit = COALESCE(result_commit, ${value.resultCommit ?? null})
-      WHERE run_id = ${value.runId}`;
+      WHERE run_id = ${value.runId} AND (
+        (${value.startedAt ?? null} IS NOT NULL AND started_at IS NULL) OR
+        (${value.firstOutputAt ?? null} IS NOT NULL AND first_output_at IS NULL) OR
+        (${executionJson} IS NOT NULL AND execution_json IS NULL) OR
+        (${value.terminalAt ?? null} IS NOT NULL AND terminal_at IS NULL) OR
+        (${value.resultCommit ?? null} IS NOT NULL AND result_commit IS NULL) OR
+        (${value.abortClass ?? null} IS NOT NULL AND terminal_at IS NULL AND abort_class != ${value.abortClass ?? null})
+      )`;
     },
     Effect.mapError(toPersistenceSqlError("WorkerRunLedger.observe")),
   );
@@ -126,6 +146,7 @@ export const make = Effect.gen(function* () {
     function* (runId: string | null) {
       const rows = yield* sql<{
         readonly identityJson: string;
+        readonly executionJson: string | null;
         readonly queuedAt: string;
         readonly startedAt: string | null;
         readonly firstOutputAt: string | null;
@@ -137,7 +158,7 @@ export const make = Effect.gen(function* () {
         readonly number: number | null;
         readonly url: string | null;
         readonly headOid: string | null;
-      }>`SELECT r.identity_json AS "identityJson", r.queued_at AS "queuedAt",
+      }>`SELECT r.identity_json AS "identityJson", r.execution_json AS "executionJson", r.queued_at AS "queuedAt",
       r.started_at AS "startedAt", r.first_output_at AS "firstOutputAt", r.terminal_at AS "terminalAt",
       r.abort_class AS "abortClass", COALESCE(r.result_commit, p.head_oid) AS "resultCommit", r.disposition,
       p.provider, p.pr_number AS "number", p.pr_url AS "url", p.head_oid AS "headOid"
@@ -148,6 +169,12 @@ export const make = Effect.gen(function* () {
           Effect.map(
             (identity): WorkerRunRecord => ({
               ...identity,
+              execution:
+                row.executionJson === null
+                  ? null
+                  : Schema.decodeUnknownSync(Schema.fromJsonString(WorkerRunExecution))(
+                      row.executionJson,
+                    ),
               queuedAt: row.queuedAt,
               startedAt: row.startedAt,
               firstOutputAt: row.firstOutputAt,

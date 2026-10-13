@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeCrypto from "node:crypto";
+import { WorkerRunLedger } from "./WorkerRunLedger.ts";
 import * as NodeOS from "node:os";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import {
@@ -132,6 +133,7 @@ export const make = Effect.gen(function* () {
   const admission = yield* Effect.serviceOption(RemoteWorkerAdmission);
   const isolatedWorktrees = yield* Effect.serviceOption(IsolatedWorkerWorktree);
   const providerInstances = yield* Effect.serviceOption(ProviderInstanceRegistry);
+  const ledger = yield* Effect.serviceOption(WorkerRunLedger);
   const mutex = yield* Semaphore.make(1);
   const targetEnvironmentId = yield* environment.getEnvironmentId;
 
@@ -347,6 +349,32 @@ export const make = Effect.gen(function* () {
       .resolveCommit({ cwd, revision: request.revision })
       .pipe(Effect.mapError(() => failure("project-unavailable")));
     if (commit.commitSha !== request.revision) return yield* failure("project-unavailable");
+    if (Option.isSome(ledger)) {
+      yield* ledger.value
+        .queue(
+          {
+            runId: request.requestId,
+            parent: {
+              threadId: request.parent.threadId,
+              sessionId: null,
+              model: null,
+              harness: null,
+            },
+            worker: {
+              model: request.modelSelection.model,
+              harness: request.harness ?? null,
+              providerRoute: request.llmRouteId ?? null,
+              reasoning: null,
+            },
+            briefSha256: NodeCrypto.createHash("sha256").update(request.task, "utf8").digest("hex"),
+            taskType: "other",
+            difficulty: "standard",
+            selection: "manual",
+          },
+          request.createdAt,
+        )
+        .pipe(Effect.mapError(() => failure("source-unavailable")));
+    }
     const branch = "workjet/worker/" + request.requestId;
     const common = yield* runGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
     if (common.stdoutTruncated || common.stdout.trim() === "")

@@ -80,6 +80,7 @@ import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as WorkerCleanupReceiptStore from "./workjet/WorkerCleanupReceiptStore.ts";
 import * as WorkerPullRequestStore from "./workjet/WorkerPullRequestStore.ts";
+import * as WorkerRunLedger from "./workjet/WorkerRunLedger.ts";
 import * as WorkerPullRequestLifecycle from "./workjet/WorkerPullRequestLifecycle.ts";
 import * as NativeWorkerWorktreeRemover from "./workjet/NativeWorkerWorktreeRemover.ts";
 import * as WorkerDispatchRollback from "./workjet/WorkerDispatchRollback.ts";
@@ -326,7 +327,12 @@ const CtoxCrewTurnAdmissionLive = CtoxCrewTurnAdmission.layer.pipe(
 );
 const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(OrchestrationReactorLive),
-  Layer.provideMerge(ProviderRuntimeIngestionLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
+  Layer.provideMerge(
+    ProviderRuntimeIngestionLive.pipe(
+      Layer.provide(CtoxCrewTurnAdmissionLive),
+      Layer.provide(WorkerRunLedger.layer),
+    ),
+  ),
   Layer.provideMerge(ProviderCommandReactorLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(PersistentGoalReactorLive),
@@ -505,6 +511,7 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
   Layer.provide(ServerSecretStore.layer),
 );
 const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
+  Layer.provide(WorkerRunLedger.layer),
   Layer.provide(IsolatedWorkerWorktreeLayerLive),
   Layer.provide(RemoteWorkerTargetAdmission.layer),
   Layer.provide(RemoteWorkerStore.layer),
@@ -516,6 +523,7 @@ const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
 // A single service instance owns the stable native intent IDs and the normal
 // MCP dispatch path. Both entries share its durable broker and first-use lock.
 const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
+  Layer.provide(WorkerRunLedger.layer),
   Layer.provide(
     LocalWorkerWorktree.layer.pipe(
       Layer.provide(IsolatedWorkerWorktreeLayerLive),

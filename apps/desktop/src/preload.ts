@@ -208,6 +208,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   declineUserDataMigration: () =>
     ipcRenderer.invoke(IpcChannels.DECLINE_USER_DATA_MIGRATION_CHANNEL),
   createSupportBundle: () => ipcRenderer.invoke(IpcChannels.CREATE_SUPPORT_BUNDLE_CHANNEL),
+  toolhubConnect: (input) => ipcRenderer.invoke(IpcChannels.TOOLHUB_CONNECT_CHANNEL, input),
   takePendingDeepLinks: () => ipcRenderer.invoke(IpcChannels.TAKE_PENDING_DEEP_LINKS_CHANNEL),
   onDeepLinkPending: (listener: () => void) => {
     // Payload-free by design: the listener drains through

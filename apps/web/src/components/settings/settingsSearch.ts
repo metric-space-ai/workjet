@@ -9,6 +9,7 @@ export type SettingsPath =
   | "/settings/workjet"
   | "/settings/projects"
   | "/settings/source-control"
+  | "/settings/integrations"
   | "/settings/diagnostics"
   | "/settings/archived"
   | "/settings/usage";
@@ -39,6 +40,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/prompts": "System-Prompts",
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
+  "/settings/integrations": "Schnittstellen",
   "/settings/diagnostics": "Diagnose",
   // Names its content: the start page "Archiv" holds projects, this one conversations (#602).
   "/settings/archived": "Chat-Archiv",
@@ -53,6 +55,7 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
   "/settings/speech": ["Speech", "Diktat"],
   "/settings/computers": ["Computers"],
   "/settings/source-control": ["Source Control"],
+  "/settings/integrations": ["Integrations", "Connectors", "Adapter", "Toolhub", "Apps"],
   "/settings/diagnostics": ["Diagnostics"],
   "/settings/archived": ["Archiv", "Archive", "Archived conversations", "Unterhaltungen"],
   "/settings/usage": ["Usage", "Kosten", "Tokens"],

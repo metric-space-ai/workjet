@@ -21,6 +21,7 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as SettingsPromptsRouteImport } from './routes/settings.prompts'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsHarnessesRouteImport } from './routes/settings.harnesses'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
@@ -91,6 +92,11 @@ const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
 const SettingsModelsRoute = SettingsModelsRouteImport.update({
   id: '/models',
   path: '/models',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsHarnessesRoute = SettingsHarnessesRouteImport.update({
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/harnesses': typeof SettingsHarnessesRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/prompts': typeof SettingsPromptsRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/harnesses': typeof SettingsHarnessesRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/prompts': typeof SettingsPromptsRoute
@@ -221,6 +229,7 @@ export interface FileRoutesById {
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/harnesses': typeof SettingsHarnessesRoute
+  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
   '/settings/prompts': typeof SettingsPromptsRoute
@@ -249,6 +258,7 @@ export interface FileRouteTypes {
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/harnesses'
+    | '/settings/integrations'
     | '/settings/models'
     | '/settings/projects'
     | '/settings/prompts'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/harnesses'
+    | '/settings/integrations'
     | '/settings/models'
     | '/settings/projects'
     | '/settings/prompts'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/harnesses'
+    | '/settings/integrations'
     | '/settings/models'
     | '/settings/projects'
     | '/settings/prompts'
@@ -404,6 +416,13 @@ declare module '@tanstack/react-router' {
       path: '/models'
       fullPath: '/settings/models'
       preLoaderRoute: typeof SettingsModelsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/harnesses': {
@@ -528,6 +547,7 @@ interface SettingsRouteChildren {
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHarnessesRoute: typeof SettingsHarnessesRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsProjectsRoute: typeof SettingsProjectsRouteWithChildren
   SettingsPromptsRoute: typeof SettingsPromptsRoute
@@ -545,6 +565,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHarnessesRoute: SettingsHarnessesRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsProjectsRoute: SettingsProjectsRouteWithChildren,
   SettingsPromptsRoute: SettingsPromptsRoute,

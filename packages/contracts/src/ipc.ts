@@ -1192,6 +1192,16 @@ export interface DesktopBridge {
    * the document itself stays on disk for the user to read first.
    */
   createSupportBundle?: () => Promise<DesktopSupportBundleResult>;
+  /** CTOX Toolhub: open the provider's hosted consent page in an in-app window. */
+  toolhubConnect?: (input: {
+    readonly server: string;
+    readonly serverUrl: string;
+    readonly scopes?: ReadonlyArray<string>;
+  }) => Promise<{
+    readonly _tag: "authorized" | "cancelled" | "failed";
+    readonly server: string;
+    readonly message?: string;
+  }>;
   /**
    * Drains the OS deep links the main process is holding. Draining is the
    * only way links leave the main process, so a link is delivered exactly

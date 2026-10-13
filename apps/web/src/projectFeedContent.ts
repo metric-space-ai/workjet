@@ -1,3 +1,4 @@
+import type { CtoxWorkjetProjectFeedPost } from "@workjet/contracts";
 import type { ProjectOverviewLanguage } from "./projectOverviewText";
 import { projectOverviewSessionError } from "./projectOverviewText";
 
@@ -14,31 +15,8 @@ export type ProjectFeedSource = {
   readonly url?: string;
 };
 
-/**
- * A post written by the CTOX supervisor (ctox.workjet.project_feed.v1,
- * metric-space-ai/ctox#686). Rendered as-is when a core delivers it.
- */
-export type CtoxProjectFeedPost = {
-  readonly post_id: string;
-  readonly kind:
-    | "pr_merged"
-    | "session_completed"
-    | "disruption"
-    | "disruption_resolved"
-    | "jour_fixe"
-    | "goal_changed"
-    | "owner_note";
-  readonly author_kind: "supervisor" | "worker" | "owner";
-  readonly author_thread: string | null;
-  readonly author_label: string;
-  readonly harness: string | null;
-  readonly headline: string;
-  readonly body: string;
-  readonly open_items: readonly string[] | null;
-  readonly sources: readonly { type: ProjectFeedSource["type"]; label: string; ref: string }[];
-  readonly thread_ref: string | null;
-  readonly occurred_at_ms: number;
-};
+/** A post written by the CTOX supervisor (ctox.workjet.project_feed.v1, metric-space-ai/ctox#686). */
+export type CtoxProjectFeedPost = CtoxWorkjetProjectFeedPost;
 
 /** Plain readable text from an assistant preview: no markdown marks, bounded. */
 export function plainPreview(raw: string | null | undefined, max = 420): string | null {
@@ -127,18 +105,37 @@ export function runningContent(input: {
   };
 }
 
+/** First one or two sentences of a PR description, without markdown, checklists or templates. */
+export function prSummaryFromBody(body: string | null | undefined): string | null {
+  if (!body) return null;
+  const cleaned = body
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .split("\n")
+    .filter((line) => !/^\s*(#{1,6}\s|[-*]\s*\[[ xX]\]|>|\|)/.test(line))
+    .filter((line) => !/^\s*(closes|fixes|resolves|refs?)\s+#\d+/i.test(line))
+    .join("\n");
+  const plain = plainPreview(cleaned, 2000);
+  if (!plain) return null;
+  const sentences = plain.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [plain];
+  const summary = sentences.slice(0, 2).join("").trim();
+  return summary.length > 320 ? `${summary.slice(0, 319).trimEnd()}…` : summary || null;
+}
+
 export function mergedPrContent(input: {
   readonly number: number;
   readonly title: string;
   readonly url: string;
+  readonly body?: string | null;
   readonly language: ProjectOverviewLanguage;
 }): ProjectFeedContent {
   const de = input.language === "de";
   return {
     headline: `#${input.number} ${input.title}`,
-    body: de
-      ? "Nach main gemergt. Eine Zusammenfassung schreibt der Supervisor, sobald CTOX Feed-Posts liefert."
-      : "Merged to main. The supervisor writes a summary once CTOX delivers feed posts.",
+    body:
+      prSummaryFromBody(input.body) ??
+      (de
+        ? "Nach main gemergt. Eine Zusammenfassung schreibt der Supervisor, sobald CTOX Feed-Posts liefert."
+        : "Merged to main. The supervisor writes a summary once CTOX delivers feed posts."),
     openItems: [],
     sources: [{ type: "pr", label: `PR #${input.number}`, url: input.url }],
   };

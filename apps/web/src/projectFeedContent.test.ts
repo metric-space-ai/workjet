@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { disruptionContent, plainPreview, stepContent } from "./projectFeedContent";
+import {
+  disruptionContent,
+  plainPreview,
+  prSummaryFromBody,
+  stepContent,
+} from "./projectFeedContent";
 
 describe("project feed content", () => {
   it("turns a raw CLI login error into what hangs, why and who acts", () => {
@@ -27,5 +32,13 @@ describe("project feed content", () => {
   });
   it("bounds long previews", () => {
     expect(plainPreview("a ".repeat(400), 50)?.length).toBe(50);
+  });
+  it("summarizes a PR body in at most two sentences", () => {
+    expect(
+      prSummaryFromBody(
+        "Closes #12.\n\n## Summary\nAdds the feed. It replaces banners. Third sentence.\n- [ ] checked",
+      ),
+    ).toBe("Adds the feed. It replaces banners.");
+    expect(prSummaryFromBody("")).toBeNull();
   });
 });

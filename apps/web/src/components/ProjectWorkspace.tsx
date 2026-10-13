@@ -156,6 +156,7 @@ function ProjectWorkspaceContent({
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
         onRecomputeKpis={sources.reload}
+        feedPosts={sources.feedPosts}
         connectionMessage={sources.failureText}
         actions={
           <>

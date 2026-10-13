@@ -253,6 +253,9 @@ export function NativeSupervisorComposer(props: {
           createdAt: new Date().toISOString(),
           ...(turnKind === "conversation" ? { turnKind } : {}),
         };
+        // Optimistisch senden: die Nachricht steht sofort im Verlauf, die
+        // Leiste bleibt frei. Ein endgültiger Fehlschlag steht an der Nachricht.
+        setPrompt((draft) => (draft === prompt ? "" : draft));
         result = await submitWorkjetSupervisorTurn(intent, port);
       } else if (operation === "input" && saved?.turn) {
         const intent = saved.inputs?.find((entry) => entry.receipt === null)?.intent ?? {
@@ -302,13 +305,11 @@ export function NativeSupervisorComposer(props: {
       if (journalRef.current?.turn?.terminal) setNotice(null);
       if (result?._tag === "failed") {
         setFailureCode(result.code);
-        setError(describeWorkjetProjectControlFailure(result, target.instanceId));
+        // Laden und Wiederholen laufen still; nur der ausdrückliche Abbruch
+        // meldet sich, weil der Nutzer ihn gerade angefordert hat.
+        if (operation === "cancel")
+          setError(describeWorkjetProjectControlFailure(result, target.instanceId));
       }
-      if (
-        result?._tag === "completed" &&
-        (operation === "send" || prompt.trim() === saved?.intent.goal)
-      )
-        setPrompt((draft) => (operation === "send" && draft === prompt ? "" : draft));
       const confirmed = journalRef.current;
       if (
         (operation === "events" || result?._tag === "completed") &&
@@ -453,13 +454,9 @@ export function NativeSupervisorComposer(props: {
     setNewMessageFor(null);
   }, [bindingInstanceId, bindingProjectId, bindingThreadId]);
   const bindingError = bindingMatches ? binding.error : null;
-  const connectionError =
-    failureCode === "authentication_required" ||
-    failureCode === "not_active" ||
-    failureCode === "timeout" ||
-    failureCode === "guest_failed"
-      ? error
-      : null;
+  // Verbindungsabbrüche und langsame Antworten werden still erneut versucht;
+  // die Leiste zeigt dafür keine Fehlerzeile mehr.
+  const connectionError = failureCode === "authentication_required" ? error : null;
   const authenticationRequired = Boolean(
     props.instanceId?.startsWith("managed:") &&
     ((bindingMatches && binding.authenticationRequired) ||
@@ -475,10 +472,20 @@ export function NativeSupervisorComposer(props: {
       (disabled
         ? (props.blockReason ?? (props.instanceId ? "Projektverbindung nicht verfügbar" : null))
         : null) ??
-      bindingError ??
       workerStatus?.message ??
       connectionError ??
       routeStatus);
+  // Binding- und Capability-Prüfungen wiederholen sich still, bis sie klappen.
+  useEffect(() => {
+    if (disabled || !bindingMatches || bindingPending || bindingError === null) return;
+    const timer = setTimeout(() => setBindingRetry((value) => value + 1), 8000);
+    return () => clearTimeout(timer);
+  }, [disabled, bindingMatches, bindingPending, bindingError]);
+  useEffect(() => {
+    if (!capabilityMatches || capability?.error == null) return;
+    const timer = setTimeout(() => setCapabilityRetry((value) => value + 1), 8000);
+    return () => clearTimeout(timer);
+  }, [capabilityMatches, capability?.error]);
   useEffect(() => {
     if (
       disabled ||
@@ -655,6 +662,7 @@ export function NativeSupervisorComposer(props: {
           if (execution)
             void run("events", nextWorkjetSupervisorExecutionPageRequest(execution.page));
         }}
+        onRetrySend={() => void run("resume")}
       />
     ) : null;
 
@@ -666,20 +674,6 @@ export function NativeSupervisorComposer(props: {
       {journal && scopeMatches && !props.conversationTarget && (
         <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
           <p className="whitespace-pre-wrap break-words">{journal.intent.goal}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {journal.turn
-              ? `${journal.turn.status} · Versuch ${journal.turn.attempt}`
-              : journal.submission === "not-submitted" && !pending
-                ? "Nicht gesendet"
-                : "Warte auf CTOX-Bestätigung"}
-          </p>
-          {journal.turn?.taskId && (
-            <details className="mt-1 text-xs text-muted-foreground">
-              <summary>Aufgabendetails</summary>
-              <p>Aufgabe {journal.turn.taskId}</p>
-              <p>Befehl {journal.turn.commandId}</p>
-            </details>
-          )}
           {journal.turn && (
             <NativeSupervisorExecutionDetails
               page={execution?.commandId === journal.turn.commandId ? execution.page : null}
@@ -706,14 +700,23 @@ export function NativeSupervisorComposer(props: {
           {journal.turn?.resultTruncated && (
             <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>
           )}
-          {journal.submission === "not-submitted" && !pending && !authenticationRequired && (
+          {journal.submission === "not-submitted" && !pending && (
             <p role="status" className="text-muted-foreground">
-              Vorherige Anfrage nicht gesendet
+              Nicht gesendet
+              {" · "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={disabled || busy}
+                onClick={() => void run("resume")}
+              >
+                Erneut senden
+              </button>
             </p>
           )}
           {journal.turn?.errorMessage && (
             <p role="alert" className="text-destructive">
-              {journal.turn.errorCode}: {journal.turn.errorMessage}
+              {journal.turn.errorMessage}
             </p>
           )}
         </div>
@@ -776,7 +779,7 @@ export function NativeSupervisorComposer(props: {
               >
                 Neu verbinden
               </button>
-            ) : props.instanceId !== null && (disabled || bindingError || connectionError) ? (
+            ) : props.instanceId !== null && disabled ? (
               <button
                 type="button"
                 className="underline underline-offset-2"
@@ -1008,24 +1011,6 @@ export function NativeSupervisorComposer(props: {
         />
       </form>
       <NativeSupervisorActualRoute state={routeState} />
-      {drafting && busy && (
-        <p role="status" className="mt-1 text-xs text-muted-foreground">
-          Bestätigung wird geprüft …
-        </p>
-      )}
-      {capabilityMatches && capability.error && (
-        <p role="status" className="mt-1 text-xs text-muted-foreground">
-          Chat nicht verfügbar: {capability.error}{" "}
-          <button
-            type="button"
-            className="underline"
-            disabled={disabled || busy}
-            onClick={() => setCapabilityRetry((value) => value + 1)}
-          >
-            Erneut prüfen
-          </button>
-        </p>
-      )}
       {journal && (
         <div className="mt-2 flex gap-3 text-xs">
           {pending && journal.turn && (

@@ -12,7 +12,7 @@ import { installWorkerSourceRoute } from "../workjet/WorkerSourceHarness.ts";
 
 const close: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const stop of close.splice(0).reverse()) await stop();
+  for (const stop of close.splice(0).toReversed()) await stop();
 });
 async function listen(handler: NodeHttp.RequestListener) {
   const server = NodeHttp.createServer(handler);

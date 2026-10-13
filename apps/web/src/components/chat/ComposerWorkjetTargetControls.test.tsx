@@ -188,7 +188,26 @@ describe("computer dropdown entries", () => {
       ...base,
       computerAvailability: { local: { status: "Not connected", reason: "Not connected" } },
     });
-    expect(choices.map((choice) => choice.meta)).toEqual(["getrennt", "Projekt fehlt"]);
+    // Der lokale Rechner ist immer verfügbar, auch wenn eine Abfrage hängt.
+    expect(choices.map((choice) => choice.meta)).toEqual(["verbunden", "Projekt fehlt"]);
+  });
+
+  it("never turns a probe timeout into „nicht verfügbar“", () => {
+    const select = vi.fn();
+    const tree = ComposerComputerMenuItems({
+      ...base,
+      selectableEnvironmentIds: [envA, envB],
+      computerAvailability: {
+        remote: { status: "Offline", reason: "Die Datenabfrage hat zu lange gedauert." },
+      },
+      onSelectComputer: select,
+    });
+    const entry = radioItem(tree, "remote");
+    expect(entry.props.disabled).toBe(false);
+    expect(textOf(tree)).not.toContain("zu lange gedauert");
+    expect(textOf(tree)).not.toContain("nicht verfügbar");
+    (radioGroup(tree).props.onValueChange as (value: string) => void)("remote");
+    expect(select).toHaveBeenCalledExactlyOnceWith("remote");
   });
 });
 
@@ -498,10 +517,33 @@ describe("harness and model dropdown entries", () => {
       onSelectHarness,
     });
     expect(textOf(tree)).toContain("Claude Code");
-    expect(textOf(tree)).toContain("nicht eingerichtet");
-    expect(radioItem(tree, "codex-cli").props.disabled).toBe(true);
+    // Fehlende Installation ist keine Sperre: „nicht installiert“, nie „gesperrt“.
+    expect(textOf(tree)).toContain("nicht installiert");
+    expect(textOf(tree)).not.toContain("gesperrt");
+    const codex = flatten(tree).find(
+      (element) => element.props.disabled === true && textOf(element).includes("Codex CLI"),
+    );
+    expect(codex).toBeDefined();
     (radioGroup(tree).props.onValueChange as (value: string) => void)("claude-code");
     expect(onSelectHarness).toHaveBeenCalledWith("claude-code");
+  });
+
+  it("leads a missing harness into the setup path instead of locking it", () => {
+    const onSetupHarness = vi.fn();
+    const tree = ComposerHarnessMenuItems({
+      configuredInstanceIds: new Set(["claudeAgent"]),
+      selectedHarness: "claude-code",
+      onSelectHarness: () => undefined,
+      onSetupHarness,
+    });
+    const entry = flatten(tree).find(
+      (element) =>
+        typeof element.props.onClick === "function" &&
+        textOf(element) === "Codex CLI nicht installiert · Einrichten",
+    );
+    expect(entry?.props.disabled).toBeUndefined();
+    (entry!.props.onClick as () => void)();
+    expect(onSetupHarness).toHaveBeenCalledExactlyOnceWith("codex-cli");
   });
 
   it("groups catalog models by provider and offers no typed model ID", () => {
@@ -618,7 +660,7 @@ describe("the compact overflow menu", () => {
         },
       }),
     ).find((element) => element.props.value === "greppy" && element.props.closeOnClick === true);
-    expect(greppy?.props.disabled).toBe(false);
+    expect(greppy?.props.disabled ?? false).toBe(false);
   });
 
   it("offers Harness and Model in Manual mode — compact must not lose the new bar (K-A2)", () => {

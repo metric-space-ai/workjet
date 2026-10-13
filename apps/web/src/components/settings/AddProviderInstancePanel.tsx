@@ -36,15 +36,15 @@ const PROVIDER_ACCENT_SWATCHES = [
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 const DEFAULT_DRIVER_OPTION = DRIVER_OPTIONS[0]!;
-const NO_INSTALLED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set();
 const EMPTY_CONFIG_DRAFT: Record<string, unknown> = {};
+const NO_INSTALLED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set();
 
 interface AddProviderInstancePanelProps {
+  /** Harnesses already on the page: the picker never offers them again (#617). */
+  readonly installedDrivers?: ReadonlySet<ProviderDriverKind>;
   readonly open: boolean;
   readonly environmentId: EnvironmentId;
   readonly onOpenChange: (open: boolean) => void;
-  /** Harnesses already on the page: the picker never offers them again (#617). */
-  readonly installedDrivers?: ReadonlySet<ProviderDriverKind>;
 }
 
 /**
@@ -60,7 +60,9 @@ export function AddProviderInstancePanel({
   installedDrivers = NO_INSTALLED_DRIVERS,
 }: AddProviderInstancePanelProps) {
   const t = useUiText();
-  const availableDrivers = DRIVER_OPTIONS.filter((option) => !installedDrivers.has(option.value));
+  const availableDrivers = DRIVER_OPTIONS.filter((option) => {
+    return !installedDrivers.has(option.value);
+  });
   const firstDriver = availableDrivers[0]?.value ?? DEFAULT_DRIVER_KIND;
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);

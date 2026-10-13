@@ -69,3 +69,21 @@ describe("WorkerRunLedger", () => {
     ),
   );
 });
+it.effect("freezes structured failure at terminal exit and clears it on a successful restart", () =>
+  database(
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const ledger = yield* WorkerRunLedger;
+      yield* ledger.queue(identity, at);
+      yield* ledger.observe({ runId: identity.runId, abortClass: "auth" });
+      yield* ledger.observe({ runId: identity.runId, terminalAt: at, abortClass: "task" });
+      assert.equal(Option.getOrThrow(yield* ledger.get(identity.runId)).abortClass, "auth");
+      const second = { ...identity, runId: "run-b" };
+      yield* ledger.queue(second, at);
+      yield* ledger.observe({ runId: second.runId, abortClass: "transport" });
+      yield* ledger.observe({ runId: second.runId, startedAt: at, abortClass: "none" });
+      yield* ledger.observe({ runId: second.runId, terminalAt: at });
+      assert.equal(Option.getOrThrow(yield* ledger.get(second.runId)).abortClass, "none");
+    }),
+  ),
+);

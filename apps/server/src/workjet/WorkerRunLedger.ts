@@ -127,7 +127,9 @@ export const make = Effect.gen(function* () {
       yield* sql`UPDATE workjet_worker_runs SET
       started_at = COALESCE(started_at, ${value.startedAt ?? null}),
       first_output_at = COALESCE(first_output_at, ${value.firstOutputAt ?? null}),
-      abort_class = CASE WHEN terminal_at IS NULL THEN COALESCE(${value.abortClass ?? null}, abort_class) ELSE abort_class END,
+      abort_class = CASE WHEN terminal_at IS NOT NULL THEN abort_class
+        WHEN ${value.terminalAt ?? null} IS NOT NULL AND ${value.abortClass ?? null} = 'task' AND abort_class != 'none' THEN abort_class
+        ELSE COALESCE(${value.abortClass ?? null}, abort_class) END,
       execution_json = COALESCE(execution_json, ${executionJson}),
       terminal_at = COALESCE(terminal_at, ${value.terminalAt ?? null}),
       result_commit = COALESCE(result_commit, ${value.resultCommit ?? null})

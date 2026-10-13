@@ -28,7 +28,7 @@ export function SpeechSettingsPanel() {
       {selectedId ? (
         <InstanceSpeechSettings key={selectedId} instanceId={selectedId} />
       ) : (
-        <SettingsSection title="Sprache" id="speech">
+        <SettingsSection title="Sprachausgabe" id="speech">
           <SettingsRow
             title="Keine Instanz"
             control={
@@ -124,7 +124,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const loadingSlow = useLoadingSlow(busy === "speech.settings.read");
   return (
     <SettingsSection
-      title="Sprache"
+      title="Sprachausgabe"
       id="speech"
       headerAction={
         !config ? undefined : (

@@ -33,7 +33,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Tastenkürzel",
   "/settings/harnesses": "Harnesses",
   "/settings/models": "Modelle",
-  "/settings/speech": "Sprache",
+  "/settings/speech": "Sprachausgabe",
   "/settings/computers": "Rechner",
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
@@ -288,7 +288,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "greppy-runtime",
-    title: "Greppy-Laufzeit",
+    title: "Code-Suche",
     to: "/settings/workjet",
   },
   {

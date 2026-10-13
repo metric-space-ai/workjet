@@ -106,7 +106,7 @@ describe("searchSettings", () => {
       ["Allgemein", "General", "/settings/general"],
       ["Darstellung", "Appearance", "/settings/appearance"],
       ["Rechner", "Computers", "/settings/computers"],
-      ["Sprache", "Speech", "/settings/speech"],
+      ["Sprachausgabe", "Speech", "/settings/speech"],
     ] as const) {
       expect(searchSettings(german).map((item) => item.to)).toContain(path);
       expect(searchSettings(english).map((item) => item.to)).toContain(path);
@@ -148,7 +148,7 @@ describe("searchSettings", () => {
     expect(searchSettings("greppy-laufzeit")).toEqual([
       {
         id: "greppy-runtime",
-        title: "Greppy-Laufzeit",
+        title: "Code-Suche",
         to: "/settings/workjet",
       },
     ]);

@@ -1,5 +1,7 @@
 "use client";
 
+import { useUiText } from "../../hooks/useUiText";
+
 import { useMemo, useState } from "react";
 import {
   ProviderInstanceId,
@@ -11,7 +13,6 @@ import {
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { normalizeProviderAccentColor } from "../../providerInstances";
-import { Button } from "../ui/button";
 import { InlinePanel } from "../ui/inline-panel";
 import { Input } from "../ui/input";
 import { toastManager } from "../ui/toast";
@@ -35,12 +36,15 @@ const PROVIDER_ACCENT_SWATCHES = [
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 const DEFAULT_DRIVER_OPTION = DRIVER_OPTIONS[0]!;
+const NO_INSTALLED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set();
 const EMPTY_CONFIG_DRAFT: Record<string, unknown> = {};
 
 interface AddProviderInstancePanelProps {
   readonly open: boolean;
   readonly environmentId: EnvironmentId;
   readonly onOpenChange: (open: boolean) => void;
+  /** Harnesses already on the page: the picker never offers them again (#617). */
+  readonly installedDrivers?: ReadonlySet<ProviderDriverKind>;
 }
 
 /**
@@ -53,11 +57,15 @@ export function AddProviderInstancePanel({
   open,
   environmentId,
   onOpenChange,
+  installedDrivers = NO_INSTALLED_DRIVERS,
 }: AddProviderInstancePanelProps) {
+  const t = useUiText();
+  const availableDrivers = DRIVER_OPTIONS.filter((option) => !installedDrivers.has(option.value));
+  const firstDriver = availableDrivers[0]?.value ?? DEFAULT_DRIVER_KIND;
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
 
-  const [driver, setDriver] = useState<ProviderDriverKind>(DEFAULT_DRIVER_KIND);
+  const [driver, setDriver] = useState<ProviderDriverKind>(firstDriver);
   const [label, setLabel] = useState("");
   // Entwürfe je Harness: ein Wechsel der Auswahl verliert keine Eingaben.
   const [accentColor, setAccentColor] = useState("");
@@ -71,7 +79,9 @@ export function AddProviderInstancePanel({
     [settings.providerInstances],
   );
 
-  const driverOption = DRIVER_OPTION_BY_VALUE[driver] ?? DEFAULT_DRIVER_OPTION;
+  const driverOption =
+    DRIVER_OPTION_BY_VALUE[installedDrivers.has(driver) ? firstDriver : driver] ??
+    DEFAULT_DRIVER_OPTION;
   const instanceId = deriveProviderInstanceId(driver, label, existingIds);
   const driverSettingsFields = useMemo(
     () => deriveProviderSettingsFields(driverOption),
@@ -94,7 +104,7 @@ export function AddProviderInstancePanel({
   };
 
   const resetDraft = () => {
-    setDriver(DEFAULT_DRIVER_KIND);
+    setDriver(firstDriver);
     setLabel("");
     setAccentColor("");
     setConfigByDriver({});
@@ -138,83 +148,74 @@ export function AddProviderInstancePanel({
       updateSettings({ providerInstances: nextMap });
       toastManager.add({
         type: "success",
-        title: `${label.trim() || driverOption.label} hinzugefügt`,
+        title: `${label.trim() || driverOption.label} ${t("hinzugefügt", "added")}`,
       });
       handleOpenChange(false);
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Harness nicht hinzugefügt",
+        title: t("Harness nicht hinzugefügt", "Harness not added"),
         ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
   };
 
+  // Nothing left to add: no add area at all.
+  if (availableDrivers.length === 0) return null;
+  const activeDriver = installedDrivers.has(driver) ? firstDriver : driver;
+
   return (
     <InlinePanel
-      triggerLabel="Harness hinzufügen"
+      triggerLabel={t("Harness hinzufügen", "Add harness")}
       open={open}
       onOpenChange={handleOpenChange}
-      submitLabel="Hinzufügen"
+      submitLabel={t("Hinzufügen", "Add")}
       onSubmit={handleSave}
       status={showInstanceIdError ? instanceIdError : undefined}
       statusTone="error"
       segment={
         <AddProviderInstanceDriverSelect
-          driver={driver}
+          driver={activeDriver}
+          options={availableDrivers}
           onDriverChange={(next) => {
             setDriver(next);
           }}
         />
       }
     >
-      <label className="grid gap-1.5">
-        <span className="text-xs font-medium text-foreground">Name</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Input
-          className="bg-background"
+          className="w-full bg-background sm:w-56"
           placeholder={driverOption.label}
+          aria-label={t("Name", "Name")}
           value={label}
           onChange={(event) => setLabel(event.target.value)}
           aria-invalid={showInstanceIdError}
         />
-      </label>
-
-      <div className="grid gap-1.5">
-        <span className="text-xs font-medium text-foreground">Farbe</span>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <input
-            type="color"
-            value={normalizeProviderAccentColor(accentColor) ?? PROVIDER_ACCENT_SWATCHES[0]}
-            onChange={(event) => setAccentColor(event.target.value)}
-            aria-label="Eigene Farbe"
-            className="h-8 w-10 cursor-pointer rounded-xl border border-input bg-background p-0.5"
-          />
-          <div className="flex flex-wrap gap-1.5">
-            {PROVIDER_ACCENT_SWATCHES.map((swatch) => {
-              const selected = accentColor.toLowerCase() === swatch;
-              return (
-                <button
-                  key={swatch}
-                  type="button"
-                  className={cn(
-                    "size-6 cursor-pointer rounded-full border transition",
-                    selected
-                      ? "scale-110 border-foreground ring-2 ring-ring ring-offset-1 ring-offset-background"
-                      : "border-black/10 hover:scale-105 dark:border-white/20",
-                  )}
-                  style={{ backgroundColor: swatch }}
-                  onClick={() => setAccentColor(swatch)}
-                  aria-label={`Farbe ${swatch}`}
-                  aria-pressed={selected}
-                />
-              );
-            })}
-          </div>
-          {accentColor ? (
-            <Button type="button" size="xs" variant="outline" onClick={() => setAccentColor("")}>
-              Ohne Farbe
-            </Button>
-          ) : null}
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label={t("Farbe", "Color")}
+        >
+          {PROVIDER_ACCENT_SWATCHES.map((swatch) => {
+            const selected = accentColor.toLowerCase() === swatch;
+            return (
+              <button
+                key={swatch}
+                type="button"
+                className={cn(
+                  "size-7 cursor-pointer rounded-full border transition sm:size-6",
+                  selected
+                    ? "scale-110 border-foreground ring-2 ring-ring ring-offset-1 ring-offset-background"
+                    : "border-black/10 hover:scale-105 dark:border-white/20",
+                )}
+                style={{ backgroundColor: swatch }}
+                onClick={() => setAccentColor(selected ? "" : swatch)}
+                aria-label={`${t("Farbe", "Color")} ${swatch}`}
+                aria-pressed={selected}
+              />
+            );
+          })}
         </div>
       </div>
 

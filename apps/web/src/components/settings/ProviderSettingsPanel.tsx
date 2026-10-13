@@ -962,6 +962,9 @@ export function EnvironmentProviderSettings({
     !serverProviders.some((provider) => provider.driver === "pi") &&
     piCodeProbe?.availability !== "available";
   const notInstalledCount = notInstalledRows.length + (piNotInstalled ? 1 : 0);
+  const showPiCodeRow =
+    !serverProviders.some((provider) => provider.driver === "pi") &&
+    (showNotInstalled || piCodeProbe?.availability === "available");
   const renderProviderRow = (row: InstanceRow) => {
     const driverOption = getDriverOption(row.driver);
     const liveProvider = serverProviders.find(
@@ -1206,8 +1209,7 @@ export function EnvironmentProviderSettings({
             </Button>
           ) : null}
           {showNotInstalled ? notInstalledRows.map(renderProviderRow) : null}
-          {!serverProviders.some((provider) => provider.driver === "pi") &&
-          (showNotInstalled || piCodeProbe?.availability === "available") ? (
+          {showPiCodeRow ? (
             <div className="rounded-lg transition-colors hover:bg-muted/20" data-slot="row">
               <div className="flex min-w-0 items-center gap-3 px-3 py-2 sm:px-4">
                 <span className="relative inline-flex size-5 shrink-0 items-center justify-center">

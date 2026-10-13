@@ -4471,7 +4471,7 @@ export default function Sidebar() {
                     onClick={() => void router.navigate({ to: "/settings/computers" })}
                   >
                     <ServerIcon aria-hidden className="size-3.5" />
-                    Rechner wählen
+                    {overviewText.chooseComputer}
                   </Button>
                 </>
               ) : workjetProjects.length > 0 && sidebarAvailableProjectCount === 0 ? (
@@ -4492,7 +4492,7 @@ export default function Sidebar() {
                     onClick={() => void router.navigate({ to: "/settings/computers" })}
                   >
                     <ServerIcon aria-hidden className="size-3.5" />
-                    Rechner wählen
+                    {overviewText.chooseComputer}
                   </Button>
                 </>
               ) : selectedWorkjetProject ? (

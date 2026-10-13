@@ -1,3 +1,4 @@
+import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
@@ -1374,6 +1375,7 @@ function LegacyFeaturesSection() {
 }
 
 export function GeneralSettingsPanel() {
+  const t = useUiText();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
@@ -1562,7 +1564,7 @@ export function GeneralSettingsPanel() {
         <>
           <SettingsSection title="Entwickler">
             <SettingsRow
-              title="Hintergrundaktivität"
+              title={t("Hintergrundaktivität", "Background activity")}
               resetAction={
                 canResetBackgroundActivity ? (
                   <SettingResetButton
@@ -1585,7 +1587,10 @@ export function GeneralSettingsPanel() {
                       }
                     }}
                   >
-                    <SelectTrigger className="w-full sm:w-40" aria-label="Hintergrundaktivität">
+                    <SelectTrigger
+                      className="w-full sm:w-40"
+                      aria-label={t("Hintergrundaktivität", "Background activity")}
+                    >
                       <SelectValue>
                         {BACKGROUND_ACTIVITY_PROFILE_LABELS[backgroundActivityProfile]}
                       </SelectValue>

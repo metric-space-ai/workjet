@@ -50,8 +50,9 @@ describe("project places are inline", () => {
     expect(settingsProjectsSource).toContain("ProjectsSettingsList");
     expect(settingsProjectSource).toContain('createFileRoute("/settings/projects/$projectKey")');
     expect(sidebarSource).toContain('to: "/settings/projects/$projectKey"');
-    expect(projectSettingsPanelSource).toContain('title="Regeltermin, Budget und Supervisor"');
-    expect(projectSettingsPanelSource).toContain('title="Skripte"');
+    // Section titles are localized (t("DE", "EN")) and hidden when embedded.
+    expect(projectSettingsPanelSource).toContain('"Regeltermin, Budget und Supervisor"');
+    expect(projectSettingsPanelSource).toMatch(/"Skripte"/);
     expect(projectSettingsPanelSource).toContain("<ProjectFaviconPicker");
     expect(projectSettingsPanelSource).toContain("<InlineRemovalConfirm");
   });

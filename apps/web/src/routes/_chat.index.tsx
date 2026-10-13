@@ -843,10 +843,9 @@ function ProjectGallery({
     <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
       <main className="flex-1 overflow-auto px-5 py-6 sm:px-6" data-workjet-project-gallery="">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-[22px] font-semibold">
-              {showArchived ? "Archivierte Projekte" : "Alle Projekte"}
-            </h1>
+          <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+            {/* No visible page title: the pressed view switch already says where you are (#576). */}
+            <h1 className="sr-only">{showArchived ? "Archivierte Projekte" : "Alle Projekte"}</h1>
             <div className="flex flex-wrap items-center gap-2">
               <div
                 className="inline-flex gap-1 rounded-md border border-border p-1"

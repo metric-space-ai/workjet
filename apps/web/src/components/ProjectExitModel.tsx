@@ -26,8 +26,8 @@ export function ProjectExitModelSummary({
   readonly projectId: string;
   readonly assessment?: WorkjetExitModelAssessment | null;
   /** When set, tapping the stamp opens the valuation inline (#561). */
-  readonly onEdit?: () => void;
-  readonly editLabel?: string;
+  readonly onEdit?: (() => void) | undefined;
+  readonly editLabel?: string | undefined;
 }) {
   const view = exitModelPresentation(assessment, projectId);
   const valued = view.value !== "—";

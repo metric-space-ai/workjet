@@ -180,16 +180,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
-    id: "archive-confirmation",
-    title: "Archivieren bestätigen",
-    to: "/settings/general",
-  },
-  {
-    id: "delete-confirmation",
-    title: "Löschen bestätigen",
-    to: "/settings/general",
-  },
-  {
     id: "text-generation-model",
     title: "Textmodell",
     to: "/settings/general",

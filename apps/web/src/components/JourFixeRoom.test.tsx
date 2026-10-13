@@ -146,6 +146,26 @@ describe("Jour fixe room states", () => {
     expect(html).toContain("Kommentar auf Folie setzen");
     expect(html).not.toContain("Folie kommentieren");
   });
+  it("zeigt Lade- und Endfehlerzustände knapp am Bereich, nie als Kopfleiste", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={{ ...meeting, state: "live" }}
+        onMessage={async () => {}}
+        presentationStatus={{ state: "loading", text: "Folien werden geladen …" }}
+        narrationStatus={{ state: "failed", text: "Ton nicht verfügbar", onRetry: () => {} }}
+        pendingChange={{ onRetry: () => {} }}
+      />,
+    );
+    expect(html).toContain('data-workjet-presentation-state="loading"');
+    expect(html).toContain('data-workjet-narration-state="failed"');
+    expect(html).toContain("Neu laden");
+    expect(html).toContain('data-workjet-pending-change="failed"');
+    expect(html).toContain("Nicht gespeichert");
+    expect(html).toContain("Erneut senden");
+    expect(html).not.toContain("Erneut versuchen");
+    expect(html).not.toContain("operation identity");
+  });
 });
 
 describe("Jour fixe start lock", () => {

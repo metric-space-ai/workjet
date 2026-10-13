@@ -206,7 +206,7 @@ export function ProjectTeamPanel(props: {
       {props.compact ? null : directory}
       {team.role === "supervisor" ? (
         <details className="mt-2">
-          <summary>Feste Luma hinzufügen</summary>
+          <summary>Worker hinzufügen</summary>
           <form
             className="mt-2 grid gap-2"
             onSubmit={(event) => {
@@ -238,7 +238,7 @@ export function ProjectTeamPanel(props: {
               className="rounded border p-2"
             />
             <button type="submit" disabled={busy || !domain.trim() || !goal.trim()}>
-              Feste Luma hinzufügen
+              Worker hinzufügen
             </button>
           </form>
         </details>

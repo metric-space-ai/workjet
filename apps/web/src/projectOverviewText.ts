@@ -52,8 +52,8 @@ export const PROJECT_OVERVIEW_TEXT = {
     showMore: "Weitere {count} anzeigen",
     supervisorChat: "Supervisor-Chat",
     supervisor: "Supervisor",
-    parents: "Feste Lumas",
-    parentSingular: "Feste Luma",
+    parents: "Feste Worker",
+    parentSingular: "Fester Worker",
     workerSingular: "Einmal-Luma",
     workers: "Einmal-Lumas",
     archive: "Archiv",
@@ -107,7 +107,7 @@ export const PROJECT_OVERVIEW_TEXT = {
     noResults: "—",
     noHistory: "—",
     noLastMeeting: "—",
-    noNextMeeting: "—",
+    noNextMeeting: "Kein Regeltermin festgelegt",
     meetingConnectionRequired: "Instanz nicht verbunden",
     noOwnerDecisions: "—",
     noLinks: "—",
@@ -120,10 +120,33 @@ export const PROJECT_OVERVIEW_TEXT = {
     openChat: "Chat öffnen",
     saving: "Wird gespeichert…",
     saveFailed: "Entscheidung nicht gespeichert",
-    addParent: "Feste Luma hinzufügen",
+    addParent: "Worker hinzufügen",
+    feedTitle: "Neuigkeiten",
+    tabTop: "Top",
+    tabLatest: "Neueste",
+    tabPrs: "PRs",
+    tabSessions: "Sessions",
+    tabDisruptions: "Störungen",
+    tabEmpty: "In diesem Tab gibt es noch nichts.",
+    sessionsEmpty: "Noch keine Session-Zusammenfassungen aus CTOX.",
+    showThread: "Diesen Thread anzeigen",
+    hideThread: "Thread einklappen",
+    chipSession: "Session",
+    liveTitle: "Läuft gerade / hängt",
+    liveEmpty: "Gerade läuft nichts und nichts hängt.",
+    feedEmpty: "Noch keine Neuigkeiten. Ergebnisse, PRs und Störungen erscheinen hier.",
+    feedMore: "Mehr anzeigen",
+    feedLess: "Weniger anzeigen",
+    feedOpenPr: "PR öffnen",
+    feedSystem: "Projekt",
+    feedGoal: "Ziel: {title} · {state}",
+    feedDisruption: "Gestört",
+    kpisMissing: "Kennzahlen sind noch nicht berechnet.",
+    recompute: "Neu berechnen",
+    projectActions: "Projekt",
     name: "Name",
     goal: "Ziel",
-    addFailed: "Feste Luma nicht gespeichert",
+    addFailed: "Worker nicht gespeichert",
     nativeRoute: "—",
     noSession: "—",
     unavailableConnection: "Instanz nicht verbunden · Verbindung prüfen",
@@ -230,7 +253,7 @@ export const PROJECT_OVERVIEW_TEXT = {
     noResults: "—",
     noHistory: "—",
     noLastMeeting: "—",
-    noNextMeeting: "—",
+    noNextMeeting: "No recurring meeting set",
     meetingConnectionRequired: "Joining needs a connected project instance.",
     noOwnerDecisions: "—",
     noLinks: "—",
@@ -243,7 +266,30 @@ export const PROJECT_OVERVIEW_TEXT = {
     openChat: "Open chat",
     saving: "Saving…",
     saveFailed: "The decision was not saved. Please check the chat.",
-    addParent: "Add persistent Luma",
+    addParent: "Add worker",
+    feedTitle: "Feed",
+    tabTop: "Top",
+    tabLatest: "Latest",
+    tabPrs: "PRs",
+    tabSessions: "Sessions",
+    tabDisruptions: "Disruptions",
+    tabEmpty: "Nothing in this tab yet.",
+    sessionsEmpty: "No session summaries from CTOX yet.",
+    showThread: "Show this thread",
+    hideThread: "Collapse thread",
+    chipSession: "Session",
+    liveTitle: "Running / stuck",
+    liveEmpty: "Nothing is running or stuck right now.",
+    feedEmpty: "Nothing yet. Results, PRs and disruptions show up here.",
+    feedMore: "Show more",
+    feedLess: "Show less",
+    feedOpenPr: "Open PR",
+    feedSystem: "Project",
+    feedGoal: "Goal: {title} · {state}",
+    feedDisruption: "Disrupted",
+    kpisMissing: "Metrics have not been calculated yet.",
+    recompute: "Recalculate",
+    projectActions: "Project",
     name: "Name",
     goal: "Goal",
     addFailed: "Persistent Luma not saved",
@@ -289,4 +335,34 @@ export function projectOverviewFormat(
   values: Readonly<Record<string, string | number>>,
 ) {
   return template.replace(/\{(\w+)\}/gu, (match, key: string) => String(values[key] ?? match));
+}
+
+/** Plain-language DE/EN for raw CLI session errors, plus the action the button should offer. */
+export function projectOverviewSessionError(
+  raw: string,
+  language: ProjectOverviewLanguage,
+): { readonly text: string; readonly action: string | null } {
+  const de = language === "de";
+  if (
+    /not logged in|please run \/login|unauthori[sz]ed|authentication required|invalid api key/i.test(
+      raw,
+    )
+  )
+    return {
+      text: de
+        ? "Der Coding-Agent ist auf der Instanz nicht angemeldet."
+        : "The coding agent is not signed in on the instance.",
+      action: de ? "Im Chat anmelden" : "Sign in via chat",
+    };
+  if (/rate.?limit|quota|usage limit/i.test(raw))
+    return {
+      text: de ? "Nutzungslimit des Anbieters erreicht." : "Provider usage limit reached.",
+      action: null,
+    };
+  if (/timed? ?out|ETIMEDOUT|ECONNREFUSED|network/i.test(raw))
+    return {
+      text: de ? "Anbieter nicht erreichbar." : "Provider unreachable.",
+      action: null,
+    };
+  return { text: raw.length > 160 ? `${raw.slice(0, 159)}…` : raw, action: null };
 }

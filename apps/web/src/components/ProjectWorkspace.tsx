@@ -155,6 +155,7 @@ function ProjectWorkspaceContent({
         onOpenChat={onOpenChat}
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
+        onRecomputeKpis={sources.reload}
         actions={
           <>
             {onOpenPullRequests ? (

@@ -155,6 +155,7 @@ export default defineConfig({
       "workjet/no-inline-schema-compile": "warn",
       "workjet/no-manual-effect-runtime-in-tests": "error",
       "workjet/namespace-node-imports": "error",
+      "workjet/no-native-form-controls": "error",
     },
     options: {
       // Revisit once Oxlint's tsgolint path can integrate with @effect/tsgo diagnostics.

@@ -8,6 +8,7 @@ import {
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
+import { Checkbox } from "../ui/checkbox";
 import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
 import {
@@ -765,13 +766,10 @@ export function ThemeLibrary({
                   className="flex min-w-0 cursor-pointer items-center gap-2 text-[13.5px]"
                   key={customTheme.id}
                 >
-                  <input
+                  <Checkbox
                     checked={themeIdsToRemoveSet.has(customTheme.id)}
-                    className="size-3.5 shrink-0 accent-[var(--primary)]"
-                    name="themes-to-remove"
-                    type="checkbox"
-                    onChange={(event) => {
-                      const shouldRemove = event.currentTarget.checked;
+                    onCheckedChange={(checked) => {
+                      const shouldRemove = checked;
                       setThemeIdsToRemove((current) =>
                         shouldRemove
                           ? [...current, customTheme.id]

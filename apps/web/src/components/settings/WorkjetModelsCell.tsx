@@ -1,4 +1,5 @@
 import { CheckIcon, CircleDashedIcon, PlusIcon, XIcon } from "lucide-react";
+import { Checkbox } from "../ui/checkbox";
 import { useEffect, useRef, useState } from "react";
 import type { WorkjetGatewayAccountSummary } from "@workjet/contracts";
 import { Button } from "../ui/button";
@@ -264,18 +265,14 @@ export function WorkjetModelsCell({
                 (excluded || unavailable) && "text-muted-foreground opacity-60",
               )}
             >
-              <input
-                type="checkbox"
-                className="size-3 shrink-0"
+              <Checkbox
                 checked={!excluded}
                 disabled={state.mutationBusy || unavailable}
                 aria-label={`${model} für ${account.label} verwenden`}
                 data-workjet-action={
                   "models.account." + account.id + ".model." + model + ".enabled"
                 }
-                onChange={(event) =>
-                  void state.onExcludeModel?.(account, model, !event.target.checked)
-                }
+                onCheckedChange={(checked) => void state.onExcludeModel?.(account, model, !checked)}
               />
               <span className="min-w-0 break-all">{model}</span>
               {!excluded && !unavailable && (

@@ -2177,8 +2177,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const rebuildPooled = (instanceId: string, expected: PooledGuest) =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.gen(function* () {
-          if (state.pool.get(instanceId)?.view !== expected.view)
-            return [false, state] as const;
+          if (state.pool.get(instanceId)?.view !== expected.view) return [false, state] as const;
           if (!(yield* claimGuestRebuild(instanceId))) return [false, state] as const;
           const attached = state.activeId === instanceId;
           destroyPooledGuest(expected);

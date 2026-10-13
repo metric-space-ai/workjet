@@ -21,6 +21,7 @@ import { InlinePanel } from "../ui/inline-panel";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useUiText } from "../../hooks/useUiText";
 import { cn } from "../../lib/utils";
 import { WorkjetModelsCell } from "./WorkjetModelsCell";
 import { parseModels } from "./WorkjetModelsFields";
@@ -460,6 +461,7 @@ function AccountRow({
 }) {
   const [replaceKey, setReplaceKey] = useState(false);
   const [editModels, setEditModels] = useState(false);
+  const t = useUiText();
   const health = state.accountHealth[account.id];
   const ProviderIcon = WORKJET_GATEWAY_PROVIDER_ICONS[account.provider];
   const providerModels =
@@ -501,18 +503,24 @@ function AccountRow({
   const menuActions: Array<RowMenuAction> = [];
   if (state.onCheckModels)
     menuActions.push({
-      label: "Neu prüfen",
+      label: t("Neu prüfen", "Check again"),
       onSelect: () => {
         if (!state.checksBusy) state.onCheckModels?.(account.id);
       },
     });
   if (state.onEditProviderModels)
-    menuActions.push({ label: "Modelle bearbeiten", onSelect: () => setEditModels(true) });
+    menuActions.push({
+      label: t("Modelle bearbeiten", "Edit models"),
+      onSelect: () => setEditModels(true),
+    });
   if (isKey && isWorkjetGatewayApiKeyProvider(account.provider))
-    menuActions.push({ label: "API-Key ersetzen", onSelect: () => setReplaceKey(true) });
+    menuActions.push({
+      label: t("API-Key ersetzen", "Replace API key"),
+      onSelect: () => setReplaceKey(true),
+    });
   else if (!isKey)
     menuActions.push({
-      label: "Neu anmelden",
+      label: t("Neu anmelden", "Sign in again"),
       onSelect: () => state.onRelogin(account.provider as WorkjetGatewayOauthProvider, account.id),
     });
   const offerRecheck = health?.status === "unavailable";
@@ -554,11 +562,13 @@ function AccountRow({
           <span className="pl-6">
             {isKey
               ? `API-Key${account.credentialSuffix === null ? "" : ` ··${account.credentialSuffix}`}`
-              : "Abo"}
+              : t("Abo", "Subscription")}
             {account.kimiConnection ? (
               <span title={account.kimiConnection.upstreamBaseUrl}>
                 {" · "}
-                {account.kimiConnection.plan === "coding" ? "Coding-Plan" : "API-Plan"}
+                {account.kimiConnection.plan === "coding"
+                  ? t("Coding-Plan", "Coding plan")
+                  : t("API-Plan", "API plan")}
               </span>
             ) : null}
           </span>
@@ -728,6 +738,7 @@ function ProviderModelsField({
   readonly state: ModelsManagementState;
   readonly onDone?: () => void;
 }) {
+  const t = useUiText();
   const providerLabel = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
   const remaining = (state.modelSuggestions?.[provider] ?? []).filter((id) => !models.includes(id));
   const [suggestionError, setSuggestionError] = useState(false);
@@ -750,7 +761,7 @@ function ProviderModelsField({
         </div>
         {onDone ? (
           <Button size="xs" variant="ghost" onClick={onDone}>
-            Fertig
+            {t("Fertig", "Done")}
           </Button>
         ) : null}
       </div>

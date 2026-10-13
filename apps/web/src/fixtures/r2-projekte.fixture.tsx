@@ -186,6 +186,7 @@ function Fixture() {
         <ProjectGallery
           instanceId="fixture"
           registryStatus={undefined}
+          lastUpdatedAt={undefined}
           projectsUnavailable={false}
           createForm={null}
           projects={galleryProjects.map((project) => ({

@@ -72,13 +72,13 @@ class DomNode {
     this.nodeName = tag === "#text" ? "#text" : tag.toUpperCase();
     this.tagName = this.nodeName;
   }
-  get nextSibling() {
+  get nextSibling(): DomNode | null {
     const parent = this.parentNode;
     if (!parent) return null;
     const index = parent.childNodes.indexOf(this);
     return parent.childNodes[index + 1] ?? null;
   }
-  get firstChild() {
+  get firstChild(): DomNode | null {
     return this.childNodes[0] ?? null;
   }
   get textContent(): string {
@@ -195,9 +195,9 @@ interface DomDocument {
 
 function installDom() {
   const listeners = new Map<string, Set<EventListener>>();
-  const document = {
-    visibilityState: "visible" as DocumentVisibilityState,
-    activeElement: null as DomNode | null,
+  const document: DomDocument = {
+    visibilityState: "visible",
+    activeElement: null,
     documentElement: null as unknown as DomNode,
     body: null as unknown as DomNode,
     defaultView: globalThis,
@@ -206,7 +206,7 @@ function installDom() {
       node.ownerDocument = document;
       return node;
     },
-    createElementNS(_ns: string, tag: string) {
+    createElementNS(_ns: string, tag: string): DomNode {
       return document.createElement(tag);
     },
     createTextNode(text: string) {
@@ -223,17 +223,17 @@ function installDom() {
     removeEventListener(type: string, listener: EventListener) {
       listeners.get(type)?.delete(listener);
     },
-  } satisfies DomDocument;
+  };
   document.documentElement = document.createElement("html");
   document.documentElement.lang = "de";
   document.body = document.createElement("body");
   globalThis.document = document as unknown as Document;
-  globalThis.window = globalThis;
+  globalThis.window = globalThis as unknown as Window & typeof globalThis;
   globalThis.HTMLElement = DomNode as unknown as typeof HTMLElement;
   globalThis.Element = DomNode as unknown as typeof Element;
   globalThis.Node = DomNode as unknown as typeof Node;
   globalThis.HTMLIFrameElement = class {} as unknown as typeof HTMLIFrameElement;
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   return document;
 }
 

@@ -349,7 +349,7 @@ export const make = Effect.gen(function* () {
           cause,
         }),
     });
-    if (existingTarget?.isSymbolicLink()) {
+    if (existingTarget && !existingTarget.isFile()) {
       return yield* new WorkspacePathNotFileError({
         workspaceRoot: input.cwd,
         relativePath: input.relativePath,

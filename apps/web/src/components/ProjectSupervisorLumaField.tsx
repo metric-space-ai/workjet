@@ -1,4 +1,13 @@
-import type { WorkjetWorkerProfile, WorkjetLumaTarget } from "@workjet/contracts";
+import {
+  WorkjetLumaInstanceConfiguration as WorkjetLumaInstanceConfigurationSchema,
+  WorkjetLumaTarget as WorkjetLumaTargetSchema,
+  type WorkjetWorkerProfile,
+  type WorkjetLumaTarget,
+} from "@workjet/contracts";
+import { Schema } from "effect";
+
+type WorkjetLumaInstanceConfiguration = typeof WorkjetLumaInstanceConfigurationSchema.Type;
+import { useEffect, useMemo } from "react";
 import { OptionSelect } from "./ui/option-select";
 import { useBusinessOsCodeScope } from "../businessOsCodeScope";
 import { usePrimaryEnvironment } from "../state/environments";
@@ -14,6 +23,40 @@ export type LumaFieldProps = {
   readonly disabled: boolean;
 };
 
+/**
+ * Lokaler Zwischenspeicher der zuletzt bekannten Supervisor-Lumas je Instanz.
+ * Ein langsamer oder gescheiterter Abruf zeigt nie eine leere Liste, sondern
+ * diesen Stand; ein erfolgreicher Abruf überschreibt ihn.
+ */
+const LUMA_CACHE_PREFIX = "workjet.supervisor-lumas.v1:";
+
+const CachedSupervisorLumasSchema = Schema.Struct({
+  instanceName: Schema.NullOr(Schema.String),
+  target: Schema.NullOr(WorkjetLumaTargetSchema),
+  configuration: Schema.NullOr(WorkjetLumaInstanceConfigurationSchema),
+});
+type CachedSupervisorLumas = typeof CachedSupervisorLumasSchema.Type;
+
+export function readCachedSupervisorLumas(instanceId: string | null): CachedSupervisorLumas | null {
+  if (instanceId === null || typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(LUMA_CACHE_PREFIX + instanceId);
+    if (raw === null) return null;
+    return Schema.decodeUnknownSync(CachedSupervisorLumasSchema)(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedSupervisorLumas(instanceId: string, value: CachedSupervisorLumas): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LUMA_CACHE_PREFIX + instanceId, JSON.stringify(value));
+  } catch {
+    // Ein voller oder gesperrter Speicher darf die Leiste nie stören.
+  }
+}
+
 /** The local server is only transport; profiles belong to the selected native instance. */
 export function useProjectSupervisorLumas(boundSource?: {
   readonly connectionId: string;
@@ -24,6 +67,8 @@ export function useProjectSupervisorLumas(boundSource?: {
   readonly target: WorkjetLumaTarget | null;
   readonly phase: "loading" | "ready" | "unavailable";
   readonly profiles: readonly WorkjetWorkerProfile[];
+  /** Live gelesene oder zuletzt bekannte Instanz-Konfiguration. */
+  readonly configuration: WorkjetLumaInstanceConfiguration | null;
 } {
   const scope = useBusinessOsCodeScope();
   const environment = usePrimaryEnvironment();
@@ -51,20 +96,49 @@ export function useProjectSupervisorLumas(boundSource?: {
           input: { connectionId: connection.connectionId, instanceId: connection.instanceId },
         }),
   );
+  const liveReady = scope.phase === "ready" && connection !== undefined && snapshot.data !== null;
+  const liveConfiguration = liveReady ? (snapshot.data?.configuration ?? null) : null;
+  const liveTarget = connection
+    ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
+    : null;
+  const liveInstanceId = scope.presentationInstanceId;
+  const liveInstanceName = connection?.displayName ?? null;
+  useEffect(() => {
+    if (!liveReady || liveInstanceId === null || liveTarget === null) return;
+    writeCachedSupervisorLumas(liveInstanceId, {
+      instanceName: liveInstanceName,
+      target: liveTarget,
+      configuration: liveConfiguration,
+    });
+  }, [liveReady, liveInstanceId, liveInstanceName, liveTarget, liveConfiguration]);
+  const cached = useMemo(
+    () => readCachedSupervisorLumas(liveInstanceId),
+    // Bei jedem erfolgreichen Live-Abruf neu einlesen, damit die Anzeige sofort folgt.
+    [liveInstanceId, liveReady, snapshot.data],
+  );
   const phase =
     scope.phase === "resolving" || connections.isPending || snapshot.isPending
       ? "loading"
-      : scope.phase === "ready" && connection !== undefined && snapshot.data !== null
+      : liveReady
         ? "ready"
         : "unavailable";
+  if (!liveReady && cached !== null) {
+    return {
+      instanceId: liveInstanceId,
+      instanceName: cached.instanceName,
+      target: cached.target,
+      phase: "ready",
+      profiles: cached.configuration?.workerProfiles ?? [],
+      configuration: cached.configuration,
+    };
+  }
   return {
-    instanceId: scope.presentationInstanceId,
-    instanceName: connection?.displayName ?? null,
-    target: connection
-      ? { connectionId: connection.connectionId, instanceId: connection.instanceId }
-      : null,
+    instanceId: liveInstanceId,
+    instanceName: liveInstanceName,
+    target: liveTarget,
     phase,
-    profiles: phase === "ready" ? (snapshot.data?.configuration?.workerProfiles ?? []) : [],
+    profiles: liveReady ? (liveConfiguration?.workerProfiles ?? []) : [],
+    configuration: liveConfiguration,
   };
 }
 

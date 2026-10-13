@@ -3,6 +3,7 @@ import { OptionSelect } from "./ui/option-select";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  Loader2Icon,
   Maximize2Icon,
   PauseIcon,
   PlayIcon,
@@ -31,7 +32,16 @@ function timestamp(seconds: number) {
 
 /** The parent only supplies a blob from the authorized instance file channel. */
 export function JourFixePlayer(props: JourFixePlayerProps) {
-  return <PlayerContent key={props.source ?? "unavailable"} {...props} />;
+  // Der gewünschte Abspielwunsch überlebt den Neuaufbau, sobald der Ton da ist.
+  const [pendingPlay, setPendingPlay] = useState(false);
+  return (
+    <PlayerContent
+      key={props.source ?? "unavailable"}
+      {...props}
+      pendingPlay={pendingPlay}
+      onPendingPlayChange={setPendingPlay}
+    />
+  );
 }
 
 function PlayerContent({
@@ -45,7 +55,12 @@ function PlayerContent({
   onAutoAdvanceChange,
   controlRef,
   onFullscreen,
-}: JourFixePlayerProps) {
+  pendingPlay,
+  onPendingPlayChange,
+}: JourFixePlayerProps & {
+  readonly pendingPlay: boolean;
+  readonly onPendingPlayChange: (pending: boolean) => void;
+}) {
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -53,6 +68,7 @@ function PlayerContent({
   const [speed, setSpeed] = useState(rate);
   const [failed, setFailed] = useState(false);
   const playable = source?.startsWith("blob:") === true && !failed;
+  const waitingForAudio = pendingPlay && !playable && !failed;
   useEffect(() => {
     if (audio.current) {
       audio.current.preservesPitch = true;
@@ -69,8 +85,15 @@ function PlayerContent({
     audio.current?.play().catch(() => setPlaying(false));
   }, [autoAdvance, playable]);
   useEffect(() => {
+    // Ein Klick auf Play ohne geladenen Ton startet, sobald der Ton da ist.
+    if (!pendingPlay || !playable) return;
+    onPendingPlayChange(false);
+    void togglePlayback();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPlay, playable]);
+  useEffect(() => {
     if (!controlRef) return;
-    controlRef.current = () => void togglePlayback();
+    controlRef.current = () => void pressPlay();
     return () => {
       controlRef.current = null;
     };
@@ -86,6 +109,11 @@ function PlayerContent({
     } catch {
       setFailed(true);
     }
+  }
+  function pressPlay() {
+    if (failed) return;
+    if (playable) void togglePlayback();
+    else onPendingPlayChange(true);
   }
   function changeSlide(action: () => void) {
     audio.current?.pause();
@@ -106,11 +134,24 @@ function PlayerContent({
         <Button
           size="icon-sm"
           variant="secondary"
-          aria-label={playing ? "Sprecher pausieren" : "Sprecher abspielen"}
-          disabled={!playable}
-          onClick={() => void togglePlayback()}
+          aria-label={
+            waitingForAudio
+              ? "Ton wird geladen"
+              : playing
+                ? "Sprecher pausieren"
+                : "Sprecher abspielen"
+          }
+          aria-busy={waitingForAudio}
+          disabled={failed}
+          onClick={pressPlay}
         >
-          {playing ? <PauseIcon /> : <PlayIcon />}
+          {waitingForAudio ? (
+            <Loader2Icon className="animate-spin" />
+          ) : playing ? (
+            <PauseIcon />
+          ) : (
+            <PlayIcon />
+          )}
         </Button>
         <Button
           size="icon-sm"
@@ -144,7 +185,6 @@ function PlayerContent({
           aria-label="Wiedergabetempo"
           className="w-auto min-w-0"
           value={String(speed)}
-          disabled={!playable}
           options={[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])]
             .sort((a, b) => a - b)
             .map((option) => ({ value: String(option), label: `${option}×` }))}
@@ -173,11 +213,16 @@ function PlayerContent({
             size="icon-sm"
             variant="outline"
             aria-label="Vollbild"
-            title="Vollbild (F) · Folien ← → · Sprecher Leertaste"
+            title="Vollbild · Folien ← → · Sprecher Leertaste"
             onClick={onFullscreen}
           >
             <Maximize2Icon />
           </Button>
+        )}
+        {waitingForAudio && (
+          <span role="status" className="text-xs text-muted-foreground">
+            Ton wird geladen …
+          </span>
         )}
         {playable && (
           <audio
@@ -204,9 +249,9 @@ function PlayerContent({
           />
         )}
       </div>
-      {!playable && (
-        <p role="status" className="mt-2 text-xs text-muted-foreground">
-          {failed ? "Wiedergabe fehlgeschlagen" : "Noch kein Sprecher"}
+      {failed && (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          Wiedergabe fehlgeschlagen
         </p>
       )}
     </div>

@@ -154,7 +154,7 @@ export async function makeWorkerSourcePrivateProfile(
           parent = opened;
         }
       } finally {
-        for (const opened of children.reverse()) await opened.close();
+        for (const opened of children.toReversed()) await opened.close();
       }
     }
     const names = new Set<string>();

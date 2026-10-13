@@ -5,7 +5,7 @@ import {
   type ProjectCardConfigurationValues,
 } from "./ProjectOverviewEditor";
 import type { ProjectOverview } from "@workjet/contracts";
-import { ArrowUpRightIcon, EllipsisIcon, ExternalLinkIcon, XIcon } from "lucide-react";
+import { EllipsisIcon, XIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -21,6 +21,7 @@ import {
 } from "../projectKpis";
 import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { ProjectInitProgress } from "./ProjectInitProgress";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
 import { Button } from "./ui/button";
@@ -189,27 +190,25 @@ export function ProjectOverviewCard({
               {project.title}
             </button>
           </h2>
-          {website && !titleIsWebsite && (
-            <p title={website} className="truncate text-xs text-muted-foreground">
-              {websiteHost}
-            </p>
+          {/* The website is a visible domain link, not an icon explained by a tooltip (#577). */}
+          {website && (
+            <a
+              href={website}
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label={projectOverviewFormat(text.cardOpenWebsiteLabel, {
+                title: project.title,
+                url: website,
+              })}
+              data-workjet-action={`project.open.website:${project.key}`}
+              className="block truncate text-xs text-muted-foreground hover:text-foreground"
+            >
+              {titleIsWebsite
+                ? website.replace(/^https?:\/\//, "").replace(/\/$/, "")
+                : websiteHost}
+            </a>
           )}
         </div>
-        {website && (
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            render={<a href={website} target="_blank" rel="noreferrer noopener" />}
-            title={text.cardOpenWebsite}
-            aria-label={projectOverviewFormat(text.cardOpenWebsiteLabel, {
-              title: project.title,
-              url: website,
-            })}
-            data-workjet-action={`project.open.website:${project.key}`}
-          >
-            <ExternalLinkIcon className="size-4" aria-hidden="true" />
-          </Button>
-        )}
         {tokenBudget}
         {reorderHandle}
         {
@@ -375,22 +374,20 @@ export function ProjectOverviewCard({
               )}
             </div>
           )}
-          <Button
-            size="icon-sm"
-            onClick={onOpen}
-            title={text.cardOpenProject}
-            aria-label={openProjectLabel}
-            data-workjet-action={`project.open.gallery:${project.key}`}
-            className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
-          >
-            <ArrowUpRightIcon className="size-4" aria-hidden="true" />
-          </Button>
           <ProjectExitModelSummary
             projectId={project.id}
             assessment={project.configuration?.exitModel ?? null}
           />
         </div>
       )}
+      {project.native ? (
+        <ProjectInitProgress
+          instanceId={ctoxInstanceId}
+          projectId={project.id}
+          kpiCount={scopedKpis?.items.length ?? 0}
+          exitStatus={project.configuration?.exitModel?.status ?? null}
+        />
+      ) : null}
       <div className="border-t border-border px-3 py-3">
         <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
           {(["first", "second", "third"] as const).map((position, index) => {

@@ -41,6 +41,9 @@ for tool in rustc cargo node pnpm python3 python go docker podman; do
     printf 'tool.%s=%s\n' "$tool" "$(printf '%s' "$result" | head -n 1)"
   fi
 done
+# User-installed coding tools may be absent from a non-interactive SSH PATH.
+PATH="$PATH:$HOME/.local/bin"
+export PATH
 for tool in codex claude cursor-agent grok opencode greppy minimax pi; do
   if command -v "$tool" >/dev/null 2>&1; then
     result="$(bounded 3 "$tool" --version)"

@@ -3846,7 +3846,15 @@ export default function Sidebar() {
               </SidebarMenuButton>
             ) : null}
             <div className="relative flex items-center gap-1">
-              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
+              {/* The whole row opens search, not only the text field. */}
+              <div
+                className="flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                onMouseDown={(event) => {
+                  if (event.target === threadSearchInputRef.current) return;
+                  event.preventDefault();
+                  threadSearchInputRef.current?.focus();
+                }}
+              >
                 <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
                 <Input
                   ref={threadSearchInputRef}

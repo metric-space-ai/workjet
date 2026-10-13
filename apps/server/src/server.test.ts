@@ -4504,6 +4504,34 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("rejects a cross-origin websocket upgrade authenticated by a browser cookie", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const { cookie, url } = parseSessionCookieFromWsUrl(yield* getWsServerUrl("/ws"));
+      assert.isDefined(cookie);
+
+      const handshakeStatus = yield* Effect.promise(
+        () =>
+          new Promise<number>((resolve, reject) => {
+            const socket = new NodeSocket.NodeWS.WebSocket(url, {
+              headers: { cookie: cookie ?? "", origin: "http://evil.example.test" },
+            });
+            socket.once("unexpected-response", (_request, response) => {
+              resolve(response.statusCode ?? 0);
+              socket.terminate();
+            });
+            socket.once("open", () => {
+              socket.close();
+              resolve(101);
+            });
+            socket.once("error", reject);
+          }),
+      );
+
+      assert.equal(handshakeStatus, 401);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "accepts websocket rpc handshake with a dedicated websocket ticket in the query string",
     () =>

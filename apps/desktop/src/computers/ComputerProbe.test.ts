@@ -66,6 +66,32 @@ describe("computer facts", () => {
   });
 });
 
+it("detects an installed user harness in a non-interactive SSH PATH", async () => {
+  const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-user-harness-"));
+  try {
+    const bin = NodePath.join(home, ".local/bin");
+    await NodeFSP.mkdir(bin, { recursive: true });
+    await NodeFSP.writeFile(
+      NodePath.join(bin, "claude"),
+      "#!/bin/sh\necho local-harness-version\n",
+      {
+        mode: 0o755,
+      },
+    );
+    const { stdout, stderr } = await execFile("sh", ["-c", COMPUTER_PROBE_SCRIPT], {
+      timeout: 15000,
+      env: { ...process.env, HOME: home, PATH: "/usr/bin:/bin" },
+    });
+    const facts = parseComputerProbe(stdout, stderr);
+    expect(facts.codingTools.claude).toBe("local-harness-version");
+    expect(
+      detectedComputerHarnesses([], facts).find((row) => row.harness === "claude-code")?.available,
+    ).toBe(true);
+  } finally {
+    await NodeFSP.rm(home, { recursive: true, force: true });
+  }
+}, 20000);
+
 it("executes detection in a disposable HOME and bounds a tool that ignores TERM", async () => {
   const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-probe-fixture-"));
   try {

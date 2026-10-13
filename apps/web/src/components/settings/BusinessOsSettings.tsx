@@ -1,3 +1,4 @@
+import { useUiText } from "../../hooks/useUiText";
 import type {
   CtoxDiscoveryResult,
   CtoxManagedInstance,
@@ -323,9 +324,15 @@ function DevicesSection({
     | undefined;
   readonly renewingInvite: boolean;
 }) {
+  const t = useUiText();
   return (
-    <SettingsSection title={`Geräte · ${instanceName}`} data-workjet-instance-devices="">
-      <div className="flex flex-col gap-2 px-3 sm:px-4">
+    <section
+      aria-label={`${t("Geräte", "Devices")} · ${instanceName}`}
+      className="space-y-1"
+      data-workjet-instance-devices=""
+    >
+      <p className="text-xs font-medium text-muted-foreground">{t("Geräte", "Devices")}</p>
+      <div className="flex flex-col gap-2">
         {blockedReason !== null ? (
           <Banner
             icon={CircleAlertIcon}
@@ -395,7 +402,7 @@ function DevicesSection({
           </Button>
         )}
       </div>
-    </SettingsSection>
+    </section>
   );
 }
 
@@ -410,12 +417,14 @@ export function networkInstancesForSelection<T extends { readonly id: string }>(
 
 function NetworkSection({ children }: { readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const t = useUiText();
   return (
     <section className="space-y-3" data-workjet-instance-network="">
-      <div className="px-3 sm:px-4">
+      <div>
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
+          className="-ms-2 text-muted-foreground"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
@@ -423,10 +432,10 @@ function NetworkSection({ children }: { readonly children: ReactNode }) {
             aria-hidden
             className={`transition-transform ${open ? "rotate-90" : ""}`}
           />
-          Netzwerk
+          {t("Netzwerk", "Network")}
         </Button>
       </div>
-      {open ? <div className="px-3 sm:px-4">{children}</div> : null}
+      {open ? <div>{children}</div> : null}
     </section>
   );
 }
@@ -485,15 +494,16 @@ export function BusinessOsSettingsView({
   /** Inhalt des aufklappbaren Abschnitts „Netzwerk“. */
   readonly network?: ReactNode;
 }) {
+  const t = useUiText();
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const visibleCount = instances.filter((instance) => instance.workjetState !== "removed").length;
   return (
     <SettingsPageContainer className="gap-5">
       <SettingsSection
-        title="Instanzen"
+        title={t("CTOX-Instanzen", "CTOX instances")}
         headerAction={
           <IconAction
-            label="Aktualisieren"
+            label={t("Aktualisieren", "Refresh")}
             onClick={() => {
               if (!refreshDisabled) onRefresh?.();
             }}
@@ -507,7 +517,8 @@ export function BusinessOsSettingsView({
             className="flex items-center gap-2 px-3 text-xs text-muted-foreground sm:px-4"
             role="status"
           >
-            <Spinner className="size-3.5" /> Instanzen werden geladen …
+            <Spinner className="size-3.5" />{" "}
+            {t("Instanzen werden geladen …", "Loading instances …")}
           </p>
         ) : discoveryFailed ? (
           <div className="px-3 sm:px-4">
@@ -517,12 +528,12 @@ export function BusinessOsSettingsView({
                 ? {}
                 : { action: { label: "Erneut versuchen", onClick: onRefresh } })}
             >
-              <span role="alert">Instanzen nicht erreichbar</span>
+              <span role="alert">{t("Instanzen nicht erreichbar", "Instances unreachable")}</span>
             </Banner>
           </div>
         ) : visibleCount === 0 ? (
           <p className="px-3 text-[13.5px] font-medium sm:px-4" role="status">
-            Keine Instanz verbunden
+            {t("Keine CTOX-Instanz verbunden", "No CTOX instance connected")}
           </p>
         ) : (
           <InstancesTable
@@ -530,33 +541,35 @@ export function BusinessOsSettingsView({
             activeInstanceId={activeInstanceId}
             onSelect={onSelectInstance}
             onStateChange={onStateChange}
+            selectedDetails={
+              selected === null ? null : (
+                <>
+                  <DevicesSection
+                    instanceName={ctoxInstanceDisplayTitle(selected)}
+                    devices={devices}
+                    devicesLoading={devicesLoading}
+                    devicesError={devicesError}
+                    blockedReason={deviceManagementBlockedReason}
+                    onAddDevice={onAddDevice}
+                    onRevokeDevice={onRevokeDevice}
+                    onRetryDevices={onRetryDevices}
+                    addingDevice={addingDevice}
+                    activeInvite={activeInvite}
+                    onCloseInvite={onCloseInvite}
+                    onRenewInvite={onRenewInvite}
+                    onLoadManualConnection={onLoadManualConnection}
+                    renewingInvite={renewingInvite}
+                  />
+                  {network === null ? null : <NetworkSection>{network}</NetworkSection>}
+                </>
+              )
+            }
           />
         )}
         {addPanel === null ? null : (
           <div className="flex flex-col px-3 pt-2 sm:px-4">{addPanel}</div>
         )}
       </SettingsSection>
-
-      {selected === null ? null : (
-        <DevicesSection
-          instanceName={ctoxInstanceDisplayTitle(selected)}
-          devices={devices}
-          devicesLoading={devicesLoading}
-          devicesError={devicesError}
-          blockedReason={deviceManagementBlockedReason}
-          onAddDevice={onAddDevice}
-          onRevokeDevice={onRevokeDevice}
-          onRetryDevices={onRetryDevices}
-          addingDevice={addingDevice}
-          activeInvite={activeInvite}
-          onCloseInvite={onCloseInvite}
-          onRenewInvite={onRenewInvite}
-          onLoadManualConnection={onLoadManualConnection}
-          renewingInvite={renewingInvite}
-        />
-      )}
-
-      {network === null || visibleCount === 0 ? null : <NetworkSection>{network}</NetworkSection>}
     </SettingsPageContainer>
   );
 }

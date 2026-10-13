@@ -21,6 +21,7 @@ import {
 } from "../projectKpis";
 import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { ProjectInitProgress } from "./ProjectInitProgress";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
 import { Button } from "./ui/button";
@@ -380,6 +381,14 @@ export function ProjectOverviewCard({
           />
         </div>
       )}
+      {project.native ? (
+        <ProjectInitProgress
+          instanceId={ctoxInstanceId}
+          projectId={project.id}
+          kpiCount={scopedKpis?.items.length ?? 0}
+          exitStatus={project.configuration?.exitModel?.status ?? null}
+        />
+      ) : null}
       <div className="relative border-t border-border px-3 py-3">
         {/* Tapping the KPI strip edits the card inline; the menu keeps only rare actions (#561). */}
         {configureCard && !(project.native && scopedKpis) && (

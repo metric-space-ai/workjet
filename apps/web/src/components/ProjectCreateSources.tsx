@@ -4,7 +4,7 @@
  * Seiteneffekte hält das Panel. Keine Erklärsätze, jede Aktion ein Button.
  */
 import type { EnvironmentId, FilesystemBrowseEntry } from "@workjet/contracts";
-import { FolderIcon, FolderOpenIcon } from "lucide-react";
+import { FolderIcon, FolderOpenIcon, GitBranchIcon, PlusIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import {
@@ -23,8 +23,12 @@ import { Input } from "./ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Toggle, ToggleGroup } from "./ui/toggle-group";
 
+/** Three clear choice tiles with icon and word, not grey-on-grey text (#583). */
 const SEGMENT_TOGGLE_CLASS =
-  "text-muted-foreground data-pressed:bg-primary/15 data-pressed:text-foreground dark:data-pressed:bg-primary/20";
+  "h-auto min-h-14 flex-1 flex-col gap-1 py-2 text-foreground data-pressed:border-primary data-pressed:bg-primary/10 dark:data-pressed:bg-primary/20";
+
+const SOURCE_ICONS = { new: PlusIcon, folder: FolderOpenIcon, clone: GitBranchIcon } as const;
+const SOURCE_LABELS_EN = { new: "New", folder: "From folder", clone: "Clone repository" } as const;
 
 export function ProjectCreateSourceSegment(props: {
   readonly value: ProjectCreateSource;
@@ -33,8 +37,8 @@ export function ProjectCreateSourceSegment(props: {
 }) {
   return (
     <ToggleGroup
-      aria-label="Quelle"
-      className="flex-wrap"
+      aria-label={workjetUiLanguage() === "en" ? "Source" : "Quelle"}
+      className="grid w-full grid-cols-3 gap-2"
       size="sm"
       variant="outline"
       value={[props.value]}
@@ -43,17 +47,23 @@ export function ProjectCreateSourceSegment(props: {
         if (next !== undefined && !props.disabled) props.onChange(next.value);
       }}
     >
-      {PROJECT_CREATE_SOURCES.map((entry) => (
-        <Toggle
-          key={entry.value}
-          value={entry.value}
-          disabled={props.disabled}
-          data-workjet-project-source={entry.value}
-          className={SEGMENT_TOGGLE_CLASS}
-        >
-          {entry.label}
-        </Toggle>
-      ))}
+      {PROJECT_CREATE_SOURCES.map((entry) => {
+        const Icon = SOURCE_ICONS[entry.value];
+        return (
+          <Toggle
+            key={entry.value}
+            value={entry.value}
+            disabled={props.disabled}
+            data-workjet-project-source={entry.value}
+            className={SEGMENT_TOGGLE_CLASS}
+          >
+            <Icon aria-hidden className="size-4" />
+            <span className="text-xs">
+              {workjetUiLanguage() === "en" ? SOURCE_LABELS_EN[entry.value] : entry.label}
+            </span>
+          </Toggle>
+        );
+      })}
     </ToggleGroup>
   );
 }

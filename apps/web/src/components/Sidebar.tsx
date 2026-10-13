@@ -1,3 +1,4 @@
+import { localizedThreadTitle } from "../localizedThreadTitle";
 import { workjetUiLanguage } from "../workjetProjectControl";
 import { autoAnimate } from "@formkit/auto-animate";
 import { scheduleUndoableThreadDelete } from "../lib/undoableDelete";
@@ -349,7 +350,7 @@ function SidebarThreadTooltip({
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
         <div className="min-w-0 truncate text-xs leading-none font-medium text-foreground">
-          {thread.title}
+          {localizedThreadTitle(thread.title)}
         </div>
         <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
           {projectTitle ? (
@@ -1151,7 +1152,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         isRegeneratingTitle && "opacity-[0.55]",
       )}
     >
-      {thread.title}
+      {localizedThreadTitle(thread.title)}
     </span>
   );
 

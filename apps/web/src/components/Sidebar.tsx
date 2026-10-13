@@ -44,11 +44,11 @@ import {
   CircleDashedIcon,
   ClockIcon,
   EllipsisIcon,
-  FolderIcon,
-  FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PinIcon,
+  LayoutDashboardIcon,
+  LayoutGridIcon,
   PlusIcon,
   SearchIcon,
   ServerIcon,
@@ -185,7 +185,16 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Menu, MenuItem, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "./ui/menu";
+import { useUiText } from "../hooks/useUiText";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -482,7 +491,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   onNavigate: (draftId: DraftId) => void;
   onDiscard: (draftId: DraftId) => void;
 }) {
-  const { composer, draftId, onDiscard, onNavigate, session } = props;
+  const { composer, draftId, onDiscard, onNavigate } = props;
   const promptPreview = composer.prompt.trim().split("\n", 1)[0] ?? "";
   // images mirrors persistedAttachments once rehydration finishes; before
   // that only the persisted list is populated, hence max not sum.
@@ -526,41 +535,24 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         data-testid="sidebar-draft-row"
         className={cn(
           "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none",
-          props.isActive
-            ? "bg-sidebar-row-active"
-            : "bg-amber-400/[0.04] hover:bg-amber-400/[0.08]",
+          props.isActive ? "bg-sidebar-row-active" : "hover:bg-sidebar-row-hover",
         )}
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
       >
-        <div className="relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
-          <div className="flex h-5 min-w-0 items-center gap-1.5">
-            <SquarePenIcon
-              aria-hidden
-              className="size-3 shrink-0 text-amber-600 dark:text-amber-300/80"
-            />
-            <ProjectFavicon
-              environmentId={session.environmentId}
-              cwd={props.projectCwd ?? ""}
-              faviconPath={props.projectFaviconPath}
-              className="size-4 shrink-0"
-            />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-secondary-label">
-              {props.projectTitle}
-            </span>
-            <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-end">
-              <button
-                type="button"
-                aria-label="Entwurf verwerfen"
-                title="Entwurf verwerfen"
-                onClick={handleDiscard}
-                className="pointer-events-none inline-flex cursor-pointer items-center rounded-md bg-transparent px-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100"
-              >
-                <XIcon className="size-3" />
-              </button>
-            </span>
-          </div>
-          <div className="mt-0.5 truncate text-sm font-medium text-foreground/90">{preview}</div>
+        {/* A draft is a normal chat row: one line, pen icon instead of a status (#629). */}
+        <div className="relative z-10 flex h-9 min-w-0 items-center gap-2 px-[var(--sidebar-row-content-inset)]">
+          <SquarePenIcon aria-hidden className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground">{preview}</span>
+          <button
+            type="button"
+            aria-label="Entwurf verwerfen"
+            title="Entwurf verwerfen"
+            onClick={handleDiscard}
+            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:text-foreground hover:opacity-100 focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover/sidebar-row:opacity-100"
+          >
+            <XIcon className="size-3" />
+          </button>
         </div>
       </div>
     </li>
@@ -3733,6 +3725,7 @@ export default function Sidebar() {
       ? shortcutLabelForCommand(keybindings, "chat.newLocal")
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const t = useUiText();
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -3742,149 +3735,8 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="relative z-[1] gap-1 p-[var(--sidebar-content-inset)]">
-            <div className="flex items-center gap-1">
-              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
-                <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-                <Input
-                  ref={threadSearchInputRef}
-                  data-sidebar-search=""
-                  nativeInput
-                  unstyled
-                  type="search"
-                  value={threadSearchQuery}
-                  onChange={(event) => {
-                    setThreadSearchQuery(event.currentTarget.value);
-                    setActiveSearchResultIndex(0);
-                  }}
-                  onKeyDown={handleThreadSearchKeyDown}
-                  placeholder={sidebarSearchPlaceholder(searchMode, overviewText.search)}
-                  aria-label={overviewText.searchThreads}
-                  role="combobox"
-                  aria-autocomplete="list"
-                  aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
-                  aria-controls={
-                    isSearchingThreads && threadSearchResults.length > 0
-                      ? "sidebar-thread-search-results"
-                      : undefined
-                  }
-                  aria-activedescendant={
-                    isSearchingThreads && threadSearchResults[activeSearchResultIndex]
-                      ? `sidebar-thread-search-result-${activeSearchResultIndex}`
-                      : undefined
-                  }
-                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
-                />
-                {isSearchActive ? (
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                    aria-label={overviewText.clearSearch}
-                    onClick={() => {
-                      clearThreadSearch();
-                      threadSearchInputRef.current?.focus();
-                    }}
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
-                ) : null}
-              </div>
-              <div className="shrink-0">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="icon"
-                        type="button"
-                        className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={handleNewThreadClick}
-                        aria-label={overviewText.newThread}
-                      />
-                    }
-                  >
-                    <SquarePenIcon />
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">
-                    {sidebarAvailableProjectCount > 1 ? (
-                      <span className="flex flex-col gap-0.5">
-                        <span>
-                          {newThreadShortcutLabel
-                            ? `${overviewText.newThread} (${newThreadShortcutLabel})`
-                            : overviewText.newThread}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {overviewText.newThreadInProject}
-                          {newThreadInProjectShortcutLabel
-                            ? ` (${newThreadInProjectShortcutLabel})`
-                            : ""}
-                        </span>
-                      </span>
-                    ) : newThreadShortcutLabel ? (
-                      `${overviewText.newThread} (${newThreadShortcutLabel})`
-                    ) : (
-                      overviewText.newThread
-                    )}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
-              {sidebarAvailableProjectCount > 1 ? (
-                <NewThreadInMenu
-                  entries={newThreadMenuEntries}
-                  open={newThreadMenuOpen}
-                  onOpenChange={setNewThreadMenuOpen}
-                  onCreateProject={openAddProjectCommandPalette}
-                  onSelect={(project) => {
-                    setNewThreadMenuOpen(false);
-                    if (isMobile) setOpenMobile(false);
-                    void newThreadContext.handleNewThread(project);
-                  }}
-                />
-              ) : null}
-            </div>
-            {isSearchActive ? (
-              <SidebarSearchModeSegment
-                mode={searchMode}
-                onModeChange={(mode) => {
-                  setSearchMode(mode);
-                  setActiveSearchResultIndex(0);
-                  threadSearchInputRef.current?.focus();
-                }}
-              />
-            ) : null}
-            <SidebarMenuButton
-              type="button"
-              data-workjet-action="project.overview"
-              disabled={isSwitchingProject}
-              className="w-full focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-              onClick={() => {
-                const instanceId = workjetProjectRegistry.presentationInstanceId;
-                if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
-                selectProjectOverviewRef(instanceId, null);
-                setProjectScopeKey(null);
-                setProjectScopeMenuOpen(false);
-                if (isMobile) setOpenMobile(false);
-                void router.navigate({ to: "/" }).catch((error) => {
-                  toastManager.add({
-                    type: "error",
-                    title: "Übersicht konnte nicht geöffnet werden",
-                    description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                  });
-                });
-              }}
-            >
-              <FolderIcon aria-hidden className="size-4 shrink-0" />
-              <span>{overviewText.allProjects}</span>
-            </SidebarMenuButton>
             {projectGroups.length > 0 || workjetProjects.length > 0 ? (
               <div className="space-y-1">
-                <p className="px-2 text-[11px] text-sidebar-muted-foreground">
-                  {overviewText.project}
-                </p>
                 <div className="flex items-center gap-1">
                   <Menu
                     open={projectScopeMenuOpen}
@@ -3899,23 +3751,60 @@ export default function Sidebar() {
                     <MenuTrigger
                       render={
                         <SidebarMenuButton
-                          aria-label="Projekt wählen"
+                          aria-label={t("Projekt wählen", "Choose project")}
                           aria-busy={isSwitchingProject}
                           disabled={isSwitchingProject}
-                          className="min-w-0 flex-1 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                          data-workjet-action="project.switcher"
+                          className="h-11 min-w-0 flex-1 gap-2.5 text-[15px] font-semibold text-sidebar-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                         />
                       }
                     >
-                      <FolderIcon aria-hidden className="size-4 shrink-0" />
+                      <span
+                        aria-hidden
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-[13px] font-semibold uppercase text-sidebar-accent-foreground"
+                      >
+                        {(
+                          selectedWorkjetProject?.title ??
+                          selectedLocalLogicalProject?.title ??
+                          scopedProjectGroup?.displayName ??
+                          ""
+                        )
+                          .trim()
+                          .charAt(0) || <LayoutGridIcon className="size-4" />}
+                      </span>
                       <span className="min-w-0 flex-1 truncate">
                         {selectedWorkjetProject?.title ??
                           selectedLocalLogicalProject?.title ??
                           scopedProjectGroup?.displayName ??
-                          "Projekt wählen"}
+                          overviewText.allProjects}
                       </span>
                       <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
                     </MenuTrigger>
                     <MenuPopup align="start" className="min-w-64 max-w-80">
+                      <MenuItem
+                        data-workjet-action="project.overview"
+                        onClick={() => {
+                          const instanceId = workjetProjectRegistry.presentationInstanceId;
+                          if (instanceId !== null && !selectWorkjetProject(instanceId, null))
+                            return;
+                          selectProjectOverviewRef(instanceId, null);
+                          setProjectScopeKey(null);
+                          setProjectScopeMenuOpen(false);
+                          if (isMobile) setOpenMobile(false);
+                          void router.navigate({ to: "/" }).catch((error) => {
+                            toastManager.add({
+                              type: "error",
+                              title: "Übersicht konnte nicht geöffnet werden",
+                              description:
+                                error instanceof Error ? error.message : "Unbekannter Fehler",
+                            });
+                          });
+                        }}
+                      >
+                        <LayoutGridIcon aria-hidden className="size-4" />
+                        <span>{overviewText.allProjects}</span>
+                      </MenuItem>
+                      <MenuSeparator />
                       <MenuRadioGroup
                         value={
                           selectableWorkjetProjects.length > 0
@@ -3983,45 +3872,162 @@ export default function Sidebar() {
                               </MenuRadioItem>
                             ))}
                       </MenuRadioGroup>
+                      <MenuSeparator />
+                      <MenuItem
+                        data-workjet-action="project.add.sidebar.persistent"
+                        onClick={openAddProjectCommandPalette}
+                      >
+                        <PlusIcon aria-hidden className="size-4" />
+                        <span>{overviewText.newProject}</span>
+                      </MenuItem>
                     </MenuPopup>
                   </Menu>
                   {scopedProjectGroup ? (
                     <SidebarMenuButton
                       type="button"
                       size="icon"
+                      className="size-9 text-sidebar-muted-foreground/70 hover:text-sidebar-foreground"
                       aria-label={`${overviewText.projectSettingsFor} ${scopedProjectGroup.displayName}`}
                       onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
                     >
                       <SettingsIcon aria-hidden className="size-4" />
                     </SidebarMenuButton>
                   ) : null}
-                  <SidebarMenuButton
-                    type="button"
-                    size="icon"
-                    aria-label={overviewText.newProject}
-                    data-workjet-action="project.add.sidebar.persistent"
-                    onClick={openAddProjectCommandPalette}
-                  >
-                    <FolderPlusIcon aria-hidden className="size-4" />
-                  </SidebarMenuButton>
                 </div>
-                {selectedWorkjetProject || selectedLocalLogicalProject ? (
-                  <SidebarMenuButton
+              </div>
+            ) : null}
+            {/* Navigation: Übersicht, Suche (#629). */}
+            {selectedWorkjetProject || selectedLocalLogicalProject ? (
+              <SidebarMenuButton
+                type="button"
+                data-workjet-action="project.workspace.overview"
+                disabled={isSwitchingProject}
+                isActive={routeTarget === null}
+                onClick={() =>
+                  void handleWorkjetProjectSelection(
+                    (selectedWorkjetProject ?? selectedLocalLogicalProject)!.id,
+                  )
+                }
+              >
+                <LayoutDashboardIcon aria-hidden className="size-4 shrink-0" />
+                <span>{overviewText.overview}</span>
+              </SidebarMenuButton>
+            ) : null}
+            <div className="relative flex items-center gap-1">
+              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
+                <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+                <Input
+                  ref={threadSearchInputRef}
+                  data-sidebar-search=""
+                  nativeInput
+                  unstyled
+                  type="search"
+                  value={threadSearchQuery}
+                  onChange={(event) => {
+                    setThreadSearchQuery(event.currentTarget.value);
+                    setActiveSearchResultIndex(0);
+                  }}
+                  onKeyDown={handleThreadSearchKeyDown}
+                  placeholder={sidebarSearchPlaceholder(searchMode, overviewText.search)}
+                  aria-label={overviewText.searchThreads}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
+                  aria-controls={
+                    isSearchingThreads && threadSearchResults.length > 0
+                      ? "sidebar-thread-search-results"
+                      : undefined
+                  }
+                  aria-activedescendant={
+                    isSearchingThreads && threadSearchResults[activeSearchResultIndex]
+                      ? `sidebar-thread-search-result-${activeSearchResultIndex}`
+                      : undefined
+                  }
+                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
+                />
+                {isSearchActive ? (
+                  <Button
                     type="button"
-                    data-workjet-action="project.workspace.overview"
-                    disabled={isSwitchingProject}
-                    isActive={routeTarget === null}
-                    onClick={() =>
-                      void handleWorkjetProjectSelection(
-                        (selectedWorkjetProject ?? selectedLocalLogicalProject)!.id,
-                      )
-                    }
+                    size="icon-xs"
+                    variant="ghost"
+                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                    aria-label={overviewText.clearSearch}
+                    onClick={() => {
+                      clearThreadSearch();
+                      threadSearchInputRef.current?.focus();
+                    }}
                   >
-                    <FolderIcon aria-hidden className="size-4 shrink-0" />
-                    <span>{overviewText.overview}</span>
-                  </SidebarMenuButton>
+                    <XIcon className="size-3" />
+                  </Button>
                 ) : null}
               </div>
+              <div className="shrink-0">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <SidebarMenuButton
+                        size="icon"
+                        type="button"
+                        className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        onClick={handleNewThreadClick}
+                        aria-label={overviewText.newThread}
+                      />
+                    }
+                  >
+                    <PlusIcon />
+                    <span
+                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                      aria-hidden="true"
+                    />
+                  </TooltipTrigger>
+                  <TooltipPopup side="right">
+                    {sidebarAvailableProjectCount > 1 ? (
+                      <span className="flex flex-col gap-0.5">
+                        <span>
+                          {newThreadShortcutLabel
+                            ? `${overviewText.newThread} (${newThreadShortcutLabel})`
+                            : overviewText.newThread}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {overviewText.newThreadInProject}
+                          {newThreadInProjectShortcutLabel
+                            ? ` (${newThreadInProjectShortcutLabel})`
+                            : ""}
+                        </span>
+                      </span>
+                    ) : newThreadShortcutLabel ? (
+                      `${overviewText.newThread} (${newThreadShortcutLabel})`
+                    ) : (
+                      overviewText.newThread
+                    )}
+                  </TooltipPopup>
+                </Tooltip>
+              </div>
+              {sidebarAvailableProjectCount > 1 ? (
+                // Opened by „+“; the menu has no trigger of its own (#629).
+                <NewThreadInMenu
+                  hideTrigger
+                  entries={newThreadMenuEntries}
+                  open={newThreadMenuOpen}
+                  onOpenChange={setNewThreadMenuOpen}
+                  onCreateProject={openAddProjectCommandPalette}
+                  onSelect={(project) => {
+                    setNewThreadMenuOpen(false);
+                    if (isMobile) setOpenMobile(false);
+                    void newThreadContext.handleNewThread(project);
+                  }}
+                />
+              ) : null}
+            </div>
+            {isSearchActive ? (
+              <SidebarSearchModeSegment
+                mode={searchMode}
+                onModeChange={(mode) => {
+                  setSearchMode(mode);
+                  setActiveSearchResultIndex(0);
+                  threadSearchInputRef.current?.focus();
+                }}
+              />
             ) : null}
           </SidebarGroup>
         }

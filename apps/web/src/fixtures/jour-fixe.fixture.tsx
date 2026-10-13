@@ -83,6 +83,9 @@ const presentationState = params.get("presentationState");
 const withPendingChange = params.get("pending") === "1";
 const withChrome = params.get("chrome") === "1";
 const scheduledInMinutes = Number(params.get("scheduledIn") ?? Number.NaN);
+const initialState = params.get("state") as JourFixeRoomSnapshot["state"] | null;
+// `?theme=dark`: der Raum folgt dem dunklen App-Schema (Klasse auf dem Wurzelelement).
+if (params.get("theme") === "dark") document.documentElement.classList.add("dark");
 const presentationStatus: JourFixeAreaStatus | undefined =
   presentationState === "loading" || presentationState === "failed"
     ? {
@@ -108,7 +111,7 @@ function Fixture() {
   const [canvasSaveCount, setCanvasSaveCount] = useState(0);
   const [meeting, setMeeting] = useState<JourFixeRoomSnapshot>({
     ...contractMeeting,
-    state: "live",
+    state: initialState ?? "live",
     ...(Number.isFinite(scheduledInMinutes)
       ? { scheduledAt: Date.now() + scheduledInMinutes * 60_000 }
       : {}),

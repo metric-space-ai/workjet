@@ -22,10 +22,12 @@ import {
 } from "./ProjectExitModel";
 import { ProjectOverviewCard } from "./ProjectOverviewCard";
 import { exitModelFixture } from "../test/exitModelFixture";
+import { exitAssessmentFixture } from "../fixtures/project-overview.fixture-data";
 import { formatExitEur, formatExitPercent } from "../projectExitModel";
 
 const projectId = "project-one";
 const decodeAssessment = Schema.decodeUnknownSync(WorkjetExitModelAssessment);
+const isExitAssessment = Schema.is(WorkjetExitModelAssessment);
 
 describe("project exit assessment display", () => {
   it("renders the actual synthetic CTOX producer receipt without translating its financial fields", () => {
@@ -261,23 +263,27 @@ describe("resource input for the five-year exit assessment", () => {
 });
 
 describe("exit card back panel", () => {
-  it("renders the dense resources row and a one-line status without instance", () => {
+  it("renders operable resource fields and no status line without an instance", () => {
     const markup = renderToStaticMarkup(
       <ProjectExitModelCardPanel projectId={projectId} instanceId={null} assessment={null} />,
     );
     expect(markup).toContain('data-workjet-project-card-exit=""');
-    expect(markup).toContain("Std./Woche");
+    expect(markup).toContain("h/Woche");
     expect(markup).toContain("€/Monat");
-    expect(markup).toContain(">Gleich<");
-    expect(markup).toContain(">Projekt<");
+    expect(markup).toContain("Ohne Projekt vergleichen");
+    expect(markup).toContain("Nur Projekt");
     expect(markup).toContain("Bewerten");
-    expect(markup).not.toContain("— · Nicht bewertet");
-    expect(markup).toContain("Instanz nicht verbunden");
+    expect(markup).not.toContain("Std./Woche");
+    expect(markup).not.toContain(">Gleich<");
+    expect(markup).not.toContain(">Projekt<");
+    expect(markup).not.toContain("Instanz nicht verbunden");
+    expect(markup).not.toContain("Vorläufig");
+    expect(markup).not.toContain('role="alert"');
     expect(markup).not.toContain("Szenarien");
     expect(markup).not.toContain("Quellen");
   });
 
-  it("shows value and state in one status line", () => {
+  it("shows the euro value and range only, without a status sentence", () => {
     const markup = renderToStaticMarkup(
       <ProjectExitModelCardPanel
         projectId={projectId}
@@ -285,27 +291,101 @@ describe("exit card back panel", () => {
         assessment={exitModelFixture}
       />,
     );
+    expect(markup).toContain('data-workjet-exit-model-value=""');
     expect(markup).toContain(formatExitEur(800_000));
-    expect(markup).toContain("Vorläufig");
+    expect(markup).toContain("P10 " + formatExitEur(0));
+    expect(markup).toContain("P90 " + formatExitEur(1_000_000));
+    expect(markup).not.toContain("Vorläufig");
+    expect(markup).not.toContain("Übernehmen");
   });
 
-  it("lists missing inputs after the state", () => {
+  it("shows one adoptable proposal line and Übernehmen, not an explanation", () => {
+    const proposal = decodeAssessment({
+      ...exitModelFixture,
+      status: "blocked",
+      result: null,
+      scenarios: [],
+      diagnostics: [],
+      run_id: "run-proposal",
+      plan_summary: { ...exitModelFixture.plan_summary!, confirmed: false },
+      missing_inputs: ["confirmed_resource_plan"],
+      findings: [
+        {
+          code: "resource_proposal_requires_confirmation",
+          message: "Vorschlag erfordert Bestätigung",
+        },
+      ],
+      resource_proposal: {
+        hours_per_week: 12,
+        monthly_budget_eur: 3_000,
+        comparison_mode: "project_specific",
+      },
+      history: [],
+    });
+    const markup = renderToStaticMarkup(
+      <ProjectExitModelCardPanel projectId={projectId} instanceId={null} assessment={proposal} />,
+    );
+    expect(markup).toContain("12 h/Woche · 3.000 €/Monat");
+    expect(markup).toContain("Übernehmen");
+    expect(markup).not.toContain("Vorschlag erfordert Bestätigung");
+    expect(markup).not.toContain("Angaben fehlen");
+    expect(markup).not.toContain('data-workjet-exit-model-value=""');
+  });
+
+  it("keeps research as a quiet state without a progress bar", () => {
     const markup = renderToStaticMarkup(
       <ProjectExitModelCardPanel
         projectId={projectId}
         instanceId={null}
-        assessment={{
+        assessment={decodeAssessment({
           ...exitModelFixture,
-          status: "blocked",
+          status: "researching",
           result: null,
           plan_summary: null,
           scenarios: [],
           diagnostics: [],
-          missing_inputs: ["confirmed_resource_plan", "research_inputs"],
-        }}
+          sources: [],
+          missing_inputs: ["research_inputs"],
+          findings: [],
+          history: [],
+        })}
       />,
     );
-    expect(markup).toContain("Angaben fehlen");
-    expect(markup).toContain("fehlt: Bestätigter Ressourcenplan");
+    expect(markup).toContain("Recherche läuft");
+    expect(markup).not.toContain("Bewerten");
+    expect(markup).not.toContain("Neu recherchieren");
+    expect(markup).not.toContain('role="progressbar"');
+  });
+
+  it("turns each missing input into a row with the next action", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectExitModelCardPanel
+        projectId={projectId}
+        instanceId={null}
+        assessment={decodeAssessment({
+          ...exitModelFixture,
+          status: "blocked",
+          result: null,
+          plan_summary: null,
+          resource_proposal: null,
+          scenarios: [],
+          diagnostics: [],
+          missing_inputs: ["resource_proposal", "research_inputs"],
+          findings: [],
+          history: [],
+        })}
+      />,
+    );
+    expect(markup).toContain("h/Woche");
+    expect(markup).toContain("Bewerten");
+    expect(markup).toContain("Recherchierte Betriebs- und Verkaufsannahmen");
+    expect(markup).toContain("Neu recherchieren");
+    expect(markup).not.toContain("fehlt:");
+    expect(markup).not.toContain("Angaben fehlen");
+  });
+
+  it("keeps the screenshot fixtures inside the assessment schema", () => {
+    for (const state of ["proposal", "value", "resources", "researching"] as const)
+      expect(isExitAssessment(exitAssessmentFixture(state))).toBe(true);
   });
 });

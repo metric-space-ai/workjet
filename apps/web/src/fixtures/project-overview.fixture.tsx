@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ProjectOverviewView } from "../components/ProjectOverviewView";
 import { ProjectOverviewQuestion } from "../components/ProjectOverviewDecisions";
-import { ProjectExitModelReport } from "../components/ProjectExitModel";
-import { ApprovalRequestId } from "@workjet/contracts";
+import { ProjectExitModelCardPanel, ProjectExitModelReport } from "../components/ProjectExitModel";
+import { ApprovalRequestId, type CtoxWorkjetProjectControlRequest } from "@workjet/contracts";
+import { commitActiveWorkjetSelection } from "../activeWorkjetScope";
 import { buildProjectOwnerOverview } from "../projectOverviewModel";
 import {
   exitAssessmentFixture,
@@ -12,8 +13,78 @@ import {
 } from "./project-overview.fixture-data";
 import "../index.css";
 
+type ExitCardShot = "proposal" | "hang" | "value" | "resources" | "researching";
+
+function exitCardShot(value: string | null): ExitCardShot | null {
+  return value === "proposal" ||
+    value === "hang" ||
+    value === "value" ||
+    value === "resources" ||
+    value === "researching"
+    ? value
+    : null;
+}
+
+function installExitCardBridge(shot: ExitCardShot) {
+  const assessment = exitAssessmentFixture(shot === "hang" ? "proposal" : shot);
+  commitActiveWorkjetSelection("fixture-instance");
+  (window as unknown as { desktopBridge: unknown }).desktopBridge = {
+    ctox: {
+      requestProjectControl: (_instanceId: string, request: CtoxWorkjetProjectControlRequest) => {
+        if (request.action === "project.exit_model.submit" && shot === "hang")
+          return new Promise(() => undefined);
+        if (
+          request.action === "project.exit_model.read" ||
+          request.action === "project.exit_model.refresh" ||
+          request.action === "project.exit_model.submit"
+        ) {
+          return Promise.resolve({
+            _tag: "completed" as const,
+            response: {
+              action: request.action,
+              commandId: request.commandId,
+              projectId: request.projectId,
+              assessment,
+            },
+          });
+        }
+        return Promise.resolve({ _tag: "failed" as const, code: "unsupported" as const });
+      },
+    },
+  };
+}
+
+function ExitCardShotView({ shot }: { readonly shot: ExitCardShot }) {
+  const state: ExitFixtureState = shot === "hang" ? "proposal" : shot;
+  useEffect(() => {
+    if (shot !== "hang") return;
+    const timer = window.setInterval(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        "[data-workjet-action^='project.exit_model.confirm:']",
+      );
+      if (button === null || button.disabled) return;
+      button.click();
+      window.clearInterval(timer);
+    }, 40);
+    return () => window.clearInterval(timer);
+  }, [shot]);
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-8 text-foreground">
+      <div className="w-[720px] rounded-lg border border-border bg-popover text-foreground">
+        <ProjectExitModelCardPanel
+          projectId="overview-fixture"
+          instanceId="fixture-instance"
+          assessment={exitAssessmentFixture(state)}
+        />
+      </div>
+    </div>
+  );
+}
+
 function OverviewFixture() {
   const query = new URLSearchParams(window.location.search);
+  const shot = exitCardShot(query.get("shot"));
+  if (shot !== null) return <ExitCardShotView shot={shot} />;
   const variant =
     query.get("variant") === "full"
       ? "full"
@@ -97,4 +168,6 @@ function OverviewFixture() {
     </div>
   );
 }
+const openingShot = exitCardShot(new URLSearchParams(window.location.search).get("shot"));
+if (openingShot !== null) installExitCardBridge(openingShot);
 createRoot(document.getElementById("root")!).render(<OverviewFixture />);

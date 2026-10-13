@@ -141,6 +141,7 @@ export const WorkjetExitModelAssessment = Schema.Struct({
   contract: Schema.Literal("ctox.workjet.exit_model.v1"),
   project_id: ProjectId,
   run_id: Schema.NullOr(text(160)),
+  confirmed_from_run_id: Schema.optionalKey(Schema.NullOr(text(160))),
   as_of: Schema.NullOr(WorkjetExitModelDate),
   exit_date: Schema.NullOr(WorkjetExitModelDate),
   refresh_due: Schema.NullOr(WorkjetExitModelDate),
@@ -231,8 +232,20 @@ export const WorkjetExitModelRefreshRequest = Schema.Struct({
   asOf: Schema.optionalKey(WorkjetExitModelDate),
   resources: Schema.optionalKey(WorkjetExitModelResources),
 });
+/** One-click adoption of the last read proposal. No inputs, resources or asOf. */
+export const WorkjetExitModelSubmitRequest = Schema.Struct({
+  action: Schema.Literal("project.exit_model.submit"),
+  commandId: CommandId,
+  projectId: ProjectId,
+  confirmRunId: text(160),
+});
+export type WorkjetExitModelSubmitRequest = typeof WorkjetExitModelSubmitRequest.Type;
 export const WorkjetExitModelResponse = Schema.Struct({
-  action: Schema.Literals(["project.exit_model.read", "project.exit_model.refresh"]),
+  action: Schema.Literals([
+    "project.exit_model.read",
+    "project.exit_model.refresh",
+    "project.exit_model.submit",
+  ]),
   commandId: CommandId,
   projectId: ProjectId,
   assessment: WorkjetExitModelAssessment,
@@ -255,15 +268,23 @@ export function isWorkjetExitModelReceiptForRequest(
 ): boolean {
   if (
     request.action !== "project.exit_model.read" &&
-    request.action !== "project.exit_model.refresh"
+    request.action !== "project.exit_model.refresh" &&
+    request.action !== "project.exit_model.submit"
   )
     return true;
-  return (
+  const correlated =
     typeof request.commandId === "string" &&
     typeof request.projectId === "string" &&
     response.action === request.action &&
     response.commandId === request.commandId &&
     response.projectId === request.projectId &&
-    response.assessment?.project_id === request.projectId
+    response.assessment?.project_id === request.projectId;
+  if (!correlated) return false;
+  if (request.action !== "project.exit_model.submit") return true;
+  const confirmRunId = "confirmRunId" in request ? request.confirmRunId : undefined;
+  return (
+    typeof confirmRunId === "string" &&
+    confirmRunId.length > 0 &&
+    response.assessment?.confirmed_from_run_id === confirmRunId
   );
 }

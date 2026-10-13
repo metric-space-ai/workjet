@@ -270,8 +270,8 @@ describe("exit card back panel", () => {
     expect(markup).toContain('data-workjet-project-card-exit=""');
     expect(markup).toContain("h/Woche");
     expect(markup).toContain("€/Monat");
-    expect(markup).toContain("Ohne Projekt vergleichen");
-    expect(markup).toContain("Nur Projekt");
+    expect(markup).toContain("Gleiche Ressourcen");
+    expect(markup).toContain("Projektbezogen");
     expect(markup).toContain("Bewerten");
     expect(markup).not.toContain("Std./Woche");
     expect(markup).not.toContain(">Gleich<");

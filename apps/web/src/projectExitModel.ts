@@ -78,8 +78,8 @@ export const EXIT_MODEL_STATUS_LABELS: Record<WorkjetExitModelStatus, string> = 
 };
 
 export const EXIT_COMPARISON_MODE_LABELS = {
-  equal_resources: "Ohne Projekt vergleichen",
-  project_specific: "Nur Projekt",
+  equal_resources: "Gleiche Ressourcen",
+  project_specific: "Projektbezogen",
 } as const;
 
 /** A blocked run whose resource proposal can be adopted with one submit. */

@@ -81,7 +81,7 @@ vi.mock("../../state/use-atom-command", () => ({
 
 vi.mock("../../hooks/useSettings", () => ({
   useClientSettings: (select?: (settings: Record<string, unknown>) => unknown) => {
-    const settings = { developerMode: false, projectOverviewLanguage: "de" };
+    const settings = { developerMode: true, projectOverviewLanguage: "de" };
     return select ? select(settings) : settings;
   },
   useEnvironmentSettings: (environmentId: EnvironmentId) => {

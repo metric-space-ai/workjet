@@ -480,7 +480,7 @@ export function formatAvailableBytes(bytes: number): string {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
-interface AutomaticWorktreeStorageState {
+export interface AutomaticWorktreeStorageState {
   readonly configuredRoot: string;
   readonly selectedServerLabel: string | null;
   readonly selectedServerId: EnvironmentId | null;
@@ -490,6 +490,169 @@ interface AutomaticWorktreeStorageState {
   readonly isApplying: boolean;
   readonly onCheck: (root: string) => void;
   readonly onApply: (root: string) => void;
+}
+
+/** Worktree storage of one machine: inspect, then apply only a valid path (#619). */
+export function useAutomaticWorktreeStorage(
+  environmentId: EnvironmentId | null,
+  configuredRoot: string,
+  selectedServerLabel: string | null,
+): AutomaticWorktreeStorageState {
+  const inspectAutomaticWorktreeRoot = useAtomCommand(inspectAutomaticWorktreeRootCommand, {
+    reportFailure: false,
+  });
+  const updateServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: false,
+  });
+  const storageOperationRef = useRef(false);
+  const [storageInspection, setStorageInspection] = useState<WorktreeStorageInspection | null>(
+    null,
+  );
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [isCheckingStorage, setIsCheckingStorage] = useState(false);
+  const [isApplyingStorage, setIsApplyingStorage] = useState(false);
+  const runStorageInspection = useCallback(
+    async (root: string): Promise<WorktreeStorageInspection | null> => {
+      if (environmentId === null) {
+        setStorageError("Kein Rechner verfügbar.");
+        return null;
+      }
+      setIsCheckingStorage(true);
+      setStorageError(null);
+      const result = await inspectAutomaticWorktreeRoot({
+        environmentId,
+        input: { root },
+      });
+      setIsCheckingStorage(false);
+      if (result._tag === "Success") {
+        setStorageInspection(result.value);
+        return result.value;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        setStorageError("Pfad nicht prüfbar.");
+      }
+      return null;
+    },
+    [environmentId, inspectAutomaticWorktreeRoot],
+  );
+
+  useEffect(() => {
+    setStorageInspection(null);
+    setStorageError(null);
+    if (environmentId !== null) {
+      void runStorageInspection(configuredRoot);
+    }
+  }, [environmentId, runStorageInspection, configuredRoot]);
+
+  const handleApplyStorage = useCallback(
+    (root: string) => {
+      if (environmentId === null || storageOperationRef.current) return;
+      storageOperationRef.current = true;
+      setIsApplyingStorage(true);
+      setStorageError(null);
+      void (async () => {
+        const result = await updateServerSettings({
+          environmentId,
+          input: { patch: { automaticWorktreeRoot: root } },
+        });
+        if (result._tag === "Success") {
+          const canonicalRoot = result.value.automaticWorktreeRoot;
+          await runStorageInspection(canonicalRoot);
+          toastManager.add({
+            type: "success",
+            title: canonicalRoot.length === 0 ? "Standardpfad aktiv" : "Worktree-Pfad gespeichert",
+          });
+        } else if (!isAtomCommandInterrupted(result)) {
+          setStorageError("Pfad abgelehnt.");
+        }
+      })().finally(() => {
+        storageOperationRef.current = false;
+        setIsApplyingStorage(false);
+      });
+    },
+    [environmentId, runStorageInspection, updateServerSettings],
+  );
+
+  return {
+    configuredRoot,
+    selectedServerLabel,
+    selectedServerId: environmentId,
+    inspection: storageInspection,
+    error: storageError,
+    isChecking: isCheckingStorage,
+    isApplying: isApplyingStorage,
+    onCheck: (root) => void runStorageInspection(root),
+    onApply: handleApplyStorage,
+  };
+}
+
+/**
+ * Compact, autosaving worktree path for a machine's inline expand (#619): the path
+ * is checked and applied when the field is left; no Prüfen/Übernehmen buttons.
+ */
+export function WorktreeStorageInline({
+  storage,
+}: {
+  readonly storage: AutomaticWorktreeStorageState;
+}) {
+  const t = useUiText();
+  const [draftRoot, setDraftRoot] = useState(storage.configuredRoot);
+  const pendingApply = useRef<string | null>(null);
+  useEffect(() => {
+    setDraftRoot(storage.configuredRoot);
+  }, [storage.configuredRoot]);
+  const inspection = storage.inspection;
+  useEffect(() => {
+    const requested = pendingApply.current;
+    if (requested === null || inspection?.requestedRoot !== requested) return;
+    pendingApply.current = null;
+    if (inspection.status === "valid" && requested !== storage.configuredRoot) {
+      storage.onApply(requested);
+    }
+  }, [inspection, storage]);
+  const commit = () => {
+    const requested = draftRoot.trim();
+    if (requested === storage.configuredRoot) return;
+    if (requested.length === 0) {
+      storage.onApply("");
+      return;
+    }
+    pendingApply.current = requested;
+    storage.onCheck(requested);
+  };
+  const checked = inspection?.requestedRoot === draftRoot.trim() ? inspection : null;
+  return (
+    <div className="space-y-1" data-workjet-worktree-storage="">
+      <Input
+        nativeInput
+        type="text"
+        aria-label={t("Arbeitskopien-Speicher", "Worktree storage")}
+        placeholder={inspection?.defaultRoot ?? "/pfad"}
+        value={draftRoot}
+        onChange={(event) => setDraftRoot(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+        className="w-full font-mono text-xs"
+      />
+      {storage.error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {storage.error}
+        </p>
+      ) : null}
+      {!storage.error && checked?.status === "invalid" ? (
+        <p role="alert" className="text-xs text-destructive">
+          {checked.message}
+        </p>
+      ) : null}
+      {!storage.error && checked?.status === "valid" ? (
+        <p className="text-xs text-muted-foreground">
+          {formatAvailableBytes(checked.availableBytes)} {t("frei", "free")}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function automaticWorktreeStorageControlState(
@@ -632,7 +795,6 @@ export function WorkjetSettingsView({
   nativeInstanceId = null,
   nativeInstanceLabel = "CTOX-Instanz",
   onSaveWorkerConfiguration,
-  automaticWorktreeStorage,
   defaultSection = "workers",
   onChange,
 }: {
@@ -644,7 +806,6 @@ export function WorkjetSettingsView({
   readonly nativeInstanceId?: string | null;
   readonly nativeInstanceLabel?: string;
   readonly onSaveWorkerConfiguration?: (configuration: WorkjetConfiguration) => Promise<void>;
-  readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
   readonly defaultSection?: WorkjetSettingsSectionId;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
@@ -1194,7 +1355,6 @@ export function WorkjetSettingsView({
           id={searchableSetting("workjet-execution").id}
           title={searchableSetting("workjet-execution").title}
         >
-          <AutomaticWorktreeStorageSettings storage={automaticWorktreeStorage} />
           <SettingsRow
             title="Prüf-Timeout"
             control={
@@ -1413,21 +1573,8 @@ function ScopedWorkjetSettings({
       : serverEnvironment.greppyRuntimeInspect({ environmentId, input: {} }),
   );
   const install = useAtomCommand(serverEnvironment.installGreppyRuntime, { reportFailure: false });
-  const inspectAutomaticWorktreeRoot = useAtomCommand(inspectAutomaticWorktreeRootCommand, {
-    reportFailure: false,
-  });
-  const updateServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
-    reportFailure: false,
-  });
   const operatingRef = useRef(false);
-  const storageOperationRef = useRef(false);
   const [isOperating, setIsOperating] = useState(false);
-  const [storageInspection, setStorageInspection] = useState<WorktreeStorageInspection | null>(
-    null,
-  );
-  const [storageError, setStorageError] = useState<string | null>(null);
-  const [isCheckingStorage, setIsCheckingStorage] = useState(false);
-  const [isApplyingStorage, setIsApplyingStorage] = useState(false);
   const action = greppyRuntimeAction(query.data);
 
   // One provider surface: the interactive gateway account section lives in
@@ -1449,68 +1596,6 @@ function ScopedWorkjetSettings({
       setIsOperating(false);
     });
   }, [action, environmentId, install]);
-
-  const runStorageInspection = useCallback(
-    async (root: string): Promise<WorktreeStorageInspection | null> => {
-      if (environmentId === null) {
-        setStorageError("Kein Rechner verfügbar.");
-        return null;
-      }
-      setIsCheckingStorage(true);
-      setStorageError(null);
-      const result = await inspectAutomaticWorktreeRoot({
-        environmentId,
-        input: { root },
-      });
-      setIsCheckingStorage(false);
-      if (result._tag === "Success") {
-        setStorageInspection(result.value);
-        return result.value;
-      }
-      if (!isAtomCommandInterrupted(result)) {
-        setStorageError("Pfad nicht prüfbar.");
-      }
-      return null;
-    },
-    [environmentId, inspectAutomaticWorktreeRoot],
-  );
-
-  useEffect(() => {
-    setStorageInspection(null);
-    setStorageError(null);
-    if (environmentId !== null) {
-      void runStorageInspection(settings.automaticWorktreeRoot);
-    }
-  }, [environmentId, runStorageInspection, settings.automaticWorktreeRoot]);
-
-  const handleApplyStorage = useCallback(
-    (root: string) => {
-      if (environmentId === null || storageOperationRef.current) return;
-      storageOperationRef.current = true;
-      setIsApplyingStorage(true);
-      setStorageError(null);
-      void (async () => {
-        const result = await updateServerSettings({
-          environmentId,
-          input: { patch: { automaticWorktreeRoot: root } },
-        });
-        if (result._tag === "Success") {
-          const canonicalRoot = result.value.automaticWorktreeRoot;
-          await runStorageInspection(canonicalRoot);
-          toastManager.add({
-            type: "success",
-            title: canonicalRoot.length === 0 ? "Standardpfad aktiv" : "Worktree-Pfad gespeichert",
-          });
-        } else if (!isAtomCommandInterrupted(result)) {
-          setStorageError("Pfad abgelehnt.");
-        }
-      })().finally(() => {
-        storageOperationRef.current = false;
-        setIsApplyingStorage(false);
-      });
-    },
-    [environmentId, runStorageInspection, updateServerSettings],
-  );
 
   if (instance.data === null)
     return (
@@ -1564,17 +1649,6 @@ function ScopedWorkjetSettings({
         }}
         gateway={gateway}
         gatewayEnvironmentId={environmentId}
-        automaticWorktreeStorage={{
-          configuredRoot: settings.automaticWorktreeRoot,
-          selectedServerLabel: environment.label,
-          selectedServerId: environmentId,
-          inspection: storageInspection,
-          error: storageError,
-          isChecking: isCheckingStorage,
-          isApplying: isApplyingStorage,
-          onCheck: (root) => void runStorageInspection(root),
-          onApply: handleApplyStorage,
-        }}
         onChange={updateConfiguration}
       />
     </>

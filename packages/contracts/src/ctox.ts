@@ -1268,6 +1268,8 @@ export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
     "owner_session_not_ready",
     "project_control_not_ready",
     "supervisor_control_not_ready",
+    "core_outdated",
+    "access_denied",
   ]),
   phase: Schema.optionalKey(
     Schema.Literals([

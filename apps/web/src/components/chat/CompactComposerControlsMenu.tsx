@@ -2,6 +2,7 @@ import { ProviderInteractionMode } from "@workjet/contracts";
 import { createContext, memo, useContext, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { SettingsIcon } from "lucide-react";
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -16,6 +17,10 @@ import {
 
 /** Sichtbarer und zugänglicher Name des Zahnrad-Menüs. */
 export const COMPOSER_OPTIONS_MENU_LABEL = "Optionen";
+
+function composerOptionsLabel(): string {
+  return workjetUiLanguage() === "en" ? "Options" : COMPOSER_OPTIONS_MENU_LABEL;
+}
 
 /**
  * Inline-Zeilen des Composers (Systemprompt): Ein Eintrag im Optionen-Menü
@@ -110,12 +115,15 @@ export function CompactComposerControlsMenuView(
               size="sm"
               variant="ghost"
               className="shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80"
-              aria-label={COMPOSER_OPTIONS_MENU_LABEL}
-              title={COMPOSER_OPTIONS_MENU_LABEL}
+              aria-label={composerOptionsLabel()}
             />
           }
         >
           <SettingsIcon aria-hidden="true" className="size-4" />
+          {/* The word, not a hover tooltip, says what the gear does (#590). */}
+          <span aria-hidden="true" className="text-xs max-sm:hidden">
+            {composerOptionsLabel()}
+          </span>
         </MenuTrigger>
         <MenuPopup align="start" side="top" className="max-w-80">
           <ComposerInlineRowContext.Provider value={menuContext}>
@@ -151,7 +159,7 @@ export function CompactComposerControlsMenuView(
             ) : null}
             {props.showInteractionModeToggle ? (
               <MenuGroup>
-                <MenuGroupLabel>Modus</MenuGroupLabel>
+                <MenuGroupLabel>{workjetUiLanguage() === "en" ? "Mode" : "Modus"}</MenuGroupLabel>
                 <MenuRadioGroup
                   value={props.interactionMode}
                   onValueChange={(value) => {
@@ -159,8 +167,12 @@ export function CompactComposerControlsMenuView(
                     props.onToggleInteractionMode();
                   }}
                 >
-                  <MenuRadioItem value="default">Bauen</MenuRadioItem>
-                  <MenuRadioItem value="plan">Planen</MenuRadioItem>
+                  <MenuRadioItem value="default">
+                    {workjetUiLanguage() === "en" ? "Build" : "Bauen"}
+                  </MenuRadioItem>
+                  <MenuRadioItem value="plan">
+                    {workjetUiLanguage() === "en" ? "Plan" : "Planen"}
+                  </MenuRadioItem>
                 </MenuRadioGroup>
               </MenuGroup>
             ) : null}

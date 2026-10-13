@@ -31,6 +31,7 @@ import {
   WorkjetDeviceWebRtcResponseV1,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import { projectControlReadKey } from "@workjet/shared/projectControlRead";
@@ -163,6 +164,7 @@ interface ActiveGuest {
  * process), so this constant IS the memory bound of the pool.
  */
 export const CTOX_GUEST_POOL_LIMIT = 4;
+const CTOX_GUEST_REBUILD_INTERVAL_MS = 10 * 60 * 1000;
 const CTOX_POOLED_GUEST_BOUNDS: CtoxGuestBounds = { x: 0, y: 0, width: 1, height: 1 };
 
 interface PooledGuest extends ActiveGuest {
@@ -1041,6 +1043,20 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     let guestUseSequence = 0;
     const shellGenerations = new Map<string, string>();
     const listFailures = new WeakMap<WebContents, number>();
+    const lastGuestRebuildAt = new Map<string, number>();
+    // Claim under the pool lock, before teardown. Failed preparations also
+    // consume the interval so the next request cannot restart the cold load.
+    const claimGuestRebuild = (instanceId: string) =>
+      Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        const previous = lastGuestRebuildAt.get(instanceId);
+        if (previous !== undefined && now - previous < CTOX_GUEST_REBUILD_INTERVAL_MS) {
+          yield* Effect.annotateCurrentSpan("guest.rebuild.cooldown", true);
+          return false;
+        }
+        lastGuestRebuildAt.set(instanceId, now);
+        return true;
+      });
     const pendingLists = new WeakMap<
       WebContents,
       Map<string, Deferred.Deferred<CtoxWorkjetProjectControlResult>>
@@ -1656,6 +1672,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               { ...state, activeId: instanceId, pool },
             ] as const;
           }
+          if (
+            (warm !== undefined || lastGuestRebuildAt.has(instanceId)) &&
+            !(yield* claimGuestRebuild(instanceId))
+          )
+            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
           if (warm !== undefined) {
             // A pooled guest whose webContents or window died is unusable;
             // destroy it through the shared teardown before the cold load.
@@ -1727,6 +1748,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             pool.set(instanceId, { ...warm, lastUsedAt: stamp });
             return [{ _tag: "ready", instanceId } as const, { ...state, pool }] as const;
           }
+          if (
+            (warm !== undefined || lastGuestRebuildAt.has(instanceId)) &&
+            !(yield* claimGuestRebuild(instanceId))
+          )
+            return [{ _tag: "failed", code: "guest_failed" } as const, state] as const;
           if (warm !== undefined) {
             pool.delete(instanceId);
             destroyPooledGuest(warm);
@@ -2151,8 +2177,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const rebuildPooled = (instanceId: string, expected: PooledGuest) =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.gen(function* () {
-          if (state.pool.get(instanceId)?.view !== expected.view)
-            return [undefined, state] as const;
+          if (state.pool.get(instanceId)?.view !== expected.view) return [false, state] as const;
+          if (!(yield* claimGuestRebuild(instanceId))) return [false, state] as const;
           const attached = state.activeId === instanceId;
           destroyPooledGuest(expected);
           const pool = new Map(state.pool);
@@ -2169,7 +2195,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             emitGuestState(instanceId, "warm");
           } else emitGuestState(instanceId, "none");
           return [
-            undefined,
+            true,
             { ...state, pool, activeId: attached && !replacement ? undefined : state.activeId },
           ] as const;
         }),
@@ -2522,8 +2548,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           listFailures.set(guest.view.webContents, failures);
         }
         if (staleShell(guest) || failures >= 3) {
-          yield* rebuildPooled(instanceId, guest);
-          return yield* requestProjectControlOnce(instanceId, request);
+          if (yield* rebuildPooled(instanceId, guest))
+            return yield* requestProjectControlOnce(instanceId, request);
         }
         return result;
       });

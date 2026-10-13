@@ -81,7 +81,7 @@ export const resolveWorkBlockStartMillis = (
   priorPayloads: ReadonlyArray<unknown>,
 ): number => {
   const priorEndMillis = [...priorPayloads]
-    .reverse()
+    .toReversed()
     .map(payloadEndMillis)
     .find((millis) => millis !== undefined);
   return Math.min(endedMillis, Math.max(issuedAt, priorEndMillis ?? issuedAt));

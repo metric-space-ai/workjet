@@ -856,54 +856,75 @@ function ProjectGallery({
               <div
                 className="inline-flex gap-1 rounded-md border border-border p-1"
                 role="group"
-                aria-label="Projektansicht"
+                aria-label={t("Projektansicht", "Project view")}
               >
                 <Button
                   size="sm"
-                  variant={view === "gallery" ? "secondary" : "ghost"}
-                  aria-pressed={view === "gallery"}
+                  variant={view === "gallery" && !showArchived ? "secondary" : "ghost"}
+                  aria-pressed={view === "gallery" && !showArchived}
                   data-workjet-action="project.view.gallery"
-                  onClick={() => setView("gallery")}
+                  onClick={() => {
+                    setShowArchived(false);
+                    setView("gallery");
+                  }}
                 >
-                  Projekte
+                  {t("Projekte", "Projects")}
                 </Button>
                 <Button
                   size="sm"
-                  variant={view === "calendar" ? "secondary" : "ghost"}
-                  aria-pressed={view === "calendar"}
+                  variant={view === "calendar" && !showArchived ? "secondary" : "ghost"}
+                  aria-pressed={view === "calendar" && !showArchived}
                   data-workjet-action="project.view.calendar"
                   onClick={() => {
                     setShowArchived(false);
                     setView("calendar");
                   }}
                 >
-                  Kalender
+                  {t("Kalender", "Calendar")}
+                </Button>
+                {/* Fixed place, fixed name: the archive is the third view, never a toggle that renames itself (#596). */}
+                <Button
+                  size="sm"
+                  variant={showArchived ? "secondary" : "ghost"}
+                  aria-pressed={showArchived}
+                  data-workjet-action="project.view.archive"
+                  onClick={() => {
+                    // The archive is a list of project cards; it never shows the calendar.
+                    setView("gallery");
+                    setShowArchived(true);
+                  }}
+                >
+                  {t("Archiv", "Archive")}
+                  {archivedCount > 0 ? (
+                    <span className="ms-1 tabular-nums text-muted-foreground">{archivedCount}</span>
+                  ) : null}
                 </Button>
               </div>
-              <Button
-                size="sm"
-                variant={showArchived ? "secondary" : "outline"}
-                aria-pressed={showArchived}
-                data-workjet-action="project.view.archive"
-                onClick={() => {
-                  // The archive is a list of project cards; it never shows the calendar.
-                  if (!showArchived) setView("gallery");
-                  setShowArchived((show) => !show);
-                }}
-              >
-                {`Archiv (${archivedCount})`}
-              </Button>
             </div>
           </div>
           {showArchived ? null : <InlineProjectCreate className="mb-5" />}
           {showArchived && visibleProjects.length === 0 ? (
-            <p
+            <div
               role="status"
-              className="py-10 text-center text-sm text-muted-foreground"
+              className="flex flex-col items-center gap-3 py-10 text-center text-sm"
               data-workjet-archive-empty=""
             >
-              Keine archivierten Projekte
-            </p>
+              <p>{t("Noch nichts archiviert", "Nothing archived yet")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Projekte archivierst du über das Menü einer Projektkarte.",
+                  "Archive a project from its card menu.",
+                )}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                data-workjet-action="project.archive.back"
+                onClick={() => setShowArchived(false)}
+              >
+                {t("Zurück zu Projekten", "Back to projects")}
+              </Button>
+            </div>
           ) : null}
           {projectsUnavailable ? (
             <div

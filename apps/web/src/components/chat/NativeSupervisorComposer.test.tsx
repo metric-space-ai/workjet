@@ -111,9 +111,10 @@ describe("native supervisor receipt display", () => {
     );
     expect(html.indexOf("<textarea")).toBeLessThan(html.indexOf("data-composer-bar="));
     expect(html).toContain('data-composer-bar="true"');
-    expect(html).toContain('aria-label="Optionen"');
+    // No gear with a single hidden choice: the mode sits inline once Chat is supported.
+    expect(html).not.toContain('aria-label="Optionen"');
     expect(html).toContain('aria-label="Diktieren"');
-    expect(html).not.toContain('aria-label="Nachrichtenart"');
+    expect(html).not.toContain('aria-label="Modus"');
     expect(html).toContain('aria-label="Luma"');
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Modell"');

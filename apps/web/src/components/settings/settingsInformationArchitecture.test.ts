@@ -2,8 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../AppSidebarLayout.tsx?raw";
 import routeTreeSource from "../../routeTree.gen.ts?raw";
-import connectionsRouteSource from "../../routes/settings.connections.tsx?raw";
-import keybindingsRouteSource from "../../routes/settings.keybindings.tsx?raw";
 import settingsRouteSource from "../../routes/settings.tsx?raw";
 import sidebarChromeSource from "../sidebar/SidebarChrome.tsx?raw";
 import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
@@ -41,12 +39,10 @@ describe("Workjet settings information architecture", () => {
     expect(appSidebarLayoutSource).not.toContain("businessOsSettingsRequestKey");
   });
 
-  it("redirects legacy settings entry points into the regular IA", () => {
+  it("redirects the settings root and has no hidden settings routes", () => {
     expect(settingsRouteSource).toContain('redirect({ to: "/settings/business-os"');
-    expect(connectionsRouteSource).toContain('redirect({ to: "/settings/computers"');
-    expect(connectionsRouteSource).not.toContain("ConnectionsSettings");
-    expect(keybindingsRouteSource).toContain('redirect({ to: "/settings/general"');
-    expect(keybindingsRouteSource).not.toContain("KeybindingsSettingsPanel");
+    expect(routeTreeSource).not.toContain("fullPath: '/settings/connections'");
+    expect(routeTreeSource).not.toContain("fullPath: '/settings/keybindings'");
   });
 
   it("has no pages outside Dev, Ops and Settings: /machines is gone, usage is Settings › Verbrauch", () => {

@@ -78,11 +78,12 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         });
         const verified = yield* sessions.verify(desktop.token);
         expect(verified.localDesktopEnvironmentId).toBe("environment-a");
-        const ticket = yield* sessions.issueWebSocketToken(verified.sessionId, {
-          ...(verified.localDesktopEnvironmentId === undefined
+        const ticket = yield* sessions.issueWebSocketToken(
+          verified.sessionId,
+          verified.localDesktopEnvironmentId === undefined
             ? {}
-            : { localDesktopEnvironmentId: verified.localDesktopEnvironmentId }),
-        });
+            : { localDesktopEnvironmentId: verified.localDesktopEnvironmentId },
+        );
         expect((yield* sessions.verifyWebSocketToken(ticket.token)).localDesktopEnvironmentId).toBe(
           "environment-a",
         );

@@ -227,3 +227,44 @@ NodeTest.test("legacy links and bundle identity are scoped metadata contexts", (
     false,
   );
 });
+
+NodeTest.test(
+  "chat and supervisor bars offer operation instead of describing internal state",
+  async () => {
+    // Sätze, die einen internen Zustand beschreiben statt eine Bedienung
+    // anzubieten (Workjet 0.0.96, Befund vom 13.10.2026). Die Sperre gilt für
+    // die Leisten und Köpfe, die sie einst zeigten.
+    const forbiddenStateCopy = [
+      "Die Datenabfrage hat zu lange gedauert",
+      "Durchlauf 0",
+      "Revision 0",
+      "noch nicht aktualisiert",
+      "Noch kein Mini-Kanban",
+      "Anfragen warten länger",
+    ];
+    const guardedFiles = [
+      "apps/web/src/components/PersistentWorkerGoal.tsx",
+      "apps/web/src/components/PersistentWorkerKanban.tsx",
+      "apps/web/src/components/ProjectSupervisorLumaField.tsx",
+      "apps/web/src/components/chat/NativeSupervisorComposer.tsx",
+      "apps/web/src/components/chat/NativeSupervisorRouteControls.tsx",
+      "apps/web/src/components/chat/NativeSupervisorConversation.tsx",
+      "apps/web/src/components/chat/ComposerWorkjetTargetControls.tsx",
+      "apps/web/src/components/chat/ComposerWorkerControl.tsx",
+      "apps/web/src/components/chat/ChatComposer.tsx",
+      "apps/web/src/components/chat/ComposerBar.tsx",
+      "apps/web/src/components/chat/ThreadErrorBanner.tsx",
+    ];
+    const read = (file) =>
+      NodeFSP.readFile(NodeURL.fileURLToPath(new URL(`../${file}`, import.meta.url)), "utf8");
+    for (const file of guardedFiles) {
+      const source = await read(file);
+      for (const sentence of forbiddenStateCopy) {
+        NodeAssert.ok(
+          !source.includes(sentence),
+          `${file} must not carry the state sentence „${sentence}“`,
+        );
+      }
+    }
+  },
+);

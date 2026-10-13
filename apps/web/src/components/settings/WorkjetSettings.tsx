@@ -615,17 +615,6 @@ export function AutomaticWorktreeStorageSettings({
   );
 }
 
-/** Seitentitel „Lumas“ – derselbe in allen Zuständen der Seite. */
-function LumasPageTitle() {
-  return (
-    <div className="px-3 sm:px-4">
-      <h1 className="text-xl font-semibold tracking-[-0.025em]">
-        {searchableSetting("workjet-workers").title}
-      </h1>
-    </div>
-  );
-}
-
 export function WorkjetSettingsView({
   configuration,
   draftScopeKey,
@@ -795,9 +784,8 @@ export function WorkjetSettingsView({
   }, [locationHash]);
 
   return (
-    <SettingsPageContainer className="gap-6">
+    <SettingsPageContainer className="gap-6" title={searchableSetting("workjet-workers").title}>
       <div className="space-y-3">
-        <LumasPageTitle />
         <SectionNavigation
           activeSection={activeSection}
           onSelect={(section) => {
@@ -1343,8 +1331,7 @@ export function WorkjetSettings({
     const resolving = scope.phase === "resolving" || connections.isPending;
     const noInstance = scope.phase === "blocked" && scope.blocker === "no-active-instance";
     return (
-      <SettingsPageContainer>
-        <LumasPageTitle />
+      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {resolving ? (
           <EmptyLoading
             title="Instanz wird geladen"
@@ -1544,8 +1531,7 @@ function ScopedWorkjetSettings({
 
   if (instance.data === null)
     return (
-      <SettingsPageContainer>
-        <LumasPageTitle />
+      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {instance.isPending ? (
           <EmptyLoading
             title="Lumas werden geladen"

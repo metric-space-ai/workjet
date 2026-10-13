@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { GalleryProject } from "../projectOverview";
@@ -43,9 +44,10 @@ export type AccountCalendarState = {
 
 /** Only exceptions earn a visible line; routine sync state stays in the tooltip. */
 export function accountCalendarProblem(calendar: AccountCalendarState): string | null {
-  if (calendar.status === "unavailable") return "Abgleich fehlgeschlagen";
-  if (calendar.status === "unsupported") return "Nicht unterstützt";
-  if (calendar.status === "ready" && calendar.truncated) return "Teilweise abgeglichen";
+  if (calendar.status === "unavailable") return calText("Abgleich fehlgeschlagen", "Sync failed");
+  if (calendar.status === "unsupported") return calText("Nicht unterstützt", "Not supported");
+  if (calendar.status === "ready" && calendar.truncated)
+    return calText("Teilweise abgeglichen", "Partially synced");
   return null;
 }
 
@@ -54,11 +56,11 @@ export function accountCalendarStatusTitle(
   timeFormat: CalendarTimeFormat = "locale",
   locale: string = "de-DE",
 ): string {
-  if (calendar.status === "loading") return "Wird abgeglichen …";
+  if (calendar.status === "loading") return calText("Wird abgeglichen …", "Syncing …");
   if (calendar.status !== "ready") return accountCalendarProblem(calendar) ?? "";
   return calendar.syncedAtMs === null
-    ? "Abgeglichen"
-    : `Abgeglichen ${formatClockTime(calendar.syncedAtMs, timeFormat, undefined, locale)}`;
+    ? calText("Abgeglichen", "Synced")
+    : `${calText("Abgeglichen", "Synced")} ${formatClockTime(calendar.syncedAtMs, timeFormat, undefined, locale)}`;
 }
 
 type CalendarProject = GalleryProject & {
@@ -108,6 +110,17 @@ const CalendarFormatContext = createContext<CalendarFormat>({
 });
 
 /** Calendar week label per UI language; new languages add an entry. */
+const VIEW_LABEL_EN: Record<string, string> = {
+  day: "Day",
+  week: "Week",
+  month: "Month",
+  year: "Year",
+};
+
+function calText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 const WEEK_NUMBER_LABEL: Record<string, string> = { de: "KW", en: "Week" };
 
 function weekNumberLabel(locale: string, week: number): string {
@@ -220,7 +233,7 @@ export function buildSessionEvents(
       {
         id: `session:${session.id}`,
         calendarId: SESSION_CALENDAR_ID,
-        title: `${project.title} · Sitzung (${session.runStatus})`,
+        title: `${project.title} · ${calText("Sitzung", "Session")} (${session.runStatus})`,
         startMs: session.createdAtMs,
         endMs: session.createdAtMs,
         point: true,
@@ -298,7 +311,7 @@ function EventButton({
 }) {
   const { timeFormat, locale } = useContext(CalendarFormatContext);
   const formatTime = (ms: number) => formatClockTime(ms, timeFormat, undefined, locale);
-  const label = `${event.title}, ${event.allDay ? "ganztägig" : formatTime(event.startMs)}`;
+  const label = `${event.title}, ${event.allDay ? calText("ganztägig", "all day") : formatTime(event.startMs)}`;
   if (placement === "chip") {
     return (
       <button
@@ -452,9 +465,11 @@ function TimeGrid({
         <div
           className="grid border-b border-border py-1 text-xs"
           style={{ gridTemplateColumns: columns }}
-          aria-label="Ganztägige Termine"
+          aria-label={calText("Ganztägige Termine", "All-day events")}
         >
-          <span className="px-1 text-right text-muted-foreground">ganztägig</span>
+          <span className="px-1 text-right text-muted-foreground">
+            {calText("ganztägig", "all day")}
+          </span>
           {days.map((date) => (
             <div
               key={date}
@@ -701,20 +716,20 @@ export function ProjectCalendar({
   return (
     <CalendarFormatContext.Provider value={format}>
       <section
-        aria-label="Projektkalender"
+        aria-label={calText("Projektkalender", "Project calendar")}
         data-workjet-project-calendar=""
         className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]"
       >
         <aside className="order-2 space-y-6 lg:order-1">
           <label className="block text-sm">
-            Projekt
+            {calText("Projekt", "Project")}
             <select
-              aria-label="Kalenderprojekt"
+              aria-label={calText("Kalenderprojekt", "Calendar project")}
               value={projectKey}
               onChange={(event) => setProjectKey(event.target.value)}
               className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2"
             >
-              <option value="all">Alle Projekte</option>
+              <option value="all">{calText("Alle Projekte", "All projects")}</option>
               {projects.map((project) => (
                 <option key={project.key} value={project.key}>
                   {project.title}
@@ -729,8 +744,8 @@ export function ProjectCalendar({
             eventDates={eventDates}
             onSelect={setAnchor}
           />
-          <section aria-label="Kalender">
-            <h2 className="mb-2 text-sm font-medium">Kalender</h2>
+          <section aria-label={calText("Kalender", "Calendars")}>
+            <h2 className="mb-2 text-sm font-medium">{calText("Kalender", "Calendars")}</h2>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -746,7 +761,9 @@ export function ProjectCalendar({
                 }}
               />
               <span className="size-2.5 shrink-0 rounded-full bg-primary" aria-hidden />
-              <span className="min-w-0 break-words">Regeltermine</span>
+              <span className="min-w-0 break-words">
+                {calText("Regeltermine", "Regular meetings")}
+              </span>
             </label>
             <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
               <input
@@ -762,19 +779,24 @@ export function ProjectCalendar({
                   })
                 }
               />
-              Projektsitzungen
+              {calText("Projektsitzungen", "Project sessions")}
             </label>
             {sessionsStatus === "unavailable" && (
               <p role="status" className="mt-2 text-xs text-muted-foreground">
-                Sitzungen nicht erreichbar · Anzeige evtl. veraltet
+                {calText(
+                  "Sitzungen nicht erreichbar · Anzeige evtl. veraltet",
+                  "Sessions unreachable · may be out of date",
+                )}
               </p>
             )}
             {accountCalendars.length > 0 && (
-              <h3 className="mt-4 text-sm font-medium">Verbundene Konten</h3>
+              <h3 className="mt-4 text-sm font-medium">
+                {calText("Verbundene Konten", "Connected accounts")}
+              </h3>
             )}
             {accountsUnavailable && (
               <p role="status" className="mt-2 text-xs text-muted-foreground">
-                Kontokalender nicht erreichbar.
+                {calText("Kontokalender nicht erreichbar.", "Account calendars unreachable.")}
               </p>
             )}
             {accountCalendars.map((calendar) => {
@@ -810,13 +832,13 @@ export function ProjectCalendar({
             })}
             {accountsTruncated && (
               <p role="status" className="mt-2 text-xs text-muted-foreground">
-                Kontenliste unvollständig.
+                {calText("Kontenliste unvollständig.", "Account list incomplete.")}
               </p>
             )}
             {(onRefreshSessions || onRefreshAccounts) && (
               <Button
                 size="sm"
-                variant="ghost"
+                variant="outline"
                 className="mt-2"
                 disabled={sessionsStatus === "loading" || accountsLoading}
                 onClick={() => {
@@ -824,21 +846,33 @@ export function ProjectCalendar({
                   onRefreshAccounts?.();
                 }}
               >
-                Aktualisieren
+                {calText("Aktualisieren", "Refresh")}
               </Button>
             )}
           </section>
           {unscheduled.length > 0 && (
-            <section aria-label="Projekte ohne Regeltermin">
-              <h2 className="text-sm font-medium">Ohne Regeltermin</h2>
+            <section
+              aria-label={calText(
+                "Projekte ohne Regeltermin",
+                "Projects without a regular meeting",
+              )}
+            >
+              <h2 className="text-sm font-medium">
+                {calText("Ohne Regeltermin", "Without regular meeting")}
+              </h2>
+              {/* Real buttons, not caption-like text (#595): each opens the project to set its meeting. */}
               <div className="mt-2 flex flex-wrap gap-1">
                 {unscheduled.map((project) => (
                   <Button
                     key={project.key}
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={project.onOpen}
                     data-workjet-action={`project.open.calendar:${project.key}`}
+                    aria-label={calText(
+                      `${project.title}: Termin festlegen`,
+                      `${project.title}: set meeting`,
+                    )}
                   >
                     {project.title}
                     <ArrowUpRightIcon className="size-3" />
@@ -854,7 +888,7 @@ export function ProjectCalendar({
           <div className="sticky top-2 z-20">
             <InlineExpand
               hideCollapseControl
-              label="Termindetails"
+              label={calText("Termindetails", "Event details")}
               open={selectedEvent !== null}
               onOpenChange={(open) => {
                 if (!open) setSelectedEvent(null);
@@ -862,14 +896,14 @@ export function ProjectCalendar({
             >
               {selectedEvent !== null && (
                 <section
-                  aria-label="Termindetails"
+                  aria-label={calText("Termindetails", "Event details")}
                   className="mb-4 rounded-md border border-border bg-background p-4 shadow-sm"
                   data-workjet-calendar-event-details=""
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="font-semibold">{selectedEvent.title}</h2>
                     <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
-                      Schließen
+                      {calText("Schließen", "Close")}
                     </Button>
                   </div>
                   <p className="mt-2 text-sm">
@@ -882,19 +916,21 @@ export function ProjectCalendar({
                   {selectedEvent.notes && (
                     <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
                   )}
-                  <p className="mt-2 text-xs text-muted-foreground">Kontotermin · nur lesen</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {calText("Kontotermin · nur lesen", "Account event · read-only")}
+                  </p>
                 </section>
               )}
             </InlineExpand>
           </div>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
-              Heute
+              {calText("Heute", "Today")}
             </Button>
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="Zurück"
+              aria-label={calText("Zurück", "Previous")}
               onClick={() => setAnchor((previous) => shiftAnchor(view, previous, -1))}
             >
               <ChevronLeftIcon />
@@ -902,7 +938,7 @@ export function ProjectCalendar({
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="Weiter"
+              aria-label={calText("Weiter", "Next")}
               onClick={() => setAnchor((previous) => shiftAnchor(view, previous, 1))}
             >
               <ChevronRightIcon />
@@ -912,7 +948,7 @@ export function ProjectCalendar({
             </h2>
             <div
               role="group"
-              aria-label="Kalenderansicht"
+              aria-label={calText("Kalenderansicht", "Calendar view")}
               className="inline-flex gap-1 rounded-md border border-border p-1"
             >
               {VIEWS.map((option) => (
@@ -923,7 +959,7 @@ export function ProjectCalendar({
                   aria-pressed={view === option.value}
                   onClick={() => setView(option.value)}
                 >
-                  {option.label}
+                  {calText(option.label, VIEW_LABEL_EN[option.value] ?? option.label)}
                 </Button>
               ))}
             </div>

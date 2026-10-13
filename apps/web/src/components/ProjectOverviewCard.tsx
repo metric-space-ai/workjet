@@ -5,7 +5,7 @@ import {
   type ProjectCardConfigurationValues,
 } from "./ProjectOverviewEditor";
 import type { ProjectOverview } from "@workjet/contracts";
-import { ArrowUpRightIcon, EllipsisIcon, ExternalLinkIcon, XIcon } from "lucide-react";
+import { EllipsisIcon, XIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -152,6 +152,10 @@ export function ProjectOverviewCard({
           });
         }
       : undefined;
+  const configureCard =
+    archived || (!saveCardConfiguration && !onConfigure)
+      ? undefined
+      : () => (saveCardConfiguration ? setEditing("configure") : onConfigure?.());
   const changeArchive = async () => {
     if (!onSave || archivePending) return false;
     setArchivePending(true);
@@ -190,27 +194,25 @@ export function ProjectOverviewCard({
               {project.title}
             </button>
           </h2>
-          {website && !titleIsWebsite && (
-            <p title={website} className="truncate text-xs text-muted-foreground">
-              {websiteHost}
-            </p>
+          {/* The website is a visible domain link, not an icon explained by a tooltip (#577). */}
+          {website && (
+            <a
+              href={website}
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label={projectOverviewFormat(text.cardOpenWebsiteLabel, {
+                title: project.title,
+                url: website,
+              })}
+              data-workjet-action={`project.open.website:${project.key}`}
+              className="block truncate text-xs text-muted-foreground hover:text-foreground"
+            >
+              {titleIsWebsite
+                ? website.replace(/^https?:\/\//, "").replace(/\/$/, "")
+                : websiteHost}
+            </a>
           )}
         </div>
-        {website && (
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            render={<a href={website} target="_blank" rel="noreferrer noopener" />}
-            title={text.cardOpenWebsite}
-            aria-label={projectOverviewFormat(text.cardOpenWebsiteLabel, {
-              title: project.title,
-              url: website,
-            })}
-            data-workjet-action={`project.open.website:${project.key}`}
-          >
-            <ExternalLinkIcon className="size-4" aria-hidden="true" />
-          </Button>
-        )}
         {tokenBudget}
         {reorderHandle}
         {
@@ -222,12 +224,6 @@ export function ProjectOverviewCard({
               <EllipsisIcon className="size-4" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end">
-              <MenuItem
-                onClick={() => setEditing("exit")}
-                data-workjet-action={`project.exit_model.menu:${project.key}`}
-              >
-                {t("Exit-Bewertung", "Exit valuation")}
-              </MenuItem>
               {onRefreshKpis && scopedKpis && scopedKpis.items.length > 0 && (
                 <MenuItem
                   disabled={refreshPending}
@@ -237,17 +233,6 @@ export function ProjectOverviewCard({
                   {refreshPending
                     ? t("Wird berechnet …", "Calculating …")
                     : t("KPIs neu berechnen", "Recalculate KPIs")}
-                </MenuItem>
-              )}
-              {(saveCardConfiguration || onConfigure) && (
-                <MenuItem
-                  onClick={() =>
-                    saveCardConfiguration ? setEditing("configure") : onConfigure?.()
-                  }
-                  aria-label={t(`${project.title} konfigurieren`, `Configure ${project.title}`)}
-                  data-workjet-action={`project.configure.gallery:${project.key}`}
-                >
-                  {t("Projekt konfigurieren", "Configure project")}
                 </MenuItem>
               )}
               {repository && (
@@ -376,19 +361,11 @@ export function ProjectOverviewCard({
               )}
             </div>
           )}
-          <Button
-            size="icon-sm"
-            onClick={onOpen}
-            title={text.cardOpenProject}
-            aria-label={openProjectLabel}
-            data-workjet-action={`project.open.gallery:${project.key}`}
-            className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
-          >
-            <ArrowUpRightIcon className="size-4" aria-hidden="true" />
-          </Button>
           <ProjectExitModelSummary
             projectId={project.id}
             assessment={project.configuration?.exitModel ?? null}
+            onEdit={archived ? undefined : () => setEditing("exit")}
+            editLabel={t("Exit-Bewertung bearbeiten", "Edit exit valuation")}
           />
         </div>
       )}
@@ -400,8 +377,25 @@ export function ProjectOverviewCard({
           exitStatus={project.configuration?.exitModel?.status ?? null}
         />
       ) : null}
-      <div className="border-t border-border px-3 py-3">
-        <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
+      <div className="relative border-t border-border px-3 py-3">
+        {/* Tapping the KPI strip edits the card inline; the menu keeps only rare actions (#561). */}
+        {configureCard && !(project.native && scopedKpis) && (
+          <button
+            type="button"
+            onClick={configureCard}
+            aria-label={t(`${project.title} konfigurieren`, `Configure ${project.title}`)}
+            data-workjet-action={`project.configure.gallery:${project.key}`}
+            className="absolute inset-0 z-0 cursor-pointer hover:bg-accent/40"
+          />
+        )}
+        <dl
+          className={
+            configureCard && !(project.native && scopedKpis)
+              ? "pointer-events-none relative grid min-w-0 grid-cols-3 gap-2 [&_a]:pointer-events-auto"
+              : "relative grid min-w-0 grid-cols-3 gap-2"
+          }
+          data-workjet-project-card-slots=""
+        >
           {(["first", "second", "third"] as const).map((position, index) => {
             if (project.native && scopedKpis)
               return (

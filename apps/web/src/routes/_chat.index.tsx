@@ -135,6 +135,7 @@ import {
   selectWorkjetProject,
   useWorkjetProjectRegistry,
 } from "../workjetProjectRegistry";
+import { useUiText } from "../hooks/useUiText";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../activeWorkjetScope";
 
 function ChatIndexRouteView() {
@@ -563,7 +564,7 @@ function IndexDraftLanding() {
               if (selectWorkjetProject(activeCtoxInstanceId, project.id))
                 selectProjectOverviewRef(activeCtoxInstanceId, null);
             } else if (project.local !== null)
-              selectProjectOverviewRef(
+              openCreatedProject(
                 activeCtoxInstanceId,
                 scopeProjectRef(project.local.environmentId, project.local.id),
               );
@@ -667,6 +668,7 @@ function ProjectGallery({
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
 }) {
+  const t = useUiText();
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"gallery" | "calendar">("gallery");
   const [galleryOrder, setGalleryOrder] = useState<{
@@ -862,62 +864,86 @@ function ProjectGallery({
     <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
       <main className="flex-1 overflow-auto px-5 py-6 sm:px-6" data-workjet-project-gallery="">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-[22px] font-semibold">
-              {showArchived ? "Archivierte Projekte" : "Alle Projekte"}
+          <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+            {/* No visible page title: the pressed view switch already says where you are (#576). */}
+            <h1 className="sr-only">
+              {showArchived
+                ? t("Archivierte Projekte", "Archived projects")
+                : t("Alle Projekte", "All projects")}
             </h1>
             <div className="flex flex-wrap items-center gap-2">
               <div
                 className="inline-flex gap-1 rounded-md border border-border p-1"
                 role="group"
-                aria-label="Projektansicht"
+                aria-label={t("Projektansicht", "Project view")}
               >
                 <Button
                   size="sm"
-                  variant={view === "gallery" ? "secondary" : "ghost"}
-                  aria-pressed={view === "gallery"}
+                  variant={view === "gallery" && !showArchived ? "secondary" : "ghost"}
+                  aria-pressed={view === "gallery" && !showArchived}
                   data-workjet-action="project.view.gallery"
-                  onClick={() => setView("gallery")}
+                  onClick={() => {
+                    setShowArchived(false);
+                    setView("gallery");
+                  }}
                 >
-                  Projekte
+                  {t("Projekte", "Projects")}
                 </Button>
                 <Button
                   size="sm"
-                  variant={view === "calendar" ? "secondary" : "ghost"}
-                  aria-pressed={view === "calendar"}
+                  variant={view === "calendar" && !showArchived ? "secondary" : "ghost"}
+                  aria-pressed={view === "calendar" && !showArchived}
                   data-workjet-action="project.view.calendar"
                   onClick={() => {
                     setShowArchived(false);
                     setView("calendar");
                   }}
                 >
-                  Kalender
+                  {t("Kalender", "Calendar")}
+                </Button>
+                {/* Fixed place, fixed name: the archive is the third view, never a toggle that renames itself (#596). */}
+                <Button
+                  size="sm"
+                  variant={showArchived ? "secondary" : "ghost"}
+                  aria-pressed={showArchived}
+                  data-workjet-action="project.view.archive"
+                  onClick={() => {
+                    // The archive is a list of project cards; it never shows the calendar.
+                    setView("gallery");
+                    setShowArchived(true);
+                  }}
+                >
+                  {t("Archiv", "Archive")}
+                  {archivedCount > 0 ? (
+                    <span className="ms-1 tabular-nums text-muted-foreground">{archivedCount}</span>
+                  ) : null}
                 </Button>
               </div>
-              <Button
-                size="sm"
-                variant={showArchived ? "secondary" : "outline"}
-                aria-pressed={showArchived}
-                data-workjet-action="project.view.archive"
-                onClick={() => {
-                  // The archive is a list of project cards; it never shows the calendar.
-                  if (!showArchived) setView("gallery");
-                  setShowArchived((show) => !show);
-                }}
-              >
-                {`Archiv (${archivedCount})`}
-              </Button>
             </div>
           </div>
           {showArchived ? null : <InlineProjectCreate className="mb-5" />}
           {showArchived && visibleProjects.length === 0 ? (
-            <p
+            <div
               role="status"
-              className="py-10 text-center text-sm text-muted-foreground"
+              className="flex flex-col items-center gap-3 py-10 text-center text-sm"
               data-workjet-archive-empty=""
             >
-              Keine archivierten Projekte
-            </p>
+              <p>{t("Noch nichts archiviert", "Nothing archived yet")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Projekte archivierst du über das Menü einer Projektkarte.",
+                  "Archive a project from its card menu.",
+                )}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                data-workjet-action="project.archive.back"
+                onClick={() => setShowArchived(false)}
+              >
+                {t("Zurück zu Projekten", "Back to projects")}
+              </Button>
+            </div>
           ) : null}
           {projectsUnavailable ? (
             <div
@@ -1033,6 +1059,28 @@ function ProjectGallery({
 }
 
 const PROJECT_OPENING_TIMEOUT_MS = 10_000;
+
+/**
+ * Opens a project that may exist only locally yet (just created, registration pending).
+ * A previously selected native project would otherwise win and the user lands on
+ * the old project instead of the new one (#585).
+ */
+function openCreatedProject(
+  instanceId: string | null,
+  project: ReturnType<typeof scopeProjectRef>,
+): void {
+  if (instanceId !== null && selectWorkjetProject(instanceId, project.projectId)) {
+    selectProjectOverviewRef(instanceId, null);
+    return;
+  }
+  if (instanceId !== null) selectWorkjetProject(instanceId, null);
+  selectProjectOverviewRef(instanceId, project);
+}
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 const MODEL_ACCOUNT_MISSING =
   "Kein Modell-Konto: Der Supervisor startet, sobald eines eingerichtet ist.";
@@ -1236,6 +1284,14 @@ function InlineProjectCreate({
   const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
+  const [progressStep, setProgressStep] = useState<{ step: number; of: number } | null>(null);
+  const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
+  const [progressNow, setProgressNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (progressStartedAt === null) return;
+    const timer = window.setInterval(() => setProgressNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [progressStartedAt]);
   const [error, setError] = useState<string | null>(null);
   const attemptRef = useRef<{
     key: string;
@@ -1307,7 +1363,7 @@ function InlineProjectCreate({
       setOpen(false);
       toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-        selectProjectOverviewRef(instanceId, scopeProjectRef(environmentId, attempt.projectId));
+        openCreatedProject(instanceId, scopeProjectRef(environmentId, attempt.projectId));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
     } finally {
@@ -1331,15 +1387,25 @@ function InlineProjectCreate({
         setOpen(false);
         toastManager.add({ type: "info", title: `„${duplicate.title}“ ist schon da – geöffnet` });
         if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-          selectProjectOverviewRef(
-            instanceId,
-            scopeProjectRef(sources.environmentId, duplicate.id),
-          );
+          openCreatedProject(instanceId, scopeProjectRef(sources.environmentId, duplicate.id));
         return;
       }
-      setProgress(source === "clone" ? "Repository wird geklont …" : "Projekt wird angelegt …");
+      const en = workjetUiLanguage() === "en";
+      setProgressStartedAt(Date.now());
+      setProgressNow(Date.now());
+      setProgressStep({ step: 1, of: 2 });
+      setProgress(
+        source === "clone"
+          ? en
+            ? "Cloning repository …"
+            : "Repository wird geklont …"
+          : en
+            ? "Checking folder …"
+            : "Ordner wird geprüft …",
+      );
       const workspaceRoot = await sources.resolveWorkspaceRoot();
-      setProgress("Projekt wird angelegt …");
+      setProgressStep({ step: 2, of: 2 });
+      setProgress(en ? "Creating project …" : "Projekt wird angelegt …");
       const created = await sources.createWorkspaceProject({
         title: trimmed,
         workspaceRoot,
@@ -1356,14 +1422,13 @@ function InlineProjectCreate({
           : { type: "info", title: `„${created.reusedTitle}“ ist schon da – geöffnet` },
       );
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-        selectProjectOverviewRef(
-          instanceId,
-          scopeProjectRef(created.environmentId, created.projectId),
-        );
+        openCreatedProject(instanceId, scopeProjectRef(created.environmentId, created.projectId));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
     } finally {
       setProgress(null);
+      setProgressStep(null);
+      setProgressStartedAt(null);
       setPending(false);
     }
   };
@@ -1410,7 +1475,33 @@ function InlineProjectCreate({
         onAction={() => void navigate({ to: "/settings/computers" })}
       />
     ) : null;
-  const status = error ?? progress ?? requirement ?? undefined;
+  // Clone/folder progress (#584): step, elapsed time and a running bar, not one grey line.
+  const progressNode =
+    progress !== null && progressStep !== null && progressStartedAt !== null ? (
+      <div className="grid gap-1" data-workjet-project-create-progress="">
+        <div className="flex items-center justify-between gap-2">
+          <span>
+            {workjetUiLanguage() === "en"
+              ? `Step ${progressStep.step} of ${progressStep.of}`
+              : `Schritt ${progressStep.step} von ${progressStep.of}`}
+            {" · "}
+            {progress}
+          </span>
+          <span className="tabular-nums">
+            {formatElapsed(Math.max(0, progressNow - progressStartedAt))}
+          </span>
+        </div>
+        <div className="h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{ width: `${(progressStep.step / (progressStep.of + 1)) * 100}%` }}
+          />
+        </div>
+      </div>
+    ) : (
+      progress
+    );
+  const status = error ?? progressNode ?? requirement ?? undefined;
   const submitDisabled =
     effectiveTitle.trim().length === 0 ||
     instanceId === null ||

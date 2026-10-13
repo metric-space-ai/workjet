@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as TestClock from "effect/testing/TestClock";
+import { ProviderGatewayService } from "../providerGateway/ProviderGatewayService.ts";
+import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
+import { runMigrations } from "../persistence/Migrations.ts";
+import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
+import { make as makePool } from "./WorkerRunPool.ts";
+import { WorkerRunDraw, layer as drawLayer } from "./WorkerRunDraw.ts";
+import { assert, describe, expect, it } from "@effect/vitest";
 import {
   WorkjetConfiguration,
   WorkjetGatewayCatalog,
@@ -180,3 +190,67 @@ describe("official coding-worker qualification", () => {
     ).toEqual([]);
   });
 });
+it.effect(
+  "qualifies a fake worker and commits its immutable draw before its execution callback",
+  () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(now);
+      yield* runMigrations();
+      let reachable = true;
+      const gateway = {
+        catalog: () => Effect.succeed(evidence.catalog),
+        health: () => Effect.succeed(evidence.health),
+        modelChecks: () => Effect.succeed(evidence.checks),
+        accountModels: () => Effect.succeed(evidence.accountModels[0]!),
+      } as unknown as ProviderGatewayService["Service"];
+      const providers = {
+        refresh: () =>
+          Effect.succeed(
+            reachable
+              ? [
+                  {
+                    instanceId: worker.modelSelection.instanceId,
+                    driver: "codex",
+                    enabled: true,
+                    installed: true,
+                    status: "ready",
+                    availability: "available",
+                  },
+                ]
+              : [],
+          ),
+      } as unknown as ProviderRegistry["Service"];
+      const pool = yield* makePool.pipe(
+        Effect.provideService(ProviderGatewayService, gateway),
+        Effect.provideService(ProviderRegistry, providers),
+      );
+      const selected = yield* pool.select(
+        configuration,
+        worker.parent.environmentId,
+        "Fake worker assignment",
+      );
+      const saved = Option.getOrThrow(yield* (yield* WorkerRunDraw).get(selected.draw.briefSha256));
+      const fakeWorker = () => {
+        assert.deepEqual(saved, selected.draw);
+        return selected.profile.harness;
+      };
+      assert.equal(fakeWorker(), "codex-cli");
+      reachable = false;
+      assert.equal(
+        (yield* Effect.exit(
+          pool.select(configuration, worker.parent.environmentId, "Fake worker assignment"),
+        ))._tag,
+        "Failure",
+      );
+      assert.deepEqual(
+        Option.getOrThrow(yield* (yield* WorkerRunDraw).get(selected.draw.briefSha256)),
+        saved,
+      );
+      reachable = true;
+      assert.deepEqual(
+        (yield* pool.select(configuration, worker.parent.environmentId, "Fake worker assignment"))
+          .draw,
+        saved,
+      );
+    }).pipe(Effect.provide(drawLayer.pipe(Layer.provideMerge(NodeSqliteClient.layerMemory())))),
+);

@@ -185,13 +185,6 @@ function SourceControlItemMark({
   return (
     <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
       <Icon className="size-4.5 text-foreground/80" aria-hidden />
-      <span
-        className={cn(
-          "pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full ring-2 ring-background",
-          dotClassName,
-        )}
-        aria-hidden
-      />
     </span>
   );
 }
@@ -590,13 +583,16 @@ function ScopedSourceControlSettingsPanel({
               title="Versionsverwaltung"
               headerAction={scanButton}
             >
-              {result.versionControlSystems.map((item) => (
-                <DiscoveryItemRow key={`vcs:${item.kind}`} item={item}>
-                  {item.kind === "git" ? (
-                    <GitFetchIntervalSettings environmentId={environmentId} />
-                  ) : undefined}
-                </DiscoveryItemRow>
-              ))}
+              {/* Only usable systems: „Bald“/unavailable entries are not choices (#627). */}
+              {result.versionControlSystems
+                .filter((item) => item.implemented && item.status === "available")
+                .map((item) => (
+                  <DiscoveryItemRow key={`vcs:${item.kind}`} item={item}>
+                    {item.kind === "git" ? (
+                      <GitFetchIntervalSettings environmentId={environmentId} />
+                    ) : undefined}
+                  </DiscoveryItemRow>
+                ))}
             </SettingsSection>
           ) : null}
 
@@ -606,9 +602,11 @@ function ScopedSourceControlSettingsPanel({
               title="Hosting-Anbieter"
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
-              {result.sourceControlProviders.map((item) => (
-                <DiscoveryItemRow key={`provider:${item.kind}`} item={item} />
-              ))}
+              {result.sourceControlProviders
+                .filter((item) => item.status === "available")
+                .map((item) => (
+                  <DiscoveryItemRow key={`provider:${item.kind}`} item={item} />
+                ))}
             </SettingsSection>
           ) : null}
         </>

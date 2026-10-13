@@ -26,8 +26,6 @@ import {
   useEnvironmentIdentificationMode,
 } from "../hooks/useSettings";
 import ThreadSidebar from "./Sidebar";
-import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
-import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
   resolveSidebarStageFocusRingOffsetClass,
   useSidebarStageBackdropVariant,
@@ -290,16 +288,10 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
                   onResize: setSidebarWidth,
                 }}
               >
-                {sidebarSurface === "settings" ? (
-                  <>
-                    <SidebarChromeHeader isElectron={isElectron} />
-                    <SettingsSidebarNav pathname={pathname} />
-                  </>
-                ) : (
-                  <InstanceNavigationBoundary>
-                    <ThreadSidebar />
-                  </InstanceNavigationBoundary>
-                )}
+                {/* Settings open as a sheet over the app (#627): the app sidebar stays behind it. */}
+                <InstanceNavigationBoundary>
+                  <ThreadSidebar />
+                </InstanceNavigationBoundary>
                 <SidebarRail onDoubleClick={resetSidebarWidth} />
               </Sidebar>
             </InstanceSidebarBoundary>

@@ -1,11 +1,16 @@
 import { Link } from "@tanstack/react-router";
+import { OptionSelect } from "../ui/option-select";
 import { useEffect, useRef, useState } from "react";
 import { CheckIcon, CircleDashedIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import type { WorkjetSpeechConfig, WorkjetSpeechSettingsResponse } from "@workjet/contracts";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { Button } from "../ui/button";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import { requestSpeechSettings, speechCheckAudio } from "../../lib/workjetSpeechSettings";
+import {
+  requestSpeechSettings,
+  speechCheckAudio,
+  speechErrorText,
+} from "../../lib/workjetSpeechSettings";
 
 const controlClass = "h-8 min-w-0 rounded-md border border-border bg-background px-2 text-sm";
 const remedies: Readonly<Record<string, string>> = {
@@ -20,6 +25,12 @@ const remedies: Readonly<Record<string, string>> = {
   invalid_transcript: "Kein Transkript erhalten",
   backend_unavailable: "Nur über Mistral API",
 };
+
+function uiLanguage(): "de" | "en" {
+  return typeof document !== "undefined" && document.documentElement.lang.startsWith("en")
+    ? "en"
+    : "de";
+}
 
 export function SpeechSettingsPanel() {
   const { selectedId } = useCtoxMode();
@@ -84,8 +95,8 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
         setRecording(url.current);
       }
       return result;
-    } catch {
-      if (!active.signal.aborted) setError("Nicht geladen oder gespeichert");
+    } catch (failure) {
+      if (!active.signal.aborted) setError(speechErrorText(failure, uiLanguage()));
     } finally {
       if (controller.current === active && !active.signal.aborted) setBusy(undefined);
     }
@@ -155,7 +166,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               ? loadingSlow
                 ? "Laden dauert länger"
                 : "Lädt …"
-              : "Spracheinstellungen der Instanz nicht geladen"}
+              : (error ?? "Spracheinstellungen der Instanz nicht geladen")}
           </span>
           {busy === "speech.settings.read" && !loadingSlow ? null : (
             <Button
@@ -266,76 +277,72 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
           <SettingsRow
             title="Vorlesen"
             control={
-              <select
+              <OptionSelect
                 aria-label="Vorlesen"
-                className={controlClass + " w-full sm:w-64"}
+                className="w-full sm:w-64"
                 value={config?.synthesis ?? ""}
-                disabled={disabled}
-                onChange={(event) =>
+                placeholder={unloadedLabel}
+                disabled={disabled || !config}
+                options={[
+                  { value: "runtime", label: "Lokale Laufzeit" },
+                  { value: "mistral", label: "Mistral API" },
+                  ...(config?.synthesis === "computer"
+                    ? [{ value: "computer" as const, label: "Sprach-Rechner" }]
+                    : []),
+                ]}
+                onValueChange={(next) =>
                   config &&
-                  configure({
-                    ...config,
-                    synthesis: event.target.value === "mistral" ? "mistral" : "runtime",
-                  })
+                  configure({ ...config, synthesis: next === "mistral" ? "mistral" : "runtime" })
                 }
-              >
-                {!config && <option value="">{unloadedLabel}</option>}
-                <option value="runtime">Lokale Laufzeit</option>
-                <option value="mistral">Mistral API</option>
-                {config?.synthesis === "computer" && (
-                  <option value="computer">Sprach-Rechner</option>
-                )}
-              </select>
+              />
             }
           />
           <SettingsRow
             title="Transkription"
             control={
-              <select
+              <OptionSelect
                 aria-label="Transkription"
-                className={controlClass + " w-full sm:w-64"}
+                className="w-full sm:w-64"
                 value={config?.transcription ?? ""}
-                disabled={disabled}
-                onChange={(event) =>
+                placeholder={unloadedLabel}
+                disabled={disabled || !config}
+                options={[
+                  { value: "runtime", label: "Lokale Laufzeit" },
+                  { value: "mistral", label: "Mistral API" },
+                  ...(config?.transcription === "computer"
+                    ? [{ value: "computer" as const, label: "Sprach-Rechner" }]
+                    : []),
+                ]}
+                onValueChange={(next) =>
                   config &&
                   configure({
                     ...config,
-                    transcription: event.target.value === "mistral" ? "mistral" : "runtime",
+                    transcription: next === "mistral" ? "mistral" : "runtime",
                   })
                 }
-              >
-                {!config && <option value="">{unloadedLabel}</option>}
-                <option value="runtime">Lokale Laufzeit</option>
-                <option value="mistral">Mistral API</option>
-                {config?.transcription === "computer" && (
-                  <option value="computer">Sprach-Rechner</option>
-                )}
-              </select>
+              />
             }
           />
           <SettingsRow
             title="Stimme"
             control={
               <div className="flex w-full items-center gap-2">
-                <select
+                <OptionSelect
                   aria-label="Stimme"
-                  className={controlClass + " w-full sm:w-64"}
+                  className="w-full sm:w-64"
                   value={config?.voice_id ?? ""}
+                  placeholder={config ? "Stimme wählen" : unloadedLabel}
                   disabled={disabled || config?.synthesis !== "mistral"}
-                  onChange={(event) =>
-                    config && configure({ ...config, voice_id: event.target.value || null })
+                  options={[
+                    ...(config?.voice_id && !voices.some((voice) => voice.id === config.voice_id)
+                      ? [{ value: config.voice_id, label: "Aktuelle Stimme" }]
+                      : []),
+                    ...voices.map((voice) => ({ value: voice.id, label: voice.name || voice.id })),
+                  ]}
+                  onValueChange={(next) =>
+                    config && configure({ ...config, voice_id: next || null })
                   }
-                >
-                  <option value="">{config ? "Stimme wählen" : unloadedLabel}</option>
-                  {config?.voice_id && !voices.some((voice) => voice.id === config.voice_id) && (
-                    <option value={config.voice_id}>Aktuelle Stimme</option>
-                  )}
-                  {voices.map((voice) => (
-                    <option key={voice.id} value={voice.id}>
-                      {voice.name || voice.id}
-                    </option>
-                  ))}
-                </select>
+                />
                 <Button
                   size="sm"
                   variant="outline"

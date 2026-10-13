@@ -1,11 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { ProviderSettingsPanel } from "../components/settings/ProviderSettingsPanel";
-
-function SettingsHarnessesRoute() {
-  return <ProviderSettingsPanel sections="harnesses" />;
-}
-
+/** Coding agents moved onto Rechner (#554); old links land there. */
 export const Route = createFileRoute("/settings/harnesses")({
-  component: SettingsHarnessesRoute,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/computers", hash: "harnesses", replace: true });
+  },
 });

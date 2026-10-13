@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "./workjetProjectControl";
 import {
   ProjectOverview,
   type CtoxWorkjetProjectProjection,
@@ -88,13 +89,24 @@ export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
     slots: draft.slots.map(slot),
   });
 }
-export function projectUpdateAge(updatedAt: string | null, now: number = Date.now()): string {
-  if (updatedAt === null || !Number.isFinite(Date.parse(updatedAt))) return "Not available";
+export function projectUpdateAge(
+  updatedAt: string | null,
+  now: number = Date.now(),
+  language: "de" | "en" = workjetUiLanguage() === "en" ? "en" : "de",
+): string {
+  const en = language === "en";
+  if (updatedAt === null || !Number.isFinite(Date.parse(updatedAt))) {
+    return en ? "Not available" : "Nicht verfügbar";
+  }
   const minutes = Math.max(0, Math.floor((now - Date.parse(updatedAt)) / 60_000));
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-  return `${Math.floor(minutes / 1440)}d ago`;
+  if (minutes < 1) return en ? "Just now" : "Gerade eben";
+  if (minutes < 60) return en ? `${minutes}m ago` : `vor ${minutes} Min.`;
+  if (minutes < 1440) {
+    const hours = Math.floor(minutes / 60);
+    return en ? `${hours}h ago` : `vor ${hours} Std.`;
+  }
+  const days = Math.floor(minutes / 1440);
+  return en ? `${days}d ago` : days === 1 ? "vor 1 Tag" : `vor ${days} Tagen`;
 }
 export type GalleryLocalProject = Pick<
   OrchestrationProjectShell,

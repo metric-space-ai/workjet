@@ -1,4 +1,5 @@
 import { MousePointer2Icon } from "lucide-react";
+import { InlineSaveFooter } from "../ui/inline-panel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyThemeColorPreview,
@@ -919,18 +920,18 @@ export function ThemeEditorPanel({
           {error}
         </div>
       ) : null}
-      <div className="flex items-center justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
-          Abbrechen
-        </Button>
-        <Button disabled={!name.trim()} size="sm" onClick={handleSubmit}>
-          {mergeTarget
-            ? isEditing
-              ? `In „${mergeTarget.label}“ zusammenführen`
-              : "Palette hinzufügen"
-            : "Speichern"}
-        </Button>
-      </div>
+      <InlineSaveFooter
+        submitDisabled={!name.trim()}
+        onSave={handleSubmit}
+        onCancel={() => onOpenChange(false)}
+        {...(mergeTarget
+          ? {
+              submitLabel: isEditing
+                ? `In „${mergeTarget.label}“ zusammenführen`
+                : "Palette hinzufügen",
+            }
+          : {})}
+      />
     </section>
   );
 }

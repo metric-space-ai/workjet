@@ -1,4 +1,5 @@
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ProviderSettingsPanel } from "./ProviderSettingsPanel";
 import type {
   ComputerConnection,
   ComputerControlInput,
@@ -1568,7 +1569,7 @@ export function WorkjetComputersSettings({
   };
 
   return (
-    <SettingsPageContainer wide className="gap-6">
+    <SettingsPageContainer className="gap-6">
       {[...new Set(configuration.computers.map((computer) => computer.environmentId))]
         .filter((target) =>
           environments.some(
@@ -1738,6 +1739,8 @@ export function WorkjetComputersSettings({
           ) : null
         }
       />
+      {/* Coding agents are per machine, so they live on Rechner (#554). */}
+      <ProviderSettingsPanel sections="harnesses" embedded />
     </SettingsPageContainer>
   );
 }

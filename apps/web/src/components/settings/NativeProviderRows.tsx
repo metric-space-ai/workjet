@@ -1,4 +1,6 @@
 import { CheckIcon, XIcon, CircleDashedIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { Switch } from "../ui/switch";
+import { Checkbox } from "../ui/checkbox";
 import { useEffect, useState } from "react";
 import type {
   WorkjetNativeProviderAccount,
@@ -176,18 +178,17 @@ function NativeAccountRow({
               className="inline-flex max-w-full items-center gap-1 rounded border border-border/60 px-1.5 py-1 text-xs"
             >
               <label className="inline-flex min-w-0 items-center gap-1">
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label={`${model} für ${accountName}`}
                   checked={!account.excludedModels.includes(model)}
                   disabled={busy || !account.modelCatalog.models.includes(model)}
-                  onChange={(event) => {
+                  onCheckedChange={(checked) => {
                     void run({
                       action: "instance.providers.models.exclude",
                       accountId: account.id,
                       expectedAccountRevision: account.revision,
                       expectedRevision: registry.revision,
-                      models: event.target.checked
+                      models: checked
                         ? account.excludedModels.filter((id) => id !== model)
                         : [...account.excludedModels, model],
                     });
@@ -255,40 +256,21 @@ function NativeAccountRow({
         />
         <div role="cell" className="order-2 flex justify-center sm:order-4">
           {canEnable ? (
-            <label
-              className="relative inline-flex cursor-pointer items-center"
-              title={account.enabled ? "Konto deaktivieren" : "Konto aktivieren"}
-            >
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label={`${accountName} aktiv`}
-                data-workjet-action={`models.instance.account.${account.id}.enabled`}
-                checked={account.enabled}
-                disabled={busy || confirmRemove}
-                onChange={(event) => {
-                  void run({
-                    action: "instance.providers.account.enable",
-                    accountId: account.id,
-                    expectedAccountRevision: account.revision,
-                    expectedRevision: registry.revision,
-                    enabled: event.target.checked,
-                  });
-                }}
-                className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-              />
-              <span
-                aria-hidden
-                className="h-4 w-7 rounded-full bg-muted transition-colors peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-disabled:opacity-50"
-              >
-                <span
-                  className={
-                    "m-0.5 block size-3 rounded-full bg-background transition-transform" +
-                    (account.enabled ? " translate-x-3" : "")
-                  }
-                />
-              </span>
-            </label>
+            <Switch
+              aria-label={`${accountName} aktiv`}
+              data-workjet-action={`models.instance.account.${account.id}.enabled`}
+              checked={account.enabled}
+              disabled={busy || confirmRemove}
+              onCheckedChange={(checked) => {
+                void run({
+                  action: "instance.providers.account.enable",
+                  accountId: account.id,
+                  expectedAccountRevision: account.revision,
+                  expectedRevision: registry.revision,
+                  enabled: checked,
+                });
+              }}
+            />
           ) : (
             <span
               className="text-[11px]"

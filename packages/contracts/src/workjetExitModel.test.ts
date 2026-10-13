@@ -157,6 +157,46 @@ describe("native five-year exit assessment contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts one-click adoption of the run that was just read", () => {
+    const decodeRequest = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
+      onExcessProperty: "error",
+    });
+    const request = {
+      action: "project.exit_model.submit",
+      commandId: "command-one",
+      projectId: "project-one",
+      confirmRunId: "run-one",
+    };
+    expect(decodeRequest(request)).toEqual(request);
+    const adopted = {
+      ...assessment,
+      plan_summary: { ...assessment.plan_summary, confirmed: true },
+      confirmed_from_run_id: "run-one",
+    };
+    const adoptedAssessment = decode(adopted);
+    expect(adoptedAssessment.confirmed_from_run_id).toBe("run-one");
+    expect(decode(assessment).confirmed_from_run_id).toBeUndefined();
+    const decodeResponse = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse, {
+      onExcessProperty: "error",
+    });
+    const response = {
+      action: request.action,
+      commandId: request.commandId,
+      projectId: request.projectId,
+      assessment: adoptedAssessment,
+    };
+    expect(isWorkjetExitModelReceiptForRequest(request, decodeResponse(response))).toBe(true);
+    expect(
+      isWorkjetExitModelReceiptForRequest(request, {
+        ...response,
+        assessment: decode({ ...adopted, confirmed_from_run_id: "run-other" }),
+      }),
+    ).toBe(false);
+    expect(
+      isWorkjetExitModelReceiptForRequest(request, { ...response, commandId: "other-command" }),
+    ).toBe(false);
+  });
+
   it("accepts resource proposals through the existing project-control request", () => {
     const decodeRequest = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest);
     const request = {

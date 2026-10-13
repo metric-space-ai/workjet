@@ -34,6 +34,7 @@ import {
   WorkjetExitModelReadRequest,
   WorkjetExitModelRefreshRequest,
   WorkjetExitModelResponse,
+  WorkjetExitModelSubmitRequest,
 } from "./workjetExitModel.ts";
 import {
   WorkjetJourFixeSpeechRequests,
@@ -786,6 +787,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   WorkjetJourFixeNarrationReadRequest,
   WorkjetExitModelReadRequest,
   WorkjetExitModelRefreshRequest,
+  WorkjetExitModelSubmitRequest,
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
   ...WorkjetJourFixeSpeechRequests,

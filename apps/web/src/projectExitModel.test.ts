@@ -10,6 +10,8 @@ import {
   formatExitMissingInput,
   formatExitFinding,
   formatExitPercent,
+  formatExitProposal,
+  isConfirmableExitProposal,
   requestProjectExitModel,
 } from "./projectExitModel";
 import { exitModelFixture } from "./test/exitModelFixture";
@@ -93,6 +95,78 @@ describe("project exit assessment", () => {
     expect((await requestProjectExitModel("managed:selected", request, port))._tag).toBe("failed");
   });
 
+  it("adopts a proposal only when the receipt confirms the same run", async () => {
+    const proposal = {
+      ...exitModelFixture,
+      status: "blocked" as const,
+      result: null,
+      scenarios: [],
+      diagnostics: [],
+      run_id: "run-proposal",
+      plan_summary: { ...exitModelFixture.plan_summary!, confirmed: false },
+      missing_inputs: ["confirmed_resource_plan"],
+      findings: [
+        {
+          code: "resource_proposal_requires_confirmation",
+          message: "Vorschlag erfordert Bestätigung",
+        },
+      ],
+      resource_proposal: {
+        hours_per_week: 12,
+        monthly_budget_eur: 3_000,
+        comparison_mode: "project_specific" as const,
+      },
+      history: [],
+    };
+    const adopted = {
+      ...exitModelFixture,
+      plan_summary: { ...exitModelFixture.plan_summary!, confirmed: true },
+      missing_inputs: [],
+      confirmed_from_run_id: "run-proposal",
+    };
+    const submit = {
+      action: "project.exit_model.submit" as const,
+      commandId: CommandId.make("command-submit"),
+      projectId: ProjectId.make("project-one"),
+      confirmRunId: "run-proposal",
+    };
+    expect(isConfirmableExitProposal(proposal)).toBe(true);
+    expect(formatExitProposal(proposal.resource_proposal)).toBe("12 h/Woche · 3.000 €/Monat");
+    expect(exitModelPresentation(proposal, "project-one").value).toBe("—");
+    const matched = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "completed",
+      response: { ...submit, assessment: adopted },
+    });
+    await expect(requestProjectExitModel("managed:selected", submit, matched)).resolves.toEqual({
+      _tag: "completed",
+      assessment: expect.objectContaining({ confirmed_from_run_id: "run-proposal" }),
+    });
+    const wrongRun = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "completed",
+      response: {
+        ...submit,
+        assessment: { ...adopted, confirmed_from_run_id: "run-other" },
+      },
+    });
+    expect(await requestProjectExitModel("managed:selected", submit, wrongRun)).toEqual({
+      _tag: "failed",
+      message: "Antwort passt nicht zum Projekt.",
+      reason: "uncorrelated",
+    });
+    const timedOut = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "failed",
+      code: "timeout",
+    });
+    const timedOutResult = await requestProjectExitModel("managed:selected", submit, timedOut);
+    expect(timedOutResult._tag === "failed" && timedOutResult.reason).toBe("timeout");
+    const rejected = vi.fn<WorkjetProjectControlPort>().mockResolvedValue({
+      _tag: "failed",
+      code: "invalid_input",
+    });
+    const rejectedResult = await requestProjectExitModel("managed:selected", submit, rejected);
+    expect(rejectedResult._tag === "failed" && rejectedResult.reason).toBe("rejected");
+  });
+
   it("shows service absence without turning it into zero proceeds", async () => {
     const port = vi
       .fn<WorkjetProjectControlPort>()
@@ -100,6 +174,7 @@ describe("project exit assessment", () => {
     expect(await requestProjectExitModel("managed:selected", request, port)).toEqual({
       _tag: "failed",
       message: "Bewertungsdienst nicht verfügbar.",
+      reason: "unavailable",
     });
     expect(exitModelPresentation(null, "project-one").value).toBe("—");
   });

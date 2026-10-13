@@ -1298,6 +1298,20 @@ function InlineProjectCreate({
     setError(null);
     try {
       await activateInstance(instanceId);
+      const duplicate = sources.duplicate;
+      if (source === "clone" && duplicate !== null && sources.environmentId !== null) {
+        // Never clone into an existing working copy or add a second card.
+        sources.reset();
+        setSource("new");
+        setOpen(false);
+        toastManager.add({ type: "info", title: `„${duplicate.title}“ ist schon da – geöffnet` });
+        if (readActiveWorkjetScope().selectedInstanceId === instanceId)
+          selectProjectOverviewRef(
+            instanceId,
+            scopeProjectRef(sources.environmentId, duplicate.id),
+          );
+        return;
+      }
       setProgress(source === "clone" ? "Repository wird geklont …" : "Projekt wird angelegt …");
       const workspaceRoot = await sources.resolveWorkspaceRoot();
       setProgress("Projekt wird angelegt …");
@@ -1311,7 +1325,11 @@ function InlineProjectCreate({
       sources.reset();
       setSource("new");
       setOpen(false);
-      toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
+      toastManager.add(
+        created.reusedTitle === undefined
+          ? { type: "success", title: `Projekt „${trimmed}“ angelegt` }
+          : { type: "info", title: `„${created.reusedTitle}“ ist schon da – geöffnet` },
+      );
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
         selectProjectOverviewRef(
           instanceId,

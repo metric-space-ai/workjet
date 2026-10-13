@@ -1,6 +1,6 @@
 {
   "name": "@workjet/desktop",
-  "version": "0.0.95",
+  "version": "0.0.97-pre",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",

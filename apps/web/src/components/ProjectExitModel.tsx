@@ -20,38 +20,60 @@ import { Button } from "./ui/button";
 export function ProjectExitModelSummary({
   projectId,
   assessment,
+  onEdit,
+  editLabel,
 }: {
   readonly projectId: string;
   readonly assessment?: WorkjetExitModelAssessment | null;
+  /** When set, tapping the stamp opens the valuation inline (#561). */
+  readonly onEdit?: () => void;
+  readonly editLabel?: string;
 }) {
   const view = exitModelPresentation(assessment, projectId);
   const valued = view.value !== "—";
-  // Der Stempel ist immer sichtbar und bleibt reine Anzeige: nicht klickbar,
-  // damit ein Klick auf die Vorschau weiter das Projekt öffnet.
+  // Der Stempel ist immer sichtbar. Mit onEdit öffnet ein Tipp darauf die
+  // Bewertung inline; der Rest der Vorschau öffnet weiter das Projekt.
   // „Nicht bewertet“ trägt dieselbe Stempelform mit festem Grund wie der
   // Wertstempel; nur Text und Rahmen sind gedämpft, damit der Stempel auf
   // hellen wie dunklen Vorschauen lesbar bleibt (Kontrast ≥ 4,5:1).
+  const label = valued
+    ? view.value +
+      " · " +
+      view.label +
+      (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
+    : "Nicht bewertet";
+  const className =
+    "absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap tabular-nums shadow-sm " +
+    (valued
+      ? "border-foreground/70 bg-background/90 text-foreground"
+      : "border-neutral-500/70 bg-background/90 text-neutral-600 dark:border-neutral-400/70 dark:text-neutral-400");
+  const text = valued ? view.value : "Nicht bewertet";
+  if (onEdit)
+    return (
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={editLabel ? `${label} · ${editLabel}` : label}
+        className={
+          className +
+          " cursor-pointer hover:border-primary focus-visible:outline-2 focus-visible:outline-ring"
+        }
+        data-workjet-exit-model-status={view.status}
+        data-workjet-exit-model-stamp=""
+        data-workjet-action="project.exit_model.stamp"
+      >
+        {text}
+      </button>
+    );
   return (
     <div
       role="img"
-      aria-label={
-        valued
-          ? view.value +
-            " · " +
-            view.label +
-            (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
-          : "Nicht bewertet"
-      }
-      className={
-        "pointer-events-none absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap tabular-nums shadow-sm " +
-        (valued
-          ? "border-foreground/70 bg-background/90 text-foreground"
-          : "border-neutral-500/70 bg-background/90 text-neutral-600 dark:border-neutral-400/70 dark:text-neutral-400")
-      }
+      aria-label={label}
+      className={"pointer-events-none " + className}
       data-workjet-exit-model-status={view.status}
       data-workjet-exit-model-stamp=""
     >
-      {valued ? view.value : "Nicht bewertet"}
+      {text}
     </div>
   );
 }

@@ -130,6 +130,10 @@ export function ProjectOverviewCard({
           });
         }
       : undefined;
+  const configureCard =
+    archived || (!saveCardConfiguration && !onConfigure)
+      ? undefined
+      : () => (saveCardConfiguration ? setEditing("configure") : onConfigure?.());
   const changeArchive = async () => {
     if (!onSave || archivePending) return false;
     setArchivePending(true);
@@ -200,23 +204,6 @@ export function ProjectOverviewCard({
               <EllipsisIcon className="size-4" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end">
-              <MenuItem
-                onClick={() => setEditing("exit")}
-                data-workjet-action={`project.exit_model.menu:${project.key}`}
-              >
-                {t("Exit-Bewertung", "Exit valuation")}
-              </MenuItem>
-              {(saveCardConfiguration || onConfigure) && (
-                <MenuItem
-                  onClick={() =>
-                    saveCardConfiguration ? setEditing("configure") : onConfigure?.()
-                  }
-                  aria-label={t(`${project.title} konfigurieren`, `Configure ${project.title}`)}
-                  data-workjet-action={`project.configure.gallery:${project.key}`}
-                >
-                  {t("Projekt konfigurieren", "Configure project")}
-                </MenuItem>
-              )}
               {repository && (
                 <MenuItem
                   render={<a href={repository} target="_blank" rel="noreferrer noopener" />}
@@ -356,11 +343,26 @@ export function ProjectOverviewCard({
           <ProjectExitModelSummary
             projectId={project.id}
             assessment={project.configuration?.exitModel ?? null}
+            onEdit={archived ? undefined : () => setEditing("exit")}
+            editLabel={t("Exit-Bewertung bearbeiten", "Edit exit valuation")}
           />
         </div>
       )}
-      <div className="border-t border-border px-3 py-3">
-        <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
+      <div className="relative border-t border-border px-3 py-3">
+        {/* Tapping the KPI strip edits the card inline; the menu keeps only rare actions (#561). */}
+        {configureCard && (
+          <button
+            type="button"
+            onClick={configureCard}
+            aria-label={t(`${project.title} konfigurieren`, `Configure ${project.title}`)}
+            data-workjet-action={`project.configure.gallery:${project.key}`}
+            className="absolute inset-0 z-0 cursor-pointer hover:bg-accent/40"
+          />
+        )}
+        <dl
+          className="pointer-events-none relative grid min-w-0 grid-cols-3 gap-2 [&_a]:pointer-events-auto"
+          data-workjet-project-card-slots=""
+        >
           {(["first", "second", "third"] as const).map((position, index) => {
             const slot = slots[index] ?? null;
             const metric = scopedKpis

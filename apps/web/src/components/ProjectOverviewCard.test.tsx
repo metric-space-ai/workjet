@@ -159,8 +159,8 @@ describe("inline card back", () => {
     );
     expect(markup).toContain('data-workjet-exit-model-stamp=""');
     expect(markup).toContain("Nicht bewertet");
-    expect(markup).toContain("pointer-events-none");
-    expect(markup).not.toMatch(/<button[^>]*data-workjet-exit-model-stamp/);
+    // #561: the stamp itself opens the valuation inline.
+    expect(markup).toMatch(/<button[^>]*data-workjet-exit-model-stamp/);
   });
   it("renders the closed card without an expanded marker or a back face", () => {
     for (const props of [

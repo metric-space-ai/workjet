@@ -63,12 +63,13 @@ describe("project exit assessment display", () => {
     );
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
     expect(markup).toContain(formatExitEur(800_000));
-    // Der Stempel ist reine Anzeige: kein Knopf, Klicks öffnen über die Vorschau das Projekt.
+    // #561: ein Tipp auf den Stempel öffnet die Bewertung inline auf der Karte.
     expect(markup).not.toContain('aria-label="Fünf-Jahres-Exit-Bewertung ansehen"');
-    expect(markup).not.toMatch(/<button[^>]*data-workjet-exit-model-stamp/);
-    const stamp = markup.match(/<div[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/div>/);
+    const stamp = markup.match(
+      /<button[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/button>/,
+    );
     expect(stamp?.[1]).toBe(formatExitEur(800_000));
-    expect(stamp?.[0]).toContain("pointer-events-none");
+    expect(stamp?.[0]).toContain("cursor-pointer");
   });
 
   it("distinguishes proceeds, sale probability, conditional price and financing", () => {

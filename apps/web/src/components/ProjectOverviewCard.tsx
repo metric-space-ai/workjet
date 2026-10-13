@@ -21,6 +21,7 @@ import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverview
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { workjetUiLanguage } from "../workjetProjectControl";
+import { useSingleInlineExpand } from "./ui/inline-expand";
 
 export function ProjectOverviewCard({
   project,
@@ -99,6 +100,11 @@ export function ProjectOverviewCard({
   const archived = overview.archived === true;
   // Die Rückseite ersetzt nur die Vorschaufläche; Spalte und Breite der Karte bleiben.
   const closeEditing = () => setEditing(null);
+  // Only one card editor (Exit-Bewertung / Konfigurieren) is open across the
+  // gallery: opening one closes every other InlineExpand, like the KPI tiles.
+  useSingleInlineExpand(editing !== null, (open) => {
+    if (!open) setEditing(null);
+  });
   useEffect(() => {
     if (editing === null) return;
     const onKey = (event: KeyboardEvent) => {

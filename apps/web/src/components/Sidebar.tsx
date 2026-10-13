@@ -3939,7 +3939,9 @@ export default function Sidebar() {
                                 closeOnClick
                                 data-workjet-action={`project.select:${project.id}`}
                               >
-                                <span className="min-w-0 truncate">{project.title}</span>
+                                <span className="min-w-0 truncate" data-sensitive="">
+                                  {project.title}
+                                </span>
                                 <span className="ml-auto">
                                   <ProjectTokenBudget
                                     project={{

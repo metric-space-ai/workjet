@@ -293,7 +293,7 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
   {
     path: "apps/desktop/src/ctox/CtoxGuestManager.ts",
     context:
-      /message(?:\s*===|\.startsWith\()\s*Native (?:WebRTC peer is not connected|request ctox\.workjet\.device\.v1 exceeded )/u,
+      /message(?:\s*===|\.startsWith\()\s*"?(?:Native (?:WebRTC peer is not connected|request ctox\.workjet\.device\.v1 exceeded )|Invalid native provider metadata or request\.)/u,
     reason:
       "Generated guest control compares exact native transport errors; it does not render them.",
   },

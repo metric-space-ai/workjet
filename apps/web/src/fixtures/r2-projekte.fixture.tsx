@@ -3,7 +3,7 @@
  * Galeriekarten, Projekt-Editor (Einstellungen › Projekte), Instanz-Ruhezustände
  * nach 10 s, Instanzauswahl als Zeilen und „Repository klonen“ mit Zielordner.
  * Kein Backend, keine Verbindungen. Ansicht per
- * `?view=kein|karten|editor|laden|verbinden|auswahl|klonen`.
+ * `?view=kein|karten|editor|laden|verbinden|auswahl|klonen|kpi`.
  */
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { EnvironmentId, ProjectId } from "@workjet/contracts";
@@ -26,6 +26,7 @@ import {
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { ProjectOverviewEditor } from "../components/ProjectOverviewEditor";
 import { SidebarProvider } from "../components/ui/sidebar";
+import { ProjectGallery } from "../routes/_chat.index";
 import type { GalleryProject } from "../projectOverview";
 import { exitModelFixture } from "../test/exitModelFixture";
 import "../index.css";
@@ -178,6 +179,25 @@ function Fixture() {
       </div>
     );
   if (view === "klonen") return <CloneFixture />;
+  // Gescheiterte Kennzahlen: die echte Galerie, ohne Zustandszeile. Reads laufen ins Leere.
+  if (view === "kpi")
+    return (
+      <div className="h-dvh bg-background text-foreground">
+        <ProjectGallery
+          instanceId="fixture"
+          registryStatus={undefined}
+          lastUpdatedAt={undefined}
+          projectsUnavailable={false}
+          createForm={null}
+          projects={galleryProjects.map((project) => ({
+            ...project,
+            onOpen: () => {},
+            canArchive: false,
+            statistics: { chatCount: null, activeChatCount: null, lastActivityAt: null },
+          }))}
+        />
+      </div>
+    );
   return (
     <main className="mx-auto max-w-6xl px-5 py-6">
       <h1 className="mb-4 text-[22px] font-semibold">Alle Projekte</h1>

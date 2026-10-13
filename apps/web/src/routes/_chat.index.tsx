@@ -66,7 +66,15 @@ import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor, projectSupervisorThreadInput } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { consumeProjectCreateRequest, onProjectCreateRequest } from "../commandPaletteBus";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
@@ -504,7 +512,7 @@ function IndexDraftLanding() {
             : undefined
         }
         lastUpdatedAt={registry.lastUpdatedAt}
-        projectsUnavailable={registry.phase === "blocked" || registry.refreshFailed === true}
+        projectsUnavailable={showsCachedProjectRegistryNotice(registry)}
         projects={galleryProjects.map((project) => ({
           ...project,
           statistics: resolveGalleryProjectStatistics(project, threads, bootstrapped),
@@ -646,12 +654,49 @@ function IndexDraftLanding() {
   return <NoProjectsHero />;
 }
 
-function ProjectGallery({
+/** Stille Wiederholung fehlgeschlagener Kennzahlen: 15 s, dann 60 s, danach alle 5 min. */
+export function galleryKpiRetryDelayMs(completedFailureRounds: number): number {
+  if (completedFailureRounds <= 0) return 15_000;
+  if (completedFailureRounds === 1) return 60_000;
+  return 5 * 60_000;
+}
+
+/**
+ * Die ruhige Zeile nur, wenn die Karten wirklich der letzte gespeicherte Stand sind.
+ * Ein noch laufender Read und ein einzelner Zeitüberschreitungs-Read zeigen nichts:
+ * die Liste ist dann nicht als veralteter Cache bestätigt.
+ */
+export function showsCachedProjectRegistryNotice(registry: {
+  readonly refreshFailed?: boolean | undefined;
+  readonly lastUpdatedAt?: number | undefined;
+  readonly projects: readonly unknown[];
+  readonly refreshError?:
+    | {
+        readonly code?: string;
+        readonly diagnostic?: { readonly reason?: string } | undefined;
+        readonly preparation?: { readonly reason?: string } | undefined;
+      }
+    | undefined;
+}): boolean {
+  if (registry.refreshFailed !== true) return false;
+  if (registry.lastUpdatedAt === undefined || registry.projects.length === 0) return false;
+  const error = registry.refreshError;
+  if (
+    error?.code === "timeout" ||
+    error?.diagnostic?.reason === "request_timeout" ||
+    error?.preparation?.reason === "navigation_timeout"
+  )
+    return false;
+  return true;
+}
+
+export function ProjectGallery({
   projects,
   instanceId,
   registryStatus,
   lastUpdatedAt,
   projectsUnavailable,
+  createForm,
 }: {
   readonly instanceId: string | null;
   readonly registryStatus: string | undefined;
@@ -667,6 +712,8 @@ function ProjectGallery({
     readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
+  /** Ersetzt „Projekt anlegen“. `null` lässt die Zeile weg (Tests, Einbettung). */
+  readonly createForm?: ReactNode;
 }) {
   const t = useUiText();
   const [showArchived, setShowArchived] = useState(false);
@@ -680,8 +727,7 @@ function ProjectGallery({
   const [orderLoaded, setOrderLoaded] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [kpiFailures, setKpiFailures] = useState<ReadonlySet<string>>(() => new Set());
-  const [kpiReload, setKpiReload] = useState(0);
-  const [kpiReloading, setKpiReloading] = useState(false);
+  const kpiFailuresRef = useRef<ReadonlySet<string>>(kpiFailures);
   const [kpiProjection, setKpiProjection] = useState<{
     readonly instanceId: string | null;
     readonly records: Readonly<Record<string, PromptedProjectKpis>>;
@@ -690,6 +736,15 @@ function ProjectGallery({
     instanceId: null,
     active: false,
   });
+  const markKpiFailure = useCallback((projectId: string, failed: boolean) => {
+    const previous = kpiFailuresRef.current;
+    if (failed === previous.has(projectId)) return;
+    const next = new Set(previous);
+    if (failed) next.add(projectId);
+    else next.delete(projectId);
+    kpiFailuresRef.current = next;
+    setKpiFailures(next);
+  }, []);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -764,30 +819,28 @@ function ProjectGallery({
         !nativeProjectIds.split("\n").includes(projectId)
       )
         return null;
-      const result = await readWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
+      let result: Awaited<ReturnType<typeof readWorkjetProjectKpis>>;
+      try {
+        result = await readWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
+      } catch {
+        if (scope.active && kpiScope.current === scope) markKpiFailure(projectId, true);
+        return null;
+      }
       if (
         !scope.active ||
         kpiScope.current !== scope ||
         result._tag !== "completed" ||
         !("kpis" in result.response)
       ) {
-        if (scope.active && kpiScope.current === scope)
-          setKpiFailures((previous) =>
-            previous.has(projectId) ? previous : new Set(previous).add(projectId),
-          );
+        if (scope.active && kpiScope.current === scope) markKpiFailure(projectId, true);
         return null;
       }
       const kpis = result.response.kpis;
-      setKpiFailures((previous) => {
-        if (!previous.has(projectId)) return previous;
-        const next = new Set(previous);
-        next.delete(projectId);
-        return next;
-      });
+      markKpiFailure(projectId, false);
       setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
       return kpis;
     },
-    [instanceId, nativeProjectIds],
+    [instanceId, markKpiFailure, nativeProjectIds],
   );
 
   useEffect(() => {
@@ -795,14 +848,70 @@ function ProjectGallery({
     const scope = { instanceId, active: true };
     kpiScope.current = scope;
     const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
-    setKpiReloading(kpiReload > 0);
-    void readGalleryProjectKpis(projectIds, readKpis, () => scope.active).finally(() => {
-      if (scope.active) setKpiReloading(false);
-    });
-    return () => {
-      scope.active = false;
+    let stopped = false;
+    let running = false;
+    let failedRounds = 0;
+    let retryWhenVisible = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+    const clearTimer = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
     };
-  }, [instanceId, nativeProjectIds, readKpis, kpiReload]);
+    const failedIds = () => projectIds.filter((id) => kpiFailuresRef.current.has(id));
+    const schedule = () => {
+      clearTimer();
+      if (stopped || !scope.active) return;
+      const delay = galleryKpiRetryDelayMs(failedRounds);
+      failedRounds += 1;
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (stopped || !scope.active) return;
+        if (hidden()) {
+          retryWhenVisible = true;
+          return;
+        }
+        void run(true);
+      }, delay);
+    };
+    const run = async (isRetry: boolean) => {
+      if (stopped || !scope.active || running) return;
+      if (isRetry && hidden()) {
+        retryWhenVisible = true;
+        return;
+      }
+      const ids = isRetry ? failedIds() : projectIds;
+      if (ids.length === 0) return;
+      running = true;
+      retryWhenVisible = false;
+      try {
+        await readGalleryProjectKpis(ids, readKpis, () => scope.active && !stopped);
+      } finally {
+        running = false;
+      }
+      if (stopped || !scope.active) return;
+      if (failedIds().length === 0) {
+        failedRounds = 0;
+        return;
+      }
+      schedule();
+    };
+    const onVisibility = () => {
+      if (hidden() || stopped || !scope.active || !retryWhenVisible || running) return;
+      retryWhenVisible = false;
+      void run(true);
+    };
+    if (typeof document !== "undefined")
+      document.addEventListener("visibilitychange", onVisibility);
+    void run(false);
+    return () => {
+      stopped = true;
+      scope.active = false;
+      clearTimer();
+      if (typeof document !== "undefined")
+        document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [instanceId, nativeProjectIds, readKpis]);
 
   // Inline KPI edit and recalculation on the card write straight into the projection.
   const saveKpis = useCallback(
@@ -921,7 +1030,11 @@ function ProjectGallery({
               </div>
             </div>
           </div>
-          {showArchived ? null : <InlineProjectCreate className="mb-5" />}
+          {showArchived ? null : createForm !== undefined ? (
+            createForm
+          ) : (
+            <InlineProjectCreate className="mb-5" />
+          )}
           {showArchived && visibleProjects.length === 0 ? (
             <div
               role="status"
@@ -968,34 +1081,6 @@ function ProjectGallery({
                   )}
                 </span>
               )}
-            </div>
-          ) : null}
-          {!projectsUnavailable && kpiFailures.size > 0 ? (
-            <div
-              role="status"
-              className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-              data-workjet-project-kpis-unavailable=""
-            >
-              <span>
-                {workjetUiLanguage() === "en"
-                  ? `KPIs for ${kpiFailures.size} project(s) could not be loaded.`
-                  : `Kennzahlen für ${kpiFailures.size} Projekt(e) nicht geladen.`}
-              </span>
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={kpiReloading}
-                onClick={() => setKpiReload((count) => count + 1)}
-                data-workjet-action="project.kpis.retry"
-              >
-                {kpiReloading
-                  ? workjetUiLanguage() === "en"
-                    ? "Loading …"
-                    : "Wird geladen …"
-                  : workjetUiLanguage() === "en"
-                    ? "Retry"
-                    : "Erneut versuchen"}
-              </Button>
             </div>
           ) : null}
           {view === "calendar" ? (

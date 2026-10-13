@@ -100,13 +100,13 @@ describe("provider health-claim age", () => {
     expect(providerCheckedAgeLabel("not-a-date")).toBe("Prüfzeit unbekannt");
   });
 
-  it("renders the age beside a cached Authenticated claim", () => {
+  it("drops the probe age caption from the row (#617)", () => {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1_000).toISOString();
     const card = renderCard(liveProvider(oneHourAgo));
 
     // An hour-old "Authenticated" must not read as a live fact.
     expect(findText(card, "Angemeldet")).not.toBeNull();
-    expect(findText(card, "· geprüft vor 1h")).not.toBeNull();
+    expect(findText(card, "· geprüft vor 1h")).toBeNull();
   });
 
   it("omits the age when the server has not reported the provider at all", () => {

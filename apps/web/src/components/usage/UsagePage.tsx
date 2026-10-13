@@ -50,10 +50,10 @@ export function UsagePage() {
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
 
-  // Hold the content until every environment is terminal. Rendering merged
-  // totals while devices are still answering makes every number on the page
-  // jump as each one lands.
-  const settling = isPending || isPartial;
+  // Hold the content only until the first environment answers. An unreachable
+  // machine must never hide the data the others already delivered; it stays
+  // visible in the device strip instead.
+  const settling = isPending;
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -150,6 +150,7 @@ export function UsagePage() {
         </>
       ) : (
         <>
+          {isPartial ? <UsageDeviceStrip environments={environments} /> : null}
           <UsageCoverageNotice
             environments={environments}
             duplicateSources={merged.duplicateSources}

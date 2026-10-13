@@ -17,6 +17,7 @@ import { resolveSettingsInstanceContext } from "../components/settings/settingsI
 import { Button } from "../components/ui/button";
 import { useUiText } from "../hooks/useUiText";
 import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
+import { useClientSettings } from "../hooks/useSettings";
 import { closeOpenInlineExpand } from "~/components/ui/inline-expand";
 import { collapseExpandedSettingsRow } from "~/components/settings/settingsEscape";
 
@@ -71,8 +72,12 @@ function SettingsContentLayout() {
   const isInstanceManagement =
     location.pathname === "/settings/business-os" || location.pathname === "/settings/usage";
   const canShowSettings = isInstanceManagement || instanceContext.canEditInstanceSettings;
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  // „Standard wiederherstellen“ ist ein Entwicklerwerkzeug: nur im Entwicklermodus.
   const showRestoreDefaults =
-    location.pathname === "/settings/general" && instanceContext.canEditInstanceSettings;
+    developerMode &&
+    location.pathname === "/settings/general" &&
+    instanceContext.canEditInstanceSettings;
   const handleRestored = () => setRestoreSignal((value) => value + 1);
   const navigateBackWithinApp = useCallback(() => {
     if (canGoBack) {

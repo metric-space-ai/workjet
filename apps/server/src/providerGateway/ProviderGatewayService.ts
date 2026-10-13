@@ -1260,7 +1260,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             throw safeError("invalid-configuration");
           });
       } catch (error) {
-        for (const name of attempted.reverse()) {
+        for (const name of attempted.toReversed()) {
           const previous = previousSecrets.get(name)!;
           await runPromise(
             Option.isSome(previous) ? secrets.set(name, previous.value) : secrets.remove(name),

@@ -150,6 +150,7 @@ describe("searchSettings", () => {
         id: "greppy-runtime",
         title: "Code-Suche",
         to: "/settings/workjet",
+        searchAliases: ["greppy", "greppy-laufzeit"],
       },
     ]);
     expect(searchSettings("arbeitskopien-speicher")).toEqual([

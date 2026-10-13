@@ -290,6 +290,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "greppy-runtime",
     title: "Code-Suche",
     to: "/settings/workjet",
+    searchAliases: ["greppy", "greppy-laufzeit"],
   },
   {
     id: "archive",

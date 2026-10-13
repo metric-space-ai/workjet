@@ -3,6 +3,7 @@ import type { ProjectId, WorkjetJourFixeReadResponse } from "@workjet/contracts"
 import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
 import {
+  readCachedJourFixePresentation,
   readJourFixePresentation,
   saveJourFixePresentationSlide,
   type JourFixePresentation,
@@ -60,6 +61,9 @@ function NativeJourFixeRoomContent({
     let cancelled = false;
     const controller = new AbortController();
     setPresentationPending(true);
+    void readCachedJourFixePresentation(instanceId, projectId, meetingId).then((cached) => {
+      if (!cancelled && cached) setPresentation((value) => value ?? cached);
+    });
     void readJourFixePresentation(
       instanceId,
       projectId,
@@ -118,8 +122,14 @@ function NativeJourFixeRoomContent({
     const controller = new AbortController();
     readAbort.current = controller;
     let cancelled = false;
+    let confirmed = false;
+    // Render the last confirmed snapshot at once; CTOX's answer replaces it.
+    void session.readCached().then((cached) => {
+      if (!cancelled && !confirmed && cached) setResult((value) => value ?? cached);
+    });
     void session.read(undefined, controller.signal).then(
       (value) => {
+        confirmed = true;
         if (!cancelled) {
           setResult(value);
           setError(null);

@@ -15,6 +15,7 @@ import {
   jourFixeTransportError,
   retryJourFixeRead,
 } from "./jourFixeReadRetry";
+import { jourFixeCacheKey, readJourFixeCache, writeJourFixeCache } from "./jourFixeCache";
 import { newCommandId, randomUUID } from "./utils";
 import type { JourFixeCommentDraft, JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
 
@@ -141,6 +142,20 @@ export class JourFixeNativeSession {
   private assertCurrent() {
     if (this.closed || !this.current()) throw new Error("Der Terminbereich hat sich geändert.");
   }
+  /**
+   * The last snapshot CTOX confirmed for this scope, for an immediate first
+   * render. It may be stale; callers replace it with `read()`'s answer.
+   */
+  async readCached(meetingId?: string): Promise<WorkjetJourFixeReadResponse | null> {
+    const cached = await readJourFixeCache<WorkjetJourFixeReadResponse>(
+      jourFixeCacheKey.meeting(this.instanceId, this.projectId, meetingId),
+    );
+    if (this.closed || !this.current() || !cached) return null;
+    if (cached.action !== "project.jour_fixe.meeting.read" || cached.projectId !== this.projectId)
+      return null;
+    if (meetingId !== undefined && cached.meeting?.id !== meetingId) return null;
+    return cached;
+  }
   read(meetingId?: string, signal?: AbortSignal): Promise<WorkjetJourFixeReadResponse> {
     const key = meetingId ?? "";
     const existing = this.reads.get(key);
@@ -178,7 +193,17 @@ export class JourFixeNativeSession {
       !isWorkjetJourFixeReadReceiptForRequest(request, result.response)
     )
       throw new Error("Das Lesen des Termins wurde nicht bestätigt.");
-    return result.response;
+    const response = result.response;
+    void writeJourFixeCache(
+      jourFixeCacheKey.meeting(this.instanceId, this.projectId, meetingId),
+      response,
+    );
+    if (meetingId === undefined && response.meeting)
+      void writeJourFixeCache(
+        jourFixeCacheKey.meeting(this.instanceId, this.projectId, response.meeting.id),
+        response,
+      );
+    return response;
   }
   private async mutate(
     key: string,

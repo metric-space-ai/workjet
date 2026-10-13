@@ -58,6 +58,7 @@ describe("native Claude Luma editor", () => {
         computers={[]}
         routes={nativeLumaRoutes([], registry, "Welsch")}
         nativeAccounts={registry.accounts}
+        initialTab="execution"
         initialDraft={{
           ...createWorkjetWorkerDraft({
             computers: [],
@@ -77,6 +78,7 @@ describe("native Claude Luma editor", () => {
         computers={[]}
         routes={nativeLumaRoutes([], registry, "Welsch")}
         nativeAccounts={registry.accounts}
+        initialTab="execution"
         nativeModelsError="The instance connection was interrupted."
         onSave={() => undefined}
         onCancel={() => undefined}

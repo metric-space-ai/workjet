@@ -346,11 +346,42 @@ export function resolveProjectTeamModelSelection(
       ? preferred
       : null;
   }
+  const supervisorDefault = resolveSupervisorPreferredSelection(candidates);
+  if (supervisorDefault) return supervisorDefault;
   const entry = resolveSelectableProviderInstanceEntry(candidates, undefined);
   const model =
     entry?.models.find((model) => concrete(model) && model.isDefault) ??
     entry?.models.find(concrete);
   return entry && model ? { instanceId: entry.instanceId, model: model.slug } : null;
+}
+
+/** Product rule: the project supervisor runs on Claude Code with Opus by default. */
+const SUPERVISOR_DRIVER_KIND = "claudeAgent";
+
+const isOpusSlug = (slug: string): boolean => /(^|-)opus(-|$)/.test(slug);
+
+/**
+ * Preferred supervisor harness among the plausible-to-start entries: a Claude
+ * Code instance (ready first) with its newest concrete Opus model. Returns
+ * null when no Claude instance is usable so callers fall back to the generic
+ * deterministic choice.
+ */
+export function resolveSupervisorPreferredSelection(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+): ModelSelection | null {
+  const claude = entries.filter(
+    (entry) =>
+      entry.driverKind === SUPERVISOR_DRIVER_KIND &&
+      isSelectableProviderInstanceEntry(entry) &&
+      entry.status !== "error",
+  );
+  const entry = claude.find(isProviderInstancePickerReady) ?? claude[0];
+  if (!entry) return null;
+  const concrete = entry.models.filter((model) => !model.isLegacy && !/[*?]/.test(model.slug));
+  const opus =
+    concrete.find((model) => isOpusSlug(model.slug) && model.isDefault) ??
+    concrete.find((model) => isOpusSlug(model.slug));
+  return opus ? { instanceId: entry.instanceId, model: opus.slug } : null;
 }
 
 /**
@@ -363,6 +394,12 @@ export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   selection: ModelSelection | null | undefined,
 ): ModelSelection | null {
+  if (!selection) {
+    const supervisorDefault = resolveSupervisorPreferredSelection(
+      deriveProviderInstanceEntries(providers),
+    );
+    if (supervisorDefault) return supervisorDefault;
+  }
   const instanceId = resolveSelectableProviderInstance(providers, selection?.instanceId);
   if (instanceId === undefined) return null;
   if (selection?.instanceId === instanceId) return selection;

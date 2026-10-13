@@ -104,6 +104,14 @@ export function describeGuestPreparationReason(
   }
 }
 
+/**
+ * The instance answers, but its CTOX core is older than the shell (#681).
+ * Reconnecting cannot help; the core has to be applied on the instance.
+ */
+export function isCoreOutdatedFailure(failure: WorkjetProjectControlFailure | undefined): boolean {
+  return failure?.diagnostic?.reason === "core_outdated";
+}
+
 /** Only safe typed classifications enter user-facing connection messages. */
 export function describeWorkjetProjectControlFailure(
   failure: WorkjetProjectControlFailure,

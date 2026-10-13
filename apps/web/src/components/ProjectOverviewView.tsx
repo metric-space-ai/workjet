@@ -131,6 +131,8 @@ export function ProjectOverviewView(props: {
   readonly onOpenJourFixe?: (() => void) | undefined;
   readonly decisions?: ReactNode;
   readonly connectionError?: boolean;
+  /** Why the overview data is missing (core outdated, timeout …), if known. */
+  readonly connectionMessage?: string | null;
   readonly actions?: ReactNode;
   readonly onRecomputeKpis?: (() => void) | undefined;
 }) {
@@ -172,7 +174,7 @@ export function ProjectOverviewView(props: {
         {props.connectionError && (
           <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
             <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
-            {text.unavailableConnection}
+            {props.connectionMessage ?? text.unavailableConnection}
           </p>
         )}
         {data.decisions.length > 0 && props.decisions && (

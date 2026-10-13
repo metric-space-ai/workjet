@@ -268,8 +268,8 @@ describe("exit card back panel", () => {
     expect(markup).toContain('data-workjet-project-card-exit=""');
     expect(markup).toContain("Std./Woche");
     expect(markup).toContain("€/Monat");
-    expect(markup).toContain(">Gleich<");
-    expect(markup).toContain(">Projekt<");
+    expect(markup).toContain(">Gleiche Ressourcen<");
+    expect(markup).toContain(">Projektbezogen<");
     expect(markup).toContain("Bewerten");
     expect(markup).not.toContain("— · Nicht bewertet");
     expect(markup).toContain("Instanz nicht verbunden");
@@ -289,7 +289,7 @@ describe("exit card back panel", () => {
     expect(markup).toContain("Vorläufig");
   });
 
-  it("lists missing inputs after the state", () => {
+  it("lists only non-field gaps as text; the resource plan is the fields themselves (#578)", () => {
     const markup = renderToStaticMarkup(
       <ProjectExitModelCardPanel
         projectId={projectId}
@@ -306,6 +306,7 @@ describe("exit card back panel", () => {
       />,
     );
     expect(markup).toContain("Angaben fehlen");
-    expect(markup).toContain("fehlt: Bestätigter Ressourcenplan");
+    expect(markup).not.toContain("Bestätigter Ressourcenplan");
+    expect(markup).toContain("fehlt: Recherchierte Betriebs- und Verkaufsannahmen");
   });
 });

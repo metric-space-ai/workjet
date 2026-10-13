@@ -15,6 +15,7 @@ import {
   parseExitMonthlyBudget,
 } from "../projectExitModel";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { Button } from "./ui/button";
 import { useUiText } from "../hooks/useUiText";
 
@@ -113,6 +114,12 @@ export function ProjectExitModelCardPanel({
   const busy = state.pending !== null || current?.status === "researching";
   const fieldsDisabled = !state.connected || busy;
   const missing = current?.missing_inputs ?? [];
+  // Resource-plan gaps are the three fields above: they get marked in place
+  // instead of a grey "fehlt:" line (#578). Only other gaps stay as text.
+  const resourcesMissing = missing.some((input) => RESOURCE_PLAN_INPUTS.has(input));
+  const otherMissing = missing.filter((input) => !RESOURCE_PLAN_INPUTS.has(input));
+  const needs = (empty: boolean) => resourcesMissing && empty && !fieldsDisabled;
+  const en = workjetUiLanguage() === "en";
   return (
     <div
       className="flex size-full min-h-0 flex-col gap-2 p-3"
@@ -133,9 +140,10 @@ export function ProjectExitModelCardPanel({
             disabled={fieldsDisabled}
             aria-label="Std./Woche"
             aria-invalid={hoursInvalid || undefined}
+            aria-required={needs(draft.hours.trim() === "") || undefined}
             onChange={(event) => setDraft({ ...draft, hours: event.currentTarget.value })}
             data-workjet-exit-model-input="hours"
-            className="h-7 w-16 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive"
+            className="h-7 w-16 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive aria-required:border-warning aria-required:ring-1 aria-required:ring-warning/40"
           />
         </label>
         <label className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
@@ -149,12 +157,20 @@ export function ProjectExitModelCardPanel({
             disabled={fieldsDisabled}
             aria-label="€/Monat"
             aria-invalid={budgetInvalid || undefined}
+            aria-required={needs(draft.budget.trim() === "") || undefined}
             onChange={(event) => setDraft({ ...draft, budget: event.currentTarget.value })}
             data-workjet-exit-model-input="budget"
-            className="h-7 w-20 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive"
+            className="h-7 w-20 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive aria-required:border-warning aria-required:ring-1 aria-required:ring-warning/40"
           />
         </label>
-        <div role="group" aria-label="Vergleichsmodus" className="flex gap-1">
+        <div
+          role="group"
+          aria-label={en ? "Comparison" : "Vergleich"}
+          className={
+            "flex gap-1 rounded-[var(--control-radius)]" +
+            (needs(draft.mode === null) ? " ring-1 ring-warning/60" : "")
+          }
+        >
           <Button
             size="xs"
             variant={draft.mode === "equal_resources" ? "default" : "outline"}
@@ -163,7 +179,7 @@ export function ProjectExitModelCardPanel({
             onClick={() => setDraft({ ...draft, mode: "equal_resources" })}
             data-workjet-action={"project.exit_model.mode.equal:" + projectId}
           >
-            Gleich
+            {en ? "Same resources" : "Gleiche Ressourcen"}
           </Button>
           <Button
             size="xs"
@@ -173,7 +189,7 @@ export function ProjectExitModelCardPanel({
             onClick={() => setDraft({ ...draft, mode: "project_specific" })}
             data-workjet-action={"project.exit_model.mode.specific:" + projectId}
           >
-            Projekt
+            {en ? "Project-specific" : "Projektbezogen"}
           </Button>
         </div>
         <Button
@@ -203,7 +219,7 @@ export function ProjectExitModelCardPanel({
           value: view.value,
           label:
             state.pending === "read" && current === null ? "Bewertung wird geladen …" : view.label,
-          missing: missing.slice(0, 3).map((input) => formatExitMissingInput(input, current)),
+          missing: otherMissing.slice(0, 3).map((input) => formatExitMissingInput(input, current)),
           connected: state.connected,
         }).join(" · ")}
       </p>
@@ -215,6 +231,14 @@ export function ProjectExitModelCardPanel({
     </div>
   );
 }
+
+const RESOURCE_PLAN_INPUTS: ReadonlySet<string> = new Set([
+  "resource_plan",
+  "resource_proposal",
+  "confirmed_resource_plan",
+  "confirmed_60_month_resource_plan",
+  "supported_committed_plan",
+]);
 
 export function exitCardStatusParts(input: {
   readonly value: string;
@@ -252,6 +276,9 @@ export function ProjectExitModelReport({
   const proposal = current?.resource_proposal;
   const busy = pending !== null;
   const researching = current?.status === "researching";
+  const en = workjetUiLanguage() === "en";
+  // The report has no missing-input marking; only the card back marks fields (#578).
+  const needs = (_empty: boolean) => false;
 
   // Ressourcen-Eingabe: Vorbelegung aus dem Vorschlag des Eigentümers, keine Standardwerte.
   // Ein neu geladener Vorschlag (andere Objektidentität) ersetzt den Entwurf.
@@ -296,6 +323,7 @@ export function ProjectExitModelReport({
                   disabled={fieldsDisabled}
                   aria-label="Std./Woche"
                   aria-invalid={hoursInvalid || undefined}
+                  aria-required={needs(draft.hours.trim() === "") || undefined}
                   onChange={(event) => setDraft({ ...draft, hours: event.currentTarget.value })}
                   data-workjet-exit-model-input="hours"
                   className="h-8 w-20 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive sm:h-7"
@@ -312,12 +340,20 @@ export function ProjectExitModelReport({
                   disabled={fieldsDisabled}
                   aria-label="€/Monat"
                   aria-invalid={budgetInvalid || undefined}
+                  aria-required={needs(draft.budget.trim() === "") || undefined}
                   onChange={(event) => setDraft({ ...draft, budget: event.currentTarget.value })}
                   data-workjet-exit-model-input="budget"
                   className="h-8 w-24 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-[13.5px] text-foreground tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64 aria-invalid:border-destructive sm:h-7"
                 />
               </label>
-              <div role="group" aria-label="Vergleichsmodus" className="flex gap-1">
+              <div
+                role="group"
+                aria-label={en ? "Comparison" : "Vergleich"}
+                className={
+                  "flex gap-1 rounded-[var(--control-radius)]" +
+                  (needs(draft.mode === null) ? " ring-1 ring-warning/60" : "")
+                }
+              >
                 <Button
                   size="sm"
                   variant={draft.mode === "equal_resources" ? "default" : "outline"}

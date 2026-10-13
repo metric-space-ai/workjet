@@ -205,9 +205,8 @@ function itemSummary({
   readonly auth: SourceControlProviderAuth | null;
   readonly authAccount: string | null;
 }) {
-  if (isVcsNotReady(item)) {
-    return <span>Bald verfügbar</span>;
-  }
+  // The „Bald“ badge already says it; a second caption is slop (QA 0.0.95 E).
+  if (isVcsNotReady(item)) return null;
 
   if (item.status !== "available") {
     return <span>Auf diesem Server nicht verfügbar</span>;
@@ -228,12 +227,11 @@ function itemSummary({
       );
     }
 
+    // „Nicht angemeldet“ is the badge; „Verfügbar“ next to it contradicted it.
+    if (auth.status === "unauthenticated") return null;
+
     if (!item.executable) {
       return <span>Verfügbar</span>;
-    }
-
-    if (auth.status === "unauthenticated") {
-      return <span>Auf dem Server nicht angemeldet</span>;
     }
     return <span>Nicht geprüft</span>;
   }

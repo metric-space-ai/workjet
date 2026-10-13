@@ -1,7 +1,7 @@
 export type ProjectOverviewLanguage = "de" | "en";
 export const SUPPORTED_UI_LANGUAGES: readonly ProjectOverviewLanguage[] = ["de", "en"];
 /** Fallback when the OS/browser asks for a language Workjet does not ship yet. */
-export const FALLBACK_UI_LANGUAGE: ProjectOverviewLanguage = "en";
+export const FALLBACK_UI_LANGUAGE: ProjectOverviewLanguage = "de";
 
 /** Maps a BCP 47 tag ("de-AT", "en_US") to a supported UI language, or null. */
 export function matchSupportedUiLanguage(tag: string | null | undefined) {
@@ -12,7 +12,7 @@ export function matchSupportedUiLanguage(tag: string | null | undefined) {
 /**
  * Resolves the UI language. An explicit setting wins; "system" walks the OS /
  * browser preference list (most preferred first) and picks the first language
- * Workjet supports, falling back to English.
+ * Workjet supports, falling back to German.
  */
 export function projectOverviewLanguage(
   preference: string = "system",

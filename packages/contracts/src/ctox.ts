@@ -806,6 +806,11 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     operationId: CtoxProjectText(128),
   }),
   Schema.Struct({
+    action: Schema.Literal("project.kpis.refresh"),
+    commandId: CommandId,
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.kpis.configure"),
     commandId: CommandId,
     projectId: ProjectId,
@@ -1077,6 +1082,30 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     projectId: ProjectId,
     contract: Schema.Literal("ctox.workjet.project_kpis.v1"),
     kpis: CtoxWorkjetProjectKpis,
+  }).check(
+    Schema.makeFilter((response) =>
+      response.kpis.project_id === response.projectId
+        ? true
+        : "KPI result belongs to another project.",
+    ),
+  ),
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.refresh"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.project_kpis.v1"),
+    kpis: CtoxWorkjetProjectKpis,
+    refresh: Schema.Struct({
+      completed: Schema.Boolean,
+      reasonCode: Schema.optionalKey(CtoxProjectText(128)),
+      items: Schema.Array(
+        Schema.Struct({
+          kpiId: CtoxProjectText(128),
+          status: Schema.Literals(["fresh", "stale", "blocked", "missing"]),
+          reasonCode: Schema.optionalKey(CtoxProjectText(128)),
+        }),
+      ).check(Schema.isMaxLength(3)),
+    }),
   }).check(
     Schema.makeFilter((response) =>
       response.kpis.project_id === response.projectId

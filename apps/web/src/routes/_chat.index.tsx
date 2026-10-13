@@ -35,6 +35,8 @@ import {
   describeWorkjetProjectControlFailure,
   readWorkjetGalleryOrder,
   readWorkjetProjectKpis,
+  refreshWorkjetProjectKpis,
+  saveWorkjetProjectKpis,
   saveWorkjetGalleryOrder,
 } from "../workjetProjectControl";
 import {
@@ -43,7 +45,7 @@ import {
   moveGalleryItem,
   orderGalleryProjects,
 } from "../projectGalleryOrder";
-import type { PromptedProjectKpis } from "../projectKpis";
+import type { ProjectKpiPromptInput, PromptedProjectKpis } from "../projectKpis";
 import { mergeProjectKpiRead, readGalleryProjectKpis } from "../projectKpiProjection";
 import { SortableProjectTile } from "../components/SortableProjectTile";
 import {
@@ -296,7 +298,7 @@ function IndexDraftLanding() {
           )?.defaultModelSelection,
         );
         if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)
-          throw new Error("In Modelle ein Konto mit konkretem Modell einrichten.");
+          throw new Error(MODEL_ACCOUNT_MISSING);
         if (plan._tag === "create") {
           const result = await createProject({
             environmentId: target.environmentId,
@@ -398,7 +400,14 @@ function IndexDraftLanding() {
     supervisor,
   ]);
 
-  if (landingProject !== null && !(selectedNative !== null && supervisor === null)) {
+  // Without a model account no Supervisor can start, but the project stays
+  // usable: history, organigram and settings open with a compact notice (QA 0.0.95 F).
+  const modelAccountMissing =
+    nativeOpenState.error === MODEL_ACCOUNT_MISSING && !nativeOpenState.pending;
+  if (
+    landingProject !== null &&
+    (!(selectedNative !== null && supervisor === null) || modelAccountMissing)
+  ) {
     const project = galleryProjects.find(
       (candidate) =>
         candidate.local?.id === landingProject.id &&
@@ -411,6 +420,7 @@ function IndexDraftLanding() {
           ctoxInstanceId={activeCtoxInstanceId}
           openMeeting={meetingProjectKey === project.key}
           threads={threads}
+          {...(modelAccountMissing ? { notice: <ModelAccountMissingNotice /> } : {})}
           onOpenPullRequests={() =>
             void navigate({
               to: "/pull-requests",
@@ -792,6 +802,41 @@ function ProjectGallery({
     };
   }, [instanceId, nativeProjectIds, readKpis, kpiReload]);
 
+  // Inline KPI edit and recalculation on the card write straight into the projection.
+  const saveKpis = useCallback(
+    async (
+      projectId: string,
+      prompts: readonly ProjectKpiPromptInput[],
+      expectedRevision: number,
+    ) => {
+      const scope = kpiScope.current;
+      if (instanceId === null || !scope.active || scope.instanceId !== instanceId) return false;
+      const saved = await saveWorkjetProjectKpis(instanceId, {
+        action: "project.kpis.configure",
+        commandId: newCommandId(),
+        projectId: ProjectId.make(projectId),
+        operationId: newCommandId(),
+        expectedRevision,
+        prompts: [...prompts],
+      });
+      if (saved === null || !scope.active || kpiScope.current !== scope) return false;
+      setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, saved));
+      return true;
+    },
+    [instanceId],
+  );
+  const refreshKpis = useCallback(
+    async (projectId: string) => {
+      const scope = kpiScope.current;
+      if (instanceId === null || !scope.active || scope.instanceId !== instanceId) return false;
+      const kpis = await refreshWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
+      if (kpis === null || !scope.active || kpiScope.current !== scope) return false;
+      setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
+      return true;
+    },
+    [instanceId],
+  );
+
   const reorderProjects = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
@@ -841,17 +886,39 @@ function ProjectGallery({
                   variant={view === "calendar" ? "secondary" : "ghost"}
                   aria-pressed={view === "calendar"}
                   data-workjet-action="project.view.calendar"
-                  onClick={() => setView("calendar")}
+                  onClick={() => {
+                    setShowArchived(false);
+                    setView("calendar");
+                  }}
                 >
                   Kalender
                 </Button>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setShowArchived((show) => !show)}>
-                {showArchived ? "Alle Projekte" : `Archiv (${archivedCount})`}
+              <Button
+                size="sm"
+                variant={showArchived ? "secondary" : "outline"}
+                aria-pressed={showArchived}
+                data-workjet-action="project.view.archive"
+                onClick={() => {
+                  // The archive is a list of project cards; it never shows the calendar.
+                  if (!showArchived) setView("gallery");
+                  setShowArchived((show) => !show);
+                }}
+              >
+                {`Archiv (${archivedCount})`}
               </Button>
             </div>
           </div>
-          <InlineProjectCreate className="mb-5" />
+          {showArchived ? null : <InlineProjectCreate className="mb-5" />}
+          {showArchived && visibleProjects.length === 0 ? (
+            <p
+              role="status"
+              className="py-10 text-center text-sm text-muted-foreground"
+              data-workjet-archive-empty=""
+            >
+              Keine archivierten Projekte
+            </p>
+          ) : null}
           {projectsUnavailable ? (
             <div
               role="status"
@@ -944,6 +1011,12 @@ function ProjectGallery({
                               : undefined
                           }
                           kpisUnavailable={kpiFailures.has(project.id)}
+                          onSaveKpis={
+                            project.native
+                              ? (prompts, revision) => saveKpis(project.id, prompts, revision)
+                              : undefined
+                          }
+                          onRefreshKpis={project.native ? () => refreshKpis(project.id) : undefined}
                           reorderHandle={reorderHandle}
                         />
                       )}
@@ -960,6 +1033,20 @@ function ProjectGallery({
 }
 
 const PROJECT_OPENING_TIMEOUT_MS = 10_000;
+
+const MODEL_ACCOUNT_MISSING =
+  "Kein Modell-Konto: Der Supervisor startet, sobald eines eingerichtet ist.";
+
+function ModelAccountMissingNotice() {
+  return (
+    <>
+      <span>{MODEL_ACCOUNT_MISSING}</span>
+      <Button size="xs" variant="outline" render={<Link to="/settings/models" />}>
+        Modell-Konto einrichten
+      </Button>
+    </>
+  );
+}
 
 function WorkjetProjectOpening({
   projectTitle,
@@ -1010,7 +1097,14 @@ function WorkjetProjectOpening({
               {error}
             </p>
           ) : null}
-          {error && (
+          {error === MODEL_ACCOUNT_MISSING ? (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button size="sm" render={<Link to="/settings/models" />}>
+                Modell-Konto einrichten
+              </Button>
+            </div>
+          ) : null}
+          {error && error !== MODEL_ACCOUNT_MISSING && (
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Button
                 size="sm"
@@ -1229,6 +1323,20 @@ function InlineProjectCreate({
     setError(null);
     try {
       await activateInstance(instanceId);
+      const duplicate = sources.duplicate;
+      if (source === "clone" && duplicate !== null && sources.environmentId !== null) {
+        // Never clone into an existing working copy or add a second card.
+        sources.reset();
+        setSource("new");
+        setOpen(false);
+        toastManager.add({ type: "info", title: `„${duplicate.title}“ ist schon da – geöffnet` });
+        if (readActiveWorkjetScope().selectedInstanceId === instanceId)
+          selectProjectOverviewRef(
+            instanceId,
+            scopeProjectRef(sources.environmentId, duplicate.id),
+          );
+        return;
+      }
       setProgress(source === "clone" ? "Repository wird geklont …" : "Projekt wird angelegt …");
       const workspaceRoot = await sources.resolveWorkspaceRoot();
       setProgress("Projekt wird angelegt …");
@@ -1242,7 +1350,11 @@ function InlineProjectCreate({
       sources.reset();
       setSource("new");
       setOpen(false);
-      toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
+      toastManager.add(
+        created.reusedTitle === undefined
+          ? { type: "success", title: `Projekt „${trimmed}“ angelegt` }
+          : { type: "info", title: `„${created.reusedTitle}“ ist schon da – geöffnet` },
+      );
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
         selectProjectOverviewRef(
           instanceId,

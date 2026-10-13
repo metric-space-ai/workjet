@@ -92,6 +92,14 @@ export function jourFixeActionError(reason: unknown, meeting: JourFixeRoomSnapsh
     : "Änderung nicht bestätigt · Entwurf bleibt erhalten.";
 }
 
+/** Eine knappe deutsche Statuszeile direkt am betroffenen Bereich, nie als Kopfleiste. */
+export interface JourFixeAreaStatus {
+  readonly state: "loading" | "failed";
+  readonly text: string;
+  /** Erst nach endgültigem Scheitern (5 min) eine kleine Aktion an derselben Stelle. */
+  readonly onRetry?: (() => void) | undefined;
+}
+
 export interface JourFixeRoomProps {
   readonly projectTitle: string;
   readonly meeting: JourFixeRoomSnapshot;
@@ -138,6 +146,15 @@ export interface JourFixeRoomProps {
     readonly blobUrl: string;
     readonly rate?: number;
   };
+  /** Lade- oder Endfehlerzustand der Folien, eingeblendet in der Folienfläche. */
+  readonly presentationStatus?: JourFixeAreaStatus | undefined;
+  /** Lade- oder Endfehlerzustand des Tons, eingeblendet am Player. */
+  readonly narrationStatus?: JourFixeAreaStatus | undefined;
+  /**
+   * Endgültig gescheiterte, vorher unbestätigte Änderung. Die Wiederholung selbst
+   * läuft automatisch und still; nur diese Zeile steht am Eingabefeld.
+   */
+  readonly pendingChange?: { readonly onRetry: () => void } | undefined;
 }
 
 export function JourFixeRoom(props: JourFixeRoomProps) {
@@ -162,6 +179,9 @@ function JourFixeRoomContent({
   partialTranscript,
   audio,
   presentation,
+  presentationStatus,
+  narrationStatus,
+  pendingChange,
 }: JourFixeRoomProps) {
   const slides = [...meeting.slides].sort((a, b) => a.position - b.position);
   const [slideId, setSlideId] = useState(slides[0]?.id ?? "");
@@ -340,6 +360,19 @@ function JourFixeRoomContent({
       </Button>
     </form>
   );
+  /** Endgültig ungespeicherte Änderung: eine Zeile direkt am Eingabefeld. */
+  const pendingNotice = pendingChange && (
+    <p
+      role="alert"
+      data-workjet-pending-change="failed"
+      className={`flex items-center gap-2 ${freeTopics ? "border-b" : "border-t"} border-border px-3 py-2 text-xs text-destructive`}
+    >
+      Nicht gespeichert
+      <Button size="sm" variant="outline" onClick={pendingChange.onRetry}>
+        Erneut senden
+      </Button>
+    </p>
+  );
   return (
     <section
       className="@container flex min-h-0 flex-1 flex-col overflow-auto"
@@ -428,25 +461,22 @@ function JourFixeRoomContent({
             {review ? "Folien" : "Prüfen"}
           </Button>
         )}
+        {(error || meeting.error) && (
+          <span role="alert" className="flex items-center gap-2 text-xs text-destructive">
+            {error ?? meeting.error}
+            {onRefresh && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void perform(onRefresh)}
+              >
+                Aktualisieren
+              </Button>
+            )}
+          </span>
+        )}
       </header>
-      {(error || meeting.error) && (
-        <div
-          role="alert"
-          className="flex items-center gap-2 border-b border-destructive/30 px-5 py-2 text-sm text-destructive"
-        >
-          <span>{error ?? meeting.error}</span>
-          {onRefresh && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => void perform(onRefresh)}
-            >
-              Aktualisieren
-            </Button>
-          )}
-        </div>
-      )}
       <div className="grid min-h-0 flex-1 grid-cols-1 @min-[900px]:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 p-4 lg:p-[18px]">
           {review ? (
@@ -701,6 +731,20 @@ function JourFixeRoomContent({
                 className="relative aspect-video overflow-hidden rounded-lg border border-border bg-[#f5f3ee] text-[#18181b] [&:fullscreen]:rounded-none [&:fullscreen]:border-0"
                 data-workjet-meeting-stage=""
               >
+                {presentationStatus && (
+                  <p
+                    role={presentationStatus.state === "failed" ? "alert" : "status"}
+                    data-workjet-presentation-state={presentationStatus.state}
+                    className={`absolute top-3 left-3 z-20 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs shadow-sm ${presentationStatus.state === "failed" ? "bg-background/95 text-destructive" : "bg-background/80 text-[#52525b]"}`}
+                  >
+                    {presentationStatus.text}
+                    {presentationStatus.state === "failed" && presentationStatus.onRetry && (
+                      <Button size="sm" variant="outline" onClick={presentationStatus.onRetry}>
+                        Neu laden
+                      </Button>
+                    )}
+                  </p>
+                )}
                 {canvasSlide && presentation ? (
                   <Suspense
                     fallback={
@@ -846,6 +890,20 @@ function JourFixeRoomContent({
                   Termin geändert. Kommentar neu setzen.
                 </p>
               )}
+              {narrationStatus && (
+                <p
+                  role={narrationStatus.state === "failed" ? "alert" : "status"}
+                  data-workjet-narration-state={narrationStatus.state}
+                  className={`flex items-center gap-2 text-xs ${narrationStatus.state === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  {narrationStatus.text}
+                  {narrationStatus.state === "failed" && narrationStatus.onRetry && (
+                    <Button size="sm" variant="outline" onClick={narrationStatus.onRetry}>
+                      Neu laden
+                    </Button>
+                  )}
+                </p>
+              )}
               <JourFixePlayer
                 key={`${slide.id}:${meeting.deckRevision}`}
                 source={narration}
@@ -911,7 +969,12 @@ function JourFixeRoomContent({
               </Button>
             ))}
           </nav>
-          {freeTopics && messageForm}
+          {freeTopics && (
+            <>
+              {pendingNotice}
+              {messageForm}
+            </>
+          )}
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 @min-[900px]:max-h-[calc(100dvh-220px)]">
             {panel === "conversation" && (
               <>
@@ -945,7 +1008,7 @@ function JourFixeRoomContent({
                   <p className="text-xs text-muted-foreground">
                     {jourFixeEvidenceLabel(meeting, item.id)}
                     {item.deckRevision !== meeting.deckRevision
-                      ? ` · Earlier deck ${item.deckRevision}`
+                      ? ` · Früherer Folienstand ${item.deckRevision}`
                       : ""}
                   </p>
                   <p className="mt-1 whitespace-pre-wrap">{item.text}</p>
@@ -966,7 +1029,12 @@ function JourFixeRoomContent({
                 </button>
               ))}
           </div>
-          {onMessage && editable && !freeTopics && messageForm}
+          {onMessage && editable && !freeTopics && (
+            <>
+              {pendingNotice}
+              {messageForm}
+            </>
+          )}
         </aside>
       </div>
     </section>

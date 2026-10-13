@@ -19,6 +19,14 @@ export function shouldShowProviderStatusBanner(
   return bannerKey !== null && bannerKey !== dismissedBannerKey;
 }
 
+/** The harness binary is absent on this computer (e.g. `codex` not on PATH). */
+export function isProviderHarnessMissing(status: ServerProvider): boolean {
+  return (
+    status.status === "error" &&
+    (!status.installed || /not installed|not on PATH|ENOENT/i.test(status.message ?? ""))
+  );
+}
+
 export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss,
   status,
@@ -31,14 +39,21 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   }
 
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
+  const isMissingHarness = isProviderHarnessMissing(status);
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
-  const title = isUnauthenticated ? `${providerName} nicht angemeldet` : `${providerName}-Zustand`;
-  const message = isUnauthenticated
-    ? "Per CLI neu anmelden"
-    : (status.message ??
-      (status.status === "error"
-        ? `${providerName} nicht verfügbar`
-        : `${providerName} eingeschränkt verfügbar`));
+  const title = isMissingHarness
+    ? `Harness fehlt: ${providerName}`
+    : isUnauthenticated
+      ? `${providerName} nicht angemeldet`
+      : `${providerName}-Zustand`;
+  const message = isMissingHarness
+    ? "Auf diesem Rechner nicht installiert. Harness wechseln oder installieren."
+    : isUnauthenticated
+      ? "Per CLI neu anmelden"
+      : (status.message ??
+        (status.status === "error"
+          ? `${providerName} nicht verfügbar`
+          : `${providerName} eingeschränkt verfügbar`));
 
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">

@@ -126,8 +126,9 @@ export type FontFamilyPreference = typeof FontFamilyPreference.Type;
 
 export const ClientSettingsSchema = Schema.Struct({
   interfaceLanguage: Schema.Literals(["system", "de", "en"]).pipe(
-    Schema.withDecodingDefault(Effect.succeed("system")),
+    Schema.withDecodingDefault(Effect.succeed("de")),
   ),
+  developerMode: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
@@ -296,16 +297,16 @@ export const CodexSettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("codex").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Codex binary used by this instance.",
+        title: "Programmpfad",
+        description: "Codex-Programm, das diese Instanz startet.",
         providerSettingsForm: { placeholder: "codex", clearWhenEmpty: "omit" },
       }),
     ),
     homePath: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "CODEX_HOME path",
-        description: "Custom Codex home and config directory.",
+        title: "CODEX_HOME-Pfad",
+        description: "Eigener Codex-Home- und Konfigurationsordner.",
         providerSettingsForm: {
           placeholder: "~/.codex",
           clearWhenEmpty: "omit",
@@ -315,9 +316,9 @@ export const CodexSettings = makeProviderSettingsSchema(
     shadowHomePath: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Shadow home path",
+        title: "Konto-Home-Pfad",
         description:
-          "Account-specific Codex home. Keeps auth.json separate while sharing state from CODEX_HOME.",
+          "Kontoeigener Codex-Home. Hält auth.json getrennt und teilt den übrigen Stand mit CODEX_HOME.",
         providerSettingsForm: {
           placeholder: "~/.codex-workjet/personal",
           clearWhenEmpty: "omit",
@@ -327,8 +328,8 @@ export const CodexSettings = makeProviderSettingsSchema(
     launchArgs: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Launch arguments",
-        description: "Additional CLI arguments passed to codex app-server on session start.",
+        title: "Startargumente",
+        description: "Zusätzliche CLI-Argumente für codex app-server beim Sitzungsstart.",
       }),
     ),
     customModels: Schema.Array(Schema.String).pipe(
@@ -350,17 +351,17 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("claude").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Claude binary used by this instance.",
+        title: "Programmpfad",
+        description: "Claude-Programm, das diese Instanz startet.",
         providerSettingsForm: { placeholder: "claude", clearWhenEmpty: "omit" },
       }),
     ),
     homePath: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "CLAUDE_CONFIG_DIR path",
+        title: "CLAUDE_CONFIG_DIR-Pfad",
         description:
-          "Custom Claude home and config directory. Keeps .claude.json and .claude separate.",
+          "Eigener Claude-Home- und Konfigurationsordner. Hält .claude.json und .claude getrennt.",
         providerSettingsForm: { placeholder: "~/.claude", clearWhenEmpty: "omit" },
       }),
     ),
@@ -371,10 +372,10 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     launchArgs: Schema.String.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Launch arguments",
-        description: "Additional CLI arguments passed on session start.",
+        title: "Startargumente",
+        description: "Zusätzliche CLI-Argumente beim Sitzungsstart.",
         providerSettingsForm: {
-          placeholder: "e.g. --chrome",
+          placeholder: "z. B. --chrome",
           clearWhenEmpty: "omit",
         },
       }),
@@ -394,16 +395,16 @@ export const CursorSettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("cursor-agent").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Cursor agent binary.",
+        title: "Programmpfad",
+        description: "Cursor-Agent-Programm.",
         providerSettingsForm: { placeholder: "cursor-agent", clearWhenEmpty: "omit" },
       }),
     ),
     apiEndpoint: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "API endpoint",
-        description: "Override the Cursor API endpoint for this instance.",
+        title: "API-Endpunkt",
+        description: "Abweichender Cursor-API-Endpunkt für diese Instanz.",
         providerSettingsForm: {
           placeholder: "https://...",
           clearWhenEmpty: "omit",
@@ -429,8 +430,8 @@ export const GrokSettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("grok").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Grok CLI binary.",
+        title: "Programmpfad",
+        description: "Grok-CLI-Programm.",
         providerSettingsForm: { placeholder: "grok", clearWhenEmpty: "omit" },
       }),
     ),
@@ -453,8 +454,8 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("opencode").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the OpenCode binary.",
+        title: "Programmpfad",
+        description: "OpenCode-Programm.",
         providerSettingsForm: {
           placeholder: "opencode",
           clearWhenEmpty: "omit",
@@ -465,7 +466,7 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
         title: "Server URL",
-        description: "Leave blank to let Workjet spawn the server when needed.",
+        description: "Leer lassen, dann startet Workjet den Server bei Bedarf.",
         providerSettingsForm: {
           placeholder: "http://127.0.0.1:4096",
           clearWhenEmpty: "omit",
@@ -475,8 +476,8 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
     serverPassword: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Server password",
-        description: "Stored in plain text on disk.",
+        title: "Server-Passwort",
+        description: "Wird im Klartext auf der Festplatte gespeichert.",
         providerSettingsForm: {
           control: "password",
           placeholder: "Optional",
@@ -503,26 +504,26 @@ export const MiniMaxSettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("mcode").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "MiniMax Code executable on this computer.",
+        title: "Programmpfad",
+        description: "MiniMax-Code-Programm auf diesem Rechner.",
         providerSettingsForm: { placeholder: "mcode", clearWhenEmpty: "omit" },
       }),
     ),
     dataDirectory: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Profile directory",
+        title: "Profilordner",
         description:
-          "Optional existing MiniMax Code data directory on this computer. Empty uses the CLI profile.",
+          "Optionaler vorhandener MiniMax-Code-Datenordner auf diesem Rechner. Leer nutzt das CLI-Profil.",
         providerSettingsForm: { clearWhenEmpty: "omit" },
       }),
     ),
     model: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("MiniMax-M3.1-Flash-Preview")),
       Schema.annotateKey({
-        title: "Preferred model",
+        title: "Bevorzugtes Modell",
         description:
-          "Must be advertised by the authenticated runtime. No fallback model is selected.",
+          "Muss von der angemeldeten Laufzeit angeboten werden. Es gibt kein Ersatzmodell.",
       }),
     ),
   },
@@ -538,16 +539,16 @@ export const PiSettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("pi").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Pi Code executable on this computer.",
+        title: "Programmpfad",
+        description: "Pi-Code-Programm auf diesem Rechner.",
         providerSettingsForm: { placeholder: "pi", clearWhenEmpty: "omit" },
       }),
     ),
     model: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Preferred model",
-        description: "Choose a model from the connected Workjet gateway accounts.",
+        title: "Bevorzugtes Modell",
+        description: "Modell aus den verbundenen Workjet-Gateway-Konten.",
       }),
     ),
   },
@@ -563,17 +564,17 @@ export const GreppySettings = makeProviderSettingsSchema(
     ),
     binaryPath: makeBinaryPathSetting("greppy").pipe(
       Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Greppy binary.",
+        title: "Programmpfad",
+        description: "Greppy-Programm.",
         providerSettingsForm: { placeholder: "greppy", clearWhenEmpty: "omit" },
       }),
     ),
     endpoint: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("http://127.0.0.1:8317")),
       Schema.annotateKey({
-        title: "Gateway endpoint",
+        title: "Gateway-Endpunkt",
         description:
-          "Plain HTTP gateway root. Greppy calls /v1/messages and /v1/models on it. HTTPS is not supported.",
+          "HTTP-Wurzel des Gateways. Greppy ruft dort /v1/messages und /v1/models auf. HTTPS wird nicht unterstützt.",
         providerSettingsForm: {
           placeholder: "http://127.0.0.1:8317",
           clearWhenEmpty: "omit",
@@ -583,10 +584,11 @@ export const GreppySettings = makeProviderSettingsSchema(
     model: TrimmedString.pipe(
       Schema.withDecodingDefault(Effect.succeed("")),
       Schema.annotateKey({
-        title: "Model",
-        description: "Model id sent to the gateway unchanged. Greppy has no built-in model list.",
+        title: "Modell",
+        description:
+          "Modell-ID, unverändert an das Gateway gesendet. Greppy hat keine eigene Modellliste.",
         providerSettingsForm: {
-          placeholder: "model id",
+          placeholder: "Modell-ID",
           clearWhenEmpty: "omit",
         },
       }),
@@ -594,9 +596,8 @@ export const GreppySettings = makeProviderSettingsSchema(
     maxTurns: Schema.Int.pipe(
       Schema.withDecodingDefault(Effect.succeed(40)),
       Schema.annotateKey({
-        title: "Max turns",
-        description:
-          "Maximum model turns for one prompt. The hosted session has no wall-clock deadline.",
+        title: "Max. Modellzüge",
+        description: "Höchstzahl an Modellzügen pro Anfrage. Die Sitzung hat kein Zeitlimit.",
       }),
     ),
 
@@ -931,6 +932,7 @@ export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
   interfaceLanguage: Schema.optionalKey(Schema.Literals(["system", "de", "en"])),
+  developerMode: Schema.optionalKey(Schema.Boolean),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),

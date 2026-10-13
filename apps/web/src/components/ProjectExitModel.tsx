@@ -173,17 +173,15 @@ export function ProjectExitModelCardPanel({
         className="min-w-0 break-words text-xs text-muted-foreground"
         data-workjet-exit-model-card-status=""
       >
-        <span className="font-medium text-foreground tabular-nums">{view.value}</span>
-        {" · "}
-        {state.pending === "read" && current === null ? "Bewertung wird geladen …" : view.label}
-        {missing.length > 0
-          ? " · fehlt: " +
-            missing
-              .slice(0, 3)
-              .map((input) => formatExitMissingInput(input, current))
-              .join(", ")
-          : ""}
-        {!state.connected ? " · Instanz nicht verbunden" : ""}
+        {/* The stamp on the preview already shows value or „Nicht bewertet“;
+            this line only adds what the stamp cannot say (QA 0.0.95 E). */}
+        {exitCardStatusParts({
+          value: view.value,
+          label:
+            state.pending === "read" && current === null ? "Bewertung wird geladen …" : view.label,
+          missing: missing.slice(0, 3).map((input) => formatExitMissingInput(input, current)),
+          connected: state.connected,
+        }).join(" · ")}
       </p>
       {state.error && (
         <p role="alert" className="text-xs text-destructive">
@@ -192,6 +190,20 @@ export function ProjectExitModelCardPanel({
       )}
     </div>
   );
+}
+
+export function exitCardStatusParts(input: {
+  readonly value: string;
+  readonly label: string;
+  readonly missing: readonly string[];
+  readonly connected: boolean;
+}): string[] {
+  const parts: string[] = [];
+  if (input.value !== "—") parts.push(input.value);
+  if (input.label !== "Nicht bewertet") parts.push(input.label);
+  if (input.missing.length > 0) parts.push("fehlt: " + input.missing.join(", "));
+  if (!input.connected) parts.push("Instanz nicht verbunden");
+  return parts;
 }
 
 export function ProjectExitModelReport({

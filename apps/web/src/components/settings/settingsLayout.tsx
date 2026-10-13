@@ -321,6 +321,16 @@ export function SettingResetButton({
   );
 }
 
+/**
+ * Set when a settings page renders inline inside a list row (e.g. a project
+ * under Einstellungen › Projekte) instead of as its own page.
+ */
+export const SettingsEmbeddedContext = createContext<{ readonly onClose: () => void } | null>(null);
+
+export function useSettingsEmbedded() {
+  return useContext(SettingsEmbeddedContext);
+}
+
 export function SettingsPageContainer({
   children,
   className,
@@ -330,6 +340,7 @@ export function SettingsPageContainer({
   className?: string;
   wide?: boolean;
 }) {
+  const embedded = useContext(SettingsEmbeddedContext);
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
   const targetId = hash.replace(/^#/, "") || null;
@@ -337,6 +348,9 @@ export function SettingsPageContainer({
     void navigate({ hash: "", replace: true, resetScroll: false, hashScrollIntoView: false });
   }, [navigate]);
 
+  if (embedded) {
+    return <div className={cn("flex w-full flex-col gap-4 pb-3 pt-1", className)}>{children}</div>;
+  }
   return (
     <SettingsSearchTargetProvider targetId={targetId} onTargetHandled={clearTargetHash}>
       <div

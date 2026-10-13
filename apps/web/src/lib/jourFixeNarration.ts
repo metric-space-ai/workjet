@@ -11,6 +11,7 @@ import {
 } from "../workjetProjectControl";
 import type { JourFixeSpeechScope } from "./jourFixeSpeech";
 import { newCommandId } from "./utils";
+import { jourFixeCacheKey, readJourFixeCache, writeJourFixeCache } from "./jourFixeCache";
 
 export interface JourFixeNarrationOptions {
   readonly scope: JourFixeSpeechScope;
@@ -39,6 +40,19 @@ export async function prepareJourFixeNarration(options: JourFixeNarrationOptions
   const slideId = options.slideId;
   const signal = options.signal;
   const port = options.port;
+  const cacheKey = jourFixeCacheKey.narration(
+    scope.instanceId,
+    scope.projectId,
+    scope.meetingId,
+    scope.deckRevision,
+    slideId,
+  );
+  // Narration is immutable per meeting, deck revision and slide; a complete,
+  // hash-checked copy is reused without any CTOX round trip.
+  const cached = await readJourFixeCache<{ sha256: string; blob: Blob }>(cacheKey);
+  if (signal.aborted) throw canceled();
+  if (cached?.blob instanceof Blob && cached.blob.size > 0 && typeof cached.sha256 === "string")
+    return cached.blob;
   const deadline = jourFixeReadDeadline();
   let first: WorkjetJourFixeNarrationReadResponse | undefined;
   let bytes: Uint8Array<ArrayBuffer> | undefined;
@@ -108,7 +122,9 @@ export async function prepareJourFixeNarration(options: JourFixeNarrationOptions
     )
       throw new Error("Narration audio failed its complete-file integrity check.");
     current();
-    return new Blob([bytes], { type: "audio/wav" });
+    const blob = new Blob([bytes], { type: "audio/wav" });
+    void writeJourFixeCache(cacheKey, { sha256: first.audio.sha256, blob });
+    return blob;
   } catch (error) {
     bytes?.fill(0);
     throw error;

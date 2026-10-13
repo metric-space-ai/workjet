@@ -10,6 +10,8 @@ import {
 } from "@workjet/contracts";
 import { createEnvironmentRpcCommand } from "@workjet/client-runtime/state/runtime";
 import { useNavigate } from "@tanstack/react-router";
+import { InlineExpand } from "../ui/inline-expand";
+import { WorkjetComputersSettings } from "../settings/WorkjetComputersSettings";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readActiveWorkjetScope } from "../../activeWorkjetScope";
 import {
@@ -105,6 +107,7 @@ export function NativeSupervisorRouteControls(props: {
   const read = useAtomCommand(readInstanceConfiguration, { reportFailure: false });
   const route = useSupervisorRouteDisplay(props.scope);
   const navigate = useNavigate();
+  const [addComputerOpen, setAddComputerOpen] = useState(false);
   const project = registry.projects.find((entry) => entry.id === props.scope?.projectId);
   const selectedId =
     project?.supervisorLumaId ??
@@ -263,48 +266,61 @@ export function NativeSupervisorRouteControls(props: {
         accountIds: [],
       });
   return (
-    <NativeSupervisorRouteControlsView
-      projectId={props.scope?.projectId ?? ""}
-      selected={selected}
-      profiles={profiles}
-      computers={computers}
-      models={models}
-      registeredComputers={
-        membership.instanceId === props.scope?.instanceId ? membership.computers : []
-      }
-      environmentId={environment?.environmentId ?? null}
-      selectedComputerId={activeComputer}
-      disabled={props.disabled || saving}
-      unavailableReason={!ready ? status : null}
-      computerAvailability={Object.fromEntries(
-        computers.map((computer) => {
-          const connection = environments.find(
-            (entry) => entry.environmentId === computer.environmentId,
-          )?.connection;
-          return [
-            computer.id,
-            {
-              status:
-                connection?.phase === "connected"
-                  ? "Online"
-                  : connection?.phase === "offline"
-                    ? "Offline"
-                    : "Getrennt",
-              reason:
-                !profiles.some((entry) => entry.computerId === computer.id) &&
-                connection?.phase !== "connected"
-                  ? (connection?.error ?? "Rechner offline")
-                  : null,
-            },
-          ];
-        }),
-      )}
-      onSelectWorker={(id) => void choose(id)}
-      onSelectManual={(next) => void choose(next)}
-      onError={setError}
-      onConfigureWorkers={() => void navigate({ to: "/settings/workjet" })}
-      onAddComputer={() => void navigate({ to: "/settings/computers" })}
-    />
+    <>
+      <NativeSupervisorRouteControlsView
+        projectId={props.scope?.projectId ?? ""}
+        selected={selected}
+        profiles={profiles}
+        computers={computers}
+        models={models}
+        registeredComputers={
+          membership.instanceId === props.scope?.instanceId ? membership.computers : []
+        }
+        environmentId={environment?.environmentId ?? null}
+        selectedComputerId={activeComputer}
+        disabled={props.disabled || saving}
+        unavailableReason={!ready ? status : null}
+        computerAvailability={Object.fromEntries(
+          computers.map((computer) => {
+            const connection = environments.find(
+              (entry) => entry.environmentId === computer.environmentId,
+            )?.connection;
+            return [
+              computer.id,
+              {
+                status:
+                  connection?.phase === "connected"
+                    ? "Online"
+                    : connection?.phase === "offline"
+                      ? "Offline"
+                      : "Getrennt",
+                reason:
+                  !profiles.some((entry) => entry.computerId === computer.id) &&
+                  connection?.phase !== "connected"
+                    ? (connection?.error ?? "Rechner offline")
+                    : null,
+              },
+            ];
+          }),
+        )}
+        onSelectWorker={(id) => void choose(id)}
+        onSelectManual={(next) => void choose(next)}
+        onError={setError}
+        onConfigureWorkers={() => void navigate({ to: "/settings/workjet" })}
+        onAddComputer={() => setAddComputerOpen(true)}
+      />
+      {/* Full-width row under the controls; same panel as the chat composer (#528). */}
+      <div className="w-full basis-full" data-supervisor-add-computer="true">
+        <InlineExpand
+          open={addComputerOpen}
+          onOpenChange={setAddComputerOpen}
+          label={supervisorAddComputerLabel()}
+          className="mt-2 rounded-2xl border bg-card p-3 pe-9"
+        >
+          <WorkjetComputersSettings setupOnly onCompleted={() => setAddComputerOpen(false)} />
+        </InlineExpand>
+      </div>
+    </>
   );
 }
 
@@ -421,4 +437,13 @@ export function NativeSupervisorRouteControlsView(props: {
       )}
     </>
   );
+}
+
+export function supervisorAddComputerLabel(
+  language: "de" | "en" = typeof document !== "undefined" &&
+  document.documentElement.lang.toLowerCase().startsWith("en")
+    ? "en"
+    : "de",
+): string {
+  return language === "en" ? "Add computer" : "Rechner hinzufügen";
 }

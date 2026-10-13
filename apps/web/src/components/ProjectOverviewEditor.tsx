@@ -448,7 +448,7 @@ export function ProjectOverviewEditor({
     >
       <div className="grid items-center gap-x-3 gap-y-2 sm:grid-cols-[6rem_minmax(0,1fr)]">
         <label className="text-xs text-muted-foreground" htmlFor={`${id}-token-budget`}>
-          Budget (Mrd.)
+          Token-Budget
         </label>
         <div className="grid gap-1">
           <div className="flex items-center gap-2">
@@ -462,6 +462,7 @@ export function ProjectOverviewEditor({
               disabled={state.pending}
               aria-invalid={errors.budget !== undefined}
             />
+            <span className="shrink-0 text-xs text-muted-foreground">Mrd. je Zyklus</span>
           </div>
           {errors.budget !== undefined && (
             <p className="text-xs text-red-400" role="alert">
@@ -575,7 +576,7 @@ export function ProjectOverviewEditor({
               />
             )}
             <span className="text-xs text-muted-foreground">Regeltermin</span>
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2 max-sm:grid-cols-1">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,1.2fr)] gap-2 max-sm:grid-cols-1">
               <select
                 aria-label="Regeltermin Wochentag"
                 className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs"

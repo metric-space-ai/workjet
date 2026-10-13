@@ -65,8 +65,41 @@ export function deriveRepositoryFolderName(input: string): string {
     .replace(/[?#].*$/, "")
     .replace(/[/\\]+$/, "")
     .replace(/\.git$/i, "");
+  // A bare scheme or host ("https", "https://github.com") is not a repository
+  // yet; deriving a name from it produced projects titled „https“.
+  const path = trimmed.replace(/^[a-z][a-z0-9+.-]*:(\/\/)?/i, "").replace(/^[^/\\:]*@/, "");
+  if (!/[/\\:]/.test(path)) return "";
   const segment = trimmed.split(/[/\\:]/).findLast((part) => part.trim().length > 0) ?? "";
   return segment.trim();
+}
+
+/** Last path segment of a working copy, without trailing separators. */
+function folderNameOf(path: string): string {
+  return (
+    path
+      .trim()
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .at(-1) ?? ""
+  );
+}
+
+/**
+ * Existing project a new source would duplicate: same title or same working
+ * copy folder name, compared case-insensitively („metric“ vs. „Metric“).
+ */
+export function findDuplicateProjectForName<
+  P extends { readonly title: string; readonly workspaceRoot?: string | null },
+>(projects: ReadonlyArray<P>, name: string): P | undefined {
+  const wanted = name.trim().toLocaleLowerCase();
+  if (wanted.length === 0) return undefined;
+  return projects.find(
+    (project) =>
+      project.title.trim().toLocaleLowerCase() === wanted ||
+      (project.workspaceRoot
+        ? folderNameOf(project.workspaceRoot).toLocaleLowerCase() === wanted
+        : false),
+  );
 }
 
 /** Default parent folder for clones: the computer's setting, else `~/`. */

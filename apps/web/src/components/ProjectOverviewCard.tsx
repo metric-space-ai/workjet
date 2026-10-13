@@ -14,7 +14,12 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
-import { projectKpiPresentation, type PromptedProjectKpis } from "../projectKpis";
+import {
+  projectKpiPresentation,
+  type PromptedProjectKpis,
+  type SaveProjectKpiPrompts,
+} from "../projectKpis";
+import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectInitProgress } from "./ProjectInitProgress";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
@@ -22,6 +27,7 @@ import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverview
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { workjetUiLanguage } from "../workjetProjectControl";
+import { useSingleInlineExpand } from "./ui/inline-expand";
 
 export function ProjectOverviewCard({
   project,
@@ -36,7 +42,13 @@ export function ProjectOverviewCard({
   ctoxInstanceId = null,
   reorderHandle,
   tokenBudget,
+  onSaveKpis,
+  onRefreshKpis,
 }: {
+  /** Saves the card's KPI sentences inline (project.kpis.configure). */
+  readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
+  /** Recalculates the card's KPIs now (project.kpis.refresh, #502). */
+  readonly onRefreshKpis?: (() => Promise<boolean>) | undefined;
   readonly project: GalleryProject;
   readonly tokenBudget?: ReactNode;
   readonly ctoxInstanceId?: string | null;
@@ -61,6 +73,8 @@ export function ProjectOverviewCard({
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [editingKpi, setEditingKpi] = useState<number | null>(null);
+  const [refreshPending, setRefreshPending] = useState(false);
   const text = PROJECT_OVERVIEW_TEXT[useProjectOverviewLanguage()];
   const openProjectLabel = projectOverviewFormat(text.cardOpenProjectLabel, {
     title: project.title,
@@ -99,7 +113,20 @@ export function ProjectOverviewCard({
     websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
   // Die Rückseite ersetzt nur die Vorschaufläche; Spalte und Breite der Karte bleiben.
+  const refreshKpis = async () => {
+    if (!onRefreshKpis || refreshPending) return;
+    setRefreshPending(true);
+    setArchiveError(null);
+    const ok = await onRefreshKpis();
+    setRefreshPending(false);
+    if (!ok) setArchiveError(t("Neuberechnung nicht erreichbar.", "Recalculation not reachable."));
+  };
   const closeEditing = () => setEditing(null);
+  // Only one card editor (Exit-Bewertung / Konfigurieren) is open across the
+  // gallery: opening one closes every other InlineExpand, like the KPI tiles.
+  useSingleInlineExpand(editing !== null, (open) => {
+    if (!open) setEditing(null);
+  });
   useEffect(() => {
     if (editing === null) return;
     const onKey = (event: KeyboardEvent) => {
@@ -201,6 +228,17 @@ export function ProjectOverviewCard({
               >
                 {t("Exit-Bewertung", "Exit valuation")}
               </MenuItem>
+              {onRefreshKpis && scopedKpis && scopedKpis.items.length > 0 && (
+                <MenuItem
+                  disabled={refreshPending}
+                  onClick={() => void refreshKpis()}
+                  data-workjet-action={`project.kpis.refresh.menu:${project.key}`}
+                >
+                  {refreshPending
+                    ? t("Wird berechnet …", "Calculating …")
+                    : t("KPIs neu berechnen", "Recalculate KPIs")}
+                </MenuItem>
+              )}
               {(saveCardConfiguration || onConfigure) && (
                 <MenuItem
                   onClick={() =>
@@ -365,6 +403,19 @@ export function ProjectOverviewCard({
       <div className="border-t border-border px-3 py-3">
         <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
           {(["first", "second", "third"] as const).map((position, index) => {
+            if (project.native && scopedKpis)
+              return (
+                <ProjectKpiTile
+                  key={position}
+                  projectId={project.id}
+                  index={index}
+                  kpis={scopedKpis}
+                  expanded={editingKpi === index}
+                  onExpandedChange={(open) => setEditingKpi(open ? index : null)}
+                  onSave={onSaveKpis}
+                  onRefresh={onRefreshKpis}
+                />
+              );
             const slot = slots[index] ?? null;
             const metric = scopedKpis
               ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)

@@ -4,7 +4,7 @@
  * Brücke des Desktops (Systemdialog, kein App-Popup) oder über Vorschläge aus
  * dem Dateisystem des gewählten Rechners; Klonen über cloneRepository.
  */
-import { RegistryContext } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
 import {
   filterFilesystemBrowseEntries,
@@ -44,6 +44,7 @@ import {
   cloneProjectRepository,
   defaultCloneBaseDirectory,
   deriveRepositoryFolderName,
+  findDuplicateProjectForName,
   pickProjectFolder,
   readyCloneProviders,
   resolveProjectComputer,
@@ -183,12 +184,25 @@ export function useProjectCreateSources(input: {
   const [baseDirectoryInput, setBaseDirectory] = useState<string | null>(null);
   const baseDirectory = baseDirectoryInput ?? baseDirectorySetting;
 
-  const derivedTitle =
+  const sourceName =
     input.source === "clone"
       ? deriveRepositoryFolderName(repository)
       : input.source === "folder" && folderPathInput !== null
         ? inferProjectTitleFromPath(resolveProjectPathForDispatch(folderPath))
         : "";
+  const environmentProjectList = useAtomValue(environmentProjects.projectsAtom).filter(
+    (project) => project.environmentId === environmentId,
+  );
+  /** Project this source would duplicate; opened instead of creating a second card. */
+  const duplicate =
+    input.source === "clone"
+      ? findDuplicateProjectForName(environmentProjectList, sourceName)
+      : input.source === "folder" && folderPathInput !== null
+        ? (findProjectByPath(environmentProjectList, resolveProjectPathForDispatch(folderPath)) ??
+          undefined)
+        : undefined;
+  // Keep the existing project's casing („Metric“), not the folder's („metric“).
+  const derivedTitle = duplicate?.title ?? sourceName;
   const ready =
     environmentId !== null &&
     (input.source === "clone"
@@ -236,7 +250,12 @@ export function useProjectCreateSources(input: {
       readonly title: string;
       readonly workspaceRoot: string;
       readonly instanceId: string;
-    }): Promise<{ environmentId: EnvironmentId; projectId: ProjectId }> => {
+    }): Promise<{
+      environmentId: EnvironmentId;
+      projectId: ProjectId;
+      /** Set when an existing project for this folder was opened instead. */
+      reusedTitle?: string;
+    }> => {
       if (environmentId === null) throw new Error("Kein Rechner verbunden.");
       const existing = findProjectByPath(
         projectStore
@@ -246,7 +265,8 @@ export function useProjectCreateSources(input: {
       );
       if (existing?.ctoxRegistration && existing.ctoxRegistration.instanceId !== request.instanceId)
         throw new Error("Ordner gehört zu einer anderen Instanz.");
-      if (existing !== undefined) return { environmentId, projectId: existing.id };
+      if (existing !== undefined)
+        return { environmentId, projectId: existing.id, reusedTitle: existing.title };
       const key = JSON.stringify([
         request.instanceId,
         environmentId,
@@ -296,6 +316,7 @@ export function useProjectCreateSources(input: {
   return {
     computerOptions,
     environmentId,
+    duplicate: duplicate === undefined ? null : { id: duplicate.id, title: duplicate.title },
     setEnvironmentId: setChosenEnvironmentId,
     hasConnectedComputer: computerOptions.some((option) => option.connected),
     folderPath,

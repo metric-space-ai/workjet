@@ -1,10 +1,10 @@
-import { Link } from "@tanstack/react-router";
+import { ChevronDownIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
 import { useProjectKpiSettings } from "../../hooks/useProjectKpiSettings";
 import { usePrimarySettings } from "../../hooks/useSettings";
-import { newCommandId } from "../../lib/utils";
+import { cn, newCommandId } from "../../lib/utils";
 import { buildProjectGallery, type GalleryProject } from "../../projectOverview";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useProjects } from "../../state/entities";
@@ -16,7 +16,7 @@ import {
 import { ProjectOverviewEditor, type ProjectConfigurationValues } from "../ProjectOverviewEditor";
 import { ProjectSupervisorLumaField } from "../ProjectSupervisorLumaField";
 import { Row } from "../ui/row";
-import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { SettingsPageContainer, SettingsSection, useSettingsEmbedded } from "./settingsLayout";
 
 /** Route key for an instance project without a local working copy on this machine. */
 export const INSTANCE_PROJECT_KEY_PREFIX = "instance:";
@@ -69,19 +69,35 @@ const text = () =>
       };
 
 /** One row in the plain project list for an instance project without a local copy (#492). */
-export function InstanceProjectRow({ project }: { readonly project: GalleryProject }) {
+export function InstanceProjectRow({
+  project,
+  open,
+  onToggle,
+}: {
+  readonly project: GalleryProject;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+}) {
   const key = instanceProjectSettingsKey(project.id);
   return (
     <Row
       name={
-        <Link
-          to="/settings/projects/$projectKey"
-          params={{ projectKey: key }}
-          className="flex min-w-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={onToggle}
+          className="flex min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-workjet-action={`project.settings:${key}`}
         >
           <span className="truncate">{project.title}</span>
-        </Link>
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </button>
       }
     />
   );
@@ -116,12 +132,17 @@ export function InstanceProjectDetail({
     [configuration, instanceId, project.title],
   );
   const t = text();
+  const embedded = useSettingsEmbedded();
   return (
     <SettingsPageContainer>
+      {embedded ? null : (
+        <h2 className="min-w-0 break-words px-1 text-[22px] font-semibold">{project.title}</h2>
+      )}
       <SettingsSection title={t.settings}>
         <div className="px-3 py-3 sm:px-4" data-workjet-project-settings-overview="">
           <ProjectOverviewEditor
             key={project.key}
+            onCancel={embedded?.onClose}
             overview={null}
             configuration={configuration}
             onSaveConfiguration={saveConfiguration}

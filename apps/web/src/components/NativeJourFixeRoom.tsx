@@ -3,6 +3,7 @@ import type { ProjectId, WorkjetJourFixeReadResponse } from "@workjet/contracts"
 import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
 import {
+  readCachedJourFixePresentation,
   readJourFixePresentation,
   saveJourFixePresentationSlide,
   type JourFixePresentation,
@@ -11,7 +12,13 @@ import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema
 import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { nativeJourFixeNarrationProvider } from "../lib/nativeJourFixeNarrationProvider";
+import { createJourFixeGatewayMicrophoneProvider } from "../lib/jourFixeGatewayMicrophone";
 import { Button } from "./ui/button";
+
+/** Retained narration plus the owner's microphone through the CTOX speech gateway. */
+const nativeJourFixeSpeechProvider = createJourFixeGatewayMicrophoneProvider({
+  prepareNarration: nativeJourFixeNarrationProvider.prepareNarration,
+});
 
 export function NativeJourFixeRoom(props: {
   readonly instanceId: string;
@@ -31,9 +38,10 @@ function NativeJourFixeRoomContent({
 }: Parameters<typeof NativeJourFixeRoom>[0]) {
   const active = useRef(false);
   const readAbort = useRef<AbortController | null>(null);
+  const pendingAbort = useRef<AbortController | null>(null);
   const recovery = useRef<{ resolve: () => void; reject: (error: Error) => void } | null>(null);
   const retrying = useRef(false);
-  const [retryBusy, setRetryBusy] = useState(false);
+  const [pendingFailed, setPendingFailed] = useState(false);
   const session = useMemo(
     () =>
       new JourFixeNativeSession(
@@ -59,6 +67,9 @@ function NativeJourFixeRoomContent({
     let cancelled = false;
     const controller = new AbortController();
     setPresentationPending(true);
+    void readCachedJourFixePresentation(instanceId, projectId, meetingId).then((cached) => {
+      if (!cancelled && cached) setPresentation((value) => value ?? cached);
+    });
     void readJourFixePresentation(
       instanceId,
       projectId,
@@ -91,7 +102,7 @@ function NativeJourFixeRoomContent({
   }, []);
   const savePresentationSlide = useCallback(
     async (slideId: string, scene: CanvasScene) => {
-      if (!presentation) throw new Error("This meeting has no presentation.");
+      if (!presentation) throw new Error("Dieser Termin hat keine Folien.");
       const saved = await saveJourFixePresentationSlide(
         instanceId,
         projectId,
@@ -117,8 +128,14 @@ function NativeJourFixeRoomContent({
     const controller = new AbortController();
     readAbort.current = controller;
     let cancelled = false;
+    let confirmed = false;
+    // Render the last confirmed snapshot at once; CTOX's answer replaces it.
+    void session.readCached().then((cached) => {
+      if (!cancelled && !confirmed && cached) setResult((value) => value ?? cached);
+    });
     void session.read(undefined, controller.signal).then(
       (value) => {
+        confirmed = true;
         if (!cancelled) {
           setResult(value);
           setError(null);
@@ -133,7 +150,11 @@ function NativeJourFixeRoomContent({
       cancelled = true;
       active.current = false;
       controller.abort();
-      recovery.current?.reject(new Error("Meeting closed before the change was confirmed."));
+      pendingAbort.current?.abort();
+      pendingAbort.current = null;
+      recovery.current?.reject(
+        new Error("Der Termin wurde geschlossen, bevor die Änderung bestätigt war."),
+      );
       recovery.current = null;
     };
   }, [session]);
@@ -172,73 +193,62 @@ function NativeJourFixeRoomContent({
       setError(null);
     } catch (reason) {
       if (!active.current || !session.hasPendingChange()) throw reason;
-      setError(reason instanceof Error ? reason.message : "Änderung nicht bestätigt.");
-      // Keep the original room action pending, inputs frozen and draft intact.
-      await new Promise<void>((resolve, reject) => {
+      // Unbestätigte Änderung: die Wiederholung läuft automatisch und still im
+      // Hintergrund. Entwurf und gesperrte Eingaben bleiben, bis der Beleg da ist.
+      const waiting = new Promise<void>((resolve, reject) => {
         recovery.current = { resolve, reject };
       });
+      confirmPending();
+      await waiting;
     }
   }
-  async function retry() {
+  function confirmPending() {
     if (retrying.current) return;
     retrying.current = true;
-    setRetryBusy(true);
-    try {
-      const value = await session.retryPending();
-      setResult(value);
-      setError(null);
-      const pending = recovery.current;
-      recovery.current = null;
-      pending?.resolve();
-    } catch (reason) {
-      if (active.current)
-        setError(reason instanceof Error ? reason.message : "Änderung unbestätigt.");
-    } finally {
-      retrying.current = false;
-      if (active.current) setRetryBusy(false);
-    }
+    setPendingFailed(false);
+    const controller = new AbortController();
+    pendingAbort.current = controller;
+    void session
+      .retryPendingUntilConfirmed({ signal: controller.signal })
+      .then(
+        (value) => {
+          if (!active.current) return;
+          setResult(value);
+          setError(null);
+          const waiting = recovery.current;
+          recovery.current = null;
+          waiting?.resolve();
+        },
+        () => {
+          // Endgültig gescheitert (5 min): erst dann „Nicht gespeichert“ am Element;
+          // „Erneut senden“ startet denselben Vorgang mit neuer Frist.
+          if (active.current) setPendingFailed(true);
+        },
+      )
+      .finally(() => {
+        retrying.current = false;
+        if (pendingAbort.current === controller) pendingAbort.current = null;
+      });
   }
+  // A shown deck (also from the cache) is never covered by a load or refresh status.
+  const presentationStatus =
+    presentation === null && (presentationFailed || presentationPending)
+      ? {
+          state: presentationFailed ? ("failed" as const) : ("loading" as const),
+          text: presentationFailed ? "Folien nicht verfügbar" : "Folien werden geladen …",
+          ...(presentationFailed ? { onRetry: reloadPresentation } : {}),
+        }
+      : undefined;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {presentationFailed ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-3 border-b border-destructive/30 px-4 py-2 text-xs text-destructive"
-          data-workjet-presentation-state="failed"
-        >
-          <span className="min-w-0 flex-1">Folien nicht verfügbar</span>
-          <Button size="sm" variant="outline" onClick={reloadPresentation}>
-            Erneut laden
-          </Button>
-        </div>
-      ) : presentationPending && presentation === null ? (
-        <p
-          role="status"
-          className="border-b border-border px-4 py-2 text-xs text-muted-foreground"
-          data-workjet-presentation-state="loading"
-        >
-          Folien werden geladen …
-        </p>
-      ) : null}
-      {error && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-3 border-b border-amber-500/30 bg-amber-500/5 px-4 py-2 text-xs"
-        >
-          <span className="min-w-0 flex-1">{error}</span>
-          {session.hasPendingChange() && (
-            <Button size="sm" variant="outline" disabled={retryBusy} onClick={() => void retry()}>
-              Erneut versuchen
-            </Button>
-          )}
-        </div>
-      )}
       <JourFixeSpeechRoom
         instanceId={instanceId}
-        speechProvider={speechProvider ?? nativeJourFixeNarrationProvider}
+        speechProvider={speechProvider ?? nativeJourFixeSpeechProvider}
         projectTitle={projectTitle}
         meeting={meeting}
         commentDelivery="saved"
+        {...(presentationStatus ? { presentationStatus } : {})}
+        {...(pendingFailed ? { pendingChange: { onRetry: () => confirmPending() } } : {})}
         {...(presentation
           ? {
               presentation: {

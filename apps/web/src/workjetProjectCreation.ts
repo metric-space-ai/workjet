@@ -48,9 +48,13 @@ export interface WorkjetProjectCreationOptions {
 export function workjetProjectCreationFailureMessage(code: string): string {
   switch (code) {
     case "authentication_required":
-      return "Sign in to the selected instance to add this project.";
+      return workjetUiLanguage() === "de"
+        ? "Bei der Instanz anmelden, um das Projekt hinzuzufügen."
+        : "Sign in to the selected instance to add this project.";
     case "unsupported":
-      return "The selected instance does not provide project management. Update its Business OS shell in Settings, then retry.";
+      return workjetUiLanguage() === "de"
+        ? "Die Instanz unterstützt noch keine Projekte. Business-OS-Shell aktualisieren und erneut versuchen."
+        : "The selected instance does not provide project management. Update its Business OS shell in Settings, then retry.";
     case "instance_disabled":
       return workjetUiLanguage() === "de"
         ? "Instanz deaktiviert. Das Projekt bleibt lokal gespeichert."
@@ -60,15 +64,25 @@ export function workjetProjectCreationFailureMessage(code: string): string {
         ? "Instanz entfernt. Das Projekt bleibt lokal gespeichert."
         : "Instance removed. The project remains saved locally.";
     case "not_active":
-      return "The selected CTOX instance is no longer connected.";
+      return workjetUiLanguage() === "de"
+        ? "Die CTOX-Instanz ist nicht mehr verbunden."
+        : "The selected CTOX instance is no longer connected.";
     case "launch_failed":
-      return "Workjet could not start the connection to the selected CTOX instance. Check its status in Settings, then retry.";
+      return workjetUiLanguage() === "de"
+        ? "Verbindung zur CTOX-Instanz nicht gestartet. Status in den Einstellungen prüfen und erneut versuchen."
+        : "Workjet could not start the connection to the selected CTOX instance. Check its status in Settings, then retry.";
     case "timeout":
-      return "The selected instance did not acknowledge synchronization. The project remains saved locally.";
+      return workjetUiLanguage() === "de"
+        ? "Die Instanz hat den Abgleich nicht bestätigt. Das Projekt bleibt lokal gespeichert."
+        : "The selected instance did not acknowledge synchronization. The project remains saved locally.";
     case "local_computer_unregistered":
-      return "Register this computer before synchronizing its working copy.";
+      return workjetUiLanguage() === "de"
+        ? "Diesen Rechner zuerst registrieren, dann abgleichen."
+        : "Register this computer before synchronizing its working copy.";
     default:
-      return "CTOX did not confirm the project. You can retry without reopening this dialog.";
+      return workjetUiLanguage() === "de"
+        ? "CTOX hat das Projekt nicht bestätigt. Erneut versuchen."
+        : "CTOX did not confirm the project. You can retry without reopening this dialog.";
   }
 }
 

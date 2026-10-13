@@ -9,7 +9,13 @@ import {
   isWorkjetJourFixeReadReceiptForRequest,
 } from "@workjet/contracts";
 import { requestWorkjetProjectControl } from "../workjetProjectControl";
-import { retryJourFixeRead, jourFixeTransportError } from "./jourFixeReadRetry";
+import {
+  JourFixeReadError,
+  jourFixeReadDeadline,
+  jourFixeTransportError,
+  retryJourFixeRead,
+} from "./jourFixeReadRetry";
+import { jourFixeCacheKey, readJourFixeCache, writeJourFixeCache } from "./jourFixeCache";
 import { newCommandId, randomUUID } from "./utils";
 import type { JourFixeCommentDraft, JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
 
@@ -96,12 +102,59 @@ export class JourFixeNativeSession {
     return this.pending !== undefined;
   }
   retryPending() {
-    if (!this.pending) throw new Error("No change is waiting for retry.");
+    if (!this.pending) throw new Error("Keine Änderung wartet auf eine Wiederholung.");
     const pending = this.pending;
     return this.mutate(pending.key, () => pending.request);
   }
+  /**
+   * Wiederholt die unbestätigte Änderung still mit der Lese-Staffelung
+   * (5/10/20/30 s) bis zur gemeinsamen 5-min-Frist. Erst der letzte Fehler
+   * nach Ablauf der Frist wird an den Raum gemeldet.
+   */
+  async retryPendingUntilConfirmed(
+    options: { readonly signal?: AbortSignal | undefined; readonly deadline?: number } = {},
+  ): Promise<WorkjetJourFixeReadResponse> {
+    const deadline = options.deadline ?? jourFixeReadDeadline();
+    let failures = 0;
+    while (true) {
+      if (options.signal?.aborted) throw new DOMException("aborted", "AbortError");
+      if (Date.now() >= deadline) throw new JourFixeReadError("timeout");
+      try {
+        return await this.retryPending();
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        if (Date.now() >= deadline) throw error;
+        const delay = [5_000, 10_000, 20_000][failures++] ?? 30_000;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delay);
+          options.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              reject(new DOMException("aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        });
+      }
+    }
+  }
   private assertCurrent() {
-    if (this.closed || !this.current()) throw new Error("Meeting scope changed.");
+    if (this.closed || !this.current()) throw new Error("Der Terminbereich hat sich geändert.");
+  }
+  /**
+   * The last snapshot CTOX confirmed for this scope, for an immediate first
+   * render. It may be stale; callers replace it with `read()`'s answer.
+   */
+  async readCached(meetingId?: string): Promise<WorkjetJourFixeReadResponse | null> {
+    const cached = await readJourFixeCache<WorkjetJourFixeReadResponse>(
+      jourFixeCacheKey.meeting(this.instanceId, this.projectId, meetingId),
+    );
+    if (this.closed || !this.current() || !cached) return null;
+    if (cached.action !== "project.jour_fixe.meeting.read" || cached.projectId !== this.projectId)
+      return null;
+    if (meetingId !== undefined && cached.meeting?.id !== meetingId) return null;
+    return cached;
   }
   read(meetingId?: string, signal?: AbortSignal): Promise<WorkjetJourFixeReadResponse> {
     const key = meetingId ?? "";
@@ -139,8 +192,18 @@ export class JourFixeNativeSession {
       result.response.action !== request.action ||
       !isWorkjetJourFixeReadReceiptForRequest(request, result.response)
     )
-      throw new Error("Meeting read was not confirmed.");
-    return result.response;
+      throw new Error("Das Lesen des Termins wurde nicht bestätigt.");
+    const response = result.response;
+    void writeJourFixeCache(
+      jourFixeCacheKey.meeting(this.instanceId, this.projectId, meetingId),
+      response,
+    );
+    if (meetingId === undefined && response.meeting)
+      void writeJourFixeCache(
+        jourFixeCacheKey.meeting(this.instanceId, this.projectId, response.meeting.id),
+        response,
+      );
+    return response;
   }
   private async mutate(
     key: string,
@@ -148,7 +211,7 @@ export class JourFixeNativeSession {
   ): Promise<WorkjetJourFixeReadResponse> {
     this.assertCurrent();
     if (this.pending && this.pending.key !== key)
-      throw new Error("Retry the unconfirmed change before making another change.");
+      throw new Error("Erst die unbestätigte Änderung erneut senden.");
     const pending: PendingMutation = this.pending ?? { key, request: build() };
     this.pending = pending;
     if (pending.acknowledgedRevision === undefined) {
@@ -160,18 +223,18 @@ export class JourFixeNativeSession {
         !("mutation" in result.response)
       )
         throw new Error(
-          "This change has not been confirmed. Retry preserves its operation identity.",
+          "Diese Änderung wurde nicht bestätigt. Erneutes Senden behält ihre Kennung.",
         );
       if (pending.request.action === "project.jour_fixe.todos.confirm") {
         if (!("goal" in result.response) || result.response.goal === undefined)
-          throw new Error("The confirmed project goal receipt is missing.");
+          throw new Error("Die Bestätigung des Projektziels fehlt.");
         pending.confirmedGoal = result.response.goal;
       }
       pending.acknowledgedRevision = result.response.mutation.revision;
     }
     const fresh = await this.read(pending.request.meetingId);
     if (fresh.meeting === null || fresh.meeting.revision < pending.acknowledgedRevision)
-      throw new Error("The confirmed meeting snapshot is still catching up.");
+      throw new Error("Der bestätigte Terminstand liegt noch nicht vor.");
     if (pending.request.action === "project.jour_fixe.todos.confirm") {
       const goal = fresh.meeting.todos?.goal;
       if (
@@ -182,7 +245,7 @@ export class JourFixeNativeSession {
         goal.goal_id !== pending.confirmedGoal?.goal_id ||
         goal.revision !== pending.confirmedGoal.revision
       )
-        throw new Error("The confirmed project goal snapshot is still catching up.");
+        throw new Error("Der bestätigte Zielstand liegt noch nicht vor.");
     }
     this.pending = undefined;
     return fresh;

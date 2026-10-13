@@ -18,6 +18,7 @@ import {
   formatInviteValidity,
   manualConnectionCredentialText,
   resolveActiveBusinessOsInstanceId,
+  networkInstancesForSelection,
   visibleBusinessOsInstances,
 } from "./BusinessOsSettings";
 import { businessOsDeviceControlErrorMessage } from "./businessOsDeviceControl";
@@ -285,5 +286,14 @@ describe("Business OS settings scope", () => {
   it("keeps the manual browser credential masked until the user explicitly reveals it", () => {
     expect(manualConnectionCredentialText("browser-token", false)).toBe("••••••••••••");
     expect(manualConnectionCredentialText("browser-token", true)).toBe("browser-token");
+  });
+});
+
+describe("networkInstancesForSelection", () => {
+  it("shows only the selected instance's network", () => {
+    const instances = [{ id: "miltonticket" }, { id: "welsch" }];
+    expect(networkInstancesForSelection(instances, "welsch")).toEqual([{ id: "welsch" }]);
+    expect(networkInstancesForSelection(instances, null)).toEqual(instances);
+    expect(networkInstancesForSelection(instances, "gone")).toEqual(instances);
   });
 });

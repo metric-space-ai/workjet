@@ -35,6 +35,17 @@ export function releaseInlineExpand(id: string): void {
   openRegistry.delete(id);
 }
 
+/** Closes the open element, if any. Returns whether something was closed. */
+export function closeOpenInlineExpand(): boolean {
+  let closed = false;
+  for (const [id, close] of openRegistry) {
+    openRegistry.delete(id);
+    close();
+    closed = true;
+  }
+  return closed;
+}
+
 /** Test helper: number of currently open elements. */
 export function openInlineExpandCount(): number {
   return openRegistry.size;

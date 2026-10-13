@@ -1,4 +1,65 @@
 import { WorkerRunLedger, type WorkerRunIdentity } from "./WorkerRunLedger.ts";
+import { WorkerRunPool } from "./WorkerRunPool.ts";
+it.effect("uses the committed pool draw before the queued team delegation", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const profile = { ...remoteProfile, computerId: localComputer.id };
+    let drawCommitted = false;
+    let queued: WorkerRunIdentity | undefined;
+    const service = yield* harness.service.pipe(
+      Effect.provide(
+        serverSettingsLayerTest({
+          workjet: { computers: [localComputer], workerProfiles: [profile] },
+        }),
+      ),
+      Effect.provideService(WorkerRunPool, {
+        list: () => Effect.die("selection owns the snapshot"),
+        select: () =>
+          Effect.sync(() => {
+            expect(harness.commands).toHaveLength(0);
+            drawCommitted = true;
+            return {
+              key: "fixture-draw",
+              provider: "codex",
+              profile,
+              instanceId: inheritedModel.instanceId,
+              draw: {
+                briefSha256: "a".repeat(64),
+                healthSnapshotSha256: "b".repeat(64),
+                observedAt: "2026-10-13T09:00:00.000Z",
+                strategy: "uniform",
+                candidates: [{ candidate: "fixture-draw", probability: 1 }],
+                randomValue: 0.5,
+                selected: "fixture-draw",
+              } as const,
+            };
+          }),
+      }),
+      Effect.provideService(WorkerRunLedger, {
+        queue: (identity) =>
+          Effect.sync(() => {
+            expect(drawCommitted).toBe(true);
+            expect(harness.commands).toHaveLength(0);
+            queued = identity;
+          }),
+        observe: () => Effect.void,
+        list: () => Effect.succeed([]),
+        get: () => Effect.succeed(Option.none()),
+      }),
+    );
+    const result = yield* service.dispatch(invocation, {
+      task: "Pool assignment",
+      pool: "worker",
+      taskType: "backend",
+      difficulty: "hard",
+    });
+    expect(queued?.selection).toBe("pool");
+    expect(queued?.worker.harness).toBe(profile.harness);
+    expect(result.modelSelection.model).toBe(profile.modelId);
+    expect(harness.commands.map((command) => command.type)).toEqual(["thread.create"]);
+    expect(harness.dispatchOptions[0]?.workerDelegation?.delegation.state).toBe("queued");
+  }),
+);
 
 it.effect("persists the queued assignment before creating its worker thread", () =>
   Effect.gen(function* () {

@@ -81,6 +81,8 @@ import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as WorkerCleanupReceiptStore from "./workjet/WorkerCleanupReceiptStore.ts";
 import * as WorkerPullRequestStore from "./workjet/WorkerPullRequestStore.ts";
 import * as WorkerRunLedger from "./workjet/WorkerRunLedger.ts";
+import * as WorkerRunPool from "./workjet/WorkerRunPool.ts";
+import * as WorkerRunDraw from "./workjet/WorkerRunDraw.ts";
 import * as WorkerPullRequestLifecycle from "./workjet/WorkerPullRequestLifecycle.ts";
 import * as NativeWorkerWorktreeRemover from "./workjet/NativeWorkerWorktreeRemover.ts";
 import * as WorkerDispatchRollback from "./workjet/WorkerDispatchRollback.ts";
@@ -524,6 +526,7 @@ const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
 // A single service instance owns the stable native intent IDs and the normal
 // MCP dispatch path. Both entries share its durable broker and first-use lock.
 const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
+  Layer.provide(WorkerRunPool.layer.pipe(Layer.provide(WorkerRunDraw.layer))),
   Layer.provide(WorkerRunLedger.layer),
   Layer.provide(
     LocalWorkerWorktree.layer.pipe(

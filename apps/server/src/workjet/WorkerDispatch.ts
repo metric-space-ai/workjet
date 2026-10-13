@@ -54,9 +54,12 @@ import { makeWorkerOrdinal } from "./WorkerOrdinal.ts";
 import { LocalWorkerWorktree } from "./LocalWorkerWorktree.ts";
 import type { CapturedWorkerWorktree } from "./NativeWorkerWorktreeRemover.ts";
 import { WorkerRunLedger, type WorkerTaskType, type WorkerDifficulty } from "./WorkerRunLedger.ts";
+import { WorkerRunPool } from "./WorkerRunPool.ts";
 
 export interface WorkerDispatchInput {
   readonly task: string;
+  readonly pool?: "worker";
+  readonly workerName?: string;
   readonly taskType?: typeof WorkerTaskType.Type;
   readonly difficulty?: typeof WorkerDifficulty.Type;
   readonly workerProfileId?: WorkjetWorkerProfileId;
@@ -166,6 +169,13 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
 }
 
 export interface WorkerDispatchShape {
+  readonly listPool?: (
+    invocation: McpInvocationScope,
+    probe?: boolean,
+  ) => Effect.Effect<
+    Effect.Success<ReturnType<WorkerRunPool["Service"]["list"]>>,
+    WorkerDispatchError
+  >;
   /** Internal source-service entrypoint; never exposed by the MCP input schema. */
   readonly dispatchNativeIntent?: (
     invocation: McpInvocationScope,
@@ -225,6 +235,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const remoteBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
   const sourceGit = yield* Effect.serviceOption(GitVcsDriver);
   const ledger = yield* Effect.serviceOption(WorkerRunLedger);
+  const pool = yield* Effect.serviceOption(WorkerRunPool);
 
   const nativeMutex = yield* Semaphore.make(1);
   const dispatch: (
@@ -234,736 +245,838 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   ) => Effect.Effect<WorkerDispatchResult, WorkerDispatchError> = Effect.fn(
     "WorkerDispatch.dispatch",
   )(function* (invocation, input, trustedInitialRequestId) {
-    const parentOption = yield* query
-      .getThreadDetailById(invocation.threadId)
-      .pipe(Effect.mapError(() => failure("parent-unavailable")));
-    const parent = Option.getOrUndefined(parentOption);
-    if (!parent || parent.deletedAt !== null || parent.archivedAt != null) {
-      return yield* failure("parent-unavailable");
-    }
-    if (!canCoordinateWorkjet(parent.workjetConfig)) {
-      return yield* failure("parent-not-orchestrator");
-    }
-    const parentTeam =
-      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
-    if (parentTeam && parentTeam.role !== "specialist" && parentTeam.role !== "supervisor") {
-      return yield* failure("role-not-authorized");
-    }
-    const parentTeamBinding =
-      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.parentTeamBinding : undefined;
-    if (
-      !workjetParentBindingMatchesTeam(parentTeamBinding, parentTeam, parent.projectId, parent.id)
-    ) {
-      return yield* failure("role-not-authorized");
-    }
-    const executionPolicy =
-      parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.executionPolicy : undefined;
-    if (
-      executionPolicy !== undefined &&
-      (executionPolicy.projectId !== parent.projectId ||
-        parentTeam === undefined ||
-        parentTeam.projectId !== parent.projectId ||
-        parentTeam.threadId !== parent.id)
-    ) {
-      return yield* failure("execution-policy-invalid");
-    }
-
-    const requestedCapabilityIds = input.enabledCapabilityIds
-      ? [...input.enabledCapabilityIds]
-      : undefined;
-    const delegated = resolveDelegatedCapabilities({
-      parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
-      ...(requestedCapabilityIds ? { requestedCapabilityIds } : {}),
-      targetRole: "worker",
-    });
-    let enabledCapabilityIds = [...delegated.capabilityIds] as WorkjetCapabilityId[];
-    if (requestedCapabilityIds !== undefined) {
-      if (new Set(requestedCapabilityIds).size !== requestedCapabilityIds.length) {
-        return yield* failure("duplicate-capabilities");
+    let queuedLocalRunId: string | undefined;
+    return yield* Effect.gen(function* () {
+      const parentOption = yield* query
+        .getThreadDetailById(invocation.threadId)
+        .pipe(Effect.mapError(() => failure("parent-unavailable")));
+      const parent = Option.getOrUndefined(parentOption);
+      if (!parent || parent.deletedAt !== null || parent.archivedAt != null) {
+        return yield* failure("parent-unavailable");
       }
-      const parentGrants = new Set(parent.workjetConfig.enabledCapabilityIds);
+      if (!canCoordinateWorkjet(parent.workjetConfig)) {
+        return yield* failure("parent-not-orchestrator");
+      }
+      const parentTeam =
+        parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+      if (parentTeam && parentTeam.role !== "specialist" && parentTeam.role !== "supervisor") {
+        return yield* failure("role-not-authorized");
+      }
+      const parentTeamBinding =
+        parent.workjetConfig.schemaVersion === 2
+          ? parent.workjetConfig.parentTeamBinding
+          : undefined;
       if (
-        requestedCapabilityIds.some((capabilityId) => !parentGrants.has(capabilityId)) ||
-        delegated.issues.length > 0
+        !workjetParentBindingMatchesTeam(parentTeamBinding, parentTeam, parent.projectId, parent.id)
       ) {
-        return yield* failure("capability-escalation");
+        return yield* failure("role-not-authorized");
       }
-    }
-
-    // A computer ID is an explicit catalog binding, never a hostname or an
-    // inferred transport. A foreign selection is relayed to that registered
-    // environment; it never creates a worker on the source computer.
-    let computerId = input.computerId;
-    let configuration: WorkjetConfiguration | undefined;
-    let targetEnvironmentId = invocation.environmentId;
-    if (Option.isSome(settings)) {
-      configuration = yield* settings.value.getSettings.pipe(
-        Effect.map((current) => current.workjet),
-        Effect.mapError(() => failure("computer-unavailable")),
-      );
-      if (invocation.ctoxBusinessOsBinding !== undefined) {
-        if (Option.isNone(lumaConnections)) return yield* failure("worker-profile-unavailable");
-        const httpClient = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
-        configuration = yield* makeCtoxLumaConfigurationRpc({
-          connections: lumaConnections.value,
-          client: makeCtoxLumaConfigurationClient(httpClient),
-        })
-          .resolveDispatch(invocation.ctoxBusinessOsBinding, configuration)
-          .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
-      }
-      if (input.workerProfileId !== undefined) {
-        const profiles = configuration.workerProfiles.filter(
-          (profile) => profile.id === input.workerProfileId,
-        );
-        if (
-          profiles.length !== 1 ||
-          (computerId !== undefined && profiles[0]!.computerId !== computerId)
-        )
-          return yield* failure("worker-profile-unavailable");
-        computerId = profiles[0]!.computerId;
-      }
-      computerId ??= configuration.selectedComputerId ?? undefined;
-      if (computerId === undefined) {
-        const localComputers = configuration.computers.filter(
-          (computer) =>
-            computer.environmentId === invocation.environmentId &&
-            computer.metadata?.active !== false,
-        );
-        if (localComputers.length === 1) computerId = localComputers[0]?.id;
-        else if (
-          localComputers.length === 0 &&
-          configuration.computers.some(
-            (computer) => computer.environmentId === invocation.environmentId,
-          )
-        )
-          return yield* failure("computer-unavailable");
-      }
-      if (computerId !== undefined) {
-        const matches = configuration.computers.filter((computer) => computer.id === computerId);
-        if (matches.length !== 1 || matches[0]!.metadata?.active === false)
-          return yield* failure("computer-unavailable");
-        targetEnvironmentId = matches[0]!.environmentId;
-      }
-    } else if (computerId !== undefined) {
-      return yield* failure("computer-unavailable");
-    }
-
-    let modelSelection = input.modelSelection ?? parent.modelSelection;
-    const queueRun = (
-      runId: string,
-      queuedAt: string,
-      harness: string | null,
-      route: string,
-      reasoning: string | null,
-    ) =>
-      Option.isNone(ledger)
-        ? Effect.void
-        : ledger.value
-            .queue(
-              {
-                runId,
-                parent: {
-                  threadId: parent.id,
-                  sessionId: invocation.providerSessionId || null,
-                  model: parent.modelSelection.model,
-                  harness: parent.session?.providerName ?? null,
-                },
-                worker: { model: modelSelection.model, harness, providerRoute: route, reasoning },
-                briefSha256: NodeCrypto.createHash("sha256")
-                  .update(input.task, "utf8")
-                  .digest("hex"),
-                taskType: input.taskType ?? "other",
-                difficulty: input.difficulty ?? "standard",
-                selection: "manual",
-              },
-              queuedAt,
-            )
-            .pipe(Effect.mapError(() => failure("create-failed")));
-    if (targetEnvironmentId !== invocation.environmentId) {
-      const profiles =
-        configuration?.workerProfiles.filter(
-          (profile) =>
-            profile.computerId === computerId &&
-            workerSourceDriver(profile.harness) !== undefined &&
-            (input.workerProfileId === undefined || profile.id === input.workerProfileId),
-        ) ?? [];
-      const profile = profiles.length === 1 ? profiles[0] : undefined;
+      const executionPolicy =
+        parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.executionPolicy : undefined;
       if (
-        !profile ||
-        !configuration?.llmRoutes.some((route) => route.id === profile.llmRouteId) ||
-        (input.modelSelection !== undefined && input.modelSelection.model !== profile.modelId)
-      )
-        return yield* failure("worker-profile-unavailable");
-      if (input.enabledCapabilityIds === undefined) {
+        executionPolicy !== undefined &&
+        (executionPolicy.projectId !== parent.projectId ||
+          parentTeam === undefined ||
+          parentTeam.projectId !== parent.projectId ||
+          parentTeam.threadId !== parent.id)
+      ) {
+        return yield* failure("execution-policy-invalid");
+      }
+
+      const requestedCapabilityIds = input.enabledCapabilityIds
+        ? [...input.enabledCapabilityIds]
+        : undefined;
+      const delegated = resolveDelegatedCapabilities({
+        parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
+        ...(requestedCapabilityIds ? { requestedCapabilityIds } : {}),
+        targetRole: "worker",
+      });
+      let enabledCapabilityIds = [...delegated.capabilityIds] as WorkjetCapabilityId[];
+      if (requestedCapabilityIds !== undefined) {
+        if (new Set(requestedCapabilityIds).size !== requestedCapabilityIds.length) {
+          return yield* failure("duplicate-capabilities");
+        }
+        const parentGrants = new Set(parent.workjetConfig.enabledCapabilityIds);
+        if (
+          requestedCapabilityIds.some((capabilityId) => !parentGrants.has(capabilityId)) ||
+          delegated.issues.length > 0
+        ) {
+          return yield* failure("capability-escalation");
+        }
+      }
+
+      // A computer ID is an explicit catalog binding, never a hostname or an
+      // inferred transport. A foreign selection is relayed to that registered
+      // environment; it never creates a worker on the source computer.
+      let computerId = input.computerId;
+      let configuration: WorkjetConfiguration | undefined;
+      let targetEnvironmentId = invocation.environmentId;
+      if (Option.isSome(settings)) {
+        configuration = yield* settings.value.getSettings.pipe(
+          Effect.map((current) => current.workjet),
+          Effect.mapError(() => failure("computer-unavailable")),
+        );
+        if (invocation.ctoxBusinessOsBinding !== undefined) {
+          if (Option.isNone(lumaConnections)) return yield* failure("worker-profile-unavailable");
+          const httpClient = yield* HttpClient.HttpClient.pipe(
+            Effect.provide(FetchHttpClient.layer),
+          );
+          configuration = yield* makeCtoxLumaConfigurationRpc({
+            connections: lumaConnections.value,
+            client: makeCtoxLumaConfigurationClient(httpClient),
+          })
+            .resolveDispatch(invocation.ctoxBusinessOsBinding, configuration)
+            .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
+        }
+        if (input.pool === "worker") {
+          if (
+            input.workerProfileId !== undefined ||
+            input.workerName !== undefined ||
+            Option.isNone(pool)
+          )
+            return yield* failure("worker-profile-unavailable");
+          const selected = yield* pool.value
+            .select(
+              {
+                ...configuration,
+                workerProfiles: configuration.workerProfiles.filter((profile) =>
+                  profile.capabilityIds.every((id) =>
+                    parent.workjetConfig.enabledCapabilityIds.includes(id),
+                  ),
+                ),
+              },
+              invocation.environmentId,
+              input.task,
+            )
+            .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
+          input = {
+            ...input,
+            workerProfileId: selected.profile.id,
+            modelSelection: { instanceId: selected.instanceId, model: selected.profile.modelId },
+          };
+        } else if (input.workerName !== undefined) {
+          const matches = configuration.workerProfiles.filter(
+            (profile) => profile.id === input.workerName || profile.name === input.workerName,
+          );
+          if (matches.length !== 1 || input.workerProfileId !== undefined)
+            return yield* failure("worker-profile-unavailable");
+          input = { ...input, workerProfileId: matches[0]!.id };
+        }
+        if (input.workerProfileId !== undefined) {
+          const profiles = configuration.workerProfiles.filter(
+            (profile) => profile.id === input.workerProfileId,
+          );
+          if (
+            profiles.length !== 1 ||
+            (computerId !== undefined && profiles[0]!.computerId !== computerId)
+          )
+            return yield* failure("worker-profile-unavailable");
+          computerId = profiles[0]!.computerId;
+        }
+        computerId ??= configuration.selectedComputerId ?? undefined;
+        if (computerId === undefined) {
+          const localComputers = configuration.computers.filter(
+            (computer) =>
+              computer.environmentId === invocation.environmentId &&
+              computer.metadata?.active !== false,
+          );
+          if (localComputers.length === 1) computerId = localComputers[0]?.id;
+          else if (
+            localComputers.length === 0 &&
+            configuration.computers.some(
+              (computer) => computer.environmentId === invocation.environmentId,
+            )
+          )
+            return yield* failure("computer-unavailable");
+        }
+        if (computerId !== undefined) {
+          const matches = configuration.computers.filter((computer) => computer.id === computerId);
+          if (matches.length !== 1 || matches[0]!.metadata?.active === false)
+            return yield* failure("computer-unavailable");
+          targetEnvironmentId = matches[0]!.environmentId;
+        }
+      } else if (computerId !== undefined) {
+        return yield* failure("computer-unavailable");
+      }
+
+      let modelSelection = input.modelSelection ?? parent.modelSelection;
+      const selectedProfile = configuration?.workerProfiles.find(
+        (profile) => profile.id === input.workerProfileId,
+      );
+      if (selectedProfile) {
         const selected = resolveDelegatedCapabilities({
           parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
-          requestedCapabilityIds: profile.capabilityIds,
+          requestedCapabilityIds: input.enabledCapabilityIds ?? selectedProfile.capabilityIds,
           targetRole: "worker",
         });
         if (
           selected.issues.length > 0 ||
-          profile.capabilityIds.some(
-            (id) => !parent.workjetConfig.enabledCapabilityIds.includes(id),
+          selected.capabilityIds.some(
+            (id) => !new Set<string>(parent.workjetConfig.enabledCapabilityIds).has(id),
+          ) ||
+          selected.capabilityIds.some(
+            (id) => !new Set<string>(selectedProfile.capabilityIds).has(id),
           )
         )
           return yield* failure("capability-escalation");
         enabledCapabilityIds = [...selected.capabilityIds] as WorkjetCapabilityId[];
-      } else if (enabledCapabilityIds.some((id) => !profile.capabilityIds.includes(id))) {
-        return yield* failure("capability-escalation");
       }
-      modelSelection = {
-        instanceId: input.modelSelection?.instanceId ?? parent.modelSelection.instanceId,
-        model: profile.modelId,
-        ...(input.modelSelection?.options === undefined
-          ? {}
-          : { options: input.modelSelection.options }),
-      };
-      if (Option.isNone(remoteBroker) || Option.isNone(sourceGit) || computerId === undefined) {
-        return yield* failure("remote-dispatch-unavailable");
+      if (
+        selectedProfile &&
+        targetEnvironmentId === invocation.environmentId &&
+        input.modelSelection === undefined
+      ) {
+        if (Option.isNone(pool)) return yield* failure("worker-profile-unavailable");
+        const catalog = yield* pool.value
+          .list(configuration!, invocation.environmentId)
+          .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
+        const selected = catalog.workers.find((entry) => entry.profile.id === selectedProfile.id);
+        if (!selected) return yield* failure("worker-profile-unavailable");
+        modelSelection = { instanceId: selected.instanceId, model: selected.profile.modelId };
       }
-      const broker = remoteBroker.value;
-      let request: RemoteWorkerRequest;
-      if (input.remoteRequestId) {
-        const saved = yield* broker
-          .read(input.remoteRequestId)
-          .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+      const queueRun = (
+        runId: string,
+        queuedAt: string,
+        harness: string | null,
+        route: string,
+        reasoning: string | null,
+      ) =>
+        Option.isNone(ledger)
+          ? Effect.void
+          : ledger.value
+              .queue(
+                {
+                  runId,
+                  parent: {
+                    threadId: parent.id,
+                    sessionId: invocation.providerSessionId || null,
+                    model: parent.modelSelection.model,
+                    harness: parent.session?.providerName ?? null,
+                  },
+                  worker: { model: modelSelection.model, harness, providerRoute: route, reasoning },
+                  briefSha256: NodeCrypto.createHash("sha256")
+                    .update(input.task, "utf8")
+                    .digest("hex"),
+                  taskType: input.taskType ?? "other",
+                  difficulty: input.difficulty ?? "standard",
+                  selection: input.pool === "worker" ? "pool" : "manual",
+                },
+                queuedAt,
+              )
+              .pipe(Effect.mapError(() => failure("create-failed")));
+      if (targetEnvironmentId !== invocation.environmentId) {
+        const profiles =
+          configuration?.workerProfiles.filter(
+            (profile) =>
+              profile.computerId === computerId &&
+              workerSourceDriver(profile.harness) !== undefined &&
+              (input.workerProfileId === undefined || profile.id === input.workerProfileId),
+          ) ?? [];
+        const profile = profiles.length === 1 ? profiles[0] : undefined;
         if (
-          Option.isNone(saved) ||
-          saved.value.request.parent.environmentId !== invocation.environmentId ||
-          saved.value.request.parent.threadId !== parent.id ||
-          saved.value.request.computerId !== computerId ||
-          saved.value.request.workerProfileId !== profile.id ||
-          (saved.value.request.harness ?? "codex-cli") !== profile.harness ||
-          saved.value.request.llmRouteId !== profile.llmRouteId ||
-          saved.value.request.modelSelection.model !== profile.modelId ||
-          !NodeUtil.isDeepStrictEqual(saved.value.request.executionPolicy, executionPolicy) ||
-          !NodeUtil.isDeepStrictEqual(saved.value.request.parentTeamBinding, parentTeamBinding) ||
-          saved.value.request.enabledCapabilityIds.some(
-            (id) => !profile.capabilityIds.includes(id),
-          ) ||
-          saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
-          saved.value.request.task !== input.task ||
-          (input.modelSelection !== undefined &&
-            !NodeUtil.isDeepStrictEqual(
-              yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(
-                Effect.mapError(() => failure("remote-dispatch-failed")),
-              ),
-              yield* Schema.encodeEffect(ModelSelection)(input.modelSelection).pipe(
-                Effect.mapError(() => failure("remote-dispatch-failed")),
-              ),
-            )) ||
-          (input.enabledCapabilityIds !== undefined &&
-            (saved.value.request.enabledCapabilityIds.length !== enabledCapabilityIds.length ||
-              saved.value.request.enabledCapabilityIds.some(
-                (id) => !enabledCapabilityIds.includes(id),
-              )))
-        ) {
-          return yield* failure("remote-dispatch-failed");
-        }
-        request = saved.value.request;
-      } else {
-        const project = Option.getOrUndefined(
-          yield* query
-            .getProjectShellById(parent.projectId)
-            .pipe(Effect.mapError(() => failure("remote-dispatch-failed"))),
-        );
-        const cwd = parent.worktreePath ?? project?.workspaceRoot;
-        if (!project?.repositoryIdentity || !cwd) return yield* failure("remote-dispatch-failed");
-        const status = yield* gitWorkflow
-          .localStatus({ cwd })
-          .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
-        // Do not silently discard unpublished source edits on another host.
-        if (!status.isRepo || status.hasWorkingTreeChanges)
-          return yield* failure("remote-dispatch-failed");
-        const revision = (yield* sourceGit.value
-          .execute({
-            operation: "WorkerDispatch.remoteSourceRevision",
-            cwd,
-            args: ["rev-parse", "HEAD"],
-            timeoutMs: 5000,
-            maxOutputBytes: 128,
-          })
-          .pipe(Effect.mapError(() => failure("remote-dispatch-failed")))).stdout.trim();
-        const requestId = trustedInitialRequestId ?? ThreadId.make(yield* sources.randomUUID);
-        const ordinal = yield* sources
-          .nextWorkerOrdinal(
-            { environmentId: invocation.environmentId, threadId: parent.id },
-            requestId,
+          !profile ||
+          !configuration?.llmRoutes.some((route) => route.id === profile.llmRouteId) ||
+          (input.modelSelection !== undefined && input.modelSelection.model !== profile.modelId)
+        )
+          return yield* failure("worker-profile-unavailable");
+        if (input.enabledCapabilityIds === undefined) {
+          const selected = resolveDelegatedCapabilities({
+            parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
+            requestedCapabilityIds: profile.capabilityIds,
+            targetRole: "worker",
+          });
+          if (
+            selected.issues.length > 0 ||
+            profile.capabilityIds.some(
+              (id) => !parent.workjetConfig.enabledCapabilityIds.includes(id),
+            )
           )
-          .pipe(Effect.mapError(() => failure("create-failed")));
-        const createdAt = yield* sources.nowIso;
-        const { rootPath: _sourcePath, ...repository } = project.repositoryIdentity;
-        const remoteUrl = repository.locator.remoteUrl.replace(
-          /^git@github\.com:/,
-          "https://github.com/",
-        );
-        request = yield* Schema.decodeUnknownEffect(RemoteWorkerRequest)({
-          schemaVersion: 1,
-          requestId,
-          targetEnvironmentId,
-          computerId,
-          workerProfileId: profile.id,
-          ...(profile.harness === "codex-cli" ? {} : { harness: profile.harness }),
-          llmRouteId: profile.llmRouteId,
-          parent: { environmentId: invocation.environmentId, threadId: parent.id },
-          ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
-          ...(executionPolicy === undefined ? {} : { executionPolicy }),
-          ...(parentTeamBinding === undefined ? {} : { parentTeamBinding }),
-          parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
-          managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
-            .filter(Boolean)
-            .join("\n\n"),
-          project: {
-            id: project.id,
-            title: project.title,
-            repository: {
-              ...repository,
-              locator: { ...repository.locator, remoteUrl },
-            },
-          },
-          revision,
-          task: input.task,
-          title: deriveWorkerTitle(ordinal, parent.title, modelSelection.model),
-          modelSelection,
-          runtimeMode: DEFAULT_RUNTIME_MODE,
-          interactionMode: parent.interactionMode,
-          enabledCapabilityIds,
-          createdAt,
-          expiresAt: DateTime.makeUnsafe(createdAt).pipe(
-            DateTime.add({ days: 7 }),
-            DateTime.formatIso,
-          ),
-        }).pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
-        yield* queueRun(
-          request.requestId,
-          request.createdAt,
-          profile.harness,
-          profile.llmRouteId,
-          profile.reasoning,
-        );
-        yield* broker
-          .enqueue(request)
-          .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
-      }
-      const response = yield* broker.awaitResponse(request.requestId).pipe(
-        Effect.timeout("4 minutes"),
-        Effect.mapError(
-          () =>
-            new WorkerDispatchError({
-              reason: "remote-dispatch-pending",
-              remoteRequestId: request.requestId,
-              targetEnvironmentId,
-            }),
-        ),
-      );
-      if (response.outcome.status === "failed")
-        return yield* new WorkerDispatchError({
-          reason:
-            response.outcome.reason === "rollback-failed"
-              ? "rollback-failed"
-              : "remote-dispatch-failed",
-          remoteRequestId: request.requestId,
-          targetEnvironmentId,
-        });
-      return response.outcome.result;
-    }
-    if (input.remoteRequestId || trustedInitialRequestId)
-      return yield* failure("remote-dispatch-failed");
-
-    const parentReference = {
-      environmentId: invocation.environmentId,
-      threadId: invocation.threadId,
-    } as const;
-    const workerThreadId = ThreadId.make(yield* sources.randomUUID);
-    const createCommandId = CommandId.make(yield* sources.randomUUID);
-    const turnStartCommandId = CommandId.make(yield* sources.randomUUID);
-    const messageId = MessageId.make(yield* sources.randomUUID);
-    const createdAt = yield* sources.nowIso;
-    yield* queueRun(workerThreadId, createdAt, null, modelSelection.instanceId, null);
-    const ordinal = yield* sources
-      .nextWorkerOrdinal(parentReference, workerThreadId)
-      .pipe(Effect.mapError(() => failure("create-failed")));
-    const title = deriveWorkerTitle(ordinal, parent.title, modelSelection.model);
-    let preparedDelegation: OrchestrationDispatchOptions["workerDelegation"];
-    if (parentTeam) {
-      if (Option.isNone(snapshotStore) || Option.isNone(meshIdentity)) {
-        return yield* failure("create-failed");
-      }
-      const identity = meshIdentity.value;
-      const snapshot = yield* snapshotStore.value
-        .put(input.task)
-        .pipe(Effect.mapError(() => failure("create-failed")));
-      const expiresAt = DateTime.makeUnsafe(createdAt).pipe(
-        DateTime.add({ days: 7 }),
-        DateTime.formatIso,
-      );
-      const envelopeId = WorkjetEnvelopeId.make(`wjm-worker-${workerThreadId}`);
-      const source = {
-        schemaVersion: 1 as const,
-        workspaceId: identity.workspaceId,
-        environmentId: invocation.environmentId,
-        threadId: parent.id,
-      };
-      const target = { ...source, threadId: workerThreadId };
-      const delegation = {
-        schemaVersion: 1,
-        delegationId: WorkjetDelegationId.make(`wjd-worker-${workerThreadId}`),
-        envelopeId,
-        source,
-        target,
-        createdAt,
-        expiresAt,
-        prompt: {
-          schemaVersion: 1,
-          snapshotRef: snapshot.snapshotRef,
-          digest: snapshot.digest,
-          byteLength: snapshot.byteLength,
-        },
-        scope: {
-          schemaVersion: 1,
-          // A worker without a narrower file selection owns the isolated
-          // checkout root. The mailbox contract requires an explicit scope.
-          files: [WorkjetRepositoryPath.make(".")],
-          nonGoals: "Do not perform work outside the assigned task.",
-        },
-        completion: {
-          schemaVersion: 1,
-          acceptance:
-            "Complete the task in the verified prompt snapshot and return implementation and verification evidence.",
-        },
-        budget: { schemaVersion: 1, maxDepth: 1, maxReviewRounds: 2, expiresAt },
-        state: "queued",
-        stateChangedAt: createdAt,
-        depth: 0,
-      } as const satisfies WorkjetDelegation;
-      const envelope = yield* identity
-        .signRoutingEnvelope({
-          schemaVersion: 1,
-          envelopeId,
-          kind: "delegation",
-          sourceWorkspaceId: source.workspaceId,
-          sourceEnvironmentId: source.environmentId,
-          targetWorkspaceId: target.workspaceId,
-          targetEnvironmentId: target.environmentId,
-          createdAt,
-          expiresAt,
-        })
-        .pipe(Effect.mapError(() => failure("create-failed")));
-      preparedDelegation = { envelope, delegation };
-    }
-
-    // The owner decision of 2026-08-17 rejects worktree inheritance: parallel
-    // workers must never share a checkout. Every worker therefore gets its own
-    // Git worktree beneath the server-authoritative storage root, branched
-    // from the orchestrator's current ref.
-    const gitCwd =
-      parent.worktreePath ??
-      (yield* query.getProjectShellById(parent.projectId).pipe(
-        Effect.map((projectOption) => Option.getOrUndefined(projectOption)?.workspaceRoot ?? null),
-        Effect.orElseSucceed(() => null),
-      ));
-    if (gitCwd === null) {
-      return yield* failure("worktree-failed");
-    }
-    const workerRefName = `${WORKER_REF_PREFIX}${workerThreadId}`;
-    let workerWorktree: { readonly path: string; readonly refName: string };
-    let custody: CapturedWorkerWorktree | undefined;
-    if (executionPolicy !== undefined) {
-      if (
-        Option.isNone(localWorktrees) ||
-        parentTeam === undefined ||
-        preparedDelegation === undefined
-      )
-        return yield* failure("worktree-failed");
-      const project = yield* query
-        .getProjectShellById(parent.projectId)
-        .pipe(Effect.mapError(() => failure("worktree-failed")));
-      if (
-        Option.isNone(project) ||
-        project.value.repositoryIdentity === undefined ||
-        project.value.repositoryIdentity === null
-      )
-        return yield* failure("worktree-failed");
-      const allocated = yield* localWorktrees.value
-        .allocate({
-          cwd: gitCwd,
-          refName: parent.branch ?? "HEAD",
-          repository: project.value.repositoryIdentity,
-          context: {
+            return yield* failure("capability-escalation");
+          enabledCapabilityIds = [...selected.capabilityIds] as WorkjetCapabilityId[];
+        } else if (enabledCapabilityIds.some((id) => !profile.capabilityIds.includes(id))) {
+          return yield* failure("capability-escalation");
+        }
+        modelSelection = {
+          instanceId: input.modelSelection?.instanceId ?? parent.modelSelection.instanceId,
+          model: profile.modelId,
+          ...(input.modelSelection?.options === undefined
+            ? {}
+            : { options: input.modelSelection.options }),
+        };
+        if (Option.isNone(remoteBroker) || Option.isNone(sourceGit) || computerId === undefined) {
+          return yield* failure("remote-dispatch-unavailable");
+        }
+        const broker = remoteBroker.value;
+        let request: RemoteWorkerRequest;
+        if (input.remoteRequestId) {
+          const saved = yield* broker
+            .read(input.remoteRequestId)
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          if (
+            Option.isNone(saved) ||
+            saved.value.request.parent.environmentId !== invocation.environmentId ||
+            saved.value.request.parent.threadId !== parent.id ||
+            saved.value.request.computerId !== computerId ||
+            saved.value.request.workerProfileId !== profile.id ||
+            (saved.value.request.harness ?? "codex-cli") !== profile.harness ||
+            saved.value.request.llmRouteId !== profile.llmRouteId ||
+            saved.value.request.modelSelection.model !== profile.modelId ||
+            !NodeUtil.isDeepStrictEqual(saved.value.request.executionPolicy, executionPolicy) ||
+            !NodeUtil.isDeepStrictEqual(saved.value.request.parentTeamBinding, parentTeamBinding) ||
+            saved.value.request.enabledCapabilityIds.some(
+              (id) => !profile.capabilityIds.includes(id),
+            ) ||
+            saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
+            saved.value.request.task !== input.task ||
+            (input.modelSelection !== undefined &&
+              !NodeUtil.isDeepStrictEqual(
+                yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(
+                  Effect.mapError(() => failure("remote-dispatch-failed")),
+                ),
+                yield* Schema.encodeEffect(ModelSelection)(input.modelSelection).pipe(
+                  Effect.mapError(() => failure("remote-dispatch-failed")),
+                ),
+              )) ||
+            (input.enabledCapabilityIds !== undefined &&
+              (saved.value.request.enabledCapabilityIds.length !== enabledCapabilityIds.length ||
+                saved.value.request.enabledCapabilityIds.some(
+                  (id) => !enabledCapabilityIds.includes(id),
+                )))
+          ) {
+            return yield* failure("remote-dispatch-failed");
+          }
+          request = saved.value.request;
+        } else {
+          const project = Option.getOrUndefined(
+            yield* query
+              .getProjectShellById(parent.projectId)
+              .pipe(Effect.mapError(() => failure("remote-dispatch-failed"))),
+          );
+          const cwd = parent.worktreePath ?? project?.workspaceRoot;
+          if (!project?.repositoryIdentity || !cwd) return yield* failure("remote-dispatch-failed");
+          const status = yield* gitWorkflow
+            .localStatus({ cwd })
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          // Do not silently discard unpublished source edits on another host.
+          if (!status.isRepo || status.hasWorkingTreeChanges)
+            return yield* failure("remote-dispatch-failed");
+          const revision = (yield* sourceGit.value
+            .execute({
+              operation: "WorkerDispatch.remoteSourceRevision",
+              cwd,
+              args: ["rev-parse", "HEAD"],
+              timeoutMs: 5000,
+              maxOutputBytes: 128,
+            })
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")))).stdout.trim();
+          const requestId = trustedInitialRequestId ?? ThreadId.make(yield* sources.randomUUID);
+          const ordinal = yield* sources
+            .nextWorkerOrdinal(
+              { environmentId: invocation.environmentId, threadId: parent.id },
+              requestId,
+            )
+            .pipe(Effect.mapError(() => failure("create-failed")));
+          const createdAt = yield* sources.nowIso;
+          const { rootPath: _sourcePath, ...repository } = project.repositoryIdentity;
+          const remoteUrl = repository.locator.remoteUrl.replace(
+            /^git@github\.com:/,
+            "https://github.com/",
+          );
+          request = yield* Schema.decodeUnknownEffect(RemoteWorkerRequest)({
             schemaVersion: 1,
-            environmentId: invocation.environmentId,
-            ...(computerId === undefined ? {} : { computerId }),
-            parentThreadId: parent.id,
-            projectId: parent.projectId,
-            workerThreadId,
-            teamRole: parentTeam.role,
-            teamParentThreadId: parentTeam.parentThreadId,
-            taskDigest: preparedDelegation.delegation.prompt.digest,
+            requestId,
+            targetEnvironmentId,
+            computerId,
+            workerProfileId: profile.id,
+            ...(profile.harness === "codex-cli" ? {} : { harness: profile.harness }),
+            llmRouteId: profile.llmRouteId,
+            parent: { environmentId: invocation.environmentId, threadId: parent.id },
+            ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
+            ...(executionPolicy === undefined ? {} : { executionPolicy }),
+            ...(parentTeamBinding === undefined ? {} : { parentTeamBinding }),
+            parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
+            managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
+              .filter(Boolean)
+              .join("\n\n"),
+            project: {
+              id: project.id,
+              title: project.title,
+              repository: {
+                ...repository,
+                locator: { ...repository.locator, remoteUrl },
+              },
+            },
+            revision,
+            task: input.task,
+            title: deriveWorkerTitle(ordinal, parent.title, modelSelection.model),
             modelSelection,
-            enabledCapabilityIds,
             runtimeMode: DEFAULT_RUNTIME_MODE,
             interactionMode: parent.interactionMode,
-            executionPolicy,
-          },
-        })
-        .pipe(Effect.mapError(() => failure("worktree-failed")));
-      workerWorktree = allocated;
-      custody = allocated.custody;
-      if (workerWorktree.refName !== workerRefName || custody.kind !== "isolated")
-        return yield* failure("worktree-failed");
-    } else {
-      workerWorktree = yield* gitWorkflow
-        .createWorktree({
-          cwd: gitCwd,
-          // Absence of the policy preserves the existing linked checkout.
-          path: null,
-          refName: parent.branch ?? "HEAD",
-          newRefName: workerRefName,
-        })
-        .pipe(
-          Effect.map((created) => created.worktree),
-          Effect.mapError(() => failure("worktree-failed")),
-        );
-    }
-    const dispatchedResult = {
-      schemaVersion: 1,
-      status: "dispatched",
-      environmentId: invocation.environmentId,
-      workerThreadId,
-      ...(computerId !== undefined ? { computerId } : {}),
-      branch: workerWorktree.refName,
-      worktreePath: workerWorktree.path,
-      parent: parentReference,
-      modelSelection,
-      enabledCapabilityIds,
-    } as const satisfies WorkerDispatchResult;
-    const preparedRollback = yield* rollback
-      .prepare({
-        cwd: gitCwd,
-        worktreePath: workerWorktree.path,
-        branchRef: workerRefName,
-        ...(custody === undefined ? {} : { custody }),
-      })
-      .pipe(Effect.option);
-    if (custody !== undefined && Option.isNone(preparedRollback))
-      return yield* failure("worktree-failed");
-    const requireRejected = Effect.fn("WorkerDispatch.requireRejected")(function* (
-      commandId: CommandId,
-    ) {
-      if (Option.isNone(receipts)) return yield* failure("rollback-failed");
-      const receipt = yield* receipts.value.getByCommandId({ commandId }).pipe(
-        Effect.mapError(() => failure("rollback-failed")),
-        Effect.map(Option.getOrUndefined),
-      );
-      if (
-        receipt?.aggregateKind !== "thread" ||
-        receipt.aggregateId !== workerThreadId ||
-        receipt.status !== "rejected"
-      ) {
-        return yield* failure("rollback-failed");
-      }
-    });
-    const removeWorkerWorktree = (commandId: CommandId) =>
-      Effect.gen(function* () {
-        yield* requireRejected(commandId);
-        if (Option.isNone(preparedRollback)) return yield* failure("rollback-failed");
-        if (commandId === createCommandId) {
-          const existing = yield* query.getThreadDetailById(workerThreadId).pipe(
-            Effect.mapError(() => failure("rollback-failed")),
-            Effect.map(Option.getOrUndefined),
+            enabledCapabilityIds,
+            createdAt,
+            expiresAt: DateTime.makeUnsafe(createdAt).pipe(
+              DateTime.add({ days: 7 }),
+              DateTime.formatIso,
+            ),
+          }).pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          yield* queueRun(
+            request.requestId,
+            request.createdAt,
+            profile.harness,
+            profile.llmRouteId,
+            profile.reasoning,
           );
-          // A collision must not remove a checkout another saved thread owns.
-          if (existing?.worktreePath === workerWorktree.path)
-            return yield* failure("rollback-failed");
+          yield* broker
+            .enqueue(request)
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
         }
-        return yield* preparedRollback.value.pipe(
-          Effect.mapError((error) =>
-            failure("rollback-failed", {
-              ...(error.originalWorktreePath
-                ? { originalWorktreePath: error.originalWorktreePath }
-                : {}),
-              ...(error.originalAdminPath ? { originalAdminPath: error.originalAdminPath } : {}),
-              ...(error.recoveryLocationStatus
-                ? { recoveryLocationStatus: error.recoveryLocationStatus }
-                : {}),
-              ...(error.recoveryWorktreePath
-                ? { recoveryWorktreePath: error.recoveryWorktreePath }
-                : {}),
-              ...(error.recoveryAdminPath ? { recoveryAdminPath: error.recoveryAdminPath } : {}),
-            }),
+        const response = yield* broker.awaitResponse(request.requestId).pipe(
+          Effect.timeout("4 minutes"),
+          Effect.mapError(
+            () =>
+              new WorkerDispatchError({
+                reason: "remote-dispatch-pending",
+                remoteRequestId: request.requestId,
+                targetEnvironmentId,
+              }),
           ),
         );
-      }).pipe(Effect.exit);
+        if (response.outcome.status === "failed")
+          return yield* new WorkerDispatchError({
+            reason:
+              response.outcome.reason === "rollback-failed"
+                ? "rollback-failed"
+                : "remote-dispatch-failed",
+            remoteRequestId: request.requestId,
+            targetEnvironmentId,
+          });
+        return response.outcome.result;
+      }
+      if (input.remoteRequestId || trustedInitialRequestId)
+        return yield* failure("remote-dispatch-failed");
 
-    const createCommand = {
-      type: "thread.create",
-      commandId: createCommandId,
-      threadId: workerThreadId,
-      projectId: parent.projectId,
-      title,
-      modelSelection,
-      runtimeMode: DEFAULT_RUNTIME_MODE,
-      interactionMode: parent.interactionMode,
-      workjetConfig: {
-        schemaVersion: 2,
-        role: "worker",
-        parent: parentReference,
-        managedInstructions: parent.workjetConfig.managedInstructions,
-        enabledCapabilityIds,
-        capabilityBindings: [],
-        ...(executionPolicy === undefined ? {} : { executionPolicy }),
-        ...(parentTeam
-          ? {
-              team: {
-                projectId: parent.projectId,
-                threadId: workerThreadId,
-                role: "worker" as const,
-                parentThreadId: parent.id,
-                packageId: workerThreadId,
-                goal: input.task.trim().slice(0, 4096),
-                createdAt,
-              },
-            }
-          : {}),
-      },
-      branch: workerWorktree.refName,
-      worktreePath: workerWorktree.path,
-      createdAt,
-    } as const satisfies OrchestrationCommand;
-
-    let createExit = yield* Effect.exit(
-      engine.dispatch(
-        createCommand,
-        preparedDelegation ? { workerDelegation: preparedDelegation } : undefined,
-      ),
-    );
-    if (createExit._tag === "Failure" && preparedDelegation) {
-      // One bounded replay uses the same receipt identity. If the commit
-      // succeeded but acknowledgement failed, the engine returns its receipt.
-      createExit = yield* Effect.exit(
-        engine.dispatch(createCommand, { workerDelegation: preparedDelegation }),
+      const parentReference = {
+        environmentId: invocation.environmentId,
+        threadId: invocation.threadId,
+      } as const;
+      const workerThreadId = ThreadId.make(yield* sources.randomUUID);
+      const createCommandId = CommandId.make(yield* sources.randomUUID);
+      const turnStartCommandId = CommandId.make(yield* sources.randomUUID);
+      const messageId = MessageId.make(yield* sources.randomUUID);
+      const createdAt = yield* sources.nowIso;
+      yield* queueRun(
+        workerThreadId,
+        createdAt,
+        selectedProfile?.harness ?? null,
+        selectedProfile?.llmRouteId ?? modelSelection.instanceId,
+        selectedProfile?.reasoning ?? null,
       );
-    }
-    if (createExit._tag === "Failure") {
-      if (preparedDelegation) {
-        // Both acknowledgements may be lost after the atomic commit. The
-        // receipt is written in that transaction, so it resolves ownership
-        // without starting a second delegation or discarding its checkout.
-        if (Option.isSome(receipts)) {
-          const receiptRead = yield* Effect.result(
-            receipts.value.getByCommandId({ commandId: createCommandId }),
-          );
-          if (receiptRead._tag === "Success") {
-            const receipt = Option.getOrUndefined(receiptRead.success);
-            if (receipt?.aggregateKind === "thread" && receipt.aggregateId === workerThreadId) {
-              if (receipt.status === "accepted") {
-                return dispatchedResult;
-              }
-              if (receipt.status === "rejected") {
-                const cleanupExit = yield* removeWorkerWorktree(createCommandId);
-                if (cleanupExit._tag === "Failure")
-                  return yield* Effect.failCause(cleanupExit.cause);
-                return yield* failure("create-failed", cleanupExit.value);
-              }
-            }
-          }
+      queuedLocalRunId = workerThreadId;
+      const ordinal = yield* sources
+        .nextWorkerOrdinal(parentReference, workerThreadId)
+        .pipe(Effect.mapError(() => failure("create-failed")));
+      const title = deriveWorkerTitle(ordinal, parent.title, modelSelection.model);
+      let preparedDelegation: OrchestrationDispatchOptions["workerDelegation"];
+      if (parentTeam) {
+        if (Option.isNone(snapshotStore) || Option.isNone(meshIdentity)) {
+          return yield* failure("create-failed");
         }
-        // A committed team create also stores its worker and delegation in
-        // one transaction. When the receipt lookup itself is unavailable,
-        // those two durable records can prove that the worker was accepted.
-        // Neither record alone is sufficient: an unrelated thread or a
-        // partially observed projection must never turn a failed dispatch
-        // into a successful one.
-        if (Option.isSome(mailbox)) {
-          const delegationRead = yield* Effect.result(
-            mailbox.value.getDelegation(preparedDelegation.delegation.delegationId),
+        const identity = meshIdentity.value;
+        const snapshot = yield* snapshotStore.value
+          .put(input.task)
+          .pipe(Effect.mapError(() => failure("create-failed")));
+        const expiresAt = DateTime.makeUnsafe(createdAt).pipe(
+          DateTime.add({ days: 7 }),
+          DateTime.formatIso,
+        );
+        const envelopeId = WorkjetEnvelopeId.make(`wjm-worker-${workerThreadId}`);
+        const source = {
+          schemaVersion: 1 as const,
+          workspaceId: identity.workspaceId,
+          environmentId: invocation.environmentId,
+          threadId: parent.id,
+        };
+        const target = { ...source, threadId: workerThreadId };
+        const delegation = {
+          schemaVersion: 1,
+          delegationId: WorkjetDelegationId.make(`wjd-worker-${workerThreadId}`),
+          envelopeId,
+          source,
+          target,
+          createdAt,
+          expiresAt,
+          prompt: {
+            schemaVersion: 1,
+            snapshotRef: snapshot.snapshotRef,
+            digest: snapshot.digest,
+            byteLength: snapshot.byteLength,
+          },
+          scope: {
+            schemaVersion: 1,
+            // A worker without a narrower file selection owns the isolated
+            // checkout root. The mailbox contract requires an explicit scope.
+            files: [WorkjetRepositoryPath.make(".")],
+            nonGoals: "Do not perform work outside the assigned task.",
+          },
+          completion: {
+            schemaVersion: 1,
+            acceptance:
+              "Complete the task in the verified prompt snapshot and return implementation and verification evidence.",
+          },
+          budget: { schemaVersion: 1, maxDepth: 1, maxReviewRounds: 2, expiresAt },
+          state: "queued",
+          stateChangedAt: createdAt,
+          depth: 0,
+        } as const satisfies WorkjetDelegation;
+        const envelope = yield* identity
+          .signRoutingEnvelope({
+            schemaVersion: 1,
+            envelopeId,
+            kind: "delegation",
+            sourceWorkspaceId: source.workspaceId,
+            sourceEnvironmentId: source.environmentId,
+            targetWorkspaceId: target.workspaceId,
+            targetEnvironmentId: target.environmentId,
+            createdAt,
+            expiresAt,
+          })
+          .pipe(Effect.mapError(() => failure("create-failed")));
+        preparedDelegation = { envelope, delegation };
+      }
+
+      // The owner decision of 2026-08-17 rejects worktree inheritance: parallel
+      // workers must never share a checkout. Every worker therefore gets its own
+      // Git worktree beneath the server-authoritative storage root, branched
+      // from the orchestrator's current ref.
+      const gitCwd =
+        parent.worktreePath ??
+        (yield* query.getProjectShellById(parent.projectId).pipe(
+          Effect.map(
+            (projectOption) => Option.getOrUndefined(projectOption)?.workspaceRoot ?? null,
+          ),
+          Effect.orElseSucceed(() => null),
+        ));
+      if (gitCwd === null) {
+        return yield* failure("worktree-failed");
+      }
+      const workerRefName = `${WORKER_REF_PREFIX}${workerThreadId}`;
+      let workerWorktree: { readonly path: string; readonly refName: string };
+      let custody: CapturedWorkerWorktree | undefined;
+      if (executionPolicy !== undefined) {
+        if (
+          Option.isNone(localWorktrees) ||
+          parentTeam === undefined ||
+          preparedDelegation === undefined
+        )
+          return yield* failure("worktree-failed");
+        const project = yield* query
+          .getProjectShellById(parent.projectId)
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+        if (
+          Option.isNone(project) ||
+          project.value.repositoryIdentity === undefined ||
+          project.value.repositoryIdentity === null
+        )
+          return yield* failure("worktree-failed");
+        const allocated = yield* localWorktrees.value
+          .allocate({
+            cwd: gitCwd,
+            refName: parent.branch ?? "HEAD",
+            repository: project.value.repositoryIdentity,
+            context: {
+              schemaVersion: 1,
+              environmentId: invocation.environmentId,
+              ...(computerId === undefined ? {} : { computerId }),
+              parentThreadId: parent.id,
+              projectId: parent.projectId,
+              workerThreadId,
+              teamRole: parentTeam.role,
+              teamParentThreadId: parentTeam.parentThreadId,
+              taskDigest: preparedDelegation.delegation.prompt.digest,
+              modelSelection,
+              enabledCapabilityIds,
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              interactionMode: parent.interactionMode,
+              executionPolicy,
+            },
+          })
+          .pipe(Effect.mapError(() => failure("worktree-failed")));
+        workerWorktree = allocated;
+        custody = allocated.custody;
+        if (workerWorktree.refName !== workerRefName || custody.kind !== "isolated")
+          return yield* failure("worktree-failed");
+      } else {
+        workerWorktree = yield* gitWorkflow
+          .createWorktree({
+            cwd: gitCwd,
+            // Absence of the policy preserves the existing linked checkout.
+            path: null,
+            refName: parent.branch ?? "HEAD",
+            newRefName: workerRefName,
+          })
+          .pipe(
+            Effect.map((created) => created.worktree),
+            Effect.mapError(() => failure("worktree-failed")),
           );
-          if (delegationRead._tag === "Success") {
-            const committed = Option.getOrUndefined(delegationRead.success);
-            if (
-              committed?.delegation.source.threadId === parent.id &&
-              committed.delegation.target.threadId === workerThreadId &&
-              committed.delegation.envelopeId === preparedDelegation.delegation.envelopeId
-            ) {
-              const workerRead = yield* Effect.result(query.getThreadDetailById(workerThreadId));
-              if (workerRead._tag === "Success") {
-                const worker = Option.getOrUndefined(workerRead.success);
-                if (
-                  worker?.id === workerThreadId &&
-                  worker.projectId === parent.projectId &&
-                  worker.deletedAt === null &&
-                  worker.archivedAt === null &&
-                  worker.branch === workerRefName &&
-                  worker.worktreePath === workerWorktree.path &&
-                  worker.workjetConfig.schemaVersion === 2 &&
-                  NodeUtil.isDeepStrictEqual(
-                    worker.workjetConfig.executionPolicy,
-                    executionPolicy,
-                  ) &&
-                  worker.workjetConfig.role === "worker" &&
-                  worker.workjetConfig.parent?.environmentId === invocation.environmentId &&
-                  worker.workjetConfig.parent?.threadId === parent.id &&
-                  worker.workjetConfig.team?.projectId === parent.projectId &&
-                  worker.workjetConfig.team?.threadId === workerThreadId &&
-                  worker.workjetConfig.team?.parentThreadId === parent.id
-                ) {
+      }
+      const dispatchedResult = {
+        schemaVersion: 1,
+        status: "dispatched",
+        environmentId: invocation.environmentId,
+        workerThreadId,
+        ...(computerId !== undefined ? { computerId } : {}),
+        branch: workerWorktree.refName,
+        worktreePath: workerWorktree.path,
+        parent: parentReference,
+        modelSelection,
+        enabledCapabilityIds,
+      } as const satisfies WorkerDispatchResult;
+      const preparedRollback = yield* rollback
+        .prepare({
+          cwd: gitCwd,
+          worktreePath: workerWorktree.path,
+          branchRef: workerRefName,
+          ...(custody === undefined ? {} : { custody }),
+        })
+        .pipe(Effect.option);
+      if (custody !== undefined && Option.isNone(preparedRollback))
+        return yield* failure("worktree-failed");
+      const requireRejected = Effect.fn("WorkerDispatch.requireRejected")(function* (
+        commandId: CommandId,
+      ) {
+        if (Option.isNone(receipts)) return yield* failure("rollback-failed");
+        const receipt = yield* receipts.value.getByCommandId({ commandId }).pipe(
+          Effect.mapError(() => failure("rollback-failed")),
+          Effect.map(Option.getOrUndefined),
+        );
+        if (
+          receipt?.aggregateKind !== "thread" ||
+          receipt.aggregateId !== workerThreadId ||
+          receipt.status !== "rejected"
+        ) {
+          return yield* failure("rollback-failed");
+        }
+      });
+      const removeWorkerWorktree = (commandId: CommandId) =>
+        Effect.gen(function* () {
+          yield* requireRejected(commandId);
+          if (Option.isNone(preparedRollback)) return yield* failure("rollback-failed");
+          if (commandId === createCommandId) {
+            const existing = yield* query.getThreadDetailById(workerThreadId).pipe(
+              Effect.mapError(() => failure("rollback-failed")),
+              Effect.map(Option.getOrUndefined),
+            );
+            // A collision must not remove a checkout another saved thread owns.
+            if (existing?.worktreePath === workerWorktree.path)
+              return yield* failure("rollback-failed");
+          }
+          return yield* preparedRollback.value.pipe(
+            Effect.mapError((error) =>
+              failure("rollback-failed", {
+                ...(error.originalWorktreePath
+                  ? { originalWorktreePath: error.originalWorktreePath }
+                  : {}),
+                ...(error.originalAdminPath ? { originalAdminPath: error.originalAdminPath } : {}),
+                ...(error.recoveryLocationStatus
+                  ? { recoveryLocationStatus: error.recoveryLocationStatus }
+                  : {}),
+                ...(error.recoveryWorktreePath
+                  ? { recoveryWorktreePath: error.recoveryWorktreePath }
+                  : {}),
+                ...(error.recoveryAdminPath ? { recoveryAdminPath: error.recoveryAdminPath } : {}),
+              }),
+            ),
+          );
+        }).pipe(Effect.exit);
+
+      const createCommand = {
+        type: "thread.create",
+        commandId: createCommandId,
+        threadId: workerThreadId,
+        projectId: parent.projectId,
+        title,
+        modelSelection,
+        runtimeMode: DEFAULT_RUNTIME_MODE,
+        interactionMode: parent.interactionMode,
+        workjetConfig: {
+          schemaVersion: 2,
+          role: "worker",
+          parent: parentReference,
+          managedInstructions: parent.workjetConfig.managedInstructions,
+          enabledCapabilityIds,
+          capabilityBindings: [],
+          ...(executionPolicy === undefined ? {} : { executionPolicy }),
+          ...(parentTeam
+            ? {
+                team: {
+                  projectId: parent.projectId,
+                  threadId: workerThreadId,
+                  role: "worker" as const,
+                  parentThreadId: parent.id,
+                  packageId: workerThreadId,
+                  goal: input.task.trim().slice(0, 4096),
+                  createdAt,
+                },
+              }
+            : {}),
+        },
+        branch: workerWorktree.refName,
+        worktreePath: workerWorktree.path,
+        createdAt,
+      } as const satisfies OrchestrationCommand;
+
+      let createExit = yield* Effect.exit(
+        engine.dispatch(
+          createCommand,
+          preparedDelegation ? { workerDelegation: preparedDelegation } : undefined,
+        ),
+      );
+      if (createExit._tag === "Failure" && preparedDelegation) {
+        // One bounded replay uses the same receipt identity. If the commit
+        // succeeded but acknowledgement failed, the engine returns its receipt.
+        createExit = yield* Effect.exit(
+          engine.dispatch(createCommand, { workerDelegation: preparedDelegation }),
+        );
+      }
+      if (createExit._tag === "Failure") {
+        if (preparedDelegation) {
+          // Both acknowledgements may be lost after the atomic commit. The
+          // receipt is written in that transaction, so it resolves ownership
+          // without starting a second delegation or discarding its checkout.
+          if (Option.isSome(receipts)) {
+            const receiptRead = yield* Effect.result(
+              receipts.value.getByCommandId({ commandId: createCommandId }),
+            );
+            if (receiptRead._tag === "Success") {
+              const receipt = Option.getOrUndefined(receiptRead.success);
+              if (receipt?.aggregateKind === "thread" && receipt.aggregateId === workerThreadId) {
+                if (receipt.status === "accepted") {
                   return dispatchedResult;
+                }
+                if (receipt.status === "rejected") {
+                  const cleanupExit = yield* removeWorkerWorktree(createCommandId);
+                  if (cleanupExit._tag === "Failure")
+                    return yield* Effect.failCause(cleanupExit.cause);
+                  return yield* failure("create-failed", cleanupExit.value);
                 }
               }
             }
           }
+          // A committed team create also stores its worker and delegation in
+          // one transaction. When the receipt lookup itself is unavailable,
+          // those two durable records can prove that the worker was accepted.
+          // Neither record alone is sufficient: an unrelated thread or a
+          // partially observed projection must never turn a failed dispatch
+          // into a successful one.
+          if (Option.isSome(mailbox)) {
+            const delegationRead = yield* Effect.result(
+              mailbox.value.getDelegation(preparedDelegation.delegation.delegationId),
+            );
+            if (delegationRead._tag === "Success") {
+              const committed = Option.getOrUndefined(delegationRead.success);
+              if (
+                committed?.delegation.source.threadId === parent.id &&
+                committed.delegation.target.threadId === workerThreadId &&
+                committed.delegation.envelopeId === preparedDelegation.delegation.envelopeId
+              ) {
+                const workerRead = yield* Effect.result(query.getThreadDetailById(workerThreadId));
+                if (workerRead._tag === "Success") {
+                  const worker = Option.getOrUndefined(workerRead.success);
+                  if (
+                    worker?.id === workerThreadId &&
+                    worker.projectId === parent.projectId &&
+                    worker.deletedAt === null &&
+                    worker.archivedAt === null &&
+                    worker.branch === workerRefName &&
+                    worker.worktreePath === workerWorktree.path &&
+                    worker.workjetConfig.schemaVersion === 2 &&
+                    NodeUtil.isDeepStrictEqual(
+                      worker.workjetConfig.executionPolicy,
+                      executionPolicy,
+                    ) &&
+                    worker.workjetConfig.role === "worker" &&
+                    worker.workjetConfig.parent?.environmentId === invocation.environmentId &&
+                    worker.workjetConfig.parent?.threadId === parent.id &&
+                    worker.workjetConfig.team?.projectId === parent.projectId &&
+                    worker.workjetConfig.team?.threadId === workerThreadId &&
+                    worker.workjetConfig.team?.parentThreadId === parent.id
+                  ) {
+                    return dispatchedResult;
+                  }
+                }
+              }
+            }
+          }
+          // A missing or unreadable receipt is still ambiguous: keep the
+          // checkout for recovery rather than risk deleting committed work.
+          return yield* failure("rollback-failed");
         }
-        // A missing or unreadable receipt is still ambiguous: keep the
-        // checkout for recovery rather than risk deleting committed work.
-        return yield* failure("rollback-failed");
+        const cleanupExit = yield* removeWorkerWorktree(createCommandId);
+        if (cleanupExit._tag === "Failure") return yield* Effect.failCause(cleanupExit.cause);
+        return yield* failure("create-failed", cleanupExit.value);
       }
-      const cleanupExit = yield* removeWorkerWorktree(createCommandId);
-      if (cleanupExit._tag === "Failure") return yield* Effect.failCause(cleanupExit.cause);
-      return yield* failure("create-failed", cleanupExit.value);
-    }
 
-    // Thread and queued delegation have one durable receipt. The existing
-    // executor alone starts the turn and returns its result after a restart.
-    if (preparedDelegation) {
-      return dispatchedResult;
-    }
+      // Thread and queued delegation have one durable receipt. The existing
+      // executor alone starts the turn and returns its result after a restart.
+      if (preparedDelegation) {
+        return dispatchedResult;
+      }
 
-    const turnStartCommand = {
-      type: "thread.turn.start",
-      commandId: turnStartCommandId,
-      threadId: workerThreadId,
-      message: {
-        messageId,
-        role: "user",
-        text: input.task,
-        attachments: [],
-      },
-      runtimeMode: DEFAULT_RUNTIME_MODE,
-      interactionMode: parent.interactionMode,
-      createdAt,
-    } as const satisfies OrchestrationCommand;
-
-    const turnStartExit = yield* Effect.exit(engine.dispatch(turnStartCommand));
-    if (turnStartExit._tag === "Failure") {
-      // A lost acknowledgement is not a rejected start. Do not delete a
-      // worker whose accepted first turn may already be executing.
-      yield* requireRejected(turnStartCommandId);
-      const rollbackCommand = {
-        type: "thread.delete",
-        commandId: CommandId.make(yield* sources.randomUUID),
+      const turnStartCommand = {
+        type: "thread.turn.start",
+        commandId: turnStartCommandId,
         threadId: workerThreadId,
+        message: {
+          messageId,
+          role: "user",
+          text: input.task,
+          attachments: [],
+        },
+        runtimeMode: DEFAULT_RUNTIME_MODE,
+        interactionMode: parent.interactionMode,
+        createdAt,
       } as const satisfies OrchestrationCommand;
-      const rollbackExit = yield* Effect.exit(engine.dispatch(rollbackCommand));
-      // A failed thread deletion leaves ownership unresolved. Never remove
-      // its checkout while that thread may still run or be retried.
-      if (rollbackExit._tag === "Failure") return yield* failure("rollback-failed");
-      const worktreeRollbackExit = yield* removeWorkerWorktree(turnStartCommandId);
-      if (worktreeRollbackExit._tag === "Failure")
-        return yield* Effect.failCause(worktreeRollbackExit.cause);
-      return yield* failure("turn-start-failed", worktreeRollbackExit.value);
-    }
 
-    return dispatchedResult;
+      const turnStartExit = yield* Effect.exit(engine.dispatch(turnStartCommand));
+      if (turnStartExit._tag === "Failure") {
+        // A lost acknowledgement is not a rejected start. Do not delete a
+        // worker whose accepted first turn may already be executing.
+        yield* requireRejected(turnStartCommandId);
+        const rollbackCommand = {
+          type: "thread.delete",
+          commandId: CommandId.make(yield* sources.randomUUID),
+          threadId: workerThreadId,
+        } as const satisfies OrchestrationCommand;
+        const rollbackExit = yield* Effect.exit(engine.dispatch(rollbackCommand));
+        // A failed thread deletion leaves ownership unresolved. Never remove
+        // its checkout while that thread may still run or be retried.
+        if (rollbackExit._tag === "Failure") return yield* failure("rollback-failed");
+        const worktreeRollbackExit = yield* removeWorkerWorktree(turnStartCommandId);
+        if (worktreeRollbackExit._tag === "Failure")
+          return yield* Effect.failCause(worktreeRollbackExit.cause);
+        return yield* failure("turn-start-failed", worktreeRollbackExit.value);
+      }
+
+      return dispatchedResult;
+    }).pipe(
+      Effect.tapError((error) => {
+        if (
+          queuedLocalRunId === undefined ||
+          Option.isNone(ledger) ||
+          (error.reason !== "worktree-failed" &&
+            error.reason !== "create-failed" &&
+            error.reason !== "turn-start-failed")
+        )
+          return Effect.void;
+        // Pending replies and failed rollback cannot prove a terminal worker.
+        return sources.nowIso.pipe(
+          Effect.flatMap((terminalAt) =>
+            ledger.value.observe({ runId: queuedLocalRunId!, terminalAt, abortClass: "task" }),
+          ),
+          Effect.mapError(() => failure("create-failed")),
+        );
+      }),
+    );
   });
 
   const dispatchNativeIntent = Effect.fn("WorkerDispatch.dispatchNativeIntent")(function* (
@@ -984,6 +1097,47 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       : dispatch(invocation, input, intentId);
   });
   return WorkerDispatch.of({
+    listPool: Effect.fn("WorkerDispatch.listPool")(function* (invocation, probe = false) {
+      if (Option.isNone(pool) || Option.isNone(settings))
+        return yield* failure("worker-profile-unavailable");
+      const parent = yield* query
+        .getThreadDetailById(invocation.threadId)
+        .pipe(Effect.mapError(() => failure("parent-unavailable")));
+      if (
+        Option.isNone(parent) ||
+        parent.value.deletedAt !== null ||
+        parent.value.archivedAt !== null ||
+        !canCoordinateWorkjet(parent.value.workjetConfig)
+      )
+        return yield* failure("role-not-authorized");
+      let configuration = (yield* settings.value.getSettings.pipe(
+        Effect.mapError(() => failure("computer-unavailable")),
+      )).workjet;
+      if (invocation.ctoxBusinessOsBinding !== undefined) {
+        if (Option.isNone(lumaConnections)) return yield* failure("worker-profile-unavailable");
+        const http = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
+        configuration = yield* makeCtoxLumaConfigurationRpc({
+          connections: lumaConnections.value,
+          client: makeCtoxLumaConfigurationClient(http),
+        })
+          .resolveDispatch(invocation.ctoxBusinessOsBinding, configuration)
+          .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
+      }
+      return yield* pool.value
+        .list(
+          {
+            ...configuration,
+            workerProfiles: configuration.workerProfiles.filter((profile) =>
+              profile.capabilityIds.every((id) =>
+                parent.value.workjetConfig.enabledCapabilityIds.includes(id),
+              ),
+            ),
+          },
+          invocation.environmentId,
+          probe,
+        )
+        .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
+    }),
     dispatch,
     dispatchNativeIntent: (invocation, input, intentId) =>
       dispatchNativeIntent(invocation, input, intentId).pipe(nativeMutex.withPermits(1)),

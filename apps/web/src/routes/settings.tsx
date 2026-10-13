@@ -15,6 +15,7 @@ import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { useCtoxMode } from "../components/ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "../components/settings/settingsInstanceContext";
 import { Button } from "../components/ui/button";
+import { useClientSettings } from "../hooks/useSettings";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
 import { cn } from "~/lib/utils";
@@ -72,8 +73,12 @@ function SettingsContentLayout() {
   const isInstanceManagement =
     location.pathname === "/settings/business-os" || location.pathname === "/settings/usage";
   const canShowSettings = isInstanceManagement || instanceContext.canEditInstanceSettings;
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  // „Standard wiederherstellen“ ist ein Entwicklerwerkzeug: nur im Entwicklermodus.
   const showRestoreDefaults =
-    location.pathname === "/settings/general" && instanceContext.canEditInstanceSettings;
+    developerMode &&
+    location.pathname === "/settings/general" &&
+    instanceContext.canEditInstanceSettings;
   const handleRestored = () => setRestoreSignal((value) => value + 1);
   const navigateBackWithinApp = useCallback(() => {
     if (canGoBack) {

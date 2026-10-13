@@ -1,3 +1,4 @@
+import { WORKJET_STATUS_TEXT_CLASS } from "../workjetStatus";
 import {
   scopeProjectRef,
   scopedThreadKey,
@@ -134,7 +135,7 @@ export function terminalStatusFromRunningIds(
   }
   return {
     label: "Terminal-Prozess aktiv",
-    colorClass: "text-teal-600 dark:text-teal-300/90",
+    colorClass: WORKJET_STATUS_TEXT_CLASS.running,
     pulse: true,
   };
 }

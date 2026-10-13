@@ -1,6 +1,7 @@
 export type SettingsPath =
   | "/settings/business-os"
   | "/settings/general"
+  | "/settings/prompts"
   | "/settings/appearance"
   | "/settings/harnesses"
   | "/settings/models"
@@ -36,6 +37,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
   "/settings/workjet": "Worker-Presets",
+  "/settings/prompts": "System-Prompts",
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
@@ -266,8 +268,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-prompt",
-    title: "Prompt",
-    to: "/settings/workjet",
+    title: "System-Prompts",
+    to: "/settings/prompts",
   },
   {
     id: "workjet-telemetry",

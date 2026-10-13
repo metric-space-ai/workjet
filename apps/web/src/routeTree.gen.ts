@@ -18,6 +18,7 @@ import { Route as SettingsWorkjetRouteImport } from './routes/settings.workjet'
 import { Route as SettingsUsageRouteImport } from './routes/settings.usage'
 import { Route as SettingsSpeechRouteImport } from './routes/settings.speech'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
+import { Route as SettingsPromptsRouteImport } from './routes/settings.prompts'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsHarnessesRouteImport } from './routes/settings.harnesses'
@@ -75,6 +76,11 @@ const SettingsSpeechRoute = SettingsSpeechRouteImport.update({
 const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   id: '/source-control',
   path: '/source-control',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPromptsRoute = SettingsPromptsRouteImport.update({
+  id: '/prompts',
+  path: '/prompts',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
@@ -166,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
+  '/settings/prompts': typeof SettingsPromptsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
   '/settings/usage': typeof SettingsUsageRoute
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
+  '/settings/prompts': typeof SettingsPromptsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
   '/settings/usage': typeof SettingsUsageRoute
@@ -215,6 +223,7 @@ export interface FileRoutesById {
   '/settings/harnesses': typeof SettingsHarnessesRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/projects': typeof SettingsProjectsRouteWithChildren
+  '/settings/prompts': typeof SettingsPromptsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/speech': typeof SettingsSpeechRoute
   '/settings/usage': typeof SettingsUsageRoute
@@ -242,6 +251,7 @@ export interface FileRouteTypes {
     | '/settings/harnesses'
     | '/settings/models'
     | '/settings/projects'
+    | '/settings/prompts'
     | '/settings/source-control'
     | '/settings/speech'
     | '/settings/usage'
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/settings/harnesses'
     | '/settings/models'
     | '/settings/projects'
+    | '/settings/prompts'
     | '/settings/source-control'
     | '/settings/speech'
     | '/settings/usage'
@@ -290,6 +301,7 @@ export interface FileRouteTypes {
     | '/settings/harnesses'
     | '/settings/models'
     | '/settings/projects'
+    | '/settings/prompts'
     | '/settings/source-control'
     | '/settings/speech'
     | '/settings/usage'
@@ -371,6 +383,13 @@ declare module '@tanstack/react-router' {
       path: '/source-control'
       fullPath: '/settings/source-control'
       preLoaderRoute: typeof SettingsSourceControlRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/prompts': {
+      id: '/settings/prompts'
+      path: '/prompts'
+      fullPath: '/settings/prompts'
+      preLoaderRoute: typeof SettingsPromptsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/projects': {
@@ -511,6 +530,7 @@ interface SettingsRouteChildren {
   SettingsHarnessesRoute: typeof SettingsHarnessesRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsProjectsRoute: typeof SettingsProjectsRouteWithChildren
+  SettingsPromptsRoute: typeof SettingsPromptsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsSpeechRoute: typeof SettingsSpeechRoute
   SettingsUsageRoute: typeof SettingsUsageRoute
@@ -527,6 +547,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsHarnessesRoute: SettingsHarnessesRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsProjectsRoute: SettingsProjectsRouteWithChildren,
+  SettingsPromptsRoute: SettingsPromptsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsSpeechRoute: SettingsSpeechRoute,
   SettingsUsageRoute: SettingsUsageRoute,

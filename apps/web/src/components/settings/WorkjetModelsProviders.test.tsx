@@ -163,8 +163,8 @@ describe("Provider account table", () => {
       2000,
     );
     const rendered = html({ accountHealth: { [first.id]: health } });
-    expect(rendered).toContain("unbekannt");
-    expect(rendered).toContain("Richtung des Anbieterwerts ist nicht belegt");
+    // #610: unknown limits are hidden, no "unbekannt".
+    expect(rendered).not.toContain("unbekannt");
     expect(rendered).not.toContain("Limit erreicht");
     expect(rendered).not.toContain('role="meter"');
   });
@@ -308,7 +308,7 @@ describe("Provider account table", () => {
     expect(rendered).not.toContain("Gateway pools");
     expect(rendered).not.toContain("LLM routes");
     expect(rendered).not.toContain("Neu anmelden");
-    expect(rendered).toContain("Anbieter meldet kein Limit");
+    expect(rendered).not.toContain("Anbieter meldet kein Limit");
     expect(rendered).toContain("Hinzufügen");
     expect(rendered).toContain("Alle prüfen");
     expect(rendered).toContain("Aktionen für work@example.test");
@@ -454,8 +454,9 @@ describe("shared provider models", () => {
       onExcludeModel: async () => true,
       modelSuggestions: { kimi: ["k3", "kimi-for-coding"] },
     });
-    expect(rendered).toContain('aria-label="Modellvorschläge für Kimi (Moonshot)"');
-    expect(rendered).toContain('aria-expanded="false"');
+    // #610: model editing opens from the row menu; no second "+" in a provider header.
+    expect(rendered).not.toContain('aria-label="Modellvorschläge für Kimi (Moonshot)"');
+    expect(rendered).toContain("Aktionen für work@example.test");
     expect(rendered).not.toContain('data-slot="popover-trigger"');
     expect(rendered).not.toContain('aria-haspopup="dialog"');
     // Closed by default: the suggestion list expands below the field on click.
@@ -478,8 +479,8 @@ describe("shared provider models", () => {
       onEditProviderModels: async () => true,
       onExcludeModel: async () => true,
     });
-    expect(rendered).toContain('data-workjet-action="models.provider.kimi.models"');
-    expect(rendered).toContain("k3, kimi-for-coding");
+    // Provider-wide model list is edited inline via the row menu (#610), closed by default.
+    expect(rendered).not.toContain('data-workjet-action="models.provider.kimi.models"');
     expect(rendered).toContain('aria-label="k3 für work@example.test verwenden"');
     expect(rendered).toContain("Für dieses Konto ausgeschlossen");
     expect(rendered).not.toContain('aria-label="Modell hinzufügen für work@example.test"');

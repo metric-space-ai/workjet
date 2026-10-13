@@ -30,23 +30,13 @@ export function NativeProviderLimits({
 
   if (quota?.state !== "reported") {
     return (
-      <div
-        role="cell"
-        className={`text-xs text-muted-foreground ${className}`}
-        title={
-          quota?.state === "unavailable"
-            ? `Limits nicht lesbar (${quota.errorClass})`
-            : "Keine Limits gemeldet"
-        }
-      >
-        —
-      </div>
+      // Unknown limits show nothing (#610).
+      <div role="cell" className={`text-xs text-muted-foreground ${className}`} />
     );
   }
   return (
     <div role="cell" className={`min-w-0 ${className}`}>
       <AccountLimits
-        provider={provider}
         health={{
           status: "unknown",
           message: null,

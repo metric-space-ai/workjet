@@ -73,7 +73,7 @@ export interface RowProps {
   readonly onDelete?: () => void;
   readonly deleteLabel?: string;
   readonly deleteConfirmTitle?: string;
-  /** Delete runs immediately; the caller shows an undo toast instead of a confirmation (#637). */
+  /** Löschen läuft sofort; der Aufrufer zeigt Rückgängig statt einer Bestätigung (#637). */
   readonly undoableDelete?: boolean;
   /** Seltene Aktionen hinter dem ⋯-Menü. */
   readonly menuActions?: ReadonlyArray<RowMenuAction>;

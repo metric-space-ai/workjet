@@ -39,6 +39,7 @@ import {
   AlarmClockOffIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
@@ -3726,6 +3727,9 @@ export default function Sidebar() {
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   const t = useUiText();
+  const [archivedSectionsOpen, setArchivedSectionsOpen] = useState<
+    Partial<Record<string, boolean>>
+  >({});
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -4272,7 +4276,8 @@ export default function Sidebar() {
                       </SortableContext>
                     </DndContext>,
                   ];
-                  if (groupByTeam) items.splice(1);
+                  // Grouped: draft and pinned rows render inside their team category.
+                  if (groupByTeam) items.splice(0);
                   if (pinnedThreads.length > 0 && !groupByTeam) {
                     items.push(
                       <li
@@ -4287,25 +4292,56 @@ export default function Sidebar() {
                   // whose chats carry team roles, reads as its team: supervisor first, then
                   // the long-lived parents, then one-time PR workers (archived on merge).
                   if (groupByTeam) {
+                    // Exactly three chat categories below the divider (#629): Supervisor,
+                    // persistent and one-shot workers. Archived chats sit collapsed inside
+                    // the two worker groups; the draft sits with the one-shot workers.
                     const team = groupThreadsByProjectTeam([
                       ...orderedPinnedThreads,
                       ...activeThreads,
                     ]);
+                    const archivedTeam = groupThreadsByProjectTeam(settledThreads);
+                    archivedTeam.parents.push(...archivedTeam.supervisor);
+                    const teamLabel = {
+                      supervisor: t("Supervisor", "Supervisor"),
+                      parents: t("Persistente Worker", "Persistent workers"),
+                      workers: t("One-shot-Worker", "One-shot workers"),
+                    } as const;
+                    items.push(
+                      <li
+                        key="team-divider"
+                        aria-hidden
+                        className="mx-2.5 mb-1 mt-1 h-px list-none bg-sidebar-border"
+                      />,
+                    );
                     for (const { section } of PROJECT_TEAM_SECTIONS) {
-                      if (team[section].length === 0) continue;
+                      const archived = section === "supervisor" ? [] : archivedTeam[section];
+                      const showDraft = section === "workers";
+                      if (team[section].length === 0 && archived.length === 0 && !showDraft)
+                        continue;
                       items.push(
                         <li
                           key={`team-${section}-header`}
                           data-workjet-team-section={section}
-                          className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5 first:mt-1"
+                          className="mb-0.5 mt-3 list-none px-2.5 first:mt-1"
                         >
-                          <span className="text-xs font-medium text-muted-foreground/70">
-                            {overviewText[section]}
-                            {section === "supervisor" ? "" : ` ${team[section].length}`}
+                          <span className="text-xs font-medium text-sidebar-muted-foreground">
+                            {teamLabel[section]}
                           </span>
-                          <span className="h-px flex-1 bg-sidebar-border/60" />
                         </li>,
                       );
+                      if (showDraft) {
+                        items.push(
+                          <SidebarDraftBlock
+                            key="draft-sessions"
+                            projectDisplayNameByKey={projectDisplayNameByKey}
+                            projectCwdByKey={projectCwdByKey}
+                            projectFaviconPathByKey={projectFaviconPathByKey}
+                            scopedProjectKeys={scopedProjectKeys}
+                            routeDraftId={routeDraftIdForRows}
+                            onNavigateToDraft={navigateToDraft}
+                          />,
+                        );
+                      }
                       for (const thread of team[section]) {
                         items.push(
                           renderThreadRow(
@@ -4313,6 +4349,43 @@ export default function Sidebar() {
                             pinnedThreads.includes(thread) ? "pinned" : "active",
                           ),
                         );
+                      }
+                      if (archived.length > 0) {
+                        const open = archivedSectionsOpen[section] === true;
+                        items.push(
+                          <li
+                            key={`team-${section}-archived`}
+                            data-thread-selection-safe
+                            className="list-none"
+                          >
+                            <button
+                              type="button"
+                              aria-expanded={open}
+                              data-workjet-action={`sidebar.archived.${section}`}
+                              onClick={() =>
+                                setArchivedSectionsOpen((current) => ({
+                                  ...current,
+                                  [section]: !open,
+                                }))
+                              }
+                              className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                            >
+                              <ChevronRightIcon
+                                aria-hidden
+                                className={cn(
+                                  "size-3.5 shrink-0 transition-transform",
+                                  open && "rotate-90",
+                                )}
+                              />
+                              <span>{t("Archiviert", "Archived")}</span>
+                            </button>
+                          </li>,
+                        );
+                        if (open) {
+                          for (const thread of archived) {
+                            items.push(renderThreadRow(thread, "settled"));
+                          }
+                        }
                       }
                     }
                   } else {
@@ -4359,22 +4432,7 @@ export default function Sidebar() {
                       items.push(renderThreadRow(thread, "snoozed"));
                     }
                   }
-                  if (groupByTeam && selectedWorkjetProject) {
-                    items.push(
-                      <li key="project-jour-fixe" className="mt-3 list-none">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
-                          onClick={() =>
-                            void handleWorkjetProjectSelection(selectedWorkjetProject.id)
-                          }
-                        >
-                          {overviewText.nextMeeting}
-                        </button>
-                      </li>,
-                    );
-                  }
-                  if (settledThreads.length > 0) {
+                  if (settledThreads.length > 0 && !groupByTeam) {
                     items.push(
                       <li
                         key="settled-shelf-header"
@@ -4405,8 +4463,10 @@ export default function Sidebar() {
                       </li>,
                     );
                   }
-                  for (const thread of renderedSettledThreads) {
-                    items.push(renderThreadRow(thread, "settled"));
+                  if (!groupByTeam) {
+                    for (const thread of renderedSettledThreads) {
+                      items.push(renderThreadRow(thread, "settled"));
+                    }
                   }
                   return items;
                 })()}

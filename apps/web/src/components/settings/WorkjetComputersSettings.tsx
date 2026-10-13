@@ -1,4 +1,5 @@
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ProviderSettingsPanel } from "./ProviderSettingsPanel";
 import type {
   ComputerConnection,
   ComputerControlInput,
@@ -1738,6 +1739,8 @@ export function WorkjetComputersSettings({
           ) : null
         }
       />
+      {/* Coding agents are per machine, so they live on Rechner (#554). */}
+      <ProviderSettingsPanel sections="harnesses" embedded />
     </SettingsPageContainer>
   );
 }

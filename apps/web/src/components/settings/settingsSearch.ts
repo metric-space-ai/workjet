@@ -2,7 +2,6 @@ export type SettingsPath =
   | "/settings/business-os"
   | "/settings/general"
   | "/settings/appearance"
-  | "/settings/harnesses"
   | "/settings/models"
   | "/settings/speech"
   | "/settings/computers"
@@ -29,12 +28,12 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/business-os": "Instanzen",
   "/settings/general": "Allgemein",
   "/settings/appearance": "Darstellung",
-  "/settings/harnesses": "Harnesses",
   "/settings/models": "Modelle",
   "/settings/speech": "Sprachausgabe",
   "/settings/computers": "Rechner",
   // Worker composition sits beside the pages it references (Models,
-  // Computers, Harnesses); Source Control follows the workflow pages.
+  // Computers); Source Control follows the workflow pages. Coding agents
+  // (formerly the Harnesses page) live on Rechner since #554.
   "/settings/workjet": "Lumas",
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
@@ -207,13 +206,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "harnesses",
-    title: "Harnesses",
-    to: "/settings/harnesses",
+    title: "Coding-Agenten",
+    to: "/settings/computers",
+    searchAliases: ["Harnesses", "Coding agents", "CLI"],
   },
   {
     id: "import-sessions",
     title: "Sitzungen importieren",
-    to: "/settings/harnesses",
+    to: "/settings/computers",
     searchAliases: ["import", "history", "histories"],
   },
   {

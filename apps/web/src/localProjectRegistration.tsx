@@ -173,6 +173,27 @@ export function LocalProjectRegistrationSynchronizer() {
       if (bound._tag === "completed")
         await requestProjectInit(instanceId, nativeProjectId, operationId);
     };
+    // Opening a project that already exists in CTOX only mirrors it locally. It
+    // must not write to the instance: no project.create, no new supervisor.
+    const alreadyNative =
+      registry.phase === "ready" && registry.projects.some((native) => native.id === project.id);
+    if (alreadyNative) {
+      void updateProject({
+        environmentId: project.environmentId,
+        input: {
+          projectId: project.id,
+          ctoxRegistration: {
+            instanceId: intent.instanceId,
+            commandId: intent.commandId,
+            status: "confirmed",
+          },
+        },
+      }).finally(() => {
+        inFlight.current = false;
+        if (mounted.current) setGeneration((value) => value + 1);
+      });
+      return;
+    }
     void (async () => {
       try {
         const workingCopy =
@@ -238,6 +259,7 @@ export function LocalProjectRegistrationSynchronizer() {
     localEnvironmentId,
     projects,
     registry.phase,
+    registry.projects,
     selectedInstanceId,
     selectionRevision,
     updateProject,

@@ -54,7 +54,11 @@ describe("compact project gallery", () => {
     expect(markup).toMatch(
       /<a[^>]*href="https:\/\/greppy.xyz"[^>]*aria-label="Webseite von greppy.xyz öffnen \(https:\/\/greppy.xyz\)"|<a[^>]*aria-label="Webseite von greppy.xyz öffnen \(https:\/\/greppy.xyz\)"[^>]*href="https:\/\/greppy.xyz"/,
     );
-    expect(markup).toContain('title="Webseite öffnen"');
+    // #577: the website is a visible domain link; no tooltip-only icons.
+    expect(markup).not.toContain('title="Webseite öffnen"');
+    expect(markup).not.toContain('title="Projekt öffnen"');
+    expect(markup).not.toContain("lucide-external-link");
+    expect(markup).not.toContain("lucide-arrow-up-right");
     expect(markup).toContain('alt="Gespeicherte Vorschau von greppy.xyz"');
     expect(markup).toContain('aria-label="greppy.xyz öffnen"');
     expect(markup).not.toContain("<iframe");

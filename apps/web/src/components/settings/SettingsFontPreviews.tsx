@@ -162,6 +162,12 @@ const TERMINAL_PREVIEW_TRANSCRIPT =
   "\r\n" +
   TERMINAL_PROMPT;
 
+/** The transcript without escape sequences, for the text fallback. */
+const TERMINAL_PREVIEW_PLAIN_TEXT = TERMINAL_PREVIEW_TRANSCRIPT.replace(
+  new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"),
+  "",
+).replaceAll("\r\n", "\n");
+
 /** The surface treats an omitted family or size as "use the built-in default". */
 function previewTerminalFont(family: string, size: number): { family?: string; size: number } {
   const trimmed = family.trim();
@@ -179,6 +185,9 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
   const surfaceRef = useRef<GhosttyTerminalSurface | null>(null);
   const fontRef = useRef({ family, size });
   const { theme, resolvedTheme } = useTheme();
+  // Without a working canvas renderer (e.g. no GPU) the preview falls back to
+  // plain text in the chosen font instead of staying empty (#540, point 1).
+  const [canvasFailed, setCanvasFailed] = useState(false);
 
   useEffect(() => {
     const current = fontRef.current;
@@ -239,18 +248,23 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
       // Tab keeps walking the settings page instead of feeding the echo loop.
       beforeKey: (event) => event.key !== "Tab",
       onLinkActivate: noop,
-    }).then((surface) => {
-      if (cancelled) {
-        surface.dispose();
-        return;
-      }
-      surfaceRef.current = surface;
-      // The theme and font may both have changed while the WASM surface loaded.
-      surface.setTheme(terminalThemeFromApp(mount));
-      const font = fontRef.current;
-      void surface.setFont(previewTerminalFont(font.family, font.size));
-      surface.write(TERMINAL_PREVIEW_TRANSCRIPT);
-    });
+    }).then(
+      (surface) => {
+        if (cancelled) {
+          surface.dispose();
+          return;
+        }
+        surfaceRef.current = surface;
+        // The theme and font may both have changed while the WASM surface loaded.
+        surface.setTheme(terminalThemeFromApp(mount));
+        const font = fontRef.current;
+        void surface.setFont(previewTerminalFont(font.family, font.size));
+        surface.write(TERMINAL_PREVIEW_TRANSCRIPT);
+      },
+      () => {
+        if (!cancelled) setCanvasFailed(true);
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -264,6 +278,16 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
       ref={mountRef}
       className="relative mt-1 mb-2 h-52 overflow-hidden rounded-lg border border-border"
       aria-label="Terminal-Schriftvorschau"
-    />
+    >
+      {canvasFailed ? (
+        <pre
+          className="size-full overflow-hidden bg-background p-3 text-foreground"
+          style={{ fontFamily: family.trim() || undefined, fontSize: size }}
+          data-terminal-preview-fallback=""
+        >
+          {TERMINAL_PREVIEW_PLAIN_TEXT}
+        </pre>
+      ) : null}
+    </div>
   );
 }

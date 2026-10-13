@@ -291,7 +291,8 @@ export function WorkjetModelsCell({
                         : "text-muted-foreground",
                   )}
                 >
-                  <Icon className="size-3.5" />
+                  {/* Only a failed check shows an icon; ok/pending stay quiet (#610). */}
+                  {!pending && status === "error" ? <Icon className="size-3.5" /> : null}
                 </span>
               )}
             </label>

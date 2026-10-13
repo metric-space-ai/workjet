@@ -1,5 +1,6 @@
 "use client";
 
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useMemo, type ReactNode } from "react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -191,7 +192,22 @@ function ProviderSettingsFieldRow({
   // Schema descriptions are explanations; the field shows only its label
   // (UI-Vertrag §1.4, §2). `field.description` stays in the model for search
   // and tooling but is never rendered.
-  const label = <span className="text-xs font-medium text-foreground">{field.label}</span>;
+  // An empty field with a placeholder runs on the default; say so, so empty and
+  // default are distinguishable (#540, point 4).
+  const usesDefault =
+    field.control !== "switch" &&
+    field.placeholder !== undefined &&
+    readProviderConfigString(value, field.key).trim().length === 0;
+  const label = (
+    <span className="flex items-baseline gap-1.5 text-xs font-medium text-foreground">
+      {field.label}
+      {usesDefault ? (
+        <span className="font-normal text-muted-foreground" data-provider-field-default="">
+          {workjetUiLanguage() === "en" ? "Default" : "Standard"}
+        </span>
+      ) : null}
+    </span>
+  );
 
   if (field.control === "switch") {
     return (

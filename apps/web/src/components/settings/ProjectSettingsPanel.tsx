@@ -885,20 +885,17 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     group.memberProjects.length > 1 ? "Alle Einträge entfernen" : "Projekt entfernen";
 
   return (
-    <SettingsPageContainer>
-      <div
-        className={cn("flex min-w-0 items-center gap-2 px-1", embedded && "hidden")}
-        data-workjet-project-settings-header=""
-      >
+    <SettingsPageContainer
+      title={group.displayName}
+      titleIcon={
         <ProjectFavicon
           environmentId={representative.environmentId}
           cwd={representative.workspaceRoot}
           faviconPath={faviconPath}
           className="size-5"
         />
-        <h2 className="min-w-0 break-words text-[22px] font-semibold">{group.displayName}</h2>
-      </div>
-
+      }
+    >
       <SettingsSection title="Projekt">
         <SettingsRow
           title="Name"

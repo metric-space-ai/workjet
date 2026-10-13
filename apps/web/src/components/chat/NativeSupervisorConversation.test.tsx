@@ -74,7 +74,6 @@ describe("native Supervisor conversation display", () => {
     expect(html).toContain("&lt;script&gt;owner context&lt;/script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).toContain("Unbestätigt");
-    expect(html).toContain("running · Versuch 1");
     expect(html).not.toContain("Gespeichert");
   });
   it("renders streamed emphasis and lists with the existing chat typography", () => {
@@ -84,7 +83,6 @@ describe("native Supervisor conversation display", () => {
     expect(html).toContain("<li>Erstens</li>");
     expect(html).toContain("chat-markdown");
     expect(html).not.toContain("**Belegt**");
-    expect(html).toContain("running · Versuch 1");
   });
   it("renders retained final answers as Markdown too", () => {
     const html = render([], {
@@ -111,7 +109,6 @@ describe("native Supervisor conversation display", () => {
     const html = render([reply]);
     expect(html).toContain('aria-label="Supervisor-Antwort"');
     expect(html).toContain("Actual partial model reply");
-    expect(html).toContain("running · Versuch 1");
     expect(html).not.toContain("Awaiting confirmation");
   });
   it("labels actual commentary separately and escapes text", () => {

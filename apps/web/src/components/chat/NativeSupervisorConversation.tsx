@@ -16,6 +16,7 @@ export function NativeSupervisorConversation(props: {
   readonly disabled: boolean;
   readonly onReset: () => void;
   readonly onNext: () => void;
+  readonly onRetrySend?: (() => void) | undefined;
 }) {
   const { journal } = props;
   const finalText =
@@ -76,28 +77,6 @@ export function NativeSupervisorConversation(props: {
         <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>
       )}
       <div className="text-xs text-muted-foreground">
-        <p>
-          {journal.turn
-            ? `${journal.turn.status} · Versuch ${journal.turn.attempt}`
-            : "Warte auf CTOX-Bestätigung"}
-        </p>
-        {journal.turn?.taskId && (
-          <details className="mt-1">
-            <summary>Aufgabendetails</summary>
-            <p>Aufgabe {journal.turn.taskId}</p>
-            <p>Befehl {journal.turn.commandId}</p>
-          </details>
-        )}
-        {props.page && props.page.public_text_supported !== true && (
-          <p role="status" className="mt-1">
-            Live-Antwort nicht verfügbar
-          </p>
-        )}
-        {props.historyLimited && (
-          <p role="status" className="mt-1">
-            Verlaufsgrenze erreicht
-          </p>
-        )}
         <NativeSupervisorExecutionDetails
           page={props.page}
           error={props.error}
@@ -106,14 +85,27 @@ export function NativeSupervisorConversation(props: {
           onNext={props.onNext}
         />
       </div>
-      {journal.submission === "not-submitted" && (
+      {journal.submission === "not-submitted" && !canResumeSupervisorJournal(journal, null) && (
         <p role="status" className="text-xs text-muted-foreground">
-          {canResumeSupervisorJournal(journal, null) ? "Warte auf Bestätigung" : "Nicht gesendet"}
+          Nicht gesendet
+          {props.onRetrySend ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                disabled={props.disabled}
+                onClick={props.onRetrySend}
+              >
+                Erneut senden
+              </button>
+            </>
+          ) : null}
         </p>
       )}
       {journal.turn?.errorMessage && (
         <p role="alert" className="text-destructive">
-          {journal.turn.errorCode}: {journal.turn.errorMessage}
+          {journal.turn.errorMessage}
         </p>
       )}
     </section>

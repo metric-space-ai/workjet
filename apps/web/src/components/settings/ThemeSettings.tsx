@@ -702,7 +702,7 @@ export function ThemeLibrary({
   const renderModeTiles = () => (
     <div
       aria-label="Farbschema"
-      className="mx-auto grid w-full max-w-[56rem] grid-cols-3 gap-3 px-3 sm:px-4"
+      className="grid w-full grid-cols-3 gap-3 px-3 sm:px-4"
       role="group"
     >
       {(["system", "light", "dark"] as const).map((mode) => {
@@ -818,7 +818,7 @@ export function ThemeLibrary({
     // accepted — scoping the group tighter makes the handoffs feel sluggish.
     <TooltipProvider>
       <div
-        className="mx-auto grid w-full max-w-[56rem] gap-2 px-3 sm:px-4"
+        className="grid w-full gap-2 px-3 sm:px-4"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 17rem), 1fr))" }}
       >
         {STANDARD_THEME_CARDS.map((standardTheme) => (
@@ -931,7 +931,7 @@ export function ThemeLibrary({
         </div>
       </div>
       {isImportOpen ? (
-        <div className="mx-auto w-full max-w-[56rem] px-3 sm:px-4">
+        <div className="w-full px-3 sm:px-4">
           <ThemeImportPanel
             onImportedMany={(importedThemes, { updated }) => {
               // Re-apply after collection updates. The update may remove the
@@ -972,7 +972,7 @@ export function ThemeLibrary({
       ) : null}
       {renderPairGrid()}
       {editorSession ? (
-        <div className="mx-auto w-full max-w-[56rem] px-3 sm:px-4">
+        <div className="w-full px-3 sm:px-4">
           <ThemeEditorSection />
         </div>
       ) : null}

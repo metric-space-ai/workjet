@@ -47,7 +47,6 @@ import {
   getProviderRuntimeSummary,
   getProviderSummary,
   getProviderVersionLabel,
-  providerCheckedAgeLabel,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -400,7 +399,12 @@ export function ProviderInstanceCard({
   // reflects the persisted intent even before the first probe completes.
   const statusKey: ProviderStatusKey =
     (liveProvider?.status as ProviderStatusKey | undefined) ?? (enabled ? "warning" : "disabled");
-  const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
+  // One meaning per dot (#617): only problems get one. Ready is the normal state and
+  // disabled is already shown by the switch.
+  const statusStyle =
+    statusKey === "error" || statusKey === "warning"
+      ? PROVIDER_STATUS_STYLES[statusKey]
+      : { dot: "hidden" };
   const rawSummary = runtimeOnly
     ? getProviderRuntimeSummary(liveProvider)
     : getProviderSummary(liveProvider);
@@ -411,7 +415,6 @@ export function ProviderInstanceCard({
     ? (liveProvider?.auth.label ?? liveProvider?.auth.type ?? null)
     : null;
   const summary = rawSummary;
-  const checkedAgeLabel = providerCheckedAgeLabel(liveProvider?.checkedAt);
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory);
   const updateCommand = versionAdvisory?.updateCommand ?? null;
@@ -561,11 +564,7 @@ export function ProviderInstanceCard({
         the probe that produced it: a stale "Angemeldet" must never read as
         a live one.
       */}
-      {liveProvider ? (
-        <span className="text-muted-foreground/60">{`· ${checkedAgeLabel}`}</span>
-      ) : null}
       {summary.detail ? <span>· {summary.detail}</span> : null}
-      {runtimeOnly ? <span>· Standard: Berechtigung umgehen</span> : null}
     </span>
   );
 
@@ -590,11 +589,6 @@ export function ProviderInstanceCard({
               <Badge variant="warning" size="sm" className="shrink-0">
                 {driverOption.badgeLabel}
               </Badge>
-            ) : null}
-            {headerAction ? (
-              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-                {headerAction}
-              </span>
             ) : null}
           </div>
           {authRowNode}
@@ -698,6 +692,8 @@ export function ProviderInstanceCard({
       <Collapsible open={isExpanded} onOpenChange={onExpandedChange}>
         <CollapsibleContent>
           <div className="space-y-4 px-3 pb-4 pt-2 sm:px-4">
+            {/* Reset lives in the details, never on some rows only (#617). */}
+            {headerAction ? <div className="flex justify-end">{headerAction}</div> : null}
             <div>
               <label htmlFor={`provider-instance-${instanceId}-display-name`} className="block">
                 <span className="text-xs font-medium text-foreground">Anzeigename</span>

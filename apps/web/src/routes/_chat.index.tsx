@@ -1052,6 +1052,11 @@ function ProjectGallery({
 
 const PROJECT_OPENING_TIMEOUT_MS = 10_000;
 
+function formatElapsed(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 const MODEL_ACCOUNT_MISSING =
   "Kein Modell-Konto: Der Supervisor startet, sobald eines eingerichtet ist.";
 
@@ -1254,6 +1259,14 @@ function InlineProjectCreate({
   const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
+  const [progressStep, setProgressStep] = useState<{ step: number; of: number } | null>(null);
+  const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
+  const [progressNow, setProgressNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (progressStartedAt === null) return;
+    const timer = window.setInterval(() => setProgressNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [progressStartedAt]);
   const [error, setError] = useState<string | null>(null);
   const attemptRef = useRef<{
     key: string;
@@ -1355,9 +1368,22 @@ function InlineProjectCreate({
           );
         return;
       }
-      setProgress(source === "clone" ? "Repository wird geklont …" : "Projekt wird angelegt …");
+      const en = workjetUiLanguage() === "en";
+      setProgressStartedAt(Date.now());
+      setProgressNow(Date.now());
+      setProgressStep({ step: 1, of: 2 });
+      setProgress(
+        source === "clone"
+          ? en
+            ? "Cloning repository …"
+            : "Repository wird geklont …"
+          : en
+            ? "Checking folder …"
+            : "Ordner wird geprüft …",
+      );
       const workspaceRoot = await sources.resolveWorkspaceRoot();
-      setProgress("Projekt wird angelegt …");
+      setProgressStep({ step: 2, of: 2 });
+      setProgress(en ? "Creating project …" : "Projekt wird angelegt …");
       const created = await sources.createWorkspaceProject({
         title: trimmed,
         workspaceRoot,
@@ -1382,6 +1408,8 @@ function InlineProjectCreate({
       setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
     } finally {
       setProgress(null);
+      setProgressStep(null);
+      setProgressStartedAt(null);
       setPending(false);
     }
   };
@@ -1428,7 +1456,33 @@ function InlineProjectCreate({
         onAction={() => void navigate({ to: "/settings/computers" })}
       />
     ) : null;
-  const status = error ?? progress ?? requirement ?? undefined;
+  // Clone/folder progress (#584): step, elapsed time and a running bar, not one grey line.
+  const progressNode =
+    progress !== null && progressStep !== null && progressStartedAt !== null ? (
+      <div className="grid gap-1" data-workjet-project-create-progress="">
+        <div className="flex items-center justify-between gap-2">
+          <span>
+            {workjetUiLanguage() === "en"
+              ? `Step ${progressStep.step} of ${progressStep.of}`
+              : `Schritt ${progressStep.step} von ${progressStep.of}`}
+            {" · "}
+            {progress}
+          </span>
+          <span className="tabular-nums">
+            {formatElapsed(Math.max(0, progressNow - progressStartedAt))}
+          </span>
+        </div>
+        <div className="h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{ width: `${(progressStep.step / (progressStep.of + 1)) * 100}%` }}
+          />
+        </div>
+      </div>
+    ) : (
+      progress
+    );
+  const status = error ?? progressNode ?? requirement ?? undefined;
   const submitDisabled =
     effectiveTitle.trim().length === 0 ||
     instanceId === null ||

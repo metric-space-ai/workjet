@@ -12,7 +12,13 @@ import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema
 import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { nativeJourFixeNarrationProvider } from "../lib/nativeJourFixeNarrationProvider";
+import { createJourFixeGatewayMicrophoneProvider } from "../lib/jourFixeGatewayMicrophone";
 import { Button } from "./ui/button";
+
+/** Retained narration plus the owner's microphone through the CTOX speech gateway. */
+const nativeJourFixeSpeechProvider = createJourFixeGatewayMicrophoneProvider({
+  prepareNarration: nativeJourFixeNarrationProvider.prepareNarration,
+});
 
 export function NativeJourFixeRoom(props: {
   readonly instanceId: string;
@@ -236,7 +242,7 @@ function NativeJourFixeRoomContent({
     <div className="flex min-h-0 flex-1 flex-col">
       <JourFixeSpeechRoom
         instanceId={instanceId}
-        speechProvider={speechProvider ?? nativeJourFixeNarrationProvider}
+        speechProvider={speechProvider ?? nativeJourFixeSpeechProvider}
         projectTitle={projectTitle}
         meeting={meeting}
         commentDelivery="saved"

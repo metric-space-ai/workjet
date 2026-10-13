@@ -1801,56 +1801,6 @@ export function GeneralSettingsPanel() {
                 }
               />
             ) : null}
-
-            <SettingsRow
-              {...searchableSetting("archive-confirmation")}
-              resetAction={
-                settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
-                  <SettingResetButton
-                    label="Archivieren bestätigen"
-                    onClick={() =>
-                      updateSettings({
-                        confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <Switch
-                  checked={settings.confirmThreadArchive}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ confirmThreadArchive: Boolean(checked) })
-                  }
-                  aria-label="Archivieren bestätigen"
-                />
-              }
-            />
-
-            <SettingsRow
-              {...searchableSetting("delete-confirmation")}
-              resetAction={
-                settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
-                  <SettingResetButton
-                    label="Löschen bestätigen"
-                    onClick={() =>
-                      updateSettings({
-                        confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <Switch
-                  checked={settings.confirmThreadDelete}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ confirmThreadDelete: Boolean(checked) })
-                  }
-                  aria-label="Löschen bestätigen"
-                />
-              }
-            />
           </SettingsSection>
           <LegacyFeaturesSection />
         </>

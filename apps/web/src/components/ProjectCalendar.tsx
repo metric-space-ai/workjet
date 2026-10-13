@@ -838,7 +838,7 @@ export function ProjectCalendar({
             {(onRefreshSessions || onRefreshAccounts) && (
               <Button
                 size="sm"
-                variant="ghost"
+                variant="outline"
                 className="mt-2"
                 disabled={sessionsStatus === "loading" || accountsLoading}
                 onClick={() => {
@@ -860,14 +860,19 @@ export function ProjectCalendar({
               <h2 className="text-sm font-medium">
                 {calText("Ohne Regeltermin", "Without regular meeting")}
               </h2>
+              {/* Real buttons, not caption-like text (#595): each opens the project to set its meeting. */}
               <div className="mt-2 flex flex-wrap gap-1">
                 {unscheduled.map((project) => (
                   <Button
                     key={project.key}
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={project.onOpen}
                     data-workjet-action={`project.open.calendar:${project.key}`}
+                    aria-label={calText(
+                      `${project.title}: Termin festlegen`,
+                      `${project.title}: set meeting`,
+                    )}
                   >
                     {project.title}
                     <ArrowUpRightIcon className="size-3" />

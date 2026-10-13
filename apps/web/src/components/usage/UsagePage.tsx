@@ -112,7 +112,7 @@ export function UsagePage() {
       : `${formatUsageDay(window.sinceDay)} – ${formatUsageDay(window.untilDay)}`;
 
   return (
-    <SettingsPageContainer wide className="gap-5">
+    <SettingsPageContainer className="gap-5">
       <div className="flex flex-wrap items-center gap-2" data-usage-toolbar="">
         <ToggleGroup
           aria-label="Zeitraum"

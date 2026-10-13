@@ -399,6 +399,15 @@ function DevicesSection({
   );
 }
 
+export function networkInstancesForSelection<T extends { readonly id: string }>(
+  instances: readonly T[],
+  activeInstanceId: string | null,
+): readonly T[] {
+  if (activeInstanceId === null) return instances;
+  const active = instances.filter((instance) => instance.id === activeInstanceId);
+  return active.length > 0 ? active : instances;
+}
+
 function NetworkSection({ children }: { readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -766,8 +775,13 @@ export function BusinessOsSettings() {
       network={
         <InstanceNetworkOverview
           variant="section"
-          instances={dedupeCtoxInstances(
-            instances.filter((instance) => instance.workjetState !== "removed"),
+          // Settings are scoped to the selected instance: its network only,
+          // never the first instance in discovery order (QA 0.0.95 D).
+          instances={networkInstancesForSelection(
+            dedupeCtoxInstances(
+              instances.filter((instance) => instance.workjetState !== "removed"),
+              activeInstanceId,
+            ),
             activeInstanceId,
           )}
           onSelect={(instance) => void select(instance)}

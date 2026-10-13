@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { GitPullRequestIcon } from "lucide-react";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
@@ -35,6 +35,8 @@ type Props = {
   readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
   /** Öffnet die Pull-Request-Liste dieses Projekts. */
   readonly onOpenPullRequests?: () => void;
+  /** Compact one-line notice above the overview, e.g. a missing model account. */
+  readonly notice?: ReactNode;
 };
 export function ProjectWorkspace(props: Props) {
   return (
@@ -53,6 +55,7 @@ function ProjectWorkspaceContent({
   onOpenPullRequests,
   ctoxInstanceId,
   openMeeting = false,
+  notice,
 }: Props) {
   useSupervisorProjectMetadata(project);
   const language = useProjectOverviewLanguage();
@@ -138,6 +141,15 @@ function ProjectWorkspaceContent({
           <WorkspaceBreadcrumbItem current>{text.overview}</WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
       </WorkjetHeaderContent>
+      {notice ? (
+        <div
+          role="status"
+          className="mx-5 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:mx-6"
+          data-workjet-project-notice=""
+        >
+          {notice}
+        </div>
+      ) : null}
       <ProjectOverviewView
         data={data}
         onOpenChat={onOpenChat}

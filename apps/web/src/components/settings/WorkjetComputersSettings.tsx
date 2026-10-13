@@ -608,7 +608,7 @@ export function WorkjetComputersSettingsView({
   ) : membershipUnreachable ? (
     <span className="flex items-center gap-1.5">
       <Chip tone="error" title={membership?.error ?? undefined}>
-        Instanz nicht erreichbar
+        Rechnerliste nicht abrufbar
       </Chip>
       {onRetryMembership ? (
         <Button size="xs" variant="outline" onClick={onRetryMembership}>
@@ -1298,7 +1298,7 @@ export function WorkjetComputersSettings({
   const rolesStatus = !selectedInstanceId
     ? "Keine Instanz gewählt"
     : activeMembership?.phase === "failed"
-      ? "Instanz nicht erreichbar"
+      ? "Rechnerliste nicht abrufbar"
       : activeMembership?.phase === "ready"
         ? null
         : "Instanz prüft…";
@@ -1424,7 +1424,7 @@ export function WorkjetComputersSettings({
           workerConnections.data?.connections ?? [],
           selectedInstanceId,
         );
-        if (!source) return { status: "error", message: "Lumas der Instanz sind nicht verbunden." };
+        if (!source) return { status: "error", message: "Lumas der Instanz nicht abrufbar." };
         const result = await enrollRemoteComputer({
           environmentId,
           targetEnvironmentId: connected,

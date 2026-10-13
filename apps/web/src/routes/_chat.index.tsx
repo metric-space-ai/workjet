@@ -135,6 +135,7 @@ import {
   selectWorkjetProject,
   useWorkjetProjectRegistry,
 } from "../workjetProjectRegistry";
+import { useUiText } from "../hooks/useUiText";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../activeWorkjetScope";
 
 function ChatIndexRouteView() {
@@ -683,6 +684,7 @@ function ProjectGallery({
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
 }) {
+  const t = useUiText();
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"gallery" | "calendar">("gallery");
   const [galleryOrder, setGalleryOrder] = useState<{
@@ -845,7 +847,11 @@ function ProjectGallery({
         <div className="mx-auto max-w-6xl">
           <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
             {/* No visible page title: the pressed view switch already says where you are (#576). */}
-            <h1 className="sr-only">{showArchived ? "Archivierte Projekte" : "Alle Projekte"}</h1>
+            <h1 className="sr-only">
+              {showArchived
+                ? t("Archivierte Projekte", "Archived projects")
+                : t("Alle Projekte", "All projects")}
+            </h1>
             <div className="flex flex-wrap items-center gap-2">
               <div
                 className="inline-flex gap-1 rounded-md border border-border p-1"

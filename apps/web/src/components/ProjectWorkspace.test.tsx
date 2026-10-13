@@ -352,7 +352,7 @@ describe("owner project overview", () => {
   it("shows the feed first, then live, meeting, KPIs and goals, and translates all overview navigation in both languages", () => {
     for (const language of ["de", "en"] as const) {
       const html = markup([supervisor], language);
-      const positions = ["feed", "live", "kpis", "goals"].map((section) =>
+      const positions = ["feed", "live", "kpis"].map((section) =>
         html.indexOf('data-workjet-overview-section="' + section + '"'),
       );
       expect(positions).toEqual([...positions].sort((a, b) => a - b));

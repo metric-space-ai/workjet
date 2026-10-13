@@ -292,40 +292,42 @@ export function ProjectOverviewView(props: {
             </dl>
           )}
         </section>
-        <section
-          className="rounded-lg border border-border bg-card px-3.5 py-3"
-          data-workjet-overview-section="goals"
-        >
-          <h2 className="mb-1.5 text-xs text-muted-foreground">{text.goals}</h2>
-          {data.goals.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{text.noGoals}</p>
-          ) : (
-            <ul className="space-y-2 text-xs">
-              {data.goals.map((goal) => (
-                <li key={goal.id} className="min-w-0">
-                  <p className="line-clamp-2 break-words text-foreground">{goal.title}</p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
-                    <span>{text.who}:</span>
-                    {goal.thread ? (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="h-auto p-0 text-xs"
-                        onClick={() => open(goal.thread!)}
-                      >
-                        {goal.owner}
-                      </Button>
-                    ) : (
-                      <span>{goal.owner}</span>
-                    )}
-                    <span>· {text.status}:</span>
-                    <StatusChip status={goal.status} label={goal.state} />
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {data.goals.length === 0 ? null : (
+          <section
+            className="rounded-lg border border-border bg-card px-3.5 py-3"
+            data-workjet-overview-section="goals"
+          >
+            <h2 className="mb-1.5 text-xs text-muted-foreground">{text.goals}</h2>
+            {data.goals.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{text.noGoals}</p>
+            ) : (
+              <ul className="space-y-2 text-xs">
+                {data.goals.map((goal) => (
+                  <li key={goal.id} className="min-w-0">
+                    <p className="line-clamp-2 break-words text-foreground">{goal.title}</p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
+                      <span>{text.who}:</span>
+                      {goal.thread ? (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="h-auto p-0 text-xs"
+                          onClick={() => open(goal.thread!)}
+                        >
+                          {goal.owner}
+                        </Button>
+                      ) : (
+                        <span>{goal.owner}</span>
+                      )}
+                      <span>· {text.status}:</span>
+                      <StatusChip status={goal.status} label={goal.state} />
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
         {props.actions ? (
           <section className="rounded-lg border border-border bg-card px-3.5 py-3">
             <h2 className="mb-1.5 text-xs text-muted-foreground">{text.projectActions}</h2>

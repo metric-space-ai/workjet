@@ -135,7 +135,6 @@ const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, s
 };
 
 const INTERFACE_LANGUAGE_LABELS = {
-  system: "System",
   de: "Deutsch",
   en: "English",
 } as const;
@@ -1445,17 +1444,18 @@ export function GeneralSettingsPanel() {
           title="Sprache"
           control={
             <Select
-              value={settings.interfaceLanguage}
+              value={settings.interfaceLanguage === "en" ? "en" : "de"}
               onValueChange={(value) => {
-                if (value === "system" || value === "de" || value === "en")
+                if (value === "de" || value === "en")
                   updateClientSettings({ interfaceLanguage: value });
               }}
             >
               <SelectTrigger aria-label="Sprache" className="w-40">
-                <SelectValue>{INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage]}</SelectValue>
+                <SelectValue>
+                  {INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage === "en" ? "en" : "de"]}
+                </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="system">System</SelectItem>
                 <SelectItem value="de">Deutsch</SelectItem>
                 <SelectItem value="en">English</SelectItem>
               </SelectPopup>

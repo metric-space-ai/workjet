@@ -1,4 +1,5 @@
 import { SupportBundleSection } from "./SupportBundleSection";
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -142,6 +143,10 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, stri
 };
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+function archiveText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 function resetBackgroundActivitySettings() {
   return {
     backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -2046,29 +2051,33 @@ export function ArchivedThreadsPanel() {
         >
           {isLoadingArchive ? (
             <EmptyLoading
-              title="Archiv wird geladen …"
-              slowMessage="Archiv nicht geladen."
+              title={archiveText("Chat-Archiv wird geladen …", "Loading chat archive …")}
+              slowMessage={archiveText("Chat-Archiv nicht geladen.", "Chat archive not loaded.")}
               onRetry={refreshArchivedThreads}
             />
           ) : archiveError ? (
             <Empty>
               <EmptyHeader>
-                <EmptyTitle role="alert">Archiv nicht geladen</EmptyTitle>
+                <EmptyTitle role="alert">
+                  {archiveText("Chat-Archiv nicht geladen", "Chat archive not loaded")}
+                </EmptyTitle>
               </EmptyHeader>
               <EmptyContent>
                 <Button variant="outline" onClick={() => refreshArchivedThreads()}>
-                  Erneut versuchen
+                  {archiveText("Erneut versuchen", "Retry")}
                 </Button>
               </EmptyContent>
             </Empty>
           ) : (
             <Empty>
               <EmptyHeader>
-                <EmptyTitle>Keine archivierten Unterhaltungen</EmptyTitle>
+                <EmptyTitle>
+                  {archiveText("Keine archivierten Unterhaltungen", "No archived conversations")}
+                </EmptyTitle>
               </EmptyHeader>
               <EmptyContent>
                 <Button variant="outline" render={<Link to="/" />}>
-                  Zu den Projekten
+                  {archiveText("Zu den Projekten", "To projects")}
                 </Button>
               </EmptyContent>
             </Empty>

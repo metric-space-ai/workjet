@@ -639,11 +639,13 @@ export function WorktreeStorageInline({
         <p role="alert" className="text-xs text-destructive">
           {storage.error}
         </p>
-      ) : checked?.status === "invalid" ? (
+      ) : null}
+      {!storage.error && checked?.status === "invalid" ? (
         <p role="alert" className="text-xs text-destructive">
           {checked.message}
         </p>
-      ) : checked?.status === "valid" ? (
+      ) : null}
+      {!storage.error && checked?.status === "valid" ? (
         <p className="text-xs text-muted-foreground">
           {formatAvailableBytes(checked.availableBytes)} {t("frei", "free")}
         </p>

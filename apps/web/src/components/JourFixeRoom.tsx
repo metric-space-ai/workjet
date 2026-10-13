@@ -93,6 +93,25 @@ export function useWorkjetDarkScheme(): boolean {
 const THUMB_RUNTIME_BASE = `${import.meta.env.BASE_URL}vendor/excalidraw/`;
 
 /**
+ * App-Zustand für die Vorschau per `exportToSvg`.
+ * `exportWithDarkMode` legt denselben Invertier-Filter auf die ganze SVG wie
+ * `theme="dark"` auf die Zeichenfläche. Der Grund bleibt das helle Papier der
+ * Szene: ein vorab dunkler Grund würde mitinvertiert und wieder hell.
+ */
+export function jourFixeThumbExportState(backgroundColor: string, dark: boolean) {
+  return {
+    viewBackgroundColor: backgroundColor,
+    exportBackground: true as const,
+    exportWithDarkMode: dark,
+  };
+}
+
+/** Während die Startbestätigung aussteht, nur die Knopfbeschriftung – keine Leiste. */
+export function jourFixeStartButtonLabel(pending: boolean): string {
+  return pending ? "Startet …" : "Termin starten";
+}
+
+/**
  * Verkleinerte echte Folie in der Vorschauleiste: dasselbe Engine-Deck wie die
  * Bühne, als einmalig exportiertes Bild. Zeigt das Theme der Folie, keine Kachel.
  */
@@ -115,11 +134,7 @@ function JourFixeCanvasThumb({
       .then((runtime) =>
         runtime.exportToSvg({
           elements: scene.elements,
-          appState: {
-            viewBackgroundColor: dark ? "#1b1a17" : scene.backgroundColor,
-            exportBackground: true,
-            exportWithDarkMode: dark,
-          },
+          appState: jourFixeThumbExportState(scene.backgroundColor, dark),
           files: scene.files,
         }),
       )
@@ -298,11 +313,15 @@ function JourFixeRoomContent({
   const [message, setMessage] = useState("");
   const [visibleTurns, setVisibleTurns] = useState(100);
   const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState(false);
   const inFlight = useRef(false);
   const now = useMinuteNow();
-  const startLocked =
-    ["planned", "preparing", "ready"].includes(meeting.state) &&
-    now < meeting.scheduledAt - JOUR_FIXE_START_LEAD_MS;
+  const beforeStart = ["planned", "preparing", "ready"].includes(meeting.state);
+  const startLocked = beforeStart && now < meeting.scheduledAt - JOUR_FIXE_START_LEAD_MS;
+  const canStart = meeting.state === "ready" && !startLocked && onStartMeeting !== undefined;
+  // Aufgaben nur nach dem Termin: vorher und während „läuft“ bleibt der Kopf ruhig.
+  const showTaskToggle =
+    meeting.todos !== undefined && (meeting.state === "review" || meeting.state === "confirmed");
   // Presenter mode: Auto plays every slide's narration in turn; keys and full screen as in
   // learnordie's live presenter.
   const [autoAdvance, setAutoAdvance] = useState(false);
@@ -387,6 +406,12 @@ function JourFixeRoomContent({
       inFlight.current = false;
       setBusy(false);
     }
+  }
+  function startMeeting() {
+    const start = onStartMeeting;
+    if (!start) return;
+    setStarting(true);
+    void perform(() => start(meeting.id, meeting.revision)).finally(() => setStarting(false));
   }
   function discardCanvasEdit() {
     // Invalidate the old editor callback before its cleanup can flush a debounced edit.
@@ -529,72 +554,69 @@ function JourFixeRoomContent({
           }).format(meeting.scheduledAt)}{" "}
           · {meeting.timezone}
         </time>
-        {meeting.state === "live" ? (
-          <span
-            className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground"
-            data-meeting-state="live"
-          >
-            <span aria-hidden="true" className="size-2 rounded-full bg-green-500" />
-            läuft seit {meetingTimeLabel(meeting)}
-          </span>
-        ) : (
-          <span
-            className={`ml-auto rounded-full border px-2.5 py-1 text-xs capitalize ${meeting.state === "review" ? "border-amber-400/30 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}
-            data-meeting-state={meeting.state}
-          >
-            {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
-            {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
-          </span>
-        )}
-        {startLocked ? (
-          <span
-            className="text-xs text-muted-foreground"
-            data-workjet-meeting-start-lock={meeting.state}
-          >
-            Beginnt um {meetingTimeLabel(meeting)}
-            {meeting.state === "preparing"
-              ? " · Vorbereitung läuft"
-              : meeting.state === "ready"
-                ? " · Vorbereitet"
-                : ""}
-          </span>
-        ) : (
-          meeting.state === "ready" &&
-          onStartMeeting && (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {beforeStart ? (
+            <span
+              className="text-xs text-muted-foreground"
+              data-meeting-state={meeting.state}
+              data-workjet-meeting-start-lock={startLocked ? meeting.state : undefined}
+            >
+              Beginnt {meetingTimeLabel(meeting)}
+            </span>
+          ) : meeting.state === "live" ? (
+            <span
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              data-meeting-state="live"
+            >
+              <span aria-hidden="true" className="size-2 rounded-full bg-green-500" />
+              läuft seit {meetingTimeLabel(meeting)}
+            </span>
+          ) : (
+            <span
+              className={`rounded-full border px-2.5 py-1 text-xs capitalize ${meeting.state === "review" ? "border-amber-400/30 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}
+              data-meeting-state={meeting.state}
+            >
+              {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
+              {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
+            </span>
+          )}
+          {canStart && (
             <Button
               size="sm"
               disabled={busy}
-              onClick={() => void perform(() => onStartMeeting(meeting.id, meeting.revision))}
+              aria-busy={starting}
+              data-workjet-meeting-start={starting ? "pending" : "idle"}
+              onClick={startMeeting}
             >
-              Termin starten
+              {jourFixeStartButtonLabel(starting)}
             </Button>
-          )
-        )}
-        {meeting.state === "live" && onEndMeeting && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            onClick={() =>
-              void perform(
-                () => onEndMeeting(meeting.id, meeting.revision),
-                () => setView(null),
-              )
-            }
-          >
-            Beenden
-          </Button>
-        )}
-        {meeting.todos && (
-          <Button
-            size="sm"
-            variant="outline"
-            aria-pressed={review}
-            onClick={() => setView(review ? "slides" : "review")}
-          >
-            {review ? "Folien" : "Prüfen"}
-          </Button>
-        )}
+          )}
+          {meeting.state === "live" && onEndMeeting && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() =>
+                void perform(
+                  () => onEndMeeting(meeting.id, meeting.revision),
+                  () => setView(null),
+                )
+              }
+            >
+              Beenden
+            </Button>
+          )}
+          {showTaskToggle && (
+            <Button
+              size="sm"
+              variant="outline"
+              aria-pressed={review}
+              onClick={() => setView(review ? "slides" : "review")}
+            >
+              {review ? "Zu den Folien" : "Aufgaben prüfen"}
+            </Button>
+          )}
+        </div>
         {(error || meeting.error) && (
           <span role="alert" className="flex items-center gap-2 text-xs text-destructive">
             {error ?? meeting.error}

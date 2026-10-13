@@ -15,6 +15,7 @@ import {
   buildProjectComputerOptions,
   cloneProjectRepository,
   deriveRepositoryFolderName,
+  readableProjectTitle,
   findDuplicateProjectForName,
   joinCloneDestination,
   knownCloneTargetFolders,
@@ -46,7 +47,7 @@ describe("Projekt anlegen: Segment Neu | Aus Ordner | Repository klonen", () => 
     expect(panel).toContain("<ProjectFolderFields");
     expect(panel).toContain("<ProjectCloneFields");
     expect(panel).toContain("submitFromSource()");
-    expect(panel).toContain("selectProjectOverviewRef(");
+    expect(panel).toContain("openCreatedProject(");
     expect(panel).toContain('"/settings/business-os"');
     expect(panel).not.toMatch(/<Dialog|CommandDialog|role="dialog"/);
   });
@@ -174,6 +175,9 @@ describe("Repository klonen", () => {
     expect(deriveRepositoryFolderName("https://github.com/a/b.git")).toBe("b");
     expect(deriveRepositoryFolderName("git@github.com:a/site.git")).toBe("site");
     expect(deriveRepositoryFolderName("owner/repo/")).toBe("repo");
+    expect(readableProjectTitle("metric")).toBe("Metric");
+    expect(readableProjectTitle("light-gun-heroes")).toBe("Light Gun Heroes");
+    expect(readableProjectTitle("WorkJet")).toBe("WorkJet");
     expect(deriveRepositoryFolderName("")).toBe("");
     expect(joinCloneDestination("", "x")).toBe("~/x");
     expect(joinCloneDestination("/", "x")).toBe("/x");
@@ -207,7 +211,10 @@ describe("Repository klonen", () => {
     );
     expect(html).toContain('aria-label="Repository"');
     expect(html).toContain('aria-label="Anbieter"');
-    expect(html).toContain('aria-label="Zielordner"');
+    // One destination line with one button; the folder controls stay closed (#507).
+    expect(html).toContain("Wird geklont nach ~/projekte/…");
+    expect(html).toContain('data-workjet-action="project.add.clone.change-target"');
+    expect(html).not.toContain('aria-label="Zielordner"');
     const urlOnly = renderToStaticMarkup(
       <ProjectCloneFields
         computer={null}
@@ -247,6 +254,7 @@ describe("Repository klonen", () => {
         onBaseDirectoryChange={() => {}}
         targetFolders={knownCloneTargetFolders("~/projekte", ["/Users/m/code/alpha"])}
         onPickTarget={() => {}}
+        defaultEditingTarget
       />,
     );
     expect(html).toContain('data-workjet-clone-target="~/projekte"');

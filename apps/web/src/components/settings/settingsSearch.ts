@@ -39,7 +39,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
-  "/settings/archived": "Archiv",
+  // Names its content: the start page "Archiv" holds projects, this one conversations (#602).
+  "/settings/archived": "Chat-Archiv",
   "/settings/usage": "Verbrauch",
 };
 
@@ -52,7 +53,7 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
   "/settings/computers": ["Computers"],
   "/settings/source-control": ["Source Control"],
   "/settings/diagnostics": ["Diagnostics"],
-  "/settings/archived": ["Archive"],
+  "/settings/archived": ["Archiv", "Archive", "Archived conversations", "Unterhaltungen"],
   "/settings/usage": ["Usage", "Kosten", "Tokens"],
 };
 
@@ -176,16 +177,6 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "add-project-starts-in",
     title: "Projektordner",
-    to: "/settings/general",
-  },
-  {
-    id: "archive-confirmation",
-    title: "Archivieren bestätigen",
-    to: "/settings/general",
-  },
-  {
-    id: "delete-confirmation",
-    title: "Löschen bestätigen",
     to: "/settings/general",
   },
   {

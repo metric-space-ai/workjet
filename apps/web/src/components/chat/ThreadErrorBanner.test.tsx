@@ -7,6 +7,7 @@ import {
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
+  threadErrorPresentation,
 } from "./ThreadErrorBanner";
 
 describe("ThreadErrorBanner", () => {
@@ -84,5 +85,22 @@ describe("ThreadErrorBanner", () => {
     expect(markup).toContain("min-h-7 pt-1 sm:min-h-6 sm:pt-0.5");
     expect(markup).toContain("h-lh w-4");
     expect(markup).toContain("h-lh self-start");
+  });
+
+  it("turns a raw adapter error into one sentence with the raw text behind Details (#586)", () => {
+    const raw =
+      "ProviderAdapterProcessError: spawn failed for thread 8c6643ef-1234-4abc-9def-000000000000 file:///workspace/x";
+    expect(threadErrorPresentation(raw)).toEqual({
+      summary: "Der Worker konnte nicht gestartet werden.",
+      details: raw,
+    });
+    const markup = renderToStaticMarkup(<ThreadErrorBanner error={raw} />);
+    expect(markup).toContain("Der Worker konnte nicht gestartet werden.");
+    expect(markup).not.toContain("file:///workspace");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(threadErrorPresentation("Turn failed")).toEqual({
+      summary: "Turn failed",
+      details: null,
+    });
   });
 });

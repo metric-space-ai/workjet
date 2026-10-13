@@ -894,21 +894,16 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
   // Regeltermin, budget and KPIs are edited on the project card; embedded settings skip them.
   const showTab = (id: ProjectTab | "card") => !embedded || (id === "card" ? false : id === tab);
+  const titleIcon = (
+    <ProjectFavicon
+      environmentId={representative.environmentId}
+      cwd={representative.workspaceRoot}
+      faviconPath={faviconPath}
+      className="size-5"
+    />
+  );
   const content = (
     <>
-      <div
-        className={cn("flex min-w-0 items-center gap-2 px-1", embedded && "hidden")}
-        data-workjet-project-settings-header=""
-      >
-        <ProjectFavicon
-          environmentId={representative.environmentId}
-          cwd={representative.workspaceRoot}
-          faviconPath={faviconPath}
-          className="size-5"
-        />
-        <h2 className="min-w-0 break-words text-[22px] font-semibold">{group.displayName}</h2>
-      </div>
-
       {showTab("general") ? (
         <SettingsSection title={embedded ? "" : t("Projekt", "Project")}>
           <SettingsRow
@@ -1401,7 +1396,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   );
   // Embedded in the project list: compact tabs, at most ~30% of the viewport, autosave (#624).
   if (!embedded) {
-    return <SettingsPageContainer>{content}</SettingsPageContainer>;
+    return (
+      <SettingsPageContainer title={group.displayName} titleIcon={titleIcon}>
+        {content}
+      </SettingsPageContainer>
+    );
   }
   return (
     <div className="space-y-2" data-workjet-project-settings-tabs="">

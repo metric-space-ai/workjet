@@ -23,6 +23,11 @@ import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useUiText } from "../../hooks/useUiText";
 import { cn } from "../../lib/utils";
+import {
+  type WorkjetStatus,
+  workjetStatusFromModelsHealth,
+  workjetStatusWord,
+} from "../../workjetStatus";
 import { WorkjetModelsCell } from "./WorkjetModelsCell";
 import { parseModels } from "./WorkjetModelsFields";
 import {
@@ -446,10 +451,15 @@ function accountRowStatus(
   failing: boolean,
   health: ModelsAccountHealth | undefined,
 ): { readonly status: RowStatus; readonly label: string } {
+  // Words from the central vocabulary (#566); "off" keeps its own word because
+  // the switch, not a status, owns that state.
   if (!enabled) return { status: "off", label: "Deaktiviert" };
-  if (failing) return { status: "error", label: "Fehler" };
-  if (health?.status === "ready") return { status: "ok", label: "Bereit" };
-  return { status: "off", label: "Unbekannt" };
+  const status: WorkjetStatus = failing
+    ? "blocked"
+    : workjetStatusFromModelsHealth(health?.status ?? "unknown");
+  const rowStatus: RowStatus =
+    status === "ok" ? "ok" : status === "blocked" ? "error" : status === "missing" ? "off" : "busy";
+  return { status: rowStatus, label: workjetStatusWord(status) };
 }
 
 function AccountRow({

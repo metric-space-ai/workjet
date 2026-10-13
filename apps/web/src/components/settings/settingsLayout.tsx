@@ -331,14 +331,26 @@ export function useSettingsEmbedded() {
   return useContext(SettingsEmbeddedContext);
 }
 
+function SettingsPageTitle({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
+  return (
+    <h1 className="flex min-w-0 items-center gap-2 px-3 text-xl font-semibold tracking-[-0.025em] break-words sm:px-4">
+      {icon}
+      {children}
+    </h1>
+  );
+}
+
 export function SettingsPageContainer({
   children,
   className,
-  wide = false,
+  title,
+  titleIcon,
 }: {
   children: ReactNode;
   className?: string;
-  wide?: boolean;
+  /** The one page title style (#564); pages never render their own h1/h2. */
+  title?: ReactNode;
+  titleIcon?: ReactNode;
 }) {
   const embedded = useContext(SettingsEmbeddedContext);
   const navigate = useNavigate();
@@ -356,16 +368,11 @@ export function SettingsPageContainer({
       <div
         className={cn(
           "settings-page-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto px-4 pb-7 sm:pb-10",
-          wide ? "pt-4 sm:px-5" : "pt-4 sm:px-5 sm:pt-5",
+          "pt-4 sm:px-5 sm:pt-5",
         )}
       >
-        <div
-          className={cn(
-            "flex w-full flex-col gap-5",
-            wide ? "mr-auto max-w-[1200px]" : "mx-auto max-w-4xl",
-            className,
-          )}
-        >
+        <div className={cn("flex w-full flex-col gap-5", "mx-auto max-w-4xl", className)}>
+          {title ? <SettingsPageTitle icon={titleIcon}>{title}</SettingsPageTitle> : null}
           {children}
         </div>
       </div>

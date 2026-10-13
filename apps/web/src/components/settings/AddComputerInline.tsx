@@ -297,7 +297,7 @@ export function AddComputerInline({
   const selectedKey = remote
     ? (keyChoice ??
       knownKey?.path ??
-      sshKeys.find((key) => /id_ed25519$/.test(key.path))?.path ??
+      sshKeys.find((key) => key.path.endsWith("id_ed25519"))?.path ??
       sshKeys[0]?.path ??
       null)
     : null;
@@ -679,9 +679,7 @@ export function AddComputerInline({
                   {port.trim() || alias?.port ? `:${port.trim() || alias?.port}` : ""}
                 </span>
               </div>
-              {field("Name", name, setName, {
-                ...(alias?.alias ? { placeholder: alias.alias } : {}),
-              })}
+              {field("Name", name, setName, alias?.alias ? { placeholder: alias.alias } : {})}
             </div>
           ) : (
             <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_5rem_minmax(0,0.8fr)]">

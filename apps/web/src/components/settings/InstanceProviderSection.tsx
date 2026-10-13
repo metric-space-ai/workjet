@@ -2,10 +2,16 @@ import type { InstanceGrokAccountPresentation } from "./WorkjetModelsProviders";
 import type { useInstanceProviders } from "./useInstanceProviders";
 import { NativeProviderRowsView } from "./NativeProviderRows";
 import { Button } from "../ui/button";
+import { ensureLocalApi } from "../../localApi";
 import {
   describeWorkjetProjectControlFailure,
+  isCoreOutdatedFailure,
+  workjetUiLanguage,
   type WorkjetProjectControlFailure,
 } from "../../workjetProjectControl";
+
+/** Where an Owner applies a new CTOX core to a managed instance. */
+const CTOX_CORE_APPLY_URL = "https://ctox.dev/";
 
 export function InstanceConnectionStatus({
   label,
@@ -21,6 +27,29 @@ export function InstanceConnectionStatus({
   // One status line plus one button (UI-Vertrag §1 Banner). The preparation
   // stage, error codes and HTTP status are raw diagnostics and belong on the
   // Diagnose page, not in an expandable "Grund" block here.
+  const en = workjetUiLanguage() === "en";
+  if (isCoreOutdatedFailure(failure)) {
+    return (
+      <div
+        role="status"
+        className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs text-muted-foreground"
+        data-workjet-instance-connection="core-outdated"
+      >
+        <span className="min-w-0">
+          {en
+            ? `${label}: core outdated. Apply the current CTOX core on the instance, then reload.`
+            : `${label}: Core veraltet. Den aktuellen CTOX-Core auf der Instanz anwenden, dann neu laden.`}
+        </span>
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={() => void ensureLocalApi().shell.openExternal(CTOX_CORE_APPLY_URL)}
+        >
+          {en ? "Apply core" : "Core anwenden"}
+        </Button>
+      </div>
+    );
+  }
   return (
     <div
       role="status"
@@ -28,11 +57,13 @@ export function InstanceConnectionStatus({
       data-workjet-instance-connection=""
     >
       <span className="min-w-0">
-        Kontoverwaltung von {label} nicht erreichbar ·{" "}
+        {en
+          ? `${label} account management unreachable · `
+          : `Kontoverwaltung von ${label} nicht erreichbar · `}
         {describeWorkjetProjectControlFailure(failure, null, "de")}
       </span>
       <Button size="xs" variant="outline" disabled={busy} onClick={reconnect}>
-        Neu verbinden
+        {en ? "Reconnect" : "Neu verbinden"}
       </Button>
     </div>
   );

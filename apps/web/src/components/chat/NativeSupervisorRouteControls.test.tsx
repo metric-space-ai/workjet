@@ -41,7 +41,7 @@ const defaults = {
 describe("Supervisor normal composer controls", () => {
   it("uses the ordinary Luma picker for an instance preset without redundant model or instance buttons", () => {
     const html = renderToStaticMarkup(<NativeSupervisorRouteControlsView {...defaults} />);
-    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Worker-Preset"');
     expect(html).toContain("Molecularity supervisor");
     expect(html).not.toContain('aria-label="Supervisor Worker"');
     expect(html).not.toContain("Project instance");
@@ -61,7 +61,7 @@ describe("Supervisor normal composer controls", () => {
         profiles={[profile, manual]}
       />,
     );
-    expect(html).toContain(">Manuell</span>");
+    expect(html).toContain(">Ohne Preset</span>");
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Modell"');
     expect(html).toContain('aria-label="Rechner"');
@@ -79,7 +79,7 @@ describe("Supervisor normal composer controls", () => {
         unavailableReason="The instance is disconnected."
       />,
     );
-    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Worker-Preset"');
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Rechner"');
     expect(html).not.toContain("Instance default");

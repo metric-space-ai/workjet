@@ -68,7 +68,8 @@ describe("Instances table", () => {
         onStateChange={async () => null}
       />,
     );
-    expect(html).toContain('aria-label="Deaktiviert"');
+    // Deactivated: the switch says it; no extra status dot (one signal).
+    expect(html).not.toContain('aria-label="Deaktiviert"');
     expect(html).not.toContain("Fehler");
     expect(html).not.toContain("removed");
     expect(html).toContain('aria-checked="false"');

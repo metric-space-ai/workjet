@@ -51,7 +51,8 @@ describe("compact project configuration", () => {
     expect(markup).toContain("Git-Quelle");
     expect(markup).toContain("Webseite");
     expect(markup).toContain("Token-Budget");
-    expect(markup).toContain("Mrd. je Zyklus");
+    expect(markup).toContain("Mrd. Tokens je Regeltermin-Zyklus");
+    expect(markup).toContain("kein Limit");
     expect(markup).not.toContain("Entered metric");
     expect(markup).not.toContain("type</label>");
     expect(markup).toContain("Regeltermin Wochentag");

@@ -1454,32 +1454,6 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
-          {...searchableSetting("add-project-starts-in")}
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="Projektordner"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <DraftInput
-              className="w-full sm:w-72"
-              value={settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder="~/"
-              spellCheck={false}
-              aria-label={searchableSetting("add-project-starts-in").title}
-            />
-          }
-        />
-        <SettingsRow
           {...searchableSetting("text-generation-model")}
           resetAction={
             isTextGenerationModelDirty ? (
@@ -2098,5 +2072,41 @@ export function ArchivedThreadsPanel() {
         ))
       )}
     </SettingsPageContainer>
+  );
+}
+
+/**
+ * Where new projects start on THIS computer. Machine-specific, so it lives on
+ * Rechner, not in Allgemein (Michael, 2026-10-13).
+ */
+export function ProjectFolderSettingRow() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("add-project-starts-in")}
+      resetAction={
+        settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+          <SettingResetButton
+            label="Projektordner"
+            onClick={() =>
+              updateSettings({
+                addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <DraftInput
+          className="w-full sm:w-72"
+          value={settings.addProjectBaseDirectory}
+          onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+          placeholder="~/"
+          spellCheck={false}
+          aria-label={searchableSetting("add-project-starts-in").title}
+        />
+      }
+    />
   );
 }

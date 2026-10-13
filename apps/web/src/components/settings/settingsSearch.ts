@@ -176,7 +176,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "add-project-starts-in",
     title: "Projektordner",
-    to: "/settings/general",
+    to: "/settings/computers",
   },
   {
     id: "text-generation-model",

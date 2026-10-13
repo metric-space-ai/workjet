@@ -246,10 +246,6 @@ function localProjectRow(
   open: boolean,
   toggle: (key: string) => void,
 ) {
-  const representative =
-    group.memberProjects.find(
-      (member) => member.environmentId === group.environmentId && member.id === group.id,
-    ) ?? group.memberProjects[0];
   return (
     <Row
       name={
@@ -260,14 +256,8 @@ function localProjectRow(
           className="flex min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-workjet-action={`project.settings:${group.projectKey}`}
         >
-          {representative ? (
-            <ProjectFavicon
-              environmentId={representative.environmentId}
-              cwd={representative.workspaceRoot}
-              faviconPath={representative.faviconPath ?? null}
-              className="size-4 shrink-0"
-            />
-          ) : null}
+          {/* Projects live in CTOX, not on a machine: no folder icon that marks
+              local checkouts, so every row looks the same (Michael, 2026-10-13). */}
           <span className="truncate">{readableProjectName(group.displayName)}</span>
           <ChevronDownIcon
             aria-hidden

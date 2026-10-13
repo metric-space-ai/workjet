@@ -514,9 +514,13 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
               ? "peer_unavailable"
               : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT" || code === "WORKJET_PROJECT_TIMEOUT" || code === "projection_delayed"
                 ? "request_timeout"
-                : message === "Failed to fetch" || message === "fetch failed"
-                  ? "network_unavailable"
-                  : undefined;
+                : code === "SPEECH_CORE_OUTDATED"
+                  ? "core_outdated"
+                  : code === "SPEECH_ACCESS_DENIED"
+                    ? "access_denied"
+                    : message === "Failed to fetch" || message === "fetch failed"
+                      ? "network_unavailable"
+                      : undefined;
     if (reason === "unsupported_action") return { status: "unsupported" };
     const projectPhase = code === "WORKJET_PROJECT_TIMEOUT"
       ? /^Workjet project list did not finish (collections|command|bridge|query readiness|native projection) before its deadline\\.$/u.exec(message)?.[1]?.replaceAll(" ", "_")
@@ -915,9 +919,13 @@ export function describeCtoxGuestFailure(error: unknown): {
               : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) ||
                   code === "REQUEST_TIMEOUT"
                 ? "request_timeout"
-                : message === "Failed to fetch" || message === "fetch failed"
-                  ? "network_unavailable"
-                  : "exception",
+                : code === "SPEECH_CORE_OUTDATED"
+                  ? "core_outdated"
+                  : code === "SPEECH_ACCESS_DENIED"
+                    ? "access_denied"
+                    : message === "Failed to fetch" || message === "fetch failed"
+                      ? "network_unavailable"
+                      : "exception",
   };
 }
 

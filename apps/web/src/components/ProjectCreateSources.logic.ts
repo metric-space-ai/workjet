@@ -73,6 +73,20 @@ export function deriveRepositoryFolderName(input: string): string {
   return segment.trim();
 }
 
+/**
+ * Readable project title from a repository folder name (#507):
+ * "metric" → "Metric", "light-gun-heroes" → "Light Gun Heroes". Mixed case stays.
+ */
+export function readableProjectTitle(folderName: string): string {
+  const name = folderName.trim();
+  if (name.length === 0 || /[A-Z]/.test(name)) return name;
+  return name
+    .split(/[-_.\s]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 /** Last path segment of a working copy, without trailing separators. */
 function folderNameOf(path: string): string {
   return (

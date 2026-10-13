@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon, ChevronDownIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
@@ -60,10 +61,18 @@ export function filterCtoxInstances(
     : instances;
 }
 
+function pickerText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 export function ctoxInstancePickerStatus(instance: CtoxManagedInstance): string {
-  if (instance.status === "pairing_expired") return "Kopplung abgelaufen";
-  if (!canActivateCtoxInstance(instance)) return "Nicht erreichbar";
-  return instance.healthSummary.dataPlaneReady ? "Verbunden" : "Nicht bestätigt";
+  if (instance.status === "pairing_expired") {
+    return pickerText("Kopplung abgelaufen", "Pairing expired");
+  }
+  if (!canActivateCtoxInstance(instance)) return pickerText("getrennt", "disconnected");
+  return instance.healthSummary.dataPlaneReady
+    ? pickerText("verbunden", "connected")
+    : pickerText("verbindet", "connecting");
 }
 
 function pickerDot(instance: CtoxManagedInstance): RowStatus {
@@ -124,9 +133,9 @@ export function ActiveCtoxInstanceSelector({
     setError(null);
     try {
       if (await select(instance)) setMenuOpen(false);
-      else setError("Wechsel nicht bestätigt.");
+      else setError(pickerText("Wechsel nicht bestätigt.", "Switch not confirmed."));
     } catch {
-      setError("Wechsel fehlgeschlagen.");
+      setError(pickerText("Wechsel fehlgeschlagen.", "Switch failed."));
     } finally {
       setPendingId(null);
     }
@@ -156,30 +165,38 @@ export function ActiveCtoxInstanceSelector({
                   ? "h-7 max-w-full justify-start gap-1.5 font-normal text-muted-foreground hover:text-foreground sm:h-7"
                   : "w-full justify-between gap-2",
               )}
-              aria-label="Instanz wählen"
+              aria-label={pickerText("Instanz wählen", "Choose instance")}
             />
           }
         >
           {active ? (
             <RowStatusDot status={pickerDot(active)} label={ctoxInstancePickerStatus(active)} />
           ) : null}
+          {/* The trigger names what it switches (#592): "Instanz: Welsch". */}
           <span className="truncate">
-            {active ? ctoxInstanceDisplayTitle(active) : "Instanz wählen"}
+            {active ? (
+              <>
+                <span className="text-muted-foreground">{pickerText("Instanz:", "Instance:")}</span>{" "}
+                {ctoxInstanceDisplayTitle(active)}
+              </>
+            ) : (
+              pickerText("Instanz wählen", "Choose instance")
+            )}
           </span>
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
         </MenuTrigger>
         <MenuPopup
           align="start"
           className="w-60 max-w-[calc(100vw-24px)]"
-          aria-label="Instanzen"
+          aria-label={pickerText("Instanzen", "Instances")}
           data-workjet-instance-picker=""
         >
           {searchable ? (
             <label className="mb-1 flex items-center gap-2 border-b border-border px-2 pb-1.5 pt-1">
               <SearchIcon className="size-3.5 text-muted-foreground" aria-hidden />
               <input
-                aria-label="Instanz suchen"
-                placeholder="Instanz suchen"
+                aria-label={pickerText("Instanz suchen", "Search instances")}
+                placeholder={pickerText("Instanz suchen", "Search instances")}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => event.stopPropagation()}
@@ -190,15 +207,17 @@ export function ActiveCtoxInstanceSelector({
           {loading ? (
             <MenuItem disabled>
               <Spinner className="size-3.5" />
-              Instanzen werden geladen …
+              {pickerText("Instanzen werden geladen …", "Loading instances …")}
             </MenuItem>
           ) : failed ? (
             <MenuItem closeOnClick={false} onClick={refresh}>
-              Erneut laden
+              {pickerText("Erneut laden", "Reload")}
             </MenuItem>
           ) : visible.length === 0 ? (
             <MenuItem disabled>
-              {search.trim() ? "Keine Instanz gefunden" : "Keine Instanz verbunden"}
+              {search.trim()
+                ? pickerText("Keine Instanz gefunden", "No instance found")
+                : pickerText("Keine Instanz verbunden", "No instance connected")}
             </MenuItem>
           ) : (
             visible.map((instance) => (
@@ -208,7 +227,6 @@ export function ActiveCtoxInstanceSelector({
                 disabled={!canActivateCtoxInstance(instance) || pendingId !== null}
                 data-workjet-instance-option={instance.id}
                 data-selected={activeId === instance.id ? "" : undefined}
-                title={ctoxInstancePickerStatus(instance)}
                 onClick={() => void chooseInstance(instance)}
               >
                 <RowStatusDot
@@ -218,10 +236,17 @@ export function ActiveCtoxInstanceSelector({
                 <span className="min-w-0 flex-1 truncate">
                   {ctoxInstanceDisplayTitle(instance)}
                 </span>
+                {/* Status as a word, not only a coloured dot (#592). */}
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {ctoxInstancePickerStatus(instance)}
+                </span>
                 {pendingId === instance.id ? (
                   <Spinner className="size-3.5" />
                 ) : activeId === instance.id ? (
-                  <CheckIcon className="size-4 text-foreground" aria-label="Ausgewählt" />
+                  <CheckIcon
+                    className="size-4 text-foreground"
+                    aria-label={pickerText("Ausgewählt", "Selected")}
+                  />
                 ) : null}
               </MenuItem>
             ))
@@ -239,7 +264,7 @@ export function ActiveCtoxInstanceSelector({
             }}
           >
             <PlusIcon />
-            Instanz hinzufügen
+            {pickerText("Instanz hinzufügen", "Add instance")}
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -248,7 +273,7 @@ export function ActiveCtoxInstanceSelector({
             }}
           >
             <SettingsIcon />
-            Instanzen verwalten
+            {pickerText("Instanzen verwalten", "Manage instances")}
           </MenuItem>
         </MenuPopup>
       </Menu>

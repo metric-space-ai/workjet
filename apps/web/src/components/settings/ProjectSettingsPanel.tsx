@@ -1399,8 +1399,10 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       ) : null}
     </>
   );
-  if (!embedded) return <SettingsPageContainer>{content}</SettingsPageContainer>;
   // Embedded in the project list: compact tabs, at most ~30% of the viewport, autosave (#624).
+  if (!embedded) {
+    return <SettingsPageContainer>{content}</SettingsPageContainer>;
+  }
   return (
     <div className="space-y-2" data-workjet-project-settings-tabs="">
       <div role="tablist" className="flex gap-1 border-b border-border/60">

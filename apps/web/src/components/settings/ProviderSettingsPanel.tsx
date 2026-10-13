@@ -632,6 +632,7 @@ export function EnvironmentProviderSettings({
   readonly readOnly?: boolean;
 }) {
   const developerMode = useClientSettings((settings) => settings.developerMode);
+  const sessionImportVisible = developerMode;
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
@@ -1244,11 +1245,8 @@ export function EnvironmentProviderSettings({
         ) : null}
       </SettingsSection>
 
-      {readOnly ? (
-        <SettingsSection title="Sitzungen importieren">
-          <SettingsRow title="Import nicht erlaubt" />
-        </SettingsSection>
-      ) : (
+      {/* Session import is a developer tool until it moves to the project list (#619). */}
+      {readOnly || !sessionImportVisible ? null : (
         <SessionImportSection environmentId={environmentId} readOnly={false} />
       )}
     </>

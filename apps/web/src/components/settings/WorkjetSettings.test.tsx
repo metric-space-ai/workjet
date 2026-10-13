@@ -26,6 +26,7 @@ import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
 import { searchableSetting } from "./settingsSearch";
 import {
   automaticWorktreeStorageControlState,
+  WorktreeStorageInline,
   GreppyRuntimeSectionView,
   greppyOperationFailureDescription,
   greppyRuntimeAction,
@@ -117,7 +118,6 @@ describe("Workjet configuration settings", () => {
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         onChange={() => undefined}
       />,
     );
@@ -172,7 +172,6 @@ describe("Workjet configuration settings", () => {
         configuration={{ ...DEFAULT_WORKJET_CONFIGURATION, workerProfiles: [worker] }}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         onChange={() => undefined}
       />,
     );
@@ -195,7 +194,6 @@ describe("Workjet configuration settings", () => {
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         defaultSection="telemetry"
         onChange={() => undefined}
       />,
@@ -211,7 +209,6 @@ describe("Workjet configuration settings", () => {
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={automaticWorktreeStorage}
         defaultSection="workers"
         onChange={() => undefined}
       />,
@@ -219,38 +216,21 @@ describe("Workjet configuration settings", () => {
     expect(capabilitiesMarkup).toContain(GREPPY_TITLE);
   });
 
-  it("shows selected-server automatic storage health in Execution", () => {
+  it("keeps worktree storage out of Execution; it lives on the Rechner page (#619)", () => {
     const markup = renderToStaticMarkup(
       <WorkjetSettingsView
         draftScopeKey="test-instance"
         configuration={DEFAULT_WORKJET_CONFIGURATION}
         greppy={greppy}
         gateway={gateway}
-        automaticWorktreeStorage={{
-          ...automaticWorktreeStorage,
-          configuredRoot: "/Volumes/worktrees",
-          inspection: {
-            ...automaticWorktreeStorage.inspection,
-            requestedRoot: "/Volumes/worktrees",
-            configuredRoot: "/Volumes/worktrees",
-            effectiveRoot: "/Volumes/worktrees",
-            canonicalRoot: "/Volumes/worktrees",
-          },
-        }}
         defaultSection="execution"
         onChange={() => undefined}
       />,
     );
-
-    expect(markup).toContain(searchableSetting("automatic-worktree-storage").title);
-    // The label alone, never the raw environment id beside it.
-    expect(markup).toContain("Rechner: Code server");
-    expect(markup).not.toContain("code-server</");
-    expect(markup).toContain("Beschreibbar · 125 GB frei");
-    expect(markup).toContain("Standard");
-    // No explanatory sentences and no raw canonical paths beside the input.
-    expect(markup).not.toContain("Effective canonical path");
-    expect(markup).not.toContain("existing worktrees are not moved");
+    expect(markup).not.toContain(searchableSetting("automatic-worktree-storage").title);
+    expect(
+      renderToStaticMarkup(<WorktreeStorageInline storage={automaticWorktreeStorage} />),
+    ).toContain("125 GB frei");
     expect(formatAvailableBytes(1_500_000_000)).toBe("1.50 GB");
     expect(formatAvailableBytes(Number.NaN)).toBe("—");
   });

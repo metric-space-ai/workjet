@@ -262,6 +262,16 @@ export class CtoxGuestManager extends Context.Service<
     readonly registerSessionTransferEvents: (
       computerIds: readonly string[],
     ) => Effect.Effect<CtoxManagedActionResult>;
+    /**
+     * CTOX Toolhub control plane on the selected instance, executed inside the
+     * authenticated guest (same-origin session). Provider tokens never leave
+     * the instance; only connector status and tool results come back.
+     */
+    readonly requestToolhub: (
+      instanceId: string,
+      route: string,
+      body: unknown,
+    ) => Effect.Effect<{ readonly status: number; readonly body: unknown }>;
   }
 >()("@workjet/desktop/ctox/CtoxGuestManager") {}
 
@@ -533,6 +543,30 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
         stage: "execute", reason, ...(projectPhase === undefined ? {} : { phase: projectPhase }),
       } }),
     };
+  }
+})()`;
+}
+
+const TOOLHUB_ROUTE_PATTERN =
+  /^(?:connections|connect|disconnect|catalog|credential|call|mcp\/tools|mcp\/call)$/u;
+const MAX_TOOLHUB_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+function buildGuestToolhubExpression(route: string, body: unknown): string {
+  const method = route === "connections" || route === "catalog" ? "GET" : "POST";
+  return `(async () => {
+  try {
+    const response = await fetch(${JSON.stringify(`/api/business-os/toolhub/${route}`)}, {
+      method: ${JSON.stringify(method)},
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      ${method === "POST" ? `body: ${JSON.stringify(JSON.stringify(body ?? {}))},` : ""}
+    });
+    const text = await response.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { parsed = { ok: false, message: text.slice(0, 300) }; }
+    return { status: response.status, body: parsed };
+  } catch {
+    return { status: 0, body: { ok: false, message: "network_unavailable" } };
   }
 })()`;
 }
@@ -2475,6 +2509,45 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const requestToolhub = (
+      instanceId: string,
+      route: string,
+      body: unknown,
+    ): Effect.Effect<{ readonly status: number; readonly body: unknown }> =>
+      Effect.gen(function* () {
+        if (!TOOLHUB_ROUTE_PATTERN.test(route)) {
+          return { status: 400, body: { ok: false, message: "invalid_route" } };
+        }
+        const state = yield* SynchronizedRef.get(stateRef);
+        const pooled = state.pool.get(instanceId);
+        if (pooled === undefined || pooled.view.webContents.isDestroyed()) {
+          return { status: 0, body: { ok: false, message: "not_active" } };
+        }
+        const pending = yield* Effect.tryPromise({
+          try: () =>
+            pooled.view.webContents.executeJavaScript(
+              buildGuestToolhubExpression(route, body),
+              true,
+            ),
+          catch: () => undefined,
+        }).pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.timeoutOption("60 seconds"),
+        );
+        if (Option.isNone(pending)) return { status: 0, body: { ok: false, message: "timeout" } };
+        const raw = pending.value as
+          | { readonly status?: unknown; readonly body?: unknown }
+          | undefined;
+        if (typeof raw !== "object" || raw === null || typeof raw.status !== "number") {
+          return { status: 0, body: { ok: false, message: "guest_failed" } };
+        }
+        const size = Buffer.byteLength(encodeUnknownJson(raw.body ?? null), "utf8");
+        if (size > MAX_TOOLHUB_RESPONSE_BYTES) {
+          return { status: 0, body: { ok: false, message: "response_too_large" } };
+        }
+        return { status: raw.status, body: raw.body ?? null };
+      });
+
     const requestSessionControl = (
       instanceId: string,
       request: CtoxWorkjetSessionControlRequest,
@@ -2630,6 +2703,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       requestProjectControl,
       requestComputerControl,
       requestSessionControl,
+      requestToolhub,
       registerSessionTransferEvents,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));

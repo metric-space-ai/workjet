@@ -143,4 +143,5 @@ export const CTOX_SHELL_FLEET_ROLLOUT_STATUS_EVENT = "desktop:ctox-shell-fleet-r
 export const CTOX_GUEST_STATE_CHANNEL = "desktop:ctox-guest-state";
 export const GET_SYSTEM_LANGUAGES_CHANNEL = "desktop:get-system-languages";
 
-export const TOOLHUB_CONNECT_CHANNEL = "desktop:toolhub-connect";
+export const TOOLHUB_REQUEST_CHANNEL = "desktop:toolhub-request";
+export const TOOLHUB_AUTHORIZE_CHANNEL = "desktop:toolhub-authorize";

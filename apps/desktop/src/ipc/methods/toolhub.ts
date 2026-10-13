@@ -2,31 +2,45 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
 import * as IpcChannels from "../channels.ts";
 import { makeIpcMethod } from "../DesktopIpc.ts";
-import { toolhubConnect } from "../../toolhub/ToolhubAuthorize.ts";
+import { openToolhubAuthorizeWindow } from "../../toolhub/ToolhubAuthorize.ts";
 
-const ToolhubConnectInput = Schema.Struct({
-  server: Schema.String,
-  serverUrl: Schema.String,
-  scopes: Schema.optional(Schema.Array(Schema.String)),
+const ToolhubRequestInput = Schema.Struct({
+  instanceId: Schema.String,
+  route: Schema.String,
+  body: Schema.optional(Schema.Unknown),
+});
+const ToolhubRequestResult = Schema.Struct({ status: Schema.Number, body: Schema.Unknown });
+
+/** Toolhub control plane on the selected instance (via the authenticated guest). */
+export const requestToolhub = makeIpcMethod({
+  channel: IpcChannels.TOOLHUB_REQUEST_CHANNEL,
+  payload: ToolhubRequestInput,
+  result: ToolhubRequestResult,
+  handler: Effect.fn("desktop.ipc.toolhub.request")(function* (input) {
+    const manager = yield* CtoxGuestManager.CtoxGuestManager;
+    return yield* manager.requestToolhub(input.instanceId, input.route, input.body);
+  }),
 });
 
-const ToolhubConnectResultSchema = Schema.Struct({
-  _tag: Schema.Literals(["authorized", "cancelled", "failed"]),
-  server: Schema.String,
-  message: Schema.optional(Schema.String),
+const ToolhubAuthorizeInput = Schema.Struct({ authorizeUrl: Schema.String });
+const ToolhubAuthorizeResult = Schema.Struct({
+  _tag: Schema.Literals(["completed", "cancelled", "failed"]),
 });
 
-/** Opens the provider's hosted consent page in an in-app window. */
-export const connectToolhubServer = makeIpcMethod({
-  channel: IpcChannels.TOOLHUB_CONNECT_CHANNEL,
-  payload: ToolhubConnectInput,
-  result: ToolhubConnectResultSchema,
-  handler: Effect.fn("desktop.ipc.toolhub.connect")(function* (input) {
-    if (!input.serverUrl.startsWith("https://")) {
-      return { _tag: "failed" as const, server: input.server, message: "https required" };
-    }
-    return yield* Effect.promise(() => toolhubConnect(input));
+/**
+ * Opens the authorize URL the INSTANCE handed out in an in-app window. The
+ * provider redirects to the instance's own callback; the window closes when
+ * that page reports its result. No codes or tokens pass through the app.
+ */
+export const authorizeToolhub = makeIpcMethod({
+  channel: IpcChannels.TOOLHUB_AUTHORIZE_CHANNEL,
+  payload: ToolhubAuthorizeInput,
+  result: ToolhubAuthorizeResult,
+  handler: Effect.fn("desktop.ipc.toolhub.authorize")(function* (input) {
+    if (!input.authorizeUrl.startsWith("https://")) return { _tag: "failed" as const };
+    return yield* Effect.promise(() => openToolhubAuthorizeWindow(input.authorizeUrl));
   }),
 });

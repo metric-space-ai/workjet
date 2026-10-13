@@ -85,10 +85,7 @@ function overviewFailureText(
   failure: Parameters<typeof describeWorkjetProjectControlFailure>[0],
 ): string {
   const en = workjetUiLanguage() === "en";
-  if (
-    failure.code === "core_outdated" ||
-    ("reason" in failure && String(failure.reason).includes("core_outdated"))
-  )
+  if ("reason" in failure && String(failure.reason).includes("core_outdated"))
     return en
       ? "Core outdated · apply the current CTOX core on the instance"
       : "Core veraltet · aktuellen CTOX-Core auf der Instanz anwenden";

@@ -1,4 +1,9 @@
 import * as React from "react";
+import {
+  WORKJET_STATUS_DOT_CLASS,
+  WORKJET_STATUS_TEXT_CLASS,
+  workjetStatusFromThreadPill,
+} from "../workjetStatus";
 import type { ContextMenuItem, ScopedProjectRef } from "@workjet/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@workjet/contracts/settings";
 import {
@@ -656,6 +661,15 @@ export function formatWorkingDurationLabel(elapsedMs: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+/** Pill colors come from the one status vocabulary (#566). */
+function workjetPillColors(label: string): { colorClass: string; dotClass: string } {
+  const status = workjetStatusFromThreadPill(label);
+  return {
+    colorClass: WORKJET_STATUS_TEXT_CLASS[status],
+    dotClass: WORKJET_STATUS_DOT_CLASS[status],
+  };
+}
+
 export function resolveThreadStatusPill(input: {
   thread: ThreadStatusInput;
 }): ThreadStatusPill | null {
@@ -664,8 +678,7 @@ export function resolveThreadStatusPill(input: {
   if (thread.hasPendingApprovals) {
     return {
       label: "Freigabe offen",
-      colorClass: "text-amber-600 dark:text-amber-300/90",
-      dotClass: "bg-amber-500 dark:bg-amber-300/90",
+      ...workjetPillColors("Freigabe offen"),
       pulse: false,
     };
   }
@@ -673,8 +686,7 @@ export function resolveThreadStatusPill(input: {
   if (thread.hasPendingUserInput) {
     return {
       label: "Wartet auf Eingabe",
-      colorClass: "text-indigo-600 dark:text-indigo-300/90",
-      dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
+      ...workjetPillColors("Wartet auf Eingabe"),
       pulse: false,
     };
   }
@@ -682,8 +694,7 @@ export function resolveThreadStatusPill(input: {
   if (thread.session?.status === "running") {
     return {
       label: "Arbeitet",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      ...workjetPillColors("Arbeitet"),
       pulse: true,
     };
   }
@@ -691,8 +702,7 @@ export function resolveThreadStatusPill(input: {
   if (thread.session?.status === "starting") {
     return {
       label: "Verbindet",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      ...workjetPillColors("Verbindet"),
       pulse: true,
     };
   }
@@ -707,8 +717,7 @@ export function resolveThreadStatusPill(input: {
   if (hasPlanReadyPrompt) {
     return {
       label: "Plan bereit",
-      colorClass: "text-violet-600 dark:text-violet-300/90",
-      dotClass: "bg-violet-500 dark:bg-violet-300/90",
+      ...workjetPillColors("Plan bereit"),
       pulse: false,
     };
   }
@@ -720,8 +729,7 @@ export function resolveThreadStatusPill(input: {
   if (thread.backgroundLiveness === "working") {
     return {
       label: "Arbeitet",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      ...workjetPillColors("Arbeitet"),
       pulse: true,
     };
   }
@@ -729,8 +737,7 @@ export function resolveThreadStatusPill(input: {
   if (thread.backgroundLiveness === "monitoring") {
     return {
       label: "Beobachtet",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      ...workjetPillColors("Beobachtet"),
       pulse: false,
     };
   }
@@ -738,8 +745,7 @@ export function resolveThreadStatusPill(input: {
   if (hasUnseenCompletion(thread)) {
     return {
       label: "Fertig",
-      colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
+      ...workjetPillColors("Fertig"),
       pulse: false,
     };
   }

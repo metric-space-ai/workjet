@@ -24,6 +24,10 @@ vi.mock("react/compiler-runtime", async () => {
 });
 
 vi.mock("../../hooks/useSettings", () => ({
+  useClientSettings: (select?: (settings: Record<string, unknown>) => unknown) => {
+    const settings = { developerMode: false, projectOverviewLanguage: "de" };
+    return select ? select(settings) : settings;
+  },
   useEnvironmentSettings: settingsHooks.read,
   useUpdateEnvironmentSettings: settingsHooks.update,
 }));

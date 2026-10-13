@@ -1,3 +1,4 @@
+import { SupportBundleSection } from "./SupportBundleSection";
 import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -1863,6 +1864,8 @@ export function GeneralSettingsPanel() {
           <SettingsRow title={<AboutVersionTitle />} />
         )}
       </SettingsSection>
+      {/* Diagnose is a developer tool (#552); end users keep only the support bundle. */}
+      {settings.developerMode ? null : <SupportBundleSection />}
     </SettingsPageContainer>
   );
 }

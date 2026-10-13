@@ -30,6 +30,7 @@ import {
   WorkjetConnectSidebarAvatar,
   WorkjetConnectSidebarSignIn,
 } from "../clerk/WorkjetConnectSidebarSignIn";
+import { useClientSettings } from "../../hooks/useSettings";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -37,6 +38,9 @@ import {
   type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
+
+/** Pages only shown in developer mode (#552). */
+const DEVELOPER_ONLY_PATHS: ReadonlySet<SettingsPath> = new Set(["/settings/diagnostics"]);
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
@@ -57,7 +61,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
-  const results = useMemo(() => searchSettings(query), [query]);
+  const developerMode = useClientSettings().developerMode;
+  const results = useMemo(
+    () =>
+      searchSettings(query).filter((item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to)),
+    [developerMode, query],
+  );
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
 
@@ -269,7 +278,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))
-              : SETTINGS_NAV_ITEMS.map((item, index) => {
+              : SETTINGS_NAV_ITEMS.filter(
+                  (item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to),
+                ).map((item, index) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
                   return (

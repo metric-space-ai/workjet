@@ -230,8 +230,9 @@ function NativeJourFixeRoomContent({
         if (pendingAbort.current === controller) pendingAbort.current = null;
       });
   }
+  // A shown deck (also from the cache) is never covered by a load or refresh status.
   const presentationStatus =
-    presentationFailed || (presentationPending && presentation === null)
+    presentation === null && (presentationFailed || presentationPending)
       ? {
           state: presentationFailed ? ("failed" as const) : ("loading" as const),
           text: presentationFailed ? "Folien nicht verfügbar" : "Folien werden geladen …",

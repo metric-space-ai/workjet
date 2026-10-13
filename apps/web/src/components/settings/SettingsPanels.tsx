@@ -1442,7 +1442,7 @@ export function GeneralSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection title="Allgemein">
         <SettingsRow
-          title="Projektsprache"
+          title="Sprache"
           control={
             <Select
               value={settings.interfaceLanguage}
@@ -1451,7 +1451,7 @@ export function GeneralSettingsPanel() {
                   updateClientSettings({ interfaceLanguage: value });
               }}
             >
-              <SelectTrigger aria-label="Projektsprache" className="w-40">
+              <SelectTrigger aria-label="Sprache" className="w-40">
                 <SelectValue>{INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage]}</SelectValue>
               </SelectTrigger>
               <SelectPopup>

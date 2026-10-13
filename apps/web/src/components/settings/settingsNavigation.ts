@@ -7,7 +7,6 @@ import {
   FolderKanbanIcon,
   GaugeIcon,
   GitBranchIcon,
-  KeyboardIcon,
   MonitorIcon,
   PaletteIcon,
   ServerIcon,
@@ -23,7 +22,6 @@ export const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/business-os": ServerIcon,
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
-  "/settings/keybindings": KeyboardIcon,
   "/settings/harnesses": TerminalIcon,
   "/settings/models": CpuIcon,
   "/settings/speech": AudioLinesIcon,
@@ -36,13 +34,13 @@ export const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/usage": GaugeIcon,
 };
 
-export const SETTINGS_NAV_ITEMS = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
-  .filter((to) => to !== "/settings/keybindings")
-  .map((to) => ({
+export const SETTINGS_NAV_ITEMS = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).map(
+  (to) => ({
     to,
     label: SETTINGS_SECTION_LABELS[to],
     icon: SETTINGS_SECTION_ICONS[to],
-  }));
+  }),
+);
 
 export const INSTANCE_SETTINGS_NAV_ITEMS = SETTINGS_NAV_ITEMS.filter(
   (item) => item.to !== "/settings/business-os",

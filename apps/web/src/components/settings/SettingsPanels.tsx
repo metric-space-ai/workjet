@@ -1568,7 +1568,7 @@ export function GeneralSettingsPanel() {
               resetAction={
                 canResetBackgroundActivity ? (
                   <SettingResetButton
-                    label="Hintergrundaktivität"
+                    label={t("Hintergrundaktivität", "Background activity")}
                     onClick={() => updateSettings(resetBackgroundActivitySettings())}
                   />
                 ) : null

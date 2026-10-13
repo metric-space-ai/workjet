@@ -228,6 +228,30 @@ function PlayerContent({
             Ton wird geladen …
           </span>
         )}
+        {playable && (
+          <audio
+            ref={audio}
+            preload="metadata"
+            src={source}
+            onLoadedMetadata={(event) => {
+              event.currentTarget.preservesPitch = true;
+              event.currentTarget.playbackRate = speed;
+              const value = event.currentTarget.duration;
+              setDuration(Number.isFinite(value) ? value : 0);
+            }}
+            onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => {
+              setPlaying(false);
+              if (autoAdvance && hasNext) changeSlide(onNext);
+            }}
+            onError={() => {
+              setPlaying(false);
+              setFailed(true);
+            }}
+          />
+        )}
       </div>
       {failed && (
         <p role="alert" className="mt-2 text-xs text-destructive">

@@ -12,7 +12,7 @@ function keyEvent(
     ctrlKey: false,
     metaKey: false,
     defaultPrevented: false,
-    target,
+    target: target as EventTarget | null,
     ...extra,
   };
 }

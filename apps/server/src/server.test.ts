@@ -4511,21 +4511,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.isDefined(cookie);
 
       const handshakeStatus = (origin: string) =>
-        Effect.promise(() =>
-          new Promise<number>((resolve, reject) => {
-            const socket = new NodeSocket.NodeWS.WebSocket(url, {
-              headers: { cookie: cookie ?? "", origin },
-            });
-            socket.once("unexpected-response", (_request, response) => {
-              resolve(response.statusCode ?? 0);
-              socket.terminate();
-            });
-            socket.once("open", () => {
-              socket.close();
-              resolve(101);
-            });
-            socket.once("error", reject);
-          }),
+        Effect.promise(
+          () =>
+            new Promise<number>((resolve, reject) => {
+              const socket = new NodeSocket.NodeWS.WebSocket(url, {
+                headers: { cookie: cookie ?? "", origin },
+              });
+              socket.once("unexpected-response", (_request, response) => {
+                resolve(response.statusCode ?? 0);
+                socket.terminate();
+              });
+              socket.once("open", () => {
+                socket.close();
+                resolve(101);
+              });
+              socket.once("error", reject);
+            }),
         );
 
       assert.equal(yield* handshakeStatus(`http://${new URL(url).host}`), 101);

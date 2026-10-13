@@ -95,6 +95,9 @@ export const make = Effect.gen(function* () {
             bound.prUrl !== receipt.prUrl
           )
             return false;
+          // Keep the worker's first verified delivery separate from later parent repairs.
+          yield* sql`UPDATE workjet_worker_runs SET result_commit = COALESCE(result_commit, ${bound.headOid})
+            WHERE run_id = ${receipt.threadId}`;
           // A terminal run cannot reopen or move to another outcome.
           if (bound.state !== "open")
             return bound.state === receipt.state && bound.headOid === receipt.headOid;

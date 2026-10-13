@@ -102,16 +102,24 @@ export const make = Effect.gen(function* () {
       const observedAt = DateTime.formatIso(yield* DateTime.now);
       const outcome = response.outcome;
       if (outcome.status === "dispatched")
-        yield* ledger.value.observe({ runId: response.requestId, startedAt: observedAt });
+        yield* ledger.value
+          .observe({ runId: response.requestId, startedAt: observedAt })
+          .pipe(
+            Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+          );
       else if (outcome.reason !== "rollback-failed")
-        yield* ledger.value.observe({
-          runId: response.requestId,
-          terminalAt: observedAt,
-          abortClass:
-            outcome.reason === "source-unavailable" || outcome.reason === "computer-unavailable"
-              ? "transport"
-              : "task",
-        });
+        yield* ledger.value
+          .observe({
+            runId: response.requestId,
+            terminalAt: observedAt,
+            abortClass:
+              outcome.reason === "source-unavailable" || outcome.reason === "computer-unavailable"
+                ? "transport"
+                : "task",
+          })
+          .pipe(
+            Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+          );
     }
   });
   const awaitResponse = Effect.fn("RemoteWorkerBroker.awaitResponse")(function* (

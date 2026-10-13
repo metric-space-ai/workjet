@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { assert, describe, it } from "@effect/vitest";
+import { ThreadId } from "@workjet/contracts";
+import { make as makePullRequests } from "./WorkerPullRequestStore.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -84,6 +86,33 @@ it.effect("freezes structured failure at terminal exit and clears it on a succes
       yield* ledger.observe({ runId: second.runId, startedAt: at, abortClass: "none" });
       yield* ledger.observe({ runId: second.runId, terminalAt: at });
       assert.equal(Option.getOrThrow(yield* ledger.get(second.runId)).abortClass, "none");
+    }),
+  ),
+);
+it.effect("retains the worker delivery commit when a parent later repairs the same PR", () =>
+  database(
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const ledger = yield* WorkerRunLedger;
+      const pullRequests = yield* makePullRequests;
+      yield* ledger.queue(identity, at);
+      const delivery = {
+        threadId: ThreadId.make(identity.runId),
+        worktreePath: "/isolated",
+        branchRef: "workjet/worker/run-a",
+        provider: "github" as const,
+        prNumber: 7,
+        prUrl: "https://github.com/owner/repo/pull/7",
+        headOid: "b".repeat(40),
+        state: "open" as const,
+      };
+      assert.isTrue(yield* pullRequests.observe(delivery));
+      assert.isTrue(
+        yield* pullRequests.observe({ ...delivery, headOid: "c".repeat(40), state: "merged" }),
+      );
+      const saved = Option.getOrThrow(yield* ledger.get(identity.runId));
+      assert.equal(saved.resultCommit, delivery.headOid);
+      assert.equal(saved.pullRequest?.headOid, "c".repeat(40));
     }),
   ),
 );

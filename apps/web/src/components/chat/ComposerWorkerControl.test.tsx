@@ -72,8 +72,8 @@ function items(overrides: Partial<Parameters<typeof ComposerWorkerMenuItems>[0]>
 
 describe("the bar's leftmost decision", () => {
   it("reads Manuell until a Luma is chosen", () => {
-    expect(render()).toContain("Ohne Preset");
-    expect(render()).toContain('aria-label="Worker-Preset"');
+    expect(render()).toContain("Luma: keine");
+    expect(render()).toContain('aria-label="Luma"');
   });
 
   it("names the chosen Luma instead", () => {
@@ -100,7 +100,7 @@ describe("the bar's leftmost decision", () => {
     const text = textContent(items());
     expect(text).toContain("Claude Code");
     expect(text).not.toContain("gpt-5.6-sol");
-    expect(text).toContain("Worker-Presets verwalten");
+    expect(text).toContain("Lumas verwalten");
   });
 
   it("disables every choice together when unavailable", () => {

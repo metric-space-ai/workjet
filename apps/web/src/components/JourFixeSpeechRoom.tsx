@@ -7,7 +7,6 @@ import {
 } from "../lib/jourFixeSpeech";
 import { JourFixeReadError } from "../lib/jourFixeReadRetry";
 import type { JourFixePartialTranscript } from "../lib/jourFixeRoom";
-import { Button } from "./ui/button";
 
 /** Sichtbarer Ton-Zustand: die Bibliothek meldet nur Fehlercodes, der Raum formuliert. */
 interface SpeechErrorView {
@@ -119,56 +118,40 @@ function SpeechRoom({
   }, [provider, scopeKey, slideId, meeting.state]);
   const current = speech.key === scopeKey && speech.provider === provider ? speech : undefined;
   // Solange die Bibliothek den Ton (mit Wiederholungen) liest, steht ein ruhiger
-  // Ladezustand; die rote Zeile kommt erst nach dem endgültigen Fehlschlag.
+  // Ladezustand am Player; die Fehlerzeile kommt erst nach dem endgültigen Fehlschlag.
   const narrationExpected =
     slideId !== undefined && ["ready", "live", "review"].includes(meeting.state);
   const audioCurrent =
     current?.audio !== undefined && slideId !== undefined && current.audio.slideId === slideId;
+  const retryNarration = () => {
+    const id = slideId;
+    if (!id) return;
+    setSpeech((state) => ({ ...state, error: undefined }));
+    void session.current?.prepareNarration(id);
+  };
+  const narrationStatus = current?.error
+    ? {
+        state: "failed" as const,
+        text: current.error.text,
+        ...(current.error.canRetry && slideId ? { onRetry: retryNarration } : {}),
+      }
+    : narrationExpected && !audioCurrent
+      ? { state: "loading" as const, text: "Ton wird geladen …" }
+      : undefined;
   return (
-    <>
-      {current?.error ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-3 border-b border-destructive/30 px-4 py-2 text-sm text-destructive"
-          data-workjet-narration-state="failed"
-        >
-          <span className="min-w-0 flex-1">{current.error.text}</span>
-          {current.error.canRetry && slideId ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const id = slideId;
-                setSpeech((state) => ({ ...state, error: undefined }));
-                void session.current?.prepareNarration(id);
-              }}
-            >
-              Erneut laden
-            </Button>
-          ) : null}
-        </div>
-      ) : narrationExpected && !audioCurrent ? (
-        <p
-          role="status"
-          className="border-b border-border px-4 py-2 text-xs text-muted-foreground"
-          data-workjet-narration-state="loading"
-        >
-          Ton wird geladen …
-        </p>
-      ) : null}
-      <JourFixeRoom
-        {...props}
-        {...(current?.audio ? { audio: current.audio } : {})}
-        partialTranscript={current?.partial}
-        microphoneActive={current?.microphone === true}
-        {...(meeting.state === "live" && provider.microphoneAvailable !== false
-          ? { onToggleMicrophone: () => void session.current?.toggleMicrophone() }
-          : {})}
-        onSlideChange={(id) => {
-          setSelectedSlide(id);
-          props.onSlideChange?.(id);
-        }}
-      />
-    </>
+    <JourFixeRoom
+      {...props}
+      {...(narrationStatus ? { narrationStatus } : {})}
+      {...(current?.audio ? { audio: current.audio } : {})}
+      partialTranscript={current?.partial}
+      microphoneActive={current?.microphone === true}
+      {...(meeting.state === "live" && provider.microphoneAvailable !== false
+        ? { onToggleMicrophone: () => void session.current?.toggleMicrophone() }
+        : {})}
+      onSlideChange={(id) => {
+        setSelectedSlide(id);
+        props.onSlideChange?.(id);
+      }}
+    />
   );
 }

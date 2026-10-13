@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ProjectId } from "@workjet/contracts";
-import { JourFixeRoom } from "../components/JourFixeRoom";
+import { JourFixeRoom, type JourFixeAreaStatus } from "../components/JourFixeRoom";
 import { JourFixeSpeechRoom } from "../components/JourFixeSpeechRoom";
 import { ProviderUpdateChipView } from "../components/ProviderUpdateLaunchNotification";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
@@ -71,14 +71,26 @@ function syntheticNarration() {
 // `?presentation=1`: the first two slides carry a hand-drawn presentation; saves stay in memory.
 // `?scheduledIn=30`: the meeting is scheduled N minutes from now, to show the start lock.
 // `?speech=1&narration=ready|loading|failed`: speech session with a fixture provider,
-// so the dense German narration states (load, failure + „Erneut laden“, playing) are visible.
+// so the dense German narration states (load, failure + „Neu laden“, playing) are visible.
+// `?presentationState=loading|failed`: die knappe Folien-Statuszeile in der Folienfläche.
+// `?pending=1`: die endgültig ungespeicherte Änderung als Zeile am Eingabefeld.
 // `?chrome=1`: header row with the update chip and the German „Letzter Stand“ line.
 const params = new URLSearchParams(location.search);
 const withPresentation = params.get("presentation") === "1";
 const withSpeech = params.get("speech") === "1";
 const narrationMode = params.get("narration") ?? "ready";
+const presentationState = params.get("presentationState");
+const withPendingChange = params.get("pending") === "1";
 const withChrome = params.get("chrome") === "1";
 const scheduledInMinutes = Number(params.get("scheduledIn") ?? Number.NaN);
+const presentationStatus: JourFixeAreaStatus | undefined =
+  presentationState === "loading" || presentationState === "failed"
+    ? {
+        state: presentationState,
+        text: presentationState === "failed" ? "Folien nicht verfügbar" : "Folien werden geladen …",
+        ...(presentationState === "failed" ? { onRetry: () => {} } : {}),
+      }
+    : undefined;
 const fixturePresentation: SlideDocument = {
   ...jourFixeDeck,
   slides: [
@@ -279,6 +291,8 @@ function Fixture() {
           projectTitle="Fixture project"
           meeting={meeting}
           onBack={() => setView("overview")}
+          {...(presentationStatus ? { presentationStatus } : {})}
+          {...(withPendingChange ? { pendingChange: { onRetry: () => {} } } : {})}
           onRefresh={async () => {
             setMeeting({ ...meeting });
           }}
@@ -304,6 +318,8 @@ function Fixture() {
           projectTitle="Fixture project"
           meeting={meeting}
           onBack={() => setView("overview")}
+          {...(presentationStatus ? { presentationStatus } : {})}
+          {...(withPendingChange ? { pendingChange: { onRetry: () => {} } } : {})}
           {...(withPresentation
             ? {
                 presentation: {

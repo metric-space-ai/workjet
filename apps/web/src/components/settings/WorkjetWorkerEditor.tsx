@@ -326,6 +326,7 @@ export function WorkjetWorkerEditor({
   readonly onCreateRoute?: ((route: WorkjetLlmRoute) => void) | undefined;
 }) {
   const [creatingRoute, setCreatingRoute] = useState(false);
+  const [editorTab, setEditorTab] = useState<"task" | "personality" | "execution">("task");
   const [draft, setDraft] = useState(() => {
     if (initialDraft) return initialDraft;
     // "Add LLM route…" navigates AWAY to the Models page; without this stash
@@ -453,7 +454,7 @@ export function WorkjetWorkerEditor({
     <form
       data-settings-inline-editor=""
       className={cn("space-y-4", !compact && "rounded-lg border bg-card/40 p-3")}
-      aria-label={worker ? `Luma ${worker.name} bearbeiten` : "Luma hinzufügen"}
+      aria-label={worker ? `Preset ${worker.name} bearbeiten` : "Preset hinzufügen"}
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -471,505 +472,549 @@ export function WorkjetWorkerEditor({
             await onSave(saveWorkjetWorkerDraft(draft));
             clearDraftStash();
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "Luma nicht gespeichert.");
+            setError(cause instanceof Error ? cause.message : "Preset nicht gespeichert.");
           } finally {
             setSaving(false);
           }
         })();
       }}
     >
-      <fieldset disabled={saving} className="min-w-0 space-y-4">
-        {compact ? null : (
-          <div className="font-medium text-[13.5px]">
-            {worker ? "Luma bearbeiten" : "Luma hinzufügen"}
-          </div>
-        )}
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="workjet-worker-name">Name</Label>
-            <Input
-              id="workjet-worker-name"
-              nativeInput
-              value={draft.name}
-              onChange={(event) => patchDraft({ name: event.target.value })}
-              placeholder="z. B. Umsetzung"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="workjet-worker-instructions">Aufgabe</Label>
-            <Textarea
-              id="workjet-worker-instructions"
-              value={draft.instructions}
-              onChange={(event) => patchDraft({ instructions: event.target.value })}
-              placeholder="Was übernimmt die Luma?"
-              rows={5}
-            />
-          </div>
-        </div>
-
-        <section aria-label="Luma-Persönlichkeit" className="space-y-2">
-          <SectionHeader title="Persönlichkeit" />
-          <div className="pt-3">
-            <WorkjetWorkerPersonalizationEditor
-              value={draft.personalization}
-              onChange={(personalization) => patchDraft({ personalization })}
-            />
-          </div>
-        </section>
-
-        <div className="space-y-1.5">
-          <SectionHeader title="Harness" />
-          <div className="flex flex-wrap gap-2">
-            {WORKJET_HARNESS_OPTIONS.map((option) => (
-              <ChoiceButton
-                key={option.id}
-                title={option.label}
-                selected={draft.harness === option.id}
-                onClick={() => patchDraft({ harness: option.id })}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <SectionHeader title="LLM-Zugang" />
-          <div className="flex flex-wrap items-center gap-2">
-            {routes.map((route) => (
-              <ChoiceButton
-                key={route.id}
-                title={route.label}
-                selected={draft.llmRouteId === route.id}
-                onClick={() => patchDraft({ llmRouteId: route.id })}
-              />
-            ))}
-            {onCreateRoute ? (
-              <Button
-                type="button"
-                size="xs"
-                variant="outline"
-                aria-expanded={creatingRoute}
-                onClick={() => setCreatingRoute((open) => !open)}
-              >
-                <PlusIcon className="size-3.5" />
-                Zugang einrichten
-              </Button>
-            ) : onAddRoute ? (
-              <Button
-                type="button"
-                size="xs"
-                variant="outline"
-                onClick={() => {
-                  try {
-                    window.sessionStorage.setItem(
-                      `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`,
-                      JSON.stringify(draft),
-                    );
-                  } catch {
-                    // Without storage the navigation still works; only the
-                    // stash is lost.
-                  }
-                  onAddRoute?.();
-                }}
-              >
-                <PlusIcon className="size-3.5" />
-                Zugang einrichten
-              </Button>
-            ) : null}
-          </div>
-          {onCreateRoute ? (
-            <InlineExpand
-              hideCollapseControl
-              label="Zugang einrichten"
-              open={creatingRoute}
-              onOpenChange={setCreatingRoute}
+      <fieldset disabled={saving} className="min-w-0 space-y-3">
+        {/* Compact tabs keep the open editor within ~30% of the viewport (#615). */}
+        <div role="tablist" aria-label="Preset" className="flex gap-1 border-b border-border/60">
+          {(
+            [
+              ["task", "Aufgabe"],
+              ["personality", "Persönlichkeit"],
+              ["execution", "Harness · Modell · Rechner"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={editorTab === id}
+              onClick={() => setEditorTab(id)}
+              className={cn(
+                "-mb-px border-b-2 px-2.5 py-1.5 text-xs font-medium",
+                editorTab === id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
             >
-              <div className="rounded-md border bg-muted/30 p-2" data-slot="worker-inline-route">
-                <WorkjetLlmRouteEditor
-                  accounts={gatewayAccounts}
-                  onCancel={() => setCreatingRoute(false)}
-                  onSave={(route) => {
-                    onCreateRoute(route);
-                    patchDraft({ llmRouteId: route.id });
-                    setCreatingRoute(false);
-                  }}
-                />
-              </div>
-            </InlineExpand>
-          ) : null}
-          {draft.llmRouteId ? null : (
-            <p role="status" className="text-[11px] text-amber-500">
-              Kein Zugang gewählt.
-            </p>
-          )}
+              {label}
+            </button>
+          ))}
         </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="workjet-worker-model">Modell</Label>
-          {chosenRoute?.nativeAccountReference ? (
+        <div
+          role="tabpanel"
+          className="max-h-[30vh] min-h-24 space-y-4 overflow-y-auto pr-1"
+          data-slot="worker-editor-panel"
+        >
+          {editorTab === "task" ? (
             <>
-              <Select
-                value={draft.modelId || null}
-                onValueChange={(model) => {
-                  if (model !== null) patchDraft({ modelId: model });
-                }}
-              >
-                <SelectTrigger id="workjet-worker-model" className="w-full">
-                  <SelectValue placeholder="Live-Modell wählen" />
-                </SelectTrigger>
-                <SelectPopup>
-                  {(chosenNativeAccount?.modelCatalog.fresh
-                    ? chosenNativeAccount.effectiveModels
-                    : []
-                  ).map((model) => (
-                    <SelectItem key={model} value={model}>
-                      <span className="break-all whitespace-normal">{model}</span>
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span
-                  role={nativeModelsError ? "alert" : "status"}
-                  className={nativeModelsError ? "text-destructive" : undefined}
-                >
-                  {nativeModelsError ??
-                    (chosenNativeAccount?.modelCatalog.fresh
-                      ? "Live-Modelle aus CTOX."
-                      : "Modellliste veraltet.")}
-                </span>
-                {onRefreshNativeModels && chosenNativeAccount && (
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    disabled={nativeModelsBusy}
-                    onClick={() => onRefreshNativeModels(chosenNativeAccount)}
-                  >
-                    Modelle aktualisieren
-                  </Button>
-                )}
-              </div>
-            </>
-          ) : chosenAccount?.provider === "claude" ? (
-            <>
-              <Select
-                value={draft.modelId || null}
-                onValueChange={(model) => {
-                  if (model !== null) patchDraft({ modelId: model });
-                }}
-              >
-                <SelectTrigger id="workjet-worker-model" className="w-full">
-                  <SelectValue placeholder="Live-Modell wählen" />
-                </SelectTrigger>
-                <SelectPopup>
-                  {choiceCatalog?.accountId === chosenAccount.id &&
-                  choiceCatalog.state === "observed" ? (
-                    choiceCatalog.modelIds.map((model) => (
-                      <SelectItem key={model} value={model}>
-                        <span className="break-all whitespace-normal">{model}</span>
-                      </SelectItem>
-                    ))
-                  ) : draft.modelId ? (
-                    <SelectItem value={draft.modelId}>{draft.modelId} · gespeichert</SelectItem>
-                  ) : null}
-                </SelectPopup>
-              </Select>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span role="status">
-                  {liveModels.isPending
-                    ? liveModelsSlow
-                      ? "Keine Antwort."
-                      : "Modellliste wird gelesen …"
-                    : choiceCatalog?.state !== "observed"
-                      ? "Modellliste nicht verfügbar."
-                      : `Live-Liste · ${chosenAccount.label}`}
-                </span>
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="outline"
-                  disabled={liveModels.isPending && !liveModelsSlow}
-                  onClick={liveModels.refresh}
-                >
-                  {liveModelsSlow ? "Erneut versuchen" : "Modelle aktualisieren"}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <Input
-              id="workjet-worker-model"
-              nativeInput
-              value={draft.modelId}
-              onChange={(event) => patchDraft({ modelId: event.target.value })}
-              placeholder="Modell-ID"
-            />
-          )}
-        </div>
-
-        <div className="space-y-1.5">
-          <SectionHeader title="Denkstufe" />
-          <div className="flex flex-wrap gap-2">
-            {REASONING_OPTIONS.map((option) => (
-              <ChoiceButton
-                key={option.id}
-                title={option.label}
-                selected={draft.reasoning === option.id}
-                onClick={() => patchDraft({ reasoning: option.id })}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <SectionHeader title="Werkzeuge" />
-          <div className="space-y-2">
-            {CAPABILITY_OPTIONS.map((capability) => {
-              const checked = draft.capabilityIds.includes(capability.id);
-              return (
-                <div
-                  key={capability.id}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-muted/25 px-2.5 py-2"
-                >
-                  <p className="min-w-0 text-xs font-medium">{capability.label}</p>
-                  <Switch
-                    checked={checked}
-                    onCheckedChange={(next) => {
-                      const capabilityIds = next
-                        ? [
-                            ...draft.capabilityIds.filter((id) => id !== capability.id),
-                            capability.id,
-                          ]
-                        : draft.capabilityIds.filter((id) => id !== capability.id);
-                      if (capability.id !== "decision-hub") {
-                        patchDraft({ capabilityIds });
-                        return;
-                      }
-                      const automatic = connections.filter(
-                        (connection) => connection.status === "ready",
-                      )[0];
-                      patchDraft({
-                        capabilityIds,
-                        capabilityBindings: next
-                          ? automatic === undefined
-                            ? []
-                            : [
-                                {
-                                  capabilityId: "decision-hub",
-                                  target: {
-                                    kind: "ctox-connection",
-                                    connectionId: automatic.connectionId,
-                                  },
-                                },
-                              ]
-                          : draft.capabilityBindings.filter(
-                              (binding) => binding.capabilityId !== "decision-hub",
-                            ),
-                      });
-                    }}
-                    aria-label={`Werkzeug ${capability.label}`}
+              <div className="space-y-2">
+                <div>
+                  <Input
+                    id="workjet-worker-name"
+                    aria-label="Name"
+                    nativeInput
+                    value={draft.name}
+                    onChange={(event) => patchDraft({ name: event.target.value })}
+                    placeholder="Name, z. B. Umsetzung"
                   />
                 </div>
-              );
-            })}
-          </div>
-          {draft.capabilityIds.includes("decision-hub") ? (
-            <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
-              <Label htmlFor="workjet-decision-hub-connection">CTOX-Verbindung</Label>
-              <Select
-                value={decisionHubBinding?.target.connectionId ?? ""}
-                onValueChange={(connectionId) => {
-                  if (connectionId === null) return;
-                  patchDraft({
-                    capabilityBindings: [
-                      {
-                        capabilityId: "decision-hub",
-                        target: {
-                          kind: "ctox-connection",
-                          connectionId: WorkjetConnectionId.make(connectionId),
-                        },
-                      },
-                    ],
-                  });
-                }}
-              >
-                <SelectTrigger id="workjet-decision-hub-connection">
-                  <SelectValue placeholder="Instanz wählen" />
-                </SelectTrigger>
-                <SelectPopup>
-                  {connections.map((connection) => (
-                    <SelectItem key={connection.connectionId} value={connection.connectionId}>
-                      {connection.displayName} · {CONNECTION_STATUS_LABELS[connection.status]}
-                    </SelectItem>
+                <div>
+                  <Textarea
+                    id="workjet-worker-instructions"
+                    aria-label="Aufgabe"
+                    value={draft.instructions}
+                    onChange={(event) => patchDraft({ instructions: event.target.value })}
+                    placeholder="Aufgabe des Workers"
+                    rows={5}
+                  />
+                </div>
+              </div>
+            </>
+          ) : editorTab === "personality" ? (
+            <>
+              <section aria-label="Persönlichkeit" className="space-y-2">
+                <div>
+                  <WorkjetWorkerPersonalizationEditor
+                    value={draft.personalization}
+                    onChange={(personalization) => patchDraft({ personalization })}
+                  />
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <SectionHeader title="Harness" />
+                <div className="flex flex-wrap gap-2">
+                  {WORKJET_HARNESS_OPTIONS.map((option) => (
+                    <ChoiceButton
+                      key={option.id}
+                      title={option.label}
+                      selected={draft.harness === option.id}
+                      onClick={() => patchDraft({ harness: option.id })}
+                    />
                   ))}
-                </SelectPopup>
-              </Select>
-              {decisionHubInstances.map((instance) => {
-                const availability = instance.decisionHub;
-                const local = instance.source === "local_daemon";
-                const tenantId = instance.id.startsWith("managed:")
-                  ? instance.id.slice("managed:".length)
-                  : "";
-                const canProvision =
-                  (local
-                    ? instance.status === "available"
-                    : tenantId.length > 0 &&
-                      availability?.eligible === true &&
-                      availability.mcpEnabled &&
-                      availability.instanceId !== null &&
-                      availability.reason === null) &&
-                  chosenComputer !== null &&
-                  window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
-                return (
-                  <div
-                    key={instance.id}
-                    className="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span className="truncate text-muted-foreground">
-                      {local ? instance.displayName : availability?.displayName}
-                      {local || availability?.reason === null ? "" : ` · ${availability?.reason}`}
-                    </span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={!canProvision || provisioningTenantId !== null}
-                      onClick={() => {
-                        if (!canProvision || chosenComputer === null) return;
-                        setProvisioningTenantId(instance.id);
-                        void window.desktopBridge!.ctox!.provisionDecisionHub!({
-                          environmentId: chosenComputer.environmentId,
-                          target: local
-                            ? { _tag: "local_ctox", instanceId: instance.id }
-                            : { _tag: "ctox_dev", tenantId },
-                        })
-                          .then(async (result) => {
-                            if (result._tag !== "completed") {
-                              setError(`Decision-Hub-Verbindung fehlgeschlagen: ${result.code}`);
-                              return;
-                            }
-                            patchDraft({
-                              capabilityBindings: [
-                                {
-                                  capabilityId: "decision-hub",
-                                  target: {
-                                    kind: "ctox-connection",
-                                    connectionId: result.connection.connectionId,
-                                  },
-                                },
-                              ],
-                            });
-                            decisionHubConnections.refresh();
-                          })
-                          .catch(() => setError("Decision-Hub-Verbindung fehlgeschlagen."))
-                          .finally(() => setProvisioningTenantId(null));
-                      }}
-                    >
-                      {provisioningTenantId === instance.id ? "Verbindet …" : "Verbinden"}
-                    </Button>
-                  </div>
-                );
-              })}
-              {connections.length === 0 ? (
-                <p role="alert" className="text-[11px] text-amber-500">
-                  Keine MCP-Verbindung auf diesem Rechner.
-                </p>
-              ) : selectedDecisionHubConnection === null ? (
-                <p role="alert" className="text-[11px] text-amber-500">
-                  Verbindung wählen.
-                </p>
-              ) : (
-                <div className="flex items-center justify-between gap-2">
-                  <p
-                    role="status"
-                    className={cn(
-                      "text-[11px]",
-                      selectedDecisionHubConnection.status === "ready"
-                        ? "text-emerald-500"
-                        : "text-amber-500",
-                    )}
-                  >
-                    MCP: {CONNECTION_STATUS_LABELS[selectedDecisionHubConnection.status]}
-                    {selectedDecisionHubConnection.reason
-                      ? ` — ${selectedDecisionHubConnection.reason}`
-                      : ""}
-                  </p>
-                  {chosenComputer !== null &&
-                  window.desktopBridge?.ctox?.disconnectDecisionHub !== undefined ? (
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <SectionHeader title="LLM-Zugang" />
+                <div className="flex flex-wrap items-center gap-2">
+                  {routes.map((route) => (
+                    <ChoiceButton
+                      key={route.id}
+                      title={route.label}
+                      selected={draft.llmRouteId === route.id}
+                      onClick={() => patchDraft({ llmRouteId: route.id })}
+                    />
+                  ))}
+                  {onCreateRoute ? (
                     <Button
                       type="button"
                       size="xs"
                       variant="outline"
-                      disabled={disconnectingConnectionId !== null}
+                      aria-expanded={creatingRoute}
+                      onClick={() => setCreatingRoute((open) => !open)}
+                    >
+                      <PlusIcon className="size-3.5" />
+                      Zugang einrichten
+                    </Button>
+                  ) : onAddRoute ? (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
                       onClick={() => {
-                        const connectionId = selectedDecisionHubConnection.connectionId;
-                        setDisconnectingConnectionId(connectionId);
-                        void window.desktopBridge!.ctox!.disconnectDecisionHub!({
-                          environmentId: chosenComputer.environmentId,
-                          connectionId,
-                        })
-                          .then((result) => {
-                            if (result._tag !== "completed") {
-                              setError(`Trennen fehlgeschlagen: ${result.code}`);
-                              return;
-                            }
-                            patchDraft({
-                              capabilityBindings: draft.capabilityBindings.filter(
-                                (binding) => binding.capabilityId !== "decision-hub",
-                              ),
-                            });
-                            decisionHubConnections.refresh();
-                          })
-                          .catch(() => setError("Trennen fehlgeschlagen."))
-                          .finally(() => setDisconnectingConnectionId(null));
+                        try {
+                          window.sessionStorage.setItem(
+                            `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`,
+                            JSON.stringify(draft),
+                          );
+                        } catch {
+                          // Without storage the navigation still works; only the
+                          // stash is lost.
+                        }
+                        onAddRoute?.();
                       }}
                     >
-                      {disconnectingConnectionId === selectedDecisionHubConnection.connectionId
-                        ? "Trennt …"
-                        : "Trennen"}
+                      <PlusIcon className="size-3.5" />
+                      Zugang einrichten
                     </Button>
                   ) : null}
                 </div>
-              )}
-            </div>
-          ) : null}
-        </div>
+                {onCreateRoute ? (
+                  <InlineExpand
+                    hideCollapseControl
+                    label="Zugang einrichten"
+                    open={creatingRoute}
+                    onOpenChange={setCreatingRoute}
+                  >
+                    <div
+                      className="rounded-md border bg-muted/30 p-2"
+                      data-slot="worker-inline-route"
+                    >
+                      <WorkjetLlmRouteEditor
+                        accounts={gatewayAccounts}
+                        onCancel={() => setCreatingRoute(false)}
+                        onSave={(route) => {
+                          onCreateRoute(route);
+                          patchDraft({ llmRouteId: route.id });
+                          setCreatingRoute(false);
+                        }}
+                      />
+                    </div>
+                  </InlineExpand>
+                ) : null}
+                {draft.llmRouteId ? null : (
+                  <p role="status" className="text-[11px] text-amber-500">
+                    Kein Zugang gewählt.
+                  </p>
+                )}
+              </div>
 
-        <div className="space-y-1.5">
-          <SectionHeader title="Rechner" />
-          <div className="flex flex-wrap gap-2">
-            {computers.map((computer) => (
-              <ChoiceButton
-                key={computer.id}
-                title={computer.label}
-                selected={draft.computerId === computer.id}
-                onClick={() =>
-                  patchDraft({
-                    computerId: computer.id,
-                    capabilityBindings: draft.capabilityBindings.filter(
-                      (binding) => binding.capabilityId !== "decision-hub",
-                    ),
-                  })
-                }
-              />
-            ))}
-          </div>
-          {/* The harness status for the CHOSEN computer, on the same screen as
+              <div className="space-y-1.5">
+                <Label htmlFor="workjet-worker-model">Modell</Label>
+                {chosenRoute?.nativeAccountReference ? (
+                  <>
+                    <Select
+                      value={draft.modelId || null}
+                      onValueChange={(model) => {
+                        if (model !== null) patchDraft({ modelId: model });
+                      }}
+                    >
+                      <SelectTrigger id="workjet-worker-model" className="w-full">
+                        <SelectValue placeholder="Live-Modell wählen" />
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {(chosenNativeAccount?.modelCatalog.fresh
+                          ? chosenNativeAccount.effectiveModels
+                          : []
+                        ).map((model) => (
+                          <SelectItem key={model} value={model}>
+                            <span className="break-all whitespace-normal">{model}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span
+                        role={nativeModelsError ? "alert" : "status"}
+                        className={nativeModelsError ? "text-destructive" : undefined}
+                      >
+                        {nativeModelsError ??
+                          (chosenNativeAccount?.modelCatalog.fresh
+                            ? "Live-Modelle aus CTOX."
+                            : "Modellliste veraltet.")}
+                      </span>
+                      {onRefreshNativeModels && chosenNativeAccount && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          disabled={nativeModelsBusy}
+                          onClick={() => onRefreshNativeModels(chosenNativeAccount)}
+                        >
+                          Modelle aktualisieren
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                ) : chosenAccount?.provider === "claude" ? (
+                  <>
+                    <Select
+                      value={draft.modelId || null}
+                      onValueChange={(model) => {
+                        if (model !== null) patchDraft({ modelId: model });
+                      }}
+                    >
+                      <SelectTrigger id="workjet-worker-model" className="w-full">
+                        <SelectValue placeholder="Live-Modell wählen" />
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {choiceCatalog?.accountId === chosenAccount.id &&
+                        choiceCatalog.state === "observed" ? (
+                          choiceCatalog.modelIds.map((model) => (
+                            <SelectItem key={model} value={model}>
+                              <span className="break-all whitespace-normal">{model}</span>
+                            </SelectItem>
+                          ))
+                        ) : draft.modelId ? (
+                          <SelectItem value={draft.modelId}>
+                            {draft.modelId} · gespeichert
+                          </SelectItem>
+                        ) : null}
+                      </SelectPopup>
+                    </Select>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span role="status">
+                        {liveModels.isPending
+                          ? liveModelsSlow
+                            ? "Keine Antwort."
+                            : "Modellliste wird gelesen …"
+                          : choiceCatalog?.state !== "observed"
+                            ? "Modellliste nicht verfügbar."
+                            : `Live-Liste · ${chosenAccount.label}`}
+                      </span>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={liveModels.isPending && !liveModelsSlow}
+                        onClick={liveModels.refresh}
+                      >
+                        {liveModelsSlow ? "Erneut versuchen" : "Modelle aktualisieren"}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <Input
+                    id="workjet-worker-model"
+                    nativeInput
+                    value={draft.modelId}
+                    onChange={(event) => patchDraft({ modelId: event.target.value })}
+                    placeholder="Modell-ID"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <SectionHeader title="Denkstufe" />
+                <div className="flex flex-wrap gap-2">
+                  {REASONING_OPTIONS.map((option) => (
+                    <ChoiceButton
+                      key={option.id}
+                      title={option.label}
+                      selected={draft.reasoning === option.id}
+                      onClick={() => patchDraft({ reasoning: option.id })}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <SectionHeader title="Werkzeuge" />
+                <div className="space-y-2">
+                  {CAPABILITY_OPTIONS.map((capability) => {
+                    const checked = draft.capabilityIds.includes(capability.id);
+                    return (
+                      <div
+                        key={capability.id}
+                        className="flex items-center justify-between gap-3 rounded-lg bg-muted/25 px-2.5 py-2"
+                      >
+                        <p className="min-w-0 text-xs font-medium">{capability.label}</p>
+                        <Switch
+                          checked={checked}
+                          onCheckedChange={(next) => {
+                            const capabilityIds = next
+                              ? [
+                                  ...draft.capabilityIds.filter((id) => id !== capability.id),
+                                  capability.id,
+                                ]
+                              : draft.capabilityIds.filter((id) => id !== capability.id);
+                            if (capability.id !== "decision-hub") {
+                              patchDraft({ capabilityIds });
+                              return;
+                            }
+                            const automatic = connections.filter(
+                              (connection) => connection.status === "ready",
+                            )[0];
+                            patchDraft({
+                              capabilityIds,
+                              capabilityBindings: next
+                                ? automatic === undefined
+                                  ? []
+                                  : [
+                                      {
+                                        capabilityId: "decision-hub",
+                                        target: {
+                                          kind: "ctox-connection",
+                                          connectionId: automatic.connectionId,
+                                        },
+                                      },
+                                    ]
+                                : draft.capabilityBindings.filter(
+                                    (binding) => binding.capabilityId !== "decision-hub",
+                                  ),
+                            });
+                          }}
+                          aria-label={`Werkzeug ${capability.label}`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {draft.capabilityIds.includes("decision-hub") ? (
+                  <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
+                    <Label htmlFor="workjet-decision-hub-connection">CTOX-Verbindung</Label>
+                    <Select
+                      value={decisionHubBinding?.target.connectionId ?? ""}
+                      onValueChange={(connectionId) => {
+                        if (connectionId === null) return;
+                        patchDraft({
+                          capabilityBindings: [
+                            {
+                              capabilityId: "decision-hub",
+                              target: {
+                                kind: "ctox-connection",
+                                connectionId: WorkjetConnectionId.make(connectionId),
+                              },
+                            },
+                          ],
+                        });
+                      }}
+                    >
+                      <SelectTrigger id="workjet-decision-hub-connection">
+                        <SelectValue placeholder="Instanz wählen" />
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {connections.map((connection) => (
+                          <SelectItem key={connection.connectionId} value={connection.connectionId}>
+                            {connection.displayName} · {CONNECTION_STATUS_LABELS[connection.status]}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                    {decisionHubInstances.map((instance) => {
+                      const availability = instance.decisionHub;
+                      const local = instance.source === "local_daemon";
+                      const tenantId = instance.id.startsWith("managed:")
+                        ? instance.id.slice("managed:".length)
+                        : "";
+                      const canProvision =
+                        (local
+                          ? instance.status === "available"
+                          : tenantId.length > 0 &&
+                            availability?.eligible === true &&
+                            availability.mcpEnabled &&
+                            availability.instanceId !== null &&
+                            availability.reason === null) &&
+                        chosenComputer !== null &&
+                        window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
+                      return (
+                        <div
+                          key={instance.id}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="truncate text-muted-foreground">
+                            {local ? instance.displayName : availability?.displayName}
+                            {local || availability?.reason === null
+                              ? ""
+                              : ` · ${availability?.reason}`}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canProvision || provisioningTenantId !== null}
+                            onClick={() => {
+                              if (!canProvision || chosenComputer === null) return;
+                              setProvisioningTenantId(instance.id);
+                              void window.desktopBridge!.ctox!.provisionDecisionHub!({
+                                environmentId: chosenComputer.environmentId,
+                                target: local
+                                  ? { _tag: "local_ctox", instanceId: instance.id }
+                                  : { _tag: "ctox_dev", tenantId },
+                              })
+                                .then(async (result) => {
+                                  if (result._tag !== "completed") {
+                                    setError(
+                                      `Decision-Hub-Verbindung fehlgeschlagen: ${result.code}`,
+                                    );
+                                    return;
+                                  }
+                                  patchDraft({
+                                    capabilityBindings: [
+                                      {
+                                        capabilityId: "decision-hub",
+                                        target: {
+                                          kind: "ctox-connection",
+                                          connectionId: result.connection.connectionId,
+                                        },
+                                      },
+                                    ],
+                                  });
+                                  decisionHubConnections.refresh();
+                                })
+                                .catch(() => setError("Decision-Hub-Verbindung fehlgeschlagen."))
+                                .finally(() => setProvisioningTenantId(null));
+                            }}
+                          >
+                            {provisioningTenantId === instance.id ? "Verbindet …" : "Verbinden"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                    {connections.length === 0 ? (
+                      <p role="alert" className="text-[11px] text-amber-500">
+                        Keine MCP-Verbindung auf diesem Rechner.
+                      </p>
+                    ) : selectedDecisionHubConnection === null ? (
+                      <p role="alert" className="text-[11px] text-amber-500">
+                        Verbindung wählen.
+                      </p>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        <p
+                          role="status"
+                          className={cn(
+                            "text-[11px]",
+                            selectedDecisionHubConnection.status === "ready"
+                              ? "text-emerald-500"
+                              : "text-amber-500",
+                          )}
+                        >
+                          MCP: {CONNECTION_STATUS_LABELS[selectedDecisionHubConnection.status]}
+                          {selectedDecisionHubConnection.reason
+                            ? ` — ${selectedDecisionHubConnection.reason}`
+                            : ""}
+                        </p>
+                        {chosenComputer !== null &&
+                        window.desktopBridge?.ctox?.disconnectDecisionHub !== undefined ? (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            disabled={disconnectingConnectionId !== null}
+                            onClick={() => {
+                              const connectionId = selectedDecisionHubConnection.connectionId;
+                              setDisconnectingConnectionId(connectionId);
+                              void window.desktopBridge!.ctox!.disconnectDecisionHub!({
+                                environmentId: chosenComputer.environmentId,
+                                connectionId,
+                              })
+                                .then((result) => {
+                                  if (result._tag !== "completed") {
+                                    setError(`Trennen fehlgeschlagen: ${result.code}`);
+                                    return;
+                                  }
+                                  patchDraft({
+                                    capabilityBindings: draft.capabilityBindings.filter(
+                                      (binding) => binding.capabilityId !== "decision-hub",
+                                    ),
+                                  });
+                                  decisionHubConnections.refresh();
+                                })
+                                .catch(() => setError("Trennen fehlgeschlagen."))
+                                .finally(() => setDisconnectingConnectionId(null));
+                            }}
+                          >
+                            {disconnectingConnectionId ===
+                            selectedDecisionHubConnection.connectionId
+                              ? "Trennt …"
+                              : "Trennen"}
+                          </Button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-1.5">
+                <SectionHeader title="Rechner" />
+                <div className="flex flex-wrap gap-2">
+                  {computers.map((computer) => (
+                    <ChoiceButton
+                      key={computer.id}
+                      title={computer.label}
+                      selected={draft.computerId === computer.id}
+                      onClick={() =>
+                        patchDraft({
+                          computerId: computer.id,
+                          capabilityBindings: draft.capabilityBindings.filter(
+                            (binding) => binding.capabilityId !== "decision-hub",
+                          ),
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+                {/* The harness status for the CHOSEN computer, on the same screen as
             the choice. Swift puts it here because the answer to "can this
             worker actually run" belongs beside the machine, not on another
             page. */}
-          <p
-            role={warning === null ? "status" : "alert"}
-            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                warning === null ? "bg-emerald-500" : "bg-amber-500",
-              )}
-            />
-            {harnessStatusLine}
-          </p>
+                <p
+                  role={warning === null ? "status" : "alert"}
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      warning === null ? "bg-emerald-500" : "bg-amber-500",
+                    )}
+                  />
+                  {harnessStatusLine}
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         {routes.length === 0 ? (

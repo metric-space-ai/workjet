@@ -35,7 +35,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/computers": "Rechner",
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
-  "/settings/workjet": "Lumas",
+  "/settings/workjet": "Worker-Presets",
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
@@ -233,8 +233,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-workers",
     // Match the page title to keep one result, while preserving old search vocabulary.
-    title: "Lumas",
-    searchAliases: ["worker", "workers", "agent", "agents"],
+    title: "Worker-Presets",
+    searchAliases: ["worker", "workers", "presets", "lumas", "agent", "agents"],
     to: "/settings/workjet",
   },
   {
@@ -265,18 +265,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/models",
   },
   {
-    id: "workjet-organigram",
-    title: "Organigramm",
-    to: "/settings/workjet",
-  },
-  {
     id: "workjet-prompt",
     title: "Prompt",
     to: "/settings/workjet",
   },
   {
     id: "workjet-telemetry",
-    title: "Telemetrie",
+    title: "Protokoll",
     to: "/settings/workjet",
   },
   {

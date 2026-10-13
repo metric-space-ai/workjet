@@ -14,7 +14,12 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
-import { projectKpiPresentation, type PromptedProjectKpis } from "../projectKpis";
+import {
+  projectKpiPresentation,
+  type PromptedProjectKpis,
+  type SaveProjectKpiPrompts,
+} from "../projectKpis";
+import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { PROJECT_OVERVIEW_TEXT, projectOverviewFormat } from "../projectOverviewText";
@@ -36,7 +41,13 @@ export function ProjectOverviewCard({
   ctoxInstanceId = null,
   reorderHandle,
   tokenBudget,
+  onSaveKpis,
+  onRefreshKpis,
 }: {
+  /** Saves the card's KPI sentences inline (project.kpis.configure). */
+  readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
+  /** Recalculates the card's KPIs now (project.kpis.refresh, #502). */
+  readonly onRefreshKpis?: (() => Promise<boolean>) | undefined;
   readonly project: GalleryProject;
   readonly tokenBudget?: ReactNode;
   readonly ctoxInstanceId?: string | null;
@@ -61,6 +72,8 @@ export function ProjectOverviewCard({
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [editingKpi, setEditingKpi] = useState<number | null>(null);
+  const [refreshPending, setRefreshPending] = useState(false);
   const text = PROJECT_OVERVIEW_TEXT[useProjectOverviewLanguage()];
   const openProjectLabel = projectOverviewFormat(text.cardOpenProjectLabel, {
     title: project.title,
@@ -99,6 +112,14 @@ export function ProjectOverviewCard({
     websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
   // Die Rückseite ersetzt nur die Vorschaufläche; Spalte und Breite der Karte bleiben.
+  const refreshKpis = async () => {
+    if (!onRefreshKpis || refreshPending) return;
+    setRefreshPending(true);
+    setArchiveError(null);
+    const ok = await onRefreshKpis();
+    setRefreshPending(false);
+    if (!ok) setArchiveError(t("Neuberechnung nicht erreichbar.", "Recalculation not reachable."));
+  };
   const closeEditing = () => setEditing(null);
   // Only one card editor (Exit-Bewertung / Konfigurieren) is open across the
   // gallery: opening one closes every other InlineExpand, like the KPI tiles.
@@ -204,6 +225,17 @@ export function ProjectOverviewCard({
               <EllipsisIcon className="size-4" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end">
+              {onRefreshKpis && scopedKpis && scopedKpis.items.length > 0 && (
+                <MenuItem
+                  disabled={refreshPending}
+                  onClick={() => void refreshKpis()}
+                  data-workjet-action={`project.kpis.refresh.menu:${project.key}`}
+                >
+                  {refreshPending
+                    ? t("Wird berechnet …", "Calculating …")
+                    : t("KPIs neu berechnen", "Recalculate KPIs")}
+                </MenuItem>
+              )}
               {repository && (
                 <MenuItem
                   render={<a href={repository} target="_blank" rel="noreferrer noopener" />}
@@ -350,7 +382,7 @@ export function ProjectOverviewCard({
       )}
       <div className="relative border-t border-border px-3 py-3">
         {/* Tapping the KPI strip edits the card inline; the menu keeps only rare actions (#561). */}
-        {configureCard && (
+        {configureCard && !(project.native && scopedKpis) && (
           <button
             type="button"
             onClick={configureCard}
@@ -360,10 +392,27 @@ export function ProjectOverviewCard({
           />
         )}
         <dl
-          className="pointer-events-none relative grid min-w-0 grid-cols-3 gap-2 [&_a]:pointer-events-auto"
+          className={
+            configureCard && !(project.native && scopedKpis)
+              ? "pointer-events-none relative grid min-w-0 grid-cols-3 gap-2 [&_a]:pointer-events-auto"
+              : "relative grid min-w-0 grid-cols-3 gap-2"
+          }
           data-workjet-project-card-slots=""
         >
           {(["first", "second", "third"] as const).map((position, index) => {
+            if (project.native && scopedKpis)
+              return (
+                <ProjectKpiTile
+                  key={position}
+                  projectId={project.id}
+                  index={index}
+                  kpis={scopedKpis}
+                  expanded={editingKpi === index}
+                  onExpandedChange={(open) => setEditingKpi(open ? index : null)}
+                  onSave={onSaveKpis}
+                  onRefresh={onRefreshKpis}
+                />
+              );
             const slot = slots[index] ?? null;
             const metric = scopedKpis
               ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)

@@ -11,8 +11,6 @@ import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operation
 import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import { RegistryContext } from "@effect/atom-react";
 import {
-  DEFAULT_RUNTIME_MODE,
-  DEFAULT_WORKJET_THREAD_CONFIG,
   ProjectId,
   type CommandId,
   type CtoxDiscoveryResult,
@@ -63,7 +61,7 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { buildThreadRouteParams } from "../threadRoutes";
-import { findProjectSupervisor } from "../lib/projectSupervisor";
+import { findProjectSupervisor, projectSupervisorThreadInput } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -318,29 +316,13 @@ function IndexDraftLanding() {
           const createdAt = new Date().toISOString();
           const result = await createThread({
             environmentId: target.environmentId,
-            input: {
+            input: projectSupervisorThreadInput({
               threadId,
               projectId: target.projectId,
-              title: "Projekt-Supervisor",
+              title: target.title,
               modelSelection,
-              runtimeMode: DEFAULT_RUNTIME_MODE,
-              interactionMode: "default",
-              workjetConfig: {
-                ...DEFAULT_WORKJET_THREAD_CONFIG,
-                role: "orchestrator",
-                team: {
-                  role: "supervisor",
-                  projectId: target.projectId,
-                  threadId,
-                  parentThreadId: null,
-                  goal: `Coordinate the goals of ${target.title}`,
-                  createdAt,
-                },
-              },
-              branch: null,
-              worktreePath: null,
               createdAt,
-            },
+            }),
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         }

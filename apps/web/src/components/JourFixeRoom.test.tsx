@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { JourFixeRoom, jourFixeActionError } from "./JourFixeRoom";
+import {
+  JourFixeRoom,
+  jourFixeActionError,
+  jourFixeStartButtonLabel,
+  jourFixeThumbExportState,
+} from "./JourFixeRoom";
 import type { JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import fixture from "../fixtures/jour-fixe.contract.json";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
@@ -181,23 +186,46 @@ describe("Jour fixe start lock", () => {
   it("hides the start button more than five minutes before the meeting", () => {
     const html = render("ready", inMinutes(30));
     expect(html).not.toContain("Termin starten");
-    expect(html).toContain("Beginnt um");
-    expect(html).toContain("Vorbereitet");
+    expect(html).toContain("Beginnt ");
+    expect(html).not.toContain("Beginnt um");
+    expect(html).not.toContain("Vorbereitet");
+    expect(html).not.toContain("Bereit");
+    expect(html).not.toContain("Prüfen");
   });
-  it("reports ongoing preparation while locked", () => {
+  it("names only the start time while preparation is locked", () => {
     const html = render("preparing", inMinutes(30));
     expect(html).not.toContain("Termin starten");
-    expect(html).toContain("Beginnt um");
-    expect(html).toContain("Vorbereitung läuft");
+    expect(html).toContain("Beginnt ");
+    expect(html).not.toContain("Vorbereitung läuft");
+    expect(html).not.toContain("In Vorbereitung");
   });
   it("offers the start button from five minutes before the meeting", () => {
     const html = render("ready", inMinutes(4));
     expect(html).toContain("Termin starten");
-    expect(html).not.toContain("Beginnt um");
+    expect(html).toContain("Beginnt ");
+    expect(html).not.toContain("Bereit");
+    expect(html).not.toContain("Vorbereitet");
+    expect(html).not.toContain("Prüfen");
+    expect(html).toContain('data-workjet-meeting-start="idle"');
+  });
+  it("labels a hanging start on the button only", () => {
+    expect(jourFixeStartButtonLabel(true)).toBe("Startet …");
+    expect(jourFixeStartButtonLabel(false)).toBe("Termin starten");
+  });
+  it("exports dark thumbnails by inverting the scene paper, not a pre-darkened ground", () => {
+    expect(jourFixeThumbExportState("#fffef8", true)).toEqual({
+      viewBackgroundColor: "#fffef8",
+      exportBackground: true,
+      exportWithDarkMode: true,
+    });
+    expect(jourFixeThumbExportState("#fffef8", false).exportWithDarkMode).toBe(false);
   });
   it("never locks a live meeting", () => {
     const html = render("live", inMinutes(30));
-    expect(html).not.toContain("Beginnt um");
+    expect(html).not.toContain("Beginnt ");
+    expect(html).toContain("läuft seit");
+    expect(html).not.toContain("Prüfen");
+    expect(html).not.toContain("Aufgaben prüfen");
   });
   it("answers a server meeting_not_started rejection with a German line", () => {
     const scheduled = { ...meeting, scheduledAt: inMinutes(30) };

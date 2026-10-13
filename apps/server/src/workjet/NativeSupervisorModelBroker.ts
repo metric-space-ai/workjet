@@ -417,7 +417,7 @@ export async function openNativeSupervisorModelBroker(
         );
         server.closeAllConnections();
         await stopped;
-        await Promise.all([...tasks]);
+        await Promise.all(tasks);
         return {
           localRequestsDrained: true,
           outcomeUnknownOperationIds: [...unknown],

@@ -5,8 +5,16 @@ import {
   readActiveWorkjetScope,
   subscribeActiveWorkjetHostContext,
 } from "./activeWorkjetScope";
-import { useProjects } from "./state/entities";
-import { usePrimaryEnvironmentId } from "./state/environments";
+import { useProjects, useThreadShells } from "./state/entities";
+import { useEnvironments, usePrimaryEnvironmentId } from "./state/environments";
+import { threadEnvironment } from "./state/threads";
+import { scopeProjectRef } from "@workjet/client-runtime/environment";
+import { CommandId } from "@workjet/contracts";
+import { findProjectSupervisor, projectSupervisorThreadInput } from "./lib/projectSupervisor";
+import { resolveProjectTeamModelSelection } from "./providerInstances";
+import { bindWorkjetSupervisor } from "./workjetSupervisorControl";
+import { pendingProjectInit, requestProjectInit } from "./projectInit";
+import { newThreadId } from "~/lib/utils";
 import { projectEnvironment } from "./state/projects";
 import { useAtomCommand } from "./state/use-atom-command";
 import {
@@ -74,6 +82,13 @@ export function LocalProjectRegistrationSynchronizer() {
   const { selectedInstanceId, selectionRevision } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(selectedInstanceId);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const threads = useThreadShells();
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const { environments } = useEnvironments();
+  const environmentsRef = useRef(environments);
+  environmentsRef.current = environments;
   const attempted = useRef(new Set<string>());
   const inFlight = useRef(false);
   const mounted = useRef(false);
@@ -120,6 +135,44 @@ export function LocalProjectRegistrationSynchronizer() {
     if (!project || !intent) return;
     attempted.current.add(intent.commandId);
     inFlight.current = true;
+    // One-click onboarding: create and bind the Projekt-Supervisor now, exactly
+    // as first open does, then re-call project.init so CTOX admits the exit
+    // research and the project-init turn without the project being opened.
+    const setUpSupervisorForOnboarding = async (instanceId: string, nativeProjectId: string) => {
+      const operationId = pendingProjectInit(instanceId, nativeProjectId);
+      if (operationId === null) return;
+      let threadId = findProjectSupervisor(
+        threadsRef.current,
+        scopeProjectRef(project.environmentId, project.id),
+      )?.id;
+      if (!threadId) {
+        const modelSelection = resolveProjectTeamModelSelection(
+          environmentsRef.current.find((e) => e.environmentId === project.environmentId)
+            ?.serverConfig?.providers ?? [],
+          project.defaultModelSelection,
+        );
+        if (modelSelection === null) return;
+        const created = newThreadId();
+        const result = await createThread({
+          environmentId: project.environmentId,
+          input: projectSupervisorThreadInput({
+            threadId: created,
+            projectId: project.id,
+            title: project.title,
+            modelSelection,
+            createdAt: new Date().toISOString(),
+          }),
+        });
+        if (result._tag !== "Success") return;
+        threadId = created;
+      }
+      const bound = await bindWorkjetSupervisor(
+        { instanceId, projectId: nativeProjectId as never, threadId: threadId as never },
+        CommandId.make(`supervisor-setup:${nativeProjectId}:${threadId}`),
+      );
+      if (bound._tag === "completed")
+        await requestProjectInit(instanceId, nativeProjectId, operationId);
+    };
     void (async () => {
       try {
         const workingCopy =
@@ -170,6 +223,8 @@ export function LocalProjectRegistrationSynchronizer() {
           environmentId: project.environmentId,
           input: { projectId: project.id, ctoxRegistration: next },
         });
+        if (outcome._tag === "visible")
+          await setUpSupervisorForOnboarding(intent.instanceId, outcome.project.id);
       } finally {
         inFlight.current = false;
         if (mounted.current) setGeneration((value) => value + 1);

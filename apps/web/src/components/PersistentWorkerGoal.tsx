@@ -36,7 +36,6 @@ export function PersistentWorkerGoal({
   compact = false,
   onChangeGoal,
   disabled = false,
-  ...state
 }: LoopState & {
   readonly config: WorkjetThreadConfig | null;
   readonly compact?: boolean;
@@ -44,14 +43,13 @@ export function PersistentWorkerGoal({
   readonly onChangeGoal?: ((change: PersistentGoalChange) => Promise<boolean>) | undefined;
 }) {
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [objective, setObjective] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (config?.schemaVersion !== 2 || config.team?.role !== "specialist") return null;
   const goal = config.goal;
   const text = goal?.objective ?? config.team.goal;
-  const counter = goal ? `Durchlauf ${goal.continuationCount}` : "Schleife nicht gestartet";
-  const summary = `${goal ? persistentWorkerGoalState(goal, state) : "Ziel noch nicht gesetzt"} · ${counter}`;
   if (compact) {
     return (
       <span
@@ -61,7 +59,6 @@ export function PersistentWorkerGoal({
         <span className="block line-clamp-2 text-foreground/80" title={text}>
           {text}
         </span>
-        <span className="block text-[11px] text-muted-foreground">{summary}</span>
       </span>
     );
   }
@@ -83,31 +80,38 @@ export function PersistentWorkerGoal({
       setBusy(false);
     }
   };
-  const currentBoard =
-    goal?.kanban?.goalRevision === goal?.revision &&
-    goal?.kanban?.iteration === goal?.continuationCount;
+  const board = goal?.kanban?.slideDocument ?? null;
   return (
     <section
       className="shrink-0 border-b border-border px-3 py-2 sm:px-5"
       aria-label="Ziel der festen Luma"
       data-workjet-persistent-goal="thread"
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium">
-            Ziel · <span className="text-muted-foreground">{summary}</span>
-          </p>
-          <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm" title={text}>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left"
+          aria-expanded={expanded}
+          aria-label={expanded ? "Ziel einklappen" : "Ziel aufklappen"}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          <span
+            className={
+              expanded ? "block whitespace-pre-wrap break-words text-sm" : "block truncate text-sm"
+            }
+            title={expanded ? undefined : text}
+          >
             {text}
-          </p>
-        </div>
+          </span>
+        </button>
         {onChangeGoal ? (
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {editing ? null : (
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
+                aria-label={goal ? "Ziel ändern" : "Ziel festlegen"}
                 disabled={busy || disabled}
                 onClick={() => {
                   setEditing(true);
@@ -115,7 +119,7 @@ export function PersistentWorkerGoal({
                 }}
               >
                 <PencilIcon aria-hidden="true" />
-                {goal ? "Ziel ändern" : "Ziel festlegen"}
+                {goal ? "Ändern" : "Ziel festlegen"}
               </Button>
             )}
             {goal ? (
@@ -181,36 +185,14 @@ export function PersistentWorkerGoal({
           {error}
         </p>
       ) : null}
-      {goal ? (
-        <details open className="mt-2 text-xs">
-          <summary className="cursor-pointer text-muted-foreground">
-            Mini-Kanban ·{" "}
-            {goal.kanban ? `Durchlauf ${goal.kanban.iteration}` : "noch nicht aktualisiert"}
-            {goal.kanban && !currentBoard ? " · vorheriger Stand" : ""}
-          </summary>
-          <div className="mt-2 max-h-72 overflow-y-auto">
-            {goal.kanban?.slideDocument ? (
-              <Suspense fallback={<p role="status">Mini-Kanban wird geladen…</p>}>
-                <WorkerKanban snapshot={goal.kanban.slideDocument} />
-              </Suspense>
-            ) : (
-              <p className="text-muted-foreground">Noch kein Mini-Kanban des Workers</p>
-            )}
-            <p className="mt-2 text-muted-foreground">
-              Ziel gespeichert · Revision {goal.revision} ·{" "}
-              <time dateTime={goal.updatedAt}>
-                {new Intl.DateTimeFormat("de-DE", {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                }).format(new Date(goal.updatedAt))}
-              </time>
-            </p>
-            {goal.reason ? <p className="mt-1 whitespace-pre-wrap">{goal.reason}</p> : null}
-          </div>
-        </details>
-      ) : (
-        <p className="mt-1 text-xs text-muted-foreground">Zielschleife nicht gestartet</p>
-      )}
+      {board ? (
+        <div className="mt-2 max-h-72 overflow-y-auto text-xs">
+          <Suspense fallback={<p role="status">Mini-Kanban wird geladen…</p>}>
+            <WorkerKanban snapshot={board} />
+          </Suspense>
+          {goal?.reason ? <p className="mt-1 whitespace-pre-wrap">{goal.reason}</p> : null}
+        </div>
+      ) : null}
     </section>
   );
 }

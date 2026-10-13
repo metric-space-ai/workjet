@@ -279,7 +279,7 @@ describe("Native provider account rows", () => {
     const rendered = html({ ...registry.accounts[0]!, enabled: false });
     expect(rendered).toContain("Konto aktivieren");
     expect(control(rendered, "Konto 1 aktiv")).not.toContain("checked");
-    expect(rendered).toContain("Keine Limits gemeldet");
+    expect(rendered).not.toContain("Keine Limits gemeldet");
     expect(rendered).not.toContain("Credentials rejected");
   });
 });

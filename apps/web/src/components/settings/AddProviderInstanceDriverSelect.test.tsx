@@ -30,14 +30,23 @@ function render(onDriverChange = vi.fn()) {
 }
 
 describe("AddProviderInstanceDriverSelect (single-level add panel)", () => {
-  it("offers every shipped harness plus disabled upcoming ones in one selection", () => {
+  it("offers only shipped harnesses; upcoming ones are not choices (#617)", () => {
     const items = collectItems(render());
 
-    expect(items).toHaveLength(DRIVER_OPTIONS.length + COMING_SOON_DRIVER_OPTIONS.length);
-    const disabled = items.filter((item) => item.props["disabled"] === true);
-    expect(disabled.map((item) => item.props["value"])).toEqual(
-      COMING_SOON_DRIVER_OPTIONS.map((option) => option.value),
+    expect(items).toHaveLength(DRIVER_OPTIONS.length);
+    expect(items.some((item) => item.props["disabled"] === true)).toBe(false);
+    expect(COMING_SOON_DRIVER_OPTIONS.length).toBeGreaterThan(0);
+  });
+
+  it("offers only the given (not yet installed) harnesses", () => {
+    const items = collectItems(
+      AddProviderInstanceDriverSelect({
+        driver: DRIVER_OPTIONS[1]!.value,
+        onDriverChange: vi.fn(),
+        options: DRIVER_OPTIONS.slice(1),
+      }) as Element,
     );
+    expect(items).toHaveLength(DRIVER_OPTIONS.length - 1);
   });
 
   it("switches the harness for a shipped driver", () => {

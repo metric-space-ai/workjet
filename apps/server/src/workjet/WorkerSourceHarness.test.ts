@@ -12,7 +12,7 @@ import { makeWorkerSourceModelSocket } from "./WorkerSourceModelSocket.ts";
 import { WORKER_MODEL_NAMESPACE_BASE_URL } from "./WorkerModelNamespaceBridge.ts";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  for (const cleanup of cleanups.splice(0).toReversed()) await cleanup();
 });
 it("cancels a pending source admission with its caller and rejects an already aborted caller", async () => {
   let onRequest = () => {};

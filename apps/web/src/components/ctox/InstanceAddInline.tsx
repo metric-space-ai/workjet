@@ -81,6 +81,7 @@ export function parseManualConnectionPaste(
       message.includes("abgelaufen")
         ? "Verbindungsdaten abgelaufen."
         : "Verbindungsdaten ungültig.",
+      { cause: cause },
     );
   }
 }

@@ -5,6 +5,7 @@ import {
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { newCommandId } from "./utils";
+import type { CtoxWorkjetProjectControlResult } from "@workjet/contracts";
 import {
   describeWorkjetProjectControlFailure,
   requestWorkjetProjectControl,
@@ -50,8 +51,7 @@ async function request(
       }),
     ]);
     signal.throwIfAborted();
-    if (result._tag !== "completed")
-      throw new Error(describeWorkjetProjectControlFailure(result, instanceId));
+    if (result._tag !== "completed") throw speechFailure(result, instanceId);
     if (
       result.response.action !== input.action ||
       !("commandId" in result.response) ||
@@ -105,4 +105,54 @@ export function speechCheckAudio(encoded: string): Blob {
   )
     throw new Error("The speech check did not return a supported WAV recording.");
   return new Blob([Uint8Array.from(raw, (c) => c.charCodeAt(0))], { type: "audio/wav" });
+}
+
+type Failure = Extract<CtoxWorkjetProjectControlResult, { readonly _tag: "failed" }>;
+type Language = "de" | "en";
+
+/** A load failure with a specific, actionable German and English message. */
+export class SpeechSettingsError extends Error {
+  constructor(readonly messages: Readonly<Record<Language, string>>) {
+    super(messages.en);
+  }
+}
+
+const speechMessages = {
+  core_outdated: {
+    de: "CTOX auf der Instanz ist zu alt für Spracheinstellungen. CTOX aktualisieren, dann erneut laden.",
+    en: "The instance runs a CTOX core without speech settings. Update CTOX, then reload.",
+  },
+  access_denied: {
+    de: "Spracheinstellungen brauchen die Rolle Owner oder Admin auf der Instanz.",
+    en: "Speech settings need the Owner or Admin role on the instance.",
+  },
+  peer_unavailable: {
+    de: "Datenverbindung zur Instanz noch nicht bereit. Gleich erneut laden.",
+    en: "The data connection to the instance is not ready yet. Reload in a moment.",
+  },
+  request_timeout: {
+    de: "Instanz hat nicht rechtzeitig geantwortet. Erneut laden.",
+    en: "The instance did not answer in time. Reload.",
+  },
+  unanswered: {
+    de: "Instanz beantwortet Spracheinstellungen nicht. CTOX aktualisieren und Rolle Owner/Admin prüfen.",
+    en: "The instance does not answer speech settings. Update CTOX and check the Owner/Admin role.",
+  },
+} as const;
+
+function speechFailure(failure: Failure, instanceId: string): SpeechSettingsError {
+  const reason = failure.diagnostic?.reason;
+  if (reason && reason in speechMessages)
+    return new SpeechSettingsError(speechMessages[reason as keyof typeof speechMessages]);
+  if (failure.code === "timeout") return new SpeechSettingsError(speechMessages.request_timeout);
+  // Older CTOX shells only report an opaque guest failure for speech settings.
+  if (failure.code === "guest_failed" && !failure.diagnostic)
+    return new SpeechSettingsError(speechMessages.unanswered);
+  const de = describeWorkjetProjectControlFailure(failure, instanceId);
+  return new SpeechSettingsError({ de, en: de });
+}
+
+export function speechErrorText(error: unknown, language: Language): string {
+  if (error instanceof SpeechSettingsError) return error.messages[language];
+  return language === "en" ? "Speech settings not loaded or saved." : "Nicht geladen oder gespeichert";
 }

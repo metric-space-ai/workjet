@@ -7,6 +7,7 @@
  *
  * @module WorkspaceFileSystem
  */
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 
 import type {
@@ -36,6 +37,7 @@ export class WorkspaceFileSystemOperationError extends Schema.TaggedErrorClass<W
     operationPath: Schema.String,
     operation: Schema.Literals([
       "realpath-workspace-root",
+      "realpath-parent",
       "realpath-target",
       "open",
       "stat",
@@ -267,31 +269,140 @@ export const make = Effect.gen(function* () {
       relativePath: input.relativePath,
     });
 
-    yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(
-      Effect.mapError(
-        (cause) =>
+    const realWorkspaceRoot = yield* Effect.tryPromise({
+      try: () => NodeFSP.realpath(input.cwd),
+      catch: (cause) =>
+        new WorkspaceFileSystemOperationError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+          resolvedPath: target.absolutePath,
+          operationPath: input.cwd,
+          operation: "realpath-workspace-root",
+          cause,
+        }),
+    });
+
+    let realParentPath = realWorkspaceRoot;
+    const parentSegments = path
+      .relative(input.cwd, path.dirname(target.absolutePath))
+      .split(path.sep)
+      .filter((segment) => segment !== "" && segment !== ".");
+    for (const segment of parentSegments) {
+      const nextParentPath = path.join(realParentPath, segment);
+      yield* fileSystem.makeDirectory(nextParentPath, { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: nextParentPath,
+              operation: "make-directory",
+              cause,
+            }),
+        ),
+      );
+      realParentPath = yield* Effect.tryPromise({
+        try: () => NodeFSP.realpath(nextParentPath),
+        catch: (cause) =>
           new WorkspaceFileSystemOperationError({
             workspaceRoot: input.cwd,
             relativePath: input.relativePath,
             resolvedPath: target.absolutePath,
-            operationPath: path.dirname(target.absolutePath),
-            operation: "make-directory",
+            operationPath: nextParentPath,
+            operation: "realpath-parent",
             cause,
           }),
-      ),
-    );
-    yield* fileSystem.writeFileString(target.absolutePath, input.contents).pipe(
-      Effect.mapError(
-        (cause) =>
+      });
+      const relativeRealParent = path.relative(realWorkspaceRoot, realParentPath);
+      if (
+        relativeRealParent.startsWith(`..${path.sep}`) ||
+        relativeRealParent === ".." ||
+        path.isAbsolute(relativeRealParent)
+      ) {
+        return yield* new WorkspaceFilePathEscapeError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+          resolvedWorkspaceRoot: realWorkspaceRoot,
+          resolvedPath: realParentPath,
+        });
+      }
+    }
+
+    const realTargetPath = path.join(realParentPath, path.basename(target.absolutePath));
+    const existingTarget = yield* Effect.tryPromise({
+      try: async () => {
+        try {
+          return await NodeFSP.lstat(realTargetPath);
+        } catch (cause) {
+          if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+          throw cause;
+        }
+      },
+      catch: (cause) =>
+        new WorkspaceFileSystemOperationError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+          resolvedPath: realTargetPath,
+          operationPath: realTargetPath,
+          operation: "stat",
+          cause,
+        }),
+    });
+    if (existingTarget?.isSymbolicLink()) {
+      return yield* new WorkspacePathNotFileError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedPath: realTargetPath,
+      });
+    }
+
+    yield* Effect.acquireUseRelease(
+      Effect.tryPromise({
+        try: () =>
+          NodeFSP.open(
+            realTargetPath,
+            NodeFS.constants.O_WRONLY |
+              NodeFS.constants.O_CREAT |
+              NodeFS.constants.O_TRUNC |
+              (NodeFS.constants.O_NOFOLLOW ?? 0),
+          ),
+        catch: (cause) =>
           new WorkspaceFileSystemOperationError({
             workspaceRoot: input.cwd,
             relativePath: input.relativePath,
-            resolvedPath: target.absolutePath,
-            operationPath: target.absolutePath,
-            operation: "write-file",
+            resolvedPath: realTargetPath,
+            operationPath: realTargetPath,
+            operation: "open",
             cause,
           }),
-      ),
+      }),
+      (handle) =>
+        Effect.tryPromise({
+          try: () => handle.writeFile(input.contents, "utf8"),
+          catch: (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: realTargetPath,
+              operationPath: realTargetPath,
+              operation: "write-file",
+              cause,
+            }),
+        }),
+      (handle) =>
+        Effect.tryPromise({
+          try: () => handle.close(),
+          catch: (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: realTargetPath,
+              operationPath: realTargetPath,
+              operation: "close",
+              cause,
+            }),
+        }),
     );
     yield* workspaceEntries.refresh(input.cwd);
     return { relativePath: target.relativePath };

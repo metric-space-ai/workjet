@@ -40,6 +40,8 @@ export function NewThreadInMenu(props: {
   readonly onOpenChange: (open: boolean) => void;
   readonly onSelect: (project: AvailableProject) => void;
   readonly onCreateProject: () => void;
+  /** Opened programmatically (the sidebar „+“); no visible trigger of its own. */
+  readonly hideTrigger?: boolean;
 }) {
   return (
     <Menu open={props.open} onOpenChange={props.onOpenChange}>
@@ -50,7 +52,13 @@ export function NewThreadInMenu(props: {
             type="button"
             aria-label={NEW_THREAD_IN_LABEL}
             data-workjet-action="thread.new.in"
-            className="w-5 min-w-5 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+            tabIndex={props.hideTrigger ? -1 : undefined}
+            aria-hidden={props.hideTrigger ? true : undefined}
+            className={
+              props.hideTrigger
+                ? "pointer-events-none absolute right-0 size-8 opacity-0"
+                : "w-5 min-w-5 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+            }
           />
         }
       >

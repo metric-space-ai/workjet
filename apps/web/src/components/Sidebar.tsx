@@ -1,4 +1,5 @@
 import { autoAnimate } from "@formkit/auto-animate";
+import { scheduleUndoableThreadDelete } from "../lib/undoableDelete";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -1693,7 +1694,6 @@ export default function Sidebar() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
-  const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const overviewLanguage = useProjectOverviewLanguage();
@@ -3299,48 +3299,41 @@ export default function Sidebar() {
         return;
       }
       if (clicked.value !== "delete") return;
-      if (confirmThreadDelete) {
-        const confirmed = await settlePromise(() =>
-          api.dialogs.confirm(
-            [count === 1 ? "Unterhaltung löschen?" : `${count} Unterhaltungen löschen?`].join("\n"),
-            { variant: "destructive" },
-          ),
-        );
-        if (confirmed._tag === "Failure" || !confirmed.value) return;
-      }
-      // Grown as deletions actually land, never seeded with the whole batch:
-      // orphaned-worktree detection must only discount threads that are
-      // really gone, or the first delete would treat still-alive batch mates
-      // as deleted and remove a worktree they still point at.
-      const deletedThreadKeys = new Set<string>();
-      for (const threadKey of threadKeys) {
-        const thread = threadByKeyRef.current.get(threadKey);
-        if (!thread) continue;
-        const result = await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
-          deletedThreadKeys,
-        });
-        if (result._tag === "Failure") {
-          if (!isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Löschen fehlgeschlagen",
-                description: error instanceof Error ? error.message : "Unbekannter Fehler",
-              }),
-            );
-          }
-          return;
-        }
-        deletedThreadKeys.add(threadKey);
-      }
+      // Undo instead of confirm: the delete runs after the undo window (#637).
       removeFromSelection(threadKeys);
+      scheduleUndoableThreadDelete(count, async () => {
+        // Grown as deletions actually land, never seeded with the whole batch:
+        // orphaned-worktree detection must only discount threads that are
+        // really gone, or the first delete would treat still-alive batch mates
+        // as deleted and remove a worktree they still point at.
+        const deletedThreadKeys = new Set<string>();
+        for (const threadKey of threadKeys) {
+          const thread = threadByKeyRef.current.get(threadKey);
+          if (!thread) continue;
+          const result = await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
+            deletedThreadKeys,
+          });
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result)) {
+              const error = squashAtomCommandFailure(result);
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Löschen fehlgeschlagen",
+                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
+                }),
+              );
+            }
+            return;
+          }
+          deletedThreadKeys.add(threadKey);
+        }
+      });
     },
     [
       attemptSettle,
       attemptSnooze,
       clearSelection,
-      confirmThreadDelete,
       deleteThread,
       markThreadUnread,
       performSnooze,
@@ -3509,26 +3502,19 @@ export default function Sidebar() {
             return;
           }
           case "delete": {
-            if (confirmThreadDelete) {
-              const confirmed = await settlePromise(() =>
-                api.dialogs.confirm([`„${thread.title}“ löschen?`].join("\n"), {
-                  variant: "destructive",
-                }),
-              );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
-            }
-            const result = await deleteThread(threadRef);
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Löschen fehlgeschlagen",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                }),
-              );
-              return;
-            }
+            scheduleUndoableThreadDelete(1, async () => {
+              const result = await deleteThread(threadRef);
+              if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+                const error = squashAtomCommandFailure(result);
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "error",
+                    title: "Löschen fehlgeschlagen",
+                    description: error instanceof Error ? error.message : "Unbekannter Fehler",
+                  }),
+                );
+              }
+            });
             return;
           }
           default:
@@ -3543,7 +3529,6 @@ export default function Sidebar() {
       attemptUnpin,
       attemptUnsettle,
       attemptUnsnooze,
-      confirmThreadDelete,
       copyBranchToClipboard,
       copyDeepLinkToClipboard,
       copyPathToClipboard,

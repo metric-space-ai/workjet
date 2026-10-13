@@ -3,6 +3,8 @@ import { useInstanceProviders } from "./useInstanceProviders";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@workjet/client-runtime/connection";
 import { safeErrorLogAttributes } from "@workjet/client-runtime/errors";
+import { ChevronDownIcon } from "lucide-react";
+import { Switch } from "../ui/switch";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -1175,11 +1177,9 @@ export function EnvironmentProviderSettings({
                       // Green = probed available, muted = not probed yet,
                       // red = probe answered "not available" — two greys made
                       // failure indistinguishable from unknown (Befund K-B16).
-                      piCodeProbe?.availability === "available"
-                        ? "bg-emerald-500"
-                        : piCodeProbe === null
-                          ? "bg-muted-foreground/40"
-                          : "bg-red-500/80",
+                      piCodeProbe === null || piCodeProbe.availability === "available"
+                        ? "hidden"
+                        : "bg-destructive",
                     )}
                     aria-hidden
                   />
@@ -1207,6 +1207,28 @@ export function EnvironmentProviderSettings({
                         ? "Installiert · nicht eingerichtet"
                         : "Nicht installiert"}
                   </span>
+                </div>
+                {/* Same controls as every harness row (#617): the switch sets Pi Code up. */}
+                <div className="flex shrink-0 items-center gap-1" data-slot="row-actions">
+                  <Switch
+                    checked={false}
+                    disabled={readOnly || piCodeProbe?.availability !== "available"}
+                    onCheckedChange={(checked) => {
+                      if (checked) setIsAddInstancePanelOpen(true);
+                    }}
+                    aria-label="Pi Code aktiv"
+                  />
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label="Pi Code Details"
+                    aria-expanded={false}
+                    disabled={readOnly}
+                    onClick={() => setIsAddInstancePanelOpen(true)}
+                  >
+                    <ChevronDownIcon className="size-3.5" />
+                  </Button>
                 </div>
               </div>
             </div>

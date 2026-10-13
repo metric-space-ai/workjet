@@ -590,11 +590,6 @@ export function ProviderInstanceCard({
                 {driverOption.badgeLabel}
               </Badge>
             ) : null}
-            {headerAction ? (
-              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-                {headerAction}
-              </span>
-            ) : null}
           </div>
           {authRowNode}
         </div>
@@ -697,6 +692,8 @@ export function ProviderInstanceCard({
       <Collapsible open={isExpanded} onOpenChange={onExpandedChange}>
         <CollapsibleContent>
           <div className="space-y-4 px-3 pb-4 pt-2 sm:px-4">
+            {/* Reset lives in the details, never on some rows only (#617). */}
+            {headerAction ? <div className="flex justify-end">{headerAction}</div> : null}
             <div>
               <label htmlFor={`provider-instance-${instanceId}-display-name`} className="block">
                 <span className="text-xs font-medium text-foreground">Anzeigename</span>

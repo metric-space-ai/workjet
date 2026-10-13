@@ -1,4 +1,4 @@
-import { ChevronDownIcon, InfoIcon, Undo2Icon, Trash2Icon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, InfoIcon, Undo2Icon, Trash2Icon } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   createContext,
@@ -8,10 +8,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import { cn } from "../../lib/utils";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import {
+  SETTINGS_SAVED_CHECK_MS,
+  SETTINGS_SAVED_TOUCH_WINDOW_MS,
+  subscribeSettingsSaved,
+} from "../../settingsSavedSignal";
 import { Button } from "../ui/button";
 import { InlineExpand } from "../ui/inline-expand";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -239,6 +246,38 @@ export function SettingsSection({
  * Einstellungszeile (UI-Vertrag §1.4): Bezeichnung (höchstens 3 Wörter) und
  * Steuerelement, optional eine Statuszeile. Keine Beschreibung.
  */
+function settingsSavedLabel(): string {
+  return workjetUiLanguage() === "en" ? "Saved" : "Gespeichert";
+}
+
+/** Short checkmark after an autosave the user triggered in this row (#562). */
+let lastTouchedRow: object | null = null;
+
+function useRowSavedCheck() {
+  const touchedAt = useRef(0);
+  const rowToken = useRef({});
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    let timer: number | undefined;
+    const unsubscribe = subscribeSettingsSaved(() => {
+      if (lastTouchedRow !== rowToken.current) return;
+      if (Date.now() - touchedAt.current > SETTINGS_SAVED_TOUCH_WINDOW_MS) return;
+      setVisible(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setVisible(false), SETTINGS_SAVED_CHECK_MS);
+    });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timer);
+    };
+  }, []);
+  const touch = useCallback(() => {
+    touchedAt.current = Date.now();
+    lastTouchedRow = rowToken.current;
+  }, []);
+  return { visible, touch };
+}
+
 export function SettingsRow({
   title,
   status,
@@ -255,6 +294,7 @@ export function SettingsRow({
   children?: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
+  const saved = useRowSavedCheck();
 
   return (
     <div
@@ -278,7 +318,23 @@ export function SettingsRow({
           {status ? <div className="pt-0.5 text-xs text-muted-foreground">{status}</div> : null}
         </div>
         {control ? (
-          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+          <div
+            className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end"
+            onPointerDownCapture={saved.touch}
+            onKeyDownCapture={saved.touch}
+          >
+            <span
+              className="inline-flex size-4 shrink-0 items-center justify-center"
+              aria-live="polite"
+            >
+              {saved.visible ? (
+                <CheckIcon
+                  className="size-3.5 text-success"
+                  aria-label={settingsSavedLabel()}
+                  data-settings-saved=""
+                />
+              ) : null}
+            </span>
             {control}
           </div>
         ) : null}

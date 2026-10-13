@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useInstanceProviders } from "./useInstanceProviders";
 import { nativeLumaRoutes, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import type {
@@ -43,7 +44,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { randomUUID } from "../../lib/utils";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { InlineExpand } from "../ui/inline-expand";
@@ -62,8 +62,10 @@ import {
   WorkjetWorkerEditor,
   workjetHarnessAvailabilityWarning,
 } from "./WorkjetWorkerEditor";
-import { sanitizeWorkjetWorkerGraph, WorkjetWorkerOrganigram } from "./WorkjetWorkerOrganigram";
+import { sanitizeWorkjetWorkerGraph } from "./WorkjetWorkerOrganigram";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { useClientSettings } from "../../hooks/useSettings";
+import { useUiText } from "../../hooks/useUiText";
 import { searchableSetting } from "./settingsSearch";
 import {
   joinManagedPrompt,
@@ -316,12 +318,7 @@ function replaceCatalogItem<T extends { readonly id: string }>(
   return items.map((candidate) => (candidate.id === item.id ? item : candidate));
 }
 
-export type WorkjetSettingsSectionId =
-  | "workers"
-  | "organigram"
-  | "prompt"
-  | "telemetry"
-  | "execution";
+export type WorkjetSettingsSectionId = "workers" | "prompt" | "telemetry" | "execution";
 
 function modelPromptFor(configuration: WorkjetConfiguration, modelId: string): string {
   return configuration.modelPrompts.find((entry) => entry.modelId === modelId)?.prompt ?? "";
@@ -341,11 +338,6 @@ export const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
     id: "workers",
     targetId: "workjet-workers",
     label: searchableSetting("workjet-workers").title,
-  },
-  {
-    id: "organigram",
-    targetId: "workjet-organigram",
-    label: searchableSetting("workjet-organigram").title,
   },
   { id: "prompt", targetId: "workjet-prompt", label: searchableSetting("workjet-prompt").title },
   {
@@ -410,20 +402,37 @@ function PositiveIntegerInput({
   );
 }
 
+/**
+ * Prompt, Telemetrie and Ausführung tune the engine, not a preset: they are
+ * developer tools. Without developer mode only the preset list remains and the
+ * tab bar disappears.
+ */
+export function visibleWorkjetSettingsSections(developerMode: boolean) {
+  // System-Prompts are their own settings page (#618), never a preset tab.
+  return WORKJET_SETTINGS_SECTIONS.filter(
+    (section) => section.id !== "prompt" && (developerMode || section.id === "workers"),
+  );
+}
+
 function SectionNavigation({
   activeSection,
   onSelect,
+  hidden = false,
 }: {
+  readonly hidden?: boolean;
   readonly activeSection: WorkjetSettingsSectionId;
   readonly onSelect: (section: WorkjetSettingsSectionId) => void;
 }) {
+  const developerMode = useClientSettings().developerMode;
+  const sections = visibleWorkjetSettingsSections(developerMode);
+  if (hidden || sections.length < 2) return null;
   return (
     <nav
       aria-label="Bereiche"
       role="tablist"
       className="mx-3 flex max-w-full gap-1 overflow-x-auto rounded-lg border border-border/60 bg-muted/20 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-4"
     >
-      {WORKJET_SETTINGS_SECTIONS.map((section) => (
+      {sections.map((section) => (
         <button
           key={section.id}
           type="button"
@@ -476,7 +485,7 @@ export function formatAvailableBytes(bytes: number): string {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
-interface AutomaticWorktreeStorageState {
+export interface AutomaticWorktreeStorageState {
   readonly configuredRoot: string;
   readonly selectedServerLabel: string | null;
   readonly selectedServerId: EnvironmentId | null;
@@ -486,6 +495,169 @@ interface AutomaticWorktreeStorageState {
   readonly isApplying: boolean;
   readonly onCheck: (root: string) => void;
   readonly onApply: (root: string) => void;
+}
+
+/** Worktree storage of one machine: inspect, then apply only a valid path (#619). */
+export function useAutomaticWorktreeStorage(
+  environmentId: EnvironmentId | null,
+  configuredRoot: string,
+  selectedServerLabel: string | null,
+): AutomaticWorktreeStorageState {
+  const inspectAutomaticWorktreeRoot = useAtomCommand(inspectAutomaticWorktreeRootCommand, {
+    reportFailure: false,
+  });
+  const updateServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: false,
+  });
+  const storageOperationRef = useRef(false);
+  const [storageInspection, setStorageInspection] = useState<WorktreeStorageInspection | null>(
+    null,
+  );
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [isCheckingStorage, setIsCheckingStorage] = useState(false);
+  const [isApplyingStorage, setIsApplyingStorage] = useState(false);
+  const runStorageInspection = useCallback(
+    async (root: string): Promise<WorktreeStorageInspection | null> => {
+      if (environmentId === null) {
+        setStorageError("Kein Rechner verfügbar.");
+        return null;
+      }
+      setIsCheckingStorage(true);
+      setStorageError(null);
+      const result = await inspectAutomaticWorktreeRoot({
+        environmentId,
+        input: { root },
+      });
+      setIsCheckingStorage(false);
+      if (result._tag === "Success") {
+        setStorageInspection(result.value);
+        return result.value;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        setStorageError("Pfad nicht prüfbar.");
+      }
+      return null;
+    },
+    [environmentId, inspectAutomaticWorktreeRoot],
+  );
+
+  useEffect(() => {
+    setStorageInspection(null);
+    setStorageError(null);
+    if (environmentId !== null) {
+      void runStorageInspection(configuredRoot);
+    }
+  }, [environmentId, runStorageInspection, configuredRoot]);
+
+  const handleApplyStorage = useCallback(
+    (root: string) => {
+      if (environmentId === null || storageOperationRef.current) return;
+      storageOperationRef.current = true;
+      setIsApplyingStorage(true);
+      setStorageError(null);
+      void (async () => {
+        const result = await updateServerSettings({
+          environmentId,
+          input: { patch: { automaticWorktreeRoot: root } },
+        });
+        if (result._tag === "Success") {
+          const canonicalRoot = result.value.automaticWorktreeRoot;
+          await runStorageInspection(canonicalRoot);
+          toastManager.add({
+            type: "success",
+            title: canonicalRoot.length === 0 ? "Standardpfad aktiv" : "Worktree-Pfad gespeichert",
+          });
+        } else if (!isAtomCommandInterrupted(result)) {
+          setStorageError("Pfad abgelehnt.");
+        }
+      })().finally(() => {
+        storageOperationRef.current = false;
+        setIsApplyingStorage(false);
+      });
+    },
+    [environmentId, runStorageInspection, updateServerSettings],
+  );
+
+  return {
+    configuredRoot,
+    selectedServerLabel,
+    selectedServerId: environmentId,
+    inspection: storageInspection,
+    error: storageError,
+    isChecking: isCheckingStorage,
+    isApplying: isApplyingStorage,
+    onCheck: (root) => void runStorageInspection(root),
+    onApply: handleApplyStorage,
+  };
+}
+
+/**
+ * Compact, autosaving worktree path for a machine's inline expand (#619): the path
+ * is checked and applied when the field is left; no Prüfen/Übernehmen buttons.
+ */
+export function WorktreeStorageInline({
+  storage,
+}: {
+  readonly storage: AutomaticWorktreeStorageState;
+}) {
+  const t = useUiText();
+  const [draftRoot, setDraftRoot] = useState(storage.configuredRoot);
+  const pendingApply = useRef<string | null>(null);
+  useEffect(() => {
+    setDraftRoot(storage.configuredRoot);
+  }, [storage.configuredRoot]);
+  const inspection = storage.inspection;
+  useEffect(() => {
+    const requested = pendingApply.current;
+    if (requested === null || inspection?.requestedRoot !== requested) return;
+    pendingApply.current = null;
+    if (inspection.status === "valid" && requested !== storage.configuredRoot) {
+      storage.onApply(requested);
+    }
+  }, [inspection, storage]);
+  const commit = () => {
+    const requested = draftRoot.trim();
+    if (requested === storage.configuredRoot) return;
+    if (requested.length === 0) {
+      storage.onApply("");
+      return;
+    }
+    pendingApply.current = requested;
+    storage.onCheck(requested);
+  };
+  const checked = inspection?.requestedRoot === draftRoot.trim() ? inspection : null;
+  return (
+    <div className="space-y-1" data-workjet-worktree-storage="">
+      <Input
+        nativeInput
+        type="text"
+        aria-label={t("Arbeitskopien-Speicher", "Worktree storage")}
+        placeholder={inspection?.defaultRoot ?? "/pfad"}
+        value={draftRoot}
+        onChange={(event) => setDraftRoot(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+        className="w-full font-mono text-xs"
+      />
+      {storage.error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {storage.error}
+        </p>
+      ) : null}
+      {!storage.error && checked?.status === "invalid" ? (
+        <p role="alert" className="text-xs text-destructive">
+          {checked.message}
+        </p>
+      ) : null}
+      {!storage.error && checked?.status === "valid" ? (
+        <p className="text-xs text-muted-foreground">
+          {formatAvailableBytes(checked.availableBytes)} {t("frei", "free")}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function automaticWorktreeStorageControlState(
@@ -615,6 +787,10 @@ export function AutomaticWorktreeStorageSettings({
   );
 }
 
+function uiText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 export function WorkjetSettingsView({
   configuration,
   draftScopeKey,
@@ -624,7 +800,6 @@ export function WorkjetSettingsView({
   nativeInstanceId = null,
   nativeInstanceLabel = "CTOX-Instanz",
   onSaveWorkerConfiguration,
-  automaticWorktreeStorage,
   defaultSection = "workers",
   onChange,
 }: {
@@ -636,7 +811,6 @@ export function WorkjetSettingsView({
   readonly nativeInstanceId?: string | null;
   readonly nativeInstanceLabel?: string;
   readonly onSaveWorkerConfiguration?: (configuration: WorkjetConfiguration) => Promise<void>;
-  readonly automaticWorktreeStorage: AutomaticWorktreeStorageState;
   readonly defaultSection?: WorkjetSettingsSectionId;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
@@ -648,9 +822,13 @@ export function WorkjetSettingsView({
   );
   const locationHash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
-    () => workjetSectionFromHash(locationHash) ?? defaultSection,
-  );
+  const t = useUiText();
+  const promptPage = defaultSection === "prompt";
+  const [selectedSection, setActiveSection] = useState<WorkjetSettingsSectionId>(() => {
+    const fromHash = workjetSectionFromHash(locationHash);
+    return fromHash === "prompt" ? defaultSection : (fromHash ?? defaultSection);
+  });
+  const activeSection: WorkjetSettingsSectionId = promptPage ? "prompt" : selectedSection;
   // A stashed draft means the operator left via "Add LLM route…" and came
   // back — reopen the editor they were in so the stash gets consumed (K-A7).
   const stashedWorkerEditor = useMemo(() => {
@@ -784,9 +962,13 @@ export function WorkjetSettingsView({
   }, [locationHash]);
 
   return (
-    <SettingsPageContainer className="gap-6" title={searchableSetting("workjet-workers").title}>
+    <SettingsPageContainer
+      className="gap-6"
+      title={promptPage ? undefined : searchableSetting("workjet-workers").title}
+    >
       <div className="space-y-3">
         <SectionNavigation
+          hidden={promptPage}
           activeSection={activeSection}
           onSelect={(section) => {
             setActiveSection(section);
@@ -808,12 +990,12 @@ export function WorkjetSettingsView({
       </div>
 
       {activeSection === "workers" ? (
-        <SettingsSection id={searchableSetting("workjet-workers").id} title="Alle Lumas">
+        <SettingsSection id={searchableSetting("workjet-workers").id} title="">
           {/* Inline-Panel-Muster: der Auslöser steht dort, wo das Formular
               aufklappt; Bearbeiten klappt direkt unter der Zeile auf. Kein
               Dialog, kein Popover. */}
           <InlineExpand
-            label="Luma hinzufügen"
+            label={t("Preset hinzufügen", "Add preset")}
             open={addingWorker}
             onOpenChange={(open) => {
               if (!open) {
@@ -828,7 +1010,7 @@ export function WorkjetSettingsView({
             <div className="px-3 sm:px-4">
               <Button type="button" size="sm" variant="outline" onClick={openAddWorker}>
                 <PlusIcon className="size-3.5" />
-                Luma hinzufügen
+                {t("Preset hinzufügen", "Add preset")}
               </Button>
             </div>
           )}
@@ -836,12 +1018,14 @@ export function WorkjetSettingsView({
             addingWorker ? null : (
               <Empty className="p-4">
                 <EmptyHeader>
-                  <EmptyTitle className="text-base">Keine Lumas</EmptyTitle>
+                  <EmptyTitle className="text-base">
+                    {t("Keine Worker-Presets", "No worker presets")}
+                  </EmptyTitle>
                 </EmptyHeader>
                 <EmptyContent>
                   <Button type="button" onClick={openAddWorker}>
                     <PlusIcon className="size-3.5" />
-                    Luma hinzufügen
+                    {t("Preset hinzufügen", "Add preset")}
                   </Button>
                 </EmptyContent>
               </Empty>
@@ -890,26 +1074,29 @@ export function WorkjetSettingsView({
                       meta={[
                         worker.modelId,
                         workjetHarnessDisplayLabel(worker.harness),
-                        computer?.label ?? "—",
+                        computer?.label ?? t("Rechner: —", "Computer: —"),
                       ].join(" · ")}
-                      status={warning === null ? "ok" : computer === undefined ? "error" : "busy"}
-                      statusLabel={warning ?? "Bereit"}
-                      chips={
-                        warning === null ? undefined : (
-                          <Badge variant="warning" size="sm" title={warning}>
-                            {computer === undefined ? "Rechner fehlt" : "Harness fehlt"}
-                          </Badge>
-                        )
-                      }
+                      // One signal: a red dot only when the preset cannot run; the reason is its label.
+                      {...(warning === null
+                        ? {}
+                        : {
+                            status: "error" as const,
+                            statusLabel:
+                              computer === undefined
+                                ? t("Rechner fehlt", "Computer missing")
+                                : t("Harness fehlt", "Harness missing"),
+                          })}
                       onDelete={deleteWorker}
-                      deleteConfirmTitle="Luma löschen?"
+                      deleteConfirmTitle={t("Preset löschen?", "Delete preset?")}
                       expanded={editingWorkerId === worker.id}
                       onToggleExpanded={() => {
                         setAddingWorker(false);
                         setPendingWorkerParentId(null);
                         setEditingWorkerId((current) => (current === worker.id ? null : worker.id));
                       }}
-                      menuActions={[{ label: "Duplizieren", onSelect: duplicateWorker }]}
+                      menuActions={[
+                        { label: t("Duplizieren", "Duplicate"), onSelect: duplicateWorker },
+                      ]}
                     />
                     <InlineExpand
                       hideCollapseControl
@@ -927,49 +1114,6 @@ export function WorkjetSettingsView({
             </div>
           )}
         </SettingsSection>
-      ) : null}
-
-      {activeSection === "organigram" ? (
-        <div id="workjet-organigram" className="px-3 sm:px-4">
-          <WorkjetWorkerOrganigram
-            workers={configuration.workerProfiles}
-            graph={configuration.workerGraph}
-            onChange={(workerGraph) => onChange({ ...configuration, workerGraph })}
-            // Bearbeiten bleibt im Organigramm: der Editor klappt direkt
-            // am angeklickten Knoten auf, kein Wechsel in die Lumas-Liste.
-            onAddWorker={(parentId) => {
-              setPendingWorkerParentId(parentId);
-              setEditingWorkerId(null);
-              setAddingWorker(true);
-            }}
-            onEditWorker={(workerId) => {
-              setPendingWorkerParentId(null);
-              setAddingWorker(false);
-              setEditingWorkerId((current) => (current === workerId ? null : workerId));
-            }}
-            onDeleteWorker={(workerId) => {
-              const workerProfiles = configuration.workerProfiles.filter(
-                (worker) => worker.id !== workerId,
-              );
-              onChange({
-                ...configuration,
-                workerProfiles,
-                workerGraph: sanitizeWorkjetWorkerGraph(configuration.workerGraph, workerProfiles),
-              });
-            }}
-            editor={{
-              open: editingWorker !== null || addingWorker,
-              anchorWorkerId: editingWorker?.id ?? pendingWorkerParentId,
-              label: editingWorker?.name ?? "Luma hinzufügen",
-              content: editingWorker !== null || addingWorker ? workerEditor : null,
-              onClose: () => {
-                setAddingWorker(false);
-                setEditingWorkerId(null);
-                setPendingWorkerParentId(null);
-              },
-            }}
-          />
-        </div>
       ) : null}
 
       {activeSection === "prompt" ? (
@@ -1223,7 +1367,6 @@ export function WorkjetSettingsView({
           id={searchableSetting("workjet-execution").id}
           title={searchableSetting("workjet-execution").title}
         >
-          <AutomaticWorktreeStorageSettings storage={automaticWorktreeStorage} />
           <SettingsRow
             title="Prüf-Timeout"
             control={
@@ -1334,22 +1477,31 @@ export function WorkjetSettings({
       <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {resolving ? (
           <EmptyLoading
-            title="Instanz wird geladen"
-            slowMessage="Keine Antwort von der Instanz."
+            title={uiText("Instanz wird geladen", "Loading instance")}
+            slowMessage={uiText(
+              "Keine Antwort von der Instanz.",
+              "The instance is not responding.",
+            )}
             onRetry={connections.refresh}
           />
         ) : (
           <Empty>
             <EmptyHeader>
               <EmptyTitle>
-                {noInstance ? "Keine Instanz" : "Lumas der Instanz nicht abrufbar"}
+                {noInstance
+                  ? uiText("Keine Instanz", "No instance")
+                  : uiText("Worker-Presets nicht abrufbar", "Worker presets unavailable")}
               </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
               {noInstance ? (
-                <Button render={<Link to="/settings/business-os" />}>Instanz auswählen</Button>
+                <Button render={<Link to="/settings/business-os" />}>
+                  {uiText("Instanz auswählen", "Choose instance")}
+                </Button>
               ) : (
-                <Button render={<Link to="/settings/business-os" />}>Instanzen verwalten</Button>
+                <Button render={<Link to="/settings/business-os" />}>
+                  {uiText("Instanzen verwalten", "Manage instances")}
+                </Button>
               )}
             </EmptyContent>
           </Empty>
@@ -1407,9 +1559,12 @@ function ScopedWorkjetSettings({
       });
       const failure =
         result._tag === "Failure"
-          ? "Lumas nicht gespeichert."
+          ? uiText("Worker-Presets nicht gespeichert.", "Worker presets not saved.")
           : result.value.status === "conflict"
-            ? "Lumas wurden anderswo geändert. Bitte neu laden."
+            ? uiText(
+                "Worker-Presets wurden anderswo geändert. Bitte neu laden.",
+                "Worker presets changed elsewhere. Please reload.",
+              )
             : null;
       if (failure !== null) {
         setSaveError(failure);
@@ -1430,21 +1585,8 @@ function ScopedWorkjetSettings({
       : serverEnvironment.greppyRuntimeInspect({ environmentId, input: {} }),
   );
   const install = useAtomCommand(serverEnvironment.installGreppyRuntime, { reportFailure: false });
-  const inspectAutomaticWorktreeRoot = useAtomCommand(inspectAutomaticWorktreeRootCommand, {
-    reportFailure: false,
-  });
-  const updateServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
-    reportFailure: false,
-  });
   const operatingRef = useRef(false);
-  const storageOperationRef = useRef(false);
   const [isOperating, setIsOperating] = useState(false);
-  const [storageInspection, setStorageInspection] = useState<WorktreeStorageInspection | null>(
-    null,
-  );
-  const [storageError, setStorageError] = useState<string | null>(null);
-  const [isCheckingStorage, setIsCheckingStorage] = useState(false);
-  const [isApplyingStorage, setIsApplyingStorage] = useState(false);
   const action = greppyRuntimeAction(query.data);
 
   // One provider surface: the interactive gateway account section lives in
@@ -1467,84 +1609,27 @@ function ScopedWorkjetSettings({
     });
   }, [action, environmentId, install]);
 
-  const runStorageInspection = useCallback(
-    async (root: string): Promise<WorktreeStorageInspection | null> => {
-      if (environmentId === null) {
-        setStorageError("Kein Rechner verfügbar.");
-        return null;
-      }
-      setIsCheckingStorage(true);
-      setStorageError(null);
-      const result = await inspectAutomaticWorktreeRoot({
-        environmentId,
-        input: { root },
-      });
-      setIsCheckingStorage(false);
-      if (result._tag === "Success") {
-        setStorageInspection(result.value);
-        return result.value;
-      }
-      if (!isAtomCommandInterrupted(result)) {
-        setStorageError("Pfad nicht prüfbar.");
-      }
-      return null;
-    },
-    [environmentId, inspectAutomaticWorktreeRoot],
-  );
-
-  useEffect(() => {
-    setStorageInspection(null);
-    setStorageError(null);
-    if (environmentId !== null) {
-      void runStorageInspection(settings.automaticWorktreeRoot);
-    }
-  }, [environmentId, runStorageInspection, settings.automaticWorktreeRoot]);
-
-  const handleApplyStorage = useCallback(
-    (root: string) => {
-      if (environmentId === null || storageOperationRef.current) return;
-      storageOperationRef.current = true;
-      setIsApplyingStorage(true);
-      setStorageError(null);
-      void (async () => {
-        const result = await updateServerSettings({
-          environmentId,
-          input: { patch: { automaticWorktreeRoot: root } },
-        });
-        if (result._tag === "Success") {
-          const canonicalRoot = result.value.automaticWorktreeRoot;
-          await runStorageInspection(canonicalRoot);
-          toastManager.add({
-            type: "success",
-            title: canonicalRoot.length === 0 ? "Standardpfad aktiv" : "Worktree-Pfad gespeichert",
-          });
-        } else if (!isAtomCommandInterrupted(result)) {
-          setStorageError("Pfad abgelehnt.");
-        }
-      })().finally(() => {
-        storageOperationRef.current = false;
-        setIsApplyingStorage(false);
-      });
-    },
-    [environmentId, runStorageInspection, updateServerSettings],
-  );
-
   if (instance.data === null)
     return (
       <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {instance.isPending ? (
           <EmptyLoading
-            title="Lumas werden geladen"
-            slowMessage="Keine Antwort von der Instanz."
+            title={uiText("Worker-Presets werden geladen", "Loading worker presets")}
+            slowMessage={uiText(
+              "Keine Antwort von der Instanz.",
+              "The instance is not responding.",
+            )}
             onRetry={instance.refresh}
           />
         ) : (
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>Konfiguration nicht verfügbar</EmptyTitle>
+              <EmptyTitle>
+                {uiText("Konfiguration nicht verfügbar", "Configuration unavailable")}
+              </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
-              <Button onClick={instance.refresh}>Erneut laden</Button>
+              <Button onClick={instance.refresh}>{uiText("Erneut laden", "Reload")}</Button>
             </EmptyContent>
           </Empty>
         )}
@@ -1576,17 +1661,6 @@ function ScopedWorkjetSettings({
         }}
         gateway={gateway}
         gatewayEnvironmentId={environmentId}
-        automaticWorktreeStorage={{
-          configuredRoot: settings.automaticWorktreeRoot,
-          selectedServerLabel: environment.label,
-          selectedServerId: environmentId,
-          inspection: storageInspection,
-          error: storageError,
-          isChecking: isCheckingStorage,
-          isApplying: isApplyingStorage,
-          onCheck: (root) => void runStorageInspection(root),
-          onApply: handleApplyStorage,
-        }}
         onChange={updateConfiguration}
       />
     </>

@@ -118,6 +118,10 @@ export const PROJECT_OVERVIEW_TEXT = {
     answer: "Antworten",
     details: "Details im Chat",
     openChat: "Chat öffnen",
+    noCheckoutTitle: "Keine Arbeitskopie auf diesem Rechner",
+    noCheckoutDescription: "Arbeitskopie anlegen oder einen anderen Rechner wählen.",
+    setUpCheckout: "Arbeitskopie einrichten",
+    chooseComputer: "Rechner wählen",
     saving: "Wird gespeichert…",
     saveFailed: "Entscheidung nicht gespeichert",
     addParent: "Feste Luma hinzufügen",
@@ -126,7 +130,7 @@ export const PROJECT_OVERVIEW_TEXT = {
     addFailed: "Feste Luma nicht gespeichert",
     nativeRoute: "—",
     noSession: "—",
-    unavailableConnection: "Instanz nicht verbunden · Verbindung prüfen",
+    unavailableConnection: "Projektdaten nicht geladen · Erneut öffnen",
     metrics: "Kennzahlen",
     facts: "Fakten",
     tokenBudget: "Token-Budget",
@@ -241,6 +245,10 @@ export const PROJECT_OVERVIEW_TEXT = {
     answer: "Answer",
     details: "Details in chat",
     openChat: "Open chat",
+    noCheckoutTitle: "No working copy on this computer",
+    noCheckoutDescription: "Create a working copy or pick another computer.",
+    setUpCheckout: "Set up working copy",
+    chooseComputer: "Choose computer",
     saving: "Saving…",
     saveFailed: "The decision was not saved. Please check the chat.",
     addParent: "Add persistent Luma",
@@ -249,7 +257,7 @@ export const PROJECT_OVERVIEW_TEXT = {
     addFailed: "Persistent Luma not saved",
     nativeRoute: "—",
     noSession: "—",
-    unavailableConnection: "Instance disconnected · Check connection",
+    unavailableConnection: "Project data not loaded · Open again",
     metrics: "Project metrics",
     facts: "Facts",
     tokenBudget: "Token budget",
@@ -289,4 +297,34 @@ export function projectOverviewFormat(
   values: Readonly<Record<string, string | number>>,
 ) {
   return template.replace(/\{(\w+)\}/gu, (match, key: string) => String(values[key] ?? match));
+}
+
+/** Plain-language DE/EN for raw CLI session errors, plus the action the button should offer. */
+export function projectOverviewSessionError(
+  raw: string,
+  language: ProjectOverviewLanguage,
+): { readonly text: string; readonly action: string | null } {
+  const de = language === "de";
+  if (
+    /not logged in|please run \/login|unauthori[sz]ed|authentication required|invalid api key/i.test(
+      raw,
+    )
+  )
+    return {
+      text: de
+        ? "Der Coding-Agent ist auf der Instanz nicht angemeldet."
+        : "The coding agent is not signed in on the instance.",
+      action: de ? "Im Chat anmelden" : "Sign in via chat",
+    };
+  if (/rate.?limit|quota|usage limit/i.test(raw))
+    return {
+      text: de ? "Nutzungslimit des Anbieters erreicht." : "Provider usage limit reached.",
+      action: null,
+    };
+  if (/timed? ?out|ETIMEDOUT|ECONNREFUSED|network/i.test(raw))
+    return {
+      text: de ? "Anbieter nicht erreichbar." : "Provider unreachable.",
+      action: null,
+    };
+  return { text: raw.length > 160 ? `${raw.slice(0, 159)}…` : raw, action: null };
 }

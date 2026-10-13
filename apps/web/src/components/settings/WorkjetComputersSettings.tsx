@@ -1,3 +1,5 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import { ProjectFolderSettingRow } from "./SettingsPanels";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderSettingsPanel } from "./ProviderSettingsPanel";
 import type {
@@ -41,6 +43,8 @@ import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { InlineExpand } from "../ui/inline-expand";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { useAutomaticWorktreeStorage, WorktreeStorageInline } from "./WorkjetSettings";
 import { Row, type RowDeleteOption, type RowMenuAction, type RowStatus } from "../ui/row";
 import { Spinner } from "../ui/spinner";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
@@ -426,6 +430,7 @@ type Expansion = { readonly key: string; readonly kind: "repair" | "edit" };
 const NOTICE_MS = 5_000;
 
 export function WorkjetComputersSettingsView({
+  worktreeStorage = null,
   configuration,
   environments,
   environmentsReady,
@@ -456,6 +461,8 @@ export function WorkjetComputersSettingsView({
   /** Werkzeugprüfung dieses Servers; null bis zur ersten Antwort. */
   readonly harnessInspection?: WorkjetHarnessAvailabilitySnapshot | null;
   readonly harnessInspections?: Readonly<Record<string, ComputerHarnessInspection>>;
+  /** Worktree path of this machine, shown in its inline expand (#619). */
+  readonly worktreeStorage?: ReactNode;
   readonly environmentId?: EnvironmentId | null;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
   readonly membership?: ComputerMembershipSnapshot | undefined;
@@ -869,8 +876,11 @@ export function WorkjetComputersSettingsView({
                     if (!open && expanded === "edit") close();
                   }}
                 >
-                  <div className="px-3 pb-3 pl-8" data-slot="computer-edit">
+                  <div className="space-y-3 px-3 pb-3 pl-8" data-slot="computer-edit">
                     {expanded === "edit" ? renderEdit(row, close) : null}
+                    {expanded === "edit" && computer.environmentId === environmentId
+                      ? worktreeStorage
+                      : null}
                   </div>
                 </InlineExpand>
               ) : null}
@@ -1049,6 +1059,18 @@ export function knownComputerFacts(
 }
 
 const PENDING_COMPUTER_TIMEOUT_MS = 90_000;
+
+function PrimaryWorktreeStorage({
+  environmentId,
+  label,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly label: string | null;
+}) {
+  const settings = useEnvironmentSettings(environmentId);
+  const storage = useAutomaticWorktreeStorage(environmentId, settings.automaticWorktreeRoot, label);
+  return <WorktreeStorageInline storage={storage} />;
+}
 
 export function WorkjetComputersSettings({
   instanceId,
@@ -1585,6 +1607,14 @@ export function WorkjetComputersSettings({
           />
         ))}
       <WorkjetComputersSettingsView
+        worktreeStorage={
+          environmentId === null ? null : (
+            <PrimaryWorktreeStorage
+              environmentId={environmentId}
+              label={primaryEnvironment?.label ?? null}
+            />
+          )
+        }
         configuration={configuration}
         environments={targetOptions}
         environmentsReady={environmentsReady}
@@ -1739,6 +1769,9 @@ export function WorkjetComputersSettings({
           ) : null
         }
       />
+      <SettingsSection title={workjetUiLanguage() === "en" ? "This computer" : "Dieser Rechner"}>
+        <ProjectFolderSettingRow />
+      </SettingsSection>
       {/* Coding agents are per machine, so they live on Rechner (#554). */}
       <ProviderSettingsPanel sections="harnesses" embedded />
     </SettingsPageContainer>

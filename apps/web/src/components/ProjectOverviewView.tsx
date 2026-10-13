@@ -2,7 +2,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { SupervisorTickStatus } from "./SupervisorTickStatus";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import type { ScopedThreadRef } from "@workjet/contracts";
-import { projectOverviewFormat, type ProjectOverviewLanguage } from "../projectOverviewText";
+import {
+  projectOverviewFormat,
+  projectOverviewSessionError,
+  type ProjectOverviewLanguage,
+} from "../projectOverviewText";
 import {
   projectOverviewStatusTone,
   projectOverviewWorkerName,
@@ -121,6 +125,8 @@ export function ProjectOverviewView(props: {
   readonly onOpenJourFixe?: (() => void) | undefined;
   readonly decisions?: ReactNode;
   readonly connectionError?: boolean;
+  /** Why the overview data is missing (core outdated, timeout …), if known. */
+  readonly connectionMessage?: string | null;
   readonly actions?: ReactNode;
 }) {
   const { data, onOpenChat } = props;
@@ -179,7 +185,7 @@ export function ProjectOverviewView(props: {
         {props.connectionError && (
           <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
             <span className="size-1.5 shrink-0 rounded-full bg-amber-400" />
-            {text.unavailableConnection}
+            {props.connectionMessage ?? text.unavailableConnection}
           </p>
         )}
         {data.decisions.length > 0 && props.decisions && (
@@ -196,27 +202,41 @@ export function ProjectOverviewView(props: {
         )}
         {(data.disruptions.length > 0 || data.escalations.length > 0) && (
           <div className="space-y-1.5" aria-label={text.disruptions}>
-            {data.disruptions.map((thread) => (
-              <p
-                key={thread.id}
-                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-[13.5px]"
-              >
-                <span className="size-1.5 shrink-0 rounded-full bg-red-400" />
-                <span className="min-w-0 break-words">
-                  {projectOverviewFormat(text.disruptionLine, {
-                    name: projectOverviewWorkerName(thread.title, data.title).name,
-                  })}
-                </span>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="ml-auto"
-                  onClick={() => open(thread)}
+            {data.disruptions.map((thread) => {
+              const sessionError = thread.session?.lastError
+                ? projectOverviewSessionError(thread.session.lastError, language)
+                : null;
+              return (
+                <p
+                  key={thread.id}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-[13.5px]"
                 >
-                  {text.openChat}
-                </Button>
-              </p>
-            ))}
+                  <span className="size-1.5 shrink-0 rounded-full bg-red-400" />
+                  <span className="min-w-0 break-words">
+                    {projectOverviewFormat(text.disruptionLine, {
+                      name: projectOverviewWorkerName(thread.title, data.title).name,
+                    })}
+                    {sessionError ? (
+                      <span
+                        className="text-muted-foreground"
+                        title={thread.session?.lastError ?? undefined}
+                      >
+                        {": "}
+                        {sessionError.text}
+                      </span>
+                    ) : null}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="ml-auto"
+                    onClick={() => open(thread)}
+                  >
+                    {sessionError?.action ?? text.openChat}
+                  </Button>
+                </p>
+              );
+            })}
             {data.escalations.map((thread) => {
               const status = projectOverviewWorkerState(thread);
               return (

@@ -166,6 +166,10 @@ const INSTANCE_STATE_WORDS: Record<"de" | "en", Record<CtoxInstanceConnectionSta
   },
 };
 
+function shellText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 export function ctoxInstanceStateWord(state: CtoxInstanceConnectionState): string {
   return INSTANCE_STATE_WORDS[workjetUiLanguage()][state];
 }
@@ -812,8 +816,14 @@ export function CtoxModeProvider({
           // (Befund K-BH4).
           toastManager.add({
             type: "error",
-            title: "App konnte nicht geöffnet werden",
-            description: "Bitte Verbindung prüfen und erneut versuchen.",
+            title: shellText(
+              "Die App konnte nicht geöffnet werden.",
+              "The app could not be opened.",
+            ),
+            description: shellText(
+              "Prüfe die Verbindung und versuche es erneut.",
+              "Check the connection and try again.",
+            ),
           });
         })
         .then(() => {
@@ -2217,10 +2227,13 @@ function ManagedAccountState({ state }: { readonly state: CtoxManagedState }) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
         <p className="text-xs text-destructive" role="alert">
-          Instanz nicht erreichbar
+          {shellText(
+            "Die Instanz ist gerade nicht erreichbar.",
+            "The instance cannot be reached right now.",
+          )}
         </p>
         <Button size="xs" variant="outline" disabled={refreshing} onClick={refresh}>
-          Erneut versuchen
+          {shellText("Erneut versuchen", "Try again")}
         </Button>
       </div>
     );
@@ -2301,14 +2314,20 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
 
           {bridge === undefined ? (
             <p className="mb-3 text-xs text-sidebar-muted-foreground" role="status">
-              Nur in der Desktop-App
+              {shellText(
+                "Instanzen lassen sich nur in der Desktop-App öffnen.",
+                "Instances open only in the desktop app.",
+              )}
             </p>
           ) : null}
           {discovery !== "loading" &&
           discovery.pairedUnavailable === true &&
           discovery.keyRecovery === undefined ? (
             <p className="mb-3 text-xs text-destructive" role="alert">
-              Gespeicherte Verbindungen nicht lesbar
+              {shellText(
+                "Die gespeicherten Verbindungen lassen sich nicht lesen.",
+                "The saved connections cannot be read.",
+              )}
             </p>
           ) : null}
 
@@ -2330,7 +2349,7 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
           ) : activeInstance === undefined ? (
             <div className="space-y-3">
               <p className="text-xs text-sidebar-muted-foreground" role="status">
-                Keine Instanz gewählt
+                {shellText("Es ist noch keine Instanz gewählt.", "No instance is selected yet.")}
               </p>
               <ManagedAccountState state={managedState} />
             </div>
@@ -2627,7 +2646,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
             )}
             {(connectingTooLong || connection === "error") && (
               <Button size="sm" variant="outline" onClick={() => void select(instance)}>
-                Erneut versuchen
+                {shellText("Erneut versuchen", "Try again")}
               </Button>
             )}
           </span>
@@ -2651,29 +2670,42 @@ export function CtoxMainShell() {
 
   const loadingExpired = useLoadingExpired(discovery === "loading");
   const openSettings = () => void navigate({ to: "/settings/business-os" });
-  // Leerzustand: Titel und genau ein Knopf, kein Satz (UI-Vertrag §1.3).
+  // Leerzustand: ein kurzer ganzer Satz und genau ein Knopf (#559).
   const emptyState: { readonly title: string; readonly action?: ReactNode } =
     connection === "revoked"
       ? {
-          title: "Zugriff entzogen",
-          action: <Button onClick={openSettings}>Einstellungen</Button>,
+          title: shellText(
+            "Der Zugriff auf diese Instanz wurde entzogen.",
+            "Access to this instance was revoked.",
+          ),
+          action: <Button onClick={openSettings}>{shellText("Einstellungen", "Settings")}</Button>,
         }
       : (discovery !== "loading" && discovery._tag === "failed") ||
           loadingExpired ||
           knownSelected !== undefined
         ? {
-            title: "Instanz nicht erreichbar",
+            title: shellText(
+              "Die Instanz ist gerade nicht erreichbar.",
+              "The instance cannot be reached right now.",
+            ),
             action: (
               <Button variant="outline" onClick={refresh}>
-                Erneut versuchen
+                {shellText("Erneut versuchen", "Try again")}
               </Button>
             ),
           }
         : discovery === "loading"
-          ? { title: "Instanzen werden geladen …" }
+          ? { title: shellText("Instanzen werden geladen …", "Loading instances …") }
           : {
-              title: "Keine Instanz gewählt",
-              action: <Button onClick={openSettings}>Instanz auswählen</Button>,
+              title: shellText(
+                "Es ist noch keine Instanz gewählt.",
+                "No instance is selected yet.",
+              ),
+              action: (
+                <Button onClick={openSettings}>
+                  {shellText("Instanz auswählen", "Choose instance")}
+                </Button>
+              ),
             };
 
   return (

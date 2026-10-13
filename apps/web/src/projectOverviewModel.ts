@@ -1,3 +1,4 @@
+import { localizedThreadTitle } from "./localizedThreadTitle";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import { selectThreadsForProjectScope } from "@workjet/client-runtime/state/worker-overview";
 import type { WorkjetJourFixeMeeting } from "@workjet/contracts";
@@ -74,7 +75,7 @@ export function projectOverviewWorkerName(title: string, projectTitle: string) {
         .replace(/^[\s·:–—-]+/u, "")
         .trim()
     : withoutHarness;
-  return { name: short || withoutHarness, harness: suffix?.[1] ?? null };
+  return { name: localizedThreadTitle(short || withoutHarness), harness: suffix?.[1] ?? null };
 }
 /** Calendar date of the next configured weekly meeting, evaluated in its timezone. */
 export function projectOverviewNextMeetingDate(

@@ -9,6 +9,7 @@ import {
   type ProjectOverviewLanguage,
   type ProjectOverviewText,
 } from "../projectOverviewText";
+import { WORKJET_STATUS_TEXT_CLASS } from "../workjetStatus";
 
 export function SupervisorTickStatus(props: {
   readonly createdAt: string | null;
@@ -72,7 +73,9 @@ export function SupervisorTickStatus(props: {
             : `Next ${nextLabel}`}
       </span>
       {props.state?.outcome === "skipped-busy" && (
-        <span className="inline-flex items-center rounded-full border border-amber-500/40 px-2.5 py-0.5 text-[11px] text-amber-400">
+        <span
+          className={`inline-flex items-center rounded-full border border-warning/40 px-2.5 py-0.5 text-[11px] ${WORKJET_STATUS_TEXT_CLASS.waiting}`}
+        >
           {text?.controlSkipped ??
             (de ? "Takt übersprungen · Supervisor beschäftigt" : "Tick skipped · supervisor busy")}
         </span>

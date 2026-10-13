@@ -8,22 +8,12 @@ import { defineRule } from "@oxlint/plugins";
 
 const normalizePath = (path: string) => path.replaceAll("\\", "/");
 
-/** Files still to migrate (#563). Shrink this list; never grow it. */
-const PENDING_MIGRATION = [
-  "apps/web/src/components/BrowserBusinessOsNavigation.tsx",
+/**
+ * Deliberate exceptions (#563): GFM task-list checkboxes inside rendered
+ * Markdown, and a dev-only fixture page.
+ */
+const EXEMPT_FILES = [
   "apps/web/src/components/ChatMarkdown.tsx",
-  "apps/web/src/components/JourFixePlayer.tsx",
-  "apps/web/src/components/ProjectCalendar.tsx",
-  "apps/web/src/components/ProjectMeetingPreparationField.tsx",
-  "apps/web/src/components/ProjectOverviewEditor.tsx",
-  "apps/web/src/components/ProjectSupervisorLumaField.tsx",
-  "apps/web/src/components/chat/NativePrivateChatControl.tsx",
-  "apps/web/src/components/chat/NativeSupervisorComposer.tsx",
-  "apps/web/src/components/chat/SupervisorTurnKindPicker.tsx",
-  "apps/web/src/components/chat/ThreadApprovalControl.tsx",
-  "apps/web/src/components/chat/WorkerSourceConnectionPicker.tsx",
-  "apps/web/src/components/chat/WorkjetCrossModeLinkCard.tsx",
-  "apps/web/src/components/chat/WorkjetMailboxActivityCard.tsx",
   "apps/web/src/fixtures/jour-fixe.fixture.tsx",
 ];
 
@@ -31,7 +21,7 @@ const isExempt = (filename: string) => {
   const path = normalizePath(filename);
   if (path.includes("/components/ui/")) return true; // the styled building blocks themselves
   if (/\.test\.tsx?$/u.test(path)) return true;
-  return PENDING_MIGRATION.some((pending) => path.endsWith(pending));
+  return EXEMPT_FILES.some((pending) => path.endsWith(pending));
 };
 
 const elementName = (node: unknown): string | undefined => {

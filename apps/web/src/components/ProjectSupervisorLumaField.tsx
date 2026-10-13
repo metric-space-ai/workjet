@@ -8,6 +8,7 @@ import { Schema } from "effect";
 
 type WorkjetLumaInstanceConfiguration = typeof WorkjetLumaInstanceConfigurationSchema.Type;
 import { useEffect, useMemo } from "react";
+import { OptionSelect } from "./ui/option-select";
 import { useBusinessOsCodeScope } from "../businessOsCodeScope";
 import { usePrimaryEnvironment } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
@@ -185,24 +186,21 @@ export function ProjectSupervisorLumaSelect({
   const selected = profiles.find((profile) => profile.id === value);
   return (
     <div className="grid min-w-0 gap-1">
-      <select
+      <OptionSelect
         id={id}
         aria-label="Supervisor Luma"
-        className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+        className="w-auto"
         value={value ?? ""}
         disabled={disabled || phase !== "ready"}
-        onChange={(event) => onChange(event.target.value || null)}
-      >
-        <option value="">Instanz-Standard</option>
-        {value !== null && selected === undefined && (
-          <option value={value}>Gespeicherte Luma fehlt · {value}</option>
-        )}
-        {profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {profile.name}
-          </option>
-        ))}
-      </select>
+        options={[
+          { value: "", label: "Instanz-Standard" },
+          ...(value !== null && selected === undefined
+            ? [{ value, label: `Gespeicherte Luma fehlt · ${value}` }]
+            : []),
+          ...profiles.map((profile) => ({ value: profile.id, label: profile.name })),
+        ]}
+        onValueChange={(next) => onChange(next || null)}
+      />
       <span className="break-words text-xs text-muted-foreground" role="status">
         {phase === "loading"
           ? "Lumas werden geladen …"

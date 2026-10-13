@@ -20,6 +20,7 @@ export function OptionSelect<Value extends string>({
   disabled,
   className,
   size = "sm",
+  id,
   "aria-label": ariaLabel,
 }: {
   value: Value | "";
@@ -29,6 +30,7 @@ export function OptionSelect<Value extends string>({
   disabled?: boolean;
   className?: string;
   size?: "sm" | "default";
+  id?: string;
   "aria-label": string;
 }) {
   const selected = options.find((option) => option.value === value);
@@ -40,9 +42,27 @@ export function OptionSelect<Value extends string>({
       }}
       disabled={disabled}
     >
-      <SelectTrigger size={size} className={className} aria-label={ariaLabel}>
+      <SelectTrigger
+        id={id}
+        size={size}
+        className={className}
+        aria-label={ariaLabel}
+        data-value={selected ? selected.value : ""}
+      >
         <SelectValue>{selected ? selected.label : placeholder}</SelectValue>
       </SelectTrigger>
+      {/* Option inventory readable without opening the popup (server markup, tests). */}
+      <span hidden data-option-select-options="">
+        {options.map((option) => (
+          <span
+            key={option.value}
+            data-option={option.value}
+            data-disabled={option.disabled ? "" : undefined}
+          >
+            {option.label}
+          </span>
+        ))}
+      </span>
       <SelectPopup align="end" alignItemWithTrigger={false}>
         {options.map((option) => (
           <SelectItem

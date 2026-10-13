@@ -8,6 +8,7 @@ import {
   type WorkjetDeliveryDisposition,
   type WorkjetMeshWorkspaceId,
 } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
@@ -479,22 +480,20 @@ function WorkjetDelegationActionRow(props: {
             </label>
           ) : null}
           {state.open === "reassign" ? (
-            <select
+            <OptionSelect
               aria-label="Unterhaltung wählen"
               disabled={busy}
-              className={actionFieldClass}
+              className="w-auto"
               value={state.reassignTargetThreadId}
-              onChange={(event) =>
-                onStateChange({ ...state, reassignTargetThreadId: event.target.value })
+              placeholder="Unterhaltung wählen …"
+              options={reassignThreads.map((thread) => ({
+                value: thread.threadId,
+                label: thread.title,
+              }))}
+              onValueChange={(reassignTargetThreadId) =>
+                onStateChange({ ...state, reassignTargetThreadId })
               }
-            >
-              <option value="">Unterhaltung wählen …</option>
-              {reassignThreads.map((thread) => (
-                <option key={thread.threadId} value={thread.threadId}>
-                  {thread.title}
-                </option>
-              ))}
-            </select>
+            />
           ) : null}
           {needsText || optionalText ? (
             <textarea

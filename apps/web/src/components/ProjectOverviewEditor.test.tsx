@@ -183,7 +183,7 @@ describe("card back configuration editor", () => {
     expect(markup).toContain('value="https://molecularity.example"');
     expect(markup).toContain('value="https://github.com/metric-space-ai/molecularity"');
     expect(markup).toContain('value="10:00"');
-    expect(markup).toContain(">Dienstag</option>");
+    expect(markup).toContain('data-option="2">Dienstag</span>');
     expect(markup).toContain("Kein Termin");
     expect(markup).toContain("Speichern");
     expect(markup).toContain("Abbrechen");

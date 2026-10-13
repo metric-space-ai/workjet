@@ -1,21 +1,12 @@
 import type { EnvironmentConnectionPhase } from "@workjet/client-runtime/connection";
 
 import { cn } from "~/lib/utils";
+import { WORKJET_STATUS_DOT_CLASS, workjetStatusFromConnectionPhase } from "~/workjetStatus";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
 /** Canonical connection-phase → dot color mapping shared by every status dot. */
 export function connectionPhaseDotClassName(phase: EnvironmentConnectionPhase): string {
-  switch (phase) {
-    case "connected":
-      return "bg-success";
-    case "connecting":
-    case "reconnecting":
-      return "bg-warning";
-    case "error":
-      return "bg-destructive";
-    default:
-      return "bg-muted-foreground/40";
-  }
+  return WORKJET_STATUS_DOT_CLASS[workjetStatusFromConnectionPhase(phase)];
 }
 
 /** Ping halo for transitional phases; null renders no ping. */

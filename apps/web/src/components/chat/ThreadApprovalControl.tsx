@@ -1,4 +1,5 @@
 import { DEFAULT_RUNTIME_MODE, type RuntimeMode } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import { useState } from "react";
 
 /** Saved per-thread permission override, applied to the next provider turn. */
@@ -24,13 +25,19 @@ export function ThreadApprovalControl({
       : "auto-accept-edits";
   return (
     <span className="no-drag inline-flex items-center gap-2 text-xs text-secondary-label">
-      <select
+      <OptionSelect
         aria-label="Freigaberegel"
-        className="rounded border border-border bg-background px-1 py-0.5"
+        className="w-auto"
         value={runtimeMode === projectPolicy ? "project" : runtimeMode}
         disabled={disabled || saving}
-        onChange={async (event) => {
-          const value = event.currentTarget.value;
+        options={[
+          { value: "project", label: "Projektregel" },
+          { value: "approval-required", label: "Freigabe nötig" },
+          { value: "auto", label: "Workspace-Autonomie", disabled: !hasOwnWorktree },
+          { value: "auto-accept-edits", label: "Änderungen annehmen" },
+          { value: "full-access", label: "Vollzugriff", disabled: !hasOwnWorktree },
+        ]}
+        onValueChange={async (value) => {
           const mode = value === "project" ? projectPolicy : (value as RuntimeMode);
           if (!hasOwnWorktree && (mode === "full-access" || mode === "auto")) return;
           setSaving(true);
@@ -43,17 +50,7 @@ export function ThreadApprovalControl({
             setSaving(false);
           }
         }}
-      >
-        <option value="project">Projektregel</option>
-        <option value="approval-required">Freigabe nötig</option>
-        <option value="auto" disabled={!hasOwnWorktree}>
-          Workspace-Autonomie
-        </option>
-        <option value="auto-accept-edits">Änderungen annehmen</option>
-        <option value="full-access" disabled={!hasOwnWorktree}>
-          Vollzugriff
-        </option>
-      </select>
+      />
       {error ? <span role="status">Regel nicht gespeichert</span> : null}
     </span>
   );

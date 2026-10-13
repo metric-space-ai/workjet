@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { OptionSelect } from "../ui/option-select";
 import {
   CommandId,
   type WorkjetThreadConfig,
@@ -98,20 +99,18 @@ export function NativePrivateChatControl(props: {
   };
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <select
+      <OptionSelect
         aria-label="Verbindung für privaten Chat"
+        className="w-auto max-w-48"
         value={props.connectionId ?? ""}
+        placeholder="Verbindung wählen"
         disabled={busy}
-        onChange={(event) => props.onSelectConnection(event.target.value)}
-        className="max-w-48 rounded border bg-background px-2 py-1 text-xs"
-      >
-        <option value="">Verbindung wählen</option>
-        {props.connections.map((connection) => (
-          <option key={connection.connectionId} value={connection.connectionId}>
-            {connection.label}
-          </option>
-        ))}
-      </select>
+        options={props.connections.map((connection) => ({
+          value: connection.connectionId,
+          label: connection.label,
+        }))}
+        onValueChange={props.onSelectConnection}
+      />
       <Button
         type="button"
         size="sm"

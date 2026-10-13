@@ -47,7 +47,7 @@ describe("Projekt anlegen: Segment Neu | Aus Ordner | Repository klonen", () => 
     expect(panel).toContain("<ProjectFolderFields");
     expect(panel).toContain("<ProjectCloneFields");
     expect(panel).toContain("submitFromSource()");
-    expect(panel).toContain("selectProjectOverviewRef(");
+    expect(panel).toContain("openCreatedProject(");
     expect(panel).toContain('"/settings/business-os"');
     expect(panel).not.toMatch(/<Dialog|CommandDialog|role="dialog"/);
   });

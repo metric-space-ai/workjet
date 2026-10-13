@@ -25,7 +25,7 @@ describe("Workjet settings information architecture", () => {
 
   it("uses the regular Settings route from either product mode", () => {
     expect(appSidebarLayoutSource).toContain('if (isOnSettings) return "settings"');
-    expect(appSidebarLayoutSource).toContain("<SettingsSidebarNav pathname={pathname} />");
+    expect(settingsRouteSource).toContain("<SettingsSidebarNav pathname={location.pathname} />");
     expect(appSidebarLayoutSource).not.toContain("WorkjetDevicePairingDialog");
     expect(appSidebarLayoutSource).not.toContain("businessOsSettingsRequestKey");
   });

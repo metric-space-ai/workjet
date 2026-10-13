@@ -9,6 +9,8 @@ import {
   type WorkjetGatewayRoutingStrategy,
   type WorkjetGatewayUpdateRoutingInput,
 } from "@workjet/contracts";
+import { Checkbox } from "../ui/checkbox";
+import { OptionSelect } from "../ui/option-select";
 import { TriangleAlertIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -206,12 +208,11 @@ function PoolMemberRow({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border/40 pt-2 first:border-t-0 first:pt-0">
       <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-foreground">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={draft.enabled}
           disabled={disabled}
           aria-label={`${member.label} aktivieren`}
-          onChange={(event) => onChange({ ...draft, enabled: event.target.checked })}
+          onCheckedChange={(checked) => onChange({ ...draft, enabled: checked })}
         />
         <span className="min-w-0 truncate">{member.label}</span>
       </label>
@@ -353,24 +354,17 @@ export function WorkjetGatewayPoolsSectionView(state: WorkjetGatewayPoolsSection
       <SettingsRow
         title="Strategie"
         control={
-          <select
+          <OptionSelect
             aria-label="Auswahlstrategie"
+            className="w-auto"
             value={draft.strategy}
             disabled={disabled}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                strategy: event.target.value as WorkjetGatewayRoutingStrategy,
-              }))
-            }
-            className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
-          >
-            {WORKJET_GATEWAY_ROUTING_STRATEGIES.map((strategy) => (
-              <option key={strategy} value={strategy}>
-                {WORKJET_GATEWAY_ROUTING_STRATEGY_LABELS[strategy]}
-              </option>
-            ))}
-          </select>
+            options={WORKJET_GATEWAY_ROUTING_STRATEGIES.map((strategy) => ({
+              value: strategy,
+              label: WORKJET_GATEWAY_ROUTING_STRATEGY_LABELS[strategy],
+            }))}
+            onValueChange={(strategy) => setDraft((current) => ({ ...current, strategy }))}
+          />
         }
         status={
           <span className="text-muted-foreground">

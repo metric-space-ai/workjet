@@ -42,6 +42,12 @@ const POPUP_IMPORT =
 /** Inline-Befehlslisten (Composer) sind erlaubt, der modale Befehlsdialog nicht. */
 const BEFEHLSDIALOG = /\bCommandDialog\b/;
 const POPUP_ROLLE = /\srole=["']dialog["']/; // JSX-Attribut, nicht CSS-Selektor
+/**
+ * Einzige Ausnahme: das Einstellungs-Sheet (Claude-Code-Stil). Michael hat es am
+ * 2026-10-13 ausdrücklich als einzige Ausnahme von „kein Popup“ freigegeben.
+ * Jedes andere Popup bleibt verboten.
+ */
+const ERLAUBTES_POPUP = 'routes/settings.tsx: role="dialog"';
 
 describe("drei Orte: Dev, Ops, Einstellungen", () => {
   it("hat keine Route außerhalb der drei Orte", () => {
@@ -63,6 +69,9 @@ describe("drei Orte: Dev, Ops, Einstellungen", () => {
       if (POPUP_ROLLE.test(text)) funde.push(`${rel}: role="dialog"`);
       if (BEFEHLSDIALOG.test(text)) funde.push(`${rel}: CommandDialog`);
     }
-    expect(funde, "Popups widersprechen der Owner-Vorgabe „kein Popup“").toEqual([]);
+    expect(
+      funde.filter((fund) => fund !== ERLAUBTES_POPUP),
+      "Popups widersprechen der Owner-Vorgabe „kein Popup“",
+    ).toEqual([]);
   });
 });

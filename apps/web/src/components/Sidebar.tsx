@@ -1,4 +1,6 @@
+import { workjetUiLanguage } from "../workjetProjectControl";
 import { autoAnimate } from "@formkit/auto-animate";
+import { scheduleUndoableThreadDelete } from "../lib/undoableDelete";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -45,6 +47,7 @@ import {
   CircleDashedIcon,
   ClockIcon,
   EllipsisIcon,
+  FolderIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PinIcon,
@@ -221,6 +224,33 @@ import {
   projectTeamParentTitle,
   duplicateProjectTeamTitles,
 } from "../lib/projectTeamSections";
+
+/** Actions whose failure the sidebar reports with one shared toast (#558). */
+const SIDEBAR_ACTIONS = {
+  copy: { en: "Copy", de: "Kopieren" },
+  rename: { en: "Rename", de: "Umbenennen" },
+  settle: { en: "Mark done", de: "Erledigen" },
+  reopen: { en: "Reopen", de: "Wieder öffnen" },
+  wake: { en: "Wake", de: "Wecken" },
+  pin: { en: "Pin", de: "Anheften" },
+  unpin: { en: "Unpin", de: "Lösen" },
+  reorder: { en: "Reorder", de: "Sortieren" },
+  snooze: { en: "Snooze", de: "Zurückstellen" },
+  title: { en: "Generate title", de: "Titel erzeugen" },
+  delete: { en: "Delete", de: "Löschen" },
+} as const;
+
+/** One error toast for every sidebar action: "<Action> failed" plus the reason. */
+function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, error: unknown, stacked = true) {
+  const en = workjetUiLanguage() === "en";
+  const toast = {
+    type: "error" as const,
+    title: `${SIDEBAR_ACTIONS[action][en ? "en" : "de"]} ${en ? "failed" : "fehlgeschlagen"}`,
+    description:
+      error instanceof Error ? error.message : en ? "Unknown error" : "Unbekannter Fehler",
+  };
+  return stacked ? stackedThreadToast(toast) : toast;
+}
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -1693,7 +1723,6 @@ export default function Sidebar() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
-  const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const overviewLanguage = useProjectOverviewLanguage();
@@ -1757,13 +1786,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
@@ -1776,13 +1799,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
@@ -1794,13 +1811,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const { copyToClipboard: copyDeepLinkToClipboard } = useCopyToClipboard<{ link: string }>({
@@ -1812,13 +1823,7 @@ export default function Sidebar() {
       });
     },
     onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: error instanceof Error ? error.message : "Unbekannter Fehler",
-        }),
-      );
+      toastManager.add(sidebarFailureToast("copy", error));
     },
   });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
@@ -2443,6 +2448,13 @@ export default function Sidebar() {
     () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
   );
+  // The search also finds projects (#581): "met" must reach "Metric".
+  const projectSearchQuery = threadSearchQuery.trim().toLocaleLowerCase();
+  const projectSearchResults = isSearchingThreads
+    ? selectableWorkjetProjects.filter((project) =>
+        project.title.toLocaleLowerCase().includes(projectSearchQuery),
+      )
+    : [];
   const threadSearchResultOrderKey = threadSearchResults
     .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
     .join("\0");
@@ -2740,13 +2752,7 @@ export default function Sidebar() {
         });
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Umbenennen fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("rename", error));
         }
       })();
     },
@@ -2823,13 +2829,7 @@ export default function Sidebar() {
             // Never navigate away from a thread that did not settle.
             if (!isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Erledigen fehlgeschlagen",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                }),
-              );
+              toastManager.add(sidebarFailureToast("settle", error));
             }
             return;
           }
@@ -2851,13 +2851,7 @@ export default function Sidebar() {
         const result = await unsettleThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Wieder öffnen fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("reopen", error));
         }
       })();
     },
@@ -2869,13 +2863,7 @@ export default function Sidebar() {
         const result = await unsnoozeThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Wecken fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("wake", error));
         }
       })();
     },
@@ -2962,13 +2950,7 @@ export default function Sidebar() {
         const result = await pinThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Anheften fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("pin", error));
         }
       })();
     },
@@ -2980,13 +2962,7 @@ export default function Sidebar() {
         const result = await unpinThread(threadRef);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Lösen fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("unpin", error));
         }
       })();
     },
@@ -3045,13 +3021,7 @@ export default function Sidebar() {
             setOptimisticPinnedOrder(null);
             if (isAtomCommandInterrupted(result)) return;
             const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Sortieren fehlgeschlagen",
-                description: error instanceof Error ? error.message : "Unbekannter Fehler",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("reorder", error));
             return;
           }
         }
@@ -3104,14 +3074,7 @@ export default function Sidebar() {
       void (async () => {
         const outcome = await performSnooze(threadRef, preset, opts);
         if (outcome.status === "failure") {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Zurückstellen fehlgeschlagen",
-              description:
-                outcome.error instanceof Error ? outcome.error.message : "Unbekannter Fehler",
-            }),
-          );
+          toastManager.add(sidebarFailureToast("snooze", outcome.error));
           return;
         }
         if (outcome.status !== "success") return;
@@ -3241,14 +3204,7 @@ export default function Sidebar() {
             );
           } else if (failures.length > 0) {
             const firstError = failures[0];
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Zurückstellen fehlgeschlagen",
-                description:
-                  firstError instanceof Error ? firstError.message : "Unbekannter Fehler",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("snooze", firstError));
           }
         }
         return;
@@ -3262,13 +3218,7 @@ export default function Sidebar() {
           if (result._tag === "Success") continue;
           if (!isAtomCommandInterrupted(result)) {
             const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Titel erzeugen fehlgeschlagen",
-                description: error instanceof Error ? error.message : "Unbekannter Fehler",
-              }),
-            );
+            toastManager.add(sidebarFailureToast("title", error));
           }
           return;
         }
@@ -3299,48 +3249,35 @@ export default function Sidebar() {
         return;
       }
       if (clicked.value !== "delete") return;
-      if (confirmThreadDelete) {
-        const confirmed = await settlePromise(() =>
-          api.dialogs.confirm(
-            [count === 1 ? "Unterhaltung löschen?" : `${count} Unterhaltungen löschen?`].join("\n"),
-            { variant: "destructive" },
-          ),
-        );
-        if (confirmed._tag === "Failure" || !confirmed.value) return;
-      }
-      // Grown as deletions actually land, never seeded with the whole batch:
-      // orphaned-worktree detection must only discount threads that are
-      // really gone, or the first delete would treat still-alive batch mates
-      // as deleted and remove a worktree they still point at.
-      const deletedThreadKeys = new Set<string>();
-      for (const threadKey of threadKeys) {
-        const thread = threadByKeyRef.current.get(threadKey);
-        if (!thread) continue;
-        const result = await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
-          deletedThreadKeys,
-        });
-        if (result._tag === "Failure") {
-          if (!isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Löschen fehlgeschlagen",
-                description: error instanceof Error ? error.message : "Unbekannter Fehler",
-              }),
-            );
-          }
-          return;
-        }
-        deletedThreadKeys.add(threadKey);
-      }
+      // Undo instead of confirm: the delete runs after the undo window (#637).
       removeFromSelection(threadKeys);
+      scheduleUndoableThreadDelete(count, async () => {
+        // Grown as deletions actually land, never seeded with the whole batch:
+        // orphaned-worktree detection must only discount threads that are
+        // really gone, or the first delete would treat still-alive batch mates
+        // as deleted and remove a worktree they still point at.
+        const deletedThreadKeys = new Set<string>();
+        for (const threadKey of threadKeys) {
+          const thread = threadByKeyRef.current.get(threadKey);
+          if (!thread) continue;
+          const result = await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
+            deletedThreadKeys,
+          });
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result)) {
+              const error = squashAtomCommandFailure(result);
+              toastManager.add(sidebarFailureToast("delete", error, true));
+            }
+            return;
+          }
+          deletedThreadKeys.add(threadKey);
+        }
+      });
     },
     [
       attemptSettle,
       attemptSnooze,
       clearSelection,
-      confirmThreadDelete,
       deleteThread,
       markThreadUnread,
       performSnooze,
@@ -3467,13 +3404,7 @@ export default function Sidebar() {
             });
             if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
               const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Titel erzeugen fehlgeschlagen",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                }),
-              );
+              toastManager.add(sidebarFailureToast("title", error));
             }
             return;
           }
@@ -3509,26 +3440,13 @@ export default function Sidebar() {
             return;
           }
           case "delete": {
-            if (confirmThreadDelete) {
-              const confirmed = await settlePromise(() =>
-                api.dialogs.confirm([`„${thread.title}“ löschen?`].join("\n"), {
-                  variant: "destructive",
-                }),
-              );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
-            }
-            const result = await deleteThread(threadRef);
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Löschen fehlgeschlagen",
-                  description: error instanceof Error ? error.message : "Unbekannter Fehler",
-                }),
-              );
-              return;
-            }
+            scheduleUndoableThreadDelete(1, async () => {
+              const result = await deleteThread(threadRef);
+              if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+                const error = squashAtomCommandFailure(result);
+                toastManager.add(sidebarFailureToast("delete", error, true));
+              }
+            });
             return;
           }
           default:
@@ -3543,7 +3461,6 @@ export default function Sidebar() {
       attemptUnpin,
       attemptUnsettle,
       attemptUnsnooze,
-      confirmThreadDelete,
       copyBranchToClipboard,
       copyDeepLinkToClipboard,
       copyPathToClipboard,
@@ -4058,6 +3975,27 @@ export default function Sidebar() {
               }}
             />
           ) : null}
+          {projectSearchResults.length > 0 ? (
+            <ul
+              aria-label={overviewText.allProjects}
+              className="mb-1 flex flex-col gap-px"
+              data-sidebar-project-search-results=""
+            >
+              {projectSearchResults.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent"
+                    data-workjet-action={`project.open.search:${project.id}`}
+                    onClick={() => void handleWorkjetProjectSelection(project.id)}
+                  >
+                    <FolderIcon className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
+                    <span className="min-w-0 truncate">{project.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -4105,14 +4043,7 @@ export default function Sidebar() {
                   })}
                 </ul>
               </TooltipProvider>
-            ) : (
-              <p
-                role="status"
-                className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
-              >
-                {overviewText.noThreads}
-              </p>
-            )
+            ) : null
           ) : null}
           {!isSearchActive ? (
             <TooltipProvider

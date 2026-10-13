@@ -1,3 +1,5 @@
+import { Fragment } from "react";
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { InstanceProviderSection } from "./InstanceProviderSection";
 import { useInstanceProviders } from "./useInstanceProviders";
 import { useAtomValue } from "@effect/atom-react";
@@ -248,7 +250,7 @@ function EnvironmentUnavailableRow({
   return (
     // Titled like the section it stands in for, so the placeholder never
     // reads as a different page than the loaded state.
-    <SettingsSection title="Harnesses">
+    <SettingsSection title={codingAgentsTitle()}>
       {access.kind === "loading" ? (
         // A wedged device can keep this state forever, so the load ends after
         // 10 s with a status line and a retry instead of spinning on.
@@ -282,10 +284,18 @@ function EnvironmentUnavailableRow({
  */
 export type ProviderSettingsSections = "harnesses" | "models";
 
+/** „Harnesses“ was unclear (#554); the section is named for what it holds. */
+function codingAgentsTitle(): string {
+  return workjetUiLanguage() === "en" ? "Coding agents" : "Coding-Agenten";
+}
+
 export function ProviderSettingsPanel({
   sections = "harnesses",
+  embedded = false,
 }: {
   readonly sections?: ProviderSettingsSections;
+  /** Rendered inside another page (Rechner) instead of as its own page. */
+  readonly embedded?: boolean;
 } = {}) {
   const { environments, isReady } = useBusinessOsScopedEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -320,10 +330,11 @@ export function ProviderSettingsPanel({
   // to pick.
   const showDevicePicker = options.length > 0 && !onlyPrimaryDevice;
 
+  const Container = embedded ? Fragment : SettingsPageContainer;
   return (
-    <SettingsPageContainer>
+    <Container>
       {devicesLoading && sections === "harnesses" ? (
-        <SettingsSection title="Harnesses">
+        <SettingsSection title={codingAgentsTitle()}>
           <LoadingStatusRow
             key={loadAttempt}
             title="Rechner werden geladen"
@@ -333,7 +344,7 @@ export function ProviderSettingsPanel({
         </SettingsSection>
       ) : null}
       {!devicesLoading && options.length === 0 && sections === "harnesses" ? (
-        <SettingsSection title="Harnesses">
+        <SettingsSection title={codingAgentsTitle()}>
           <SettingsRow title="Kein Rechner" control={<AddComputerLinkButton />} />
         </SettingsSection>
       ) : null}
@@ -398,7 +409,7 @@ export function ProviderSettingsPanel({
           devicesLoading={devicesLoading}
         />
       ) : null}
-    </SettingsPageContainer>
+    </Container>
   );
 }
 
@@ -944,7 +955,7 @@ export function EnvironmentProviderSettings({
         id={searchableSetting("harnesses").id}
         // Named for what these actually are — harness CLI runtimes — so the
         // gateway account section on Modelle can never read as a rival list.
-        title="Harnesses"
+        title={codingAgentsTitle()}
         headerAction={
           <div className="flex items-center gap-1.5">
             <ProviderLastChecked lastCheckedAt={lastCheckedAt} />

@@ -13,7 +13,7 @@ describe("thread approval policy control", () => {
       />,
     );
     expect(markup).toContain('aria-label="Freigaberegel"');
-    expect(markup).toContain('value="project" selected');
+    expect(markup).toContain('data-value="project"');
     expect(markup).toContain("Freigabe nötig");
     const overridden = renderToStaticMarkup(
       <ThreadApprovalControl
@@ -23,7 +23,7 @@ describe("thread approval policy control", () => {
         onChange={async () => true}
       />,
     );
-    expect(overridden).toContain('value="approval-required" selected');
+    expect(overridden).toContain('data-value="approval-required"');
   });
   it("caps project policy without a worktree and enables full access only with one", () => {
     const markup = renderToStaticMarkup(
@@ -33,9 +33,9 @@ describe("thread approval policy control", () => {
         onChange={async () => true}
       />,
     );
-    expect(markup).toContain('value="project" selected');
-    expect(markup).toContain('value="full-access" disabled');
-    expect(markup).toContain('value="auto" disabled');
+    expect(markup).toContain('data-value="project"');
+    expect(markup).toContain('data-option="full-access" data-disabled');
+    expect(markup).toContain('data-option="auto" data-disabled');
     const isolated = renderToStaticMarkup(
       <ThreadApprovalControl
         runtimeMode="full-access"
@@ -44,8 +44,8 @@ describe("thread approval policy control", () => {
         onChange={async () => true}
       />,
     );
-    expect(isolated).toContain('value="project" selected');
-    expect(isolated).not.toContain('value="full-access" disabled');
+    expect(isolated).toContain('data-value="project"');
+    expect(isolated).not.toContain('data-option="full-access" data-disabled');
   });
 
   it("disables policy edits while the thread is unavailable", () => {

@@ -7,8 +7,8 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
-import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
+import { SearchIcon, XIcon } from "lucide-react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
@@ -52,7 +52,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   );
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
-  const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -166,16 +165,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     },
     [activeResultIndex, clearSearch, handleSearchResultClick, isSearching, results],
   );
-  const handleBackClick = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, isMobile, navigate, setOpenMobile]);
 
   return (
     <>
@@ -313,14 +302,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       <SidebarFooter className="p-[var(--sidebar-content-inset)]">
         <WorkjetConnectSidebarSignIn />
         <div className="flex items-center gap-1">
-          <SidebarMenu className="min-w-0 flex-1">
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleBackClick}>
-                <ArrowLeftIcon />
-                <span>Zurück</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <div className="min-w-0 flex-1" />
           <WorkjetConnectSidebarAvatar />
         </div>
       </SidebarFooter>

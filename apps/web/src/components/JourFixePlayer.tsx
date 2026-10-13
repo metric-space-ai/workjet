@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { OptionSelect } from "./ui/option-select";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -180,27 +181,22 @@ function PlayerContent({
         <span className="text-xs tabular-nums text-muted-foreground">
           {timestamp(position)} / {timestamp(duration)}
         </span>
-        <select
+        <OptionSelect
           aria-label="Wiedergabetempo"
-          value={speed}
-          className="h-7 rounded-full border border-border bg-background px-2 text-xs"
-          onChange={(event) => {
-            const rate = Number(event.target.value);
+          className="w-auto min-w-0"
+          value={String(speed)}
+          options={[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])]
+            .sort((a, b) => a - b)
+            .map((option) => ({ value: String(option), label: `${option}×` }))}
+          onValueChange={(next) => {
+            const nextRate = Number(next);
             if (audio.current) {
               audio.current.preservesPitch = true;
-              audio.current.playbackRate = rate;
+              audio.current.playbackRate = nextRate;
             }
-            setSpeed(rate);
+            setSpeed(nextRate);
           }}
-        >
-          {[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])]
-            .sort((a, b) => a - b)
-            .map((rate) => (
-              <option key={rate} value={rate}>
-                {rate}×
-              </option>
-            ))}
-        </select>
+        />
         {onAutoAdvanceChange && (
           <Button
             size="sm"

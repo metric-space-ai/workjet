@@ -154,5 +154,7 @@ function speechFailure(failure: Failure, instanceId: string): SpeechSettingsErro
 
 export function speechErrorText(error: unknown, language: Language): string {
   if (error instanceof SpeechSettingsError) return error.messages[language];
-  return language === "en" ? "Speech settings not loaded or saved." : "Nicht geladen oder gespeichert";
+  return language === "en"
+    ? "Speech settings not loaded or saved."
+    : "Nicht geladen oder gespeichert";
 }

@@ -2,6 +2,7 @@ import type {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectProjection,
 } from "@workjet/contracts";
+import { markProjectInitPending, requestProjectInit } from "./projectInit";
 import { ProjectId } from "@workjet/contracts";
 
 import {
@@ -186,6 +187,17 @@ export async function runWorkjetProjectCreation(
     onPhase("failed");
     return { _tag: "failed", code: "invalid_projection" };
   }
+  // One-click onboarding: the card shows and polls progress; start it now.
+  const operationId = markProjectInitPending(
+    attempt.presentationInstanceId,
+    attempt.request.projectId,
+  );
+  void requestProjectInit(
+    attempt.presentationInstanceId,
+    attempt.request.projectId,
+    operationId,
+    options.port,
+  );
   onPhase("visible");
   return { _tag: "visible", project: created.response.project };
 }

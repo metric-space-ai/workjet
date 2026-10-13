@@ -333,7 +333,7 @@ describe("native computer capabilities", () => {
     const markup = render("failed");
     expect(markup).not.toContain("flashstore24-nas");
     expect(markup).not.toContain("data-workjet-capability=");
-    expect(markup).toContain("Instanz nicht erreichbar");
+    expect(markup).toContain("Rechnerliste nicht abrufbar");
   });
 
   it("keeps rows and their order while the instance re-checks (no layout jump)", () => {

@@ -1355,7 +1355,9 @@ export function WorkjetSettings({
         ) : (
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>{noInstance ? "Keine Instanz" : "Instanz nicht verbunden"}</EmptyTitle>
+              <EmptyTitle>
+                {noInstance ? "Keine Instanz" : "Lumas der Instanz nicht abrufbar"}
+              </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
               {noInstance ? (

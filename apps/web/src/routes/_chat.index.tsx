@@ -564,7 +564,7 @@ function IndexDraftLanding() {
               if (selectWorkjetProject(activeCtoxInstanceId, project.id))
                 selectProjectOverviewRef(activeCtoxInstanceId, null);
             } else if (project.local !== null)
-              selectProjectOverviewRef(
+              openCreatedProject(
                 activeCtoxInstanceId,
                 scopeProjectRef(project.local.environmentId, project.local.id),
               );
@@ -1060,6 +1060,23 @@ function ProjectGallery({
 
 const PROJECT_OPENING_TIMEOUT_MS = 10_000;
 
+/**
+ * Opens a project that may exist only locally yet (just created, registration pending).
+ * A previously selected native project would otherwise win and the user lands on
+ * the old project instead of the new one (#585).
+ */
+function openCreatedProject(
+  instanceId: string | null,
+  project: ReturnType<typeof scopeProjectRef>,
+): void {
+  if (instanceId !== null && selectWorkjetProject(instanceId, project.projectId)) {
+    selectProjectOverviewRef(instanceId, null);
+    return;
+  }
+  if (instanceId !== null) selectWorkjetProject(instanceId, null);
+  selectProjectOverviewRef(instanceId, project);
+}
+
 function formatElapsed(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -1346,7 +1363,7 @@ function InlineProjectCreate({
       setOpen(false);
       toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-        selectProjectOverviewRef(instanceId, scopeProjectRef(environmentId, attempt.projectId));
+        openCreatedProject(instanceId, scopeProjectRef(environmentId, attempt.projectId));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
     } finally {
@@ -1370,10 +1387,7 @@ function InlineProjectCreate({
         setOpen(false);
         toastManager.add({ type: "info", title: `„${duplicate.title}“ ist schon da – geöffnet` });
         if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-          selectProjectOverviewRef(
-            instanceId,
-            scopeProjectRef(sources.environmentId, duplicate.id),
-          );
+          openCreatedProject(instanceId, scopeProjectRef(sources.environmentId, duplicate.id));
         return;
       }
       const en = workjetUiLanguage() === "en";
@@ -1408,10 +1422,7 @@ function InlineProjectCreate({
           : { type: "info", title: `„${created.reusedTitle}“ ist schon da – geöffnet` },
       );
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-        selectProjectOverviewRef(
-          instanceId,
-          scopeProjectRef(created.environmentId, created.projectId),
-        );
+        openCreatedProject(instanceId, scopeProjectRef(created.environmentId, created.projectId));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
     } finally {

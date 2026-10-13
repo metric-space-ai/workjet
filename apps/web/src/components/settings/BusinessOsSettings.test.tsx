@@ -171,7 +171,7 @@ describe("Business OS settings scope", () => {
       />,
     );
     expect(markup).toContain('aria-label="Instanzen"');
-    expect(markup).toContain("Ausgewählt");
+    expect(markup).toContain('aria-current="true"');
     expect(markup).toContain("WELSCH");
     expect(markup).toContain("Geräte · WELSCH");
     expect(markup).toContain('data-slot="row"');

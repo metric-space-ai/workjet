@@ -619,21 +619,10 @@ export function AutomaticWorktreeStorageSettings({
   );
 }
 
-/** Seitentitel „Worker-Presets“ – derselbe in allen Zuständen der Seite. */
 function uiText(de: string, en: string): string {
   return workjetUiLanguage() === "en" ? en : de;
 }
 
-function LumasPageTitle() {
-  const t = useUiText();
-  return (
-    <div className="px-3 sm:px-4">
-      <h1 className="text-xl font-semibold tracking-[-0.025em]">
-        {t("Worker-Presets", "Worker presets")}
-      </h1>
-    </div>
-  );
-}
 
 export function WorkjetSettingsView({
   configuration,
@@ -805,9 +794,8 @@ export function WorkjetSettingsView({
   }, [locationHash]);
 
   return (
-    <SettingsPageContainer className="gap-6">
+    <SettingsPageContainer className="gap-6" title={searchableSetting("workjet-workers").title}>
       <div className="space-y-3">
-        <LumasPageTitle />
         <SectionNavigation
           activeSection={activeSection}
           onSelect={(section) => {
@@ -1315,8 +1303,7 @@ export function WorkjetSettings({
     const resolving = scope.phase === "resolving" || connections.isPending;
     const noInstance = scope.phase === "blocked" && scope.blocker === "no-active-instance";
     return (
-      <SettingsPageContainer>
-        <LumasPageTitle />
+      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {resolving ? (
           <EmptyLoading
             title={uiText("Instanz wird geladen", "Loading instance")}
@@ -1528,8 +1515,7 @@ function ScopedWorkjetSettings({
 
   if (instance.data === null)
     return (
-      <SettingsPageContainer>
-        <LumasPageTitle />
+      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {instance.isPending ? (
           <EmptyLoading
             title={uiText("Worker-Presets werden geladen", "Loading worker presets")}

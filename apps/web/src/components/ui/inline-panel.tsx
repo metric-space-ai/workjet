@@ -52,7 +52,6 @@ function InlinePanel({
   className,
   hideTrigger = false,
 }: InlinePanelProps) {
-  const labels = inlineExpandLabels();
   return (
     <>
       {open || hideTrigger ? null : (
@@ -94,18 +93,65 @@ function InlinePanel({
               {status}
             </div>
           ) : null}
-          <div className="flex items-center justify-end gap-2" data-slot="inline-panel-footer">
-            <Button size="sm" type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {labels.cancel}
-            </Button>
-            <Button disabled={submitDisabled || busy} size="sm" type="submit">
-              {submitLabel}
-            </Button>
-          </div>
+          <InlineSaveFooter
+            submitLabel={submitLabel}
+            submitDisabled={Boolean(submitDisabled || busy)}
+            onCancel={() => onOpenChange(false)}
+          />
         </form>
       </InlineExpand>
     </>
   );
 }
 
-export { InlinePanel };
+/**
+ * Save contract for composite entities (UI rule 3, #562): bottom right,
+ * exactly „Abbrechen“ then „Speichern“. Simple values autosave instead.
+ */
+function InlineSaveFooter({
+  onCancel,
+  onSave,
+  saving = false,
+  submitDisabled = false,
+  cancelDisabled = false,
+  submitLabel,
+  className,
+}: {
+  readonly onCancel: () => void;
+  /** Without onSave the button submits the surrounding form. */
+  readonly onSave?: () => void;
+  readonly saving?: boolean;
+  readonly submitDisabled?: boolean;
+  readonly cancelDisabled?: boolean;
+  /** Only for create flows (e.g. „Hinzufügen“); editing always says „Speichern“. */
+  readonly submitLabel?: string;
+  readonly className?: string;
+}) {
+  const labels = inlineExpandLabels();
+  return (
+    <div
+      className={cn("flex items-center justify-end gap-2", className)}
+      data-slot="inline-panel-footer"
+    >
+      <Button
+        size="sm"
+        type="button"
+        variant="outline"
+        disabled={cancelDisabled}
+        onClick={onCancel}
+      >
+        {labels.cancel}
+      </Button>
+      <Button
+        disabled={submitDisabled || saving}
+        size="sm"
+        type={onSave ? "button" : "submit"}
+        onClick={onSave}
+      >
+        {saving ? labels.saving : (submitLabel ?? labels.save)}
+      </Button>
+    </div>
+  );
+}
+
+export { InlinePanel, InlineSaveFooter };

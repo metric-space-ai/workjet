@@ -1,4 +1,5 @@
 import type { WorkjetNativeProviderAccount } from "@workjet/contracts";
+import { InlineSaveFooter } from "../ui/inline-panel";
 import { nativeAccountForRoute, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import {
   WorkjetComputerId,
@@ -982,28 +983,16 @@ export function WorkjetWorkerEditor({
             {error}
           </p>
         ) : null}
-        <div
-          className={cn(
-            "flex items-center justify-end gap-2",
-            // The compact editor scrolls inside the chat composer's panel.
-            compact && "sticky bottom-0 bg-popover py-2",
-          )}
-        >
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              clearDraftStash();
-              onCancel();
-            }}
-          >
-            {compact ? "Verwerfen" : "Abbrechen"}
-          </Button>
-          <Button type="submit" size="sm" disabled={computers.length === 0 || routes.length === 0}>
-            {saving ? "Speichert …" : "Speichern"}
-          </Button>
-        </div>
+        <InlineSaveFooter
+          // The compact editor scrolls inside the chat composer's panel.
+          className={cn(compact && "sticky bottom-0 bg-popover py-2")}
+          saving={saving}
+          submitDisabled={computers.length === 0 || routes.length === 0}
+          onCancel={() => {
+            clearDraftStash();
+            onCancel();
+          }}
+        />
       </fieldset>
     </form>
   );

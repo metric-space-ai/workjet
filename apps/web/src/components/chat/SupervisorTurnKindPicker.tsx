@@ -2,6 +2,7 @@ import type {
   WorkjetSupervisorTurnCapabilitiesResponse,
   WorkjetSupervisorTurnKind,
 } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import type { NativeSupervisorScope } from "../../nativeSupervisorComposer";
 
 export interface ScopedSupervisorTurnCapabilities {
@@ -39,20 +40,22 @@ export function SupervisorTurnKindPicker(props: {
 }) {
   const supported = supervisorConversationSupported(props.scope, props.capability);
   return (
-    <select
+    <OptionSelect
       aria-label="Nachrichtenart"
+      className="w-auto"
       value={props.value}
       disabled={props.disabled}
-      onChange={(event) => {
-        const kind = event.target.value;
+      options={[
+        { value: "work", label: "Aufgabe" },
+        {
+          value: "conversation",
+          label: supported ? "Chat" : "Chat (nicht verfügbar)",
+          disabled: !supported,
+        },
+      ]}
+      onValueChange={(kind) => {
         if (kind === "work" || (kind === "conversation" && supported)) props.onChange(kind);
       }}
-      className="rounded border border-border bg-background px-2 py-1 text-xs"
-    >
-      <option value="work">Aufgabe</option>
-      <option value="conversation" disabled={!supported}>
-        {supported ? "Chat" : "Chat (nicht verfügbar)"}
-      </option>
-    </select>
+    />
   );
 }

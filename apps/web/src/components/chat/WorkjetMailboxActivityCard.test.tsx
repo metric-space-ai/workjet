@@ -603,9 +603,9 @@ describe("WorkjetMailboxActivityCard delegation actions", () => {
     const select = descendants(card.props.children).find(
       (element) => element.props["aria-label"] === "Unterhaltung wählen",
     );
-    // The same recipient list the send panel uses, one option each plus the
-    // empty placeholder.
-    expect(Children.toArray(select?.props.children).length).toBe(3);
+    // The same recipient list the send panel uses, one option each; the empty
+    // choice is the placeholder.
+    expect((select?.props.options as ReadonlyArray<unknown>).length).toBe(2);
     const submit = descendants(card.props.children).find(
       (element) => element.props["data-workjet-delegation-submit"] === "reassign",
     );

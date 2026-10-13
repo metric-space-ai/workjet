@@ -1,4 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
+import { Checkbox } from "./ui/checkbox";
+import { OptionSelect } from "./ui/option-select";
 import {
   CtoxWorkjetProjectControlRequest,
   DEFAULT_SUPERVISOR_TICK_CONFIGURATION,
@@ -145,32 +147,30 @@ export function ProjectCardConfigEditor({
           onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value || null })}
         />
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-1.5">
-          <select
+          <OptionSelect
             aria-label="Regeltermin Wochentag"
-            className="h-7.5 min-w-0 rounded-md border border-input bg-background px-2 text-xs sm:h-6.5"
+            className="w-auto min-w-0"
+            size="sm"
             disabled={state.pending}
-            value={draft.jourFixe?.weekday ?? "none"}
-            onChange={(event) =>
+            value={String(draft.jourFixe?.weekday ?? "none")}
+            options={[
+              { value: "none", label: "Kein Termin" },
+              ...WEEKDAY_LABELS.map((day, index) => ({ value: String(index + 1), label: day })),
+            ]}
+            onValueChange={(next) =>
               setDraft((current) => ({
                 ...current,
                 jourFixe:
-                  event.target.value === "none"
+                  next === "none"
                     ? null
                     : {
-                        weekday: Number(event.target.value),
+                        weekday: Number(next),
                         time: current.jourFixe?.time ?? "09:00",
                         timezone: current.jourFixe?.timezone ?? "Europe/Berlin",
                       },
               }))
             }
-          >
-            <option value="none">Kein Termin</option>
-            {WEEKDAY_LABELS.map((day, index) => (
-              <option key={day} value={index + 1}>
-                {day}
-              </option>
-            ))}
-          </select>
+          />
           <Input
             aria-label="Regeltermin Uhrzeit"
             size="sm"
@@ -509,17 +509,16 @@ export function ProjectOverviewEditor({
         </label>
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs">
-            <input
+            <Checkbox
               id={`${id}-supervisor-tick`}
-              type="checkbox"
               checked={(draft.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION).enabled}
               disabled={state.pending}
-              onChange={(event) =>
+              onCheckedChange={(checked) =>
                 setDraft((current) => ({
                   ...current,
                   supervisorTick: {
                     ...(current.supervisorTick ?? DEFAULT_SUPERVISOR_TICK_CONFIGURATION),
-                    enabled: event.target.checked,
+                    enabled: checked,
                   },
                 }))
               }
@@ -577,35 +576,31 @@ export function ProjectOverviewEditor({
             )}
             <span className="text-xs text-muted-foreground">Regeltermin</span>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,1.2fr)] gap-2 max-sm:grid-cols-1">
-              <select
+              <OptionSelect
                 aria-label="Regeltermin Wochentag"
-                className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+                className="w-auto min-w-0"
                 disabled={state.pending}
-                value={meeting.enabled ? meeting.weekday : "none"}
-                onChange={(event) =>
+                value={meeting.enabled ? String(meeting.weekday) : "none"}
+                options={[
+                  { value: "none", label: "Kein Termin" },
+                  ...[
+                    "Montag",
+                    "Dienstag",
+                    "Mittwoch",
+                    "Donnerstag",
+                    "Freitag",
+                    "Samstag",
+                    "Sonntag",
+                  ].map((day, index) => ({ value: String(index + 1), label: day })),
+                ]}
+                onValueChange={(next) =>
                   setMeeting((current) => ({
                     ...current,
-                    enabled: event.target.value !== "none",
-                    weekday:
-                      event.target.value === "none" ? current.weekday : Number(event.target.value),
+                    enabled: next !== "none",
+                    weekday: next === "none" ? current.weekday : Number(next),
                   }))
                 }
-              >
-                <option value="none">Kein Termin</option>
-                {[
-                  "Montag",
-                  "Dienstag",
-                  "Mittwoch",
-                  "Donnerstag",
-                  "Freitag",
-                  "Samstag",
-                  "Sonntag",
-                ].map((day, index) => (
-                  <option key={day} value={index + 1}>
-                    {day}
-                  </option>
-                ))}
-              </select>
+              />
               <Input
                 aria-label="Regeltermin Uhrzeit"
                 type="time"

@@ -9,6 +9,7 @@ import {
   type WorkjetSupervisorTurnIntent,
   type WorkjetSupervisorTurnKind,
 } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import {
   cloneElement,
   useEffect,
@@ -796,19 +797,17 @@ export function NativeSupervisorComposer(props: {
       {previousTurns.length > 0 && journal && scopeMatches && (
         <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           Verlauf
-          <select
+          <OptionSelect
             aria-label="Supervisor-Anfrage"
+            className="w-auto min-w-0 max-w-full"
             value={journal.intent.commandId}
             disabled={disabled || busy || (pending && !confirmedPending)}
-            onChange={(event) => void selectTask(event.target.value)}
-            className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1"
-          >
-            {[...previousTurns, journal].map((entry) => (
-              <option key={entry.intent.commandId} value={entry.intent.commandId}>
-                {entry.turn?.status ?? "Warte auf Bestätigung"} · {entry.intent.goal.slice(0, 80)}
-              </option>
-            ))}
-          </select>
+            options={[...previousTurns, journal].map((entry) => ({
+              value: entry.intent.commandId,
+              label: `${entry.turn?.status ?? "Warte auf Bestätigung"} · ${entry.intent.goal.slice(0, 80)}`,
+            }))}
+            onValueChange={(commandId) => void selectTask(commandId)}
+          />
         </label>
       )}
       {unresolvedInput && (

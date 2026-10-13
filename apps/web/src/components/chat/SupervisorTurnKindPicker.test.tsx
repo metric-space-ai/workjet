@@ -42,17 +42,17 @@ function render(value: ScopedSupervisorTurnCapabilities | null, disabled = false
 describe("Owner-selected Supervisor message kind", () => {
   it("keeps Task as the default and exposes Chat only after scoped support", () => {
     expect(render(null)).toContain(
-      '<option value="conversation" disabled="">Chat (nicht verfügbar)</option>',
+      'data-option="conversation" data-disabled="">Chat (nicht verfügbar)</span>',
     );
-    expect(render(capability)).toContain('<option value="conversation">Chat</option>');
-    expect(render(capability)).toContain('<option value="work" selected="">Aufgabe</option>');
+    expect(render(capability)).toContain('data-option="conversation">Chat</span>');
+    expect(render(capability)).toContain('data-value="work"');
   });
   it.each(["instanceId", "projectId", "threadId"] as const)(
     "rejects a late capability from a previous %s",
     (field) => {
       const stale = { ...capability, scope: { ...scope, [field]: "foreign" } };
       expect(supervisorConversationSupported(scope, stale)).toBe(false);
-      expect(render(stale)).toContain('value="conversation" disabled=""');
+      expect(render(stale)).toContain('data-option="conversation" data-disabled=""');
     },
   );
   it("rejects a response for a different native binding even on the same connection", () => {
@@ -72,6 +72,8 @@ describe("Owner-selected Supervisor message kind", () => {
     ).toBe(false);
   });
   it("preserves the uncertain-submission lock even when Chat is supported", () => {
-    expect(render(capability, true)).toContain('<select aria-label="Nachrichtenart" disabled=""');
+    expect(render(capability, true)).toMatch(
+      /aria-label="Nachrichtenart"[^>]*data-disabled=""|data-disabled=""[^>]*aria-label="Nachrichtenart"/,
+    );
   });
 });

@@ -1,3 +1,4 @@
+import { OptionSelect } from "../ui/option-select";
 import type { WorkjetConnectionSummary } from "@workjet/contracts";
 
 export interface WorkerSourceConnectionChoice {
@@ -10,21 +11,17 @@ export function WorkerSourceConnectionPicker(props: {
   readonly disabled: boolean;
 }) {
   return (
-    <select
+    <OptionSelect
       aria-label="Luma-Zugang wählen"
-      className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1 text-xs disabled:opacity-50 sm:max-w-64"
+      className="w-auto max-w-full sm:max-w-64"
       value=""
+      placeholder="Luma-Zugang wählen …"
       disabled={props.disabled}
-      onChange={(event) => props.choice.select(event.target.value)}
-    >
-      <option value="" disabled>
-        Luma-Zugang wählen …
-      </option>
-      {props.choice.connections.map((entry) => (
-        <option key={entry.connectionId} value={entry.connectionId}>
-          {entry.displayName} · {entry.connectionId.split(":").at(-1)?.slice(0, 8)}
-        </option>
-      ))}
-    </select>
+      options={props.choice.connections.map((entry) => ({
+        value: entry.connectionId,
+        label: `${entry.displayName} · ${entry.connectionId.split(":").at(-1)?.slice(0, 8) ?? ""}`,
+      }))}
+      onValueChange={props.choice.select}
+    />
   );
 }

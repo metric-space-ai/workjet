@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Checkbox } from "./ui/checkbox";
+import { OptionSelect } from "./ui/option-select";
 import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { GalleryProject } from "../projectOverview";
 import type { CtoxWorkjetSessionProjection, WorkjetCalendarEvent } from "@workjet/contracts";
@@ -708,19 +710,17 @@ export function ProjectCalendar({
         <aside className="order-2 space-y-6 lg:order-1">
           <label className="block text-sm">
             Projekt
-            <select
+            <OptionSelect
               aria-label="Kalenderprojekt"
+              className="mt-1"
+              size="default"
               value={projectKey}
-              onChange={(event) => setProjectKey(event.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2"
-            >
-              <option value="all">Alle Projekte</option>
-              {projects.map((project) => (
-                <option key={project.key} value={project.key}>
-                  {project.title}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "all", label: "Alle Projekte" },
+                ...projects.map((project) => ({ value: project.key, label: project.title })),
+              ]}
+              onValueChange={setProjectKey}
+            />
           </label>
           <MiniMonth
             monthKey={startOfMonth(anchor)}
@@ -732,14 +732,12 @@ export function ProjectCalendar({
           <section aria-label="Kalender">
             <h2 className="mb-2 text-sm font-medium">Kalender</h2>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-primary"
+              <Checkbox
                 checked={!hiddenCalendars.has(PROJECT_CALENDAR_ID)}
-                onChange={(event) => {
+                onCheckedChange={(checked) => {
                   setHiddenCalendars((previous) => {
                     const next = new Set(previous);
-                    if (event.target.checked) next.delete(PROJECT_CALENDAR_ID);
+                    if (checked) next.delete(PROJECT_CALENDAR_ID);
                     else next.add(PROJECT_CALENDAR_ID);
                     return next;
                   });
@@ -749,14 +747,12 @@ export function ProjectCalendar({
               <span className="min-w-0 break-words">Regeltermine</span>
             </label>
             <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-primary"
+              <Checkbox
                 checked={!hiddenCalendars.has(SESSION_CALENDAR_ID)}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setHiddenCalendars((previous) => {
                     const next = new Set(previous);
-                    if (event.target.checked) next.delete(SESSION_CALENDAR_ID);
+                    if (checked) next.delete(SESSION_CALENDAR_ID);
                     else next.add(SESSION_CALENDAR_ID);
                     return next;
                   })
@@ -785,14 +781,12 @@ export function ProjectCalendar({
                     className="flex cursor-pointer items-center gap-2"
                     title={accountCalendarStatusTitle(calendar, timeFormat, locale)}
                   >
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
+                    <Checkbox
                       checked={!hiddenCalendars.has(calendar.id)}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         setHiddenCalendars((previous) => {
                           const next = new Set(previous);
-                          if (event.target.checked) next.delete(calendar.id);
+                          if (checked) next.delete(calendar.id);
                           else next.add(calendar.id);
                           return next;
                         })

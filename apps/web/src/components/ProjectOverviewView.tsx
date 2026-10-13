@@ -20,6 +20,15 @@ import {
   MessageSquareIcon,
   RefreshCwIcon,
 } from "lucide-react";
+import {
+  ctoxPostContent,
+  disruptionContent,
+  mergedPrContent,
+  runningContent,
+  stepContent,
+  type CtoxProjectFeedPost,
+  type ProjectFeedSource,
+} from "../projectFeedContent";
 import { useClientSettings } from "../hooks/useSettings";
 import { Button } from "./ui/button";
 
@@ -134,6 +143,7 @@ export function ProjectOverviewView(props: {
   /** Why the overview data is missing (core outdated, timeout …), if known. */
   readonly connectionMessage?: string | null;
   readonly actions?: ReactNode;
+  readonly feedPosts?: readonly CtoxProjectFeedPost[];
   readonly onRecomputeKpis?: (() => void) | undefined;
 }) {
   const { data, onOpenChat } = props;
@@ -150,7 +160,7 @@ export function ProjectOverviewView(props: {
     onOpenChat(scopeThreadRef(thread.environmentId, thread.id));
   const developerMode = useClientSettings((settings) => settings.developerMode);
   const missingKpis = data.kpis.every((kpi) => kpi.value === "—");
-  const feed = buildFeed(data, now);
+  const feed = buildFeed(data, now, props.feedPosts);
   const live = [...data.supervisors, ...data.parents, ...data.workers].flatMap((thread) => {
     const state = projectOverviewWorkerState(thread);
     return state === "waiting" ? [] : [{ thread, state }];
@@ -373,9 +383,17 @@ type FeedItem = {
   readonly badge: string | null;
   readonly thread: ProjectOwnerOverview["members"][number] | undefined;
   readonly url: string | undefined;
+  readonly headline?: string;
+  readonly openItems?: readonly string[];
+  readonly sources?: readonly ProjectFeedSource[];
+  readonly actionLabel?: string | null;
 };
 
-function buildFeed(data: ProjectOwnerOverview, now: number): FeedItem[] {
+function buildFeed(
+  data: ProjectOwnerOverview,
+  now: number,
+  posts: readonly CtoxProjectFeedPost[] = [],
+): FeedItem[] {
   const { text } = data;
   const nowIso = new Date(now).toISOString();
   const threadAt = (thread: ProjectOwnerOverview["members"][number]) =>
@@ -389,12 +407,16 @@ function buildFeed(data: ProjectOwnerOverview, now: number): FeedItem[] {
   };
   const items: FeedItem[] = [];
   for (const thread of data.disruptions) {
-    const error = thread.session?.lastError;
+    const content = disruptionContent({
+      name: who(thread).author,
+      lastError: thread.session?.lastError,
+      language: data.language,
+    });
     items.push({
       id: `disruption:${thread.id}`,
       at: threadAt(thread),
       ...who(thread),
-      body: error ? projectOverviewSessionError(error, data.language).text : text.disrupted,
+      ...content,
       tone: "disrupted",
       kind: "disruption",
       badge: text.feedDisruption,
@@ -432,18 +454,86 @@ function buildFeed(data: ProjectOwnerOverview, now: number): FeedItem[] {
         thread: goal.thread,
         url: undefined,
       });
-  for (const event of data.feed)
+  for (const thread of [...data.supervisors, ...data.parents, ...data.workers])
+    if (thread.planProgress && projectOverviewWorkerState(thread) === "running")
+      items.push({
+        id: `running:${thread.id}`,
+        at: thread.latestTurn?.startedAt ?? nowIso,
+        ...who(thread),
+        ...runningContent({
+          name: who(thread).author,
+          step: thread.planProgress.step,
+          done: thread.planProgress.completedSteps,
+          total: thread.planProgress.totalSteps,
+          language: data.language,
+        }),
+        tone: "normal",
+        kind: "step",
+        badge: null,
+        thread,
+        url: undefined,
+      });
+  for (const post of posts)
+    items.push({
+      id: `post:${post.post_id}`,
+      at: new Date(post.occurred_at_ms).toISOString(),
+      author: post.author_label,
+      harness: post.harness,
+      ...ctoxPostContent(post),
+      tone: post.kind === "disruption" ? "disrupted" : "normal",
+      kind:
+        post.kind === "pr_merged"
+          ? "pr"
+          : post.kind === "disruption"
+            ? "disruption"
+            : post.kind === "session_completed"
+              ? "session"
+              : post.kind === "goal_changed"
+                ? "goal"
+                : "meeting",
+      badge: post.kind === "disruption" ? text.feedDisruption : null,
+      thread: post.author_thread
+        ? data.members.find((member) => member.id === post.author_thread)
+        : undefined,
+      url: undefined,
+    });
+  const covered = new Set(posts.flatMap((post) => post.sources.map((source) => source.ref)));
+  for (const event of data.feed) {
+    if (event.url && covered.has(event.url)) continue;
+    const pr =
+      event.kind === "pr" ? data.merged.find((entry) => entry.url === event.url) : undefined;
+    const goalOf =
+      event.thread?.workjetConfig.schemaVersion === 2 ? event.thread.workjetConfig.goal : null;
+    const content =
+      pr !== undefined
+        ? mergedPrContent({
+            number: pr.number,
+            title: pr.title,
+            url: pr.url,
+            language: data.language,
+          })
+        : event.kind === "step" && event.thread
+          ? stepContent({
+              name: who(event.thread).author,
+              preview: event.thread.latestAssistantMessagePreview,
+              goal: goalOf?.objective ?? null,
+              goalDone: goalOf?.status === "complete",
+              language: data.language,
+            })
+          : null;
     items.push({
       id: `event:${event.id}`,
       at: event.at,
       ...(event.thread ? who(event.thread) : { author: text.feedSystem, harness: null }),
       body: event.sentence,
+      ...(content ?? {}),
       tone: "normal",
       kind: event.kind === "goal" ? "meeting" : event.kind,
       badge: null,
       thread: event.thread,
-      url: event.url,
+      url: content?.sources.some((source) => source.url === event.url) ? undefined : event.url,
     });
+  }
   return items.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
@@ -649,6 +739,11 @@ function FeedCard(props: {
             </span>
           ) : null}
         </p>
+        {item.headline ? (
+          <p className="mt-0.5 font-medium break-words leading-5 [overflow-wrap:anywhere]">
+            {item.headline}
+          </p>
+        ) : null}
         <p className="mt-0.5 break-words leading-5 whitespace-pre-line [overflow-wrap:anywhere]">
           {long && !expanded ? `${item.body.slice(0, 220).trimEnd()}…` : item.body}
           {long ? (
@@ -663,14 +758,41 @@ function FeedCard(props: {
             </Button>
           ) : null}
         </p>
-        {props.onOpen || item.url ? (
+        {item.openItems && item.openItems.length > 0 ? (
+          <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+            {item.openItems.map((entry) => (
+              <li key={entry}>
+                {text.feedOpen}: {entry}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {props.onOpen || item.url || (item.sources && item.sources.some((s) => s.url)) ? (
           <div className="mt-1.5 flex flex-wrap gap-2">
+            {(item.sources ?? [])
+              .filter((source) => source.url)
+              .map((source) => (
+                <Button
+                  key={source.url}
+                  size="xs"
+                  variant="outline"
+                  render={<a href={source.url} target="_blank" rel="noopener noreferrer" />}
+                >
+                  {source.type === "pr" ? (
+                    <GitPullRequestIcon aria-hidden className="size-3.5" />
+                  ) : (
+                    <ArrowUpRightIcon aria-hidden className="size-3.5" />
+                  )}
+                  {source.label}
+                </Button>
+              ))}
             {props.onOpen ? (
               <Button size="xs" variant="outline" onClick={props.onOpen}>
                 <MessageSquareIcon aria-hidden className="size-3.5" />
-                {item.kind === "disruption" || item.kind === "escalation"
-                  ? text.openChat
-                  : text.chipSession}
+                {item.actionLabel ??
+                  (item.kind === "disruption" || item.kind === "escalation"
+                    ? text.openChat
+                    : text.chipSession)}
               </Button>
             ) : null}
             {item.url ? (

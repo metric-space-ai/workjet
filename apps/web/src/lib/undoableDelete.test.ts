@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const added: Array<{ actionProps?: { onClick: () => void } }> = [];
 vi.mock("../components/ui/toast", () => ({

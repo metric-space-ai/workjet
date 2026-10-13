@@ -4294,6 +4294,87 @@ describe("CtoxGuestManager", () => {
 });
 
 describe("pooled Shell recovery", () => {
+  it.effect("keeps a responding guest through repeated native and projection timeouts", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const execute = harness.views[0]!.executeJavaScript;
+      // Both Electron rejection and a classified renderer response demonstrate
+      // life. Neither is a reason to throw away ongoing replication.
+      for (let i = 0; i < 8; i++) {
+        if (i % 2 === 0)
+          execute.mockRejectedValueOnce(
+            new Error("Native request ctox.workjet.project.v1 exceeded 28000ms"),
+          );
+        else
+          execute.mockResolvedValueOnce({
+            status: "failed",
+            diagnostic: { stage: "execute", reason: "request_timeout", phase: "collections" },
+          });
+        const result = yield* manager.requestProjectControl(descriptor.id, { action: "project.list" });
+        expect(result).toMatchObject({
+          _tag: "failed",
+          diagnostic: { reason: "request_timeout" },
+        });
+      }
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.views[0]!.close).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("keeps a live guest when desktop deadlines precede late replies", () => {
+    const harness = makeGuestHarness();
+    const response = { action: "project.list", projects: [], count: 0, truncated: false } as const;
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const execute = harness.views[0]!.executeJavaScript;
+      for (let i = 0; i < 4; i++) {
+        const entered = Promise.withResolvers<void>();
+        const late = Promise.withResolvers<unknown>();
+        execute.mockImplementationOnce(() => {
+          entered.resolve();
+          return late.promise;
+        });
+        const reading = yield* Effect.forkChild(
+          manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        );
+        yield* Effect.promise(() => entered.promise);
+        yield* TestClock.adjust("30 seconds");
+        assert.deepEqual(yield* Fiber.join(reading), { _tag: "failed", code: "timeout" });
+        late.resolve({ status: "completed", result: response });
+      }
+      execute.mockResolvedValueOnce({ status: "completed", result: response });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        { _tag: "completed", response });
+      expect(harness.createView).toHaveBeenCalledOnce();
+      expect(harness.views[0]!.close).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
+  });
+
+  it.effect("spaces actual exception rebuilds by at least ten minutes", () => {
+    const harness = makeGuestHarness();
+    harness.setLoadURLImplementation(async (url, emit) => {
+      harness.views.at(-1)!.executeJavaScript.mockRejectedValue(new Error("Script failed to execute"));
+      queueMicrotask(() => emit("did-frame-navigate", {}, url, 200, "OK", true, 1, 1));
+    });
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      for (let i = 0; i < 6; i++)
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" });
+      expect(harness.createView).toHaveBeenCalledTimes(2);
+      expect(harness.views[1]!.close).not.toHaveBeenCalled();
+      yield* TestClock.adjust("599999 millis");
+      yield* manager.requestProjectControl(descriptor.id, { action: "project.list" });
+      expect(harness.createView).toHaveBeenCalledTimes(2);
+      yield* TestClock.adjust("1 millis");
+      yield* manager.requestProjectControl(descriptor.id, { action: "project.list" });
+      expect(harness.createView).toHaveBeenCalledTimes(3);
+      expect(harness.views[1]!.close).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
+  });
+
   it.effect("rebuilds after three consecutive guest_failed lists and retries exactly once", () => {
     const harness = makeGuestHarness();
     const response = {
@@ -4435,6 +4516,19 @@ describe("pooled Shell recovery", () => {
       expect(harness.views[0]!.close).toHaveBeenCalledOnce();
       expect(harness.views[1]!.setBounds).toHaveBeenCalledWith(bounds);
       expect(harness.addChildView).toHaveBeenCalledTimes(2);
+      const newer = { ...descriptor, shellUpdate: shell("1.2.5") };
+      harness.setDiscovery({ _tag: "ready", instances: [newer], sessionVerified: true });
+      yield* manager.observeShellGenerations!([newer]);
+      assert.deepEqual(yield* manager.ensurePooled(descriptor.id),
+        { _tag: "failed", code: "guest_failed" });
+      assert.deepEqual(yield* manager.activate(descriptor.id, bounds),
+        { _tag: "failed", code: "guest_failed" });
+      expect(harness.createView).toHaveBeenCalledTimes(2);
+      expect(harness.views[1]!.close).not.toHaveBeenCalled();
+      yield* TestClock.adjust("10 minutes");
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        { _tag: "completed", response });
+      expect(harness.createView).toHaveBeenCalledTimes(3);
     }).pipe(Effect.provide(harness.layer));
   });
 });

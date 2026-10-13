@@ -206,6 +206,14 @@ export function ProjectOverviewView(props: {
                   {projectOverviewFormat(text.disruptionLine, {
                     name: projectOverviewWorkerName(thread.title, data.title).name,
                   })}
+                  {thread.session?.lastError ? (
+                    <span className="text-muted-foreground">
+                      {": "}
+                      {thread.session.lastError.length > 160
+                        ? `${thread.session.lastError.slice(0, 159)}…`
+                        : thread.session.lastError}
+                    </span>
+                  ) : null}
                 </span>
                 <Button
                   variant="outline"

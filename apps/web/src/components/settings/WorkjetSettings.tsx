@@ -1,3 +1,4 @@
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useInstanceProviders } from "./useInstanceProviders";
 import { nativeLumaRoutes, requireNativeLumaModel } from "../../lib/workjetNativeProviders";
 import type {
@@ -43,7 +44,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { randomUUID } from "../../lib/utils";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { InlineExpand } from "../ui/inline-expand";
@@ -62,8 +62,10 @@ import {
   WorkjetWorkerEditor,
   workjetHarnessAvailabilityWarning,
 } from "./WorkjetWorkerEditor";
-import { sanitizeWorkjetWorkerGraph, WorkjetWorkerOrganigram } from "./WorkjetWorkerOrganigram";
+import { sanitizeWorkjetWorkerGraph } from "./WorkjetWorkerOrganigram";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { useClientSettings } from "../../hooks/useSettings";
+import { useUiText } from "../../hooks/useUiText";
 import { searchableSetting } from "./settingsSearch";
 import {
   joinManagedPrompt,
@@ -316,12 +318,7 @@ function replaceCatalogItem<T extends { readonly id: string }>(
   return items.map((candidate) => (candidate.id === item.id ? item : candidate));
 }
 
-export type WorkjetSettingsSectionId =
-  | "workers"
-  | "organigram"
-  | "prompt"
-  | "telemetry"
-  | "execution";
+export type WorkjetSettingsSectionId = "workers" | "prompt" | "telemetry" | "execution";
 
 function modelPromptFor(configuration: WorkjetConfiguration, modelId: string): string {
   return configuration.modelPrompts.find((entry) => entry.modelId === modelId)?.prompt ?? "";
@@ -341,11 +338,6 @@ export const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
     id: "workers",
     targetId: "workjet-workers",
     label: searchableSetting("workjet-workers").title,
-  },
-  {
-    id: "organigram",
-    targetId: "workjet-organigram",
-    label: searchableSetting("workjet-organigram").title,
   },
   { id: "prompt", targetId: "workjet-prompt", label: searchableSetting("workjet-prompt").title },
   {
@@ -410,6 +402,15 @@ function PositiveIntegerInput({
   );
 }
 
+/**
+ * Prompt, Telemetrie and Ausführung tune the engine, not a preset: they are
+ * developer tools. Without developer mode only the preset list remains and the
+ * tab bar disappears.
+ */
+export function visibleWorkjetSettingsSections(developerMode: boolean) {
+  return WORKJET_SETTINGS_SECTIONS.filter((section) => developerMode || section.id === "workers");
+}
+
 function SectionNavigation({
   activeSection,
   onSelect,
@@ -417,13 +418,16 @@ function SectionNavigation({
   readonly activeSection: WorkjetSettingsSectionId;
   readonly onSelect: (section: WorkjetSettingsSectionId) => void;
 }) {
+  const developerMode = useClientSettings().developerMode;
+  const sections = visibleWorkjetSettingsSections(developerMode);
+  if (sections.length < 2) return null;
   return (
     <nav
       aria-label="Bereiche"
       role="tablist"
       className="mx-3 flex max-w-full gap-1 overflow-x-auto rounded-lg border border-border/60 bg-muted/20 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-4"
     >
-      {WORKJET_SETTINGS_SECTIONS.map((section) => (
+      {sections.map((section) => (
         <button
           key={section.id}
           type="button"
@@ -615,6 +619,10 @@ export function AutomaticWorktreeStorageSettings({
   );
 }
 
+function uiText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 export function WorkjetSettingsView({
   configuration,
   draftScopeKey,
@@ -648,6 +656,7 @@ export function WorkjetSettingsView({
   );
   const locationHash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
+  const t = useUiText();
   const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
     () => workjetSectionFromHash(locationHash) ?? defaultSection,
   );
@@ -808,12 +817,12 @@ export function WorkjetSettingsView({
       </div>
 
       {activeSection === "workers" ? (
-        <SettingsSection id={searchableSetting("workjet-workers").id} title="Alle Lumas">
+        <SettingsSection id={searchableSetting("workjet-workers").id} title="">
           {/* Inline-Panel-Muster: der Auslöser steht dort, wo das Formular
               aufklappt; Bearbeiten klappt direkt unter der Zeile auf. Kein
               Dialog, kein Popover. */}
           <InlineExpand
-            label="Luma hinzufügen"
+            label={t("Preset hinzufügen", "Add preset")}
             open={addingWorker}
             onOpenChange={(open) => {
               if (!open) {
@@ -828,7 +837,7 @@ export function WorkjetSettingsView({
             <div className="px-3 sm:px-4">
               <Button type="button" size="sm" variant="outline" onClick={openAddWorker}>
                 <PlusIcon className="size-3.5" />
-                Luma hinzufügen
+                {t("Preset hinzufügen", "Add preset")}
               </Button>
             </div>
           )}
@@ -836,12 +845,14 @@ export function WorkjetSettingsView({
             addingWorker ? null : (
               <Empty className="p-4">
                 <EmptyHeader>
-                  <EmptyTitle className="text-base">Keine Lumas</EmptyTitle>
+                  <EmptyTitle className="text-base">
+                    {t("Keine Worker-Presets", "No worker presets")}
+                  </EmptyTitle>
                 </EmptyHeader>
                 <EmptyContent>
                   <Button type="button" onClick={openAddWorker}>
                     <PlusIcon className="size-3.5" />
-                    Luma hinzufügen
+                    {t("Preset hinzufügen", "Add preset")}
                   </Button>
                 </EmptyContent>
               </Empty>
@@ -890,26 +901,29 @@ export function WorkjetSettingsView({
                       meta={[
                         worker.modelId,
                         workjetHarnessDisplayLabel(worker.harness),
-                        computer?.label ?? "—",
+                        computer?.label ?? t("Rechner: —", "Computer: —"),
                       ].join(" · ")}
-                      status={warning === null ? "ok" : computer === undefined ? "error" : "busy"}
-                      statusLabel={warning ?? "Bereit"}
-                      chips={
-                        warning === null ? undefined : (
-                          <Badge variant="warning" size="sm" title={warning}>
-                            {computer === undefined ? "Rechner fehlt" : "Harness fehlt"}
-                          </Badge>
-                        )
-                      }
+                      // One signal: a red dot only when the preset cannot run; the reason is its label.
+                      {...(warning === null
+                        ? {}
+                        : {
+                            status: "error" as const,
+                            statusLabel:
+                              computer === undefined
+                                ? t("Rechner fehlt", "Computer missing")
+                                : t("Harness fehlt", "Harness missing"),
+                          })}
                       onDelete={deleteWorker}
-                      deleteConfirmTitle="Luma löschen?"
+                      deleteConfirmTitle={t("Preset löschen?", "Delete preset?")}
                       expanded={editingWorkerId === worker.id}
                       onToggleExpanded={() => {
                         setAddingWorker(false);
                         setPendingWorkerParentId(null);
                         setEditingWorkerId((current) => (current === worker.id ? null : worker.id));
                       }}
-                      menuActions={[{ label: "Duplizieren", onSelect: duplicateWorker }]}
+                      menuActions={[
+                        { label: t("Duplizieren", "Duplicate"), onSelect: duplicateWorker },
+                      ]}
                     />
                     <InlineExpand
                       hideCollapseControl
@@ -927,49 +941,6 @@ export function WorkjetSettingsView({
             </div>
           )}
         </SettingsSection>
-      ) : null}
-
-      {activeSection === "organigram" ? (
-        <div id="workjet-organigram" className="px-3 sm:px-4">
-          <WorkjetWorkerOrganigram
-            workers={configuration.workerProfiles}
-            graph={configuration.workerGraph}
-            onChange={(workerGraph) => onChange({ ...configuration, workerGraph })}
-            // Bearbeiten bleibt im Organigramm: der Editor klappt direkt
-            // am angeklickten Knoten auf, kein Wechsel in die Lumas-Liste.
-            onAddWorker={(parentId) => {
-              setPendingWorkerParentId(parentId);
-              setEditingWorkerId(null);
-              setAddingWorker(true);
-            }}
-            onEditWorker={(workerId) => {
-              setPendingWorkerParentId(null);
-              setAddingWorker(false);
-              setEditingWorkerId((current) => (current === workerId ? null : workerId));
-            }}
-            onDeleteWorker={(workerId) => {
-              const workerProfiles = configuration.workerProfiles.filter(
-                (worker) => worker.id !== workerId,
-              );
-              onChange({
-                ...configuration,
-                workerProfiles,
-                workerGraph: sanitizeWorkjetWorkerGraph(configuration.workerGraph, workerProfiles),
-              });
-            }}
-            editor={{
-              open: editingWorker !== null || addingWorker,
-              anchorWorkerId: editingWorker?.id ?? pendingWorkerParentId,
-              label: editingWorker?.name ?? "Luma hinzufügen",
-              content: editingWorker !== null || addingWorker ? workerEditor : null,
-              onClose: () => {
-                setAddingWorker(false);
-                setEditingWorkerId(null);
-                setPendingWorkerParentId(null);
-              },
-            }}
-          />
-        </div>
       ) : null}
 
       {activeSection === "prompt" ? (
@@ -1334,22 +1305,31 @@ export function WorkjetSettings({
       <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {resolving ? (
           <EmptyLoading
-            title="Instanz wird geladen"
-            slowMessage="Keine Antwort von der Instanz."
+            title={uiText("Instanz wird geladen", "Loading instance")}
+            slowMessage={uiText(
+              "Keine Antwort von der Instanz.",
+              "The instance is not responding.",
+            )}
             onRetry={connections.refresh}
           />
         ) : (
           <Empty>
             <EmptyHeader>
               <EmptyTitle>
-                {noInstance ? "Keine Instanz" : "Lumas der Instanz nicht abrufbar"}
+                {noInstance
+                  ? uiText("Keine Instanz", "No instance")
+                  : uiText("Worker-Presets nicht abrufbar", "Worker presets unavailable")}
               </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
               {noInstance ? (
-                <Button render={<Link to="/settings/business-os" />}>Instanz auswählen</Button>
+                <Button render={<Link to="/settings/business-os" />}>
+                  {uiText("Instanz auswählen", "Choose instance")}
+                </Button>
               ) : (
-                <Button render={<Link to="/settings/business-os" />}>Instanzen verwalten</Button>
+                <Button render={<Link to="/settings/business-os" />}>
+                  {uiText("Instanzen verwalten", "Manage instances")}
+                </Button>
               )}
             </EmptyContent>
           </Empty>
@@ -1407,9 +1387,12 @@ function ScopedWorkjetSettings({
       });
       const failure =
         result._tag === "Failure"
-          ? "Lumas nicht gespeichert."
+          ? uiText("Worker-Presets nicht gespeichert.", "Worker presets not saved.")
           : result.value.status === "conflict"
-            ? "Lumas wurden anderswo geändert. Bitte neu laden."
+            ? uiText(
+                "Worker-Presets wurden anderswo geändert. Bitte neu laden.",
+                "Worker presets changed elsewhere. Please reload.",
+              )
             : null;
       if (failure !== null) {
         setSaveError(failure);
@@ -1534,17 +1517,22 @@ function ScopedWorkjetSettings({
       <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
         {instance.isPending ? (
           <EmptyLoading
-            title="Lumas werden geladen"
-            slowMessage="Keine Antwort von der Instanz."
+            title={uiText("Worker-Presets werden geladen", "Loading worker presets")}
+            slowMessage={uiText(
+              "Keine Antwort von der Instanz.",
+              "The instance is not responding.",
+            )}
             onRetry={instance.refresh}
           />
         ) : (
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>Konfiguration nicht verfügbar</EmptyTitle>
+              <EmptyTitle>
+                {uiText("Konfiguration nicht verfügbar", "Configuration unavailable")}
+              </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
-              <Button onClick={instance.refresh}>Erneut laden</Button>
+              <Button onClick={instance.refresh}>{uiText("Erneut laden", "Reload")}</Button>
             </EmptyContent>
           </Empty>
         )}

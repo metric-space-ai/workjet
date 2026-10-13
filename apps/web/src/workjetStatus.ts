@@ -15,6 +15,32 @@ export const WORKJET_STATUS_DOT_CLASS: Readonly<Record<WorkjetStatus, string>> =
   missing: "bg-muted-foreground/40",
 };
 
+export const WORKJET_STATUS_TEXT_CLASS: Readonly<Record<WorkjetStatus, string>> = {
+  ok: "text-success",
+  running: "text-primary",
+  waiting: "text-warning",
+  blocked: "text-destructive",
+  missing: "text-muted-foreground",
+};
+
+/** Thread pill labels (Sidebar.logic / ThreadStatusIndicators). */
+export function workjetStatusFromThreadPill(label: string): WorkjetStatus {
+  switch (label) {
+    case "Freigabe offen":
+    case "Wartet auf Eingabe":
+    case "Plan bereit":
+      return "waiting";
+    case "Arbeitet":
+    case "Verbindet":
+    case "Beobachtet":
+      return "running";
+    case "Fertig":
+      return "ok";
+    default:
+      return "missing";
+  }
+}
+
 const WORDS: Readonly<Record<"de" | "en", Readonly<Record<WorkjetStatus, string>>>> = {
   de: { ok: "ok", running: "läuft", waiting: "wartet", blocked: "blockiert", missing: "fehlt" },
   en: { ok: "ok", running: "running", waiting: "waiting", blocked: "blocked", missing: "missing" },

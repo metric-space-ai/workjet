@@ -199,6 +199,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "developer-mode",
+    title: "Entwicklermodus",
+    to: "/settings/general",
+    searchAliases: ["developer", "entwickler"],
+  },
+  {
     id: "legacy-plan-mode",
     title: "Plan-Modus",
     to: "/settings/general",

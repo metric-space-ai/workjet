@@ -28,7 +28,7 @@ export function InstanceConnectionStatus({
       data-workjet-instance-connection=""
     >
       <span className="min-w-0">
-        Instanz {label} nicht verbunden ·{" "}
+        Kontoverwaltung von {label} nicht erreichbar ·{" "}
         {describeWorkjetProjectControlFailure(failure, null, "de")}
       </span>
       <Button size="xs" variant="outline" disabled={busy} onClick={reconnect}>

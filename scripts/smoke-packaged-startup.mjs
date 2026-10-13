@@ -6,6 +6,11 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTimersPromises from "node:timers/promises";
 import { CdpClient } from "./lib/cdpClient.ts";
+import {
+  inspectSmokeRootProcesses,
+  removeStoppedSmokeRoot,
+  stopSmokeService,
+} from "./lib/packaged-startup-cleanup.ts";
 
 async function reservePort() {
   const server = NodeNet.createServer();
@@ -161,6 +166,24 @@ async function main() {
     child.stderr.destroy();
     child.unref();
     ready = ready && !gatewayFailed() && parentProcessClosed;
+    let postSignalInspection;
+    try {
+      postSignalInspection = await inspectSmokeRootProcesses(root);
+    } catch {}
+    const serviceStop = await stopSmokeService(executable, root);
+    let inspection;
+    let inventoryError;
+    try {
+      inspection = await inspectSmokeRootProcesses(root);
+    } catch (error) {
+      inventoryError = error instanceof Error ? error.name : "ProcessInventoryError";
+    }
+    const backendListeningAfterStop = await backendListening(backend.port);
+    ready =
+      ready &&
+      serviceStop.completed &&
+      inspection?.survivorCount === 0 &&
+      !backendListeningAfterStop;
     const report = {
       ready,
       elapsedMs: Date.now() - started,
@@ -169,13 +192,33 @@ async function main() {
       backendPort: backend.port,
       debugPort: debug.port,
       parentProcessClosed,
+      postSignalSurvivorCount: postSignalInspection?.survivorCount ?? null,
+      serviceStop,
+      survivorCount: inspection?.survivorCount ?? null,
+      survivors: inspection?.survivors ?? [],
+      observedProcessCount: inspection?.observedProcessCount ?? null,
+      inventoryError,
+      backendListeningAfterStop,
+      root,
+      rootRemoved: false,
     };
     await NodeFSP.mkdir(NodePath.dirname(reportPath), { recursive: true });
     await NodeFSP.writeFile(reportPath, JSON.stringify(report, null, 2) + "\n");
-    await NodeFSP.rm(root, { recursive: true, force: true });
+    // Never hide a detached writer behind retries, or delete its live profile.
+    if (serviceStop.completed && inspection?.survivorCount === 0 && !backendListeningAfterStop) {
+      try {
+        await removeStoppedSmokeRoot(root, inspection);
+        report.rootRemoved = true;
+      } catch (error) {
+        ready = false;
+        report.cleanupError = error?.code ?? "SmokeRootCleanupError";
+      }
+    }
+    report.ready = ready;
+    await NodeFSP.writeFile(reportPath, JSON.stringify(report, null, 2) + "\n");
     console.log(JSON.stringify(report));
   }
-  if (!ready) throw new Error("Packaged Workjet backend and renderer did not become ready");
+  if (!ready) throw new Error("Packaged Workjet startup or teardown failed; see the smoke report");
 }
 
 await main();

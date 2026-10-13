@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { CtoxManagedInstance } from "@workjet/contracts";
 
 import { Row, type RowMenuAction, type RowStatus } from "../ui/row";
@@ -143,6 +143,7 @@ export function InstancesTable({
   onSelect,
   onStateChange,
   onRePair = openInstanceRePair,
+  selectedDetails = null,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
@@ -154,6 +155,8 @@ export function InstancesTable({
       ) => Promise<string | null>)
     | undefined;
   readonly onRePair?: (instance: CtoxManagedInstance) => void;
+  /** Geräte und Netzwerk der ausgewählten Instanz, inline unter ihrer Zeile. */
+  readonly selectedDetails?: ReactNode;
 }) {
   const text = INSTANCE_LIST_TEXT;
   const [error, setError] = useState<string | null>(null);
@@ -238,8 +241,11 @@ export function InstancesTable({
               <Row
                 name={name}
                 meta={instanceRowMeta(instance)}
-                status={state.status}
-                statusLabel={state.label}
+                // One status signal (#631): the chip names a problem; a dot only
+                // for the one state without a chip. Healthy and deactivated stay quiet.
+                {...(state.chip === null && state.status === "busy"
+                  ? { status: state.status, statusLabel: state.label }
+                  : {})}
                 chips={
                   <>
                     {selected ? (
@@ -272,6 +278,14 @@ export function InstancesTable({
                 menuActions={menuActions}
               />
               {diagnosed === instance.id ? <InstanceDiagnosis instance={instance} /> : null}
+              {selected && selectedDetails !== null ? (
+                <div
+                  className="mb-2 ms-3 space-y-3 border-s border-border/70 ps-3 sm:ms-4"
+                  data-workjet-instance-details={instance.id}
+                >
+                  {selectedDetails}
+                </div>
+              ) : null}
             </li>
           );
         })}

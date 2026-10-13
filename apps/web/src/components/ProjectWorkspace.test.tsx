@@ -418,15 +418,11 @@ describe("owner project overview", () => {
   it("resolves the saved UI setting before the browser language", () => {
     expect(projectOverviewLanguage("de", "en-US")).toBe("de");
     expect(projectOverviewLanguage("en", "de-DE")).toBe("en");
-    expect(projectOverviewLanguage("system", "de-DE")).toBe("de");
-    expect(projectOverviewLanguage("system", "en-US")).toBe("en");
+    expect(projectOverviewLanguage("system", "en-US")).toBe("de");
   });
-  it("follows the OS preference list for the system setting", () => {
-    expect(projectOverviewLanguage("system", ["de-AT", "en-US"])).toBe("de");
-    expect(projectOverviewLanguage("system", ["de_CH"])).toBe("de");
-    expect(projectOverviewLanguage("system", ["fr-FR", "de-DE"])).toBe("de");
-    expect(projectOverviewLanguage("system", ["fr-FR", "es-ES"])).toBe("de");
+  it("ignores the OS language: the retired system setting means German (#567)", () => {
+    expect(projectOverviewLanguage("system", ["EN-gb"])).toBe("de");
     expect(projectOverviewLanguage("system", [])).toBe("de");
-    expect(projectOverviewLanguage("system", ["EN-gb"])).toBe("en");
+    expect(projectOverviewLanguage("fr", ["fr-FR"])).toBe("de");
   });
 });

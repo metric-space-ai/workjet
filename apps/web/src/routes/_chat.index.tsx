@@ -859,17 +859,39 @@ function ProjectGallery({
                   variant={view === "calendar" ? "secondary" : "ghost"}
                   aria-pressed={view === "calendar"}
                   data-workjet-action="project.view.calendar"
-                  onClick={() => setView("calendar")}
+                  onClick={() => {
+                    setShowArchived(false);
+                    setView("calendar");
+                  }}
                 >
                   Kalender
                 </Button>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setShowArchived((show) => !show)}>
-                {showArchived ? "Alle Projekte" : `Archiv (${archivedCount})`}
+              <Button
+                size="sm"
+                variant={showArchived ? "secondary" : "outline"}
+                aria-pressed={showArchived}
+                data-workjet-action="project.view.archive"
+                onClick={() => {
+                  // The archive is a list of project cards; it never shows the calendar.
+                  if (!showArchived) setView("gallery");
+                  setShowArchived((show) => !show);
+                }}
+              >
+                {`Archiv (${archivedCount})`}
               </Button>
             </div>
           </div>
-          <InlineProjectCreate className="mb-5" />
+          {showArchived ? null : <InlineProjectCreate className="mb-5" />}
+          {showArchived && visibleProjects.length === 0 ? (
+            <p
+              role="status"
+              className="py-10 text-center text-sm text-muted-foreground"
+              data-workjet-archive-empty=""
+            >
+              Keine archivierten Projekte
+            </p>
+          ) : null}
           {projectsUnavailable ? (
             <div
               role="status"

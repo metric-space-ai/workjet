@@ -16,6 +16,7 @@ import {
 } from "../projectExitModel";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { Button } from "./ui/button";
+import { useUiText } from "../hooks/useUiText";
 
 export function ProjectExitModelSummary({
   projectId,
@@ -29,6 +30,7 @@ export function ProjectExitModelSummary({
   readonly onEdit?: (() => void) | undefined;
   readonly editLabel?: string | undefined;
 }) {
+  const t = useUiText();
   const view = exitModelPresentation(assessment, projectId);
   const valued = view.value !== "—";
   // Der Stempel ist immer sichtbar. Mit onEdit öffnet ein Tipp darauf die
@@ -41,13 +43,13 @@ export function ProjectExitModelSummary({
       " · " +
       view.label +
       (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
-    : "Nicht bewertet";
+    : t("Nicht bewertet", "Not rated");
   const className =
     "absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double px-4 py-2 text-center text-[22px] leading-none font-bold tracking-tight whitespace-nowrap tabular-nums shadow-sm " +
     (valued
       ? "border-foreground/70 bg-background/90 text-foreground"
       : "border-neutral-500/70 bg-background/90 text-neutral-600 dark:border-neutral-400/70 dark:text-neutral-400");
-  const text = valued ? view.value : "Nicht bewertet";
+  const text = valued ? view.value : t("Nicht bewertet", "Not rated");
   if (onEdit)
     return (
       <button
@@ -625,7 +627,7 @@ export function ProjectExitModelReport({
                 </tr>
               </thead>
               <tbody>
-                {[...current.history].reverse().map((run) => (
+                {[...current.history].toReversed().map((run) => (
                   <tr key={run.run_id} className="border-t border-border">
                     <td className="py-2 pr-3 whitespace-nowrap">{formatExitDate(run.as_of)}</td>
                     <td className="px-2 whitespace-nowrap">{formatExitDate(run.exit_date)}</td>

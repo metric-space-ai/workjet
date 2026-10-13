@@ -422,7 +422,7 @@ function SectionNavigation({
   readonly activeSection: WorkjetSettingsSectionId;
   readonly onSelect: (section: WorkjetSettingsSectionId) => void;
 }) {
-  const developerMode = useClientSettings((settings) => settings.developerMode);
+  const developerMode = useClientSettings().developerMode;
   const sections = visibleWorkjetSettingsSections(developerMode);
   if (hidden || sections.length < 2) return null;
   return (

@@ -653,7 +653,7 @@ export function WorkjetWorkerEditor({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="workjet-worker-model">Modell</Label>
+                <Label htmlFor="workjet-worker-model">{t("Modell", "Model")}</Label>
                 {chosenRoute?.nativeAccountReference ? (
                   <>
                     <Select
@@ -663,7 +663,7 @@ export function WorkjetWorkerEditor({
                       }}
                     >
                       <SelectTrigger id="workjet-worker-model" className="w-full">
-                        <SelectValue placeholder="Live-Modell wählen" />
+                        <SelectValue placeholder={t("Live-Modell wählen", "Choose live model")} />
                       </SelectTrigger>
                       <SelectPopup>
                         {(chosenNativeAccount?.modelCatalog.fresh
@@ -708,7 +708,7 @@ export function WorkjetWorkerEditor({
                       }}
                     >
                       <SelectTrigger id="workjet-worker-model" className="w-full">
-                        <SelectValue placeholder="Live-Modell wählen" />
+                        <SelectValue placeholder={t("Live-Modell wählen", "Choose live model")} />
                       </SelectTrigger>
                       <SelectPopup>
                         {choiceCatalog?.accountId === chosenAccount.id &&
@@ -732,7 +732,7 @@ export function WorkjetWorkerEditor({
                             ? "Keine Antwort."
                             : "Modellliste wird gelesen …"
                           : choiceCatalog?.state !== "observed"
-                            ? "Modellliste nicht verfügbar."
+                            ? t("Modellliste nicht verfügbar.", "Model list unavailable.")
                             : `Live-Liste · ${chosenAccount.label}`}
                       </span>
                       <Button
@@ -825,7 +825,9 @@ export function WorkjetWorkerEditor({
                 </div>
                 {draft.capabilityIds.includes("decision-hub") ? (
                   <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
-                    <Label htmlFor="workjet-decision-hub-connection">CTOX-Verbindung</Label>
+                    <Label htmlFor="workjet-decision-hub-connection">
+                      {t("CTOX-Verbindung", "CTOX connection")}
+                    </Label>
                     <Select
                       value={decisionHubBinding?.target.connectionId ?? ""}
                       onValueChange={(connectionId) => {
@@ -844,7 +846,7 @@ export function WorkjetWorkerEditor({
                       }}
                     >
                       <SelectTrigger id="workjet-decision-hub-connection">
-                        <SelectValue placeholder="Instanz wählen" />
+                        <SelectValue placeholder={t("Instanz wählen", "Choose instance")} />
                       </SelectTrigger>
                       <SelectPopup>
                         {connections.map((connection) => (

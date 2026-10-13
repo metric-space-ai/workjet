@@ -348,8 +348,9 @@ describe("real project overview", () => {
   });
   it("derives age from actual project time and never invents an unavailable timestamp", () => {
     const now = Date.parse("2026-10-02T02:00:00Z");
-    expect(projectUpdateAge("2026-10-02T00:00:00Z", now)).toBe("2h ago");
-    expect(projectUpdateAge(null, now)).toBe("Not available");
-    expect(projectUpdateAge("invalid", now)).toBe("Not available");
+    expect(projectUpdateAge("2026-10-02T00:00:00Z", now, "en")).toBe("2h ago");
+    expect(projectUpdateAge("2026-10-02T00:00:00Z", now, "de")).toBe("vor 2 Std.");
+    expect(projectUpdateAge(null, now, "en")).toBe("Not available");
+    expect(projectUpdateAge("invalid", now, "en")).toBe("Not available");
   });
 });

@@ -800,6 +800,12 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     projectId: ProjectId,
   }),
   Schema.Struct({
+    action: Schema.Literal("project.init"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.kpis.refresh"),
     commandId: CommandId,
     projectId: ProjectId,
@@ -968,6 +974,15 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
   }),
 );
 
+// ctox.workjet.project.init progress (ctox #653). Unknown ids/states are kept
+// as text so a newer CTOX step never breaks the card.
+export const CtoxWorkjetProjectInitStep = Schema.Struct({
+  id: CtoxProjectText(64),
+  state: CtoxProjectText(32),
+  detail: Schema.String.check(Schema.isMaxLength(256)),
+});
+export type CtoxWorkjetProjectInitStep = typeof CtoxWorkjetProjectInitStep.Type;
+
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetInstanceGrokResponse,
   WorkjetNativeProviderResponse,
@@ -1054,6 +1069,13 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
         : "Supervisor turn belongs to another binding.",
     ),
   ),
+  Schema.Struct({
+    action: Schema.Literal("project.init"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    operationId: CtoxProjectText(128),
+    steps: Schema.Array(CtoxWorkjetProjectInitStep).check(Schema.isMaxLength(12)),
+  }),
   Schema.Struct({
     action: Schema.Literals(["project.kpis.read", "project.kpis.configure"]),
     commandId: CommandId,
@@ -1246,6 +1268,8 @@ export const CtoxWorkjetProjectControlDiagnostic = Schema.Struct({
     "owner_session_not_ready",
     "project_control_not_ready",
     "supervisor_control_not_ready",
+    "core_outdated",
+    "access_denied",
   ]),
   phase: Schema.optionalKey(
     Schema.Literals([

@@ -5,9 +5,11 @@
  */
 import type { EnvironmentId, FilesystemBrowseEntry } from "@workjet/contracts";
 import { FolderIcon, FolderOpenIcon, GitBranchIcon, PlusIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import {
+  deriveRepositoryFolderName,
+  joinCloneDestination,
   PROJECT_CLONE_PROVIDERS,
   PROJECT_CREATE_SOURCES,
   type ProjectCloneProvider,
@@ -174,8 +176,15 @@ export function ProjectCloneFields(props: {
   readonly targetFolders?: readonly ProjectCloneTargetFolder[];
   readonly onPickTarget?: (() => void) | null;
   readonly picking?: boolean;
+  /** Opens the target editor initially (fixtures, tests). */
+  readonly defaultEditingTarget?: boolean;
 }) {
   const normalizedBase = props.baseDirectory.trim().replace(/(.)[/\\]+$/, "$1");
+  const [editingTarget, setEditingTarget] = useState(props.defaultEditingTarget ?? false);
+  const folderName = deriveRepositoryFolderName(props.repository);
+  const destination =
+    normalizedBase.length > 0 ? joinCloneDestination(normalizedBase, folderName || "…") : null;
+  const en = workjetUiLanguage() === "en";
   const entry =
     PROJECT_CLONE_PROVIDERS.find((candidate) => candidate.value === props.provider) ??
     PROJECT_CLONE_PROVIDERS[0]!;
@@ -221,54 +230,80 @@ export function ProjectCloneFields(props: {
           </div>
         </div>
       </div>
-      <div className="grid min-w-0 gap-1 text-[13.5px]">
-        <span>Zielordner</span>
-        {(props.targetFolders?.length ?? 0) > 0 || props.onPickTarget ? (
-          <div
-            aria-label="Bekannte Ordner"
-            className="flex flex-wrap gap-1.5"
-            role="group"
-            data-workjet-clone-targets=""
-          >
-            {props.targetFolders?.map((folder) => (
-              <Button
-                key={folder.path}
-                type="button"
-                size="xs"
-                variant={folder.path === normalizedBase ? "default" : "outline"}
-                aria-pressed={folder.path === normalizedBase}
-                title={folder.path}
-                data-workjet-clone-target={folder.path}
-                onClick={() => props.onBaseDirectoryChange(folder.path)}
-              >
-                <FolderIcon />
-                {folder.label}
-              </Button>
-            ))}
-            {props.onPickTarget ? (
-              <Button
-                type="button"
-                size="xs"
-                variant="outline"
-                disabled={props.picking}
-                data-workjet-action="project.add.clone.pick-target"
-                onClick={props.onPickTarget}
-              >
-                <FolderOpenIcon />
-                Ordner wählen
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-        <Input
-          aria-label="Zielordner"
-          className="w-full min-w-0"
-          placeholder="~/"
-          spellCheck={false}
-          value={props.baseDirectory}
-          onChange={(event) => props.onBaseDirectoryChange(event.target.value)}
-        />
+      {/* One line with one button instead of two folder controls (#507). */}
+      <div
+        className="flex min-w-0 flex-wrap items-center gap-2 text-[13.5px]"
+        data-workjet-clone-destination=""
+      >
+        <span className="min-w-0 truncate text-muted-foreground">
+          {destination !== null
+            ? en
+              ? `Will be cloned to ${destination}`
+              : `Wird geklont nach ${destination}`
+            : en
+              ? "No target folder yet"
+              : "Noch kein Zielordner"}
+        </span>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          aria-expanded={editingTarget || destination === null}
+          data-workjet-action="project.add.clone.change-target"
+          onClick={() => setEditingTarget((open) => !open)}
+        >
+          {en ? "Change" : "Ändern"}
+        </Button>
       </div>
+      {editingTarget || destination === null ? (
+        <div className="grid min-w-0 gap-1 text-[13.5px]">
+          {(props.targetFolders?.length ?? 0) > 0 || props.onPickTarget ? (
+            <div
+              aria-label="Bekannte Ordner"
+              className="flex flex-wrap gap-1.5"
+              role="group"
+              data-workjet-clone-targets=""
+            >
+              {props.targetFolders?.map((folder) => (
+                <Button
+                  key={folder.path}
+                  type="button"
+                  size="xs"
+                  variant={folder.path === normalizedBase ? "default" : "outline"}
+                  aria-pressed={folder.path === normalizedBase}
+                  title={folder.path}
+                  data-workjet-clone-target={folder.path}
+                  onClick={() => props.onBaseDirectoryChange(folder.path)}
+                >
+                  <FolderIcon />
+                  {folder.label}
+                </Button>
+              ))}
+              {props.onPickTarget ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={props.picking}
+                  data-workjet-action="project.add.clone.pick-target"
+                  onClick={props.onPickTarget}
+                >
+                  <FolderOpenIcon />
+                  Ordner wählen
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          <Input
+            aria-label="Zielordner"
+            className="w-full min-w-0"
+            placeholder="~/"
+            spellCheck={false}
+            value={props.baseDirectory}
+            onChange={(event) => props.onBaseDirectoryChange(event.target.value)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

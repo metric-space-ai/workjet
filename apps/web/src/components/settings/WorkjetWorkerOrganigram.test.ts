@@ -12,6 +12,7 @@ import {
   autoLayoutWorkjetWorkerGraph,
   sanitizeWorkjetWorkerGraph,
   WorkjetWorkerOrganigram,
+  organigramEditorPosition,
 } from "./WorkjetWorkerOrganigram";
 
 const profile = (id: string): WorkjetWorkerProfile => ({
@@ -92,5 +93,17 @@ describe("WorkjetWorkerOrganigram", () => {
     expect(markup).toContain('aria-label="Unter-Luma für lead"');
     expect(markup).not.toContain("Arrange");
     expect(markup).not.toContain('role="dialog"');
+  });
+});
+
+describe("organigramEditorPosition", () => {
+  it("opens directly below the clicked node", () => {
+    expect(organigramEditorPosition({ x: 120, y: 40 }, 1000)).toEqual({ left: 120, top: 130 });
+  });
+  it("stays inside the canvas width", () => {
+    expect(organigramEditorPosition({ x: 700, y: 0 }, 800).left).toBe(352);
+  });
+  it("uses the top left corner for a new top-level Luma", () => {
+    expect(organigramEditorPosition(null, 800)).toEqual({ left: 8, top: 8 });
   });
 });

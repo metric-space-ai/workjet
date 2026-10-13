@@ -40,7 +40,10 @@ export function organigramEditorPosition(
 ): { readonly left: number; readonly top: number } {
   if (anchor === null) return { left: 8, top: 8 };
   const maxLeft = Math.max(8, canvasWidth - EDITOR_WIDTH - 8);
-  return { left: Math.min(Math.max(8, anchor.x), maxLeft), top: anchor.y + NODE_HEIGHT + EDITOR_GAP };
+  return {
+    left: Math.min(Math.max(8, anchor.x), maxLeft),
+    top: anchor.y + NODE_HEIGHT + EDITOR_GAP,
+  };
 }
 
 type Position = {

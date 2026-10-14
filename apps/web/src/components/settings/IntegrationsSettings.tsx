@@ -426,6 +426,12 @@ export function IntegrationsSettingsPanel() {
           {t("Neu verbinden", "Reconnect")}
         </Pill>
       );
+    if (e.connect === null)
+      return (
+        <span className="inline-flex h-8 shrink-0 items-center px-2 text-[13px] text-muted-foreground">
+          {t("Bald verfügbar", "Coming soon")}
+        </span>
+      );
     return (
       <Pill
         action={`integrations.add.${e.slug}`}

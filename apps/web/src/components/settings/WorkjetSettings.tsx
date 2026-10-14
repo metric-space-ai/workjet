@@ -1473,8 +1473,11 @@ export function WorkjetSettings({
   if (target === null || environment === null) {
     const resolving = scope.phase === "resolving" || connections.isPending;
     const noInstance = scope.phase === "blocked" && scope.blocker === "no-active-instance";
+    const promptPage = defaultSection === "prompt";
     return (
-      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
+      <SettingsPageContainer
+        title={searchableSetting(promptPage ? "workjet-prompt" : "workjet-workers").title}
+      >
         {resolving ? (
           <EmptyLoading
             title={uiText("Instanz wird geladen", "Loading instance")}
@@ -1490,7 +1493,9 @@ export function WorkjetSettings({
               <EmptyTitle>
                 {noInstance
                   ? uiText("Keine Instanz", "No instance")
-                  : uiText("Worker-Presets nicht abrufbar", "Worker presets unavailable")}
+                  : promptPage
+                    ? uiText("System-Prompts nicht abrufbar", "System prompts unavailable")
+                    : uiText("Worker-Presets nicht abrufbar", "Worker presets unavailable")}
               </EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
@@ -1611,7 +1616,12 @@ function ScopedWorkjetSettings({
 
   if (instance.data === null)
     return (
-      <SettingsPageContainer title={searchableSetting("workjet-workers").title}>
+      <SettingsPageContainer
+        title={
+          searchableSetting(defaultSection === "prompt" ? "workjet-prompt" : "workjet-workers")
+            .title
+        }
+      >
         {instance.isPending ? (
           <EmptyLoading
             title={uiText("Worker-Presets werden geladen", "Loading worker presets")}

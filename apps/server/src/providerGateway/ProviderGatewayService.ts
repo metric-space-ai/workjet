@@ -1759,18 +1759,41 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const account = configuration.accounts.find((candidate) => candidate.id === input.accountId);
       if (account === undefined) return unavailable("account-unavailable");
       if (!account.enabled) return unavailable("account-disabled");
-      if (account.provider !== "claude" || platform.discoverClaudeModels === undefined)
-        return unavailable("provider-unsupported");
+      const apiKeyList =
+        isApiKeyAccount(account) &&
+        (account.provider === "minimax" || account.provider === "xai") &&
+        platform.discoverApiKeyModels !== undefined;
+      const claudeList =
+        account.provider === "claude" && platform.discoverClaudeModels !== undefined;
+      if (!apiKeyList && !claudeList) return unavailable("provider-unsupported");
+      const secretReference =
+        account.provider === "claude"
+          ? account.accessTokenSecret
+          : isApiKeyAccount(account)
+            ? account.apiKeySecret
+            : undefined;
+      if (secretReference === undefined) return unavailable("provider-unsupported");
       const readToken = async () => {
-        const secret = await runPromise(secrets.get(secretStoreName(account.accessTokenSecret)));
+        const secret = await runPromise(secrets.get(secretStoreName(secretReference)));
         return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
       };
       const token = await readToken();
       if (token === undefined || !isAcceptableApiKey(token))
         return unavailable("catalog-unavailable");
-      const models = await platform
-        .discoverClaudeModels(token, AbortSignal.timeout(8_000))
-        .catch(() => undefined);
+      const models = claudeList
+        ? await platform.discoverClaudeModels!(token, AbortSignal.timeout(8_000)).catch(() => undefined)
+        : apiKeyList && (account.provider === "minimax" || account.provider === "xai")
+          ? (
+              await platform
+                .discoverApiKeyModels!(
+                  account.provider,
+                  token,
+                  account.upstreamBaseUrl,
+                  AbortSignal.timeout(8_000),
+                )
+                .catch(() => undefined)
+            )?.models
+          : undefined;
       const current = (await loadConfiguration()).accounts.find(
         (candidate) => candidate.id === input.accountId,
       );

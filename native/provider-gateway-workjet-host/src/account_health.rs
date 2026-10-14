@@ -53,6 +53,13 @@ mod account_failure_scope_tests {
         assert_eq!(health["accounts"][0]["usable"], true);
         assert!(health["accounts"][0]["cooldownUntilMs"].is_null());
         assert_eq!(health["accounts"][0]["generationHttpStatus"], 404);
+        assert_eq!(health["accounts"][0]["models"][0]["modelId"], "grok-4.7");
+        assert_eq!(
+            health["accounts"][0]["models"][0]["status"],
+            "model-unavailable"
+        );
+        assert_eq!(health["accounts"][0]["models"][0]["httpStatus"], 404);
+        assert_eq!(health["accounts"][0]["models"][1]["status"], "ready");
         let records = reopened.state.load().unwrap();
         assert_eq!(
             reopened
@@ -80,6 +87,32 @@ mod account_failure_scope_tests {
             ),
             Err(AccountSelectionError::Unavailable)
         ));
+    }
+
+    #[test]
+    fn model_quota_is_visible_even_when_account_remains_usable() {
+        let root = tempfile::tempdir().unwrap();
+        let source = source(root.path());
+        let now = now_ms();
+        source
+            .state
+            .observe_quota(
+                "xai",
+                "account",
+                vec![QuotaWindow {
+                    name: "model_bucket".into(),
+                    model_pattern: Some("grok-4.7".into()),
+                    remaining_percent: Some(0.0),
+                    resets_at_ms: Some(now + 60_000),
+                    observed_at_ms: now,
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+        let health = source.snapshot();
+        assert_eq!(health["accounts"][0]["usable"], true);
+        assert_eq!(health["accounts"][0]["models"][0]["status"], "quota");
+        assert_eq!(health["accounts"][0]["models"][1]["status"], "ready");
     }
 
     #[test]
@@ -411,8 +444,8 @@ mod provenance_tests {
 // Bounded on-demand subscription usage reads. No periodic worker or CLI scraping.
 use crate::{
     account_policy::{
-        balance_is_exhausted, is_model_not_found_cooldown, quota_is_exhausted, AccountBalance,
-        AccountState, QuotaSource, QuotaWindow,
+        balance_is_exhausted, is_model_not_found_cooldown, quota_applies, quota_is_exhausted,
+        AccountBalance, AccountState, QuotaSource, QuotaWindow,
     },
     secret_store::WorkjetSecretStore,
 };
@@ -428,7 +461,10 @@ use workjet_provider_gateway::{
         runtime::executor::ApiKeyHttpClient,
     },
     sdk::{
-        cliproxy::auth::{AccountCandidate, CooldownStateStore},
+        cliproxy::auth::{
+            scheduler::canonical_model_key, AccountCandidate, CooldownStateRecord,
+            CooldownStateStore,
+        },
         pluginapi::{HostHttpClient, HttpRequest},
     },
 };
@@ -467,6 +503,116 @@ pub struct AccountHealth {
     pub quota_supported: bool,
     pub quota_refreshing: bool,
     pub quota_error: Option<&'static str>,
+    pub models: Vec<AccountModelHealth>,
+}
+/// Route eligibility for an exact configured model. A successful account-wide
+/// usage probe is not proof that this model can be selected for a real turn.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountModelHealth {
+    pub model_id: String,
+    pub status: &'static str,
+    pub usable: bool,
+    pub cooldown_until_ms: Option<i64>,
+    pub error_code: Option<String>,
+    pub http_status: Option<u16>,
+    pub observed_at_ms: Option<i64>,
+}
+
+fn model_health(
+    account: &AccountCandidate,
+    model: &str,
+    records: Option<&[CooldownStateRecord]>,
+    quotas: &[QuotaWindow],
+    balance: Option<&AccountBalance>,
+    now: i64,
+) -> AccountModelHealth {
+    let requested = canonical_model_key(model);
+    let relevant = records
+        .into_iter()
+        .flatten()
+        .filter(|record| {
+            record.provider.eq_ignore_ascii_case(&account.provider)
+                && record.auth_id == account.auth_id
+                && !(record.model.is_none() && is_model_not_found_cooldown(record))
+                && record
+                    .model
+                    .as_deref()
+                    .is_none_or(|name| canonical_model_key(name) == requested)
+        })
+        .collect::<Vec<_>>();
+    let latest = relevant.iter().max_by_key(|record| record.updated_at_ms);
+    let blocked = relevant.iter().any(|record| !record.is_available_at(now));
+    let cooldown_until_ms = relevant
+        .iter()
+        .filter(|record| !record.is_available_at(now))
+        .filter_map(|record| record.blocking_until_ms())
+        .filter(|until| *until > now)
+        .max();
+    let exhausted_windows = quotas
+        .iter()
+        .filter(|window| {
+            quota_applies(window, &requested)
+                && (window.name != "seven_day_opus"
+                    || requested.to_ascii_lowercase().contains("opus"))
+                && (window.name != "seven_day_sonnet"
+                    || requested.to_ascii_lowercase().contains("sonnet"))
+                && quota_is_exhausted(window, now)
+        })
+        .collect::<Vec<_>>();
+    let exhausted = !exhausted_windows.is_empty();
+    let retry_at_ms = cooldown_until_ms.max(
+        exhausted_windows
+            .iter()
+            .filter_map(|window| window.resets_at_ms)
+            .filter(|until| *until > now)
+            .max(),
+    );
+    let status = if account.disabled {
+        "disabled"
+    } else if records.is_none() {
+        "unknown"
+    } else if relevant.iter().any(|record| {
+        !record.is_available_at(now)
+            && record
+                .last_error
+                .as_ref()
+                .is_some_and(|error| error.http_status == Some(401))
+    }) {
+        "auth-required"
+    } else if blocked
+        && relevant
+            .iter()
+            .filter(|record| !record.is_available_at(now))
+            .all(|record| record.model.is_some() && is_model_not_found_cooldown(record))
+    {
+        "model-unavailable"
+    } else if blocked {
+        "cooldown"
+    } else if balance.is_some_and(|balance| balance_is_exhausted(balance, now)) {
+        "balance"
+    } else if exhausted {
+        "quota"
+    } else {
+        "ready"
+    };
+    AccountModelHealth {
+        model_id: model.to_owned(),
+        status,
+        usable: status == "ready",
+        cooldown_until_ms: retry_at_ms,
+        error_code: latest
+            .and_then(|record| record.last_error.as_ref())
+            .map(|error| error.code.clone()),
+        http_status: latest
+            .and_then(|record| record.last_error.as_ref())
+            .and_then(|error| error.http_status),
+        observed_at_ms: latest
+            .map(|record| record.updated_at_ms)
+            .into_iter()
+            .chain(exhausted_windows.iter().map(|window| window.observed_at_ms))
+            .max(),
+    }
 }
 #[derive(Default)]
 struct RefreshState {
@@ -599,6 +745,15 @@ impl AccountHealthSource {
                 let authentication = authentication(generation, probe);
                 let quotas = self.state.quotas(&a.provider, &a.auth_id);
                 let balance = self.state.balance(&a.provider, &a.auth_id);
+                let models = a
+                    .supported_models
+                    .iter()
+                    .filter(|model| !model.contains('*'))
+                    .take(256)
+                    .map(|model| {
+                        model_health(a, model, records.as_deref(), &quotas, balance.as_ref(), now)
+                    })
+                    .collect();
                 let exhausted = balance
                     .as_ref()
                     .is_some_and(|b| balance_is_exhausted(b, now))
@@ -646,6 +801,7 @@ impl AccountHealthSource {
                         Some((0, _)) => Some("unavailable"),
                         Some(_) => Some("provider-error"),
                     },
+                    models,
                 }
             })
             .collect::<Vec<_>>();

@@ -137,7 +137,7 @@ const fixture = (): Parameters<typeof officialCodingModelExport>[0] =>
     },
     harnesses: {
       schemaVersion: 1,
-      probedAt: new Date(999_000).toISOString(),
+      probedAt: "1970-01-01T00:16:39.000Z",
       harnesses: [
         { harness: "claude-code", availability: "available", executablePath: "/usr/bin/claude" },
       ],
@@ -195,7 +195,7 @@ it("fails closed when account, catalog, or harness evidence has expired", () => 
   assert.equal(staleHealth.models[0]?.reason, "account-unavailable");
   const staleHarness = officialCodingModelExport({
     ...input,
-    harnesses: { ...input.harnesses, probedAt: new Date(0).toISOString() },
+    harnesses: { ...input.harnesses, probedAt: "1970-01-01T00:00:00.000Z" },
   });
   assert.equal(staleHarness.models[0]?.available, false);
   assert.equal(staleHarness.models[0]?.reason, "harness-unavailable");

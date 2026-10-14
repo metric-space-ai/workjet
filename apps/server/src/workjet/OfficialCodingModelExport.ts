@@ -31,7 +31,8 @@ export function officialCodingModelExport(input: {
   const routes = new Map(workjet.llmRoutes.map((route) => [route.id, route]));
   const computers = new Map(workjet.computers.map((computer) => [computer.id, computer]));
   const probes = new Map(harnesses.harnesses.map((harness) => [harness.harness, harness]));
-  const recent = (atMs: number) =>
+  const recent = (atMs: number | null | undefined) =>
+    typeof atMs === "number" &&
     Number.isFinite(atMs) &&
     atMs <= observedAtMs &&
     observedAtMs - atMs <= 15 * 60 * 1000;
@@ -45,7 +46,10 @@ export function officialCodingModelExport(input: {
       unverifiedAccounts.push({
         accountId: account.id,
         provider: account.provider,
-        reason: list?.state === "observed" ? "catalog-unavailable" : (list?.reason ?? "catalog-unavailable"),
+        reason:
+          list?.state === "observed"
+            ? "catalog-unavailable"
+            : (list?.reason ?? "catalog-unavailable"),
       });
       continue;
     }
@@ -115,9 +119,9 @@ export function officialCodingModelExport(input: {
             ? "coding-route-unverified"
             : !enabled
               ? "route-disabled"
-            : computer?.presentationKind !== "local" ||
-                !harnessFresh ||
-                probe?.availability !== "available"
+              : computer?.presentationKind !== "local" ||
+                  !harnessFresh ||
+                  probe?.availability !== "available"
                 ? "harness-unavailable"
                 : health.accountHealth !== "reported" ||
                     !recent(health.observedAtMs) ||

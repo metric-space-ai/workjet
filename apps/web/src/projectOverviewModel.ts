@@ -137,6 +137,15 @@ export function isRunningProjectOneShot(thread: EnvironmentThreadShell) {
     thread.workerDecisionProblem != null
   );
 }
+export type ProjectOverviewFeedKind = "step" | "pr" | "meeting" | "goal" | "setup";
+export type ProjectOverviewHistoryItem = {
+  readonly id: string;
+  readonly at: string;
+  readonly sentence: string;
+  readonly thread: EnvironmentThreadShell | undefined;
+  readonly kind: ProjectOverviewFeedKind;
+  readonly url?: string;
+};
 export type ProjectOverviewPr = {
   readonly url: string;
   readonly number: number;
@@ -312,7 +321,7 @@ export function buildProjectOwnerOverview(input: {
           : null,
     },
   ];
-  const history = all.flatMap((thread) =>
+  const history: ProjectOverviewHistoryItem[] = all.flatMap((thread) =>
     thread.latestTurn?.state === "completed" && thread.latestTurn.completedAt
       ? [
           {
@@ -321,6 +330,8 @@ export function buildProjectOwnerOverview(input: {
             sentence: projectOverviewFormat(text.completedStep, {
               name: projectOverviewWorkerName(thread.title, project.title).name,
             }),
+            thread,
+            kind: "step" as const,
           },
         ]
       : [],
@@ -331,18 +342,25 @@ export function buildProjectOwnerOverview(input: {
         id: pr.url,
         at: pr.mergedAt,
         sentence: projectOverviewFormat(text.mergedEvent, { number: pr.number, title: pr.title }),
+        thread: undefined,
+        kind: "pr",
+        url: pr.url,
       });
   if (lastMeeting)
     history.push({
       id: "meeting",
       at: new Date(lastMeeting.scheduled_at_ms).toISOString(),
       sentence: text.meetingCompleted,
+      thread: undefined,
+      kind: "meeting",
     });
   if (confirmed?.confirmed_at_ms)
     history.push({
       id: "todos:confirmed",
       at: new Date(confirmed.confirmed_at_ms).toISOString(),
       sentence: text.todosConfirmed,
+      thread: undefined,
+      kind: "goal",
     });
   const setup = all.filter((thread) => Number.isFinite(Date.parse(thread.createdAt)));
   if (setup.length) {
@@ -371,6 +389,8 @@ export function buildProjectOwnerOverview(input: {
         roles: roles.join(" + "),
         range: day(dates[0]!) + "–" + day(dates.at(-1)!),
       }),
+      thread: undefined,
+      kind: "setup",
     });
   }
   return {
@@ -405,6 +425,8 @@ export function buildProjectOwnerOverview(input: {
     kpis,
     merged,
     history: history.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 5),
+    /** Everything for the feed, newest first (#overview-feed). */
+    feed: history.slice(0, 40),
     lastMeeting,
     recurring: project.configuration?.jourFixe ?? null,
     nextMeetingDate: projectOverviewNextMeetingDate(

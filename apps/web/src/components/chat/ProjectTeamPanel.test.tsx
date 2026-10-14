@@ -83,14 +83,14 @@ describe("ProjectTeamPanel directory", () => {
     expect(markup).not.toContain("One-time PR threads");
     expect(markup).not.toContain("gpt-6.1-sol");
     expect(markup).toContain("Teamziel");
-    expect(markup).toContain("Feste Luma hinzufügen");
+    expect(markup).toContain("Worker hinzufügen");
   });
   it("shows all three persisted team roles from the supervisor, including its grandchild worker", () => {
     const markup = render(supervisor, [worker, specialist, supervisor]);
     expect(markup).toContain('data-workjet-team-group="supervisor"');
     expect(markup).toContain('data-workjet-team-group="specialist"');
     expect(markup).toContain('data-workjet-team-group="worker"');
-    expect(markup).toContain("Feste Luma");
+    expect(markup).toContain("Worker hinzufügen");
     expect(markup).toContain("Einmal-Luma");
     expect(markup).toContain("Interface specialist");
     expect(markup).toContain("Fix gallery navigation");

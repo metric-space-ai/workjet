@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ProjectId, type WorkjetJourFixeMeeting } from "@workjet/contracts";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession } from "../lib/jourFixeNative";
@@ -13,7 +13,9 @@ import type { PromptedProjectKpis } from "../projectKpis";
 
 export function useProjectOverviewSources(instanceId: string | null, projectId: string) {
   const scope = useActiveWorkjetScope();
-  const key = JSON.stringify([instanceId, projectId, scope.selectionRevision]);
+  const [reloadCount, setReloadCount] = useState(0);
+  const key = JSON.stringify([instanceId, projectId, scope.selectionRevision, reloadCount]);
+  const reload = useCallback(() => setReloadCount((value) => value + 1), []);
   const [state, setState] = useState<{
     key: string;
     meeting: WorkjetJourFixeMeeting | null;
@@ -77,8 +79,8 @@ export function useProjectOverviewSources(instanceId: string | null, projectId: 
     };
   }, [instanceId, projectId, key, scope.selectionRevision]);
   return state.key === key
-    ? state
-    : { key, meeting: null, kpis: null, failed: false, failureText: null };
+    ? { ...state, reload }
+    : { key, meeting: null, kpis: null, failed: false, failureText: null, reload };
 }
 
 function overviewFailureText(

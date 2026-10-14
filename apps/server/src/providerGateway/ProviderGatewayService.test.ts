@@ -244,6 +244,105 @@ describe("ProviderGatewayService", () => {
     },
   );
 
+  it.each(["kimi", "zai"] as const)(
+    "reads the authenticated %s model list for the exact stored plan without inference",
+    async (provider) => {
+      const harness = readyHarness();
+      const origin = provider === "kimi" ? "https://api.moonshot.ai/v1" : "https://api.z.ai/api/coding/paas/v4";
+      const configured = JSON.stringify({
+        ...JSON.parse(configuration),
+        defaultProvider: provider,
+        accounts: [
+          {
+            id: `${provider}-primary`,
+            label: provider,
+            provider,
+            enabled: true,
+            models: ["configured-model"],
+            upstreamBaseUrl: origin,
+            apiKeySecret: { scope: "workjet-provider-gateway", name: `${provider}.key` },
+          },
+        ],
+      });
+      let probes = 0;
+      const result = await runGateway(
+        {
+          ...harness.platform,
+          readText: async () => configured,
+          discoverKimiConnection: async (token, preferredBaseUrl) => {
+            expect(token).toBe("provider-secret");
+            expect(preferredBaseUrl).toBe(origin);
+            probes += 1;
+            return {
+              plan: "api",
+              upstreamBaseUrl: origin,
+              models: ["live-model"],
+            };
+          },
+          discoverZaiModels: async (token, preferredBaseUrl) => {
+            expect(token).toBe("provider-secret");
+            expect(preferredBaseUrl).toBe(origin);
+            probes += 1;
+            return ["live-model"];
+          },
+        },
+        (gateway) =>
+          Effect.gen(function* () {
+            yield* gateway.start();
+            const writesBefore = [...harness.writes];
+            const models = yield* gateway.accountModels({
+              accountId: WorkjetGatewayAccountId.make(`${provider}-primary`),
+            });
+            expect(harness.writes).toEqual(writesBefore);
+            return models;
+          }),
+      );
+      expect(result.state).toBe("observed");
+      expect(result.modelIds).toEqual(["live-model"]);
+      expect(probes).toBe(1);
+      expect(JSON.stringify(result)).not.toContain("provider-secret");
+    },
+  );
+
+  it("does not attribute a Kimi fallback catalog to a different stored plan", async () => {
+    const harness = readyHarness();
+    const configured = JSON.stringify({
+      ...JSON.parse(configuration),
+      defaultProvider: "kimi",
+      accounts: [
+        {
+          id: "kimi-primary",
+          label: "Kimi",
+          provider: "kimi",
+          enabled: true,
+          models: ["configured-model"],
+          upstreamBaseUrl: "https://api.moonshot.ai/v1",
+          apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi.key" },
+        },
+      ],
+    });
+    const result = await runGateway(
+      {
+        ...harness.platform,
+        readText: async () => configured,
+        discoverKimiConnection: async () => ({
+          plan: "coding",
+          upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+          models: ["other-plan-model"],
+        }),
+      },
+      (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          return yield* gateway.accountModels({
+            accountId: WorkjetGatewayAccountId.make("kimi-primary"),
+          });
+        }),
+    );
+    expect(result.reason).toBe("catalog-unavailable");
+    expect(result.modelIds).toEqual([]);
+  });
+
   it("discards a live-list completion if the exact account changes during discovery", async () => {
     const harness = readyHarness();
     let enabled = true;

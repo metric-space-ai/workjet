@@ -135,6 +135,11 @@ export interface ProviderGatewayPlatform {
     preferredBaseUrl?: string,
     signal?: AbortSignal,
   ) => Promise<KimiConnection | undefined>;
+  readonly discoverZaiModels?: (
+    apiKey: string,
+    preferredBaseUrl: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
   readonly discoverApiKeyModels?: (
     provider: "minimax" | "xai",
     apiKey: string,
@@ -1765,7 +1770,18 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         platform.discoverApiKeyModels !== undefined;
       const claudeList =
         account.provider === "claude" && platform.discoverClaudeModels !== undefined;
-      if (!apiKeyList && !claudeList) return unavailable("provider-unsupported");
+      const kimiList =
+        isApiKeyAccount(account) &&
+        account.provider === "kimi" &&
+        account.upstreamBaseUrl !== undefined &&
+        platform.discoverKimiConnection !== undefined;
+      const zaiList =
+        isApiKeyAccount(account) &&
+        account.provider === "zai" &&
+        account.upstreamBaseUrl !== undefined &&
+        platform.discoverZaiModels !== undefined;
+      if (!apiKeyList && !claudeList && !kimiList && !zaiList)
+        return unavailable("provider-unsupported");
       const secretReference =
         account.provider === "claude"
           ? account.accessTokenSecret
@@ -1780,19 +1796,40 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const token = await readToken();
       if (token === undefined || !isAcceptableApiKey(token))
         return unavailable("catalog-unavailable");
+      const kimiConnection =
+        kimiList && account.provider === "kimi"
+          ? await platform.discoverKimiConnection!(
+              token,
+              account.upstreamBaseUrl,
+              AbortSignal.timeout(8_000),
+            ).catch(() => undefined)
+          : undefined;
+      const apiKeyConnection =
+        apiKeyList && (account.provider === "minimax" || account.provider === "xai")
+          ? await platform.discoverApiKeyModels!(
+              account.provider,
+              token,
+              account.upstreamBaseUrl,
+              AbortSignal.timeout(8_000),
+            ).catch(() => undefined)
+          : undefined;
       const models = claudeList
         ? await platform.discoverClaudeModels!(token, AbortSignal.timeout(8_000)).catch(
             () => undefined,
           )
+        : kimiList && account.provider === "kimi"
+          ? kimiConnection?.upstreamBaseUrl === account.upstreamBaseUrl
+            ? kimiConnection.models
+            : undefined
+        : zaiList && account.provider === "zai"
+          ? await platform
+              .discoverZaiModels!(token, account.upstreamBaseUrl!, AbortSignal.timeout(8_000))
+              .catch(() => undefined)
         : apiKeyList && (account.provider === "minimax" || account.provider === "xai")
-          ? (
-              await platform.discoverApiKeyModels!(
-                account.provider,
-                token,
-                account.upstreamBaseUrl,
-                AbortSignal.timeout(8_000),
-              ).catch(() => undefined)
-            )?.models
+          ? account.upstreamBaseUrl === undefined ||
+            apiKeyConnection?.upstreamBaseUrl === account.upstreamBaseUrl
+            ? apiKeyConnection?.models
+            : undefined
           : undefined;
       const current = (await loadConfiguration()).accounts.find(
         (candidate) => candidate.id === input.accountId,

@@ -1,6 +1,6 @@
 // @effect-diagnostics globalFetch:off -- Vendor-only plan-detection regression.
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { discoverZaiConnection, ZAI_BASE_URLS } from "./ZaiConnection.ts";
+import { discoverZaiConnection, discoverZaiModels, ZAI_BASE_URLS } from "./ZaiConnection.ts";
 
 // Real stored-account GET /models and bounded inference, 2026-10-09.
 const model = "glm-5.3-flash";
@@ -10,6 +10,19 @@ const answer = () =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Z.ai plan discovery", () => {
+  it("exports only the configured plan's authenticated model list without inference", async () => {
+    const fetch = vi.fn((url: string, init: RequestInit) => {
+      expect(url).toBe(`${ZAI_BASE_URLS[0]}/models`);
+      expect(init.redirect).toBe("error");
+      expect((init.headers as Record<string, string>).authorization).toBe("Bearer fixture-key");
+      return list();
+    });
+    vi.stubGlobal("fetch", fetch);
+    expect(await discoverZaiModels("fixture-key", ZAI_BASE_URLS[0])).toEqual([model]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(await discoverZaiModels("fixture-key", "https://other.invalid")).toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("distinguishes identical lists by actual inference without returning the credential", async () => {
     const requests: Array<string> = [];
     vi.stubGlobal("fetch", (url: string, init: RequestInit) => {

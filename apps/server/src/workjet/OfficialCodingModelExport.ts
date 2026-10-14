@@ -62,9 +62,19 @@ export function officialCodingModelExport(input: {
               ? profile.harness === "claude-code"
               : profile.harness !== "codex-cli" && profile.harness !== "claude-code");
         const coding = profile !== undefined && homeValid;
-        const enabled = account.enabled && computer?.harnesses.some(
-          (harness) => harness.harness === profile?.harness && harness.available,
-        ) === true;
+        const poolSelectable = catalog.providerPools.some(
+          (pool) =>
+            pool.provider === account.provider &&
+            pool.members.some((member) => member.accountId === account.id && member.selectable),
+        );
+        const enabled =
+          account.enabled &&
+          account.modelIds.includes(modelId) &&
+          !account.excludedModelIds?.includes(modelId) &&
+          poolSelectable &&
+          computer?.harnesses.some(
+            (harness) => harness.harness === profile?.harness && harness.available,
+          ) === true;
         const available =
           coding &&
           enabled &&

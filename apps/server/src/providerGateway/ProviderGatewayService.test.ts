@@ -194,6 +194,56 @@ describe("ProviderGatewayService", () => {
     expect(JSON.stringify(result)).not.toContain("provider-secret");
   });
 
+  it.each(["xai", "minimax"] as const)(
+    "reads the authenticated %s API-key model list without persisting credentials",
+    async (provider) => {
+      const harness = readyHarness();
+      const configured = JSON.stringify({
+        ...JSON.parse(configuration),
+        defaultProvider: provider,
+        accounts: [
+          {
+            id: `${provider}-primary`,
+            label: provider,
+            provider,
+            enabled: true,
+            models: ["configured-model"],
+            apiKeySecret: { scope: "workjet-provider-gateway", name: `${provider}.key` },
+          },
+        ],
+      });
+      let probes = 0;
+      const result = await runGateway(
+        {
+          ...harness.platform,
+          readText: async () => configured,
+          discoverApiKeyModels: async (actualProvider, token, preferredBaseUrl, signal) => {
+            expect(actualProvider).toBe(provider);
+            expect(token).toBe("provider-secret");
+            expect(preferredBaseUrl).toBeUndefined();
+            expect(signal).toBeDefined();
+            probes += 1;
+            return { upstreamBaseUrl: "https://fixed.example/v1", models: ["live-model"] };
+          },
+        },
+        (gateway) =>
+          Effect.gen(function* () {
+            yield* gateway.start();
+            const writesBefore = [...harness.writes];
+            const models = yield* gateway.accountModels({
+              accountId: WorkjetGatewayAccountId.make(`${provider}-primary`),
+            });
+            expect(harness.writes).toEqual(writesBefore);
+            return models;
+          }),
+      );
+      expect(result.state).toBe("observed");
+      expect(result.modelIds).toEqual(["live-model"]);
+      expect(probes).toBe(1);
+      expect(JSON.stringify(result)).not.toContain("provider-secret");
+    },
+  );
+
   it("discards a live-list completion if the exact account changes during discovery", async () => {
     const harness = readyHarness();
     let enabled = true;

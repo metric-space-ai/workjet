@@ -9,7 +9,7 @@ const fixture = (): Parameters<typeof officialCodingModelExport>[0] =>
       accounts: [
         { id: "account-1", provider: "claude", enabled: true, label: "Test", priority: 0, weight: 1, modelIds: ["live-model"], credentialSuffix: null },
       ],
-      pools: [], routes: [], models: [], routingStrategy: "fill-first", providerPools: [],
+      pools: [], routes: [], models: [], routingStrategy: "fill-first", providerPools: [{ provider: "claude", strategy: "fill-first", weightHonored: true, priorityExclusive: true, members: [{ accountId: "account-1", label: "Test", enabled: true, priority: 0, weight: 1, selectable: true }] }],
     },
     health: {
       schemaVersion: 1,

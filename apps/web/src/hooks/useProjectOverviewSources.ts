@@ -1,3 +1,4 @@
+import type { CtoxWorkjetProjectFeedPost } from "@workjet/contracts";
 import { useCallback, useEffect, useState } from "react";
 import { ProjectId, type WorkjetJourFixeMeeting } from "@workjet/contracts";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
@@ -5,6 +6,7 @@ import { JourFixeNativeSession } from "../lib/jourFixeNative";
 import { prefetchJourFixeMeeting } from "../lib/jourFixePrefetch";
 import {
   describeWorkjetProjectControlFailure,
+  readWorkjetProjectFeed,
   readWorkjetProjectKpis,
   workjetUiLanguage,
 } from "../workjetProjectControl";
@@ -78,9 +80,34 @@ export function useProjectOverviewSources(instanceId: string | null, projectId: 
       session.close();
     };
   }, [instanceId, projectId, key, scope.selectionRevision]);
+  // Supervisor feed posts; `unsupported` or a failure keeps the derived cards (empty list).
+  const [feed, setFeed] = useState<{
+    key: string;
+    posts: readonly CtoxWorkjetProjectFeedPost[];
+    supported: boolean | null;
+  }>({ key, posts: [], supported: null });
+  useEffect(() => {
+    if (!instanceId) return;
+    let active = true;
+    void readWorkjetProjectFeed(instanceId, ProjectId.make(projectId)).then(
+      (result) => {
+        if (!active) return;
+        setFeed({
+          key,
+          posts: result._tag === "posts" ? result.posts : [],
+          supported: result._tag === "posts" ? true : result._tag === "unsupported" ? false : null,
+        });
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [instanceId, projectId, key]);
+  const feedPosts = feed.key === key ? feed.posts : [];
   return state.key === key
-    ? { ...state, reload }
-    : { key, meeting: null, kpis: null, failed: false, failureText: null, reload };
+    ? { ...state, reload, feedPosts }
+    : { key, meeting: null, kpis: null, failed: false, failureText: null, reload, feedPosts };
 }
 
 function overviewFailureText(

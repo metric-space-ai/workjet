@@ -8,7 +8,8 @@ import { useProjectOverviewTokenBudgetSource } from "../hooks/useProjectOverview
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
 import { useSupervisorProjectMetadata } from "../hooks/useSupervisorProjectMetadata";
 import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOverviewModel";
-import type { GalleryProject } from "../projectOverview";
+import { resolveGalleryProjectOverview, type GalleryProject } from "../projectOverview";
+import { useGithubMergedPullRequests } from "../hooks/useGithubMergedPullRequests";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
 import { ProjectOverviewView } from "./ProjectOverviewView";
 import { ProjectOverviewDecisions } from "./ProjectOverviewDecisions";
@@ -64,6 +65,9 @@ function ProjectWorkspaceContent({
   const sources = useProjectOverviewSources(nativeInstance, project.id);
   const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
   const exit = useProjectExitModel(nativeInstance, project.id, project.configuration?.exitModel);
+  const githubPrs = useGithubMergedPullRequests(
+    resolveGalleryProjectOverview(project).repositoryUrl,
+  );
   const [pullRequests, setPullRequests] = useState<Record<string, ProjectOverviewPr | null>>({});
   const onReadPr = useCallback(
     (key: string, pr: ProjectOverviewPr | null) =>
@@ -79,7 +83,10 @@ function ProjectWorkspaceContent({
     language,
     meeting: sources.meeting,
     kpis: sources.kpis,
-    pullRequests: Object.values(pullRequests).filter((pr): pr is ProjectOverviewPr => pr !== null),
+    pullRequests: [
+      ...Object.values(pullRequests).filter((pr): pr is ProjectOverviewPr => pr !== null),
+      ...githubPrs,
+    ],
     projectTokenBudgetSource: tokenBudgetSource,
   });
   const [editingParent, setEditingParent] = useState(false);
@@ -156,6 +163,7 @@ function ProjectWorkspaceContent({
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
         onRecomputeKpis={sources.reload}
+        feedPosts={sources.feedPosts}
         connectionMessage={sources.failureText}
         actions={
           <>

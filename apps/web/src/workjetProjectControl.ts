@@ -1,3 +1,4 @@
+import type { CtoxWorkjetProjectFeedPost } from "@workjet/contracts";
 import type {
   CommandId,
   CtoxGuestPreparationDiagnostic,
@@ -396,4 +397,38 @@ export function saveWorkjetGalleryOrder(
     { action: "project.gallery.order.set", ...request },
     port,
   );
+}
+
+/**
+ * Supervisor-written feed posts (ctox.workjet.project_feed.v1). A core without
+ * the feed answers `unsupported`; callers then keep their derived cards.
+ */
+export async function readWorkjetProjectFeed(
+  instanceId: string,
+  projectId: ProjectId,
+  port: WorkjetProjectControlPort | undefined = activeDesktopProjectControl(),
+): Promise<
+  | { readonly _tag: "posts"; readonly posts: readonly CtoxWorkjetProjectFeedPost[] }
+  | { readonly _tag: "unsupported" }
+  | { readonly _tag: "failed"; readonly code: string }
+> {
+  if (!port) return { _tag: "failed", code: "not_active" };
+  const commandId = newCommandId();
+  const result = await requestWorkjetProjectControl(
+    instanceId,
+    { action: "project.feed.read", commandId, projectId, limit: 30 },
+    port,
+  );
+  if (result._tag !== "completed")
+    return result.code === "unsupported" ||
+      ("reason" in result && /unsupported|unknown action/i.test(String(result.reason)))
+      ? { _tag: "unsupported" }
+      : { _tag: "failed", code: result.code };
+  if (
+    result.response.action !== "project.feed.read" ||
+    result.response.commandId !== commandId ||
+    result.response.projectId !== projectId
+  )
+    return { _tag: "failed", code: "guest_failed" };
+  return { _tag: "posts", posts: result.response.posts };
 }

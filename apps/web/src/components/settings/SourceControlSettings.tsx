@@ -19,7 +19,11 @@ import {
   resolveServerBackgroundActivitySettings,
 } from "@workjet/shared/backgroundActivitySettings";
 
-import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -238,7 +242,9 @@ function DiscoveryItemRow({
   /** A single setting sits directly in the row; no expand for one field (#601). */
   readonly control?: ReactNode;
 }) {
-  const version = optionLabel(item.version);
+  // Versionsstrings („git version 2.47.3“) sind Entwicklerdetail (Audit F67, #729).
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  const version = developerMode ? optionLabel(item.version) : null;
   const auth = isProviderDiscoveryItem(item) ? item.auth : null;
   const authStatus = auth ? authPresentation(auth) : null;
   const authAccount = auth ? optionLabel(auth.account) : null;

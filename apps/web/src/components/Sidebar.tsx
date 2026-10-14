@@ -4504,10 +4504,9 @@ export default function Sidebar() {
               ) : selectedWorkjetProject ? (
                 "Noch keine Unterhaltungen"
               ) : scopedProjectGroup ? (
-                "Noch keine Unterhaltungen"
-              ) : (
-                "Kein Projekt gewählt"
-              )}
+                "Noch keine Unterhaltungen" // Leerzustand ohne Satz (Audit F11/F18): ohne gewähltes Projekt
+              ) : // bleibt die Liste einfach leer.
+              null}
             </div>
           ) : null}
         </SidebarGroup>

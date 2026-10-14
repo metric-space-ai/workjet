@@ -248,6 +248,60 @@ fn source_role_search_queries(
         .collect()
 }
 
+struct RoleSearchResult {
+    role_category: Option<&'static str>,
+    query: String,
+    result: Result<Value>,
+}
+
+fn execute_source_role_searches<F>(
+    context: WebStackContext<'_>,
+    request: &PersonResearchRequest,
+    plan: &PersonResearchPlan,
+    company: &str,
+    mut execute: F,
+) -> Vec<RoleSearchResult>
+where
+    F: FnMut(&CanonicalWebSearchRequest) -> Result<Value>,
+{
+    source_role_search_queries(plan.source_id, company)
+        .into_iter()
+        .map(|(role_category, source_query)| {
+            let ctx = SourceCtx {
+                root: context.root,
+                runtime_config: context.runtime_config,
+                country: Some(request.country),
+                mode: request.mode,
+            };
+            let query = sources::find(plan.source_id)
+                .and_then(|module| {
+                    module
+                        .shape_query(&source_query, &ctx)
+                        .map(|shape| shape.query)
+                })
+                .unwrap_or(source_query);
+            let search_request = CanonicalWebSearchRequest {
+                query: query.clone(),
+                external_web_access: None,
+                allowed_domains: Vec::new(),
+                user_location: SearchUserLocation {
+                    country: Some(request.country.as_iso().to_string()),
+                    ..SearchUserLocation::default()
+                },
+                search_context_size: Some(ContextSize::Medium),
+                search_content_types: Vec::new(),
+                include_sources: true,
+                pinned_sources: vec![plan.source_id.to_string()],
+            };
+            RoleSearchResult {
+                role_category,
+                query,
+                result: execute(&search_request),
+            }
+        })
+        .collect()
+}
+
 fn run_person_research_with_checkpoint(
     context: WebStackContext<'_>,
     request: &PersonResearchRequest,
@@ -519,40 +573,13 @@ fn run_person_research_with_checkpoint(
         }
 
         let mut reads_for_plan = 0_usize;
-        for (role_category, source_query) in source_role_search_queries(plan.source_id, &company) {
-            // Honor the source's `shape_query` for the search-engine query
-            // text. Crawl/snippet sources frequently need a tightened query
-            // (e.g. `site:` operators, role-keyword bias) that the bare
-            // company name doesn't carry.
-            let effective_query = sources::find(plan.source_id)
-                .and_then(|m| {
-                    let ctx = SourceCtx {
-                        root,
-                        runtime_config: context.runtime_config,
-                        country: Some(request.country),
-                        mode: request.mode,
-                    };
-                    m.shape_query(&source_query, &ctx).map(|s| s.query)
-                })
-                .unwrap_or(source_query);
-
-            let search_payload = run_web_search_tool_with_context(
-                context,
-                &CanonicalWebSearchRequest {
-                    query: effective_query.clone(),
-                    external_web_access: None,
-                    allowed_domains: Vec::new(),
-                    user_location: SearchUserLocation {
-                        country: Some(request.country.as_iso().to_string()),
-                        ..SearchUserLocation::default()
-                    },
-                    search_context_size: Some(ContextSize::Medium),
-                    search_content_types: Vec::new(),
-                    include_sources: true,
-                    pinned_sources: vec![plan.source_id.to_string()],
-                },
-            );
-
+        for RoleSearchResult {
+            role_category,
+            query: effective_query,
+            result: search_payload,
+        } in execute_source_role_searches(context, request, plan, &company, |query| {
+            run_web_search_tool_with_context(context, query)
+        }) {
             let search_payload = match search_payload {
                 Ok(payload) => payload,
                 Err(err) => {
@@ -3231,6 +3258,49 @@ mod tests {
             assert!(query.contains(" OR "));
         }
         assert!(!queries[2].1.contains("CEO"));
+    }
+
+    #[test]
+    fn role_discovery_executor_receives_seven_profile_queries_and_keeps_failures_scoped() {
+        let mut request = configured_request(Path::new("fixture-root"));
+        request.fields = vec![FieldKey::PersonFunktion, FieldKey::PersonLinkedin];
+        request.include_private = vec!["person-discovery".into()];
+        let plans = build_person_research_plan(&request);
+        let plan = plans
+            .iter()
+            .find(|plan| plan.source_id == "person-discovery")
+            .unwrap();
+        let config = NoFallbackConfig;
+        let mut sent = Vec::new();
+        let results = execute_source_role_searches(
+            WebStackContext::new(Path::new("fixture-root"), &config),
+            &request,
+            plan,
+            &request.company,
+            |query| {
+                assert_eq!(query.pinned_sources, ["person-discovery"]);
+                assert_eq!(query.user_location.country.as_deref(), Some("DE"));
+                assert!(query
+                    .query
+                    .ends_with("(site:linkedin.com/in OR site:xing.com/profile)"));
+                sent.push(query.query.clone());
+                if sent.len() == 2 {
+                    anyhow::bail!("source blocked")
+                }
+                Ok(json!({"ok": true, "results": []}))
+            },
+        );
+        assert_eq!(
+            sent.len(),
+            7,
+            "the live executor seam must receive one search for each role"
+        );
+        assert!(sent[2].contains("Procurement Team Lead"));
+        assert!(sent[3].contains("VP SCM"));
+        assert_eq!(results[1].role_category, Some("Finanzen"));
+        assert!(results[1].result.is_err());
+        assert!(results[2].result.is_ok());
+        assert_eq!(results[2].query, sent[2]);
     }
 
     #[test]

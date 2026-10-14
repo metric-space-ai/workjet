@@ -1,3 +1,4 @@
+import { scheduleUndoableDelete } from "../../lib/undoableDelete";
 import { useUiText } from "../../hooks/useUiText";
 import type {
   CtoxDiscoveryResult,
@@ -333,6 +334,27 @@ function DevicesSection({
   // States that need attention open the section by themselves.
   const open =
     openByUser || activeInvite !== null || blockedReason !== null || devicesError !== null;
+  // Undo instead of a confirmation (#637).
+  const [pendingRevoke, setPendingRevoke] = useState<ReadonlySet<string>>(() => new Set());
+  const revokeWithUndo = (devicePairingId: string) => {
+    if (onRevokeDevice === undefined) return;
+    setPendingRevoke((current) => new Set(current).add(devicePairingId));
+    const show = () =>
+      setPendingRevoke((current) => {
+        const next = new Set(current);
+        next.delete(devicePairingId);
+        return next;
+      });
+    scheduleUndoableDelete({
+      title: t("Gerät getrennt", "Device disconnected"),
+      undoLabel: t("Rückgängig", "Undo"),
+      run: () => {
+        onRevokeDevice(devicePairingId);
+        show();
+      },
+      onUndo: show,
+    });
+  };
   return (
     <section
       aria-label={`${t("Gekoppelte Workjet-Apps", "Paired Workjet apps")} · ${instanceName}`}
@@ -381,26 +403,27 @@ function DevicesSection({
             <p className="text-xs text-muted-foreground">Keine weiteren Geräte</p>
           ) : (
             <ul aria-label="Geräte" className="-mx-3 divide-y divide-border/60 sm:-mx-4">
-              {devices.map((device) => (
-                <li key={device.devicePairingId}>
-                  <Row
-                    name={`Gerät vom ${new Date(device.pairedAtMillis).toLocaleString("de-DE", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}`}
-                    status="ok"
-                    statusLabel="Gekoppelt"
-                    {...(onRevokeDevice === undefined
-                      ? {}
-                      : { onDelete: () => onRevokeDevice(device.devicePairingId) })}
-                    deleteLabel="Trennen"
-                    deleteConfirmTitle="Gerät trennen?"
-                  />
-                </li>
-              ))}
+              {devices
+                .filter((device) => !pendingRevoke.has(device.devicePairingId))
+                .map((device) => (
+                  <li key={device.devicePairingId}>
+                    <Row
+                      name={`Gerät vom ${new Date(device.pairedAtMillis).toLocaleString("de-DE", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}`}
+                      status="ok"
+                      statusLabel="Gekoppelt"
+                      {...(onRevokeDevice === undefined
+                        ? {}
+                        : { onDelete: () => revokeWithUndo(device.devicePairingId) })}
+                      deleteLabel="Trennen"
+                    />
+                  </li>
+                ))}
             </ul>
           )}
           {activeInvite !== null && onCloseInvite !== undefined && onRenewInvite !== undefined ? (

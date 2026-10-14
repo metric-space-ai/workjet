@@ -73,6 +73,8 @@ export interface RowProps {
   readonly onDelete?: () => void;
   readonly deleteLabel?: string;
   readonly deleteConfirmTitle?: string;
+  /** Löschen läuft sofort; der Aufrufer zeigt Rückgängig statt einer Bestätigung (#637). */
+  readonly undoableDelete?: boolean;
   /** Seltene Aktionen hinter dem ⋯-Menü. */
   readonly menuActions?: ReadonlyArray<RowMenuAction>;
   readonly menuLabel?: string;
@@ -99,6 +101,7 @@ function Row({
   deleteOptions,
   deleteLabel = "Löschen",
   deleteConfirmTitle,
+  undoableDelete = false,
   menuActions,
   menuLabel = "Weitere Aktionen",
   onToggleExpanded,
@@ -220,13 +223,20 @@ function Row({
                 render={
                   <Button
                     aria-label={deleteLabel}
-                    size="icon-sm"
+                    size="xs"
                     variant="ghost"
-                    onClick={() => setConfirmingDelete(true)}
+                    className="text-muted-foreground"
+                    onClick={() => {
+                      // Undoable deletes run at once; the caller offers „Rückgängig“.
+                      if (undoableDelete && onDelete) onDelete();
+                      else setConfirmingDelete(true);
+                    }}
                   />
                 }
               >
                 <Trash2Icon />
+                {/* Icons explain themselves: the word is always visible, also on touch. */}
+                <span>{deleteLabel}</span>
               </TooltipTrigger>
               <TooltipPopup>{deleteLabel}</TooltipPopup>
             </Tooltip>

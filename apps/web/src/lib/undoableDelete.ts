@@ -13,6 +13,8 @@ export function scheduleUndoableDelete(input: {
   readonly undoLabel: string;
   readonly run: () => void | Promise<void>;
   readonly delayMs?: number;
+  /** Called when „Rückgängig“ is pressed, e.g. to show a hidden row again. */
+  readonly onUndo?: () => void;
 }): () => void {
   let cancelled = false;
   const timer = setTimeout(() => {
@@ -27,7 +29,13 @@ export function scheduleUndoableDelete(input: {
       type: "success",
       title: input.title,
       timeout: input.delayMs ?? UNDO_DELETE_MS,
-      actionProps: { children: input.undoLabel, onClick: cancel },
+      actionProps: {
+        children: input.undoLabel,
+        onClick: () => {
+          cancel();
+          input.onUndo?.();
+        },
+      },
     }),
   );
   return cancel;

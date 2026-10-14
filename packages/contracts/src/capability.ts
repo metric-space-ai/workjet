@@ -36,9 +36,27 @@ export const CapabilityDisplayMetadata = Schema.Struct({
 });
 export type CapabilityDisplayMetadata = typeof CapabilityDisplayMetadata.Type;
 
+/** Team role a role-aware contribution addresses (CTOX naming). */
+export const CapabilityPromptTeamRole = Schema.Literals([
+  "supervisor",
+  "persistent_worker",
+  "one_shot_worker",
+  "operator",
+]);
+export type CapabilityPromptTeamRole = typeof CapabilityPromptTeamRole.Type;
+
 export const CapabilityPromptContribution = Schema.NullOr(
   Schema.Struct({
     instructions: TrimmedNonEmptyString,
+    /** Appended after `instructions` for exactly the thread's team role. */
+    teamRoleInstructions: Schema.optionalKey(
+      Schema.Struct({
+        supervisor: TrimmedNonEmptyString,
+        persistent_worker: TrimmedNonEmptyString,
+        one_shot_worker: TrimmedNonEmptyString,
+        operator: TrimmedNonEmptyString,
+      }),
+    ),
   }),
 );
 export type CapabilityPromptContribution = typeof CapabilityPromptContribution.Type;

@@ -1,3 +1,4 @@
+import { piManagedPromptArgs } from "../managedPromptHooks.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
@@ -317,12 +318,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
               selected.model,
               "--session-dir",
               sessionDirectory,
-              ...(managedPrompt
-                ? [
-                    "--append-system-prompt",
-                    `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
-                  ]
-                : []),
+              ...piManagedPromptArgs(managedPrompt),
               ...(input.extensionPath ? ["--extension", input.extensionPath] : []),
               ...(resume ? ["--session", resume] : []),
             ],

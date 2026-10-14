@@ -1,3 +1,4 @@
+import { ctoxNativeInstruction } from "../managedPromptHooks.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stable native turn/event ids; no CLI process is started.
 import * as NodeCrypto from "node:crypto";
 import {
@@ -423,7 +424,7 @@ export const makeCtoxAdapter = (options: {
           const managedPrompt = readMcpProviderSession(
             input.threadId,
           )?.compiledManagedPrompt.trim();
-          const instruction = [managedPrompt, input.input].filter(Boolean).join("\n\n");
+          const instruction = ctoxNativeInstruction(managedPrompt, input.input ?? "");
           if (Buffer.byteLength(instruction, "utf8") > 16_000)
             return yield* failure(
               "sendTurn",

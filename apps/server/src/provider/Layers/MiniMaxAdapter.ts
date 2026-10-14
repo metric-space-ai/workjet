@@ -1,3 +1,4 @@
+import { prefixTurnWithManagedPrompt } from "../managedPromptHooks.ts";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
@@ -739,9 +740,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         }
         yield* emit(input.threadId, { type: "turn.started", turnId, payload: { model } });
         const inputText = input.input ?? "";
-        const text = ctx.managedPrompt
-          ? `<workjet_managed_instructions>\n${ctx.managedPrompt}\n</workjet_managed_instructions>\n\n${inputText}`
-          : inputText;
+        const text = prefixTurnWithManagedPrompt(ctx.managedPrompt, inputText);
         const prompt = [{ type: "text" as const, text }];
         const result = yield* ctx.acp
           .prompt({ prompt })

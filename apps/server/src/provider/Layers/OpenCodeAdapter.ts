@@ -1,3 +1,4 @@
+import { delimitWorkjetManagedPrompt } from "../managedPromptHooks.ts";
 import type { ProviderSessionStartInput } from "@workjet/contracts";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import {
@@ -116,12 +117,7 @@ function makeOpenCodeResumeCursor(
   };
 }
 
-function delimitManagedPrompt(compiledManagedPrompt: string | undefined): string | undefined {
-  const managedPrompt = compiledManagedPrompt?.trim();
-  return managedPrompt
-    ? `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`
-    : undefined;
-}
+const delimitManagedPrompt = delimitWorkjetManagedPrompt;
 
 /**
  * Whether an error definitively reports a missing session. Only a confirmed

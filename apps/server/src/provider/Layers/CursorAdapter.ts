@@ -1,3 +1,4 @@
+import { delimitWorkjetManagedPrompt } from "../managedPromptHooks.ts";
 /**
  * CursorAdapterLive — Cursor CLI (`agent acp`) via ACP.
  *
@@ -217,12 +218,7 @@ function makeCursorResumeCursor(
   };
 }
 
-function delimitManagedPrompt(compiledManagedPrompt: string | undefined): string | undefined {
-  const managedPrompt = compiledManagedPrompt?.trim();
-  return managedPrompt
-    ? `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`
-    : undefined;
-}
+const delimitManagedPrompt = delimitWorkjetManagedPrompt;
 
 function applyManagedPromptFingerprint(
   ctx: CursorSessionContext,

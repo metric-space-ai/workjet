@@ -1,3 +1,4 @@
+import { delimitWorkjetManagedPrompt } from "../managedPromptHooks.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- The Claude SDK spawn hook exposes the harness child so stopSession can terminate and verify its process group.
 import * as NodeChildProcess from "node:child_process";
 import { oneShotClaudePolicy } from "../oneShotClaudePolicy.ts";
@@ -147,7 +148,7 @@ function claudeSystemPrompt(
     ? {
         type: "preset",
         preset: "claude_code",
-        append: `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
+        append: delimitWorkjetManagedPrompt(managedPrompt)!,
       }
     : { type: "preset", preset: "claude_code" };
 }

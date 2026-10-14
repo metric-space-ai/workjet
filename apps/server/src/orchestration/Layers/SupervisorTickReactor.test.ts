@@ -317,6 +317,23 @@ it.layer(NodeServices.layer)("persisted supervisor tick reactor", (it) => {
               expect(reads).toBeLessThanOrEqual(2);
               expect(preparations).toBeGreaterThanOrEqual(1);
               const admittedPreparations = preparations;
+              // The provider adopts the admitted start; an unadopted start would be retried (#717).
+              const adoptedAt = DateTime.formatIso(yield* DateTime.now);
+              yield* engine.dispatch({
+                type: "thread.session.set",
+                commandId: CommandId.make("test:supervisor-session-running"),
+                threadId: supervisor.id,
+                session: {
+                  threadId: supervisor.id,
+                  status: "running",
+                  providerName: "codex",
+                  runtimeMode: "approval-required",
+                  activeTurnId: null,
+                  lastError: null,
+                  updatedAt: adoptedAt,
+                },
+                createdAt: adoptedAt,
+              });
               yield* TestClock.adjust(Duration.minutes(31));
               yield* reactor.reconcile();
               expect(preparations).toBe(admittedPreparations);

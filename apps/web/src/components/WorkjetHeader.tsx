@@ -73,11 +73,12 @@ export function WorkjetHeaderFrame({
           type="button"
           aria-label="Einstellungen"
           title="Einstellungen"
-          className="no-drag mr-[var(--workspace-controls-right)] flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          className="no-drag mr-[var(--workspace-controls-right)] flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           data-workjet-header-settings=""
           onClick={() => void navigate({ to: "/settings" })}
         >
           <SettingsIcon className="size-4" aria-hidden />
+          <span>{headerSettingsLabel()}</span>
         </button>
       </header>
       <div className="flex min-h-0 w-full flex-1 overflow-hidden" data-workjet-content="">
@@ -85,6 +86,11 @@ export function WorkjetHeaderFrame({
       </div>
     </WorkjetHeaderSlotContext>
   );
+}
+
+function headerSettingsLabel(): string {
+  const lang = typeof document === "undefined" ? "de" : document.documentElement.lang;
+  return lang.toLowerCase().startsWith("en") ? "Settings" : "Einstellungen";
 }
 
 function isMacPlatform(): boolean {

@@ -79,8 +79,9 @@ export async function discoverCodexModels(
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    const models = record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)))
-      ?.models;
+    const models = record(
+      JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+    )?.models;
     if (!Array.isArray(models) || models.length === 0 || models.length > 512) return undefined;
     const ids = models.map((model) => record(model)?.slug);
     if (

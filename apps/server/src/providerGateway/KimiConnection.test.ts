@@ -1,7 +1,7 @@
 // @effect-diagnostics globalFetch:off -- Bounded, vendor-only discovery transport regression.
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { WORKJET_GATEWAY_KIMI_ENDPOINTS } from "@workjet/contracts";
-import { discoverKimiConnection, KIMI_BASE_URLS } from "./KimiConnection.ts";
+import { discoverKimiConnection, discoverKimiModels, KIMI_BASE_URLS } from "./KimiConnection.ts";
 const codingUrl = "https://api.kimi.com/coding/v1";
 const apiUrl = "https://api.moonshot.ai/v1";
 
@@ -13,6 +13,17 @@ const list = () => Response.json({ data: liveModels.map((id) => ({ id })) });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Kimi key origin discovery", () => {
+  it("exports only the exact stored account origin", async () => {
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      requests.push(url);
+      return list();
+    });
+    expect(await discoverKimiModels("fixture-key", apiUrl)).toEqual(liveModels);
+    expect(requests).toEqual([`${apiUrl}/models`]);
+    expect(await discoverKimiModels("fixture-key", "https://other.invalid")).toBeUndefined();
+    expect(requests).toEqual([`${apiUrl}/models`]);
+  });
   it("uses the accepted coding plan, probing both official endpoints without redirects", async () => {
     const requests: Array<{ url: string; redirect: RequestInit["redirect"] }> = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {

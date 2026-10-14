@@ -137,7 +137,7 @@ const fixture = (): Parameters<typeof officialCodingModelExport>[0] =>
     },
     harnesses: {
       schemaVersion: 1,
-      probedAt: "2026-10-14T00:00:00Z",
+      probedAt: new Date(999_000).toISOString(),
       harnesses: [
         { harness: "claude-code", availability: "available", executablePath: "/usr/bin/claude" },
       ],
@@ -157,7 +157,10 @@ it("exports only a live, checked model with its registered and probed home route
 
 it("fails closed when a model check is stale or the account list is unavailable", () => {
   const input = fixture();
-  const stale = officialCodingModelExport({ ...input, observedAtMs: 2_000_000 });
+  const stale = officialCodingModelExport({
+    ...input,
+    checks: { ...input.checks, checks: [{ ...input.checks.checks[0]!, checkedAtMs: 0 }] },
+  });
   assert.equal(stale.models[0]?.available, false);
   assert.equal(stale.models[0]?.reason, "model-check-unverified");
   const missing = officialCodingModelExport({
@@ -174,4 +177,26 @@ it("fails closed when a model check is stale or the account list is unavailable"
   });
   assert.equal(missing.models.length, 0);
   assert.equal(missing.unverifiedAccounts[0]?.reason, "catalog-unavailable");
+});
+
+it("fails closed when account, catalog, or harness evidence has expired", () => {
+  const input = fixture();
+  const staleList = officialCodingModelExport({
+    ...input,
+    accountModels: [{ ...input.accountModels[0]!, checkedAtMs: 0 }],
+  });
+  assert.equal(staleList.models.length, 0);
+  assert.equal(staleList.unverifiedAccounts[0]?.reason, "catalog-unavailable");
+  const staleHealth = officialCodingModelExport({
+    ...input,
+    health: { ...input.health, observedAtMs: 0 },
+  });
+  assert.equal(staleHealth.models[0]?.available, false);
+  assert.equal(staleHealth.models[0]?.reason, "account-unavailable");
+  const staleHarness = officialCodingModelExport({
+    ...input,
+    harnesses: { ...input.harnesses, probedAt: new Date(0).toISOString() },
+  });
+  assert.equal(staleHarness.models[0]?.available, false);
+  assert.equal(staleHarness.models[0]?.reason, "harness-unavailable");
 });

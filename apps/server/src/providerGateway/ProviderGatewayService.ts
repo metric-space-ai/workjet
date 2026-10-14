@@ -140,6 +140,11 @@ export interface ProviderGatewayPlatform {
     preferredBaseUrl?: string,
     signal?: AbortSignal,
   ) => Promise<KimiConnection | undefined>;
+  readonly discoverKimiModels?: (
+    apiKey: string,
+    preferredBaseUrl: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
   readonly discoverZaiModels?: (
     apiKey: string,
     preferredBaseUrl: string,
@@ -1775,13 +1780,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         platform.discoverApiKeyModels !== undefined;
       const claudeList =
         account.provider === "claude" && platform.discoverClaudeModels !== undefined;
-      const codexList =
-        account.provider === "codex" && platform.discoverCodexModels !== undefined;
+      const codexList = account.provider === "codex" && platform.discoverCodexModels !== undefined;
       const kimiList =
         isApiKeyAccount(account) &&
         account.provider === "kimi" &&
         account.upstreamBaseUrl !== undefined &&
-        platform.discoverKimiConnection !== undefined;
+        platform.discoverKimiModels !== undefined;
       const zaiList =
         isApiKeyAccount(account) &&
         account.provider === "zai" &&
@@ -1800,8 +1804,18 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         const secret = await runPromise(secrets.get(secretStoreName(secretReference)));
         return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
       };
+      const acceptableOAuthToken = (value: string | undefined) =>
+        value !== undefined &&
+        value.trim().length > 0 &&
+        value.length <= 16 * 1024 &&
+        !/[\x00-\x1f\x7f]/.test(value);
       const token = await readToken();
-      if (token === undefined || !isAcceptableApiKey(token))
+      if (
+        token === undefined ||
+        (account.provider === "claude" || account.provider === "codex"
+          ? !acceptableOAuthToken(token)
+          : !isAcceptableApiKey(token))
+      )
         return unavailable("catalog-unavailable");
       const readIdToken = async () => {
         if (account.provider !== "codex") return undefined;
@@ -1809,16 +1823,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
       };
       const idToken = codexList ? await readIdToken() : undefined;
-      if (codexList && (idToken === undefined || !isAcceptableApiKey(idToken)))
-        return unavailable("catalog-unavailable");
-      const kimiConnection =
-        kimiList && account.provider === "kimi"
-          ? await platform.discoverKimiConnection!(
-              token,
-              account.upstreamBaseUrl,
-              AbortSignal.timeout(8_000),
-            ).catch(() => undefined)
-          : undefined;
+      if (codexList && !acceptableOAuthToken(idToken)) return unavailable("catalog-unavailable");
       const apiKeyConnection =
         apiKeyList && (account.provider === "minimax" || account.provider === "xai")
           ? await platform.discoverApiKeyModels!(
@@ -1833,23 +1838,27 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             () => undefined,
           )
         : codexList && idToken !== undefined
-          ? await platform
-              .discoverCodexModels!(token, idToken, AbortSignal.timeout(8_000))
-              .catch(() => undefined)
-        : kimiList && account.provider === "kimi"
-          ? kimiConnection?.upstreamBaseUrl === account.upstreamBaseUrl
-            ? kimiConnection.models
-            : undefined
-        : zaiList && account.provider === "zai"
-          ? await platform
-              .discoverZaiModels!(token, account.upstreamBaseUrl!, AbortSignal.timeout(8_000))
-              .catch(() => undefined)
-        : apiKeyList && (account.provider === "minimax" || account.provider === "xai")
-          ? account.upstreamBaseUrl === undefined ||
-            apiKeyConnection?.upstreamBaseUrl === account.upstreamBaseUrl
-            ? apiKeyConnection?.models
-            : undefined
-          : undefined;
+          ? await platform.discoverCodexModels!(token, idToken, AbortSignal.timeout(8_000)).catch(
+              () => undefined,
+            )
+          : kimiList && account.provider === "kimi"
+            ? await platform.discoverKimiModels!(
+                token,
+                account.upstreamBaseUrl!,
+                AbortSignal.timeout(8_000),
+              ).catch(() => undefined)
+            : zaiList && account.provider === "zai"
+              ? await platform.discoverZaiModels!(
+                  token,
+                  account.upstreamBaseUrl!,
+                  AbortSignal.timeout(8_000),
+                ).catch(() => undefined)
+              : apiKeyList && (account.provider === "minimax" || account.provider === "xai")
+                ? account.upstreamBaseUrl === undefined ||
+                  apiKeyConnection?.upstreamBaseUrl === account.upstreamBaseUrl
+                  ? apiKeyConnection?.models
+                  : undefined
+                : undefined;
       const current = (await loadConfiguration()).accounts.find(
         (candidate) => candidate.id === input.accountId,
       );

@@ -17,13 +17,20 @@ export const discoverKimiConnection = async (
   apiKey: string,
   preferredBaseUrl?: string,
   signal?: AbortSignal,
+  onlyPreferred = false,
 ): Promise<KimiConnection | undefined> => {
+  const endpoints = onlyPreferred
+    ? WORKJET_GATEWAY_KIMI_ENDPOINTS.filter(
+        (endpoint) => endpoint.upstreamBaseUrl === preferredBaseUrl,
+      )
+    : WORKJET_GATEWAY_KIMI_ENDPOINTS;
+  if (endpoints.length === 0) return undefined;
   const deadline = AbortSignal.any([
     AbortSignal.timeout(8_000),
     ...(signal === undefined ? [] : [signal]),
   ]);
   const results = await Promise.all(
-    WORKJET_GATEWAY_KIMI_ENDPOINTS.map(
+    endpoints.map(
       async ({ plan, upstreamBaseUrl }): Promise<KimiConnection | undefined> => {
         let response: Response | undefined;
         try {
@@ -93,3 +100,11 @@ export const discoverKimiConnection = async (
     results.find((result) => result !== undefined)
   );
 };
+
+/** Export only the account's configured plan origin; never probe alternate plans. */
+export const discoverKimiModels = async (
+  apiKey: string,
+  preferredBaseUrl: string,
+  signal?: AbortSignal,
+): Promise<ReadonlyArray<string> | undefined> =>
+  (await discoverKimiConnection(apiKey, preferredBaseUrl, signal, true))?.models;

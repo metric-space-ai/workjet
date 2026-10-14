@@ -31,16 +31,21 @@ export function officialCodingModelExport(input: {
   const routes = new Map(workjet.llmRoutes.map((route) => [route.id, route]));
   const computers = new Map(workjet.computers.map((computer) => [computer.id, computer]));
   const probes = new Map(harnesses.harnesses.map((harness) => [harness.harness, harness]));
+  const recent = (atMs: number) =>
+    Number.isFinite(atMs) &&
+    atMs <= observedAtMs &&
+    observedAtMs - atMs <= 15 * 60 * 1000;
+  const harnessFresh = recent(Date.parse(harnesses.probedAt));
   const models: WorkjetOfficialCodingModelExport["models"][number][] = [];
   const unverifiedAccounts: WorkjetOfficialCodingModelExport["unverifiedAccounts"][number][] = [];
 
   for (const account of catalog.accounts) {
     const list = lists.get(account.id);
-    if (list?.state !== "observed") {
+    if (list?.state !== "observed" || !recent(list.checkedAtMs)) {
       unverifiedAccounts.push({
         accountId: account.id,
         provider: account.provider,
-        reason: list?.reason ?? "catalog-unavailable",
+        reason: list?.state === "observed" ? "catalog-unavailable" : (list?.reason ?? "catalog-unavailable"),
       });
       continue;
     }
@@ -81,8 +86,12 @@ export function officialCodingModelExport(input: {
           coding &&
           enabled &&
           computer?.presentationKind === "local" &&
+          harnessFresh &&
           probe?.availability === "available" &&
           health.accountHealth === "reported" &&
+          recent(health.observedAtMs) &&
+          accountHealth !== undefined &&
+          recent(accountHealth.observedAtMs) &&
           accountHealth?.usable === true &&
           accountHealth.authentication === "authenticated" &&
           accountHealth.disabled === false &&
@@ -106,9 +115,14 @@ export function officialCodingModelExport(input: {
             ? "coding-route-unverified"
             : !enabled
               ? "route-disabled"
-              : computer?.presentationKind !== "local" || probe?.availability !== "available"
+            : computer?.presentationKind !== "local" ||
+                !harnessFresh ||
+                probe?.availability !== "available"
                 ? "harness-unavailable"
                 : health.accountHealth !== "reported" ||
+                    !recent(health.observedAtMs) ||
+                    accountHealth === undefined ||
+                    !recent(accountHealth.observedAtMs) ||
                     accountHealth?.usable !== true ||
                     accountHealth.authentication !== "authenticated" ||
                     accountHealth.disabled

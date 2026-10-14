@@ -164,8 +164,10 @@ pub(super) fn brightdata_search(
     let response = match agent
         .post(&config.brightdata_endpoint)
         .set("Authorization", &format!("Bearer {}", provider.api_key))
+        // No `Accept: application/json`: with it Bright Data answers the
+        // SERP request with HTTP 200 and an EMPTY body (measured 14.10.2026:
+        // 0 bytes with the header, 14 KB of brd_json results without it).
         .set("Content-Type", "application/json")
-        .set("Accept", "application/json")
         .send_string(&body.to_string())
     {
         Ok(response) => response,
@@ -447,6 +449,13 @@ pub(super) mod tests {
         assert!(request.starts_with("POST /request "), "{request}");
         assert!(
             request.contains("Authorization: Bearer test-key"),
+            "{request}"
+        );
+        // Bright Data returns an empty body when JSON is requested via Accept.
+        assert!(
+            !request
+                .to_ascii_lowercase()
+                .contains("accept: application/json"),
             "{request}"
         );
         let body: Value = serde_json::from_str(&request[request.find("\r\n\r\n").unwrap() + 4..])

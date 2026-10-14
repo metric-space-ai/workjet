@@ -243,7 +243,10 @@ function DiscoveryItemRow({
   readonly control?: ReactNode;
 }) {
   // Versionsstrings („git version 2.47.3“) sind Entwicklerdetail (Audit F67, #729).
-  const developerMode = useClientSettings((settings) => settings.developerMode);
+  // Block-Body: vermeidet UI-Vertrag-(d)-Fehltreffer durch `=>` vor JSX (`>`…`<`).
+  const developerMode = useClientSettings((settings) => {
+    return settings.developerMode;
+  });
   const version = developerMode ? optionLabel(item.version) : null;
   const auth = isProviderDiscoveryItem(item) ? item.auth : null;
   const authStatus = auth ? authPresentation(auth) : null;

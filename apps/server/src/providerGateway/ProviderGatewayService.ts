@@ -126,6 +126,11 @@ export interface GatewayHostProcess {
 
 export interface ProviderGatewayPlatform {
   readonly publicModelCatalog?: () => Promise<unknown>;
+  readonly discoverCodexModels?: (
+    accessToken: string,
+    idToken: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
   readonly discoverClaudeModels?: (
     accessToken: string,
     signal?: AbortSignal,
@@ -1770,6 +1775,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         platform.discoverApiKeyModels !== undefined;
       const claudeList =
         account.provider === "claude" && platform.discoverClaudeModels !== undefined;
+      const codexList =
+        account.provider === "codex" && platform.discoverCodexModels !== undefined;
       const kimiList =
         isApiKeyAccount(account) &&
         account.provider === "kimi" &&
@@ -1780,10 +1787,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         account.provider === "zai" &&
         account.upstreamBaseUrl !== undefined &&
         platform.discoverZaiModels !== undefined;
-      if (!apiKeyList && !claudeList && !kimiList && !zaiList)
+      if (!apiKeyList && !claudeList && !codexList && !kimiList && !zaiList)
         return unavailable("provider-unsupported");
       const secretReference =
-        account.provider === "claude"
+        account.provider === "claude" || account.provider === "codex"
           ? account.accessTokenSecret
           : isApiKeyAccount(account)
             ? account.apiKeySecret
@@ -1795,6 +1802,14 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
       const token = await readToken();
       if (token === undefined || !isAcceptableApiKey(token))
+        return unavailable("catalog-unavailable");
+      const readIdToken = async () => {
+        if (account.provider !== "codex") return undefined;
+        const secret = await runPromise(secrets.get(secretStoreName(account.idTokenSecret)));
+        return Option.isSome(secret) ? new TextDecoder().decode(secret.value) : undefined;
+      };
+      const idToken = codexList ? await readIdToken() : undefined;
+      if (codexList && (idToken === undefined || !isAcceptableApiKey(idToken)))
         return unavailable("catalog-unavailable");
       const kimiConnection =
         kimiList && account.provider === "kimi"
@@ -1817,6 +1832,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         ? await platform.discoverClaudeModels!(token, AbortSignal.timeout(8_000)).catch(
             () => undefined,
           )
+        : codexList && idToken !== undefined
+          ? await platform
+              .discoverCodexModels!(token, idToken, AbortSignal.timeout(8_000))
+              .catch(() => undefined)
         : kimiList && account.provider === "kimi"
           ? kimiConnection?.upstreamBaseUrl === account.upstreamBaseUrl
             ? kimiConnection.models
@@ -1834,7 +1853,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const current = (await loadConfiguration()).accounts.find(
         (candidate) => candidate.id === input.accountId,
       );
-      if (JSON.stringify(current) !== JSON.stringify(account) || (await readToken()) !== token)
+      if (
+        JSON.stringify(current) !== JSON.stringify(account) ||
+        (await readToken()) !== token ||
+        (codexList && (await readIdToken()) !== idToken)
+      )
         return unavailable("account-changed");
       if (models === undefined || models.length === 0) return unavailable("catalog-unavailable");
       return {

@@ -244,6 +244,53 @@ describe("ProviderGatewayService", () => {
     },
   );
 
+  it("reads a Codex account's authenticated list with both tokens kept in memory", async () => {
+    const harness = readyHarness();
+    const configured = JSON.stringify({
+      ...JSON.parse(configuration),
+      defaultProvider: "codex",
+      accounts: [
+        {
+          id: "codex-primary",
+          label: "Codex",
+          provider: "codex",
+          enabled: true,
+          models: ["configured-model"],
+          accessTokenSecret: { scope: "workjet-provider-gateway", name: "codex.access" },
+          idTokenSecret: { scope: "workjet-provider-gateway", name: "codex.id" },
+          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "codex.refresh" },
+        },
+      ],
+    });
+    let probes = 0;
+    const result = await runGateway(
+      {
+        ...harness.platform,
+        readText: async () => configured,
+        discoverCodexModels: async (accessToken, idToken) => {
+          expect(accessToken).toBe("provider-secret");
+          expect(idToken).toBe("provider-secret");
+          probes += 1;
+          return ["live-model"];
+        },
+      },
+      (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          const writesBefore = [...harness.writes];
+          const models = yield* gateway.accountModels({
+            accountId: WorkjetGatewayAccountId.make("codex-primary"),
+          });
+          expect(harness.writes).toEqual(writesBefore);
+          return models;
+        }),
+    );
+    expect(result.state).toBe("observed");
+    expect(result.modelIds).toEqual(["live-model"]);
+    expect(probes).toBe(1);
+    expect(JSON.stringify(result)).not.toContain("provider-secret");
+  });
+
   it.each(["kimi", "zai"] as const)(
     "reads the authenticated %s model list for the exact stored plan without inference",
     async (provider) => {
@@ -275,7 +322,7 @@ describe("ProviderGatewayService", () => {
             probes += 1;
             return {
               plan: "api",
-              upstreamBaseUrl: origin,
+              upstreamBaseUrl: "https://api.moonshot.ai/v1",
               models: ["live-model"],
             };
           },

@@ -11,6 +11,7 @@ import type {
   WorkjetGatewayInferenceResult,
 } from "@workjet/contracts";
 import { discoverKimiConnection } from "./KimiConnection.ts";
+import { discoverCodexModels } from "./CodexConnection.ts";
 import { discoverZaiConnection, discoverZaiModels } from "./ZaiConnection.ts";
 import { discoverApiKeyModels } from "./ApiKeyModelConnection.ts";
 import { readPublicModelCatalog } from "./LiveProviderCatalog.ts";
@@ -200,6 +201,7 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
   publicModelCatalog: readPublicModelCatalog,
   discoverClaudeModels,
   discoverKimiConnection,
+  discoverCodexModels,
   discoverZaiConnection,
   discoverZaiModels,
   discoverApiKeyModels,

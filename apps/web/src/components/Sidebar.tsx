@@ -3566,7 +3566,12 @@ export default function Sidebar() {
         if (target === undefined) {
           toastManager.add({
             type: "warning",
-            title: "Keine Arbeitskopie auf diesem Rechner",
+            title: overviewText.noCheckoutTitle,
+            description: overviewText.noCheckoutDescription,
+            actionProps: {
+              children: overviewText.setUpCheckout,
+              onClick: () => void router.navigate({ to: "/settings/projects" }),
+            },
           });
           return;
         }
@@ -4475,11 +4480,30 @@ export default function Sidebar() {
                     onClick={() => void router.navigate({ to: "/settings/computers" })}
                   >
                     <ServerIcon aria-hidden className="size-3.5" />
-                    Rechner wählen
+                    {overviewText.chooseComputer}
                   </Button>
                 </>
               ) : workjetProjects.length > 0 && sidebarAvailableProjectCount === 0 ? (
-                <span>Keine Arbeitskopie auf diesem Rechner</span>
+                <>
+                  <span>{overviewText.noCheckoutTitle}</span>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => void router.navigate({ to: "/settings/projects" })}
+                  >
+                    {overviewText.setUpCheckout}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => void router.navigate({ to: "/settings/computers" })}
+                  >
+                    <ServerIcon aria-hidden className="size-3.5" />
+                    {overviewText.chooseComputer}
+                  </Button>
+                </>
               ) : selectedWorkjetProject ? (
                 "Noch keine Unterhaltungen"
               ) : scopedProjectGroup ? (

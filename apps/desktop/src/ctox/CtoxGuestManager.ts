@@ -515,6 +515,8 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
               : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) || code === "REQUEST_TIMEOUT" || code === "WORKJET_PROJECT_TIMEOUT" || code === "projection_delayed"
                 ? "request_timeout"
                 : code === "SPEECH_CORE_OUTDATED"
+                    || message === "Invalid native provider metadata or request."
+                    || message.startsWith("Grok control unavailable.")
                   ? "core_outdated"
                   : code === "SPEECH_ACCESS_DENIED"
                     ? "access_denied"
@@ -919,7 +921,9 @@ export function describeCtoxGuestFailure(error: unknown): {
               : /^Native request [a-zA-Z0-9._-]+ exceeded /u.test(message) ||
                   code === "REQUEST_TIMEOUT"
                 ? "request_timeout"
-                : code === "SPEECH_CORE_OUTDATED"
+                : code === "SPEECH_CORE_OUTDATED" ||
+                    message === "Invalid native provider metadata or request." ||
+                    message.startsWith("Grok control unavailable.")
                   ? "core_outdated"
                   : code === "SPEECH_ACCESS_DENIED"
                     ? "access_denied"

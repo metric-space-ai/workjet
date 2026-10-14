@@ -1,14 +1,37 @@
-import { EnvironmentHttpApi, WorkjetOfficialCodingModelExport } from "@workjet/contracts";
+// @effect-diagnostics globalFetch:off -- A user-selected Workjet server is fetched without redirects.
+import { WorkjetOfficialCodingModelExport } from "@workjet/contracts";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/unstable/cli";
-import { FetchHttpClient } from "effect/unstable/http";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
-const encode = Schema.encodeEffect(Schema.fromJsonString(WorkjetOfficialCodingModelExport));
+export class CodingModelExportRequestError extends Schema.TaggedErrorClass<CodingModelExportRequestError>()(
+  "CodingModelExportRequestError",
+  { code: Schema.String },
+) {
+  override get message() {
+    return `Could not read the Workjet coding model export (${this.code}). Check the server URL and orchestration read permission.`;
+  }
+}
+
+const decode = Schema.decodeUnknownSync(WorkjetOfficialCodingModelExport);
+
+/** Never follow a redirect with the access token or reuse caller-supplied path data. */
+export function codingModelExportUrl(value: string): string {
+  const url = new URL(value);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new CodingModelExportRequestError({ code: "invalid_url" });
+  }
+  url.pathname = "/api/workjet/coding-models";
+  return url.href;
+}
 
 /** An authenticated, fresh read from the running Workjet server. */
 export const modelsCommand = Command.make("models").pipe(
@@ -23,12 +46,22 @@ export const modelsCommand = Command.make("models").pipe(
       Command.withHandler(({ url }) =>
         Effect.gen(function* () {
           const token = yield* Config.string("WORKJET_ACCESS_TOKEN");
-          const client = yield* HttpApiClient.make(EnvironmentHttpApi, { baseUrl: url });
-          const result = yield* client.orchestration.codingModels({
-            headers: { authorization: `Bearer ${token}` },
-          }).pipe(Effect.timeout(Duration.seconds(60)));
-          yield* Console.log(yield* encode(result));
-        }).pipe(Effect.provide(FetchHttpClient.layer)),
+          const result = yield* Effect.tryPromise({
+            try: async () => {
+              const response = await fetch(codingModelExportUrl(url), {
+                redirect: "error",
+                headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+                signal: AbortSignal.timeout(60_000),
+              });
+              if (response.status !== 200) throw new Error("request_failed");
+              const body = await response.text();
+              if (body.length > 2 * 1024 * 1024) throw new Error("response_too_large");
+              return decode(JSON.parse(body));
+            },
+            catch: () => new CodingModelExportRequestError({ code: "request_failed" }),
+          });
+          yield* Console.log(JSON.stringify(result));
+        }),
       ),
     ),
   ]),

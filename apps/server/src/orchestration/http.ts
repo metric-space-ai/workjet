@@ -5,6 +5,8 @@ import {
   WorkjetHarness,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -38,7 +40,7 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
     const orchestrationEngine = yield* OrchestrationEngineService;
     const settings = yield* ServerSettingsService;
     const providerGateway = yield* ProviderGatewayService;
-    const spawner = yield* ChildProcessSpawner;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
     return handlers
       .handle(
@@ -67,7 +69,7 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
               harnesses: WorkjetHarness.literals.filter((harness) =>
                 current.workjet.workerProfiles.some((profile) => profile.harness === harness),
               ),
-              nowIso: Effect.sync(() => new Date().toISOString()),
+              nowIso: Effect.map(DateTime.now, DateTime.formatIso),
             });
             return officialCodingModelExport({
               catalog,
@@ -76,11 +78,11 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
               accountModels,
               workjet: current.workjet,
               harnesses,
-              observedAtMs: Date.now(),
+              observedAtMs: yield* Clock.currentTimeMillis,
             });
           });
           return yield* result.pipe(
-            Effect.catch((cause) => failEnvironmentInternal("coding_model_export_failed", cause)),
+            Effect.catch((cause) => failEnvironmentInternal("internal_error", cause)),
           );
         }),
       )

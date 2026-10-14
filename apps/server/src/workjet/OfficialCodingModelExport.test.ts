@@ -38,7 +38,7 @@ const fixture = (): Parameters<typeof officialCodingModelExport>[0] =>
       execution: { probeTimeoutSeconds: 120, turnTimeoutSeconds: 5400, degradationAllowed: true },
     },
     harnesses: { schemaVersion: 1, probedAt: "2026-10-14T00:00:00Z", harnesses: [{ harness: "claude-code", availability: "available", executablePath: "/usr/bin/claude" }] },
-  }) as Parameters<typeof officialCodingModelExport>[0];
+  }) as unknown as Parameters<typeof officialCodingModelExport>[0];
 
 it("exports only a live, checked model with its registered and probed home route as available", () => {
   const result = officialCodingModelExport(fixture());
@@ -58,7 +58,7 @@ it("fails closed when a model check is stale or the account list is unavailable"
   assert.equal(stale.models[0]?.reason, "model-check-unverified");
   const missing = officialCodingModelExport({
     ...input,
-    accountModels: [{ accountId: "account-1", checkedAtMs: 999_500, state: "unavailable", reason: "catalog-unavailable", modelIds: [] }],
+    accountModels: [{ accountId: input.catalog.accounts[0]!.id, checkedAtMs: 999_500, state: "unavailable", reason: "catalog-unavailable", modelIds: [] }],
   });
   assert.equal(missing.models.length, 0);
   assert.equal(missing.unverifiedAccounts[0]?.reason, "catalog-unavailable");

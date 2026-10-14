@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUiText } from "../../hooks/useUiText";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { Input } from "../ui/input";
+import { CredentialCard, type ToolhubParam } from "../toolhub/ToolhubCards";
 import {
   INTEGRATIONS,
   INTEGRATION_CATEGORIES,
@@ -235,7 +236,9 @@ export function IntegrationsSettingsPanel() {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<IntegrationCategory | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [token, setToken] = useState("");
+  const [connectionFields, setConnectionFields] = useState<
+    Record<string, ReadonlyArray<ToolhubParam>>
+  >({});
   const [confirmRemove, setConfirmRemove] = useState(false);
   const retryTimer = useRef<number | null>(null);
 
@@ -281,6 +284,9 @@ export function IntegrationsSettingsPanel() {
         return next;
       });
       setAccounts((k.accounts as Account[] | undefined) ?? []);
+      setConnectionFields(
+        (k.connection_fields as Record<string, ReadonlyArray<ToolhubParam>> | undefined) ?? {},
+      );
       setLoadProblem(null);
     } catch (e) {
       const d = describe(e, t, instanceName, null);
@@ -333,12 +339,12 @@ export function IntegrationsSettingsPanel() {
     [request],
   );
 
-  const fail = (entry: IntegrationEntry, e: unknown, retry: () => void) => {
+  const fail = (entry: IntegrationEntry, e: unknown, retry?: () => void) => {
     const d = describe(e, t, instanceName, entry.name);
     const action =
       d.kind === "expired"
-        ? { label: t("Neu verbinden", "Reconnect"), run: retry }
-        : d.kind === "admin" || d.kind === "outdated"
+        ? retry && { label: t("Neu verbinden", "Reconnect"), run: retry }
+        : d.kind === "admin" || d.kind === "outdated" || !retry
           ? undefined
           : { label: t("Erneut versuchen", "Try again"), run: retry };
     setProblems((p) => ({
@@ -365,14 +371,23 @@ export function IntegrationsSettingsPanel() {
     }
   };
 
-  const saveToken = async (entry: IntegrationEntry) => {
+  const saveToken = async (entry: IntegrationEntry, values: Record<string, string>) => {
     setBusy(entry.slug);
+    setProblems((p) => ({ ...p, [entry.slug]: undefined }));
     try {
-      await request("credential", { toolkit: entry.slug, credential: token.trim() });
-      setToken("");
+      const params: Record<string, string> = {};
+      for (const f of connectionFields[entry.slug] ?? []) {
+        const v = (values[f.key] ?? "").trim();
+        if (v) params[f.key] = v;
+      }
+      await request("credential", {
+        toolkit: entry.slug,
+        credential: (values.token ?? "").trim(),
+        ...(Object.keys(params).length > 0 ? { params } : {}),
+      });
       await refresh();
     } catch (e) {
-      fail(entry, e, () => void saveToken(entry));
+      fail(entry, e);
     } finally {
       setBusy(null);
     }
@@ -396,7 +411,6 @@ export function IntegrationsSettingsPanel() {
   const open = (entry: IntegrationEntry) => {
     setSelected(entry.slug);
     setConfirmRemove(false);
-    setToken("");
     if (entry.connect === "mcp" && isConnected(entry)) void loadMcpTools(entry.slug);
   };
 
@@ -478,13 +492,12 @@ export function IntegrationsSettingsPanel() {
           tools={catalog[entry.slug] ?? []}
           problem={problems[entry.slug] ?? null}
           instanceName={instanceName}
-          token={token}
-          setToken={setToken}
+          connectionFields={connectionFields[entry.slug] ?? []}
           confirmRemove={confirmRemove}
           setConfirmRemove={setConfirmRemove}
           onBack={() => setSelected(null)}
           onConnect={() => void connectMcp(entry)}
-          onSaveToken={() => void saveToken(entry)}
+          onSaveToken={(values) => void saveToken(entry, values)}
           onRemove={() => void remove(entry)}
         />
       ) : (
@@ -599,13 +612,12 @@ function Detail(props: {
   tools: ReadonlyArray<ToolEntry>;
   problem: Problem | null;
   instanceName: string;
-  token: string;
-  setToken: (v: string) => void;
+  connectionFields: ReadonlyArray<ToolhubParam>;
   confirmRemove: boolean;
   setConfirmRemove: (v: boolean) => void;
   onBack: () => void;
   onConnect: () => void;
-  onSaveToken: () => void;
+  onSaveToken: (values: Record<string, string>) => void;
   onRemove: () => void;
 }) {
   const { entry, t } = props;
@@ -679,30 +691,20 @@ function Detail(props: {
       </p>
       {props.problem ? <ProblemNote t={t} problem={props.problem} /> : null}
       {entry.connect === "token" && !props.connected ? (
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            props.onSaveToken();
-          }}
-        >
-          <Input
-            type="password"
-            autoComplete="off"
-            aria-label={t("Zugangsschlüssel", "Access key")}
-            placeholder={t("Zugangsschlüssel einfügen", "Paste access key")}
-            value={props.token}
-            onChange={(e) => props.setToken(e.target.value)}
-            className="h-9 flex-1 rounded-full"
-          />
-          <Pill
-            onClick={props.onSaveToken}
-            disabled={props.token.trim().length < 8 || props.busy || !props.available}
-          >
-            {props.busy ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
-            {t("Verbinden", "Connect")}
-          </Pill>
-        </form>
+        <CredentialCard
+          t={t}
+          appName={entry.name}
+          title={t(`${entry.name} API-Schlüssel`, `${entry.name} API key`)}
+          help={t(
+            `Wird nur auf ${props.instanceName} gespeichert und von allen Agenten der Instanz genutzt.`,
+            `Stored only on ${props.instanceName} and used by all agents on the instance.`,
+          )}
+          secrets={[{ name: "token", secret: true }]}
+          params={props.connectionFields}
+          busy={props.busy}
+          disabled={!props.available}
+          onSubmit={props.onSaveToken}
+        />
       ) : null}
       {entry.connect !== null ? (
         <section className="flex flex-col gap-2">

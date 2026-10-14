@@ -1556,8 +1556,7 @@ export const WorkjetGatewayAccountModelHealth = Schema.Struct({
   httpStatus: Schema.NullOr(NonNegativeInt),
   observedAtMs: Schema.NullOr(NonNegativeInt),
 });
-export type WorkjetGatewayAccountModelHealth =
-  typeof WorkjetGatewayAccountModelHealth.Type;
+export type WorkjetGatewayAccountModelHealth = typeof WorkjetGatewayAccountModelHealth.Type;
 
 export const WorkjetGatewayAccountHealth = Schema.Struct({
   accountId: WorkjetGatewayAccountId,

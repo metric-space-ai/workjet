@@ -202,6 +202,52 @@ pub fn run_ctox_person_research_with_configured_dispatch(
     )
 }
 
+/// One query per requested business responsibility, instead of allowing the
+/// source's top-ranked executives to crowd out every specialist role. These
+/// queries run only after the normal planner admits person-discovery.
+fn source_role_search_queries(
+    source_id: &str,
+    company: &str,
+) -> Vec<(Option<&'static str>, String)> {
+    if source_id != "person-discovery" {
+        return vec![(None, company.to_string())];
+    }
+    let roles = [
+        (
+            "Gesamtverantwortung",
+            r#""CEO" OR "Chief Executive Officer" OR "Gründer & Geschäftsführer" OR "Executive Director" OR "Founder & CEO" OR "General Manager" OR "Vorsitzender der Geschäftsführung" OR "Vorstandssprecher" OR "Vorstandsvorsitzender" OR "Managing Director" OR "Managing Partner" OR "Owner & Managing Director" OR "President" OR "Business Unit Director" OR "Country Director" OR "Country Lead" OR "Country Manager" OR "Geschäftsbereichsleiter" OR "Regional Director""#,
+        ),
+        (
+            "Finanzen",
+            r#""CFO" OR "Chief Financial Officer" OR "Finanzvorstand" OR "Geschäftsführer Finanzen" OR "Group Finance Director" OR "Kaufmännischer Geschäftsführer" OR "Managing Director Finance" OR "VP Finance" OR "Head of Finance mit Prokura" OR "Leiter Finanzen mit Prokura" OR "Commercial Director" OR "Finance Director" OR "Finance Executive" OR "Finanzdirektor" OR "Kaufmännischer Leiter" OR "Leiter Finanz- & Rechnungswesen" OR "Regional Finance Director" OR "Finanzleiter" OR "Senior Finance Manager""#,
+        ),
+        (
+            "Einkauf",
+            r#""CPO" OR "Chief Procurement Officer" OR "Einkaufsvorstand" OR "Vorstand Einkauf" OR "Vorstand Beschaffung" OR "Director Einkauf" OR "Director Procurement" OR "Director of Procurement" OR "Director of Purchasing" OR "Procurement Director" OR "Bereichsleiter Einkauf" OR "Einkaufsdirektor" OR "Einkaufsgruppenleiter" OR "Einkaufsleiter" OR "Head of Direct Procurement" OR "Head of Procurement" OR "Head of Purchasing" OR "Leiter Beschaffung" OR "Leiter Category Management" OR "Leiter Einkauf" OR "Leiter Materialwirtschaft" OR "Leiter operativer Einkauf" OR "Leiter strategischer Einkauf" OR "Senior Procurement Specialist" OR "Procurement Team Lead" OR "Purchasing Team Lead" OR "Senior Procurement Manager" OR "SVP Procurement" OR "SVP Purchasing" OR "Teamleiter Beschaffung" OR "Teamleiter Einkauf""#,
+        ),
+        (
+            "Supply Chain",
+            r#""Director Supply Chain Management" OR "Director of SCM" OR "Head of Supply Chain Management" OR "Head of SCM" OR "Leiter Supply Chain Management" OR "Leiter SCM" OR "VP Supply Chain Management" OR "VP SCM""#,
+        ),
+        (
+            "Operations",
+            r#""COO" OR "Chief Operating Officer" OR "Director of Operations" OR "Geschäftsführer Operations" OR "Global Operations Director" OR "Managing Director Operations" OR "Operativer Geschäftsführer" OR "Regional Operations Director" OR "SVP Operations" OR "Senior Vice President Operations" OR "VP Operations" OR "Bereichsleiter Operations" OR "Betriebsleiter Operations" OR "Head of Operations" OR "Leiter Operations" OR "Operations Lead" OR "Senior Operations Manager" OR "Standortleiter" OR "Operations Director""#,
+        ),
+        (
+            "Technik",
+            r#""CTO" OR "Chief Technology Officer" OR "Geschäftsführer Technik" OR "Technischer Geschäftsführer" OR "VP Technik" OR "Vorstand Technik" OR "Leiter Technik" OR "Bereichsleitung Technik" OR "Betriebsleiter Technik" OR "Entwicklungsleiter" OR "Head of Technology" OR "Technischer Leiter""#,
+        ),
+        (
+            "Entwicklung",
+            r#""VP R&D" OR "Vice President Entwicklung" OR "VP Forschung und Entwicklung" OR "Forschung & Entwicklungsleiter" OR "Head of R&D" OR "Leiter F&E" OR "Leiter Forschung & Entwicklung" OR "Leiter F&E / R&D" OR "Leiter Produktentwicklung" OR "Konstruktionsleiter" OR "Entwicklungsleiter""#,
+        ),
+    ];
+    roles
+        .into_iter()
+        .map(|(role, terms)| (Some(role), format!("{company} ({terms})")))
+        .collect()
+}
+
 fn run_person_research_with_checkpoint(
     context: WebStackContext<'_>,
     request: &PersonResearchRequest,
@@ -450,240 +496,247 @@ fn run_person_research_with_checkpoint(
             continue;
         }
 
-        // Honor the source's `shape_query` for the search-engine query
-        // text. Crawl/snippet sources frequently need a tightened query
-        // (e.g. `site:` operators, role-keyword bias) that the bare
-        // company name doesn't carry.
-        let effective_query = sources::find(plan.source_id)
-            .and_then(|m| {
-                let ctx = SourceCtx {
-                    root,
-                    runtime_config: context.runtime_config,
-                    country: Some(request.country),
-                    mode: request.mode,
-                };
-                m.shape_query(&company, &ctx).map(|s| s.query)
-            })
-            .unwrap_or_else(|| company.clone());
+        let mut reads_for_plan = 0_usize;
+        for (role_category, source_query) in source_role_search_queries(plan.source_id, &company) {
+            // Honor the source's `shape_query` for the search-engine query
+            // text. Crawl/snippet sources frequently need a tightened query
+            // (e.g. `site:` operators, role-keyword bias) that the bare
+            // company name doesn't carry.
+            let effective_query = sources::find(plan.source_id)
+                .and_then(|m| {
+                    let ctx = SourceCtx {
+                        root,
+                        runtime_config: context.runtime_config,
+                        country: Some(request.country),
+                        mode: request.mode,
+                    };
+                    m.shape_query(&source_query, &ctx).map(|s| s.query)
+                })
+                .unwrap_or(source_query);
 
-        let search_payload = run_web_search_tool_with_context(
-            context,
-            &CanonicalWebSearchRequest {
-                query: effective_query,
-                external_web_access: None,
-                allowed_domains: Vec::new(),
-                user_location: SearchUserLocation {
-                    country: Some(request.country.as_iso().to_string()),
-                    ..SearchUserLocation::default()
+            let search_payload = run_web_search_tool_with_context(
+                context,
+                &CanonicalWebSearchRequest {
+                    query: effective_query.clone(),
+                    external_web_access: None,
+                    allowed_domains: Vec::new(),
+                    user_location: SearchUserLocation {
+                        country: Some(request.country.as_iso().to_string()),
+                        ..SearchUserLocation::default()
+                    },
+                    search_context_size: Some(ContextSize::Medium),
+                    search_content_types: Vec::new(),
+                    include_sources: true,
+                    pinned_sources: vec![plan.source_id.to_string()],
                 },
-                search_context_size: Some(ContextSize::Medium),
-                search_content_types: Vec::new(),
-                include_sources: true,
-                pinned_sources: vec![plan.source_id.to_string()],
-            },
-        );
+            );
 
-        let search_payload = match search_payload {
-            Ok(payload) => payload,
-            Err(err) => {
-                search_runs.push(json!({
+            let search_payload = match search_payload {
+                Ok(payload) => payload,
+                Err(err) => {
+                    search_runs.push(json!({
                     "source_id": plan.source_id,
                     "target_fields": plan.target_fields.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
                     "ok": false,
                     "error": err.to_string(),
+                    "role_category": role_category,
+                    "query": effective_query,
                 }));
-                continue;
-            }
-        };
+                    continue;
+                }
+            };
 
-        let ok = search_payload
-            .get("ok")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let hits = search_payload
-            .get("results")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        search_runs.push(json!({
+            let ok = search_payload
+                .get("ok")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let hits = search_payload
+                .get("results")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            search_runs.push(json!({
             "source_id": plan.source_id,
             "target_fields": plan.target_fields.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
             "tier": tier_label(plan.tier),
             "api_path": plan.api_path,
             "ok": ok,
             "hit_count": hits.len(),
+            "role_category": role_category,
+            "query": effective_query,
             "provider": search_payload.get("provider").cloned().unwrap_or(Value::Null),
             "source_failures": search_payload.get("source_failures").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
         }));
-        browser_assist_tasks.extend(browser_assist_tasks_from_source_failures(
-            plan,
-            search_payload.get("source_failures"),
-        ));
-        if !ok {
-            continue;
-        }
+            browser_assist_tasks.extend(browser_assist_tasks_from_source_failures(
+                plan,
+                search_payload.get("source_failures"),
+            ));
+            if !ok {
+                continue;
+            }
 
-        // Snippet-mining sources (e.g. `person-discovery`) extract typed
-        // evidence directly from the search-result hits without needing to
-        // fetch the gated profile pages behind them. If `extract_from_hits`
-        // returns evidence, we use it and skip the per-hit read loop.
-        if let Some(module) = sources::find(plan.source_id) {
-            let hit_objs = parse_verified_hits(&hits, plan, &company);
-            if !hit_objs.is_empty() {
-                let ctx = SourceCtx {
-                    root,
-                    runtime_config: context.runtime_config,
-                    country: Some(request.country),
-                    mode: request.mode,
-                };
-                let snippet_evidence = module.extract_from_hits(&ctx, &company, &hit_objs);
-                if !snippet_evidence.is_empty() {
-                    for (field, ev) in snippet_evidence {
-                        if !request.fields.is_empty() && !request.fields.contains(&field) {
-                            continue;
-                        }
-                        if scrape_covered_fields.contains(&field) {
-                            continue;
-                        }
-                        field_evidence.entry(field).or_default().push(json!({
-                            "value": ev.value,
-                            "confidence": ev.confidence.as_str(),
-                            "source_id": plan.source_id,
-                            "source_url": ev.source_url,
-                            "tier": tier_label(plan.tier),
-                            "via": "search_snippet",
-                            "note": ev.note,
-                        }));
-                    }
-                    // Snippet path produced evidence — do not also read each
-                    // URL (typically gated by login walls).
-                    continue;
-                }
-            }
-        }
-
-        let mut reads_for_plan = 0_usize;
-        for hit in hits.iter().take(MAX_HITS_PER_SOURCE) {
-            if reads_for_plan >= MAX_READS_PER_SOURCE {
-                break;
-            }
-            if !search_hit_evidence_eligible(hit, plan, &company) {
-                continue;
-            }
-            let Some(url) = hit.get("url").and_then(Value::as_str) else {
-                continue;
-            };
-            if !visited_urls.insert(url.to_string()) {
-                continue;
-            }
-            // Only read hits whose host belongs to the pinned source — a
-            // pinned-source `fetch_direct` already returned typed data, but
-            // the generic cascade may have added unrelated URLs to the
-            // result list.
-            if !url_belongs_to_source(url, plan.source_id, plan.aliases, plan.host_suffixes) {
-                continue;
-            }
-            let read_payload = run_web_read_tool_with_context(
-                context,
-                &DirectWebReadRequest {
-                    url: url.to_string(),
-                    query: Some(company.clone()),
-                    find: find_terms_for_fields(&plan.target_fields),
-                    workspace: None,
-                    include_full_text: false,
-                    timeout_cap_ms: None,
-                    max_artifact_bytes: None,
-                    country: Some(request.country.as_iso().to_string()),
-                },
-            );
-            match read_payload {
-                Ok(payload) => {
-                    if !web_read_evidence_eligible(&payload, plan, &company, url) {
-                        read_runs.push(json!({
-                            "source_id": plan.source_id,
-                            "url": url,
-                            "ok": false,
-                            "evidence_rejected": true,
-                        }));
-                        continue;
-                    }
-                    if let Some(fields) = payload
-                        .get("extracted_fields")
-                        .and_then(|v| v.get("fields"))
-                        .and_then(Value::as_array)
-                    {
-                        for entry in fields {
-                            let Some(field_str) = entry.get("field").and_then(Value::as_str) else {
-                                continue;
-                            };
-                            let Some(field) = FieldKey::from_str(field_str) else {
-                                continue;
-                            };
+            // Snippet-mining sources (e.g. `person-discovery`) extract typed
+            // evidence directly from the search-result hits without needing to
+            // fetch the gated profile pages behind them. If `extract_from_hits`
+            // returns evidence, we use it and skip the per-hit read loop.
+            if let Some(module) = sources::find(plan.source_id) {
+                let hit_objs = parse_verified_hits(&hits, plan, &company);
+                if !hit_objs.is_empty() {
+                    let ctx = SourceCtx {
+                        root,
+                        runtime_config: context.runtime_config,
+                        country: Some(request.country),
+                        mode: request.mode,
+                    };
+                    let snippet_evidence = module.extract_from_hits(&ctx, &company, &hit_objs);
+                    if !snippet_evidence.is_empty() {
+                        for (field, ev) in snippet_evidence {
                             if !request.fields.is_empty() && !request.fields.contains(&field) {
                                 continue;
                             }
                             if scrape_covered_fields.contains(&field) {
                                 continue;
                             }
-                            let Some(source_url) = entry
-                                .get("canonical_url")
-                                .or_else(|| entry.get("source_url"))
-                                .and_then(Value::as_str)
-                                .filter(|value| {
-                                    valid_http_url(value)
-                                        && url_belongs_to_source(
-                                            value,
-                                            plan.source_id,
-                                            plan.aliases,
-                                            plan.host_suffixes,
-                                        )
-                                })
-                            else {
-                                continue;
-                            };
-                            if !entry_company_identity_matches(&payload, entry, &company) {
-                                continue;
-                            }
-                            let mut tagged = entry.clone();
-                            tagged["source_id"] = Value::String(plan.source_id.to_string());
-                            tagged["tier"] = Value::String(tier_label(plan.tier).to_string());
-                            tagged["hit_url"] = Value::String(url.to_string());
-                            tagged["source_url"] = Value::String(source_url.to_string());
-                            tagged["canonical_url"] = Value::String(
-                                payload
-                                    .get("canonical_url")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or(source_url)
-                                    .to_string(),
-                            );
-                            tagged["evidence_eligible"] = Value::Bool(true);
-                            tagged["verification_status"] = Value::String("verified".into());
-                            tagged["checked_at"] =
-                                payload.get("checked_at").cloned().unwrap_or(Value::Null);
-                            field_evidence.entry(field).or_default().push(tagged);
+                            field_evidence.entry(field).or_default().push(json!({
+                                "value": ev.value,
+                                "confidence": ev.confidence.as_str(),
+                                "source_id": plan.source_id,
+                                "source_url": ev.source_url,
+                                "tier": tier_label(plan.tier),
+                                "via": "search_snippet",
+                                "note": ev.note,
+                            }));
                         }
+                        // Snippet path produced evidence — do not also read each
+                        // URL (typically gated by login walls).
+                        continue;
                     }
-                    read_runs.push(json!({
-                        "source_id": plan.source_id,
-                        "url": url,
-                        "ok": payload.get("ok").cloned().unwrap_or(Value::Bool(false)),
-                        "is_pdf": payload.get("is_pdf").cloned().unwrap_or(Value::Bool(false)),
-                        "extracted_count": payload
+                }
+            }
+
+            for hit in hits.iter().take(MAX_HITS_PER_SOURCE) {
+                if reads_for_plan >= MAX_READS_PER_SOURCE {
+                    break;
+                }
+                if !search_hit_evidence_eligible(hit, plan, &company) {
+                    continue;
+                }
+                let Some(url) = hit.get("url").and_then(Value::as_str) else {
+                    continue;
+                };
+                if !visited_urls.insert(url.to_string()) {
+                    continue;
+                }
+                // Only read hits whose host belongs to the pinned source — a
+                // pinned-source `fetch_direct` already returned typed data, but
+                // the generic cascade may have added unrelated URLs to the
+                // result list.
+                if !url_belongs_to_source(url, plan.source_id, plan.aliases, plan.host_suffixes) {
+                    continue;
+                }
+                let read_payload = run_web_read_tool_with_context(
+                    context,
+                    &DirectWebReadRequest {
+                        url: url.to_string(),
+                        query: Some(company.clone()),
+                        find: find_terms_for_fields(&plan.target_fields),
+                        workspace: None,
+                        include_full_text: false,
+                        timeout_cap_ms: None,
+                        max_artifact_bytes: None,
+                        country: Some(request.country.as_iso().to_string()),
+                    },
+                );
+                match read_payload {
+                    Ok(payload) => {
+                        if !web_read_evidence_eligible(&payload, plan, &company, url) {
+                            read_runs.push(json!({
+                                "source_id": plan.source_id,
+                                "url": url,
+                                "ok": false,
+                                "evidence_rejected": true,
+                            }));
+                            continue;
+                        }
+                        if let Some(fields) = payload
                             .get("extracted_fields")
                             .and_then(|v| v.get("fields"))
                             .and_then(Value::as_array)
-                            .map(Vec::len)
-                            .unwrap_or(0),
-                    }));
-                    reads_for_plan += 1;
-                }
-                Err(err) => {
-                    read_runs.push(json!({
-                        "source_id": plan.source_id,
-                        "url": url,
-                        "ok": false,
-                        "error": err.to_string(),
-                    }));
+                        {
+                            for entry in fields {
+                                let Some(field_str) = entry.get("field").and_then(Value::as_str)
+                                else {
+                                    continue;
+                                };
+                                let Some(field) = FieldKey::from_str(field_str) else {
+                                    continue;
+                                };
+                                if !request.fields.is_empty() && !request.fields.contains(&field) {
+                                    continue;
+                                }
+                                if scrape_covered_fields.contains(&field) {
+                                    continue;
+                                }
+                                let Some(source_url) = entry
+                                    .get("canonical_url")
+                                    .or_else(|| entry.get("source_url"))
+                                    .and_then(Value::as_str)
+                                    .filter(|value| {
+                                        valid_http_url(value)
+                                            && url_belongs_to_source(
+                                                value,
+                                                plan.source_id,
+                                                plan.aliases,
+                                                plan.host_suffixes,
+                                            )
+                                    })
+                                else {
+                                    continue;
+                                };
+                                if !entry_company_identity_matches(&payload, entry, &company) {
+                                    continue;
+                                }
+                                let mut tagged = entry.clone();
+                                tagged["source_id"] = Value::String(plan.source_id.to_string());
+                                tagged["tier"] = Value::String(tier_label(plan.tier).to_string());
+                                tagged["hit_url"] = Value::String(url.to_string());
+                                tagged["source_url"] = Value::String(source_url.to_string());
+                                tagged["canonical_url"] = Value::String(
+                                    payload
+                                        .get("canonical_url")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or(source_url)
+                                        .to_string(),
+                                );
+                                tagged["evidence_eligible"] = Value::Bool(true);
+                                tagged["verification_status"] = Value::String("verified".into());
+                                tagged["checked_at"] =
+                                    payload.get("checked_at").cloned().unwrap_or(Value::Null);
+                                field_evidence.entry(field).or_default().push(tagged);
+                            }
+                        }
+                        read_runs.push(json!({
+                            "source_id": plan.source_id,
+                            "url": url,
+                            "ok": payload.get("ok").cloned().unwrap_or(Value::Bool(false)),
+                            "is_pdf": payload.get("is_pdf").cloned().unwrap_or(Value::Bool(false)),
+                            "extracted_count": payload
+                                .get("extracted_fields")
+                                .and_then(|v| v.get("fields"))
+                                .and_then(Value::as_array)
+                                .map(Vec::len)
+                                .unwrap_or(0),
+                        }));
+                        reads_for_plan += 1;
+                    }
+                    Err(err) => {
+                        read_runs.push(json!({
+                            "source_id": plan.source_id,
+                            "url": url,
+                            "ok": false,
+                            "error": err.to_string(),
+                        }));
+                    }
                 }
             }
         }
@@ -3103,6 +3156,74 @@ fn slugify(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_discovery_queries_cover_every_responsibility_without_executive_crowding() {
+        let queries = source_role_search_queries("person-discovery", "Fixture GmbH");
+        assert_eq!(queries.len(), 7);
+        assert_eq!(
+            queries
+                .iter()
+                .map(|(role, _)| role.unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "Gesamtverantwortung",
+                "Finanzen",
+                "Einkauf",
+                "Supply Chain",
+                "Operations",
+                "Technik",
+                "Entwicklung"
+            ]
+        );
+        for ((_, query), representative) in queries.iter().zip([
+            "Country Lead",
+            "Senior Finance Manager",
+            "Procurement Team Lead",
+            "VP SCM",
+            "Standortleiter",
+            "Technischer Leiter",
+            "Konstruktionsleiter",
+        ]) {
+            assert!(query.starts_with("Fixture GmbH ("));
+            assert!(
+                query.contains(representative),
+                "missing role alias {representative}"
+            );
+            assert!(query.contains(" OR "));
+        }
+        assert!(!queries[2].1.contains("CEO"));
+    }
+
+    #[test]
+    fn role_discovery_queries_keep_other_sources_as_one_company_lookup() {
+        for source in ["google.de", "maps.google.com", "linkedin.com", "experte.de"] {
+            assert_eq!(
+                source_role_search_queries(source, "Fixture GmbH"),
+                vec![(None, "Fixture GmbH".into())]
+            );
+        }
+    }
+
+    #[test]
+    fn role_discovery_queries_follow_the_existing_person_source_opt_in() {
+        let mut request = configured_request(Path::new("fixture-root"));
+        request.fields = vec![FieldKey::PersonFunktion, FieldKey::PersonLinkedin];
+        request.include_private.clear();
+        assert!(!build_person_research_plan(&request)
+            .iter()
+            .any(|plan| plan.source_id == "person-discovery"));
+        request.include_private.push("person-discovery".into());
+        let plans = build_person_research_plan(&request);
+        let discovery = plans
+            .iter()
+            .find(|plan| plan.source_id == "person-discovery")
+            .expect("opted-in discovery source");
+        assert_eq!(
+            source_role_search_queries(discovery.source_id, &request.company).len(),
+            7
+        );
+    }
 
     struct ConfiguredTestRoot(PathBuf);
     impl ConfiguredTestRoot {

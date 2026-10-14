@@ -23,7 +23,9 @@ const encode = Schema.encodeSync(jsonSchema);
 export function codingModelExportUrl(value: string): string {
   const url = new URL(value);
   if (
-    !["http:", "https:"].includes(url.protocol) ||
+    (url.protocol !== "https:" &&
+      (url.protocol !== "http:" ||
+        !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) ||
     url.username ||
     url.password ||
     url.search ||

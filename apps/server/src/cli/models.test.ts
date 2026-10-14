@@ -9,6 +9,7 @@ it("uses the fixed Workjet export path and refuses credential-bearing or redirec
   for (const value of [
     "https://user:secret@workjet.example/",
     "https://workjet.example/?next=https://other.example",
+    "http://workjet.example/",
     "file:///tmp/workjet",
   ]) {
     assert.throws(() => codingModelExportUrl(value), CodingModelExportRequestError);

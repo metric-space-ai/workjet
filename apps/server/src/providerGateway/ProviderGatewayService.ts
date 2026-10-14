@@ -1781,17 +1781,17 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       if (token === undefined || !isAcceptableApiKey(token))
         return unavailable("catalog-unavailable");
       const models = claudeList
-        ? await platform.discoverClaudeModels!(token, AbortSignal.timeout(8_000)).catch(() => undefined)
+        ? await platform.discoverClaudeModels!(token, AbortSignal.timeout(8_000)).catch(
+            () => undefined,
+          )
         : apiKeyList && (account.provider === "minimax" || account.provider === "xai")
           ? (
-              await platform
-                .discoverApiKeyModels!(
-                  account.provider,
-                  token,
-                  account.upstreamBaseUrl,
-                  AbortSignal.timeout(8_000),
-                )
-                .catch(() => undefined)
+              await platform.discoverApiKeyModels!(
+                account.provider,
+                token,
+                account.upstreamBaseUrl,
+                AbortSignal.timeout(8_000),
+              ).catch(() => undefined)
             )?.models
           : undefined;
       const current = (await loadConfiguration()).accounts.find(

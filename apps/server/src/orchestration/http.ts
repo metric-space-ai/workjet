@@ -39,7 +39,6 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const orchestrationEngine = yield* OrchestrationEngineService;
     const settings = yield* ServerSettingsService;
-    const providerGateway = yield* ProviderGatewayService;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
     return handlers
@@ -49,6 +48,14 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
           yield* annotateEnvironmentRequest(args.endpoint.name);
           yield* requireEnvironmentScope(AuthOrchestrationReadScope);
           const result = Effect.gen(function* () {
+            const gateway = yield* Effect.serviceOption(ProviderGatewayService);
+            if (Option.isNone(gateway)) {
+              return yield* failEnvironmentInternal(
+                "internal_error",
+                new Error("provider gateway unavailable"),
+              );
+            }
+            const providerGateway = gateway.value;
             const current = yield* settings.getSettings;
             const catalog = yield* providerGateway.catalog();
             const health = yield* providerGateway.health();

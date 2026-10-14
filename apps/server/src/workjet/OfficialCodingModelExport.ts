@@ -25,7 +25,9 @@ export function officialCodingModelExport(input: {
   const { catalog, health, checks, accountModels, workjet, harnesses, observedAtMs } = input;
   const lists = new Map(accountModels.map((list) => [list.accountId, list]));
   const healthById = new Map(health.accounts.map((account) => [account.accountId, account]));
-  const checked = new Map(checks.checks.map((check) => [`${check.accountId}\0${check.modelId}`, check]));
+  const checked = new Map(
+    checks.checks.map((check) => [`${check.accountId}\0${check.modelId}`, check]),
+  );
   const routes = new Map(workjet.llmRoutes.map((route) => [route.id, route]));
   const computers = new Map(workjet.computers.map((computer) => [computer.id, computer]));
   const probes = new Map(harnesses.harnesses.map((harness) => [harness.harness, harness]));

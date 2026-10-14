@@ -43,8 +43,7 @@ async function readCodingModels(url: string, token: string) {
   });
   if (response.status !== 200) throw new Error("request_failed");
   const length = response.headers.get("content-length");
-  if (length !== null && Number(length) > 2 * 1024 * 1024)
-    throw new Error("response_too_large");
+  if (length !== null && Number(length) > 2 * 1024 * 1024) throw new Error("response_too_large");
   const body = await response.text();
   if (body.length > 2 * 1024 * 1024) throw new Error("response_too_large");
   return decode(body);

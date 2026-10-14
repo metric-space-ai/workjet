@@ -14,5 +14,8 @@ test("pins the runtime before Expo chooses its default and is idempotent", () =>
 
 test("refuses an unknown or duplicate native template", () => {
   assert.throws(() => configureNdk("buildscript {}"), /expected one/);
-  assert.throws(() => configureNdk('apply plugin: "expo-root-project"\n'.repeat(2)), /expected one/);
+  assert.throws(
+    () => configureNdk('apply plugin: "expo-root-project"\n'.repeat(2)),
+    /expected one/,
+  );
 });

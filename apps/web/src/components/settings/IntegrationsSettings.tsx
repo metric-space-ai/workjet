@@ -1,116 +1,35 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 /**
- * Einstellungen → Schnittstellen: Store für CTOX-Toolhub-Adapter.
+ * Einstellungen → Schnittstellen: App-Store im Stil von „Apps und Skills“.
  *
- * Zustand kommt immer von der CTOX-Instanz (`/api/business-os/toolhub/*` über
- * den angemeldeten Guest). Die Instanz besitzt Registrierung, Rückleitung und
- * Tokens; die App öffnet nur die Anmelde-URL, die die Instanz ausgibt, oder
- * übergibt ein Token direkt an die Instanz.
+ * Zustand kommt immer von der CTOX-Instanz (über den angemeldeten Guest). Die
+ * Instanz besitzt Registrierung, Rückleitung und Tokens; die App öffnet nur die
+ * Anmelde-URL, die die Instanz ausgibt, oder übergibt ein Token an die Instanz.
+ * Fehler werden in verständliche Sätze mit einer Aktion übersetzt; technische
+ * Codes stehen nur im aufklappbaren „Details“.
  */
-import {
-  CheckCircle2Icon,
-  ChevronDownIcon,
-  Loader2Icon,
-  PlugIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ArrowLeftIcon, CheckIcon, Loader2Icon, SearchIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useUiText } from "../../hooks/useUiText";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  INTEGRATIONS,
+  INTEGRATION_CATEGORIES,
+  type IntegrationCategory,
+  type IntegrationEntry,
+} from "./integrationsCatalog";
 
-type Kind = "mcp" | "native";
-
-export interface ToolhubConnector {
-  readonly slug: string;
-  readonly name: string;
-  readonly kind: Kind;
-  readonly description: { readonly de: string; readonly en: string };
-  readonly monogram: string;
-  readonly color: string;
-  /** Native adapters: how the instance gets its credential. */
-  readonly tokenHint?: { readonly de: string; readonly en: string };
-}
-
-export const TOOLHUB_CONNECTORS: ReadonlyArray<ToolhubConnector> = [
-  {
-    slug: "cloudflare",
-    name: "Cloudflare",
-    kind: "mcp",
-    monogram: "CF",
-    color: "#f38020",
-    description: {
-      de: "Zonen, DNS, Workers, R2 und mehr über den offiziellen Cloudflare-MCP-Server.",
-      en: "Zones, DNS, Workers, R2 and more via the official Cloudflare MCP server.",
-    },
-  },
-  {
-    slug: "cloudflare-bindings",
-    name: "Cloudflare Workers Bindings",
-    kind: "mcp",
-    monogram: "W",
-    color: "#f6821f",
-    description: {
-      de: "Workers, KV, R2, D1 und Hyperdrive verwalten.",
-      en: "Manage Workers, KV, R2, D1 and Hyperdrive.",
-    },
-  },
-  {
-    slug: "vercel",
-    name: "Vercel",
-    kind: "mcp",
-    monogram: "▲",
-    color: "#000000",
-    description: {
-      de: "Projekte, Deployments, Logs und Doku auf Vercel.",
-      en: "Projects, deployments, logs and docs on Vercel.",
-    },
-  },
-  {
-    slug: "slack",
-    name: "Slack",
-    kind: "native",
-    monogram: "S",
-    color: "#4a154b",
-    description: {
-      de: "Kanäle auflisten, Verlauf lesen, suchen und Nachrichten senden.",
-      en: "List channels, read history, search and send messages.",
-    },
-    tokenHint: {
-      de: "Bot- oder User-Token (xoxb-/xoxp-) deiner Slack-App.",
-      en: "Bot or user token (xoxb-/xoxp-) of your Slack app.",
-    },
-  },
-  {
-    slug: "gmail",
-    name: "Gmail",
-    kind: "native",
-    monogram: "G",
-    color: "#ea4335",
-    description: {
-      de: "E-Mails suchen und lesen, Entwürfe anlegen, senden (mit Freigabe), Labels.",
-      en: "Search and read email, create drafts, send (with approval), labels.",
-    },
-    tokenHint: {
-      de: "Google-OAuth-Client der Instanz nötig; zum Testen ein Access-Token.",
-      en: "Needs the instance's Google OAuth client; for testing an access token.",
-    },
-  },
-];
+type T = (de: string, en: string) => string;
 
 interface Connection {
   readonly server: string;
   readonly status: string;
-  readonly tool_count?: number | null;
 }
 interface Account {
   readonly toolkit: string;
   readonly status: string;
-  readonly id: string;
 }
 interface ToolEntry {
   readonly name: string;
@@ -118,52 +37,230 @@ interface ToolEntry {
   readonly mutating: boolean;
 }
 
-type Busy = { readonly slug: string; readonly label: string } | null;
+/** Ein Fehler, wie ihn der Nutzer sieht: was passiert ist, was er tun kann. */
+interface Problem {
+  readonly message: string;
+  readonly action?: { readonly label: string; readonly run: () => void };
+  readonly detail: string;
+  readonly blocking?: boolean;
+}
 
-function ConnectorLogo({ connector }: { connector: ToolhubConnector }) {
+class RequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
+const NETWORK_CODES = new Set([
+  "network_unavailable",
+  "peer_unavailable",
+  "sync_unavailable",
+  "unavailable",
+  "timeout",
+]);
+
+/** Übersetzt einen Instanzfehler in einen Satz ohne Fachbegriffe. */
+function describe(
+  error: unknown,
+  t: T,
+  instance: string,
+  service: string | null,
+): { message: string; kind: "offline" | "signin" | "outdated" | "expired" | "admin" | "other" } {
+  const status = error instanceof RequestError ? error.status : 0;
+  const code = error instanceof Error ? error.message : String(error);
+  if (status === 0 || NETWORK_CODES.has(code))
+    return {
+      kind: "offline",
+      message: t(
+        `${instance} ist gerade nicht erreichbar. Wir versuchen es automatisch erneut.`,
+        `${instance} can't be reached right now. We'll keep trying automatically.`,
+      ),
+    };
+  if (/credential_required|expired|invalid_grant|unauthori[sz]ed_client/i.test(code))
+    return {
+      kind: "expired",
+      message: t(
+        `Die Verbindung zu ${service ?? "dem Dienst"} ist abgelaufen. Verbinde sie neu, damit deine Agenten weiterarbeiten können.`,
+        `The connection to ${service ?? "the service"} has expired. Reconnect it so your agents can keep working.`,
+      ),
+    };
+  if (status === 401)
+    return {
+      kind: "signin",
+      message: t(
+        `Du bist bei ${instance} nicht mehr angemeldet. Melde dich erneut an.`,
+        `You're no longer signed in to ${instance}. Please sign in again.`,
+      ),
+    };
+  if (status === 403)
+    return {
+      kind: "admin",
+      message: t(
+        `Dafür brauchst du Admin-Rechte auf ${instance}. Bitte eine Person mit Admin-Zugang, die Verbindung herzustellen.`,
+        `This needs admin rights on ${instance}. Ask someone with admin access to set up the connection.`,
+      ),
+    };
+  if (status === 404)
+    return {
+      kind: "outdated",
+      message: t(
+        `${instance} unterstützt Schnittstellen noch nicht. Der Admin von ${instance} muss die Instanz aktualisieren.`,
+        `${instance} doesn't support integrations yet. The admin of ${instance} needs to update it.`,
+      ),
+    };
+  return {
+    kind: "other",
+    message: service
+      ? t(
+          `Das Verbinden mit ${service} hat nicht geklappt. Versuch es bitte noch einmal.`,
+          `Connecting to ${service} didn't work. Please try again.`,
+        )
+      : t(
+          "Etwas hat nicht geklappt. Versuch es bitte noch einmal.",
+          "Something went wrong. Please try again.",
+        ),
+  };
+}
+
+function detailOf(error: unknown): string {
+  if (error instanceof RequestError) return `HTTP ${error.status} · ${error.code}`;
+  return error instanceof Error ? error.message : String(error);
+}
+
+function Logo({ entry, size = "md" }: { entry: IntegrationEntry; size?: "md" | "lg" }) {
+  const box = size === "lg" ? "size-14 rounded-2xl" : "size-11 rounded-xl";
   return (
     <span
       aria-hidden
-      className="flex size-9 shrink-0 items-center justify-center rounded-lg text-[13px] font-semibold text-white"
-      style={{ backgroundColor: connector.color }}
+      className={`${box} flex shrink-0 items-center justify-center overflow-hidden border border-border/60 bg-white`}
     >
-      {connector.monogram}
+      {entry.logo ? (
+        <img src={entry.logo} alt="" className="size-[70%] object-contain" draggable={false} />
+      ) : (
+        <span className="text-[15px] font-semibold text-neutral-700">{entry.name.slice(0, 1)}</span>
+      )}
     </span>
   );
 }
 
+/** Dezenter Pillen-Knopf wie im Referenz-Store. */
+function Pill({
+  children,
+  onClick,
+  disabled,
+  action,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  action?: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-workjet-action={action}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-muted px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/70 disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Added({ t }: { t: T }) {
+  return (
+    <span className="inline-flex h-8 shrink-0 items-center gap-1 px-2 text-[13px] text-muted-foreground">
+      <CheckIcon className="size-3.5 text-emerald-500" />
+      {t("Hinzugefügt", "Added")}
+    </span>
+  );
+}
+
+function ProblemNote({ problem, t }: { problem: Problem; t: T }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      role={problem.blocking ? "alert" : "status"}
+      className={`rounded-xl px-4 py-3 text-[13px] ${problem.blocking ? "border border-destructive/40 bg-destructive/10" : "bg-muted/60"}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-foreground">{problem.message}</span>
+        {problem.action ? <Pill onClick={problem.action.run}>{problem.action.label}</Pill> : null}
+      </div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((x) => !x)}
+        className="mt-1 text-[12px] text-muted-foreground underline-offset-2 hover:underline"
+      >
+        {open ? t("Details ausblenden", "Hide details") : t("Details", "Details")}
+      </button>
+      {open ? (
+        <code className="mt-1 block break-all text-[11.5px] text-muted-foreground">
+          {problem.detail}
+        </code>
+      ) : null}
+    </div>
+  );
+}
+
+const PREVIEW = 6;
+
 export function IntegrationsSettingsPanel() {
   const t = useUiText();
-  const { selectedId } = useCtoxMode();
+  const { selectedId, discovery } = useCtoxMode();
   const bridge = typeof window !== "undefined" ? window.desktopBridge : undefined;
   const available = typeof bridge?.toolhubRequest === "function" && typeof selectedId === "string";
+  const instanceName = useMemo(() => {
+    if (discovery !== "loading" && discovery._tag === "ready") {
+      const hit = discovery.instances.find((i) => i.id === selectedId);
+      if (hit?.displayName) return String(hit.displayName);
+    }
+    return t("Deine Instanz", "Your instance");
+  }, [discovery, selectedId, t]);
+
   const [connections, setConnections] = useState<ReadonlyArray<Connection>>([]);
   const [accounts, setAccounts] = useState<ReadonlyArray<Account>>([]);
   const [catalog, setCatalog] = useState<Record<string, ReadonlyArray<ToolEntry>>>({});
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<Busy>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [tokenOpen, setTokenOpen] = useState<string | null>(null);
+  const [loadProblem, setLoadProblem] = useState<Problem | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problems, setProblems] = useState<Record<string, Problem | undefined>>({});
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<IntegrationCategory | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [token, setToken] = useState("");
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
-  const [details, setDetails] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const retryTimer = useRef<number | null>(null);
 
   const request = useCallback(
     async (route: string, body?: unknown) => {
-      if (!bridge?.toolhubRequest || typeof selectedId !== "string") throw new Error("unavailable");
+      if (!bridge?.toolhubRequest || typeof selectedId !== "string")
+        throw new RequestError(0, "unavailable");
       const r = await bridge.toolhubRequest({
         instanceId: selectedId,
         route,
         ...(body === undefined ? {} : { body }),
       });
-      const b = (r.body ?? {}) as { ok?: boolean; message?: string } & Record<string, unknown>;
-      if (r.status !== 200) throw new Error(b.message ?? `HTTP ${r.status}`);
+      const b = (r.body ?? {}) as { ok?: boolean; message?: string; code?: string } & Record<
+        string,
+        unknown
+      >;
+      if (r.status !== 200)
+        throw new RequestError(r.status, String(b.code ?? b.message ?? "error"));
       return b;
     },
     [bridge, selectedId],
   );
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<void> => {
+    if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
     try {
       const c = await request("connections");
       setConnections((c.connections as Connection[] | undefined) ?? []);
@@ -183,315 +280,460 @@ export function IntegrationsSettingsPanel() {
           }));
         return next;
       });
-      setAccounts(
-        (k.accounts as Account[] | undefined) ?? (c.accounts as Account[] | undefined) ?? [],
-      );
-      setLoadError(null);
+      setAccounts((k.accounts as Account[] | undefined) ?? []);
+      setLoadProblem(null);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e));
+      const d = describe(e, t, instanceName, null);
+      setLoadProblem({
+        message: d.message,
+        detail: detailOf(e),
+        action: { label: t("Erneut versuchen", "Try again"), run: () => void refresh() },
+      });
+      if (d.kind === "offline")
+        retryTimer.current = window.setTimeout(() => void refresh(), 15_000);
     }
-  }, [request, t]);
+  }, [request, t, instanceName]);
 
   useEffect(() => {
     if (available) void refresh();
+    return () => {
+      if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
+    };
   }, [available, refresh]);
 
-  const isConnected = (c: ToolhubConnector) =>
-    c.kind === "mcp"
-      ? connections.some((x) => x.server === c.slug && x.status === "ACTIVE")
-      : accounts.some((a) => a.toolkit === c.slug && a.status === "ACTIVE");
+  const isConnected = (e: IntegrationEntry) =>
+    e.connect === "mcp"
+      ? connections.some((x) => x.server === e.slug && x.status === "ACTIVE")
+      : accounts.some((a) => a.toolkit === e.slug && a.status === "ACTIVE");
+  const isExpired = (e: IntegrationEntry) =>
+    e.connect === "mcp"
+      ? connections.some((x) => x.server === e.slug && /EXPIRED|INVALID/.test(x.status))
+      : accounts.some((a) => a.toolkit === e.slug && /EXPIRED|INVALID/.test(a.status));
 
-  const loadMcpTools = async (slug: string) => {
-    try {
-      const r = await request("mcp/tools", { server: slug });
-      const tools = (
-        (r.tools as Array<{
-          name: string;
-          title?: string;
-          annotations?: { readOnlyHint?: boolean };
-        }>) ?? []
-      ).map((x) => ({
-        name: x.name,
-        title: x.title ?? null,
-        mutating: x.annotations?.readOnlyHint !== true,
-      }));
-      setCatalog((prev) => ({ ...prev, [slug]: tools }));
-    } catch {
-      // Katalog bleibt leer, bis die Verbindung steht.
-    }
+  const loadMcpTools = useCallback(
+    async (slug: string) => {
+      try {
+        const r = await request("mcp/tools", { server: slug });
+        const tools = (
+          (r.tools as Array<{
+            name: string;
+            title?: string;
+            annotations?: { readOnlyHint?: boolean };
+          }>) ?? []
+        ).map((x) => ({
+          name: x.name,
+          title: x.title ?? null,
+          mutating: x.annotations?.readOnlyHint !== true,
+        }));
+        setCatalog((prev) => ({ ...prev, [slug]: tools }));
+      } catch {
+        // Werkzeugliste erscheint, sobald die Verbindung steht.
+      }
+    },
+    [request],
+  );
+
+  const fail = (entry: IntegrationEntry, e: unknown, retry: () => void) => {
+    const d = describe(e, t, instanceName, entry.name);
+    const action =
+      d.kind === "expired"
+        ? { label: t("Neu verbinden", "Reconnect"), run: retry }
+        : d.kind === "admin" || d.kind === "outdated"
+          ? undefined
+          : { label: t("Erneut versuchen", "Try again"), run: retry };
+    setProblems((p) => ({
+      ...p,
+      [entry.slug]: { message: d.message, detail: detailOf(e), ...(action ? { action } : {}) },
+    }));
   };
 
-  const addMcp = async (c: ToolhubConnector) => {
-    setErrors((e) => ({ ...e, [c.slug]: "" }));
-    setBusy({ slug: c.slug, label: t("Anmeldung läuft …", "Signing in …") });
+  const connectMcp = async (entry: IntegrationEntry) => {
+    setProblems((p) => ({ ...p, [entry.slug]: undefined }));
+    setBusy(entry.slug);
     try {
-      const r = await request("connect", { server: c.slug });
-      const url = String(r.authorize_url ?? "");
-      if (!bridge?.toolhubAuthorize) throw new Error("unavailable");
-      const result = await bridge.toolhubAuthorize({ authorizeUrl: url });
-      if (result._tag === "failed")
-        throw new Error(t("Anmeldung fehlgeschlagen.", "Sign-in failed."));
+      const r = await request("connect", { server: entry.slug });
+      if (!bridge?.toolhubAuthorize) throw new RequestError(0, "unavailable");
+      const result = await bridge.toolhubAuthorize({ authorizeUrl: String(r.authorize_url ?? "") });
+      if (result._tag === "cancelled") return;
+      if (result._tag === "failed") throw new Error("authorize_failed");
       await refresh();
-      await loadMcpTools(c.slug);
+      await loadMcpTools(entry.slug);
     } catch (e) {
-      setErrors((x) => ({ ...x, [c.slug]: e instanceof Error ? e.message : String(e) }));
+      fail(entry, e, () => void connectMcp(entry));
     } finally {
       setBusy(null);
     }
   };
 
-  const saveToken = async (c: ToolhubConnector) => {
-    setBusy({ slug: c.slug, label: t("Wird gespeichert …", "Saving …") });
+  const saveToken = async (entry: IntegrationEntry) => {
+    setBusy(entry.slug);
     try {
-      await request("credential", { toolkit: c.slug, credential: token });
+      await request("credential", { toolkit: entry.slug, credential: token.trim() });
       setToken("");
-      setTokenOpen(null);
       await refresh();
     } catch (e) {
-      setErrors((x) => ({ ...x, [c.slug]: e instanceof Error ? e.message : String(e) }));
+      fail(entry, e, () => void saveToken(entry));
     } finally {
       setBusy(null);
     }
   };
 
-  const remove = async (c: ToolhubConnector) => {
-    setConfirmRemove(null);
+  const remove = async (entry: IntegrationEntry) => {
+    setConfirmRemove(false);
     try {
-      if (c.kind === "mcp") await request("disconnect", { server: c.slug });
-      else await request("disconnect", { server: c.slug, toolkit: c.slug });
+      await request(
+        "disconnect",
+        entry.connect === "mcp"
+          ? { server: entry.slug }
+          : { server: entry.slug, toolkit: entry.slug },
+      );
       await refresh();
     } catch (e) {
-      setErrors((x) => ({ ...x, [c.slug]: e instanceof Error ? e.message : String(e) }));
+      fail(entry, e, () => void remove(entry));
     }
   };
 
-  const installed = TOOLHUB_CONNECTORS.filter(isConnected);
+  const open = (entry: IntegrationEntry) => {
+    setSelected(entry.slug);
+    setConfirmRemove(false);
+    setToken("");
+    if (entry.connect === "mcp" && isConnected(entry)) void loadMcpTools(entry.slug);
+  };
+
+  const q = query.trim().toLowerCase();
+  const matches = (e: IntegrationEntry) =>
+    q === "" ||
+    e.name.toLowerCase().includes(q) ||
+    t(e.description.de, e.description.en).toLowerCase().includes(q);
+
+  const entry = selected ? INTEGRATIONS.find((e) => e.slug === selected) : undefined;
+
+  const rowAction = (e: IntegrationEntry) => {
+    if (isConnected(e)) return <Added t={t} />;
+    if (busy === e.slug)
+      return (
+        <Pill onClick={() => undefined} disabled>
+          <Loader2Icon className="size-3.5 animate-spin" />
+          {t("Verbinde …", "Connecting …")}
+        </Pill>
+      );
+    if (isExpired(e))
+      return (
+        <Pill
+          action={`integrations.add.${e.slug}`}
+          onClick={() => (e.connect === "mcp" ? void connectMcp(e) : open(e))}
+        >
+          {t("Neu verbinden", "Reconnect")}
+        </Pill>
+      );
+    return (
+      <Pill
+        action={`integrations.add.${e.slug}`}
+        disabled={e.connect === "mcp" && !available}
+        onClick={() => (e.connect === "mcp" ? void connectMcp(e) : open(e))}
+      >
+        {e.connect === "token" ? t("Verbinden", "Connect") : t("Hinzufügen", "Add")}
+      </Pill>
+    );
+  };
+
+  const searchBar = (
+    <div className="flex items-center gap-2 pb-1 pt-1">
+      <div className="relative flex-1">
+        <SearchIcon className="pointer-events-none absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(ev) => {
+            setQuery(ev.target.value);
+            setSelected(null);
+          }}
+          placeholder={t("Apps durchsuchen", "Search apps")}
+          aria-label={t("Apps durchsuchen", "Search apps")}
+          className="h-10 rounded-full ps-10"
+        />
+      </div>
+    </div>
+  );
 
   return (
-    <SettingsPageContainer
-      title={t("Schnittstellen", "Integrations")}
-      titleIcon={<PlugIcon className="size-4" />}
+    <div
+      className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-4 sm:px-6"
+      data-integrations-store
     >
-      <p className="px-3 text-[13px] text-muted-foreground sm:px-4">
-        {t(
-          "Dienste, die Agenten dieser Instanz über „ctox toolhub“ und den Instanz-Proxy nutzen. Anmeldung und Zugangsdaten gehören der CTOX-Instanz, nicht diesem Gerät.",
-          "Services that agents on this instance use via “ctox toolhub” and the instance proxy. Sign-in and credentials belong to the CTOX instance, not this device.",
-        )}
-      </p>
-      {loadError !== null ? (
-        <p
-          role="alert"
-          className="mx-3 flex items-start gap-1.5 text-[12.5px] text-destructive sm:mx-4"
-        >
-          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-          {t(
-            "Instanz antwortet nicht auf Toolhub-Anfragen:",
-            "Instance does not answer toolhub requests:",
-          )}{" "}
-          {loadError}
-        </p>
-      ) : null}
-
-      <SettingsSection id="integrations-installed" title={t("Installiert", "Installed")}>
-        {installed.length === 0 ? (
-          <SettingsRow
-            title={
-              <span className="text-muted-foreground">
-                {t("Noch keine Schnittstelle verbunden.", "No integration connected yet.")}
-              </span>
-            }
-          />
-        ) : (
-          installed.map((c) => (
-            <SettingsRow
-              key={c.slug}
-              title={
-                <span className="flex items-center gap-3">
-                  <ConnectorLogo connector={c} />
-                  <span className="flex flex-col">
-                    <span className="font-medium">{c.name}</span>
-                    <span className="text-[12px] text-muted-foreground">
-                      <code>ctox toolhub exec {c.slug}.&lt;tool&gt;</code>
-                    </span>
-                  </span>
-                </span>
-              }
-              status={
-                <Badge variant="success">
-                  <CheckCircle2Icon className="me-1 size-3" />
-                  {t("Verbunden", "Connected")}
-                </Badge>
-              }
-              control={
-                confirmRemove === c.slug ? (
-                  <span className="flex gap-1.5">
-                    <Button size="xs" variant="destructive" onClick={() => void remove(c)}>
-                      {t("Trennen", "Disconnect")}
-                    </Button>
-                    <Button size="xs" variant="outline" onClick={() => setConfirmRemove(null)}>
-                      {t("Abbrechen", "Cancel")}
-                    </Button>
-                  </span>
-                ) : (
-                  <Button size="xs" variant="outline" onClick={() => setConfirmRemove(c.slug)}>
-                    {t("Entfernen", "Remove")}
-                  </Button>
-                )
-              }
-            />
-          ))
-        )}
-      </SettingsSection>
-
-      <SettingsSection id="integrations-store" title={t("Verfügbar", "Available")}>
-        <div className="grid grid-cols-1 gap-3 px-3 pb-2 sm:grid-cols-2 sm:px-4 xl:grid-cols-3">
-          {TOOLHUB_CONNECTORS.map((c) => {
-            const connected = isConnected(c);
-            const tools = catalog[c.slug] ?? [];
-            const isBusy = busy?.slug === c.slug;
-            return (
-              <div
-                key={c.slug}
-                data-toolhub-connector={c.slug}
-                className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3"
-              >
-                <div className="flex items-start gap-3">
-                  <ConnectorLogo connector={c} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{c.name}</span>
-                      <Badge variant="outline">{c.kind === "mcp" ? "MCP" : "CTOX"}</Badge>
-                    </div>
-                    <p className="mt-1 text-[12.5px] text-muted-foreground">
-                      {t(c.description.de, c.description.en)}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 self-start text-[12px] text-muted-foreground"
-                  aria-expanded={details === c.slug}
-                  onClick={() => {
-                    const open = details === c.slug ? null : c.slug;
-                    setDetails(open);
-                    if (open && c.kind === "mcp" && connected) void loadMcpTools(c.slug);
-                  }}
-                >
-                  <ChevronDownIcon
-                    className={`size-3.5 transition-transform ${details === c.slug ? "rotate-180" : ""}`}
-                  />
-                  {t("Werkzeuge", "Tools")}
-                  {tools.length > 0 ? ` (${tools.length})` : ""}
-                </button>
-                {details === c.slug ? (
-                  tools.length === 0 ? (
-                    <p className="text-[12px] text-muted-foreground">
-                      {c.kind === "mcp"
-                        ? t(
-                            "Der Werkzeugkatalog kommt vom Anbieter und erscheint nach dem Verbinden.",
-                            "The tool catalog comes from the provider and appears after connecting.",
-                          )
-                        : t(
-                            "Katalog wird von der Instanz geladen …",
-                            "Loading catalog from the instance …",
-                          )}
-                    </p>
-                  ) : (
-                    <ul className="max-h-48 space-y-1 overflow-auto text-[12px]">
-                      {tools.map((x) => (
-                        <li key={x.name} className="flex items-center justify-between gap-2">
-                          <span className="truncate">
-                            <code>{x.name}</code>
-                            {x.title ? (
-                              <span className="text-muted-foreground"> · {x.title}</span>
-                            ) : null}
-                          </span>
-                          {x.mutating ? (
-                            <Badge variant="warning">{t("Freigabe", "Approval")}</Badge>
-                          ) : (
-                            <Badge variant="outline">{t("Lesen", "Read")}</Badge>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )
-                ) : null}
-                {c.kind === "native" && tokenOpen === c.slug ? (
-                  <form
-                    className="flex flex-col gap-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void saveToken(c);
-                    }}
-                  >
-                    <label
-                      className="text-[12px] text-muted-foreground"
-                      htmlFor={`token-${c.slug}`}
-                    >
-                      {t(c.tokenHint!.de, c.tokenHint!.en)}
-                    </label>
-                    <Input
-                      id={`token-${c.slug}`}
-                      type="password"
-                      autoComplete="off"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        type="button"
-                        onClick={() => {
-                          setTokenOpen(null);
-                          setToken("");
-                        }}
-                      >
-                        {t("Abbrechen", "Cancel")}
-                      </Button>
-                      <Button size="xs" type="submit" disabled={token.trim().length < 8 || isBusy}>
-                        {t("An Instanz übergeben", "Save to instance")}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
-                {errors[c.slug] ? (
-                  <p role="alert" className="flex items-start gap-1.5 text-[12px] text-destructive">
-                    <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-                    {errors[c.slug]}
-                  </p>
-                ) : null}
-                <div className="mt-auto flex items-center justify-end gap-2">
-                  {connected ? (
-                    <Badge variant="success">
-                      <CheckCircle2Icon className="me-1 size-3" />
-                      {t("Verbunden", "Connected")}
-                    </Badge>
-                  ) : tokenOpen === c.slug ? null : (
-                    <Button
-                      size="sm"
-                      data-workjet-action={`integrations.add.${c.slug}`}
-                      disabled={!available || isBusy}
-                      onClick={() => (c.kind === "mcp" ? void addMcp(c) : setTokenOpen(c.slug))}
-                    >
-                      {isBusy ? <Loader2Icon className="me-1 size-3.5 animate-spin" /> : null}
-                      {isBusy ? busy?.label : t("Hinzufügen", "Add")}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {!available ? (
-          <p className="px-3 text-[12px] text-muted-foreground sm:px-4">
+      {searchBar}
+      {entry ? (
+        <Detail
+          entry={entry}
+          t={t}
+          connected={isConnected(entry)}
+          expired={isExpired(entry)}
+          busy={busy === entry.slug}
+          available={available}
+          tools={catalog[entry.slug] ?? []}
+          problem={problems[entry.slug] ?? null}
+          instanceName={instanceName}
+          token={token}
+          setToken={setToken}
+          confirmRemove={confirmRemove}
+          setConfirmRemove={setConfirmRemove}
+          onBack={() => setSelected(null)}
+          onConnect={() => void connectMcp(entry)}
+          onSaveToken={() => void saveToken(entry)}
+          onRemove={() => void remove(entry)}
+        />
+      ) : (
+        <>
+          <p className="text-[14px] text-muted-foreground">
             {t(
-              "Verbinden ist in der Workjet-Desktop-App mit gewählter Instanz möglich.",
-              "Connecting needs the Workjet desktop app with a selected instance.",
+              "Verbinde Apps, damit deine Agenten sie nutzen können.",
+              "Connect apps so your agents can use them.",
             )}
           </p>
+          {!available ? (
+            <ProblemNote
+              t={t}
+              problem={{
+                message: t(
+                  "Wähle zuerst eine Instanz aus. Apps werden für die ganze Instanz verbunden.",
+                  "Pick an instance first. Apps are connected for the whole instance.",
+                ),
+                detail: "toolhub bridge or selected instance missing",
+              }}
+            />
+          ) : loadProblem ? (
+            <ProblemNote t={t} problem={loadProblem} />
+          ) : null}
+          {INTEGRATION_CATEGORIES.filter((c) => expanded === null || expanded === c.id).map(
+            (cat) => {
+              const items = INTEGRATIONS.filter((e) => e.category === cat.id && matches(e));
+              if (items.length === 0) return null;
+              const shown = expanded === cat.id || q !== "" ? items : items.slice(0, PREVIEW);
+              return (
+                <section
+                  key={cat.id}
+                  className="flex flex-col gap-1"
+                  aria-label={t(cat.de, cat.en)}
+                >
+                  <div className="flex items-center justify-between py-2">
+                    <h2 className="text-[16px] font-medium">{t(cat.de, cat.en)}</h2>
+                    {q === "" && items.length > PREVIEW ? (
+                      <button
+                        type="button"
+                        className="text-[13px] text-muted-foreground hover:text-foreground"
+                        onClick={() => setExpanded(expanded === cat.id ? null : cat.id)}
+                      >
+                        {expanded === cat.id
+                          ? t("Weniger anzeigen", "Show less")
+                          : t("Alle anzeigen", "Show all")}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="grid grid-cols-1 gap-x-4 md:grid-cols-2">
+                    {shown.map((e) => (
+                      <div
+                        key={e.slug}
+                        role="button"
+                        tabIndex={0}
+                        data-toolhub-connector={e.slug}
+                        onClick={() => open(e)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" || ev.key === " ") {
+                            ev.preventDefault();
+                            open(e);
+                          }
+                        }}
+                        className="flex cursor-pointer items-center gap-3.5 rounded-xl px-2.5 py-2.5 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                      >
+                        <Logo entry={e} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[14.5px] font-medium">{e.name}</span>
+                          <span className="block truncate text-[13.5px] text-muted-foreground">
+                            {t(e.description.de, e.description.en)}
+                          </span>
+                        </span>
+                        {rowAction(e)}
+                      </div>
+                    ))}
+                  </div>
+                  {problemsFor(items, problems).map(([slug, p]) => (
+                    <ProblemNote key={slug} t={t} problem={p} />
+                  ))}
+                </section>
+              );
+            },
+          )}
+          {INTEGRATIONS.every((e) => !matches(e)) ? (
+            <p className="py-8 text-center text-[13px] text-muted-foreground">
+              {t(`Keine App für „${query}“ gefunden.`, `No app found for “${query}”.`)}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+function problemsFor(
+  items: ReadonlyArray<IntegrationEntry>,
+  problems: Record<string, Problem | undefined>,
+): Array<[string, Problem]> {
+  return items.flatMap((e) => {
+    const p = problems[e.slug];
+    return p ? [[e.slug, p] as [string, Problem]] : [];
+  });
+}
+
+function Detail(props: {
+  entry: IntegrationEntry;
+  t: T;
+  connected: boolean;
+  expired: boolean;
+  busy: boolean;
+  available: boolean;
+  tools: ReadonlyArray<ToolEntry>;
+  problem: Problem | null;
+  instanceName: string;
+  token: string;
+  setToken: (v: string) => void;
+  confirmRemove: boolean;
+  setConfirmRemove: (v: boolean) => void;
+  onBack: () => void;
+  onConnect: () => void;
+  onSaveToken: () => void;
+  onRemove: () => void;
+}) {
+  const { entry, t } = props;
+  const status = props.connected
+    ? t(
+        `Verbunden für ${props.instanceName}. Alle Agenten der Instanz können ${entry.name} nutzen.`,
+        `Connected for ${props.instanceName}. All agents on the instance can use ${entry.name}.`,
+      )
+    : props.expired
+      ? t("Die Verbindung ist abgelaufen.", "The connection has expired.")
+      : entry.connect === null
+        ? t(
+            `${entry.name} kann noch nicht verbunden werden. Wir arbeiten daran; die App erscheint hier, sobald sie bereitsteht.`,
+            `${entry.name} can't be connected yet. We're working on it; it will be ready here once available.`,
+          )
+        : entry.connect === "mcp"
+          ? t(
+              `Beim Verbinden öffnet sich die Anmeldeseite von ${entry.name}. Du wählst dort, worauf deine Agenten zugreifen dürfen.`,
+              `Connecting opens the ${entry.name} sign-in page, where you choose what your agents may access.`,
+            )
+          : t(
+              `Füge einen Zugangsschlüssel von ${entry.name} ein. Er wird nur auf ${props.instanceName} gespeichert.`,
+              `Paste an access key from ${entry.name}. It is stored only on ${props.instanceName}.`,
+            );
+
+  return (
+    <div className="flex flex-col gap-5" data-integration-detail={entry.slug}>
+      <button
+        type="button"
+        onClick={props.onBack}
+        className="inline-flex items-center gap-1.5 self-start text-[13px] text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeftIcon className="size-4" />
+        {t("Alle Apps", "All apps")}
+      </button>
+      <div className="flex items-center gap-4">
+        <Logo entry={entry} size="lg" />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[18px] font-medium">{entry.name}</h2>
+          <p className="text-[13.5px] text-muted-foreground">
+            {t(entry.description.de, entry.description.en)}
+          </p>
+        </div>
+        {props.connected ? (
+          props.confirmRemove ? (
+            <span className="flex gap-1.5">
+              <Pill onClick={props.onRemove}>{t("Ja, trennen", "Yes, disconnect")}</Pill>
+              <Pill onClick={() => props.setConfirmRemove(false)}>{t("Abbrechen", "Cancel")}</Pill>
+            </span>
+          ) : (
+            <Pill onClick={() => props.setConfirmRemove(true)}>{t("Trennen", "Disconnect")}</Pill>
+          )
+        ) : entry.connect === "mcp" ? (
+          <Pill
+            action={`integrations.add.${entry.slug}`}
+            disabled={props.busy || !props.available}
+            onClick={props.onConnect}
+          >
+            {props.busy ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+            {props.busy
+              ? t("Verbinde …", "Connecting …")
+              : props.expired
+                ? t("Neu verbinden", "Reconnect")
+                : t("Hinzufügen", "Add")}
+          </Pill>
         ) : null}
-      </SettingsSection>
-    </SettingsPageContainer>
+      </div>
+      <p className="text-[13.5px]">
+        {props.connected ? <CheckIcon className="me-1 inline size-3.5 text-emerald-500" /> : null}
+        {status}
+      </p>
+      {props.problem ? <ProblemNote t={t} problem={props.problem} /> : null}
+      {entry.connect === "token" && !props.connected ? (
+        <form
+          className="flex flex-col gap-2 sm:flex-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            props.onSaveToken();
+          }}
+        >
+          <Input
+            type="password"
+            autoComplete="off"
+            aria-label={t("Zugangsschlüssel", "Access key")}
+            placeholder={t("Zugangsschlüssel einfügen", "Paste access key")}
+            value={props.token}
+            onChange={(e) => props.setToken(e.target.value)}
+            className="h-9 flex-1 rounded-full"
+          />
+          <Pill
+            onClick={props.onSaveToken}
+            disabled={props.token.trim().length < 8 || props.busy || !props.available}
+          >
+            {props.busy ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+            {t("Verbinden", "Connect")}
+          </Pill>
+        </form>
+      ) : null}
+      {entry.connect !== null ? (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[14px] font-medium">
+            {t("Was deine Agenten damit tun können", "What your agents can do")}
+          </h3>
+          {props.tools.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground">
+              {entry.connect === "mcp"
+                ? t(
+                    `Die Liste kommt von ${entry.name} und erscheint nach dem Verbinden.`,
+                    `The list comes from ${entry.name} and appears after connecting.`,
+                  )
+                : t(
+                    "Die Liste wird geladen, sobald die Instanz erreichbar ist.",
+                    "The list loads once the instance is reachable.",
+                  )}
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/60 rounded-xl border border-border/60">
+              {props.tools.map((x) => (
+                <li
+                  key={x.name}
+                  className="flex items-center justify-between gap-3 px-3.5 py-2 text-[13px]"
+                >
+                  <span className="min-w-0 truncate">{x.title || x.name}</span>
+                  <span className="shrink-0 text-[12px] text-muted-foreground">
+                    {x.mutating
+                      ? t("fragt vorher nach", "asks first")
+                      : t("nur lesen", "read only")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+    </div>
   );
 }

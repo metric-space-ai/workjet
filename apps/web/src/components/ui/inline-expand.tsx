@@ -165,13 +165,14 @@ export function InlineExpand({
           {hideCollapseControl ? null : (
             <button
               aria-label={labels.collapse}
-              className="absolute end-1.5 top-1.5 z-10 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              className="absolute end-1.5 top-1.5 z-10 inline-flex h-6 items-center justify-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               data-slot="inline-expand-collapse"
               title={`${labels.collapse} (Esc)`}
               type="button"
               onClick={() => onOpenChange(false)}
             >
-              <ChevronUpIcon className="size-4" />
+              <ChevronUpIcon aria-hidden className="size-4" />
+              <span>{labels.collapse}</span>
             </button>
           )}
           {open ? children : present ? lastChildrenRef.current : null}

@@ -18,13 +18,13 @@ import { workjetHarnessDisplayLabel } from "../settings/WorkjetWorkerEditor";
 export const MANUAL_WORKER_VALUE = "__manual__";
 
 /**
- * Sichtbarer Name der Wahl ohne Luma (Harness, Modell und Rechner in der Leiste).
+ * Sichtbarer Name der Wahl ohne Preset (Harness, Modell und Rechner in der Leiste).
  * Nennt den Inhalt des Knopfs, nicht „Manuell“ (#589).
  */
-export const MANUAL_WORKER_LABEL = "Luma: keine";
+export const MANUAL_WORKER_LABEL = "Ohne Preset";
 
 export function manualWorkerLabel(): string {
-  return workjetUiLanguage() === "en" ? "Luma: none" : MANUAL_WORKER_LABEL;
+  return workjetUiLanguage() === "en" ? "No preset" : MANUAL_WORKER_LABEL;
 }
 
 /** A worker's harness maps to the actual provider instance, never just its label. */
@@ -103,7 +103,7 @@ export function ComposerWorkerMenuItems(
       <MenuSeparator />
       <MenuItem onClick={props.onOpenWorkjetSettings}>
         <SettingsIcon aria-hidden="true" />
-        {workjetUiLanguage() === "en" ? "Manage Lumas" : "Lumas verwalten"}
+        {workjetUiLanguage() === "en" ? "Manage worker presets" : "Worker-Presets verwalten"}
       </MenuItem>
     </>
   );
@@ -119,7 +119,7 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
           <ComposerControl
             type="button"
             className="min-w-0 max-w-52 font-medium"
-            aria-label="Luma"
+            aria-label="Worker-Preset"
             title={selected ? workerChoiceMeta(selected) : undefined}
           />
         }

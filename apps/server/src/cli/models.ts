@@ -15,7 +15,9 @@ export class CodingModelExportRequestError extends Schema.TaggedErrorClass<Codin
   }
 }
 
-const decode = Schema.decodeUnknownSync(WorkjetOfficialCodingModelExport);
+const jsonSchema = Schema.fromJsonString(WorkjetOfficialCodingModelExport);
+const decode = Schema.decodeUnknownSync(jsonSchema);
+const encode = Schema.encodeSync(jsonSchema);
 
 /** Never follow a redirect with the access token or reuse caller-supplied path data. */
 export function codingModelExportUrl(value: string): string {
@@ -33,6 +35,21 @@ export function codingModelExportUrl(value: string): string {
   return url.href;
 }
 
+async function readCodingModels(url: string, token: string) {
+  const response = await fetch(codingModelExportUrl(url), {
+    redirect: "error",
+    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (response.status !== 200) throw new Error("request_failed");
+  const length = response.headers.get("content-length");
+  if (length !== null && Number(length) > 2 * 1024 * 1024)
+    throw new Error("response_too_large");
+  const body = await response.text();
+  if (body.length > 2 * 1024 * 1024) throw new Error("response_too_large");
+  return decode(body);
+}
+
 /** An authenticated, fresh read from the running Workjet server. */
 export const modelsCommand = Command.make("models").pipe(
   Command.withDescription("Inspect registered coding models with live account evidence."),
@@ -47,20 +64,10 @@ export const modelsCommand = Command.make("models").pipe(
         Effect.gen(function* () {
           const token = yield* Config.string("WORKJET_ACCESS_TOKEN");
           const result = yield* Effect.tryPromise({
-            try: async () => {
-              const response = await fetch(codingModelExportUrl(url), {
-                redirect: "error",
-                headers: { authorization: `Bearer ${token}`, accept: "application/json" },
-                signal: AbortSignal.timeout(60_000),
-              });
-              if (response.status !== 200) throw new Error("request_failed");
-              const body = await response.text();
-              if (body.length > 2 * 1024 * 1024) throw new Error("response_too_large");
-              return decode(JSON.parse(body));
-            },
+            try: () => readCodingModels(url, token),
             catch: () => new CodingModelExportRequestError({ code: "request_failed" }),
           });
-          yield* Console.log(JSON.stringify(result));
+          yield* Console.log(encode(result));
         }),
       ),
     ),

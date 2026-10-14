@@ -5,6 +5,7 @@
  * call these functions; tests render every harness through this table, and the
  * `Record<…>` type makes a harness without a hook a compile error.
  */
+import { CTOX_TOOLHUB_PROMPT } from "@metric-space-ai/workjet-capabilities";
 import type { WorkjetHarness } from "@workjet/contracts";
 
 import { buildCodexDeveloperInstructions } from "./CodexDeveloperInstructions.ts";
@@ -37,9 +38,23 @@ export function piManagedPromptArgs(managedPrompt: string | undefined): Readonly
   return delimited ? ["--append-system-prompt", delimited] : [];
 }
 
-/** Native CTOX: role prompt travels in the instruction (CTOX adds its own Toolhub section). */
+/**
+ * Native CTOX composes its own role-aware Toolhub section (from the same
+ * ctox-toolhub skill, role from its bindings), so Workjet's copy is removed
+ * here to avoid sending it twice.
+ */
+export function stripCtoxToolhubSection(managedPrompt: string): string {
+  let out = managedPrompt;
+  for (const block of [CTOX_TOOLHUB_PROMPT.common, ...Object.values(CTOX_TOOLHUB_PROMPT.roles)]) {
+    out = out.split(`\n\n${block}`).join("").split(`\n${block}`).join("").split(block).join("");
+  }
+  return out.trim();
+}
+
+/** Native CTOX: role prompt travels in the instruction. */
 export function ctoxNativeInstruction(managedPrompt: string | undefined, input: string): string {
-  return [managedPrompt?.trim(), input].filter(Boolean).join("\n\n");
+  const managed = managedPrompt ? stripCtoxToolhubSection(managedPrompt) : undefined;
+  return [managed, input].filter(Boolean).join("\n\n");
 }
 
 export type HarnessManagedPromptHook = (compiledManagedPrompt: string | undefined) => string;

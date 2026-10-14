@@ -1,3 +1,4 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
 import { prefixTurnWithManagedPrompt } from "../managedPromptHooks.ts";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 // @effect-diagnostics nodeBuiltinImport:off
@@ -330,7 +331,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         let transferred = false;
         const acp = yield* makeMiniMaxAcpRuntime({
           config: runtimeConfig,
-          environment,
+          environment: workjetTeamEnvironment(input.threadId, environment),
           spawner,
           cwd: input.cwd,
           clientInfo: { name: "workjet", version: "1" },
@@ -529,7 +530,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
             stopped: false,
             stoppedSignal: yield* Deferred.make<void>(),
             managedPrompt:
-              managed?.compiledManagedPrompt.trim() ||
+              readWorkjetManagedPrompt(input.threadId)?.trim() ||
               input.workjetConfig?.managedInstructions.trim(),
           };
           yield* acp.getEvents().pipe(

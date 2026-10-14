@@ -1,3 +1,4 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
 import { prefixTurnWithManagedPrompt } from "../managedPromptHooks.ts";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
 import { prepareWorkerSourceNamespace } from "../../workjet/WorkerSourceNamespace.ts";
@@ -262,7 +263,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
               ]
             : [],
           config,
-          environment,
+          environment: workjetTeamEnvironment(input.threadId, environment),
           model,
           spawner,
           cwd: input.cwd,
@@ -384,7 +385,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
             cancelled: false,
             stopped: false,
             managedPrompt:
-              managed?.compiledManagedPrompt.trim() ||
+              readWorkjetManagedPrompt(input.threadId)?.trim() ||
               input.workjetConfig?.managedInstructions.trim(),
           };
           yield* acp.getEvents().pipe(

@@ -1,3 +1,4 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
 import { delimitWorkjetManagedPrompt } from "../managedPromptHooks.ts";
 /**
  * CursorAdapterLive — Cursor CLI (`agent acp`) via ACP.
@@ -614,7 +615,7 @@ export function makeCursorAdapter(
             : cursorSettings;
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-          const managedPrompt = delimitManagedPrompt(mcpSession?.compiledManagedPrompt);
+          const managedPrompt = delimitManagedPrompt(readWorkjetManagedPrompt(input.threadId));
           const managedPromptFingerprint = managedPrompt
             ? yield* crypto.digest("SHA-256", new TextEncoder().encode(managedPrompt)).pipe(
                 Effect.map(Encoding.encodeHex),
@@ -631,7 +632,7 @@ export function makeCursorAdapter(
             : undefined;
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
-            ...(options?.environment ? { environment: options.environment } : {}),
+            environment: workjetTeamEnvironment(input.threadId, options?.environment),
             childProcessSpawner,
             onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
             cwd,

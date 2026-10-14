@@ -1,3 +1,4 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
 import { delimitWorkjetManagedPrompt } from "../managedPromptHooks.ts";
 import type { ProviderSessionStartInput } from "@workjet/contracts";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
@@ -1299,7 +1300,7 @@ export function makeOpenCodeAdapter(
           });
         }
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-        const managedPrompt = delimitManagedPrompt(mcpSession?.compiledManagedPrompt);
+        const managedPrompt = delimitManagedPrompt(readWorkjetManagedPrompt(input.threadId));
         const managedPromptFingerprint = managedPrompt
           ? yield* crypto.digest("SHA-256", new TextEncoder().encode(managedPrompt)).pipe(
               Effect.map(Encoding.encodeHex),
@@ -1345,7 +1346,7 @@ export function makeOpenCodeAdapter(
               const server = yield* openCodeRuntime.connectToOpenCodeServer({
                 binaryPath,
                 serverUrl,
-                ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
+                environment: workjetTeamEnvironment(input.threadId, sessionEnvironment),
               });
               const client = openCodeRuntime.createOpenCodeSdkClient({
                 baseUrl: server.url,

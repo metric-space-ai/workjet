@@ -824,7 +824,7 @@ function FeedSection(props: {
                   {group.length > 3 ? (
                     <button
                       type="button"
-                      className="mb-3 ml-[4.25rem] text-[15px] text-blue-400 hover:underline"
+                      className="mb-3 ml-[4.25rem] text-[15px] text-blue-400 hover:text-blue-300"
                       aria-expanded={expanded}
                       onClick={() =>
                         setExpandedThreads((current) => {
@@ -990,7 +990,7 @@ function FeedCard(props: {
           {long ? (
             <button
               type="button"
-              className="ml-1 text-blue-400 hover:underline"
+              className="ml-1 text-blue-400 hover:text-blue-300"
               aria-expanded={expanded}
               onClick={() => setExpanded((value) => !value)}
             >

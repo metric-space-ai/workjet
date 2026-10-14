@@ -33,7 +33,12 @@ const output =
   `// Generated from skills/ctox-toolhub/SKILL.md (ctox source, sha256 ${sha}). Do not edit.\n` +
   `export const CTOX_TOOLHUB_PROMPT = ${JSON.stringify(prompt, null, 2)} as const;\n`;
 if (process.argv.includes("--check")) {
-  if (NodeFS.readFileSync(outputPath, "utf8") !== output) process.exit(1);
+  // Compare content, not layout: the repo formatter may re-wrap the literal.
+  const current = NodeFS.readFileSync(outputPath, "utf8");
+  const literal = current.slice(current.indexOf("=") + 1).replace(/\s*as const;\s*$/, "");
+  const parsed = new Function(`return (${literal});`)();
+  if (!current.includes(`sha256 ${sha}`) || JSON.stringify(parsed) !== JSON.stringify(prompt))
+    process.exit(1);
 } else {
   NodeFS.writeFileSync(outputPath, output);
 }

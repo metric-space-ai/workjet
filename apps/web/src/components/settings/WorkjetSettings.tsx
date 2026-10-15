@@ -1483,11 +1483,7 @@ export function WorkjetSettings({
     // Verbindung der gewählten Instanz trägt ihn als reason.
     const blockedReason =
       scope.phase === "ready"
-        ? ((connections.data?.connections ?? []).find(
-            (entry) =>
-              entry.status !== "ready" &&
-              ctoxConnectionMatchesSelectedInstance(entry, scope.presentationInstanceId),
-          )?.reason ?? null)
+        ? unreadyConnectionReason(connections.data?.connections, scope.presentationInstanceId)
         : null;
     const noInstance = scope.phase === "blocked" && scope.blocker === "no-active-instance";
     const promptPage = defaultSection === "prompt";
@@ -1699,4 +1695,23 @@ function ScopedWorkjetSettings({
       />
     </>
   );
+}
+
+function unreadyConnectionReason(
+  entries:
+    | ReadonlyArray<
+        Parameters<typeof ctoxConnectionMatchesSelectedInstance>[0] & {
+          readonly status: string;
+          readonly reason: string | null;
+        }
+      >
+    | undefined,
+  instanceId: Parameters<typeof ctoxConnectionMatchesSelectedInstance>[1],
+): string | null {
+  for (const entry of entries ?? []) {
+    if (entry.status === "ready") continue;
+    if (!ctoxConnectionMatchesSelectedInstance(entry, instanceId)) continue;
+    return entry.reason ?? null;
+  }
+  return null;
 }

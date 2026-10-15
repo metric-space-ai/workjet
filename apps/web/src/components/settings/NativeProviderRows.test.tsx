@@ -119,7 +119,7 @@ describe("Native provider account rows", () => {
     expect(rendered).not.toMatch(/>[^<]*native-api-fixture/);
     expect(rendered).not.toContain("CTOX aktualisieren");
   });
-  it("keeps provider model fields separate and shows a shared refresh failure once", () => {
+  it("keeps provider model fields separate and retries a shared refresh failure silently", () => {
     const rendered = registryHtml(
       {
         ...registry,
@@ -133,8 +133,9 @@ describe("Native provider account rows", () => {
     expect(rendered).toContain('aria-label="Modelle für zai"');
     expect(rendered).toContain("claude-opus-5-5");
     expect(rendered).toContain("glm-5.3-flash");
-    expect(rendered.match(/role="alert"/g)).toHaveLength(1);
-    expect(rendered).toContain("The instance refresh failed.");
+    // A shared read failure is retried silently: no line, the rows stay.
+    expect(rendered).not.toContain('role="alert"');
+    expect(rendered).not.toContain("The instance refresh failed.");
   });
   it("retains an unfamiliar native provider using its real public identity", () => {
     const account = { ...apiAccount, provider: "ctox_proxy" };
@@ -203,7 +204,7 @@ describe("Native provider account rows", () => {
   });
 
   it.each([undefined, "guest_failed"])(
-    "does not claim an empty account list before a successful read (error: %s)",
+    "shows no counter or raw error before a successful read (error: %s)",
     (error) => {
       vi.mocked(useInstanceProviders).mockReturnValue({
         registry: undefined,
@@ -217,12 +218,12 @@ describe("Native provider account rows", () => {
       const rendered = renderToStaticMarkup(
         <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
       );
-      expect(rendered).toContain("Konten nicht geladen");
+      expect(rendered).not.toContain("Konten nicht geladen");
       expect(rendered).not.toContain("0 Konten");
-      if (error) expect(rendered).toContain(error);
+      if (error) expect(rendered).not.toContain(error);
     },
   );
-  it("shows zero accounts only after an actual empty registry reply", () => {
+  it("shows no account counter after an empty registry reply", () => {
     vi.mocked(useInstanceProviders).mockReturnValue({
       registry: { ...registry, accounts: [] },
       error: undefined,
@@ -235,12 +236,12 @@ describe("Native provider account rows", () => {
     const rendered = renderToStaticMarkup(
       <NativeProviderRows instanceId="managed:welsch" label="Welsch" />,
     );
-    expect(rendered).toContain("0 Konten");
+    expect(rendered).not.toContain("0 Konten");
     expect(rendered).not.toContain("Konten nicht geladen");
   });
   it("keeps previously observed accounts visible when refreshing fails", () => {
     const rendered = html(registry.accounts[0]!, false, "guest_failed");
-    expect(rendered).toContain("1 Konten");
+    expect(rendered).not.toContain("1 Konten");
     expect(rendered).toContain("Konto 1");
     expect(rendered).not.toMatch(new RegExp(`>[^<]*${accountId.slice(0, 8)}`));
     expect(rendered).not.toContain("Konten nicht geladen");

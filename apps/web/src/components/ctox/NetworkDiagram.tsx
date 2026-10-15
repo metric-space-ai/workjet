@@ -1,26 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  MaximizeIcon,
-  MinusIcon,
+  AppleIcon,
   MonitorIcon,
+  MonitorSmartphoneIcon,
   PlusIcon,
   ServerIcon,
-  SmartphoneIcon,
+  TerminalIcon,
 } from "lucide-react";
 import "./networkDiagram.css";
+import {
+  layoutNetwork,
+  type NetworkClientNode,
+  type NetworkComputerNode,
+  type NetworkLayoutNode,
+  type NetworkPlatform,
+} from "./networkTopology";
 
-export interface NetworkComputerNode {
-  readonly id: string;
-  readonly name: string;
-  readonly connected: boolean;
-}
+export type { NetworkClientNode, NetworkComputerNode } from "./networkTopology";
 
 export interface NetworkDiagramProps {
   readonly name: string;
   readonly host: string;
   readonly ready: boolean;
-  readonly satellites: readonly NetworkComputerNode[] | null;
-  readonly registeredClients: number | null;
+  readonly clients: readonly NetworkClientNode[];
+  readonly computers: readonly NetworkComputerNode[];
   readonly selected: string | null;
   readonly empty?: boolean;
   readonly canAdd?: boolean;
@@ -28,13 +31,33 @@ export interface NetworkDiagramProps {
   readonly onAdd: () => void;
 }
 
-/** Edges describe membership. Only an observed connection receives a live marker. */
+function PlatformIcon({ platform }: { readonly platform: NetworkPlatform }) {
+  if (platform === "macos") return <AppleIcon size={19} />;
+  if (platform === "linux") return <TerminalIcon size={19} />;
+  return <MonitorIcon size={19} />;
+}
+
+function Status({ connected }: { readonly connected: boolean }) {
+  return (
+    <span
+      className={`network-status ${connected ? "is-ready" : ""}`}
+      title={connected ? "Verbunden" : "Getrennt"}
+      aria-label={connected ? "Verbunden" : "Getrennt"}
+    />
+  );
+}
+
+/**
+ * Echte Topologie einer Instanz: jeder Client und jeder registrierte Rechner
+ * ist ein eigener Knoten. Durchgezogene Kante = verbunden, gestrichelt =
+ * getrennt. Die Karte bricht in die verfügbare Breite um und scrollt nie quer.
+ */
 export function NetworkDiagram({
   name,
   host,
   ready,
-  satellites,
-  registeredClients,
+  clients,
+  computers,
   selected,
   empty = false,
   canAdd = true,
@@ -43,171 +66,159 @@ export function NetworkDiagram({
 }: NetworkDiagramProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const [viewportWidth, setViewportWidth] = useState(720);
-  const [zoom, setZoom] = useState<number | null>(null);
-  const count = (satellites?.length ?? 0) + 1;
-  const width = Math.max(720, count * 224 + 64);
-  const scale = zoom ?? Math.min(1, Math.max(0.45, (viewportWidth - 40) / width));
-  // Die Zoom-Leiste erscheint nur, wenn die Karte nicht in den Abschnitt passt.
-  const showControls = zoom !== null || width > viewportWidth - 40;
-  const center = width / 2;
-  const start = center - ((count - 1) * 224) / 2;
   useEffect(() => {
     const element = viewport.current;
     if (!element) return;
+    setViewportWidth(element.clientWidth || 720);
     const observer = new ResizeObserver(([entry]) => {
       if (entry) setViewportWidth(entry.contentRect.width);
     });
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const layout = layoutNetwork({
+    width: viewportWidth,
+    clients: empty ? [] : clients,
+    computers: empty ? [] : computers,
+    showAdd: !empty,
+  });
+  const place = (node: NetworkLayoutNode) => ({
+    left: node.x,
+    top: node.y,
+    width: node.width,
+    height: node.height,
+  });
+  const render = (node: NetworkLayoutNode): ReactNode => {
+    if (node.role === "instance")
+      return (
+        <button
+          key={node.id}
+          type="button"
+          className={`network-node network-master ${empty ? "network-placeholder" : ""} ${selected === "master" ? "is-selected" : ""}`}
+          style={place(node)}
+          aria-pressed={!empty && selected === "master"}
+          data-network-node="instance"
+          onClick={() => (empty ? onAdd() : onInspect("master"))}
+        >
+          <span className="network-node-icon">
+            {empty ? <PlusIcon size={25} /> : <ServerIcon size={25} />}
+          </span>
+          <span className="network-node-copy">
+            <small className="network-node-role">{empty ? "ERSTES NETZWERK" : "INSTANZ"}</small>
+            <strong>{empty ? "Instanz hinzufügen" : host}</strong>
+          </span>
+          {!empty && <Status connected={ready} />}
+        </button>
+      );
+    if (node.role === "add")
+      return (
+        <button
+          key={node.id}
+          type="button"
+          className="network-node network-placeholder network-add"
+          style={place(node)}
+          disabled={!canAdd}
+          data-network-node="add"
+          onClick={onAdd}
+          aria-label="Rechner hinzufügen"
+        >
+          <span className="network-node-icon">
+            <PlusIcon size={20} />
+          </span>
+          <span className="network-node-copy">
+            <strong>Rechner hinzufügen</strong>
+          </span>
+        </button>
+      );
+    if (node.role === "client") {
+      const client = clients.find((entry) => entry.id === node.id);
+      if (!client) return null;
+      return (
+        <button
+          key={node.id}
+          type="button"
+          className={`network-node network-client ${selected === client.id ? "is-selected" : ""}`}
+          style={place(node)}
+          aria-pressed={selected === client.id}
+          data-network-node="client"
+          data-network-connected={String(client.connected)}
+          onClick={() => onInspect(client.id)}
+        >
+          <span className="network-node-icon">
+            {client.kind === "this-device" ? (
+              <MonitorIcon size={18} />
+            ) : (
+              <MonitorSmartphoneIcon size={18} />
+            )}
+          </span>
+          <span className="network-node-copy">
+            {client.kind === "this-device" ? (
+              <small className="network-node-role">DIESES GERÄT</small>
+            ) : null}
+            <strong title={client.name}>{client.name}</strong>
+          </span>
+          <Status connected={client.connected} />
+        </button>
+      );
+    }
+    const computer = computers.find((entry) => entry.id === node.id);
+    if (!computer) return null;
+    return (
+      <button
+        key={node.id}
+        type="button"
+        className={`network-node network-satellite ${selected === computer.id ? "is-selected" : ""}`}
+        style={place(node)}
+        aria-pressed={selected === computer.id}
+        data-network-node="computer"
+        data-network-connected={String(computer.connected)}
+        onClick={() => onInspect(computer.id)}
+      >
+        <span className="network-node-head">
+          <span className="network-node-icon">
+            <PlatformIcon platform={computer.platform} />
+          </span>
+          <strong title={computer.name}>{computer.name}</strong>
+        </span>
+        {computer.tags.length > 0 ? (
+          <span className="network-tags">
+            {computer.tags.map((tag) => (
+              <span
+                key={tag.kind}
+                className="network-tag"
+                data-network-capability={tag.kind}
+                title={tag.title}
+              >
+                {tag.label}
+              </span>
+            ))}
+          </span>
+        ) : null}
+        <Status connected={computer.connected} />
+      </button>
+    );
+  };
   return (
     <div className="network-diagram" aria-label={`Netzwerkdiagramm: ${name}`}>
-      <div className="network-viewport" ref={viewport} tabIndex={0} aria-label="Netzwerkkarte">
-        <div
-          className="network-stage"
-          style={{ width: Math.max(viewportWidth, width * scale), height: 570 * scale }}
-        >
-          <div
-            className="network-scene"
-            style={{
-              width,
-              height: 570,
-              transform: `scale(${scale})`,
-              left: Math.max(0, (viewportWidth - width * scale) / 2),
-            }}
+      <div className="network-viewport" ref={viewport} aria-label="Netzwerkkarte">
+        <div className="network-stage" style={{ width: layout.width, height: layout.height }}>
+          <svg
+            className="network-edges"
+            width={layout.width}
+            height={layout.height}
+            aria-hidden="true"
           >
-            <svg className="network-edges" width={width} height="570" aria-hidden="true">
-              <path className="network-edge network-edge-pending" d={`M ${center} 120 V 228`} />
-              {(satellites ?? []).map((computer, index) => {
-                const x = start + index * 224;
-                return (
-                  <path
-                    key={computer.id}
-                    className={`network-edge ${selected === computer.id ? "network-edge-selected" : ""}`}
-                    d={`M ${center} 322 C ${center} 385, ${x} 365, ${x} 426`}
-                  />
-                );
-              })}
+            {layout.edges.map((edge) => (
               <path
-                className="network-edge network-edge-pending"
-                d={`M ${center} 322 C ${center} 385, ${start + (count - 1) * 224} 365, ${start + (count - 1) * 224} 426`}
+                key={edge.id}
+                className={`network-edge ${edge.connected ? "is-live" : "network-edge-pending"} ${selected === edge.id ? "network-edge-selected" : ""}`}
+                d={edge.d}
               />
-              <circle className="network-port" cx={center} cy="228" r="3" />
-              <circle className="network-port" cx={center} cy="322" r="3" />
-            </svg>
-            <button
-              type="button"
-              className={`network-node network-client ${selected === "clients" ? "is-selected" : ""}`}
-              style={{ left: center - 100, top: 42 }}
-              disabled={empty}
-              aria-pressed={selected === "clients"}
-              onClick={() => onInspect("clients")}
-            >
-              <span className="network-node-icon">
-                <SmartphoneIcon size={21} />
-              </span>
-              <span className="network-node-copy">
-                <small className="network-node-role">GERÄTE</small>
-                <strong>Rechner · Mobil</strong>
-                <small>
-                  {empty || registeredClients === null ? "—" : `${registeredClients} gekoppelt`}
-                </small>
-              </span>
-              <i className="network-port-top" />
-            </button>
-            <span className="network-edge-label" style={{ left: center + 14, top: 160 }}>
-              Zugriff
-            </span>
-            <button
-              type="button"
-              className={`network-node network-master ${empty ? "network-placeholder" : ""} ${selected === "master" ? "is-selected" : ""}`}
-              style={{ left: center - 122, top: 228 }}
-              aria-pressed={!empty && selected === "master"}
-              onClick={() => (empty ? onAdd() : onInspect("master"))}
-            >
-              <span className="network-node-icon">
-                {empty ? <PlusIcon size={25} /> : <ServerIcon size={25} />}
-              </span>
-              <span className="network-node-copy">
-                <small className="network-node-role">{empty ? "ERSTES NETZWERK" : "INSTANZ"}</small>
-                <strong>{empty ? "Instanz hinzufügen" : host}</strong>
-                <small>{empty ? "Erstellen oder verbinden" : "Abgleich · Ops"}</small>
-              </span>
-              {!empty && (
-                <span
-                  className={`network-status ${ready ? "is-ready" : ""}`}
-                  title={ready ? "Verbunden" : "Getrennt"}
-                />
-              )}
-            </button>
-            <span className="network-edge-label" style={{ left: center + 14, top: 353 }}>
-              Abgleich
-            </span>
-            {(satellites ?? []).map((computer, index) => (
-              <button
-                key={computer.id}
-                type="button"
-                className={`network-node network-satellite ${selected === computer.id ? "is-selected" : ""}`}
-                style={{ left: start + index * 224 - 100, top: 426 }}
-                aria-pressed={selected === computer.id}
-                onClick={() => onInspect(computer.id)}
-              >
-                <span className="network-node-icon">
-                  <MonitorIcon size={22} />
-                </span>
-                <span className="network-node-copy">
-                  <strong>{computer.name}</strong>
-                  <small>Rechner</small>
-                </span>
-                <span
-                  className={`network-status ${computer.connected ? "is-ready" : ""}`}
-                  title={computer.connected ? "Verbunden" : "Getrennt"}
-                />
-              </button>
             ))}
-            <button
-              type="button"
-              className="network-node network-placeholder network-add"
-              style={{ left: start + (count - 1) * 224 - 100, top: 426 }}
-              disabled={empty || !canAdd}
-              onClick={onAdd}
-              aria-label="Rechner hinzufügen"
-            >
-              <span className="network-node-icon">
-                <PlusIcon size={22} />
-              </span>
-              <span className="network-node-copy">
-                <strong>Rechner hinzufügen</strong>
-                <small>Lokal · SSH · Tailscale</small>
-              </span>
-            </button>
-          </div>
+          </svg>
+          {layout.nodes.map(render)}
         </div>
       </div>
-      {showControls ? (
-        <div className="network-map-controls" aria-label="Kartenansicht">
-          <button
-            type="button"
-            aria-label="Verkleinern"
-            disabled={scale <= 0.45}
-            onClick={() => setZoom(Math.max(0.45, scale - 0.15))}
-          >
-            <MinusIcon size={15} />
-          </button>
-          <output aria-label="Zoom">{Math.round(scale * 100)}%</output>
-          <button
-            type="button"
-            aria-label="Vergrößern"
-            disabled={scale >= 1.6}
-            onClick={() => setZoom(Math.min(1.6, scale + 0.15))}
-          >
-            <PlusIcon size={15} />
-          </button>
-          <button type="button" aria-label="Netzwerk einpassen" onClick={() => setZoom(null)}>
-            <MaximizeIcon size={15} />
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

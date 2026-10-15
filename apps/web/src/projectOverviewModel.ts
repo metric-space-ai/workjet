@@ -19,11 +19,13 @@ export type ProjectOverviewWorkerState =
   | "missingSupervisor"
   | "supervisorTimedOut"
   | "asks"
-  | "disrupted";
+  | "disrupted"
+  | "stuck";
 export type ProjectOverviewStatus = ProjectOverviewWorkerState | "completed";
 export function projectOverviewStatusTone(state: ProjectOverviewStatus) {
   switch (state) {
     case "disrupted":
+    case "stuck":
     case "missingSupervisor":
     case "supervisorTimedOut":
       return "red";
@@ -101,29 +103,106 @@ export function projectOverviewNextMeetingDate(
   today.setUTCDate(today.getUTCDate() + offset + (passed ? 7 : 0));
   return today.toISOString().slice(0, 10);
 }
+/**
+ * An open turn without any sign of life for this long counts as stuck. No
+ * provider heartbeat reaches the client, so the brief's 120 s bound applies.
+ */
+export const PROJECT_OVERVIEW_LIVE_STALE_MS = 120_000;
+
+type ProjectOverviewLiveThread = Pick<
+  EnvironmentThreadShell,
+  | "session"
+  | "latestTurn"
+  | "updatedAt"
+  | "workjetConfig"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "backgroundLiveness"
+  | "waitingOnSupervisor"
+  | "workerDecisionProblem"
+>;
+
+/**
+ * Newest evidence that the thread's turn is doing something. A skipped
+ * control round only repeats the server's own "busy" guess and is no
+ * evidence of work, so its bump of `updatedAt` does not count.
+ */
+export function projectOverviewLastSignOfLife(thread: ProjectOverviewLiveThread): number | null {
+  const tick =
+    thread.workjetConfig?.schemaVersion === 2 ? thread.workjetConfig.supervisorTick : undefined;
+  const threadUpdate =
+    tick?.outcome === "skipped-busy" && tick.lastTickAt === thread.updatedAt
+      ? null
+      : thread.updatedAt;
+  const times = [
+    thread.session?.updatedAt,
+    thread.latestTurn?.requestedAt,
+    thread.latestTurn?.startedAt,
+    threadUpdate,
+  ]
+    .map((at) => (at ? Date.parse(at) : Number.NaN))
+    .filter(Number.isFinite);
+  return times.length > 0 ? Math.max(...times) : null;
+}
+
 export function projectOverviewWorkerState(
-  thread: Pick<
-    EnvironmentThreadShell,
-    | "session"
-    | "hasPendingApprovals"
-    | "hasPendingUserInput"
-    | "backgroundLiveness"
-    | "waitingOnSupervisor"
-    | "workerDecisionProblem"
-  >,
+  thread: ProjectOverviewLiveThread,
+  now: number = Date.now(),
 ): ProjectOverviewWorkerState {
   if (thread.workerDecisionProblem === "missing-supervisor") return "missingSupervisor";
   if (thread.workerDecisionProblem === "timed-out") return "supervisorTimedOut";
   if (thread.waitingOnSupervisor) return "waitingSupervisor";
   if (thread.session?.status === "error") return "disrupted";
   if (thread.hasPendingApprovals || thread.hasPendingUserInput) return "asks";
-  if (
-    thread.session?.status === "running" ||
-    thread.session?.status === "starting" ||
-    thread.backgroundLiveness === "working"
-  )
-    return "running";
+  // Live in-process background work (subagents, workflows) is current by construction.
+  if (thread.backgroundLiveness === "working") return "running";
+  if (thread.session?.status === "running" || thread.session?.status === "starting") {
+    const lastSign = projectOverviewLastSignOfLife(thread);
+    return lastSign !== null && now - lastSign <= PROJECT_OVERVIEW_LIVE_STALE_MS
+      ? "running"
+      : "stuck";
+  }
   return "waiting";
+}
+
+/** Owner attention first: stuck or disrupted, then blocked, then questions, then running. */
+export function projectOverviewAttentionRank(state: ProjectOverviewStatus): number {
+  switch (state) {
+    case "stuck":
+    case "disrupted":
+      return 0;
+    case "missingSupervisor":
+    case "supervisorTimedOut":
+      return 1;
+    case "asks":
+    case "waitingSupervisor":
+      return 2;
+    case "running":
+      return 3;
+    case "waiting":
+      return 4;
+    case "completed":
+      return 5;
+  }
+}
+
+/** Stable sort by attention rank; equal ranks keep their incoming order. */
+export function sortByAttention<T>(items: readonly T[], stateOf: (item: T) => number): T[] {
+  return items
+    .map((item, index) => ({ item, index, rank: stateOf(item) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.item);
+}
+
+export type ProjectOverviewSideSection = "live" | "goals" | "kpis" | "meeting";
+/** Side column, action first: live/stuck, goals, KPIs, next meeting. Empty sections are left out. */
+export function projectOverviewSideSections(present: {
+  readonly live: boolean;
+  readonly goals: boolean;
+  readonly kpis: boolean;
+  readonly meeting: boolean;
+}): ProjectOverviewSideSection[] {
+  return (["live", "goals", "kpis", "meeting"] as const).filter((section) => present[section]);
 }
 export function isRunningProjectOneShot(thread: EnvironmentThreadShell) {
   return (
@@ -234,7 +313,7 @@ export function buildProjectOwnerOverview(input: {
               ? "disrupted"
               : goal?.status === "paused"
                 ? "waiting"
-                : projectOverviewWorkerState(thread);
+                : projectOverviewWorkerState(thread, input.now);
         return (goal?.objective ?? team?.goal)?.trim()
           ? [
               {
@@ -426,7 +505,7 @@ export function buildProjectOwnerOverview(input: {
     ),
     disruptions: [...supervisors, ...parents, ...workers].filter(
       (thread) =>
-        projectOverviewWorkerState(thread) === "disrupted" ||
+        projectOverviewWorkerState(thread, input.now) === "disrupted" ||
         (thread.workjetConfig.schemaVersion === 2 &&
           thread.workjetConfig.goal?.status === "blocked"),
     ),

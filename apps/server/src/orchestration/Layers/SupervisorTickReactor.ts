@@ -17,6 +17,13 @@ import { SourceControlProviderRegistry } from "../../sourceControl/SourceControl
 import { supervisorTickPrompt } from "../../workjet/supervisorTickPrompt.ts";
 import { isSupervisorTickEligible } from "../../workjet/supervisorTickEligibility.ts";
 import { UsageService } from "../../usage/UsageService.ts";
+import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import {
+  isOrphanedThreadSession,
+  liveProviderThreadIds,
+  settleOrphanedThreadSession,
+  threadSessionLooksBusy,
+} from "../orphanedSessions.ts";
 import { readProjectTokenBudgetStatus } from "../../usage/projectTokenBudgetStatus.ts";
 import {
   SupervisorPullRequests,
@@ -43,6 +50,8 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
   const registry = yield* SourceControlProviderRegistry;
   const usage = yield* Effect.serviceOption(UsageService);
   const preparation = yield* Effect.serviceOption(SupervisorMeetingPreparation);
+  const providerService = yield* ProviderService;
+  const processStartedAtMs = DateTime.toEpochMillis(yield* DateTime.now);
 
   const reconcile = Effect.fn("SupervisorTickReactor.reconcile")(function* () {
     const model = yield* query.getCommandReadModel();
@@ -85,6 +94,24 @@ export const makeSupervisorTickReactor = Effect.gen(function* () {
         config.supervisorTick,
       );
       if (dueAt === null || dueAt > now) continue;
+      // "Busy" is only true while this server drives a provider runtime for
+      // the supervisor. A session left running/starting without one can never
+      // finish, so settle it like a process exit and run the round normally.
+      if (threadSessionLooksBusy(supervisor)) {
+        const liveThreadIds = yield* liveProviderThreadIds(providerService);
+        if (
+          isOrphanedThreadSession(supervisor, { liveThreadIds, processStartedAtMs, nowMs: now })
+        ) {
+          yield* settleOrphanedThreadSession(engine, supervisor, "control-round").pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("Supervisor orphaned session could not be settled", {
+                threadId: supervisor.id,
+                error,
+              }),
+            ),
+          );
+        }
+      }
       const since = config.supervisorTick?.lastControlAt ?? supervisor.createdAt;
       const sourceErrors: string[] = [];
       const read = <A, E>(source: string, effect: Effect.Effect<readonly A[], E>) =>

@@ -75,7 +75,8 @@
   padding: 16px 0 28px;
 }
 .network-viewport {
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: visible;
   min-width: 0;
   border-radius: 8px;
   background-image: radial-gradient(
@@ -91,12 +92,7 @@
 }
 .network-stage {
   position: relative;
-  min-height: 280px;
-}
-.network-scene {
-  position: absolute;
-  top: 0;
-  transform-origin: top left;
+  max-width: 100%;
 }
 .network-edges {
   position: absolute;
@@ -110,6 +106,9 @@
   stroke-width: 1.5;
   transition: stroke 0.16s;
 }
+.network-edge.is-live {
+  stroke: color-mix(in srgb, var(--success) 70%, var(--muted-foreground));
+}
 .network-edge-pending {
   stroke-dasharray: 5 5;
   opacity: 0.6;
@@ -118,23 +117,13 @@
   stroke: var(--primary);
   stroke-width: 2;
 }
-.network-port {
-  fill: var(--primary);
-}
-.network-edge-label {
-  position: absolute;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--muted-foreground);
-}
 .network-node {
   position: absolute;
   display: flex;
   align-items: center;
-  gap: 13px;
-  width: 200px;
-  height: 78px;
-  padding: 15px;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 22px 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card);
@@ -187,8 +176,7 @@
   color: var(--muted-foreground);
 }
 .network-master {
-  width: 244px;
-  height: 94px;
+  padding: 14px 22px 14px 16px;
   border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
   background: var(--card);
 }
@@ -207,13 +195,62 @@
   position: absolute;
   top: 10px;
   right: 10px;
-  width: 5px;
-  height: 5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--muted-foreground);
+  background: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
 }
 .network-status.is-ready {
-  background: var(--primary);
+  background: var(--success);
+}
+.network-satellite {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+}
+.network-node-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.network-node-head strong {
+  font-size: 12px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.network-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 40px;
+  overflow: hidden;
+}
+.network-add {
+  padding-right: 12px;
+}
+.network-add strong {
+  white-space: normal;
+}
+.network-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.network-tag[data-network-capability="gpu"] {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .network-placeholder {
   border-style: dashed;
@@ -222,42 +259,6 @@
 }
 .network-placeholder .network-node-icon {
   color: var(--muted-foreground);
-}
-.network-map-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 3px;
-  background: var(--background);
-  color: var(--muted-foreground);
-}
-.network-map-controls button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 28px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.network-map-controls button:hover {
-  background: var(--muted);
-  color: var(--foreground);
-}
-.network-map-controls button:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-.network-map-controls output {
-  font-size: 10px;
-  width: 40px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
 }
 .network-inspector {
   flex: 0 0 248px;

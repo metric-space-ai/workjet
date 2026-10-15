@@ -351,12 +351,13 @@ describe("owner project overview", () => {
   it("keeps the native supervisor route unknown rather than substituting its local thread model", () => {
     expect(markup([supervisor])).not.toContain("gpt-6.1-sol");
   });
-  it("shows the feed first, then live, meeting, KPIs and goals, and translates all overview navigation in both languages", () => {
+  it("shows the feed first, then live, goals, KPIs and meeting, and translates all overview navigation in both languages", () => {
     for (const language of ["de", "en"] as const) {
       const html = markup([supervisor], language);
       // Empty side sections (nothing live, no KPIs) are absent; those present keep the order.
       expect(html).toContain('data-workjet-overview-section="feed"');
-      const positions = ["feed", "live", "meeting", "kpis"]
+      expect(html).not.toContain(language === "de" ? "Im Blick" : "At a glance");
+      const positions = ["feed", "live", "goals", "kpis", "meeting"]
         .map((section) => html.indexOf('data-workjet-overview-section="' + section + '"'))
         .filter((position) => position >= 0);
       expect(positions).toEqual([...positions].sort((a, b) => a - b));
@@ -374,6 +375,32 @@ describe("owner project overview", () => {
       expect(pending).toContain(language === "de" ? "Braucht dich" : "Needs you");
       expect(pending).not.toContain(language === "de" ? "Open decisions" : "Braucht dich");
     }
+  });
+  it("shows a supervisor with a day-old starting session as stuck, first and clickable", () => {
+    const stale = {
+      ...supervisor,
+      session: {
+        threadId: supervisor.id,
+        status: "starting",
+        providerName: "codex",
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: "2026-10-14T05:40:25.400Z",
+      },
+    } as unknown as EnvironmentThreadShell;
+    const fresh = {
+      ...specialist,
+      session: { ...stale.session!, threadId: specialist.id, updatedAt: new Date().toISOString() },
+    } as EnvironmentThreadShell;
+    const html = markup([fresh, stale]);
+    const live = html.slice(html.indexOf('data-workjet-overview-section="live"'));
+    expect(live.indexOf('data-workjet-overview-live="stuck"')).toBeGreaterThan(-1);
+    expect(live.indexOf('data-workjet-overview-live="stuck"')).toBeLessThan(
+      live.indexOf('data-workjet-overview-live="running"'),
+    );
+    expect(live).toMatch(/<button type="button"[^>]*data-workjet-overview-live="stuck"/);
+    expect(live).toContain(">hängt<");
   });
   it("offers the real regular-meeting action even if its schedule is not available", () => {
     expect(markup([supervisor])).toContain("Regeltermin beitreten");

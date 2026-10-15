@@ -224,7 +224,8 @@ describe("native project session calendar", () => {
           sessions={[session]}
         />,
       );
-      expect(html).toContain("Sitzung (running)");
+      expect(html).toContain("Sitzung (läuft)");
+      expect(html).not.toContain("(running)");
       expect(html).toContain('aria-label="Kalenderprojekt"');
       expect(html).toContain("Alle Projekte");
     });

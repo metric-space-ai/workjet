@@ -98,6 +98,9 @@ const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const VIEWS: readonly CalendarView[] = ["day", "week", "month", "year"];
 const WEEKDAY_OFFSETS = Array.from({ length: 7 }, (_, index) => index);
+const NO_SESSIONS: readonly CtoxWorkjetSessionProjection[] = [];
+const NO_ACCOUNT_EVENTS: readonly WorkjetCalendarEvent[] = [];
+const NO_ACCOUNT_CALENDARS: readonly AccountCalendarState[] = [];
 
 type CalendarFormat = {
   readonly locale: string;
@@ -588,11 +591,11 @@ export function ProjectCalendar({
   projects,
   initialDate,
   initialView = "week",
-  sessions = [],
+  sessions = NO_SESSIONS,
   sessionsStatus,
   onRefreshSessions,
-  accountEvents = [],
-  accountCalendars = [],
+  accountEvents = NO_ACCOUNT_EVENTS,
+  accountCalendars = NO_ACCOUNT_CALENDARS,
   accountsUnavailable = false,
   accountsLoading = false,
   accountsTruncated = false,

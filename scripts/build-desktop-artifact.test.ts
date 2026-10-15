@@ -16,6 +16,8 @@ import {
   createStagePatchedDependencies,
   createStagePnpmLockfile,
   createBuildConfig,
+  LINUX_APPARMOR_PROFILE_PATH,
+  LINUX_LAUNCHER_AFTER_PACK_PATH,
   CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
   createDesktopExtraResources,
   PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY,
@@ -724,6 +726,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.notProperty(mac, "asarUnpack");
       assert.notProperty(linux, "asarUnpack");
+      // Only Linux starts through the sandbox-aware launcher script.
+      assert.equal(linux.afterPack, LINUX_LAUNCHER_AFTER_PACK_PATH);
+      assert.deepStrictEqual(linux.deb, { appArmorProfile: LINUX_APPARMOR_PROFILE_PATH });
+      assert.notProperty(mac, "afterPack");
+      assert.notProperty(win, "afterPack");
       assert.deepStrictEqual(win.asarUnpack, WINDOWS_ASAR_UNPACK);
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/workjet; for OAuth deep links.

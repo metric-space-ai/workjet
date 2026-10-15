@@ -53,6 +53,16 @@ const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 const MAC_ADHOC_ENTITLEMENTS_PATH = NodeURL.fileURLToPath(
   new URL("../apps/desktop/resources/entitlements.mac.adhoc.plist", import.meta.url),
 );
+// Linux packages start through apps/desktop/scripts/linux-launcher.sh, which
+// drops the Chromium sandbox only where Linux cannot provide one (PRoot, no
+// user namespaces). The hook installs it; the AppArmor profile also attaches
+// to the renamed Electron binary so Ubuntu 24.04+ keeps its userns sandbox.
+export const LINUX_LAUNCHER_AFTER_PACK_PATH = NodeURL.fileURLToPath(
+  new URL("../apps/desktop/scripts/linux-launcher-after-pack.cjs", import.meta.url),
+);
+export const LINUX_APPARMOR_PROFILE_PATH = NodeURL.fileURLToPath(
+  new URL("../apps/desktop/scripts/linux-apparmor-profile.tpl", import.meta.url),
+);
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -2409,6 +2419,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           StartupWMClass: "workjet",
         },
       },
+    };
+    buildConfig.afterPack = LINUX_LAUNCHER_AFTER_PACK_PATH;
+    buildConfig.deb = {
+      appArmorProfile: LINUX_APPARMOR_PROFILE_PATH,
     };
   }
 

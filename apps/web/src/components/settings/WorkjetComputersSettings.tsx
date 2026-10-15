@@ -40,6 +40,9 @@ import { workerSourceConnectionForEnrollment } from "../../workjetWorkerSourceCo
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
+import { Empty, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
+import { CapabilitySwitch } from "./CapabilitySwitch";
 import { InlineExpand } from "../ui/inline-expand";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useAutomaticWorktreeStorage, WorktreeStorageInline } from "./WorkjetSettings";
@@ -365,7 +368,9 @@ export function computerCapabilityToggles(
   const nativeHas = (kind: string) => native?.capabilities.includes(kind) ?? false;
   const roles = metadata?.roles ?? { build: nativeHas("build"), storage: nativeHas("storage") };
   const toggles: ComputerCapabilityToggle[] = [];
-  if (remote || roles.build || nativeHas("build"))
+  // D16: ein agentloser Speicher (NAS) baut nicht; Build nur, wenn gemeldet.
+  const canBuild = remote && !(native?.agentless ?? false);
+  if (canBuild || roles.build || nativeHas("build"))
     toggles.push({ key: "build", label: "Build", on: roles.build || nativeHas("build") });
   if (remote || roles.storage || nativeHas("storage"))
     toggles.push({ key: "storage", label: "Speicher", on: roles.storage || nativeHas("storage") });
@@ -396,7 +401,7 @@ export function computerRoleChoice(
   return { build: on("build"), storage: on("storage"), gpu: on("gpu") };
 }
 
-/** Schalter-Chips: Klick schaltet an/aus und speichert sofort. */
+/** Fähigkeits-Schalter: Klick schaltet an/aus und speichert sofort (D05, D54). */
 function CapabilityToggles({
   toggles,
   disabled,
@@ -407,24 +412,15 @@ function CapabilityToggles({
   readonly onToggle: (key: keyof ComputerRoleChoice, on: boolean) => void;
 }) {
   return toggles.map((toggle) => (
-    <button
+    <CapabilitySwitch
       key={toggle.key}
-      type="button"
-      aria-pressed={toggle.on}
-      disabled={disabled}
+      capability={toggle.key}
+      label={toggle.label}
       title={toggle.title}
-      data-workjet-capability={toggle.key}
-      data-on={toggle.on ? "true" : "false"}
-      className={cn(
-        "inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded border px-1.5 text-[11px] leading-none whitespace-nowrap transition-colors disabled:cursor-default disabled:opacity-64",
-        toggle.on
-          ? "border-primary/60 bg-primary/15 text-foreground"
-          : "border-dashed border-border text-muted-foreground hover:text-foreground",
-      )}
-      onClick={() => onToggle(toggle.key, !toggle.on)}
-    >
-      {toggle.label}
-    </button>
+      checked={toggle.on}
+      disabled={disabled}
+      onCheckedChange={(on) => onToggle(toggle.key, on)}
+    />
   ));
 }
 
@@ -532,9 +528,17 @@ export interface ComputerRemoveOutcome {
   readonly text: string;
 }
 
+type ComputerRemoveNotice = ComputerRemoveOutcome & {
+  readonly label: string;
+  /** Fehler bleiben stehen, bis gehandelt wird, mit genau dieser Aktion (D07). */
+  readonly retry?: () => void;
+};
+
 type Expansion = { readonly key: string; readonly kind: "repair" | "edit" };
 
 const NOTICE_MS = 5_000;
+/** Eine Werkzeugprüfung endet nach 10 s (UI-Vertrag §1.3, D03). */
+const PROBE_TIMEOUT_MS = 10_000;
 
 export function WorkjetComputersSettingsView({
   worktreeStorage = null,
@@ -562,6 +566,8 @@ export function WorkjetComputersSettingsView({
   renderEdit,
   onRetryMembership,
   onRolesChange,
+  connectionAction,
+  onRetryLoad,
 }: {
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
@@ -601,6 +607,12 @@ export function WorkjetComputersSettingsView({
   readonly onRolesChange?:
     | ((row: ComputerMachineRow, roles: ComputerRoleChoice) => Promise<void>)
     | undefined;
+  /** Trennen/Verbinden als eigener ⋯-Eintrag (D14). */
+  readonly connectionAction?:
+    | ((row: ComputerMachineRow) => { readonly label: string; readonly onSelect: () => void } | null)
+    | undefined;
+  /** Lädt die Rechnerliste neu, wenn das Laden nach 10 s nicht endet (D17). */
+  readonly onRetryLoad?: (() => void) | undefined;
 }) {
   const [expansion, setExpansion] = useState<Expansion | null>(null);
   // Sofort sichtbar umgeschaltet, bis die Instanz den neuen Stand meldet.
@@ -609,10 +621,10 @@ export function WorkjetComputersSettingsView({
   );
   const [savingRoles, setSavingRoles] = useState(emptyIdSet);
   const [removeAsk, setRemoveAsk] = useState<string | null>(null);
+  const [removeFiles, setRemoveFiles] = useState(false);
+  const [probeExpired, setProbeExpired] = useState(emptyIdSet);
   const [removing, setRemoving] = useState(emptyIdSet);
-  const [notices, setNotices] = useState<
-    Readonly<Record<string, ComputerRemoveOutcome & { readonly label: string }>>
-  >({});
+  const [notices, setNotices] = useState<Readonly<Record<string, ComputerRemoveNotice>>>({});
   const noticeTimers = useRef(new Map<string, number>());
   useEffect(() => {
     const timers = noticeTimers.current;
@@ -620,10 +632,13 @@ export function WorkjetComputersSettingsView({
       for (const timer of timers.values()) window.clearTimeout(timer);
     };
   }, []);
-  const showNotice = (key: string, notice: ComputerRemoveOutcome & { readonly label: string }) => {
+  const showNotice = (key: string, notice: ComputerRemoveNotice) => {
     setNotices((current) => ({ ...current, [key]: notice }));
     const previous = noticeTimers.current.get(key);
     if (previous !== undefined) window.clearTimeout(previous);
+    noticeTimers.current.delete(key);
+    // Fehler verschwinden nicht von selbst (D07); nur Erfolgszeilen gehen nach 5 s.
+    if (notice.tone === "error") return;
     noticeTimers.current.set(
       key,
       window.setTimeout(() => {
@@ -639,14 +654,17 @@ export function WorkjetComputersSettingsView({
   const runRemove = (row: ComputerMachineRow, label: string, mode: ComputerRemoveMode) => {
     if (!onRemove) return;
     setRemoving((current) => new Set(current).add(row.key));
+    const retry = () => runRemove(row, label, mode);
     void onRemove(row, mode)
       .then(
-        (outcome) => showNotice(row.key, { ...outcome, label }),
+        (outcome) =>
+          showNotice(row.key, { ...outcome, label, ...(outcome.tone === "error" ? { retry } : {}) }),
         (failure: unknown) =>
           showNotice(row.key, {
             tone: "error",
             text: failure instanceof Error ? failure.message : "Entfernen fehlgeschlagen",
             label,
+            retry,
           }),
       )
       .finally(() =>
@@ -659,12 +677,12 @@ export function WorkjetComputersSettingsView({
   };
   // Während die Instanz neu prüft, bleiben die zuletzt bestätigten Einträge
   // stehen (die Membership-Ablage behält sie für dieselbe Instanz). Zeilen
-  // erscheinen und verschwinden nicht; ein Chip „prüft…“ zeigt die Prüfung.
+  // erscheinen und verschwinden nicht; es gibt keinen Text „prüft…“ (D19,
+  // Owner-Regel: keine Zustandstexte).
   const natives =
     membership && membership.phase !== "failed"
       ? membership.computers.filter((entry) => entry.status === "assigned")
       : [];
-  const membershipChecking = membership?.phase === "loading";
   const membershipUnreachable = membership?.phase === "failed";
   const stateFor = (computer: WorkjetComputer) => {
     const connecting = connectingEnvironmentIds?.includes(computer.environmentId) ?? false;
@@ -706,6 +724,25 @@ export function WorkjetComputersSettingsView({
       current?.key === key && current.kind === kind ? null : { key, kind },
     );
   const close = () => setExpansion(null);
+  const isRowActive = (row: ComputerMachineRow) =>
+    row.computer?.metadata ? row.computer.metadata.active : (row.native?.active ?? true);
+  // D03: inaktive Rechner werden nicht geprüft; eine Prüfung endet nach 10 s.
+  const probingKeys = rows
+    .filter((row) => {
+      if (!row.computer || !isRowActive(row)) return false;
+      const { connecting, disconnected, inspection, snapshot } = stateFor(row.computer);
+      return !disconnected && !connecting && !snapshot && !inspection?.error;
+    })
+    .map((row) => row.key)
+    .join("\n");
+  useEffect(() => {
+    if (probingKeys === "") return;
+    const timer = window.setTimeout(
+      () => setProbeExpired(new Set(probingKeys.split("\n"))),
+      PROBE_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [probingKeys]);
 
   const noticeLine = (key: string, withLabel: boolean) => {
     const notice = notices[key];
@@ -716,35 +753,56 @@ export function WorkjetComputersSettingsView({
         role={notice.tone === "error" ? "alert" : "status"}
         data-slot="computer-remove-result"
         className={cn(
-          "px-3 pb-2 pl-8 text-xs",
+          "flex flex-wrap items-center gap-2 px-3 pb-2 pl-8 text-xs",
           notice.tone === "error" ? "text-destructive" : "text-muted-foreground",
           withLabel && "pt-2",
         )}
       >
-        {withLabel ? `${notice.label}: ${notice.text}` : notice.text}
+        <span className="min-w-0">
+          {withLabel ? `${notice.label}: ${notice.text}` : notice.text}
+        </span>
+        {notice.tone === "error" && notice.retry ? (
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              setNotices((current) => {
+                const next = { ...current };
+                delete next[key];
+                return next;
+              });
+              notice.retry?.();
+            }}
+          >
+            Erneut versuchen
+          </Button>
+        ) : null}
       </div>
     );
   };
 
-  // Die Prüfung der Instanz zeigt kein „prüft…“; die Zeilen behalten ihren Stand.
-  void membershipChecking;
-  const headerStatus = membershipUnreachable ? (
-    <span className="flex items-center gap-1.5">
-      <Chip tone="error">Rechnerliste nicht abrufbar</Chip>
+  // D18: Fehler als eine Zeile unter dem Titel mit genau einer Aktion, kein Chip.
+  const membershipError = membershipUnreachable ? (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center gap-2 pb-2 text-xs text-destructive"
+      data-slot="computer-membership-error"
+    >
+      <span>Rechnerliste nicht abrufbar</span>
       {onRetryMembership ? (
         <Button size="xs" variant="outline" onClick={onRetryMembership}>
           Erneut versuchen
         </Button>
       ) : null}
-    </span>
+    </div>
   ) : null;
 
   return (
     <SettingsSection
       id={searchableSetting("workjet-computers").id}
       title={searchableSetting("workjet-computers").title}
-      headerAction={headerStatus}
     >
+      {membershipError}
       <div
         className="divide-y divide-border/60 border-y border-border/60"
         data-workjet-computers-table
@@ -752,7 +810,7 @@ export function WorkjetComputersSettingsView({
         {rows.map((row) => {
           const { computer, native } = row;
           const metadata = computer?.metadata ?? null;
-          const active = metadata ? metadata.active : (native?.active ?? true);
+          const active = isRowActive(row);
           const label = computer?.label ?? native?.displayName ?? row.key;
           let status: RowStatus = "off";
           let statusLabel = "Getrennt";
@@ -814,23 +872,28 @@ export function WorkjetComputersSettingsView({
             // Kein „prüft…“/„verbindet…“ als Text mehr: der Punkt trägt den Zustand.
             const unreachable = metadata?.status === "unreachable";
             const toolsFailed = !disconnected && !connecting && !snapshot && !!inspection?.error;
-            const probing = !disconnected && !connecting && !snapshot && !inspection?.error;
-            status =
-              checking || connecting || busyRow || probing
+            const probingNow =
+              active && !disconnected && !connecting && !snapshot && !inspection?.error;
+            const probeTimedOut = probingNow && probeExpired.has(row.key);
+            const probing = probingNow && !probeTimedOut;
+            status = !active
+              ? "off"
+              : checking || connecting || busyRow || probing
                 ? "busy"
-                : unreachable || toolsFailed
+                : unreachable || toolsFailed || probeTimedOut
                   ? "error"
                   : disconnected
                     ? "off"
                     : "ok";
-            statusLabel =
-              checking || busyRow || probing
+            statusLabel = !active
+              ? "Inaktiv"
+              : checking || busyRow || probing
                 ? "Prüft"
                 : connecting
                   ? "Verbindet"
                   : unreachable
                     ? "Nicht erreichbar"
-                    : toolsFailed
+                    : toolsFailed || probeTimedOut
                       ? "Werkzeuge nicht prüfbar"
                       : disconnected
                         ? "Getrennt"
@@ -844,7 +907,7 @@ export function WorkjetComputersSettingsView({
                       .join(" · ")
                   : computer.presentationKind === "local"
                     ? "Lokal"
-                    : "—";
+                    : null;
             if (snapshot) {
               const tools = computer.harnesses.filter(
                 (declared) =>
@@ -888,13 +951,14 @@ export function WorkjetComputersSettingsView({
             if (configuration.selectedComputerId === computer.id)
               chips.push(
                 <Chip key="current" tone="outline" data-slot="computer-current">
-                  Aktuell
+                  Standard
                 </Chip>,
               );
           } else if (native) {
             status = "off";
             statusLabel = "Nur Instanz";
-            meta = native.agentless ? "Speicher" : "Instanz";
+            // D16: kein doppeltes „Speicher“ neben dem Schalter.
+            meta = native.agentless ? null : "Instanz";
           }
           if (native)
             chips.push(
@@ -906,13 +970,14 @@ export function WorkjetComputersSettingsView({
           const menuActions: RowMenuAction[] = [];
           if (computer && renderRepair)
             menuActions.push({ label: "Reparieren", onSelect: () => toggle(row.key, "repair") });
+          const connection = connectionAction?.(row) ?? null;
+          if (connection) menuActions.push(connection);
           if (onRecheck) menuActions.push({ label: "Neu prüfen", onSelect: () => onRecheck(row) });
+          // D10: ein klarer Begriff, „Standard“, statt „aktuell“/„nicht mehr aktuell“.
           if (computer)
             menuActions.push({
               label:
-                configuration.selectedComputerId === computer.id
-                  ? "Nicht mehr aktuell"
-                  : "Als aktuell verwenden",
+                configuration.selectedComputerId === computer.id ? "Kein Standard" : "Als Standard",
               onSelect: () => onChange(toggleCurrentComputer(configuration, computer.id)),
             });
           if (computer && !native && onAssign && membership?.phase === "ready")
@@ -954,7 +1019,10 @@ export function WorkjetComputersSettingsView({
             menuActions.push({
               label: "Entfernen",
               destructive: true,
-              onSelect: () => setRemoveAsk(row.key),
+              onSelect: () => {
+                setRemoveFiles(false);
+                setRemoveAsk(row.key);
+              },
             });
           const expanded = expansion?.key === row.key ? expansion.kind : null;
           return (
@@ -998,30 +1066,43 @@ export function WorkjetComputersSettingsView({
                 />
               </div>
               {removeAsk === row.key && deleteOptions.length ? (
+                // D12: eine destructive Aktion plus Haken für die Dateien auf dem Rechner.
                 <div
-                  className="flex flex-wrap items-center justify-end gap-1.5 px-3 pb-2"
+                  className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5 px-3 pb-2"
                   data-slot="computer-remove-confirm"
                   role="group"
                   aria-label={`${label} entfernen`}
                 >
-                  <span className="text-xs text-muted-foreground">Entfernen?</span>
-                  {deleteOptions.map((option) => (
+                  {deleteOptions.length > 1 ? (
+                    <label className="flex items-center gap-1.5 text-xs has-disabled:opacity-64">
+                      <Checkbox
+                        checked={removeFiles}
+                        disabled={deleteOptions[1]!.disabled === true}
+                        onCheckedChange={(checked) => setRemoveFiles(checked === true)}
+                      />
+                      Auch Dateien auf dem Rechner
+                    </label>
+                  ) : null}
+                  <span className="flex items-center gap-1.5">
+                    <Button size="xs" variant="outline" onClick={() => setRemoveAsk(null)}>
+                      Abbrechen
+                    </Button>
                     <Button
-                      key={option.label}
                       size="xs"
                       variant="destructive"
-                      disabled={option.disabled}
+                      disabled={removing.has(row.key)}
                       onClick={() => {
+                        const option =
+                          removeFiles && deleteOptions.length > 1
+                            ? deleteOptions[1]!
+                            : deleteOptions[0]!;
                         setRemoveAsk(null);
                         option.onSelect();
                       }}
                     >
-                      {option.label}
+                      Entfernen
                     </Button>
-                  ))}
-                  <Button size="xs" variant="outline" onClick={() => setRemoveAsk(null)}>
-                    Abbrechen
-                  </Button>
+                  </span>
                 </div>
               ) : null}
               {noticeLine(row.key, false)}
@@ -1062,9 +1143,21 @@ export function WorkjetComputersSettingsView({
           .filter((key) => !rowKeys.has(key))
           .map((key) => noticeLine(key, true))}
         {rows.length === 0 ? (
-          <div className="px-3 py-2.5 text-[13.5px] text-muted-foreground" role="status">
-            {environmentsReady ? "Noch keine Rechner" : "Lädt…"}
-          </div>
+          // D17: Leerzustand als ui/empty; „Rechner hinzufügen“ steht direkt darunter.
+          environmentsReady ? (
+            <Empty className="py-6" data-slot="computers-empty">
+              <EmptyHeader>
+                <EmptyTitle className="text-[13.5px]">Noch keine Rechner</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <EmptyLoading
+              className="py-6"
+              title="Rechner werden geladen …"
+              slowMessage="Rechner nicht geladen"
+              {...(onRetryLoad ? { onRetry: onRetryLoad } : {})}
+            />
+          )
         ) : null}
       </div>
       {addPanel ? <div className="flex flex-col pt-3">{addPanel}</div> : null}
@@ -1857,6 +1950,7 @@ export function WorkjetComputersSettings({
         configuration={configuration}
         environments={targetOptions}
         environmentsReady={environmentsReady}
+        onRetryLoad={() => window.location.reload()}
         harnessInspection={harnessInspectQuery.data ?? null}
         harnessInspections={harnessInspections}
         environmentId={environmentId}
@@ -1939,49 +2033,41 @@ export function WorkjetComputersSettings({
             ? () => void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox)
             : undefined
         }
-        renderRepair={(row, close) => {
+        connectionAction={(row) => {
+          const computer = row.computer;
+          if (!computer || !savedEnvironmentIds.includes(computer.environmentId)) return null;
+          const online = connectedIds.includes(computer.environmentId);
+          if (connections.busyEnvironmentId === computer.environmentId) return null;
+          return {
+            label: online ? "Trennen" : "Verbinden",
+            onSelect: () => {
+              const action = online ? connections.disconnect : connections.reconnect;
+              void action(computer.environmentId).then((failure) => {
+                if (failure) toastManager.add({ type: "error", title: failure });
+              });
+            },
+          };
+        }}
+        renderRepair={(row) => {
           const computer = row.computer;
           if (!computer) return null;
           const sshTarget = connections.savedSshTargets.get(computer.environmentId);
-          const online = connectedIds.includes(computer.environmentId);
-          const saved = savedEnvironmentIds.includes(computer.environmentId);
+          // D14: ein Schließen-Weg (der Bereich selbst); Trennen/Verbinden liegt im ⋯-Menü.
           return (
-            <div className="space-y-3">
-              {saved ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={connections.busyEnvironmentId === computer.environmentId}
-                    onClick={() => {
-                      const action = online ? connections.disconnect : connections.reconnect;
-                      void action(computer.environmentId).then((failure) => {
-                        if (failure) toastManager.add({ type: "error", title: failure });
-                      });
-                    }}
-                  >
-                    {online ? "Trennen" : "Verbinden"}
-                  </Button>
-                  <Button size="xs" variant="outline" onClick={close}>
-                    Schließen
-                  </Button>
-                </div>
-              ) : null}
-              <ComputerProvisioningSection
-                key={computer.id}
-                initialKind={computer.environmentId === environmentId ? "local" : "ssh"}
-                fixedTargetKind
-                {...(sshTarget
-                  ? {
-                      initialTarget: {
-                        host: sshTarget.hostname,
-                        username: sshTarget.username,
-                        port: sshTarget.port,
-                      },
-                    }
-                  : {})}
-              />
-            </div>
+            <ComputerProvisioningSection
+              key={computer.id}
+              initialKind={computer.environmentId === environmentId ? "local" : "ssh"}
+              fixedTargetKind
+              {...(sshTarget
+                ? {
+                    initialTarget: {
+                      host: sshTarget.hostname,
+                      username: sshTarget.username,
+                      port: sshTarget.port,
+                    },
+                  }
+                : {})}
+            />
           );
         }}
         renderEdit={(row, close) =>

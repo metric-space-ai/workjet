@@ -43,7 +43,9 @@ Missing drivers never acquire a Codex proxy route.
 The current producer verifies local harnesses through the existing provider registry.
 It has no live remote-harness health observation, so remote profiles remain ineligible
 for random selection. Explicit remote dispatch retains its existing native admission
-path and its source and target ledger records. Native-account-only routes likewise
+path and its source and target ledger records. Explicit local dispatch of a named
+profile is not gated by this qualification either: it keeps the caller's or the parent's
+model selection and only adds its ledger record. Native-account-only routes likewise
 need their authoritative model/health export before they can enter this gateway-backed
 pool; neither configuration nor a historical successful run substitutes for that proof.
 

@@ -421,19 +421,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           return yield* failure("capability-escalation");
         enabledCapabilityIds = [...selected.capabilityIds] as WorkjetCapabilityId[];
       }
-      if (
-        selectedProfile &&
-        targetEnvironmentId === invocation.environmentId &&
-        input.modelSelection === undefined
-      ) {
-        if (Option.isNone(pool)) return yield* failure("worker-profile-unavailable");
-        const catalog = yield* pool.value
-          .list(configuration!, invocation.environmentId)
-          .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
-        const selected = catalog.workers.find((entry) => entry.profile.id === selectedProfile.id);
-        if (!selected) return yield* failure("worker-profile-unavailable");
-        modelSelection = { instanceId: selected.instanceId, model: selected.profile.modelId };
-      }
+      // Only a pool draw (`pool: "worker"`, resolved above) depends on fresh gateway
+      // evidence. An explicitly named profile keeps the established local placement:
+      // its model selection is the caller's override or the parent's, never a pool gate.
       const queueRun = (
         runId: string,
         queuedAt: string,

@@ -33,7 +33,7 @@ export function workerRunProgressFromEvent(
         detail: event.payload.detail,
       }),
     };
-  if (event.type === "session.exited" && event.payload.recoverable === false)
+  if (event.type === "session.exited" && event.payload.recoverable !== true)
     return {
       runId: event.threadId,
       terminalAt: event.createdAt,

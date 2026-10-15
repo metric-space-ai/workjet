@@ -39,3 +39,59 @@ export function resolveCachedProjectPreview(website: string | null | undefined) 
     return null;
   }
 }
+
+/** `owner/repo` of a GitHub repository URL (https, ssh or scp form); null for anything else. */
+export function githubRepositorySlug(
+  repositoryUrl: string | null | undefined,
+): { readonly owner: string; readonly repo: string } | null {
+  const value = repositoryUrl?.trim();
+  if (!value) return null;
+  const match =
+    /^(?:https?:\/\/(?:www\.)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?(?:[?#].*)?$/i.exec(
+      value,
+    );
+  if (!match) return null;
+  const [, owner, repo] = match;
+  if (!owner || !repo || repo === "." || repo === "..") return null;
+  return { owner, repo };
+}
+
+/** Repository identity of a local project's Git remote, as far as the card needs it. */
+export type ProjectPreviewRepositoryIdentity = {
+  readonly provider?: string | undefined;
+  readonly owner?: string | undefined;
+  readonly name?: string | undefined;
+};
+
+export type ProjectPreview = {
+  readonly image: string;
+  readonly kind: "preview" | "logo" | "github";
+  /** Capture date of a stored website snapshot; GitHub previews are live. */
+  readonly capturedOn: string | null;
+};
+
+/**
+ * The card's preview: the captured website first, else the GitHub social preview of
+ * the project's repository (configured repository URL, else the local Git remote).
+ * No preview at all is `null`; the card then shows its content instead.
+ */
+export function resolveProjectPreview(input: {
+  readonly websiteUrl: string | null | undefined;
+  readonly repositoryUrl: string | null | undefined;
+  readonly repositoryIdentity?: ProjectPreviewRepositoryIdentity | null | undefined;
+}): ProjectPreview | null {
+  const website = resolveCachedProjectPreview(input.websiteUrl);
+  if (website) return { ...website, kind: website.kind === "logo" ? "logo" : "preview" };
+  const identity = input.repositoryIdentity;
+  const slug =
+    githubRepositorySlug(input.repositoryUrl) ??
+    (identity?.provider?.toLowerCase() === "github" && identity.owner && identity.name
+      ? githubRepositorySlug(`https://github.com/${identity.owner}/${identity.name}`)
+      : null);
+  if (!slug) return null;
+  return {
+    image: `https://opengraph.githubassets.com/1/${encodeURIComponent(slug.owner)}/${encodeURIComponent(slug.repo)}`,
+    kind: "github",
+    capturedOn: null,
+  };
+}

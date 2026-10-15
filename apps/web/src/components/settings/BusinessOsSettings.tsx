@@ -37,6 +37,7 @@ import {
   listBusinessOsDevices,
   revokeBusinessOsDevice,
   revokeBusinessOsDeviceInvite,
+  workjetDeviceDisplayName,
 } from "./businessOsDeviceControl";
 import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
 import { formatMobileInviteExpiry } from "./businessOsPairing";
@@ -273,26 +274,7 @@ function DeviceInvitePanel({
   );
 }
 
-/**
- * Gekoppelte Geräte heißen nach ihrem Namen (#685); ohne Namen nach Gerätetyp
- * und kurzem Datum, nie „Gerät vom TT.MM.JJJJ, hh:mm“.
- */
-export function workjetDeviceDisplayName(device: WorkjetDeviceBindingSummary): string {
-  const named = device as WorkjetDeviceBindingSummary & {
-    readonly deviceName?: unknown;
-    readonly displayName?: unknown;
-    readonly label?: unknown;
-  };
-  for (const candidate of [named.deviceName, named.displayName, named.label]) {
-    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate.trim();
-  }
-  const date = new Date(device.pairedAtMillis).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-  });
-  return `Workjet-App · ${date}`;
-}
+export { workjetDeviceDisplayName };
 
 function DevicesSection({
   instanceName,
@@ -368,7 +350,8 @@ function DevicesSection({
             <li key={device.devicePairingId}>
               <Row
                 name={workjetDeviceDisplayName(device)}
-                status="ok"
+                // CTOX meldet für Kopplungen keine Lebendigkeit; ohne sie grau.
+                status="off"
                 statusLabel="Gekoppelt"
                 {...(onRevokeDevice === undefined
                   ? {}

@@ -11,6 +11,7 @@ import { buildProjectOwnerOverview, type ProjectOverviewPr } from "../projectOve
 import { resolveGalleryProjectOverview, type GalleryProject } from "../projectOverview";
 import { useGithubMergedPullRequests } from "../hooks/useGithubMergedPullRequests";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
+import { refreshWorkjetProjectKpis } from "../workjetProjectControl";
 import { ProjectOverviewView } from "./ProjectOverviewView";
 import { ProjectOverviewDecisions } from "./ProjectOverviewDecisions";
 import { ProjectOverviewPullRequest } from "./ProjectOverviewPullRequest";
@@ -66,6 +67,17 @@ function ProjectWorkspaceContent({
   ];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;
   const sources = useProjectOverviewSources(nativeInstance, project.id);
+  const configurationId = project.configuration?.id ?? null;
+  // „Neu berechnen“ startet die Neuberechnung in CTOX (project.kpis.refresh, #502) und
+  // liest danach neu. Der stille Wiederholversuch nach einem Lesefehler liest nur neu.
+  const { failed: sourcesFailed, reload: reloadSources } = sources;
+  const recomputeKpis = useCallback(() => {
+    if (sourcesFailed || nativeInstance === null || configurationId === null) {
+      reloadSources();
+      return;
+    }
+    void refreshWorkjetProjectKpis(nativeInstance, configurationId).then(() => reloadSources());
+  }, [sourcesFailed, reloadSources, nativeInstance, configurationId]);
   const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
   const exit = useProjectExitModel(nativeInstance, project.id, project.configuration?.exitModel);
   const githubPrs = useGithubMergedPullRequests(
@@ -144,7 +156,7 @@ function ProjectWorkspaceContent({
         onOpenChat={onOpenChat}
         {...(openJourFixe ? { onOpenJourFixe: openJourFixe } : {})}
         connectionError={sources.failed}
-        onRecomputeKpis={sources.reload}
+        onRecomputeKpis={recomputeKpis}
         feedPosts={sources.feedPosts}
         settingsLinks={settingsLinks}
         feedPersistence={{

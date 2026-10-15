@@ -110,7 +110,13 @@ export function projectUpdateAge(
 }
 export type GalleryLocalProject = Pick<
   OrchestrationProjectShell,
-  "id" | "title" | "updatedAt" | "overview" | "ctoxRegistration" | "faviconPath"
+  | "id"
+  | "title"
+  | "updatedAt"
+  | "overview"
+  | "ctoxRegistration"
+  | "faviconPath"
+  | "repositoryIdentity"
 > & {
   readonly environmentId: EnvironmentId;
   readonly workspaceRoot?: string | null | undefined;
@@ -199,6 +205,55 @@ export function resolveGalleryProjectOverview(project: GalleryProject): ProjectO
       ? {}
       : { websiteUrl: project.configuration.publicUrl }),
   };
+}
+/**
+ * Browser address for a git remote (`git@host:owner/repo.git`, `ssh://…`,
+ * `https://…`). Credentials in the remote never reach the result.
+ */
+export function repositoryWebUrlFromGitRemote(remote: string): string | null {
+  const value = remote
+    .trim()
+    .replace(/\/+$/g, "")
+    .replace(/\.git$/i, "");
+  let host: string;
+  let path: string;
+  const scp = /^[^@\s/]+@([^:/\s]+):([^\s]+)$/.exec(value);
+  if (scp?.[1] && scp[2]) {
+    host = scp[1];
+    path = scp[2];
+  } else {
+    try {
+      const url = new URL(value);
+      if (!["ssh:", "https:", "http:", "git:"].includes(url.protocol)) return null;
+      host = url.hostname;
+      path = url.pathname;
+    } catch {
+      return null;
+    }
+  }
+  const segments = path.split("/").filter((segment) => segment.length > 0);
+  if (!host || segments.length < 2) return null;
+  return `https://${host}/${segments.join("/")}`;
+}
+/**
+ * Proposed repository address for a project with a folder but no repository:
+ * the folder's `origin` remote as read by its computer (never written silently).
+ */
+export function projectRepositorySuggestion(project: GalleryProject): string | null {
+  if (resolveGalleryProjectOverview(project).repositoryUrl) return null;
+  const local = project.local;
+  const identity = local?.repositoryIdentity;
+  if (!local?.workspaceRoot || !identity || identity.locator.remoteName !== "origin") return null;
+  return repositoryWebUrlFromGitRemote(identity.locator.remoteUrl);
+}
+/** The project whose name matches `title` (trimmed, case-insensitive), if any. */
+export function findProjectWithSameName<Project extends { readonly title: string }>(
+  projects: readonly Project[],
+  title: string,
+): Project | null {
+  const name = title.trim().toLocaleLowerCase();
+  if (name.length === 0) return null;
+  return projects.find((project) => project.title.trim().toLocaleLowerCase() === name) ?? null;
 }
 /** Archiving keeps identity joins and histories intact; only the chosen gallery view changes. */
 export function visibleGalleryProjects<Project extends GalleryProject>(

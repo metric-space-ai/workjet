@@ -373,15 +373,10 @@ export function NativeProviderRowsView({
   readonly state: ReturnType<typeof useInstanceProviders>;
   readonly label: string;
 }) {
-  if (state.connectionFailure) return null;
+  // A failed read is retried silently; the last known accounts stay (no status line).
   const providers = [...new Set(state.registry?.accounts.map((account) => account.provider) ?? [])];
   return (
     <div role="rowgroup" aria-label={`Konten auf ${label}`}>
-      {state.error && !state.errorAccountId && (
-        <p role="alert" className="py-1 text-xs text-destructive">
-          {state.error}
-        </p>
-      )}
       {(providers.length > 0 ? providers : [""]).map((provider) => (
         <NativeProviderGroup key={provider} provider={provider} state={state} label={label} />
       ))}
@@ -433,7 +428,7 @@ function NativeProviderGroup({
         });
     }
   };
-  if (state.connectionFailure) return null;
+  if (state.connectionFailure && !state.registry) return null;
   return (
     <div
       role="rowgroup"
@@ -452,7 +447,7 @@ function NativeProviderGroup({
           role="cell"
           className="order-last col-span-full flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground sm:order-none sm:col-span-1"
         >
-          <span>{registry ? `${accounts.length} Konten` : "Konten nicht geladen"}</span>
+          <span />
           <Button
             size="xs"
             variant="outline"
@@ -472,7 +467,7 @@ function NativeProviderGroup({
               void checkAll();
             }}
           >
-            {checkingAll ? "Prüft …" : "Alle prüfen"}
+            Alle prüfen
           </Button>
         </div>
         <div role="cell" className="hidden sm:block" />

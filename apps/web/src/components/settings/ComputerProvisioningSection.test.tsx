@@ -1,11 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  ComputerProvisioningSection,
-  preflightOutcome,
-  provisioningMessageDe,
-} from "./ComputerProvisioningSection";
+import { provisioningMessageDe } from "../../workjetProvisioningMessages";
+import { ComputerProvisioningSection, preflightOutcome } from "./ComputerProvisioningSection";
 
 afterEach(() => vi.unstubAllGlobals());
 

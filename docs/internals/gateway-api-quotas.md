@@ -22,6 +22,27 @@ nextResetTime epoch-millisecond reset are retained. The renderer owns window
 qualification; unknown unit encodings stay unknown. CREDIT_LIMIT scope remains
 unestablished, so unrecognized scopes do not block inference.
 
+Kimi Code (coding plan) keys on `https://api.kimi.com/coding/v1` or
+`https://api.kimi.ai/coding/v1` are read at `{base}/usages` with the bearer key
+(MoonshotAI/kimi-code `packages/oauth/src/managed-usage.ts`). `usages.limit_5h`,
+`limit_7d` and `limit_month_total` each become one window; `used_ratio` (0..1)
+is the used share, `reset_time` the RFC 3339 reset. `limit_month_code` is a
+sub-budget of the monthly total and not its own window. The older
+`usage`/`limits[]` count shape (MoonshotAI/kimi-cli `ui/shell/usage.py`) is read
+only when `usages` is absent. Moonshot platform keys keep their monetary
+balance read and never yield a percentage. The balance/usage split follows the
+probed URL, not the provider name.
+
+SuperGrok subscription accounts on the default upstream are read at
+`https://cli-chat-proxy.grok.com/v1/billing?format=credits` with the OAuth
+access token, `X-XAI-Token-Auth` and `x-grok-client-version`, the same headers
+the subscription chat proxy already receives (xai-org/grok-build
+`xai-grok-shell/src/extensions/billing.rs` @2bdd1d6a). `config.creditUsagePercent`
+is the used share of the one weekly or monthly pool, `config.currentPeriod.end`
+(else `billingPeriodEnd`) the reset. A missing percentage stays unknown;
+on-demand spend and prepaid balance never become a window. xAI API keys have no
+quota read.
+
 Probe and parse failures report quota errors without rejecting inference
 authentication. Positive readings expire for display; known exhausted windows
 remain exhausted until their actual reset. Unlimited windows never exhaust.

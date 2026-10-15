@@ -198,8 +198,21 @@ pub fn api_quota_endpoint(provider: &str, base: &str) -> Option<&'static str> {
         ("kimi", "https://api.moonshot.cn/v1") => {
             Some("https://api.moonshot.cn/v1/users/me/balance")
         }
+        // Kimi Code (coding plan) keys; ref: MoonshotAI/kimi-code
+        // packages/oauth/src/managed-usage.ts `kimiCodeUsageUrl`.
+        ("kimi", "https://api.kimi.com/coding/v1") => Some("https://api.kimi.com/coding/v1/usages"),
+        ("kimi", "https://api.kimi.ai/coding/v1") => Some("https://api.kimi.ai/coding/v1/usages"),
         _ => None,
     }
+}
+/// SuperGrok subscription credits, read with the OAuth token the subscription
+/// chat proxy already receives; ref: xai-org/grok-build
+/// crates/codegen/xai-grok-shell/src/extensions/billing.rs @2bdd1d6a.
+pub const GROK_CREDITS_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+/// Only the Moonshot platform balance endpoint returns money; every other
+/// quota endpoint returns usage windows.
+pub fn reads_balance(url: &str) -> bool {
+    url.ends_with("/users/me/balance")
 }
 /// Currency comes from the exact regional destination, never from exchange-rate inference.
 pub fn parse_balance(url: &str, body: &[u8], observed: i64) -> Option<AccountBalance> {
@@ -458,7 +471,11 @@ use std::{
 use workjet_provider_gateway::{
     internal::{
         config::{RuntimeSecretRef, ValidatedRuntimeConfig},
-        runtime::executor::ApiKeyHttpClient,
+        runtime::executor::{
+            ApiKeyHttpClient, DEFAULT_XAI_API_BASE_URL, DEFAULT_XAI_CHAT_BASE_URL,
+            XAI_CLIENT_VERSION_HEADER, XAI_CLIENT_VERSION_VALUE, XAI_TOKEN_AUTH_HEADER,
+            XAI_TOKEN_AUTH_VALUE,
+        },
     },
     sdk::{
         cliproxy::auth::{
@@ -700,6 +717,22 @@ impl AccountHealthSource {
                 }
             }
         }
+        // The OAuth token reaches the subscription chat proxy only for the
+        // default upstream; a custom upstream never receives a credits read.
+        for account in config.xai_accounts().iter().filter(|a| !a.disabled) {
+            if account.base_url().is_ok_and(|base| {
+                base == DEFAULT_XAI_API_BASE_URL || base == DEFAULT_XAI_CHAT_BASE_URL
+            }) {
+                probes.push(Probe {
+                    provider: "xai".into(),
+                    id: account.id.clone(),
+                    access: account.access_token_secret.clone(),
+                    proxy: account.proxy_url_secret.clone(),
+                    url: GROK_CREDITS_URL,
+                    id_token: None,
+                });
+            }
+        }
         Arc::new(Self {
             state,
             store,
@@ -835,7 +868,7 @@ impl AccountHealthSource {
                     tokio::time::timeout(Duration::from_secs(3), probe_read(&probe, &store)).await;
                 let status = match response {
                     Ok(Some(response)) => {
-                        if response.status_code == 200 && probe.provider == "kimi" {
+                        if response.status_code == 200 && reads_balance(probe.url) {
                             observe_balance(&state, &probe.id, probe.url, &response.body, observed)
                         } else if response.status_code == 200 {
                             observe_usage(
@@ -895,6 +928,16 @@ async fn probe_read(
     if probe.provider == "claude" {
         headers.insert("anthropic-beta".into(), vec!["oauth-2025-04-20".into()]);
     }
+    if probe.url == GROK_CREDITS_URL {
+        headers.insert(
+            XAI_TOKEN_AUTH_HEADER.into(),
+            vec![XAI_TOKEN_AUTH_VALUE.into()],
+        );
+        headers.insert(
+            XAI_CLIENT_VERSION_HEADER.into(),
+            vec![XAI_CLIENT_VERSION_VALUE.into()],
+        );
+    }
     client
         .execute(HttpRequest {
             method: "GET".into(),
@@ -912,6 +955,12 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     if matches!(provider, "minimax" | "zai") {
         return parse_api_quota(provider, &value, observed);
+    }
+    if provider == "kimi" {
+        return parse_kimi_code_usage(&value, observed);
+    }
+    if provider == "xai" {
+        return parse_grok_credits(&value, observed);
     }
     let mut windows = Vec::new();
     if provider == "codex" {
@@ -985,4 +1034,267 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
         return None;
     }
     Some(windows)
+}
+fn rfc3339_ms(value: Option<&serde_json::Value>) -> Option<i64> {
+    value
+        .and_then(|v| v.as_str())
+        .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
+        .map(|v| v.timestamp_millis())
+        .filter(|v| *v > 0)
+}
+/// The vendor accepts numbers and numeric strings for ratios and counts.
+fn finite_number(value: Option<&serde_json::Value>) -> Option<f64> {
+    match value? {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    }
+    .filter(|v| v.is_finite())
+}
+/// Kimi Code `GET {base}/usages`. The current shape carries `usages.limit_5h`,
+/// `limit_7d` and `limit_month_total` as `{used_ratio, reset_time}`;
+/// `limit_month_code` is a sub-budget of the monthly total, not its own window.
+/// ref: MoonshotAI/kimi-code packages/oauth/src/managed-usage.ts.
+/// The older shape (`usage` plus `limits[]` with `detail{limit,used,remaining}`)
+/// is read only when `usages` is absent; ref: MoonshotAI/kimi-cli
+/// src/kimi_cli/ui/shell/usage.py.
+fn parse_kimi_code_usage(value: &serde_json::Value, observed: i64) -> Option<Vec<QuotaWindow>> {
+    let mut windows = Vec::new();
+    if let Some(usages) = value.get("usages") {
+        let usages = usages.as_object()?;
+        for (name, seconds) in [
+            ("limit_5h", Some(18_000)),
+            ("limit_7d", Some(604_800)),
+            ("limit_month_total", None),
+        ] {
+            let Some(entry) = usages.get(name).filter(|v| v.is_object()) else {
+                continue;
+            };
+            let used = finite_number(entry.get("used_ratio")).filter(|v| (0.0..=1.0).contains(v));
+            windows.push(QuotaWindow {
+                name: name.into(),
+                source: Some(QuotaSource {
+                    field: "used_ratio".into(),
+                    value: used,
+                    window_seconds: seconds,
+                    ..Default::default()
+                }),
+                remaining_percent: used.map(|v| 100.0 - v * 100.0),
+                resets_at_ms: rfc3339_ms(entry.get("reset_time")),
+                observed_at_ms: observed,
+                ..Default::default()
+            });
+        }
+        return Some(windows);
+    }
+    let legacy = |name: String, detail: &serde_json::Value, seconds: Option<u64>| {
+        let limit = finite_number(detail.get("limit")).filter(|v| *v > 0.0);
+        let used = finite_number(detail.get("used")).or_else(|| {
+            finite_number(detail.get("remaining"))
+                .zip(limit)
+                .map(|(remaining, limit)| limit - remaining)
+        });
+        // Same clamp as the vendor CLI: remaining = min(max(limit - used, 0), limit).
+        let ratio = limit
+            .zip(used)
+            .map(|(limit, used)| (used / limit).clamp(0.0, 1.0));
+        let reset = ["resetTime", "reset_time", "resetAt", "reset_at"]
+            .into_iter()
+            .find_map(|key| rfc3339_ms(detail.get(key)));
+        QuotaWindow {
+            name,
+            source: Some(QuotaSource {
+                field: "limit_used_ratio".into(),
+                value: ratio,
+                window_seconds: seconds,
+                ..Default::default()
+            }),
+            remaining_percent: ratio.map(|v| 100.0 - v * 100.0),
+            resets_at_ms: reset,
+            observed_at_ms: observed,
+            ..Default::default()
+        }
+    };
+    let usage = value.get("usage").filter(|v| v.is_object());
+    let limits = value.get("limits").and_then(|v| v.as_array());
+    if usage.is_none() && limits.is_none() {
+        return None;
+    }
+    if let Some(usage) = usage {
+        windows.push(legacy("usage".into(), usage, None));
+    }
+    for (index, item) in limits.into_iter().flatten().enumerate() {
+        let Some(detail) = item.get("detail").filter(|v| v.is_object()) else {
+            continue;
+        };
+        let window = item.get("window").filter(|v| v.is_object());
+        let duration = window
+            .and_then(|w| w.get("duration"))
+            .and_then(|v| v.as_u64())
+            .filter(|v| *v > 0);
+        let unit = window
+            .and_then(|w| w.get("timeUnit"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let seconds = duration.and_then(|d| {
+            if unit.contains("MINUTE") {
+                d.checked_mul(60)
+            } else if unit.contains("HOUR") {
+                d.checked_mul(3_600)
+            } else if unit.contains("DAY") {
+                d.checked_mul(86_400)
+            } else {
+                None
+            }
+        });
+        windows.push(legacy(format!("limit_{index}"), detail, seconds));
+    }
+    Some(windows)
+}
+/// SuperGrok credits (`GetGrokCreditsConfig`): one shared weekly or monthly
+/// pool. `creditUsagePercent` is the used share; on-demand spend is a separate
+/// money cap and never becomes a window.
+fn parse_grok_credits(value: &serde_json::Value, observed: i64) -> Option<Vec<QuotaWindow>> {
+    let config = value.get("config").filter(|v| v.is_object())?;
+    let used = config
+        .get("creditUsagePercent")
+        .and_then(|v| v.as_f64())
+        .filter(|v| v.is_finite() && (0.0..=100.0).contains(v));
+    let period = config.get("currentPeriod").filter(|v| v.is_object());
+    let start = rfc3339_ms(period.and_then(|p| p.get("start")))
+        .or_else(|| rfc3339_ms(config.get("billingPeriodStart")));
+    let end = rfc3339_ms(period.and_then(|p| p.get("end")))
+        .or_else(|| rfc3339_ms(config.get("billingPeriodEnd")));
+    let (name, seconds) = match period.and_then(|p| p.get("type")).and_then(|v| v.as_str()) {
+        Some("USAGE_PERIOD_TYPE_WEEKLY") => ("weekly", Some(604_800)),
+        Some("USAGE_PERIOD_TYPE_MONTHLY") => (
+            "monthly",
+            // Calendar months differ in length; only the reported bounds qualify one.
+            start
+                .zip(end)
+                .and_then(|(start, end)| end.checked_sub(start))
+                .filter(|ms| *ms > 0 && ms % 1000 == 0)
+                .and_then(|ms| u64::try_from(ms / 1000).ok()),
+        ),
+        _ => ("credits", None),
+    };
+    Some(vec![QuotaWindow {
+        name: name.into(),
+        source: Some(QuotaSource {
+            field: "creditUsagePercent".into(),
+            value: used,
+            window_seconds: seconds,
+            ..Default::default()
+        }),
+        remaining_percent: used.map(|v| 100.0 - v),
+        resets_at_ms: end,
+        observed_at_ms: observed,
+        ..Default::default()
+    }])
+}
+#[cfg(test)]
+mod quota_probe_tests {
+    use super::*;
+    use workjet_provider_gateway::internal::config::{
+        ApiKeyAccountConfig, CliproxyRuntimeConfig, XaiSubscriptionAccountConfig,
+    };
+    use workjet_provider_gateway::sdk::cliproxy::auth::SchedulerStrategy;
+
+    fn secret(name: &str) -> RuntimeSecretRef {
+        RuntimeSecretRef {
+            scope: crate::config::ALLOWED_SECRET_SCOPE.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+
+    fn xai(id: &str, base: &str, disabled: bool) -> XaiSubscriptionAccountConfig {
+        XaiSubscriptionAccountConfig {
+            id: id.into(),
+            disabled,
+            priority: 0,
+            models: vec!["grok-4.7".into()],
+            access_token_secret: secret(&format!("{id}.access")),
+            refresh_token_secret: secret(&format!("{id}.refresh")),
+            upstream_base_url: base.into(),
+            token_endpoint: String::new(),
+            proxy_url_secret: None,
+        }
+    }
+
+    fn kimi(id: &str, base: &str) -> ApiKeyAccountConfig {
+        ApiKeyAccountConfig {
+            id: id.into(),
+            provider: "kimi".into(),
+            disabled: false,
+            priority: 0,
+            weight: 1,
+            models: vec![],
+            api_key_secret: secret(&format!("{id}.key")),
+            upstream_base_url: base.into(),
+            proxy_url_secret: None,
+        }
+    }
+
+    #[test]
+    fn subscription_and_coding_plan_accounts_get_exactly_one_vendor_quota_read() {
+        let root = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let store = Arc::new(WorkjetSecretStore::new(root.path().to_owned()).unwrap());
+        let state = AccountState::open(store.clone()).unwrap();
+        let config = CliproxyRuntimeConfig {
+            request_timeout_ms: 1_000,
+            routing_strategy: SchedulerStrategy::RoundRobin,
+            claude_accounts: Vec::new(),
+            codex_accounts: Vec::new(),
+            antigravity_accounts: Vec::new(),
+            api_key_accounts: vec![
+                kimi("kimi-code", "https://api.kimi.com/coding/v1"),
+                kimi("kimi-platform", ""),
+            ],
+            xai_accounts: vec![
+                xai("grok-default", "", false),
+                xai("grok-proxy", "https://cli-chat-proxy.grok.com/v1", false),
+                xai("grok-custom", "https://grok.example/v1", false),
+                xai("grok-off", "", true),
+            ],
+        }
+        .validate_for_extension_host()
+        .unwrap();
+        let source = AccountHealthSource::new(state, store, &config);
+        let probes: Vec<_> = source
+            .probes
+            .iter()
+            .map(|p| (p.provider.as_str(), p.id.as_str(), p.url))
+            .collect();
+        assert_eq!(
+            probes,
+            [
+                ("kimi", "kimi-code", "https://api.kimi.com/coding/v1/usages"),
+                (
+                    "kimi",
+                    "kimi-platform",
+                    "https://api.moonshot.ai/v1/users/me/balance"
+                ),
+                ("xai", "grok-default", GROK_CREDITS_URL),
+                ("xai", "grok-proxy", GROK_CREDITS_URL),
+            ]
+        );
+        let health = source.snapshot();
+        let supported = |id: &str| {
+            health["accounts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["accountId"] == id)
+                .unwrap()["quotaSupported"]
+                .clone()
+        };
+        assert_eq!(supported("grok-default"), true);
+        assert_eq!(supported("grok-custom"), false);
+        assert_eq!(supported("kimi-code"), true);
+    }
 }

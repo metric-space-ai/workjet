@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use workjet_provider_gateway::sdk::cliproxy::auth::conductor_execution::AccountPolicy;
 use workjet_provider_gateway_host::{
-    account_health::{api_quota_endpoint, observe_balance, parse_balance},
+    account_health::{api_quota_endpoint, observe_balance, parse_balance, reads_balance},
     account_policy::{balance_is_exhausted, AccountState},
     secret_store::WorkjetSecretStore,
 };
@@ -38,9 +38,25 @@ fn balance_destinations_are_regional_and_never_kimi_code_or_custom_upstreams() {
         api_quota_endpoint("kimi", "https://api.moonshot.cn/v1"),
         Some(CHINA)
     );
+    // Kimi Code bases read usage windows, never a monetary balance.
+    for (base, usages) in [
+        (
+            "https://api.kimi.com/coding/v1",
+            "https://api.kimi.com/coding/v1/usages",
+        ),
+        (
+            "https://api.kimi.ai/coding/v1/",
+            "https://api.kimi.ai/coding/v1/usages",
+        ),
+    ] {
+        assert_eq!(api_quota_endpoint("kimi", base), Some(usages));
+        assert!(!reads_balance(usages));
+        assert!(parse_balance(usages, POSITIVE, 1000).is_none());
+    }
+    assert!(reads_balance(GLOBAL) && reads_balance(CHINA));
     for base in [
         "https://api.kimi.com/coding",
-        "https://api.kimi.ai/coding/v1",
+        "https://api.kimi.ai/coding",
         "https://custom.example/v1",
         "https://api.moonshot.ai.attacker.test/v1",
         "https://api.moonshot.ai:444/v1",

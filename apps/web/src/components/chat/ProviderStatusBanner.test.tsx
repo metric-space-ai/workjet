@@ -80,4 +80,22 @@ describe("ProviderStatusBanner", () => {
     expect(markup).toContain("Harness fehlt: Codex");
     expect(markup).not.toContain("not on PATH");
   });
+
+  it("keeps raw English provider text and HTTP status behind Details", () => {
+    const markup = renderToStaticMarkup(
+      <ProviderStatusBanner
+        status={{
+          ...warningProvider(),
+          status: "error",
+          message: "Failed to connect to the configured OpenCode server (HTTP 503).",
+        }}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(markup).toContain("Codex nicht verfügbar</div>");
+    expect(markup).toContain("<summary");
+    expect(markup).toMatch(
+      /<pre[^>]*>Failed to connect to the configured OpenCode server \(HTTP 503\)\.<\/pre>/,
+    );
+  });
 });

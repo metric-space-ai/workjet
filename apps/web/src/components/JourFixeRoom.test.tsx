@@ -137,7 +137,13 @@ describe("Jour fixe room states", () => {
     expect(html).toContain("Folie wird geladen …");
     expect(html).toContain("Folie kommentieren");
     expect(html).not.toContain("Kommentar auf Folie setzen");
-    expect(html).not.toContain(first.markdown.split("\n")[0]!.slice(0, 24));
+    // Die Bühne zeigt die Leinwand; der Folientext steht nur im schmalen Lesefeld (Audit B #47).
+    const stageOnly = html.replace(
+      /<article[^>]*data-workjet-slide-text=""[\s\S]*?<\/article>/,
+      "",
+    );
+    expect(stageOnly).not.toContain(first.markdown.split("\n")[0]!.slice(0, 24));
+    expect(html).toMatch(/<article class="@\[36rem\]:hidden[^"]*" data-workjet-slide-text=""/);
   });
   it("keeps the markdown stage for slides that are not in the presentation", () => {
     const html = renderToStaticMarkup(

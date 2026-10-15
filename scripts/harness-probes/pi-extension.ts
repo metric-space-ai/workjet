@@ -1,4 +1,4 @@
-import { appendFileSync } from "node:fs";
+import * as NodeFS from "node:fs";
 
 // Deliberately contains no model IDs and no project or production permissions.
 export default function (pi) {
@@ -15,7 +15,7 @@ export default function (pi) {
     const systemPrompt =
       event.systemPrompt + "\nFor this probe call probe_echo once, then answer ROLE_PROBE_OK.";
     if (process.env.HARNESS_PROBE_HOOK_LOG) {
-      appendFileSync(
+      NodeFS.appendFileSync(
         process.env.HARNESS_PROBE_HOOK_LOG,
         JSON.stringify({
           hook: "before_agent_start",

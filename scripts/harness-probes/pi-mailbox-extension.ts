@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeURL from "node:url";
 
 // Probe-only facade. The parent binds identity privately; the model cannot set it.
 export default function (pi) {
-  const bridge = fileURLToPath(new URL("./mailbox_tools_cli.py", import.meta.url));
+  const bridge = NodeURL.fileURLToPath(new URL("./mailbox_tools_cli.py", import.meta.url));
   for (const tool of [
     {
       name: "thread_send",
@@ -28,10 +28,14 @@ export default function (pi) {
       ...tool,
       label: tool.name,
       async execute(_id, args) {
-        const text = execFileSync("python3", [bridge, tool.name, JSON.stringify(args)], {
-          encoding: "utf8",
-          timeout: 25000,
-        });
+        const text = NodeChildProcess.execFileSync(
+          "python3",
+          [bridge, tool.name, JSON.stringify(args)],
+          {
+            encoding: "utf8",
+            timeout: 25000,
+          },
+        );
         return { content: [{ type: "text", text }], details: {} };
       },
     });

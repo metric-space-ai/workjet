@@ -1,7 +1,7 @@
 // Probe facade over the real Workjet mailbox RPC and transcript read API.
 // Credentials are read from an owned mode-0600 scratch file, never argv/output.
-import { readFileSync } from "node:fs";
-const config = JSON.parse(readFileSync(process.env.HARNESS_PROBE_BRIDGE_CONFIG, "utf8"));
+import * as NodeFS from "node:fs";
+const config = JSON.parse(NodeFS.readFileSync(process.env.HARNESS_PROBE_BRIDGE_CONFIG, "utf8"));
 const source = process.env.HARNESS_PROBE_SOURCE_THREAD;
 const [operation, target, text] = process.argv.slice(2);
 if (![config.threadA, config.threadB].includes(source)) throw new Error("Unbound source");

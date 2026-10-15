@@ -12,9 +12,11 @@ import { newCommandId } from "../lib/utils";
 type State = {
   key: string;
   assessment: WorkjetExitModelAssessment | null;
-  pending: "read" | "refresh" | null;
+  pending: "read" | "refresh" | "submit" | null;
   error: string | null;
 };
+
+type Retry = { key: string; commandId: ReturnType<typeof newCommandId> };
 
 export function useProjectExitModel(
   instanceId: string | null,
@@ -25,7 +27,9 @@ export function useProjectExitModel(
   const key = JSON.stringify([instanceId, projectId, scope.selectionRevision]);
   const generation = useRef(0);
   const inFlight = useRef(false);
-  const retry = useRef<{ key: string; commandId: ReturnType<typeof newCommandId> } | null>(null);
+  const refreshRetry = useRef<Retry | null>(null);
+  const submitRetry = useRef<Retry | null>(null);
+  const assessmentRef = useRef<WorkjetExitModelAssessment | null>(seed ?? null);
   const initialAssessment = useRef(seed);
   initialAssessment.current = seed;
   const [state, setState] = useState<State>({
@@ -37,8 +41,12 @@ export function useProjectExitModel(
 
   const request = useCallback(
     async (
-      action: "project.exit_model.read" | "project.exit_model.refresh",
+      action:
+        | "project.exit_model.read"
+        | "project.exit_model.refresh"
+        | "project.exit_model.submit",
       resources?: WorkjetExitModelResources,
+      confirmRunId?: string,
     ): Promise<boolean> => {
       if (
         instanceId === null ||
@@ -49,24 +57,38 @@ export function useProjectExitModel(
         return false;
       const token = ++generation.current;
       inFlight.current = true;
-      const retryKey = JSON.stringify([key, resources ?? null]);
-      if (action === "project.exit_model.refresh" && retry.current?.key !== retryKey)
-        retry.current = { key: retryKey, commandId: newCommandId() };
-      const commandId =
-        action === "project.exit_model.refresh" ? retry.current!.commandId : newCommandId();
+      const retryKey = JSON.stringify([key, action, resources ?? null, confirmRunId ?? null]);
+      let commandId: ReturnType<typeof newCommandId>;
+      if (action === "project.exit_model.refresh") {
+        if (refreshRetry.current?.key !== retryKey)
+          refreshRetry.current = { key: retryKey, commandId: newCommandId() };
+        commandId = refreshRetry.current.commandId;
+      } else if (action === "project.exit_model.submit") {
+        if (submitRetry.current?.key !== retryKey)
+          submitRetry.current = { key: retryKey, commandId: newCommandId() };
+        commandId = submitRetry.current.commandId;
+      } else commandId = newCommandId();
       setState((previous) => ({
         key,
         assessment:
           previous.key === key ? previous.assessment : (initialAssessment.current ?? null),
-        pending: action === "project.exit_model.read" ? "read" : "refresh",
+        pending:
+          action === "project.exit_model.read"
+            ? "read"
+            : action === "project.exit_model.refresh"
+              ? "refresh"
+              : "submit",
         error: null,
       }));
-      const result = await requestProjectExitModel(instanceId, {
-        action,
-        commandId,
-        projectId: ProjectId.make(projectId),
-        ...(action === "project.exit_model.refresh" && resources ? { resources } : {}),
-      });
+      const project = ProjectId.make(projectId);
+      const result = await requestProjectExitModel(
+        instanceId,
+        action === "project.exit_model.submit"
+          ? { action, commandId, projectId: project, confirmRunId: confirmRunId ?? "" }
+          : action === "project.exit_model.refresh"
+            ? { action, commandId, projectId: project, ...(resources ? { resources } : {}) }
+            : { action, commandId, projectId: project },
+      );
       if (token !== generation.current) return false;
       inFlight.current = false;
       if (
@@ -77,12 +99,23 @@ export function useProjectExitModel(
         return false;
       }
       if (result._tag === "failed") {
+        // Adoption keeps its command id until a correlated success. A definite
+        // rejection (stale proposal, expired sources) reads the card again.
+        // Timeouts and uncorrelated receipts do not paint a value or an error.
+        if (action === "project.exit_model.submit") {
+          setState((previous) => ({ ...previous, pending: null, error: null }));
+          if (result.reason !== "timeout" && result.reason !== "uncorrelated")
+            await request("project.exit_model.read");
+          return false;
+        }
         setState((previous) => ({ ...previous, pending: null, error: result.message }));
         return false;
       }
-      if (action === "project.exit_model.refresh") retry.current = null;
+      if (action === "project.exit_model.refresh") refreshRetry.current = null;
+      if (action === "project.exit_model.submit") submitRetry.current = null;
       setState({ key, assessment: result.assessment, pending: null, error: null });
-      if (action === "project.exit_model.refresh") refreshWorkjetProjectRegistry(instanceId);
+      if (action === "project.exit_model.refresh" || action === "project.exit_model.submit")
+        refreshWorkjetProjectRegistry(instanceId);
       return true;
     },
     [instanceId, key, projectId, scope.selectionRevision],
@@ -91,7 +124,8 @@ export function useProjectExitModel(
   useEffect(() => {
     generation.current++;
     inFlight.current = false;
-    retry.current = null;
+    refreshRetry.current = null;
+    submitRetry.current = null;
     setState({ key, assessment: initialAssessment.current ?? null, pending: null, error: null });
     if (instanceId !== null) void request("project.exit_model.read");
     return () => {
@@ -121,11 +155,17 @@ export function useProjectExitModel(
     };
   }, [instanceId, key, request, visible.assessment?.status]);
 
+  assessmentRef.current = visible.assessment;
   return {
     ...visible,
     connected: instanceId !== null && scope.selectedInstanceId === instanceId,
     refresh: (resources?: WorkjetExitModelResources) =>
       request("project.exit_model.refresh", resources),
+    confirm: () => {
+      const runId = assessmentRef.current?.run_id;
+      if (runId == null) return Promise.resolve(false);
+      return request("project.exit_model.submit", undefined, runId);
+    },
     check: () => request("project.exit_model.read"),
   };
 }

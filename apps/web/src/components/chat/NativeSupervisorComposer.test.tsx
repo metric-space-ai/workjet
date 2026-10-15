@@ -87,7 +87,7 @@ describe("native supervisor receipt display", () => {
     expect(html.indexOf("Letzte Ausführung")).toBeGreaterThan(
       html.indexOf('data-composer-bar="true"'),
     );
-    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Worker-Preset"');
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Modell"');
     expect(html.match(/<textarea/g)).toHaveLength(1);
@@ -111,10 +111,11 @@ describe("native supervisor receipt display", () => {
     );
     expect(html.indexOf("<textarea")).toBeLessThan(html.indexOf("data-composer-bar="));
     expect(html).toContain('data-composer-bar="true"');
-    expect(html).toContain('aria-label="Optionen"');
+    // No gear with a single hidden choice: the mode sits inline once Chat is supported.
+    expect(html).not.toContain('aria-label="Optionen"');
     expect(html).toContain('aria-label="Diktieren"');
     expect(html).not.toContain('aria-label="Nachrichtenart"');
-    expect(html).toContain('aria-label="Luma"');
+    expect(html).toContain('aria-label="Worker-Preset"');
     expect(html).toContain('aria-label="Harness"');
     expect(html).toContain('aria-label="Modell"');
     expect(html).not.toContain("Project instance");
@@ -162,7 +163,8 @@ describe("native supervisor receipt display", () => {
         />,
       );
       expect(html).toContain("Real requested change");
-      expect(html).toContain("Warte auf CTOX-Bestätigung");
+      // Still erneut versucht: keine Zustandszeile, kein Fehlertext.
+      expect(html).not.toContain("Warte auf");
       expect(html).not.toContain("Nicht gesendet");
       expect(html).not.toContain("You can send a new request");
       expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
@@ -189,7 +191,8 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Warte auf CTOX-Bestätigung");
+    expect(html).toContain("Real requested change");
+    expect(html).not.toContain("Warte auf");
     expect(html).not.toContain("Awaiting confirmation");
     expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
     expect(html).not.toContain("Refresh task");
@@ -237,8 +240,9 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Actual native result");
-    expect(html).toContain("Versuch 2");
-    expect(html).toContain("native-task");
+    // Kein interner Zustand (Versuchszähler, Aufgaben-IDs) in der Fläche.
+    expect(html).not.toContain("Versuch");
+    expect(html).not.toContain("native-task");
     expect(html).not.toContain("Codex CLI");
     expect(html).not.toContain("gpt-6");
   });

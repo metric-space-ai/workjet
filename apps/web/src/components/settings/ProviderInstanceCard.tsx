@@ -1,4 +1,5 @@
-"use client";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+("use client");
 
 import {
   ArrowUpCircleIcon,
@@ -47,7 +48,6 @@ import {
   getProviderRuntimeSummary,
   getProviderSummary,
   getProviderVersionLabel,
-  providerCheckedAgeLabel,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -394,13 +394,21 @@ export function ProviderInstanceCard({
   onInstallPinnedRuntime,
   isUpdating = false,
 }: ProviderInstanceCardProps) {
-  const enabled = instance.enabled ?? true;
+  // A harness the probe could not find can't run, so it never reads as on (#475).
+  // The stored intent is kept untouched; it applies again once the CLI is installed.
+  const notInstalled = liveProvider?.installed === false;
+  const enabled = notInstalled ? false : (instance.enabled ?? true);
   // The server-reported status wins when present; otherwise fall back to
   // "disabled"/"warning" based on the local `enabled` flag so the dot
   // reflects the persisted intent even before the first probe completes.
   const statusKey: ProviderStatusKey =
     (liveProvider?.status as ProviderStatusKey | undefined) ?? (enabled ? "warning" : "disabled");
-  const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
+  // One meaning per dot (#617): only problems get one. Ready is the normal state and
+  // disabled is already shown by the switch.
+  const statusStyle =
+    !notInstalled && (statusKey === "error" || statusKey === "warning")
+      ? PROVIDER_STATUS_STYLES[statusKey]
+      : { dot: "hidden" };
   const rawSummary = runtimeOnly
     ? getProviderRuntimeSummary(liveProvider)
     : getProviderSummary(liveProvider);
@@ -411,7 +419,6 @@ export function ProviderInstanceCard({
     ? (liveProvider?.auth.label ?? liveProvider?.auth.type ?? null)
     : null;
   const summary = rawSummary;
-  const checkedAgeLabel = providerCheckedAgeLabel(liveProvider?.checkedAt);
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory);
   const updateCommand = versionAdvisory?.updateCommand ?? null;
@@ -561,11 +568,7 @@ export function ProviderInstanceCard({
         the probe that produced it: a stale "Angemeldet" must never read as
         a live one.
       */}
-      {liveProvider ? (
-        <span className="text-muted-foreground/60">{`· ${checkedAgeLabel}`}</span>
-      ) : null}
       {summary.detail ? <span>· {summary.detail}</span> : null}
-      {runtimeOnly ? <span>· Standard: Berechtigung umgehen</span> : null}
     </span>
   );
 
@@ -591,11 +594,6 @@ export function ProviderInstanceCard({
                 {driverOption.badgeLabel}
               </Badge>
             ) : null}
-            {headerAction ? (
-              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-                {headerAction}
-              </span>
-            ) : null}
           </div>
           {authRowNode}
         </div>
@@ -617,6 +615,7 @@ export function ProviderInstanceCard({
           ) : null}
           <Switch
             checked={enabled}
+            disabled={notInstalled}
             onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
             aria-label={`${displayName} aktiv`}
           />
@@ -675,7 +674,7 @@ export function ProviderInstanceCard({
                 render={
                   <Button
                     type="button"
-                    size="icon-xs"
+                    size="xs"
                     variant="ghost"
                     className="text-muted-foreground hover:text-foreground"
                     onClick={() =>
@@ -683,9 +682,9 @@ export function ProviderInstanceCard({
                         providerName: displayName,
                       })
                     }
-                    aria-label="Befehl kopieren"
                   >
-                    <CopyIcon className="size-3" />
+                    <CopyIcon aria-hidden className="size-3" />
+                    {workjetUiLanguage() === "en" ? "Copy command" : "Befehl kopieren"}
                   </Button>
                 }
               />
@@ -698,6 +697,8 @@ export function ProviderInstanceCard({
       <Collapsible open={isExpanded} onOpenChange={onExpandedChange}>
         <CollapsibleContent>
           <div className="space-y-4 px-3 pb-4 pt-2 sm:px-4">
+            {/* Reset lives in the details, never on some rows only (#617). */}
+            {headerAction ? <div className="flex justify-end">{headerAction}</div> : null}
             <div>
               <label htmlFor={`provider-instance-${instanceId}-display-name`} className="block">
                 <span className="text-xs font-medium text-foreground">Anzeigename</span>

@@ -11,8 +11,6 @@ import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operation
 import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import { RegistryContext } from "@effect/atom-react";
 import {
-  DEFAULT_RUNTIME_MODE,
-  DEFAULT_WORKJET_THREAD_CONFIG,
   ProjectId,
   type CommandId,
   type CtoxDiscoveryResult,
@@ -65,10 +63,18 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { buildThreadRouteParams } from "../threadRoutes";
-import { findProjectSupervisor } from "../lib/projectSupervisor";
+import { findProjectSupervisor, projectSupervisorThreadInput } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, ServerIcon } from "lucide-react";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { consumeProjectCreateRequest, onProjectCreateRequest } from "../commandPaletteBus";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
@@ -137,6 +143,7 @@ import {
   selectWorkjetProject,
   useWorkjetProjectRegistry,
 } from "../workjetProjectRegistry";
+import { useUiText } from "../hooks/useUiText";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../activeWorkjetScope";
 
 function ChatIndexRouteView() {
@@ -320,29 +327,13 @@ function IndexDraftLanding() {
           const createdAt = new Date().toISOString();
           const result = await createThread({
             environmentId: target.environmentId,
-            input: {
+            input: projectSupervisorThreadInput({
               threadId,
               projectId: target.projectId,
-              title: "Projekt-Supervisor",
+              title: target.title,
               modelSelection,
-              runtimeMode: DEFAULT_RUNTIME_MODE,
-              interactionMode: "default",
-              workjetConfig: {
-                ...DEFAULT_WORKJET_THREAD_CONFIG,
-                role: "orchestrator",
-                team: {
-                  role: "supervisor",
-                  projectId: target.projectId,
-                  threadId,
-                  parentThreadId: null,
-                  goal: `Coordinate the goals of ${target.title}`,
-                  createdAt,
-                },
-              },
-              branch: null,
-              worktreePath: null,
               createdAt,
-            },
+            }),
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         }
@@ -521,7 +512,7 @@ function IndexDraftLanding() {
             : undefined
         }
         lastUpdatedAt={registry.lastUpdatedAt}
-        projectsUnavailable={registry.phase === "blocked" || registry.refreshFailed === true}
+        projectsUnavailable={showsCachedProjectRegistryNotice(registry)}
         projects={galleryProjects.map((project) => ({
           ...project,
           statistics: resolveGalleryProjectStatistics(project, threads, bootstrapped),
@@ -581,7 +572,7 @@ function IndexDraftLanding() {
               if (selectWorkjetProject(activeCtoxInstanceId, project.id))
                 selectProjectOverviewRef(activeCtoxInstanceId, null);
             } else if (project.local !== null)
-              selectProjectOverviewRef(
+              openCreatedProject(
                 activeCtoxInstanceId,
                 scopeProjectRef(project.local.environmentId, project.local.id),
               );
@@ -663,12 +654,49 @@ function IndexDraftLanding() {
   return <NoProjectsHero />;
 }
 
-function ProjectGallery({
+/** Stille Wiederholung fehlgeschlagener Kennzahlen: 15 s, dann 60 s, danach alle 5 min. */
+export function galleryKpiRetryDelayMs(completedFailureRounds: number): number {
+  if (completedFailureRounds <= 0) return 15_000;
+  if (completedFailureRounds === 1) return 60_000;
+  return 5 * 60_000;
+}
+
+/**
+ * Die ruhige Zeile nur, wenn die Karten wirklich der letzte gespeicherte Stand sind.
+ * Ein noch laufender Read und ein einzelner Zeitüberschreitungs-Read zeigen nichts:
+ * die Liste ist dann nicht als veralteter Cache bestätigt.
+ */
+export function showsCachedProjectRegistryNotice(registry: {
+  readonly refreshFailed?: boolean | undefined;
+  readonly lastUpdatedAt?: number | undefined;
+  readonly projects: readonly unknown[];
+  readonly refreshError?:
+    | {
+        readonly code?: string;
+        readonly diagnostic?: { readonly reason?: string } | undefined;
+        readonly preparation?: { readonly reason?: string } | undefined;
+      }
+    | undefined;
+}): boolean {
+  if (registry.refreshFailed !== true) return false;
+  if (registry.lastUpdatedAt === undefined || registry.projects.length === 0) return false;
+  const error = registry.refreshError;
+  if (
+    error?.code === "timeout" ||
+    error?.diagnostic?.reason === "request_timeout" ||
+    error?.preparation?.reason === "navigation_timeout"
+  )
+    return false;
+  return true;
+}
+
+export function ProjectGallery({
   projects,
   instanceId,
   registryStatus,
   lastUpdatedAt,
   projectsUnavailable,
+  createForm,
 }: {
   readonly instanceId: string | null;
   readonly registryStatus: string | undefined;
@@ -684,7 +712,10 @@ function ProjectGallery({
     readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
+  /** Ersetzt „Projekt anlegen“. `null` lässt die Zeile weg (Tests, Einbettung). */
+  readonly createForm?: ReactNode;
 }) {
+  const t = useUiText();
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"gallery" | "calendar">("gallery");
   const [galleryOrder, setGalleryOrder] = useState<{
@@ -696,8 +727,7 @@ function ProjectGallery({
   const [orderLoaded, setOrderLoaded] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [kpiFailures, setKpiFailures] = useState<ReadonlySet<string>>(() => new Set());
-  const [kpiReload, setKpiReload] = useState(0);
-  const [kpiReloading, setKpiReloading] = useState(false);
+  const kpiFailuresRef = useRef<ReadonlySet<string>>(kpiFailures);
   const [kpiProjection, setKpiProjection] = useState<{
     readonly instanceId: string | null;
     readonly records: Readonly<Record<string, PromptedProjectKpis>>;
@@ -706,6 +736,15 @@ function ProjectGallery({
     instanceId: null,
     active: false,
   });
+  const markKpiFailure = useCallback((projectId: string, failed: boolean) => {
+    const previous = kpiFailuresRef.current;
+    if (failed === previous.has(projectId)) return;
+    const next = new Set(previous);
+    if (failed) next.add(projectId);
+    else next.delete(projectId);
+    kpiFailuresRef.current = next;
+    setKpiFailures(next);
+  }, []);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -780,30 +819,28 @@ function ProjectGallery({
         !nativeProjectIds.split("\n").includes(projectId)
       )
         return null;
-      const result = await readWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
+      let result: Awaited<ReturnType<typeof readWorkjetProjectKpis>>;
+      try {
+        result = await readWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
+      } catch {
+        if (scope.active && kpiScope.current === scope) markKpiFailure(projectId, true);
+        return null;
+      }
       if (
         !scope.active ||
         kpiScope.current !== scope ||
         result._tag !== "completed" ||
         !("kpis" in result.response)
       ) {
-        if (scope.active && kpiScope.current === scope)
-          setKpiFailures((previous) =>
-            previous.has(projectId) ? previous : new Set(previous).add(projectId),
-          );
+        if (scope.active && kpiScope.current === scope) markKpiFailure(projectId, true);
         return null;
       }
       const kpis = result.response.kpis;
-      setKpiFailures((previous) => {
-        if (!previous.has(projectId)) return previous;
-        const next = new Set(previous);
-        next.delete(projectId);
-        return next;
-      });
+      markKpiFailure(projectId, false);
       setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
       return kpis;
     },
-    [instanceId, nativeProjectIds],
+    [instanceId, markKpiFailure, nativeProjectIds],
   );
 
   useEffect(() => {
@@ -811,14 +848,70 @@ function ProjectGallery({
     const scope = { instanceId, active: true };
     kpiScope.current = scope;
     const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
-    setKpiReloading(kpiReload > 0);
-    void readGalleryProjectKpis(projectIds, readKpis, () => scope.active).finally(() => {
-      if (scope.active) setKpiReloading(false);
-    });
-    return () => {
-      scope.active = false;
+    let stopped = false;
+    let running = false;
+    let failedRounds = 0;
+    let retryWhenVisible = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+    const clearTimer = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
     };
-  }, [instanceId, nativeProjectIds, readKpis, kpiReload]);
+    const failedIds = () => projectIds.filter((id) => kpiFailuresRef.current.has(id));
+    const schedule = () => {
+      clearTimer();
+      if (stopped || !scope.active) return;
+      const delay = galleryKpiRetryDelayMs(failedRounds);
+      failedRounds += 1;
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (stopped || !scope.active) return;
+        if (hidden()) {
+          retryWhenVisible = true;
+          return;
+        }
+        void run(true);
+      }, delay);
+    };
+    const run = async (isRetry: boolean) => {
+      if (stopped || !scope.active || running) return;
+      if (isRetry && hidden()) {
+        retryWhenVisible = true;
+        return;
+      }
+      const ids = isRetry ? failedIds() : projectIds;
+      if (ids.length === 0) return;
+      running = true;
+      retryWhenVisible = false;
+      try {
+        await readGalleryProjectKpis(ids, readKpis, () => scope.active && !stopped);
+      } finally {
+        running = false;
+      }
+      if (stopped || !scope.active) return;
+      if (failedIds().length === 0) {
+        failedRounds = 0;
+        return;
+      }
+      schedule();
+    };
+    const onVisibility = () => {
+      if (hidden() || stopped || !scope.active || !retryWhenVisible || running) return;
+      retryWhenVisible = false;
+      void run(true);
+    };
+    if (typeof document !== "undefined")
+      document.addEventListener("visibilitychange", onVisibility);
+    void run(false);
+    return () => {
+      stopped = true;
+      scope.active = false;
+      clearTimer();
+      if (typeof document !== "undefined")
+        document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [instanceId, nativeProjectIds, readKpis]);
 
   // Inline KPI edit and recalculation on the card write straight into the projection.
   const saveKpis = useCallback(
@@ -880,62 +973,90 @@ function ProjectGallery({
     <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
       <main className="flex-1 overflow-auto px-5 py-6 sm:px-6" data-workjet-project-gallery="">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-[22px] font-semibold">
-              {showArchived ? "Archivierte Projekte" : "Alle Projekte"}
+          <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+            {/* No visible page title: the pressed view switch already says where you are (#576). */}
+            <h1 className="sr-only">
+              {showArchived
+                ? t("Archivierte Projekte", "Archived projects")
+                : t("Alle Projekte", "All projects")}
             </h1>
             <div className="flex flex-wrap items-center gap-2">
               <div
                 className="inline-flex gap-1 rounded-md border border-border p-1"
                 role="group"
-                aria-label="Projektansicht"
+                aria-label={t("Projektansicht", "Project view")}
               >
                 <Button
                   size="sm"
-                  variant={view === "gallery" ? "secondary" : "ghost"}
-                  aria-pressed={view === "gallery"}
+                  variant={view === "gallery" && !showArchived ? "secondary" : "ghost"}
+                  aria-pressed={view === "gallery" && !showArchived}
                   data-workjet-action="project.view.gallery"
-                  onClick={() => setView("gallery")}
+                  onClick={() => {
+                    setShowArchived(false);
+                    setView("gallery");
+                  }}
                 >
-                  Projekte
+                  {t("Projekte", "Projects")}
                 </Button>
                 <Button
                   size="sm"
-                  variant={view === "calendar" ? "secondary" : "ghost"}
-                  aria-pressed={view === "calendar"}
+                  variant={view === "calendar" && !showArchived ? "secondary" : "ghost"}
+                  aria-pressed={view === "calendar" && !showArchived}
                   data-workjet-action="project.view.calendar"
                   onClick={() => {
                     setShowArchived(false);
                     setView("calendar");
                   }}
                 >
-                  Kalender
+                  {t("Kalender", "Calendar")}
+                </Button>
+                {/* Fixed place, fixed name: the archive is the third view, never a toggle that renames itself (#596). */}
+                <Button
+                  size="sm"
+                  variant={showArchived ? "secondary" : "ghost"}
+                  aria-pressed={showArchived}
+                  data-workjet-action="project.view.archive"
+                  onClick={() => {
+                    // The archive is a list of project cards; it never shows the calendar.
+                    setView("gallery");
+                    setShowArchived(true);
+                  }}
+                >
+                  {t("Archiv", "Archive")}
+                  {archivedCount > 0 ? (
+                    <span className="ms-1 tabular-nums text-muted-foreground">{archivedCount}</span>
+                  ) : null}
                 </Button>
               </div>
-              <Button
-                size="sm"
-                variant={showArchived ? "secondary" : "outline"}
-                aria-pressed={showArchived}
-                data-workjet-action="project.view.archive"
-                onClick={() => {
-                  // The archive is a list of project cards; it never shows the calendar.
-                  if (!showArchived) setView("gallery");
-                  setShowArchived((show) => !show);
-                }}
-              >
-                {`Archiv (${archivedCount})`}
-              </Button>
             </div>
           </div>
-          {showArchived ? null : <InlineProjectCreate className="mb-5" />}
+          {showArchived ? null : createForm !== undefined ? (
+            createForm
+          ) : (
+            <InlineProjectCreate className="mb-5" />
+          )}
           {showArchived && visibleProjects.length === 0 ? (
-            <p
+            <div
               role="status"
-              className="py-10 text-center text-sm text-muted-foreground"
+              className="flex flex-col items-center gap-3 py-10 text-center text-sm"
               data-workjet-archive-empty=""
             >
-              Keine archivierten Projekte
-            </p>
+              <p>{t("Noch nichts archiviert", "Nothing archived yet")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Projekte archivierst du über das Menü einer Projektkarte.",
+                  "Archive a project from its card menu.",
+                )}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                data-workjet-action="project.archive.back"
+                onClick={() => setShowArchived(false)}
+              >
+                {t("Zurück zu Projekten", "Back to projects")}
+              </Button>
+            </div>
           ) : null}
           {projectsUnavailable ? (
             <div
@@ -960,34 +1081,6 @@ function ProjectGallery({
                   )}
                 </span>
               )}
-            </div>
-          ) : null}
-          {!projectsUnavailable && kpiFailures.size > 0 ? (
-            <div
-              role="status"
-              className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-              data-workjet-project-kpis-unavailable=""
-            >
-              <span>
-                {workjetUiLanguage() === "en"
-                  ? `KPIs for ${kpiFailures.size} project(s) could not be loaded.`
-                  : `Kennzahlen für ${kpiFailures.size} Projekt(e) nicht geladen.`}
-              </span>
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={kpiReloading}
-                onClick={() => setKpiReload((count) => count + 1)}
-                data-workjet-action="project.kpis.retry"
-              >
-                {kpiReloading
-                  ? workjetUiLanguage() === "en"
-                    ? "Loading …"
-                    : "Wird geladen …"
-                  : workjetUiLanguage() === "en"
-                    ? "Retry"
-                    : "Erneut versuchen"}
-              </Button>
             </div>
           ) : null}
           {view === "calendar" ? (
@@ -1051,6 +1144,28 @@ function ProjectGallery({
 }
 
 const PROJECT_OPENING_TIMEOUT_MS = 10_000;
+
+/**
+ * Opens a project that may exist only locally yet (just created, registration pending).
+ * A previously selected native project would otherwise win and the user lands on
+ * the old project instead of the new one (#585).
+ */
+function openCreatedProject(
+  instanceId: string | null,
+  project: ReturnType<typeof scopeProjectRef>,
+): void {
+  if (instanceId !== null && selectWorkjetProject(instanceId, project.projectId)) {
+    selectProjectOverviewRef(instanceId, null);
+    return;
+  }
+  if (instanceId !== null) selectWorkjetProject(instanceId, null);
+  selectProjectOverviewRef(instanceId, project);
+}
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 const MODEL_ACCOUNT_MISSING =
   "Kein Modell-Konto: Der Supervisor startet, sobald eines eingerichtet ist.";
@@ -1254,6 +1369,14 @@ function InlineProjectCreate({
   const [chosenInstanceId, setChosenInstanceId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
+  const [progressStep, setProgressStep] = useState<{ step: number; of: number } | null>(null);
+  const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
+  const [progressNow, setProgressNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (progressStartedAt === null) return;
+    const timer = window.setInterval(() => setProgressNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [progressStartedAt]);
   const [error, setError] = useState<string | null>(null);
   const attemptRef = useRef<{
     key: string;
@@ -1325,7 +1448,7 @@ function InlineProjectCreate({
       setOpen(false);
       toastManager.add({ type: "success", title: `Projekt „${trimmed}“ angelegt` });
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-        selectProjectOverviewRef(instanceId, scopeProjectRef(environmentId, attempt.projectId));
+        openCreatedProject(instanceId, scopeProjectRef(environmentId, attempt.projectId));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
     } finally {
@@ -1349,15 +1472,25 @@ function InlineProjectCreate({
         setOpen(false);
         toastManager.add({ type: "info", title: `„${duplicate.title}“ ist schon da – geöffnet` });
         if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-          selectProjectOverviewRef(
-            instanceId,
-            scopeProjectRef(sources.environmentId, duplicate.id),
-          );
+          openCreatedProject(instanceId, scopeProjectRef(sources.environmentId, duplicate.id));
         return;
       }
-      setProgress(source === "clone" ? "Repository wird geklont …" : "Projekt wird angelegt …");
+      const en = workjetUiLanguage() === "en";
+      setProgressStartedAt(Date.now());
+      setProgressNow(Date.now());
+      setProgressStep({ step: 1, of: 2 });
+      setProgress(
+        source === "clone"
+          ? en
+            ? "Cloning repository …"
+            : "Repository wird geklont …"
+          : en
+            ? "Checking folder …"
+            : "Ordner wird geprüft …",
+      );
       const workspaceRoot = await sources.resolveWorkspaceRoot();
-      setProgress("Projekt wird angelegt …");
+      setProgressStep({ step: 2, of: 2 });
+      setProgress(en ? "Creating project …" : "Projekt wird angelegt …");
       const created = await sources.createWorkspaceProject({
         title: trimmed,
         workspaceRoot,
@@ -1374,14 +1507,13 @@ function InlineProjectCreate({
           : { type: "info", title: `„${created.reusedTitle}“ ist schon da – geöffnet` },
       );
       if (readActiveWorkjetScope().selectedInstanceId === instanceId)
-        selectProjectOverviewRef(
-          instanceId,
-          scopeProjectRef(created.environmentId, created.projectId),
-        );
+        openCreatedProject(instanceId, scopeProjectRef(created.environmentId, created.projectId));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Projekt nicht angelegt.");
     } finally {
       setProgress(null);
+      setProgressStep(null);
+      setProgressStartedAt(null);
       setPending(false);
     }
   };
@@ -1428,7 +1560,33 @@ function InlineProjectCreate({
         onAction={() => void navigate({ to: "/settings/computers" })}
       />
     ) : null;
-  const status = error ?? progress ?? requirement ?? undefined;
+  // Clone/folder progress (#584): step, elapsed time and a running bar, not one grey line.
+  const progressNode =
+    progress !== null && progressStep !== null && progressStartedAt !== null ? (
+      <div className="grid gap-1" data-workjet-project-create-progress="">
+        <div className="flex items-center justify-between gap-2">
+          <span>
+            {workjetUiLanguage() === "en"
+              ? `Step ${progressStep.step} of ${progressStep.of}`
+              : `Schritt ${progressStep.step} von ${progressStep.of}`}
+            {" · "}
+            {progress}
+          </span>
+          <span className="tabular-nums">
+            {formatElapsed(Math.max(0, progressNow - progressStartedAt))}
+          </span>
+        </div>
+        <div className="h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{ width: `${(progressStep.step / (progressStep.of + 1)) * 100}%` }}
+          />
+        </div>
+      </div>
+    ) : (
+      progress
+    );
+  const status = error ?? progressNode ?? requirement ?? undefined;
   const submitDisabled =
     effectiveTitle.trim().length === 0 ||
     instanceId === null ||

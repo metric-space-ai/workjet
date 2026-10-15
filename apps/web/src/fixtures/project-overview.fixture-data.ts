@@ -4,6 +4,7 @@ import {
   EnvironmentId,
   ProjectId,
   ThreadId,
+  WorkjetExitModelAssessment,
   WorkjetJourFixeMeeting,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
@@ -94,11 +95,79 @@ function thread(
     },
   } as unknown as EnvironmentThreadShell;
 }
-export type ExitFixtureState = "empty" | "missing" | "provisional";
+export type ExitFixtureState =
+  | "empty"
+  | "missing"
+  | "provisional"
+  | "proposal"
+  | "value"
+  | "resources"
+  | "researching";
 
-/** Exit-Bewertungsstände für Screenshots der Ressourcen-Eingabe; nur synthetische Daten. */
+const decodeExitAssessment = Schema.decodeUnknownSync(WorkjetExitModelAssessment);
+
+/** Exit-Bewertungsstände für Screenshots der Karte; nur synthetische Daten. */
 export function exitAssessmentFixture(state: ExitFixtureState) {
-  if (state === "provisional") return { ...exitModelFixture, project_id: projectId };
+  if (state === "provisional" || state === "value")
+    return { ...exitModelFixture, project_id: projectId };
+  if (state === "proposal")
+    return decodeExitAssessment({
+      ...exitModelFixture,
+      project_id: projectId,
+      run_id: "fixture-proposal",
+      status: "blocked",
+      result: null,
+      scenarios: [],
+      diagnostics: [],
+      plan_summary: {
+        ...exitModelFixture.plan_summary,
+        confirmed: false,
+        hours_per_week: 12,
+        budget_eur: 180_000,
+      },
+      missing_inputs: ["confirmed_resource_plan"],
+      findings: [
+        {
+          code: "resource_proposal_requires_confirmation",
+          message: "Vorschlag erfordert Bestätigung",
+        },
+      ],
+      resource_proposal: {
+        hours_per_week: 12,
+        monthly_budget_eur: 3_000,
+        comparison_mode: "project_specific",
+      },
+      history: [],
+    });
+  if (state === "resources")
+    return decodeExitAssessment({
+      ...exitModelFixture,
+      project_id: projectId,
+      status: "blocked",
+      result: null,
+      plan_summary: null,
+      resource_proposal: null,
+      scenarios: [],
+      diagnostics: [],
+      missing_inputs: ["resource_proposal"],
+      findings: [],
+      history: [],
+    });
+  if (state === "researching")
+    return decodeExitAssessment({
+      ...exitModelFixture,
+      project_id: projectId,
+      status: "researching",
+      result: null,
+      plan_summary: null,
+      resource_proposal: null,
+      scenarios: [],
+      diagnostics: [],
+      sources: [],
+      missing_inputs: [],
+      findings: [],
+      history: [],
+    });
   if (state === "missing")
     return {
       ...exitModelFixture,

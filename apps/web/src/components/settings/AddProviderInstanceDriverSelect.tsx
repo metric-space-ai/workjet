@@ -39,11 +39,14 @@ export const COMING_SOON_DRIVER_OPTIONS: readonly ComingSoonDriverOption[] = [
 interface AddProviderInstanceDriverSelectProps {
   readonly driver: ProviderDriverKind;
   readonly onDriverChange: (driver: ProviderDriverKind) => void;
+  /** Only harnesses not yet installed (#617); defaults to all. */
+  readonly options?: typeof DRIVER_OPTIONS;
 }
 
 export function AddProviderInstanceDriverSelect({
   driver,
   onDriverChange,
+  options = DRIVER_OPTIONS,
 }: AddProviderInstanceDriverSelectProps) {
   const selected = DRIVER_OPTION_BY_VALUE[driver];
   const SelectedIcon = selected?.icon;
@@ -51,7 +54,7 @@ export function AddProviderInstanceDriverSelect({
     <Select
       value={driver}
       onValueChange={(value) => {
-        const next = DRIVER_OPTIONS.find((option) => option.value === value)?.value;
+        const next = options.find((option) => option.value === value)?.value;
         if (next !== undefined) onDriverChange(next);
       }}
     >
@@ -64,7 +67,7 @@ export function AddProviderInstanceDriverSelect({
         </SelectValue>
       </SelectTrigger>
       <SelectPopup align="start" alignItemWithTrigger={false}>
-        {DRIVER_OPTIONS.map((option) => {
+        {options.map((option) => {
           const OptionIcon = option.icon;
           return (
             <SelectItem key={option.value} hideIndicator value={option.value}>
@@ -74,18 +77,6 @@ export function AddProviderInstanceDriverSelect({
                 {option.badgeLabel ? (
                   <span className="text-[11px] text-muted-foreground">{option.badgeLabel}</span>
                 ) : null}
-              </span>
-            </SelectItem>
-          );
-        })}
-        {COMING_SOON_DRIVER_OPTIONS.map((option) => {
-          const OptionIcon = option.icon;
-          return (
-            <SelectItem key={option.value} hideIndicator disabled value={option.value}>
-              <span className="flex min-w-0 items-center gap-2">
-                <OptionIcon className="size-4 shrink-0" aria-hidden />
-                <span className="truncate">{option.label}</span>
-                <span className="text-[11px] text-muted-foreground">Bald</span>
               </span>
             </SelectItem>
           );

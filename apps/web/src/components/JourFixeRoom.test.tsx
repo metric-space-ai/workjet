@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { JourFixeRoom, jourFixeActionError } from "./JourFixeRoom";
+import {
+  JourFixeRoom,
+  jourFixeActionError,
+  jourFixeStartButtonLabel,
+  jourFixeThumbExportState,
+} from "./JourFixeRoom";
 import type { JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import fixture from "../fixtures/jour-fixe.contract.json";
 import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
@@ -45,7 +50,7 @@ describe("Jour fixe room states", () => {
     expect(owned).toContain('value="Project supervisor"');
     expect(owned).not.toContain("Jede Aufgabe braucht Verantwortliche.");
   });
-  it("renders planned/preparing without live editing controls or narration", () => {
+  it("renders planned/preparing without live editing controls, with a writable field", () => {
     for (const state of ["planned", "preparing"] as const) {
       const html = renderToStaticMarkup(
         <JourFixeRoom
@@ -56,7 +61,8 @@ describe("Jour fixe room states", () => {
         />,
       );
       expect(html).not.toContain("Kommentar auf Folie setzen");
-      expect(html).not.toContain("Nachricht an Supervisor");
+      // Das Feld ist auch vor dem Start fokussierbar und beschreibbar.
+      expect(html).toContain("Nachricht an Supervisor");
       expect(html).toContain(state === "preparing" ? "bereitet Folien vor" : "Keine Folien");
     }
   });
@@ -111,7 +117,6 @@ describe("Jour fixe room states", () => {
         />,
       );
       expect(html).not.toContain("Kommentar auf Folie setzen");
-      expect(html).not.toContain("Nachricht an Supervisor");
       expect(html).not.toContain("1 Aufgaben bestätigen");
     }
   });
@@ -181,23 +186,46 @@ describe("Jour fixe start lock", () => {
   it("hides the start button more than five minutes before the meeting", () => {
     const html = render("ready", inMinutes(30));
     expect(html).not.toContain("Termin starten");
-    expect(html).toContain("Beginnt um");
-    expect(html).toContain("Vorbereitet");
+    expect(html).toContain("Beginnt ");
+    expect(html).not.toContain("Beginnt um");
+    expect(html).not.toContain("Vorbereitet");
+    expect(html).not.toContain("Bereit");
+    expect(html).not.toContain("Prüfen");
   });
-  it("reports ongoing preparation while locked", () => {
+  it("names only the start time while preparation is locked", () => {
     const html = render("preparing", inMinutes(30));
     expect(html).not.toContain("Termin starten");
-    expect(html).toContain("Beginnt um");
-    expect(html).toContain("Vorbereitung läuft");
+    expect(html).toContain("Beginnt ");
+    expect(html).not.toContain("Vorbereitung läuft");
+    expect(html).not.toContain("In Vorbereitung");
   });
   it("offers the start button from five minutes before the meeting", () => {
     const html = render("ready", inMinutes(4));
     expect(html).toContain("Termin starten");
-    expect(html).not.toContain("Beginnt um");
+    expect(html).toContain("Beginnt ");
+    expect(html).not.toContain("Bereit");
+    expect(html).not.toContain("Vorbereitet");
+    expect(html).not.toContain("Prüfen");
+    expect(html).toContain('data-workjet-meeting-start="idle"');
+  });
+  it("labels a hanging start on the button only", () => {
+    expect(jourFixeStartButtonLabel(true)).toBe("Startet …");
+    expect(jourFixeStartButtonLabel(false)).toBe("Termin starten");
+  });
+  it("exports dark thumbnails by inverting the scene paper, not a pre-darkened ground", () => {
+    expect(jourFixeThumbExportState("#fffef8", true)).toEqual({
+      viewBackgroundColor: "#fffef8",
+      exportBackground: true,
+      exportWithDarkMode: true,
+    });
+    expect(jourFixeThumbExportState("#fffef8", false).exportWithDarkMode).toBe(false);
   });
   it("never locks a live meeting", () => {
     const html = render("live", inMinutes(30));
-    expect(html).not.toContain("Beginnt um");
+    expect(html).not.toContain("Beginnt ");
+    expect(html).toContain("läuft seit");
+    expect(html).not.toContain("Prüfen");
+    expect(html).not.toContain("Aufgaben prüfen");
   });
   it("answers a server meeting_not_started rejection with a German line", () => {
     const scheduled = { ...meeting, scheduledAt: inMinutes(30) };
@@ -228,17 +256,21 @@ describe("Tagesordnung und freie Themen", () => {
         {...extra}
       />,
     );
-  it("zeigt über den Folien-Kacheln Punkt, Gesamtzahl und Titel", () => {
+  it("zeigt die Position im Folienzähler der Bühne und echte Miniaturen in der Leiste", () => {
     const html = render(slides);
-    expect(html).toContain('data-workjet-agenda-line=""');
-    expect(html).toContain("Tagesordnung · Punkt 1 von 3 · Tagesordnung");
-    expect(html.indexOf("Tagesordnung · Punkt 1 von 3")).toBeLessThan(
-      html.indexOf('aria-label="Folien"'),
-    );
+    expect(html).not.toContain("data-workjet-agenda-line");
+    expect(html).not.toContain("Noch kein Sprecher");
+    expect(html).toContain("1 / 3");
+    expect(html.indexOf("1 / 3")).toBeLessThan(html.indexOf('aria-label="Folien"'));
+    // Vorschaubilder nutzen die Folienfläche (Papier/Tafel), keine grauen Textkacheln.
+    const nav = html.slice(html.indexOf('aria-label="Folien"'));
+    expect(nav).toContain("bg-[#f5f3ee]");
+    expect(nav).toContain("dark:bg-[#1b1a17]");
+    expect(nav).toContain("Stand gegen Ziele");
+    expect(nav).not.toContain("bg-[#e9e6df]");
   });
   it("wechselt auf der letzten Folie auf „Freie Themen“ und stellt das Eingabefeld vorne", () => {
     const html = render([slides[2]!]);
-    expect(html).not.toContain("Tagesordnung · Punkt");
     expect(html.indexOf("Freie Themen")).toBeGreaterThan(-1);
     expect(html.indexOf('aria-label="Nachricht an Supervisor"')).toBeLessThan(
       html.indexOf("Das übernehmen wir."),
@@ -249,5 +281,84 @@ describe("Tagesordnung und freie Themen", () => {
     expect(html.indexOf('aria-label="Nachricht an Supervisor"')).toBeGreaterThan(
       html.indexOf("Das übernehmen wir."),
     );
+  });
+});
+
+describe("Bedienung wirkt sofort", () => {
+  const twoSlides = [
+    { id: "s1", position: 0, title: "Tagesordnung", markdown: "1. Stand" },
+    { id: "s2", position: 1, title: "Stand gegen Ziele", markdown: "PR merged." },
+  ];
+  const live = { ...meeting, state: "live" as const, slides: twoSlides };
+  it("sperrt das Schreibfeld nie, auch nicht während Ton oder Folien laden", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={live}
+        onMessage={() => new Promise<void>(() => {})}
+        presentationStatus={{ state: "loading", text: "Folien werden geladen …" }}
+        narrationStatus={{ state: "loading", text: "Ton wird geladen …" }}
+      />,
+    );
+    const field = html.match(/<input[^>]*aria-label="Nachricht an Supervisor"[^>]*>/)?.[0] ?? "";
+    expect(field).not.toBe("");
+    expect(field).not.toContain("disabled");
+    // Solange das Deck lädt, erscheint kein Fließtext-Ersatz, sondern der Ladezustand.
+    expect(html.indexOf("Folie wird geladen …")).toBeGreaterThan(-1);
+  });
+  it("stellt Weiter und Zurück frei und kennt keinen toten Play-Knopf", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeRoom {...props} meeting={live} onMessage={async () => {}} />,
+    );
+    const previous = html.match(/<button[^>]*aria-label="Vorherige Folie"[^>]*>/)?.[0] ?? "";
+    const next = html.match(/<button[^>]*aria-label="Nächste Folie"[^>]*>/)?.[0] ?? "";
+    const play = html.match(/<button[^>]*aria-label="Sprecher abspielen"[^>]*>/)?.[0] ?? "";
+    expect(previous).toContain('disabled=""');
+    expect(next).not.toContain('disabled=""');
+    expect(play).not.toContain('disabled=""');
+    expect(html).toContain('aria-label="Vollbild"');
+    expect(html).not.toContain("Vollbild (F)");
+  });
+  it("zeigt im dunklen Schema die dunkle Folienfläche und ruhige Kopfzeile", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={live}
+        onMessage={async () => {}}
+        onEndMeeting={async () => {}}
+      />,
+    );
+    expect(html).toContain("dark:bg-[#1b1a17]");
+    expect(html).toContain("läuft seit");
+    expect(html).toContain("Beenden");
+    expect(html).not.toContain("text-red-400");
+    expect(html).not.toContain("Termin beenden");
+  });
+  it("markiert Tabs ruhig und zeigt knappe deutsche Leerzustände", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={{ ...live, comments: [], transcript: [] }}
+        onMessage={async () => {}}
+      />,
+    );
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain("Noch keine Beiträge");
+  });
+  it("zeigt den Aufnahmezustand und Diktatfehler am Feld", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={live}
+        onMessage={async () => {}}
+        onToggleMicrophone={() => {}}
+        microphoneActive={true}
+        microphoneError="Keine Mikrofon-Freigabe – bitte Zugriff erlauben."
+      />,
+    );
+    expect(html).toContain('data-workjet-microphone-state="recording"');
+    expect(html).toContain("Aufnahme läuft");
+    expect(html).toContain("Keine Mikrofon-Freigabe");
   });
 });

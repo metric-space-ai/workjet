@@ -33,7 +33,7 @@ import type { WorkjetComputerDraft } from "../settings/WorkjetComputerEditor";
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
 import { ComposerControl, ComposerControlIcon, ComposerControlChevron } from "./ComposerControl";
 import {
-  MANUAL_WORKER_LABEL,
+  manualWorkerLabel,
   MANUAL_WORKER_VALUE,
   providerInstanceIdForHarness,
 } from "./ComposerWorkerControl";
@@ -236,6 +236,10 @@ export function composerComputerStatusLabel(status: string | undefined): string 
   }
 }
 
+/** Ein ausstehender Datenabruf ist kein Defekt: Timeout-Fehler sperren keine Wahl. */
+export const COMPOSER_COMPUTER_TRANSIENT_PROBE_PATTERN =
+  /zu lange gedauert|timed?[\s-]?out|zeitüberschreitung|deadline|noch nicht bestätigt|antwortet nicht/iu;
+
 /** One entry per computer, as the dropdown lists it. */
 export function composerComputerChoices(
   props: Pick<
@@ -260,12 +264,22 @@ export function composerComputerChoices(
       props.activeEnvironmentId,
       selectable,
     );
+    // Der lokale Rechner (die aktive Umgebung) ist immer verfügbar; ein
+    // Timeout beim Nachfragen behält den zuletzt bekannten Stand statt
+    // „nicht verfügbar“.
+    const local = computer.environmentId === props.activeEnvironmentId;
     const availability = props.computerAvailability?.[computer.id];
+    const probeReason =
+      availability?.reason !== null &&
+      availability?.reason !== undefined &&
+      COMPOSER_COMPUTER_TRANSIENT_PROBE_PATTERN.test(availability.reason)
+        ? null
+        : (availability?.reason ?? null);
     const reason =
       (props.busy ? "Speichert…" : props.disabledReason) ??
-      availability?.reason ??
+      (local ? null : probeReason) ??
       (projectAvailable ? null : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT);
-    const status = composerComputerStatusLabel(availability?.status);
+    const status = local ? "verbunden" : composerComputerStatusLabel(availability?.status);
     const meta =
       reason === null
         ? (status ?? workjetComputerKindLabel(computer.presentationKind))
@@ -477,6 +491,13 @@ export interface ComposerManualTargetControlsProps {
   readonly modelsUnavailableReason: string | null;
   readonly selectedModelId: string;
   readonly onSelectModel: (modelId: string) => void;
+  /**
+   * Führt für einen nicht installierten Harness in den Einrichten-Weg
+   * (Einstellungen › Harnesses). Ohne Callback bleibt der Eintrag gesperrt.
+   */
+  readonly onSetupHarness?: ((harness: WorkjetHarness) => void) | undefined;
+  /** Löst beim Öffnen des Harness-Menüs eine neue Erkennung aus. */
+  readonly onHarnessMenuOpen?: (() => void) | undefined;
 }
 
 /** The harness dropdown entries. Hook-free so tests can inspect the tree. */
@@ -488,36 +509,48 @@ export function ComposerHarnessMenuItems(
     | "unavailableHint"
     | "selectedHarness"
     | "onSelectHarness"
+    | "onSetupHarness"
   >,
 ) {
   const options = composerHarnessOptions(props.configuredInstanceIds, props.configuredDriverKinds);
+  const configured = options.filter((option) => option.configured);
+  const missing = options.filter((option) => !option.configured);
   return (
-    <MenuRadioGroup
-      value={props.selectedHarness ?? NO_HARNESS_VALUE}
-      onValueChange={(value) => {
-        if (typeof value !== "string" || value === NO_HARNESS_VALUE) return;
-        props.onSelectHarness(value as WorkjetHarness);
-      }}
-    >
-      {options.map((option) => (
-        <MenuRadioItem
-          key={option.id}
-          value={option.id}
-          disabled={!option.configured}
-          title={option.configured ? undefined : props.unavailableHint}
-          closeOnClick
-        >
-          <span className="flex min-w-0 items-baseline">
-            <span className="min-w-0 truncate">{option.label}</span>
-            {option.configured ? null : (
-              <MenuMeta>
-                {props.unavailableHint === undefined ? "nicht eingerichtet" : "gesperrt"}
-              </MenuMeta>
-            )}
-          </span>
-        </MenuRadioItem>
-      ))}
-    </MenuRadioGroup>
+    <>
+      <MenuRadioGroup
+        value={props.selectedHarness ?? NO_HARNESS_VALUE}
+        onValueChange={(value) => {
+          if (typeof value !== "string" || value === NO_HARNESS_VALUE) return;
+          props.onSelectHarness(value as WorkjetHarness);
+        }}
+      >
+        {configured.map((option) => (
+          <MenuRadioItem key={option.id} value={option.id} closeOnClick>
+            <span className="flex min-w-0 items-baseline">
+              <span className="min-w-0 truncate">{option.label}</span>
+            </span>
+          </MenuRadioItem>
+        ))}
+      </MenuRadioGroup>
+      {/* „gesperrt“ nur bei echter Policy-Sperre; fehlende Installation bietet Einrichten. */}
+      {missing.map((option) =>
+        props.onSetupHarness ? (
+          <MenuItem key={option.id} onClick={() => props.onSetupHarness?.(option.id)}>
+            <span className="flex min-w-0 items-baseline">
+              <span className="min-w-0 truncate">{option.label}</span>
+              <MenuMeta>nicht installiert · Einrichten</MenuMeta>
+            </span>
+          </MenuItem>
+        ) : (
+          <MenuItem key={option.id} disabled title={props.unavailableHint}>
+            <span className="flex min-w-0 items-baseline">
+              <span className="min-w-0 truncate">{option.label}</span>
+              <MenuMeta>nicht installiert</MenuMeta>
+            </span>
+          </MenuItem>
+        ),
+      )}
+    </>
   );
 }
 
@@ -585,7 +618,13 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
       data-model-catalog-source={props.modelSource ?? "gateway"}
     >
       {/* Harness */}
-      <Menu>
+      <Menu
+        onOpenChange={(open) => {
+          // Nach einer Installation muss die Erkennung ohne App-Neustart neu
+          // laufen; das Öffnen des Menüs ist der natürliche Zeitpunkt.
+          if (open) props.onHarnessMenuOpen?.();
+        }}
+      >
         <MenuTrigger
           disabled={disabled}
           render={
@@ -805,7 +844,7 @@ export function ComposerWorkjetCompactMenuContent(
               props.onSelectWorker(value === MANUAL_WORKER_VALUE ? null : value);
             }}
           >
-            <MenuRadioItem value={MANUAL_WORKER_VALUE}>{MANUAL_WORKER_LABEL}</MenuRadioItem>
+            <MenuRadioItem value={MANUAL_WORKER_VALUE}>{manualWorkerLabel()}</MenuRadioItem>
             {props.workers.map((worker) => (
               <MenuRadioItem key={worker.id} value={worker.id}>
                 {worker.name}

@@ -13,6 +13,7 @@ import {
   type WorkjetCrossModeOperation,
   type WorkjetCrossModeResultOutcome,
 } from "@workjet/contracts";
+import { OptionSelect } from "../ui/option-select";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
@@ -301,22 +302,18 @@ function WorkjetCrossModeActionRow(props: {
           {state.open === "submit-result" ? (
             <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
               Ergebnis
-              <select
+              <OptionSelect
                 aria-label="Ergebnis"
                 disabled={busy}
-                className={actionFieldClass}
+                className="w-auto"
                 value={state.outcome}
-                onChange={(event) =>
-                  onStateChange({
-                    ...state,
-                    outcome: event.target.value as WorkjetCrossModeResultOutcome,
-                  })
-                }
-              >
-                <option value="completed">Fertig</option>
-                <option value="failed">Fehlgeschlagen</option>
-                <option value="cancelled">Abgebrochen</option>
-              </select>
+                options={[
+                  { value: "completed", label: "Fertig" },
+                  { value: "failed", label: "Fehlgeschlagen" },
+                  { value: "cancelled", label: "Abgebrochen" },
+                ]}
+                onValueChange={(outcome) => onStateChange({ ...state, outcome })}
+              />
             </label>
           ) : null}
           <textarea

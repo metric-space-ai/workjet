@@ -5,6 +5,8 @@ import {
   type WorkjetHarness,
   type WorkjetWorkerProfile,
 } from "@workjet/contracts";
+import { Checkbox } from "./ui/checkbox";
+import { OptionSelect } from "./ui/option-select";
 import { useEffect, useState } from "react";
 import { useProjectSupervisorLumas } from "./ProjectSupervisorLumaField";
 import { workjetHarnessDisplayLabel } from "./settings/WorkjetWorkerEditor";
@@ -65,79 +67,69 @@ export function MeetingPreparationField({
     >
       <legend className="px-1 text-xs font-medium">Regeltermin-Vorbereitung</legend>
       <label className="flex items-center gap-2 text-xs">
-        <input
+        <Checkbox
           id={id}
-          type="checkbox"
           checked={config.enabled}
-          onChange={(e) => change({ enabled: e.target.checked })}
+          onCheckedChange={(checked) => change({ enabled: checked })}
         />
         Vorbereitung aktiv
       </label>
       <div className="grid min-w-0 gap-2 sm:grid-cols-2">
         <label className="grid min-w-0 gap-1 text-xs">
           Harness
-          <select
+          <OptionSelect
             aria-label="Vorbereitungs-Harness"
-            className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+            className="w-auto min-w-0"
             value={config.harness}
-            onChange={(e) => {
-              const harness = e.target.value as WorkjetHarness;
+            options={harnesses.map((h) => ({
+              value: h,
+              label: `${workjetHarnessDisplayLabel(h)}${oneShotHarnessUnavailableReason(h) ? " · Worktree-Begrenzung fehlt" : ""}`,
+              disabled: oneShotHarnessUnavailableReason(h) !== null,
+            }))}
+            onValueChange={(harness) => {
               const { workerProfileId: _profile, ...rest } = config;
               onChange({ ...rest, harness });
             }}
-          >
-            {harnesses.map((h) => (
-              <option key={h} value={h} disabled={oneShotHarnessUnavailableReason(h) !== null}>
-                {workjetHarnessDisplayLabel(h)}
-                {oneShotHarnessUnavailableReason(h) ? " · Worktree-Begrenzung fehlt" : ""}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label className="grid min-w-0 gap-1 text-xs">
           Modell
-          <select
+          <OptionSelect
             aria-label="Vorbereitungs-Modell"
-            className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+            className="w-auto min-w-0"
             value={config.model}
-            onChange={(e) => {
+            options={[
+              ...(models.includes(config.model)
+                ? []
+                : [{ value: config.model, label: `${config.model} · Luma fehlt` }]),
+              ...models.map((model) => ({ value: model, label: model })),
+            ]}
+            onValueChange={(model) => {
               const { workerProfileId: _profile, ...rest } = config;
-              onChange({ ...rest, model: e.target.value });
+              onChange({ ...rest, model });
             }}
-          >
-            {!models.includes(config.model) && (
-              <option value={config.model}>{config.model} · Luma fehlt</option>
-            )}
-            {models.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
+          />
         </label>
       </div>
       <label className="grid min-w-0 gap-1 text-xs">
         Luma und Kontoroute
-        <select
+        <OptionSelect<string>
           aria-label="Vorbereitungs-Luma"
-          className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+          className="w-auto min-w-0"
           value={config.workerProfileId ?? ""}
-          onChange={(e) => {
+          options={[
+            { value: "", label: "Passende Luma" },
+            ...(config.workerProfileId && !available.some((p) => p.id === config.workerProfileId)
+              ? [{ value: config.workerProfileId, label: "Gespeicherte Luma fehlt" }]
+              : []),
+            ...available.map((p) => ({ value: p.id, label: `${p.name} · ${p.computerId}` })),
+          ]}
+          onValueChange={(id) => {
             const { workerProfileId: _profile, ...rest } = config;
-            const selected = available.find((p) => p.id === e.target.value);
+            const selected = available.find((p) => p.id === id);
             onChange({ ...rest, ...(selected ? { workerProfileId: selected.id } : {}) });
           }}
-        >
-          <option value="">Passende Luma</option>
-          {config.workerProfileId && !available.some((p) => p.id === config.workerProfileId) && (
-            <option value={config.workerProfileId}>Gespeicherte Luma fehlt</option>
-          )}
-          {available.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · {p.computerId}
-            </option>
-          ))}
-        </select>
+        />
       </label>
       <div className="grid gap-2">
         <span className="text-xs">Stunden vor dem Termin</span>

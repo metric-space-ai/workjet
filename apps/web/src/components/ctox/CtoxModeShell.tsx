@@ -1,4 +1,5 @@
 import { openInstanceSetup, openInstanceRePair } from "../../instanceSetup";
+import { workjetUiLanguage } from "../../workjetProjectControl";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import type {
@@ -140,23 +141,56 @@ const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
   ssh_managed: "SSH-Instanz",
 };
 
-/** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
-const CONNECTION_LABELS: Record<string, string> = {
-  idle: "Nicht verbunden",
-  connecting: "Wird verbunden…",
-  ready: "Geöffnet",
-  error: "Verbindungsfehler",
-  revoked: "Zugriff entzogen",
+/**
+ * The instance shell knows exactly four connection states (#559): connected,
+ * connecting, disconnected, login needed. Every status enum maps onto them.
+ */
+export type CtoxInstanceConnectionState =
+  | "connected"
+  | "connecting"
+  | "disconnected"
+  | "needsLogin";
+
+const INSTANCE_STATE_WORDS: Record<"de" | "en", Record<CtoxInstanceConnectionState, string>> = {
+  de: {
+    connected: "Verbunden",
+    connecting: "Verbindet …",
+    disconnected: "Getrennt",
+    needsLogin: "Anmeldung nötig",
+  },
+  en: {
+    connected: "Connected",
+    connecting: "Connecting …",
+    disconnected: "Disconnected",
+    needsLogin: "Login needed",
+  },
 };
 
-const STATUS_LABELS: Record<CtoxManagedInstance["status"], string> = {
-  available: "Verfügbar",
-  offline: "Offline",
-  needs_auth: "Anmeldung erforderlich",
-  pairing_expired: "Verbindung abgelaufen",
-  paired: "Verbunden",
-  installing: "Wird eingerichtet",
-  error: "Fehler",
+function shellText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
+export function ctoxInstanceStateWord(state: CtoxInstanceConnectionState): string {
+  return INSTANCE_STATE_WORDS[workjetUiLanguage()][state];
+}
+
+/** Topbar wording for the guest connection — the raw enum leaked before (K-B4). */
+const CONNECTION_STATES: Record<string, CtoxInstanceConnectionState> = {
+  idle: "disconnected",
+  connecting: "connecting",
+  ready: "connected",
+  error: "disconnected",
+  revoked: "needsLogin",
+};
+
+const INSTANCE_STATES: Record<CtoxManagedInstance["status"], CtoxInstanceConnectionState> = {
+  available: "connected",
+  paired: "connected",
+  installing: "connecting",
+  offline: "disconnected",
+  error: "disconnected",
+  needs_auth: "needsLogin",
+  pairing_expired: "needsLogin",
 };
 
 interface CtoxModeContextValue {
@@ -782,8 +816,14 @@ export function CtoxModeProvider({
           // (Befund K-BH4).
           toastManager.add({
             type: "error",
-            title: "App konnte nicht geöffnet werden",
-            description: "Bitte Verbindung prüfen und erneut versuchen.",
+            title: shellText(
+              "Die App konnte nicht geöffnet werden.",
+              "The app could not be opened.",
+            ),
+            description: shellText(
+              "Prüfe die Verbindung und versuche es erneut.",
+              "Check the connection and try again.",
+            ),
           });
         })
         .then(() => {
@@ -1054,7 +1094,7 @@ export function ctoxInstanceStatusLabel(
     ? "Synchronisierung verfügbar"
     : "Synchronisierung nicht verfügbar";
   const opened = guestOpened ? " · Geöffnet · Datenstand unbestätigt" : "";
-  return `${STATUS_LABELS[instance.status]} · ${health}${opened}`;
+  return `${ctoxInstanceStateWord(INSTANCE_STATES[instance.status])} · ${health}${opened}`;
 }
 
 export function ctoxShellUpdateLabel(instance: CtoxManagedInstance): string {
@@ -2187,10 +2227,13 @@ function ManagedAccountState({ state }: { readonly state: CtoxManagedState }) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
         <p className="text-xs text-destructive" role="alert">
-          Instanz nicht erreichbar
+          {shellText(
+            "Die Instanz ist gerade nicht erreichbar.",
+            "The instance cannot be reached right now.",
+          )}
         </p>
         <Button size="xs" variant="outline" disabled={refreshing} onClick={refresh}>
-          Erneut versuchen
+          {shellText("Erneut versuchen", "Try again")}
         </Button>
       </div>
     );
@@ -2271,14 +2314,20 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
 
           {bridge === undefined ? (
             <p className="mb-3 text-xs text-sidebar-muted-foreground" role="status">
-              Nur in der Desktop-App
+              {shellText(
+                "Instanzen lassen sich nur in der Desktop-App öffnen.",
+                "Instances open only in the desktop app.",
+              )}
             </p>
           ) : null}
           {discovery !== "loading" &&
           discovery.pairedUnavailable === true &&
           discovery.keyRecovery === undefined ? (
             <p className="mb-3 text-xs text-destructive" role="alert">
-              Gespeicherte Verbindungen nicht lesbar
+              {shellText(
+                "Die gespeicherten Verbindungen lassen sich nicht lesen.",
+                "The saved connections cannot be read.",
+              )}
             </p>
           ) : null}
 
@@ -2300,7 +2349,7 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
           ) : activeInstance === undefined ? (
             <div className="space-y-3">
               <p className="text-xs text-sidebar-muted-foreground" role="status">
-                Keine Instanz gewählt
+                {shellText("Es ist noch keine Instanz gewählt.", "No instance is selected yet.")}
               </p>
               <ManagedAccountState state={managedState} />
             </div>
@@ -2597,7 +2646,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
             )}
             {(connectingTooLong || connection === "error") && (
               <Button size="sm" variant="outline" onClick={() => void select(instance)}>
-                Erneut versuchen
+                {shellText("Erneut versuchen", "Try again")}
               </Button>
             )}
           </span>
@@ -2621,29 +2670,42 @@ export function CtoxMainShell() {
 
   const loadingExpired = useLoadingExpired(discovery === "loading");
   const openSettings = () => void navigate({ to: "/settings/business-os" });
-  // Leerzustand: Titel und genau ein Knopf, kein Satz (UI-Vertrag §1.3).
+  // Leerzustand: ein kurzer ganzer Satz und genau ein Knopf (#559).
   const emptyState: { readonly title: string; readonly action?: ReactNode } =
     connection === "revoked"
       ? {
-          title: "Zugriff entzogen",
-          action: <Button onClick={openSettings}>Einstellungen</Button>,
+          title: shellText(
+            "Der Zugriff auf diese Instanz wurde entzogen.",
+            "Access to this instance was revoked.",
+          ),
+          action: <Button onClick={openSettings}>{shellText("Einstellungen", "Settings")}</Button>,
         }
       : (discovery !== "loading" && discovery._tag === "failed") ||
           loadingExpired ||
           knownSelected !== undefined
         ? {
-            title: "Instanz nicht erreichbar",
+            title: shellText(
+              "Die Instanz ist gerade nicht erreichbar.",
+              "The instance cannot be reached right now.",
+            ),
             action: (
               <Button variant="outline" onClick={refresh}>
-                Erneut versuchen
+                {shellText("Erneut versuchen", "Try again")}
               </Button>
             ),
           }
         : discovery === "loading"
-          ? { title: "Instanzen werden geladen …" }
+          ? { title: shellText("Instanzen werden geladen …", "Loading instances …") }
           : {
-              title: "Keine Instanz gewählt",
-              action: <Button onClick={openSettings}>Instanz auswählen</Button>,
+              title: shellText(
+                "Es ist noch keine Instanz gewählt.",
+                "No instance is selected yet.",
+              ),
+              action: (
+                <Button onClick={openSettings}>
+                  {shellText("Instanz auswählen", "Choose instance")}
+                </Button>
+              ),
             };
 
   return (
@@ -2680,7 +2742,7 @@ export function CtoxMainShell() {
               )}
               aria-hidden
             />
-            {CONNECTION_LABELS[connection]}
+            {ctoxInstanceStateWord(CONNECTION_STATES[connection] ?? "disconnected")}
           </span>
         ) : null}
       </WorkjetHeaderContent>

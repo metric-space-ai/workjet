@@ -37,6 +37,8 @@ import {
 
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
 import type { SlideDocument } from "@workjet/slide-engine/schema";
+import { loadCanvasRuntime } from "@workjet/slide-engine/canvas";
+import { canvasSceneForSlide } from "@workjet/slide-engine/excalidraw/scene";
 import { PresentationSlideChangedError } from "../lib/jourFixePresentation";
 import { jourFixeShortcut } from "../lib/jourFixeShortcuts";
 
@@ -67,6 +69,94 @@ const MEETING_MARKDOWN_COMPONENTS: Components = {
 
 /** Der Raum öffnet frühestens fünf Minuten vor dem geplanten Beginn. */
 export const JOUR_FIXE_START_LEAD_MS = 5 * 60_000;
+
+/** Folienfläche: Papier im hellen Schema, Tafel im dunklen Schema. */
+const STAGE_SURFACE_CLASSES = "bg-[#f5f3ee] text-[#18181b] dark:bg-[#1b1a17] dark:text-[#eceae3]";
+const STAGE_MUTED_CLASSES = "text-[#71717a] dark:text-[#9b9a94]";
+
+/** Ob die App gerade im dunklen Schema steht (Klasse `dark` auf dem Wurzelelement). */
+export function useWorkjetDarkScheme(): boolean {
+  const [dark, setDark] = useState(
+    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const update = () => setDark(root.classList.contains("dark"));
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    update();
+    return () => observer.disconnect();
+  }, []);
+  return dark;
+}
+
+const THUMB_RUNTIME_BASE = `${import.meta.env.BASE_URL}vendor/excalidraw/`;
+
+/**
+ * App-Zustand für die Vorschau per `exportToSvg`.
+ * `exportWithDarkMode` legt denselben Invertier-Filter auf die ganze SVG wie
+ * `theme="dark"` auf die Zeichenfläche. Der Grund bleibt das helle Papier der
+ * Szene: ein vorab dunkler Grund würde mitinvertiert und wieder hell.
+ */
+export function jourFixeThumbExportState(backgroundColor: string, dark: boolean) {
+  return {
+    viewBackgroundColor: backgroundColor,
+    exportBackground: true as const,
+    exportWithDarkMode: dark,
+  };
+}
+
+/** Während die Startbestätigung aussteht, nur die Knopfbeschriftung – keine Leiste. */
+export function jourFixeStartButtonLabel(pending: boolean): string {
+  return pending ? "Startet …" : "Termin starten";
+}
+
+/**
+ * Verkleinerte echte Folie in der Vorschauleiste: dasselbe Engine-Deck wie die
+ * Bühne, als einmalig exportiertes Bild. Zeigt das Theme der Folie, keine Kachel.
+ */
+function JourFixeCanvasThumb({
+  document: deck,
+  slideId,
+  dark,
+}: {
+  readonly document: SlideDocument;
+  readonly slideId: string;
+  readonly dark: boolean;
+}) {
+  const [svgMarkup, setSvgMarkup] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const slide = deck.slides.find((item) => item.id === slideId);
+    if (!slide) return;
+    const scene = slide.canvas ?? canvasSceneForSlide(slide, deck.assets);
+    void loadCanvasRuntime({ assetBaseUrl: THUMB_RUNTIME_BASE })
+      .then((runtime) =>
+        runtime.exportToSvg({
+          elements: scene.elements,
+          appState: jourFixeThumbExportState(scene.backgroundColor, dark),
+          files: scene.files,
+        }),
+      )
+      .then(
+        (svg) => {
+          if (alive) setSvgMarkup(svg.outerHTML);
+        },
+        () => {},
+      );
+    return () => {
+      alive = false;
+    };
+  }, [deck, slideId, dark]);
+  if (!svgMarkup) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 [&_svg]:h-full [&_svg]:w-full"
+      dangerouslySetInnerHTML={{ __html: svgMarkup }}
+    />
+  );
+}
 
 /** Minutentakt für die Zeitsperre; kein Sekundenzeiger in der Kopfzeile. */
 function useMinuteNow(): number {
@@ -126,6 +216,8 @@ export interface JourFixeRoomProps {
   readonly onSlideChange?: (slideId: string) => void;
   readonly onToggleMicrophone?: () => void;
   readonly microphoneActive?: boolean;
+  /** Eine deutsche Zeile am Feld, wenn das Diktat nicht startet (Freigabe, Transport). */
+  readonly microphoneError?: string | undefined;
   readonly partialTranscript?: JourFixePartialTranscript | undefined;
   /**
    * The meeting's presentation. Slides whose id appears in it are shown as the hand-drawn
@@ -176,6 +268,7 @@ function JourFixeRoomContent({
   onSlideChange,
   onToggleMicrophone,
   microphoneActive = false,
+  microphoneError,
   partialTranscript,
   audio,
   presentation,
@@ -220,14 +313,19 @@ function JourFixeRoomContent({
   const [message, setMessage] = useState("");
   const [visibleTurns, setVisibleTurns] = useState(100);
   const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState(false);
   const inFlight = useRef(false);
   const now = useMinuteNow();
-  const startLocked =
-    ["planned", "preparing", "ready"].includes(meeting.state) &&
-    now < meeting.scheduledAt - JOUR_FIXE_START_LEAD_MS;
+  const beforeStart = ["planned", "preparing", "ready"].includes(meeting.state);
+  const startLocked = beforeStart && now < meeting.scheduledAt - JOUR_FIXE_START_LEAD_MS;
+  const canStart = meeting.state === "ready" && !startLocked && onStartMeeting !== undefined;
+  // Aufgaben nur nach dem Termin: vorher und während „läuft“ bleibt der Kopf ruhig.
+  const showTaskToggle =
+    meeting.todos !== undefined && (meeting.state === "review" || meeting.state === "confirmed");
   // Presenter mode: Auto plays every slide's narration in turn; keys and full screen as in
   // learnordie's live presenter.
   const [autoAdvance, setAutoAdvance] = useState(false);
+  const darkScheme = useWorkjetDarkScheme();
   const playerControl = useRef<(() => void) | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const shortcutHandler = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -248,6 +346,40 @@ function JourFixeRoomContent({
     meeting.state === "review" &&
     meeting.todos?.status === "proposed";
   const partial = jourFixeVisiblePartial(meeting, partialTranscript);
+  /** Eben gesendete, noch unbestätigte eigene Nachrichten, in Reihenfolge. */
+  const [outbox, setOutbox] = useState<
+    readonly { id: string; text: string; state: "sending" | "failed" }[]
+  >([]);
+  function sendMessage(text: string, retryId?: string) {
+    if (!onMessage) return;
+    const id = retryId ?? randomUUID();
+    setOutbox((list) =>
+      retryId
+        ? list.map((item) => (item.id === retryId ? { ...item, state: "sending" as const } : item))
+        : [...list, { id, text, state: "sending" as const }],
+    );
+    if (!retryId) setMessage("");
+    onMessage(meeting.id, meeting.revision, text).then(
+      // Die Bestätigung kommt still nach; der Verlauf zeigt den Beleg aus dem Lesemodell.
+      () => setOutbox((list) => list.filter((item) => item.id !== id)),
+      () =>
+        setOutbox((list) =>
+          list.map((item) => (item.id === id ? { ...item, state: "failed" as const } : item)),
+        ),
+    );
+  }
+  // Diktat: der Teiltext erscheint live im Feld und hängt an bereits Getipptem an.
+  const dictationBase = useRef<string | null>(null);
+  useEffect(() => {
+    if (!microphoneActive) {
+      dictationBase.current = null;
+      return;
+    }
+    if (dictationBase.current === null)
+      dictationBase.current = message.trim() ? `${message.trimEnd()} ` : "";
+    if (partial) setMessage(`${dictationBase.current}${partial}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [microphoneActive, partial]);
   /** Die letzte Folie „Freie Themen“ öffnet den offenen Teil der Runde. */
   const freeTopics =
     slide !== undefined && index === slides.length - 1 && slide.title === "Freie Themen";
@@ -274,6 +406,12 @@ function JourFixeRoomContent({
       inFlight.current = false;
       setBusy(false);
     }
+  }
+  function startMeeting() {
+    const start = onStartMeeting;
+    if (!start) return;
+    setStarting(true);
+    void perform(() => start(meeting.id, meeting.revision)).finally(() => setStarting(false));
   }
   function discardCanvasEdit() {
     // Invalidate the old editor callback before its cleanup can flush a debounced edit.
@@ -306,7 +444,6 @@ function JourFixeRoomContent({
     if (action === "next" && index < slides.length - 1) selectSlide(slides[index + 1]!.id);
     else if (action === "previous" && index > 0) selectSlide(slides[index - 1]!.id);
     else if (action === "togglePlayback") playerControl.current?.();
-    else if (action === "toggleFullscreen") toggleFullscreen();
     else return;
     event.preventDefault();
   };
@@ -323,42 +460,54 @@ function JourFixeRoomContent({
     editTodos(todos.map((todo) => (todo.id === id ? { ...todo, [key]: value } : todo)));
   }
   /** Bei „Freie Themen“ steht das Eingabefeld vorne, sonst am Ende der Seitenleiste. */
-  const messageForm = onMessage && editable && (
-    <form
-      className={`flex items-center gap-2 ${freeTopics ? "border-b" : "border-t"} border-border p-3`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!message.trim() || busy) return;
-        void perform(
-          () => onMessage(meeting.id, meeting.revision, message.trim()),
-          () => setMessage(""),
-        );
-      }}
-    >
-      <Input
-        aria-label="Nachricht an Supervisor"
-        maxLength={16384}
-        placeholder="Schreiben oder sprechen …"
-        value={message}
-        disabled={busy}
-        onChange={(event) => setMessage(event.target.value)}
-        className="min-w-0 flex-1"
-      />
-      {onToggleMicrophone && (
-        <Button
-          size="icon-sm"
-          variant={microphoneActive ? "destructive" : "outline"}
-          aria-label={microphoneActive ? "Mikrofon aus" : "Mikrofon an"}
-          aria-pressed={microphoneActive}
-          onClick={onToggleMicrophone}
+  const messageForm = onMessage && (
+    <div className={freeTopics ? "border-b border-border" : "border-t border-border"}>
+      {microphoneActive && (
+        <p
+          role="status"
+          data-workjet-microphone-state="recording"
+          className="flex items-center gap-2 px-3 pt-2 text-xs text-muted-foreground"
         >
-          <MicIcon />
-        </Button>
+          <span aria-hidden="true" className="size-2 animate-pulse rounded-full bg-red-500" />
+          Aufnahme läuft – sprich, der Text erscheint im Feld
+        </p>
       )}
-      <Button type="submit" size="icon-sm" aria-label="Senden" disabled={busy || !message.trim()}>
-        <SendIcon />
-      </Button>
-    </form>
+      {microphoneError && (
+        <p role="alert" className="px-3 pt-2 text-xs text-destructive">
+          {microphoneError}
+        </p>
+      )}
+      <form
+        className="flex items-center gap-2 p-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (message.trim()) sendMessage(message.trim());
+        }}
+      >
+        <Input
+          aria-label="Nachricht an Supervisor"
+          maxLength={16384}
+          placeholder="Schreiben oder sprechen …"
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          className="min-w-0 flex-1"
+        />
+        {onToggleMicrophone && (
+          <Button
+            size="icon-sm"
+            variant={microphoneActive ? "destructive" : "outline"}
+            aria-label={microphoneActive ? "Mikrofon aus" : "Mikrofon an"}
+            aria-pressed={microphoneActive}
+            onClick={onToggleMicrophone}
+          >
+            <MicIcon />
+          </Button>
+        )}
+        <Button type="submit" size="icon-sm" aria-label="Senden" disabled={!message.trim()}>
+          <SendIcon />
+        </Button>
+      </form>
+    </div>
   );
   /** Endgültig ungespeicherte Änderung: eine Zeile direkt am Eingabefeld. */
   const pendingNotice = pendingChange && (
@@ -405,62 +554,69 @@ function JourFixeRoomContent({
           }).format(meeting.scheduledAt)}{" "}
           · {meeting.timezone}
         </time>
-        <span
-          className={`ml-auto rounded-full border px-2.5 py-1 text-xs capitalize ${meeting.state === "live" ? "border-red-400/30 bg-red-400/10 text-red-400" : meeting.state === "review" ? "border-amber-400/30 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}
-          data-meeting-state={meeting.state}
-        >
-          {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
-          {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
-        </span>
-        {startLocked ? (
-          <span
-            className="text-xs text-muted-foreground"
-            data-workjet-meeting-start-lock={meeting.state}
-          >
-            Beginnt um {meetingTimeLabel(meeting)}
-            {meeting.state === "preparing"
-              ? " · Vorbereitung läuft"
-              : meeting.state === "ready"
-                ? " · Vorbereitet"
-                : ""}
-          </span>
-        ) : (
-          meeting.state === "ready" &&
-          onStartMeeting && (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {beforeStart ? (
+            <span
+              className="text-xs text-muted-foreground"
+              data-meeting-state={meeting.state}
+              data-workjet-meeting-start-lock={startLocked ? meeting.state : undefined}
+            >
+              Beginnt {meetingTimeLabel(meeting)}
+            </span>
+          ) : meeting.state === "live" ? (
+            <span
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              data-meeting-state="live"
+            >
+              <span aria-hidden="true" className="size-2 rounded-full bg-green-500" />
+              läuft seit {meetingTimeLabel(meeting)}
+            </span>
+          ) : (
+            <span
+              className={`rounded-full border px-2.5 py-1 text-xs capitalize ${meeting.state === "review" ? "border-amber-400/30 bg-amber-400/10 text-amber-400" : "border-border text-muted-foreground"}`}
+              data-meeting-state={meeting.state}
+            >
+              {meeting.state === "confirmed" && <CheckIcon className="mr-1 inline size-3" />}
+              {MEETING_STATE_LABELS[meeting.state] ?? meeting.state}
+            </span>
+          )}
+          {canStart && (
             <Button
               size="sm"
               disabled={busy}
-              onClick={() => void perform(() => onStartMeeting(meeting.id, meeting.revision))}
+              aria-busy={starting}
+              data-workjet-meeting-start={starting ? "pending" : "idle"}
+              onClick={startMeeting}
             >
-              Termin starten
+              {jourFixeStartButtonLabel(starting)}
             </Button>
-          )
-        )}
-        {meeting.state === "live" && onEndMeeting && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              void perform(
-                () => onEndMeeting(meeting.id, meeting.revision),
-                () => setView(null),
-              )
-            }
-          >
-            Termin beenden
-          </Button>
-        )}
-        {meeting.todos && (
-          <Button
-            size="sm"
-            variant="outline"
-            aria-pressed={review}
-            onClick={() => setView(review ? "slides" : "review")}
-          >
-            {review ? "Folien" : "Prüfen"}
-          </Button>
-        )}
+          )}
+          {meeting.state === "live" && onEndMeeting && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() =>
+                void perform(
+                  () => onEndMeeting(meeting.id, meeting.revision),
+                  () => setView(null),
+                )
+              }
+            >
+              Beenden
+            </Button>
+          )}
+          {showTaskToggle && (
+            <Button
+              size="sm"
+              variant="outline"
+              aria-pressed={review}
+              onClick={() => setView(review ? "slides" : "review")}
+            >
+              {review ? "Zu den Folien" : "Aufgaben prüfen"}
+            </Button>
+          )}
+        </div>
         {(error || meeting.error) && (
           <span role="alert" className="flex items-center gap-2 text-xs text-destructive">
             {error ?? meeting.error}
@@ -627,7 +783,7 @@ function JourFixeRoomContent({
               )}
             </div>
           ) : slide ? (
-            <div className="space-y-3">
+            <div className="space-y-3" data-workjet-presenter-scope="">
               {canvasSlide && presentation && (
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   {slideSaveError && (
@@ -704,11 +860,10 @@ function JourFixeRoomContent({
                           {placingComment ? "Auf Folie klicken" : "Folie kommentieren"}
                         </Button>
                       )}
-                      {presentation.editable && (
+                      {presentation.editable && !placingComment && (
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={busy || placingComment}
                           onClick={() => {
                             saveEditRef.current = presentation.onSave;
                             setEditDocument(presentation.document);
@@ -728,14 +883,15 @@ function JourFixeRoomContent({
               )}
               <div
                 ref={stageRef}
-                className="relative aspect-video overflow-hidden rounded-lg border border-border bg-[#f5f3ee] text-[#18181b] [&:fullscreen]:rounded-none [&:fullscreen]:border-0"
+                tabIndex={0}
+                className={`relative aspect-video overflow-hidden rounded-lg border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring [&:fullscreen]:rounded-none [&:fullscreen]:border-0 ${STAGE_SURFACE_CLASSES}`}
                 data-workjet-meeting-stage=""
               >
                 {presentationStatus && (
                   <p
                     role={presentationStatus.state === "failed" ? "alert" : "status"}
                     data-workjet-presentation-state={presentationStatus.state}
-                    className={`absolute top-3 left-3 z-20 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs shadow-sm ${presentationStatus.state === "failed" ? "bg-background/95 text-destructive" : "bg-background/80 text-[#52525b]"}`}
+                    className={`absolute top-3 left-3 z-20 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs shadow-sm ${presentationStatus.state === "failed" ? "bg-background/95 text-destructive" : "bg-background/80 text-[#52525b] dark:text-[#a8a79f]"}`}
                   >
                     {presentationStatus.text}
                     {presentationStatus.state === "failed" && presentationStatus.onRetry && (
@@ -750,7 +906,7 @@ function JourFixeRoomContent({
                     fallback={
                       <p
                         role="status"
-                        className="absolute inset-0 grid place-items-center text-sm text-[#52525b]"
+                        className={`absolute inset-0 grid place-items-center text-sm ${STAGE_MUTED_CLASSES}`}
                       >
                         Folie wird geladen …
                       </p>
@@ -771,15 +927,25 @@ function JourFixeRoomContent({
                       }
                       slideId={slide.id}
                       mode={canvasEditing && editingSlideId === slide.id ? "edit" : "present"}
+                      theme={darkScheme ? "dark" : "light"}
                       onSceneChange={(scene) => {
                         if (canvasEpochRef.current === canvasEpoch) setPendingScene(scene);
                       }}
                       captureRef={captureRef}
                     />
                   </Suspense>
+                ) : presentationStatus?.state === "loading" ? (
+                  <p
+                    role="status"
+                    className={`absolute inset-0 grid place-items-center text-sm ${STAGE_MUTED_CLASSES}`}
+                  >
+                    Folie wird geladen …
+                  </p>
                 ) : (
                   <article className="absolute inset-0 overflow-auto p-[6%]">
-                    <p className="mb-2 text-[clamp(10px,1vw,13px)] tracking-wide text-[#71717a]">
+                    <p
+                      className={`mb-2 text-[clamp(10px,1vw,13px)] tracking-wide ${STAGE_MUTED_CLASSES}`}
+                    >
                       {index + 1} / {slides.length}
                     </p>
                     <h2 className="mb-5 text-[clamp(18px,2.5vw,32px)] leading-tight font-semibold tracking-tight">
@@ -917,30 +1083,60 @@ function JourFixeRoomContent({
                 controlRef={playerControl}
                 onFullscreen={toggleFullscreen}
               />
-              <p className="text-xs text-muted-foreground" data-workjet-agenda-line="">
-                {freeTopics
-                  ? "Freie Themen"
-                  : `Tagesordnung · Punkt ${index + 1} von ${slides.length} · ${slide.title}`}
-              </p>
               <nav aria-label="Folien" className="flex gap-2 overflow-x-auto pb-1">
-                {slides.map((item, number) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-label={`Folie ${number + 1}: ${item.title}`}
-                    aria-current={item.id === slide.id ? "step" : undefined}
-                    onClick={() => selectSlide(item.id)}
-                    className={`relative aspect-video w-[92px] shrink-0 overflow-hidden rounded-md border-2 bg-[#e9e6df] px-2 py-1 text-left text-[#18181b] ${item.id === slide.id ? "border-primary" : "border-transparent"}`}
-                  >
-                    <span className="line-clamp-2 text-[8px] leading-tight">{item.title}</span>
-                    <span className="absolute bottom-1 left-1.5 text-[10px]">{number + 1}</span>
-                    {jourFixeCommentsForSlide(meeting, item.id).length > 0 && (
-                      <span className="absolute top-1 right-1 rounded-full bg-primary px-1 text-[9px] text-primary-foreground">
-                        {jourFixeCommentsForSlide(meeting, item.id).length}
+                {slides.map((item, number) => {
+                  const itemComments = jourFixeCommentsForSlide(meeting, item.id).length;
+                  const itemIsCanvas =
+                    presentation !== undefined &&
+                    presentation.document.slides.some((entry) => entry.id === item.id);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-label={`Folie ${number + 1}: ${item.title}`}
+                      aria-current={item.id === slide.id ? "step" : undefined}
+                      onClick={() => selectSlide(item.id)}
+                      className={`relative aspect-video w-[128px] shrink-0 overflow-hidden rounded-md border-2 ${STAGE_SURFACE_CLASSES} ${item.id === slide.id ? "border-primary" : "border-transparent"}`}
+                    >
+                      {itemIsCanvas && presentation ? (
+                        <JourFixeCanvasThumb
+                          document={presentation.document}
+                          slideId={item.id}
+                          dark={darkScheme}
+                        />
+                      ) : (
+                        <div
+                          aria-hidden="true"
+                          className={`pointer-events-none absolute top-0 left-0 aspect-video w-[640px] origin-top-left scale-[0.2] overflow-hidden p-[6%] text-left [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-3 ${STAGE_SURFACE_CLASSES}`}
+                        >
+                          <p className={`mb-2 text-[13px] tracking-wide ${STAGE_MUTED_CLASSES}`}>
+                            {number + 1} / {slides.length}
+                          </p>
+                          <p className="mb-5 text-[32px] leading-tight font-semibold tracking-tight">
+                            {item.title}
+                          </p>
+                          <div className="text-[16px] leading-relaxed opacity-80">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              skipHtml
+                              components={MEETING_MARKDOWN_COMPONENTS}
+                            >
+                              {item.markdown}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 left-1.5 rounded bg-black/45 px-1 text-[10px] text-white">
+                        {number + 1}
                       </span>
-                    )}
-                  </button>
-                ))}
+                      {itemComments > 0 && (
+                        <span className="absolute top-1 right-1 rounded-full bg-primary px-1 text-[9px] text-primary-foreground">
+                          {itemComments}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </nav>
             </div>
           ) : (
@@ -953,20 +1149,29 @@ function JourFixeRoomContent({
           )}
         </div>
         <aside className="flex min-h-80 min-w-0 flex-col border-t border-border bg-muted/10 @min-[900px]:border-t-0 @min-[900px]:border-l">
-          <nav aria-label="Terminbereiche" className="flex gap-1 border-b border-border px-3 py-2">
+          <nav
+            aria-label="Terminbereiche"
+            role="tablist"
+            className="flex gap-1 border-b border-border px-3 py-2"
+          >
             {(["conversation", "comments", "agenda"] as const).map((name) => (
-              <Button
+              <button
                 key={name}
-                variant={panel === name ? "secondary" : "ghost"}
-                size="sm"
-                aria-pressed={panel === name}
+                type="button"
+                role="tab"
+                aria-selected={panel === name}
                 onClick={() => setPanel(name)}
+                className={`rounded-md border-b-2 px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  panel === name
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
               >
                 {PANEL_LABELS[name]}
                 {name === "comments" && meeting.comments.length > 0
                   ? ` ${meeting.comments.length}`
                   : ""}
-              </Button>
+              </button>
             ))}
           </nav>
           {freeTopics && (
@@ -995,12 +1200,39 @@ function JourFixeRoomContent({
                     <p className="mt-1 whitespace-pre-wrap text-sm">{turn.text}</p>
                   </div>
                 ))}
-                {partial && (
+                {outbox.map((item) => (
+                  <div key={item.id} data-workjet-outbox-message={item.state}>
+                    <p className="text-xs text-muted-foreground">Du</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm">{item.text}</p>
+                    {item.state === "failed" && (
+                      <p
+                        role="alert"
+                        className="mt-1 flex items-center gap-2 text-xs text-destructive"
+                      >
+                        Nicht gesendet
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => sendMessage(item.text, item.id)}
+                        >
+                          Erneut senden
+                        </Button>
+                      </p>
+                    )}
+                  </div>
+                ))}
+                {partial && !microphoneActive && (
                   <p role="status" className="text-sm italic text-muted-foreground">
                     {partial}
                   </p>
                 )}
+                {meeting.transcript.length === 0 && outbox.length === 0 && !partial && (
+                  <p className="text-sm text-muted-foreground">Noch keine Beiträge</p>
+                )}
               </>
+            )}
+            {panel === "comments" && meeting.comments.length === 0 && (
+              <p className="text-sm text-muted-foreground">Noch keine Kommentare</p>
             )}
             {panel === "comments" &&
               meeting.comments.map((item) => (
@@ -1014,6 +1246,9 @@ function JourFixeRoomContent({
                   <p className="mt-1 whitespace-pre-wrap">{item.text}</p>
                 </div>
               ))}
+            {panel === "agenda" && slides.length === 0 && (
+              <p className="text-sm text-muted-foreground">Noch keine Tagesordnung</p>
+            )}
             {panel === "agenda" &&
               slides.map((item, number) => (
                 <button
@@ -1029,7 +1264,7 @@ function JourFixeRoomContent({
                 </button>
               ))}
           </div>
-          {onMessage && editable && !freeTopics && (
+          {onMessage && !freeTopics && (
             <>
               {pendingNotice}
               {messageForm}

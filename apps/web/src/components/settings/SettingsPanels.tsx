@@ -1,5 +1,7 @@
+import { SupportBundleSection } from "./SupportBundleSection";
+import { workjetUiLanguage } from "../../workjetProjectControl";
+import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
-import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,7 +11,6 @@ import {
   type DesktopUpdateChannel,
   ProviderDriverKind,
   type ScopedThreadRef,
-  type SidebarProjectGroupingMode,
 } from "@workjet/contracts";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import {
@@ -112,10 +113,6 @@ import { ThemeLibrary } from "./ThemeSettings";
 import {
   getChangedTypographySettingLabels,
   hasChangedBackgroundActivitySettings,
-  isProjectGroupingEnabled,
-  projectGroupingModeFromToggle,
-  readLastEnabledProjectGroupingMode,
-  rememberEnabledProjectGroupingMode,
   resolveBackgroundActivityProfileOption,
 } from "./SettingsPanels.logic";
 import {
@@ -135,27 +132,8 @@ const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, s
 };
 
 const INTERFACE_LANGUAGE_LABELS = {
-  system: "System",
   de: "Deutsch",
   en: "English",
-} as const;
-
-/** Wochenbeginn texts per UI language; new languages add an entry. */
-const CALENDAR_WEEK_START_TEXT = {
-  de: {
-    title: "Wochenbeginn",
-    labels: { locale: "Automatisch", monday: "Montag", sunday: "Sonntag" },
-  },
-  en: {
-    title: "Week starts on",
-    labels: { locale: "Automatic", monday: "Monday", sunday: "Sunday" },
-  },
-} as const;
-
-const TIMESTAMP_FORMAT_LABELS = {
-  locale: "System",
-  "12-hour": "12 Stunden",
-  "24-hour": "24 Stunden",
 } as const;
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
@@ -165,6 +143,10 @@ const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, stri
 };
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+function archiveText(de: string, en: string): string {
+  return workjetUiLanguage() === "en" ? en : de;
+}
+
 function resetBackgroundActivitySettings() {
   return {
     backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -496,19 +478,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
         ? ["Projektordner"]
         : []),
-      ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
-        ? ["Archivieren bestätigen"]
-        : []),
-      ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
-        ? ["Löschen bestätigen"]
-        : []),
       ...(isTextGenerationModelDirty ? ["Textmodell"] : []),
     ],
     [
       isTextGenerationModelDirty,
       isBackgroundActivityDirty,
-      settings.confirmThreadArchive,
-      settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
@@ -1398,13 +1372,10 @@ function LegacyFeaturesSection() {
 }
 
 export function GeneralSettingsPanel() {
-  const weekStartText = CALENDAR_WEEK_START_TEXT[useProjectOverviewLanguage()];
+  const t = useUiText();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
-  const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
-    readLastEnabledProjectGroupingMode(),
-  );
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
@@ -1445,17 +1416,18 @@ export function GeneralSettingsPanel() {
           title="Sprache"
           control={
             <Select
-              value={settings.interfaceLanguage}
+              value={settings.interfaceLanguage === "en" ? "en" : "de"}
               onValueChange={(value) => {
-                if (value === "system" || value === "de" || value === "en")
+                if (value === "de" || value === "en")
                   updateClientSettings({ interfaceLanguage: value });
               }}
             >
               <SelectTrigger aria-label="Sprache" className="w-40">
-                <SelectValue>{INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage]}</SelectValue>
+                <SelectValue>
+                  {INTERFACE_LANGUAGE_LABELS[settings.interfaceLanguage === "en" ? "en" : "de"]}
+                </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="system">System</SelectItem>
                 <SelectItem value="de">Deutsch</SelectItem>
                 <SelectItem value="en">English</SelectItem>
               </SelectPopup>
@@ -1472,193 +1444,77 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
         <SettingsRow
-          {...searchableSetting("project-grouping")}
+          {...searchableSetting("text-generation-model")}
           resetAction={
-            settings.sidebarProjectGroupingMode !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode ? (
+            isTextGenerationModelDirty ? (
               <SettingResetButton
-                label="Projekte gruppieren"
+                label="Textmodell"
                 onClick={() =>
                   updateSettings({
-                    sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+                    textGenerationModelSelection:
+                      DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
                   })
                 }
               />
             ) : null
           }
           control={
-            <Switch
-              checked={isProjectGroupingEnabled(settings.sidebarProjectGroupingMode)}
-              onCheckedChange={(checked) => {
-                if (!checked && settings.sidebarProjectGroupingMode !== "separate") {
-                  lastEnabledProjectGroupingMode.current = settings.sidebarProjectGroupingMode;
-                  rememberEnabledProjectGroupingMode(settings.sidebarProjectGroupingMode);
-                }
-                updateSettings({
-                  sidebarProjectGroupingMode: projectGroupingModeFromToggle(
-                    checked,
-                    lastEnabledProjectGroupingMode.current,
-                  ),
-                });
-              }}
-              aria-label="Projekte gruppieren"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("time-format")}
-          resetAction={
-            settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
-              <SettingResetButton
-                label="Zeitformat"
-                onClick={() =>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <ProviderModelPicker
+                activeInstanceId={textGenInstanceId}
+                model={textGenModel}
+                lockedProvider={null}
+                instanceEntries={textGenerationModelInstanceEntries}
+                modelOptionsByInstance={textGenerationModelOptionsByInstance}
+                triggerVariant="outline"
+                triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                onInstanceModelChange={(instanceId, model) => {
                   updateSettings({
-                    timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.timestampFormat}
-              onValueChange={(value) => {
-                if (value === "locale" || value === "12-hour" || value === "24-hour") {
-                  updateSettings({ timestampFormat: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Zeitformat">
-                <SelectValue>{TIMESTAMP_FORMAT_LABELS[settings.timestampFormat]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {TIMESTAMP_FORMAT_LABELS.locale}
-                </SelectItem>
-                <SelectItem hideIndicator value="12-hour">
-                  {TIMESTAMP_FORMAT_LABELS["12-hour"]}
-                </SelectItem>
-                <SelectItem hideIndicator value="24-hour">
-                  {TIMESTAMP_FORMAT_LABELS["24-hour"]}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("calendar-week-start")}
-          title={weekStartText.title}
-          resetAction={
-            settings.calendarWeekStart !== DEFAULT_UNIFIED_SETTINGS.calendarWeekStart ? (
-              <SettingResetButton
-                label={weekStartText.title}
-                onClick={() =>
-                  updateSettings({
-                    calendarWeekStart: DEFAULT_UNIFIED_SETTINGS.calendarWeekStart,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.calendarWeekStart}
-              onValueChange={(value) => {
-                if (value === "locale" || value === "monday" || value === "sunday") {
-                  updateSettings({ calendarWeekStart: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label={weekStartText.title}>
-                <SelectValue>{weekStartText.labels[settings.calendarWeekStart]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {weekStartText.labels.locale}
-                </SelectItem>
-                <SelectItem hideIndicator value="monday">
-                  {weekStartText.labels.monday}
-                </SelectItem>
-                <SelectItem hideIndicator value="sunday">
-                  {weekStartText.labels.sunday}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          title="Hintergrundaktivität"
-          resetAction={
-            canResetBackgroundActivity ? (
-              <SettingResetButton
-                label="Hintergrundaktivität"
-                onClick={() => updateSettings(resetBackgroundActivitySettings())}
-              />
-            ) : null
-          }
-          control={
-            <>
-              <Select
-                value={backgroundActivityProfile}
-                onValueChange={(value) => {
-                  if (
-                    value === "balanced" ||
-                    value === "performance" ||
-                    value === "battery-saver"
-                  ) {
-                    updateSettings(backgroundActivityProfileSettings(value));
-                  }
+                    textGenerationModelSelection: resolveAppModelSelectionState(
+                      {
+                        ...settings,
+                        textGenerationModelSelection: createModelSelection(instanceId, model),
+                      },
+                      serverProviders,
+                    ),
+                  });
                 }}
-              >
-                <SelectTrigger className="w-full sm:w-40" aria-label="Hintergrundaktivität">
-                  <SelectValue>
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS[backgroundActivityProfile]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="balanced">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="performance">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="battery-saver">
-                    {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            </>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("add-project-starts-in")}
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="Projektordner"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
               />
-            ) : null
-          }
-          control={
-            <DraftInput
-              className="w-full sm:w-72"
-              value={settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder="~/"
-              spellCheck={false}
-              aria-label={searchableSetting("add-project-starts-in").title}
-            />
+              <TraitsPicker
+                provider={textGenProvider}
+                models={
+                  // Use the exact instance's models (rather than the
+                  // first-kind-match) so a custom text-gen instance like
+                  // `codex_personal` gets its own model list, not the
+                  // default Codex one.
+                  textGenInstanceEntry?.models ?? []
+                }
+                model={textGenModel}
+                prompt=""
+                onPromptChange={() => {}}
+                modelOptions={textGenModelOptions}
+                allowPromptInjectedEffort={false}
+                triggerVariant="outline"
+                triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                onModelOptionsChange={(nextOptions) => {
+                  updateSettings({
+                    textGenerationModelSelection: resolveAppModelSelectionState(
+                      {
+                        ...settings,
+                        textGenerationModelSelection: createModelSelection(
+                          textGenInstanceId,
+                          textGenModel,
+                          nextOptions,
+                        ),
+                      },
+                      serverProviders,
+                    ),
+                  });
+                }}
+              />
+            </div>
           }
         />
 
@@ -1679,6 +1535,53 @@ export function GeneralSettingsPanel() {
       {settings.developerMode ? (
         <>
           <SettingsSection title="Entwickler">
+            <SettingsRow
+              title={t("Hintergrundaktivität", "Background activity")}
+              resetAction={
+                canResetBackgroundActivity ? (
+                  <SettingResetButton
+                    label={t("Hintergrundaktivität", "Background activity")}
+                    onClick={() => updateSettings(resetBackgroundActivitySettings())}
+                  />
+                ) : null
+              }
+              control={
+                <>
+                  <Select
+                    value={backgroundActivityProfile}
+                    onValueChange={(value) => {
+                      if (
+                        value === "balanced" ||
+                        value === "performance" ||
+                        value === "battery-saver"
+                      ) {
+                        updateSettings(backgroundActivityProfileSettings(value));
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      className="w-full sm:w-40"
+                      aria-label={t("Hintergrundaktivität", "Background activity")}
+                    >
+                      <SelectValue>
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS[backgroundActivityProfile]}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      <SelectItem hideIndicator value="balanced">
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
+                      </SelectItem>
+                      <SelectItem hideIndicator value="performance">
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
+                      </SelectItem>
+                      <SelectItem hideIndicator value="battery-saver">
+                        {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
+                      </SelectItem>
+                    </SelectPopup>
+                  </Select>
+                </>
+              }
+            />
             <SettingsRow
               {...searchableSetting("auto-settle-merged-threads")}
               resetAction={
@@ -1870,129 +1773,6 @@ export function GeneralSettingsPanel() {
                 }
               />
             ) : null}
-
-            <SettingsRow
-              {...searchableSetting("archive-confirmation")}
-              resetAction={
-                settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
-                  <SettingResetButton
-                    label="Archivieren bestätigen"
-                    onClick={() =>
-                      updateSettings({
-                        confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <Switch
-                  checked={settings.confirmThreadArchive}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ confirmThreadArchive: Boolean(checked) })
-                  }
-                  aria-label="Archivieren bestätigen"
-                />
-              }
-            />
-
-            <SettingsRow
-              {...searchableSetting("delete-confirmation")}
-              resetAction={
-                settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
-                  <SettingResetButton
-                    label="Löschen bestätigen"
-                    onClick={() =>
-                      updateSettings({
-                        confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <Switch
-                  checked={settings.confirmThreadDelete}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ confirmThreadDelete: Boolean(checked) })
-                  }
-                  aria-label="Löschen bestätigen"
-                />
-              }
-            />
-
-            <SettingsRow
-              {...searchableSetting("text-generation-model")}
-              resetAction={
-                isTextGenerationModelDirty ? (
-                  <SettingResetButton
-                    label="Textmodell"
-                    onClick={() =>
-                      updateSettings({
-                        textGenerationModelSelection:
-                          DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-                      })
-                    }
-                  />
-                ) : null
-              }
-              control={
-                <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <ProviderModelPicker
-                    activeInstanceId={textGenInstanceId}
-                    model={textGenModel}
-                    lockedProvider={null}
-                    instanceEntries={textGenerationModelInstanceEntries}
-                    modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                    triggerVariant="outline"
-                    triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                    onInstanceModelChange={(instanceId, model) => {
-                      updateSettings({
-                        textGenerationModelSelection: resolveAppModelSelectionState(
-                          {
-                            ...settings,
-                            textGenerationModelSelection: createModelSelection(instanceId, model),
-                          },
-                          serverProviders,
-                        ),
-                      });
-                    }}
-                  />
-                  <TraitsPicker
-                    provider={textGenProvider}
-                    models={
-                      // Use the exact instance's models (rather than the
-                      // first-kind-match) so a custom text-gen instance like
-                      // `codex_personal` gets its own model list, not the
-                      // default Codex one.
-                      textGenInstanceEntry?.models ?? []
-                    }
-                    model={textGenModel}
-                    prompt=""
-                    onPromptChange={() => {}}
-                    modelOptions={textGenModelOptions}
-                    allowPromptInjectedEffort={false}
-                    triggerVariant="outline"
-                    triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                    onModelOptionsChange={(nextOptions) => {
-                      updateSettings({
-                        textGenerationModelSelection: resolveAppModelSelectionState(
-                          {
-                            ...settings,
-                            textGenerationModelSelection: createModelSelection(
-                              textGenInstanceId,
-                              textGenModel,
-                              nextOptions,
-                            ),
-                          },
-                          serverProviders,
-                        ),
-                      });
-                    }}
-                  />
-                </div>
-              }
-            />
           </SettingsSection>
           <LegacyFeaturesSection />
         </>
@@ -2004,15 +1784,9 @@ export function GeneralSettingsPanel() {
         ) : (
           <SettingsRow title={<AboutVersionTitle />} />
         )}
-        <SettingsRow
-          {...searchableSetting("diagnostics")}
-          control={
-            <Button render={<Link to="/settings/diagnostics" />} size="xs" variant="outline">
-              Diagnose öffnen
-            </Button>
-          }
-        />
       </SettingsSection>
+      {/* Diagnose is a developer tool (#552); end users keep only the support bundle. */}
+      {settings.developerMode ? null : <SupportBundleSection />}
     </SettingsPageContainer>
   );
 }
@@ -2193,29 +1967,33 @@ export function ArchivedThreadsPanel() {
         >
           {isLoadingArchive ? (
             <EmptyLoading
-              title="Archiv wird geladen …"
-              slowMessage="Archiv nicht geladen."
+              title={archiveText("Chat-Archiv wird geladen …", "Loading chat archive …")}
+              slowMessage={archiveText("Chat-Archiv nicht geladen.", "Chat archive not loaded.")}
               onRetry={refreshArchivedThreads}
             />
           ) : archiveError ? (
             <Empty>
               <EmptyHeader>
-                <EmptyTitle role="alert">Archiv nicht geladen</EmptyTitle>
+                <EmptyTitle role="alert">
+                  {archiveText("Chat-Archiv nicht geladen", "Chat archive not loaded")}
+                </EmptyTitle>
               </EmptyHeader>
               <EmptyContent>
                 <Button variant="outline" onClick={() => refreshArchivedThreads()}>
-                  Erneut versuchen
+                  {archiveText("Erneut versuchen", "Retry")}
                 </Button>
               </EmptyContent>
             </Empty>
           ) : (
             <Empty>
               <EmptyHeader>
-                <EmptyTitle>Keine archivierten Unterhaltungen</EmptyTitle>
+                <EmptyTitle>
+                  {archiveText("Keine archivierten Unterhaltungen", "No archived conversations")}
+                </EmptyTitle>
               </EmptyHeader>
               <EmptyContent>
                 <Button variant="outline" render={<Link to="/" />}>
-                  Zu den Projekten
+                  {archiveText("Zu den Projekten", "To projects")}
                 </Button>
               </EmptyContent>
             </Empty>
@@ -2286,5 +2064,41 @@ export function ArchivedThreadsPanel() {
         ))
       )}
     </SettingsPageContainer>
+  );
+}
+
+/**
+ * Where new projects start on THIS computer. Machine-specific, so it lives on
+ * Rechner, not in Allgemein (Michael, 2026-10-13).
+ */
+export function ProjectFolderSettingRow() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("add-project-starts-in")}
+      resetAction={
+        settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+          <SettingResetButton
+            label="Projektordner"
+            onClick={() =>
+              updateSettings({
+                addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <DraftInput
+          className="w-full sm:w-72"
+          value={settings.addProjectBaseDirectory}
+          onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+          placeholder="~/"
+          spellCheck={false}
+          aria-label={searchableSetting("add-project-starts-in").title}
+        />
+      }
+    />
   );
 }

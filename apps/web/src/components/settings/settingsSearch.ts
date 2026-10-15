@@ -1,8 +1,8 @@
 export type SettingsPath =
   | "/settings/business-os"
   | "/settings/general"
+  | "/settings/prompts"
   | "/settings/appearance"
-  | "/settings/harnesses"
   | "/settings/models"
   | "/settings/speech"
   | "/settings/computers"
@@ -29,17 +29,19 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/business-os": "Instanzen",
   "/settings/general": "Allgemein",
   "/settings/appearance": "Darstellung",
-  "/settings/harnesses": "Harnesses",
   "/settings/models": "Modelle",
   "/settings/speech": "Sprachausgabe",
   "/settings/computers": "Rechner",
   // Worker composition sits beside the pages it references (Models,
-  // Computers, Harnesses); Source Control follows the workflow pages.
-  "/settings/workjet": "Lumas",
+  // Computers); Source Control follows the workflow pages. Coding agents
+  // (formerly the Harnesses page) live on Rechner since #554.
+  "/settings/workjet": "Worker-Presets",
+  "/settings/prompts": "System-Prompts",
   "/settings/projects": "Projekte",
   "/settings/source-control": "Versionsverwaltung",
   "/settings/diagnostics": "Diagnose",
-  "/settings/archived": "Archiv",
+  // Names its content: the start page "Archiv" holds projects, this one conversations (#602).
+  "/settings/archived": "Chat-Archiv",
   "/settings/usage": "Verbrauch",
 };
 
@@ -52,7 +54,7 @@ const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly str
   "/settings/computers": ["Computers"],
   "/settings/source-control": ["Source Control"],
   "/settings/diagnostics": ["Diagnostics"],
-  "/settings/archived": ["Archive"],
+  "/settings/archived": ["Archiv", "Archive", "Archived conversations", "Unterhaltungen"],
   "/settings/usage": ["Usage", "Kosten", "Tokens"],
 };
 
@@ -176,17 +178,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "add-project-starts-in",
     title: "Projektordner",
-    to: "/settings/general",
-  },
-  {
-    id: "archive-confirmation",
-    title: "Archivieren bestätigen",
-    to: "/settings/general",
-  },
-  {
-    id: "delete-confirmation",
-    title: "Löschen bestätigen",
-    to: "/settings/general",
+    to: "/settings/computers",
   },
   {
     id: "text-generation-model",
@@ -216,13 +208,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "harnesses",
-    title: "Harnesses",
-    to: "/settings/harnesses",
+    title: "Coding-Agenten",
+    to: "/settings/computers",
+    searchAliases: ["Harnesses", "Coding agents", "CLI"],
   },
   {
     id: "import-sessions",
     title: "Sitzungen importieren",
-    to: "/settings/harnesses",
+    to: "/settings/computers",
     searchAliases: ["import", "history", "histories"],
   },
   {
@@ -233,8 +226,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "workjet-workers",
     // Match the page title to keep one result, while preserving old search vocabulary.
-    title: "Lumas",
-    searchAliases: ["worker", "workers", "agent", "agents"],
+    title: "Worker-Presets",
+    searchAliases: ["worker", "workers", "presets", "lumas", "agent", "agents"],
     to: "/settings/workjet",
   },
   {
@@ -265,18 +258,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/models",
   },
   {
-    id: "workjet-organigram",
-    title: "Organigramm",
-    to: "/settings/workjet",
-  },
-  {
     id: "workjet-prompt",
-    title: "Prompt",
-    to: "/settings/workjet",
+    title: "System-Prompts",
+    to: "/settings/prompts",
   },
   {
     id: "workjet-telemetry",
-    title: "Telemetrie",
+    title: "Protokoll",
     to: "/settings/workjet",
   },
   {

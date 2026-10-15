@@ -252,9 +252,10 @@ describe("owner project overview", () => {
     expect(data.kpis.find((kpi) => kpi.id === "tokens")?.label).toBe("Token-Budget");
     expect(data.kpis.every((kpi) => !("explanation" in kpi))).toBe(true);
     const html = markup([supervisor, specialist]);
-    expect(html).not.toContain("Sessions");
     expect(html).not.toContain("Latency");
-    expect(html).toContain(">—<");
+    // Missing values: one sentence, no dash tiles (feed redesign).
+    expect(html).toContain("Kennzahlen sind noch nicht berechnet.");
+    expect(html).not.toContain(">—<");
     expect(html).not.toMatch(/noch nicht verfügbar|not yet available/iu);
   });
   it("uses confirmed to-dos before persistent goals without inventing completion", () => {
@@ -348,10 +349,10 @@ describe("owner project overview", () => {
   it("keeps the native supervisor route unknown rather than substituting its local thread model", () => {
     expect(markup([supervisor])).not.toContain("gpt-6.1-sol");
   });
-  it("follows the mock's section order and translates all overview navigation in both languages", () => {
+  it("shows the feed first, then live, meeting, KPIs and goals, and translates all overview navigation in both languages", () => {
     for (const language of ["de", "en"] as const) {
       const html = markup([supervisor], language);
-      const positions = ["kpis", "goals", "results", "history"].map((section) =>
+      const positions = ["feed", "live", "kpis"].map((section) =>
         html.indexOf('data-workjet-overview-section="' + section + '"'),
       );
       expect(positions).toEqual([...positions].sort((a, b) => a - b));
@@ -418,15 +419,11 @@ describe("owner project overview", () => {
   it("resolves the saved UI setting before the browser language", () => {
     expect(projectOverviewLanguage("de", "en-US")).toBe("de");
     expect(projectOverviewLanguage("en", "de-DE")).toBe("en");
-    expect(projectOverviewLanguage("system", "de-DE")).toBe("de");
-    expect(projectOverviewLanguage("system", "en-US")).toBe("en");
+    expect(projectOverviewLanguage("system", "en-US")).toBe("de");
   });
-  it("follows the OS preference list for the system setting", () => {
-    expect(projectOverviewLanguage("system", ["de-AT", "en-US"])).toBe("de");
-    expect(projectOverviewLanguage("system", ["de_CH"])).toBe("de");
-    expect(projectOverviewLanguage("system", ["fr-FR", "de-DE"])).toBe("de");
-    expect(projectOverviewLanguage("system", ["fr-FR", "es-ES"])).toBe("de");
+  it("ignores the OS language: the retired system setting means German (#567)", () => {
+    expect(projectOverviewLanguage("system", ["EN-gb"])).toBe("de");
     expect(projectOverviewLanguage("system", [])).toBe("de");
-    expect(projectOverviewLanguage("system", ["EN-gb"])).toBe("en");
+    expect(projectOverviewLanguage("fr", ["fr-FR"])).toBe("de");
   });
 });

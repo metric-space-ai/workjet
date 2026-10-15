@@ -13,11 +13,18 @@ import {
 
 export type ExitModelRequest = Extract<
   CtoxWorkjetProjectControlRequest,
-  { readonly action: "project.exit_model.read" | "project.exit_model.refresh" }
+  {
+    readonly action:
+      | "project.exit_model.read"
+      | "project.exit_model.refresh"
+      | "project.exit_model.submit";
+  }
 >;
 
 const isAssessment = Schema.is(WorkjetExitModelAssessment);
 const isResponse = Schema.is(WorkjetExitModelResponse);
+
+export type ExitModelFailureReason = "unavailable" | "timeout" | "rejected" | "uncorrelated";
 
 export async function requestProjectExitModel(
   instanceId: string,
@@ -25,31 +32,39 @@ export async function requestProjectExitModel(
   port?: WorkjetProjectControlPort,
 ): Promise<
   | { readonly _tag: "completed"; readonly assessment: WorkjetExitModelAssessment }
-  | { readonly _tag: "failed"; readonly message: string }
+  | { readonly _tag: "failed"; readonly message: string; readonly reason: ExitModelFailureReason }
 > {
   try {
     const result = await requestWorkjetProjectControl(instanceId, request, port);
     if (result._tag !== "completed") {
+      if (result.code === "timeout" || result.diagnostic?.reason === "request_timeout")
+        return { _tag: "failed", message: "Bewertung nicht geladen.", reason: "timeout" };
       const unavailable = result.code === "unsupported" || result.code === "guest_failed";
       return {
         _tag: "failed",
         message: unavailable ? "Bewertungsdienst nicht verfügbar." : "Bewertung nicht geladen.",
+        reason: unavailable ? "unavailable" : "rejected",
       };
     }
     const response = result.response;
+    const confirmed =
+      request.action !== "project.exit_model.submit" ||
+      (isResponse(response) && response.assessment.confirmed_from_run_id === request.confirmRunId);
     if (
       !isResponse(response) ||
       response.action !== request.action ||
       response.commandId !== request.commandId ||
-      response.projectId !== request.projectId
+      response.projectId !== request.projectId ||
+      !confirmed
     )
       return {
         _tag: "failed",
         message: "Antwort passt nicht zum Projekt.",
+        reason: "uncorrelated",
       };
     return { _tag: "completed", assessment: response.assessment };
   } catch {
-    return { _tag: "failed", message: "Bewertung nicht geladen." };
+    return { _tag: "failed", message: "Bewertung nicht geladen.", reason: "rejected" };
   }
 }
 
@@ -61,6 +76,52 @@ export const EXIT_MODEL_STATUS_LABELS: Record<WorkjetExitModelStatus, string> = 
   ready: "Bewertet",
   failed: "Bewertung fehlgeschlagen",
 };
+
+export const EXIT_COMPARISON_MODE_LABELS = {
+  equal_resources: "Gleiche Ressourcen",
+  project_specific: "Projektbezogen",
+} as const;
+
+/** A blocked run whose resource proposal can be adopted with one submit. */
+export function isConfirmableExitProposal(
+  assessment: WorkjetExitModelAssessment | null | undefined,
+): boolean {
+  if (assessment == null) return false;
+  return (
+    assessment.status === "blocked" &&
+    assessment.plan_summary?.confirmed === false &&
+    assessment.missing_inputs.includes("confirmed_resource_plan") &&
+    assessment.findings.some(
+      (finding) => finding.code === "resource_proposal_requires_confirmation",
+    ) &&
+    assessment.resource_proposal != null &&
+    assessment.run_id != null
+  );
+}
+
+export function isExitResearchMissingInput(input: string): boolean {
+  return (
+    input === "research_inputs" ||
+    input === "researched_inputs" ||
+    input === "valid_source_backed_research_inputs" ||
+    input.startsWith("source:") ||
+    input.startsWith("current_source:")
+  );
+}
+
+/** „12 h/Woche · 3.000 €/Monat“ — full euros, not the compact forecast scale. */
+export function formatExitProposal(proposal: {
+  readonly hours_per_week: number;
+  readonly monthly_budget_eur: number;
+}): string {
+  const hours = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(
+    proposal.hours_per_week,
+  );
+  const budget = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(
+    proposal.monthly_budget_eur,
+  );
+  return hours + " h/Woche · " + budget + " €/Monat";
+}
 
 export function formatExitMissingInput(
   input: string,

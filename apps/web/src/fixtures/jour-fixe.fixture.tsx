@@ -70,6 +70,7 @@ function syntheticNarration() {
 }
 // `?presentation=1`: the first two slides carry a hand-drawn presentation; saves stay in memory.
 // `?scheduledIn=30`: the meeting is scheduled N minutes from now, to show the start lock.
+// `?start=hang`: „Termin starten“ bleibt auf „Startet …“, die Bestätigung kommt nicht.
 // `?speech=1&narration=ready|loading|failed`: speech session with a fixture provider,
 // so the dense German narration states (load, failure + „Neu laden“, playing) are visible.
 // `?presentationState=loading|failed`: die knappe Folien-Statuszeile in der Folienfläche.
@@ -83,6 +84,10 @@ const presentationState = params.get("presentationState");
 const withPendingChange = params.get("pending") === "1";
 const withChrome = params.get("chrome") === "1";
 const scheduledInMinutes = Number(params.get("scheduledIn") ?? Number.NaN);
+const startHangs = params.get("start") === "hang";
+const initialState = params.get("state") as JourFixeRoomSnapshot["state"] | null;
+// `?theme=dark`: der Raum folgt dem dunklen App-Schema (Klasse auf dem Wurzelelement).
+if (params.get("theme") === "dark") document.documentElement.classList.add("dark");
 const presentationStatus: JourFixeAreaStatus | undefined =
   presentationState === "loading" || presentationState === "failed"
     ? {
@@ -101,14 +106,14 @@ const fixturePresentation: SlideDocument = {
 
 function Fixture() {
   const [view, setView] = useState<"overview" | "calendar" | "meeting">(
-    withSpeech ? "meeting" : "overview",
+    withSpeech || params.get("view") === "meeting" ? "meeting" : "overview",
   );
   const [chipDismissed, setChipDismissed] = useState(false);
   const [presentation, setPresentation] = useState<SlideDocument>(fixturePresentation);
   const [canvasSaveCount, setCanvasSaveCount] = useState(0);
   const [meeting, setMeeting] = useState<JourFixeRoomSnapshot>({
     ...contractMeeting,
-    state: "live",
+    state: initialState ?? "live",
     ...(Number.isFinite(scheduledInMinutes)
       ? { scheduledAt: Date.now() + scheduledInMinutes * 60_000 }
       : {}),
@@ -352,11 +357,13 @@ function Fixture() {
             setMeeting({ ...meeting });
           }}
           onStartMeeting={(_id, revision) =>
-            apply(revision, (current) => ({
-              ...current,
-              state: "live",
-              revision: current.revision + 1,
-            }))
+            startHangs
+              ? new Promise(() => {})
+              : apply(revision, (current) => ({
+                  ...current,
+                  state: "live",
+                  revision: current.revision + 1,
+                }))
           }
           onEndMeeting={(_id, revision) =>
             apply(revision, (current) => ({

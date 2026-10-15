@@ -124,9 +124,7 @@ describe("conversation import browser controls", () => {
   });
   it("supports existing and new destination projects through the same visible selector", () => {
     const input = props();
-    (control(input, "Zielprojekt").onChange as (event: { target: { value: string } }) => void)({
-      target: { value: "new" },
-    });
+    (control(input, "Zielprojekt").onValueChange as (value: string) => void)("new");
     expect(input.onDestinationChange).toHaveBeenCalledWith("new");
     expect(control({ ...input, destination: "new" }, "Projektname")).toBeDefined();
     expect(control({ ...input, destination: "new" }, "Projektordner")).toBeDefined();

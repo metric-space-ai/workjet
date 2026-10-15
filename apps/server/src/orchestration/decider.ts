@@ -1586,11 +1586,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         thread.session?.status === "starting" ||
         thread.session?.status === "running" ||
         hasOpenBlockingRequest(thread) ||
-        (config.supervisorTick?.lastControlAt != null &&
-          thread.session?.status !== "error" &&
-          Date.parse(thread.latestTurn?.requestedAt ?? thread.createdAt) <
-            Date.parse(config.supervisorTick.lastControlAt)) ||
-        threadHasQueuedTurnStart(thread, command.createdAt, Number.POSITIVE_INFINITY);
+        threadHasQueuedTurnStart(thread, command.createdAt);
       const state = {
         lastTickAt: command.createdAt,
         lastControlAt: busy ? (config.supervisorTick?.lastControlAt ?? null) : command.createdAt,

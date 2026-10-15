@@ -44,6 +44,7 @@ import {
   cloneProjectRepository,
   defaultCloneBaseDirectory,
   deriveRepositoryFolderName,
+  readableProjectTitle,
   findDuplicateProjectForName,
   pickProjectFolder,
   readyCloneProviders,
@@ -202,7 +203,8 @@ export function useProjectCreateSources(input: {
           undefined)
         : undefined;
   // Keep the existing project's casing („Metric“), not the folder's („metric“).
-  const derivedTitle = duplicate?.title ?? sourceName;
+  const derivedTitle =
+    duplicate?.title ?? (input.source === "clone" ? readableProjectTitle(sourceName) : sourceName);
   const ready =
     environmentId !== null &&
     (input.source === "clone"

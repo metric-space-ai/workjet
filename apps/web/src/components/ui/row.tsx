@@ -11,6 +11,7 @@
  * (drei Orte: Dev, Ops, Einstellungen; keine Popups). Unter 640 px rutscht
  * sie unter die Zeile, damit alle Knöpfe ganz sichtbar bleiben.
  */
+import { WORKJET_STATUS_DOT_CLASS } from "../../workjetStatus";
 import { ChevronDownIcon, EllipsisVerticalIcon, Trash2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -22,11 +23,12 @@ import { cn } from "~/lib/utils";
 
 export type RowStatus = "ok" | "busy" | "error" | "off";
 
+/** Row dots use the central status colors (#566). */
 const ROW_STATUS_DOT_CLASS: Record<RowStatus, string> = {
-  ok: "bg-emerald-500",
-  busy: "bg-amber-500",
-  error: "bg-destructive",
-  off: "bg-muted-foreground/40",
+  ok: WORKJET_STATUS_DOT_CLASS.ok,
+  busy: WORKJET_STATUS_DOT_CLASS.waiting,
+  error: WORKJET_STATUS_DOT_CLASS.blocked,
+  off: WORKJET_STATUS_DOT_CLASS.missing,
 };
 
 export interface RowMenuAction {
@@ -71,6 +73,8 @@ export interface RowProps {
   readonly onDelete?: () => void;
   readonly deleteLabel?: string;
   readonly deleteConfirmTitle?: string;
+  /** Löschen läuft sofort; der Aufrufer zeigt Rückgängig statt einer Bestätigung (#637). */
+  readonly undoableDelete?: boolean;
   /** Seltene Aktionen hinter dem ⋯-Menü. */
   readonly menuActions?: ReadonlyArray<RowMenuAction>;
   readonly menuLabel?: string;
@@ -97,6 +101,7 @@ function Row({
   deleteOptions,
   deleteLabel = "Löschen",
   deleteConfirmTitle,
+  undoableDelete = false,
   menuActions,
   menuLabel = "Weitere Aktionen",
   onToggleExpanded,
@@ -218,13 +223,20 @@ function Row({
                 render={
                   <Button
                     aria-label={deleteLabel}
-                    size="icon-sm"
+                    size="xs"
                     variant="ghost"
-                    onClick={() => setConfirmingDelete(true)}
+                    className="text-muted-foreground"
+                    onClick={() => {
+                      // Undoable deletes run at once; the caller offers „Rückgängig“.
+                      if (undoableDelete && onDelete) onDelete();
+                      else setConfirmingDelete(true);
+                    }}
                   />
                 }
               >
                 <Trash2Icon />
+                {/* Icons explain themselves: the word is always visible, also on touch. */}
+                <span>{deleteLabel}</span>
               </TooltipTrigger>
               <TooltipPopup>{deleteLabel}</TooltipPopup>
             </Tooltip>

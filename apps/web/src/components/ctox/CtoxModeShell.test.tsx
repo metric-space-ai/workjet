@@ -79,18 +79,18 @@ it("does not treat an opened guest as a synchronized module", () => {
     healthSummary: unavailable,
   });
   expect(ctoxInstanceStatusLabel(local, false)).toBe(
-    "Verfügbar · Synchronisierung nicht verfügbar",
+    "Verbunden · Synchronisierung nicht verfügbar",
   );
   expect(ctoxInstanceStatusLabel(local, true)).toBe(
-    "Verfügbar · Synchronisierung nicht verfügbar · Geöffnet · Datenstand unbestätigt",
+    "Verbunden · Synchronisierung nicht verfügbar · Geöffnet · Datenstand unbestätigt",
   );
 });
 
 it("keeps module freshness unconfirmed when discovery advertises a ready data plane", () => {
   const managed = instance({ id: "managed:welsch", source: "ctox_dev", displayName: "Welsch" });
-  expect(ctoxInstanceStatusLabel(managed)).toBe("Verfügbar · Synchronisierung verfügbar");
+  expect(ctoxInstanceStatusLabel(managed)).toBe("Verbunden · Synchronisierung verfügbar");
   expect(ctoxInstanceStatusLabel(managed, true)).toBe(
-    "Verfügbar · Synchronisierung verfügbar · Geöffnet · Datenstand unbestätigt",
+    "Verbunden · Synchronisierung verfügbar · Geöffnet · Datenstand unbestätigt",
   );
   expect(ctoxInstanceStatusLabel(managed, true)).not.toContain("Synchronisierung bereit");
 });
@@ -272,7 +272,7 @@ describe("CTOX instance presentation", () => {
     expect(markup).not.toContain("Local Lab");
     expect(markup).not.toContain("SSH Lab");
     expect(markup).toContain("ctox.dev · owner · alpha.ctox.dev");
-    expect(markup).toContain("Verfügbar · Synchronisierung verfügbar");
+    expect(markup).toContain("Verbunden · Synchronisierung verfügbar");
     expect(markup).not.toContain("Synchronisierung bereit");
     expect(markup).not.toContain("room-secret-must-not-render");
     expect(markup).not.toContain("tenant-launch-token-must-not-render");
@@ -297,7 +297,7 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Keine Instanz gewählt");
+    expect(markup).toContain("Es ist noch keine Instanz gewählt.");
     expect(markup).not.toContain("Other");
   });
 
@@ -337,7 +337,7 @@ describe("CTOX instance presentation", () => {
     expect(canActivateCtoxInstance(unreachable)).toBe(false);
     expect(isRemovableCtoxInstance(reachable)).toBe(true);
     expect(markup).toContain("Aktive Instanz");
-    expect(markup).toContain("SSH-Instanz\nVerfügbar · Synchronisierung nicht verfügbar");
+    expect(markup).toContain("SSH-Instanz\nVerbunden · Synchronisierung nicht verfügbar");
     expect(markup).not.toContain(CTOX_SSH_LAUNCH_PENDING_HINT);
     expect(markup).not.toContain("Quiet Box");
     expect(markup).not.toContain("cursor-not-allowed");
@@ -435,9 +435,9 @@ describe("CTOX instance presentation", () => {
     expect(markup).toContain("Workshop Business OS");
     expect(markup).not.toContain("Stopped Daemon");
     // A running daemon carries no unavailability hint; a stopped one does.
-    expect(markup).toContain("Lokale Instanz\nVerfügbar · Synchronisierung nicht verfügbar");
+    expect(markup).toContain("Lokale Instanz\nVerbunden · Synchronisierung nicht verfügbar");
     expect(markup).not.toContain(
-      "Lokale Instanz\nVerfügbar · Synchronisierung nicht verfügbar\nLokale Instanz läuft nicht.",
+      "Lokale Instanz\nVerbunden · Synchronisierung nicht verfügbar\nLokale Instanz läuft nicht.",
     );
     // Other discovered backends belong only in the dropdown.
     expect(markup).toContain('data-ctox-instance-source="local_daemon"');
@@ -498,7 +498,7 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Gespeicherte Verbindungen nicht lesbar");
+    expect(markup).toContain("Die gespeicherten Verbindungen lassen sich nicht lesen.");
     expect(markup).toContain("Welsch");
   });
 
@@ -528,9 +528,9 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Instanz nicht erreichbar");
+    expect(markup).toContain("Die Instanz ist gerade nicht erreichbar.");
     expect(markup).toContain("Paired Office");
-    expect(markup).toContain("Verbindung abgelaufen · Synchronisierung nicht verfügbar");
+    expect(markup).toContain("Anmeldung nötig · Synchronisierung nicht verfügbar");
   });
 
   it("infers legacy managed-only discovery without overriding explicit managed state", () => {
@@ -1012,7 +1012,7 @@ describe("CtoxMainShell", () => {
 
     expect(markup).toContain('data-ctox-main-shell=""');
     expect(markup).toContain('data-ctox-main-chrome=""');
-    expect(markup).toContain("Keine Instanz gewählt");
+    expect(markup).toContain("Es ist noch keine Instanz gewählt.");
     expect(markup).toContain("Instanz auswählen");
     expect(ctoxModeShellSource).not.toContain("Managed Business OS guest");
     expect(ctoxModeShellSource).not.toContain("managed Business OS guest");
@@ -1042,9 +1042,9 @@ describe("CtoxMainShell", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("Instanz nicht erreichbar");
+    expect(markup).toContain("Die Instanz ist gerade nicht erreichbar.");
     expect(markup).toContain("Erneut versuchen");
-    expect(markup).not.toContain("Keine Instanz gewählt");
+    expect(markup).not.toContain("Es ist noch keine Instanz gewählt.");
   });
 
   it("keeps exposed host copy in product language", () => {

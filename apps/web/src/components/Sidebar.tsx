@@ -107,13 +107,16 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import {
-  onNewThreadMenuRequest,
   onSidebarSearchMode,
   openCommandPalette,
   type SidebarSearchMode,
 } from "../commandPaletteBus";
-import { buildNewThreadMenuEntries, NewThreadInMenu } from "./NewThreadInMenu";
 import { SidebarProjectSwitcher } from "./sidebar/SidebarProjectSwitcher";
+import { SidebarProjectNav } from "./sidebar/SidebarProjectNav";
+import {
+  SidebarAddPersistentWorker,
+  useAddPersistentWorker,
+} from "./sidebar/SidebarAddPersistentWorker";
 import { buildProjectSwitcherEntries, projectFolderName } from "./sidebar/projectSwitcher.logic";
 import {
   SidebarProjectSearchResults,
@@ -1142,7 +1145,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     : "text-foreground/90",
             )
           : cn(
-              "truncate group-hover/sidebar-row:text-foreground",
+              // Team rows show the full worker name and wrap instead of „…“ (15.10.).
+              props.projectTeam
+                ? "whitespace-normal break-words leading-snug"
+                : "truncate",
+              "group-hover/sidebar-row:text-foreground",
               props.isActive || isWoke
                 ? "text-foreground"
                 : isUnread
@@ -1207,7 +1214,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
                 aria-busy={isRegeneratingTitle || undefined}
-                className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
+                className={cn(
+                  rowSurfaceClassName,
+                  "flex items-center gap-2.5 px-2.5",
+                  props.projectTeam ? "min-h-9 py-1.5" : "h-9",
+                )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDown}
@@ -1820,8 +1831,6 @@ export default function Sidebar() {
     },
   });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
-  const [newThreadMenuOpen, setNewThreadMenuOpen] = useState(false);
-  useEffect(() => onNewThreadMenuRequest(() => setNewThreadMenuOpen(true)), []);
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
     () => openCommandPalette({ open: "add-project" }),
@@ -1871,15 +1880,6 @@ export default function Sidebar() {
         environments.map((environment) => [environment.environmentId, environment.label] as const),
       ),
     [environments],
-  );
-  const newThreadMenuEntries = useMemo(
-    () =>
-      buildNewThreadMenuEntries(
-        availableProjects,
-        sidebarFallbackProject,
-        (environmentId) => environmentLabelById.get(environmentId) ?? null,
-      ),
-    [availableProjects, environmentLabelById, sidebarFallbackProject],
   );
   const orderedProjects = useMemo(
     () =>
@@ -2469,10 +2469,19 @@ export default function Sidebar() {
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
+  // Die Suche ist ein Icon der Projektleiste; das Feld erscheint erst beim Öffnen.
+  const [searchOpen, setSearchOpen] = useState(false);
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   // ⌘K searches threads, ⌘P files, ⌘⇧F file contents; all in this one field.
   const [searchMode, setSearchMode] = useState<SidebarSearchMode>("threads");
-  useEffect(() => onSidebarSearchMode(setSearchMode), []);
+  useEffect(
+    () =>
+      onSidebarSearchMode((mode) => {
+        setSearchMode(mode);
+        setSearchOpen(true);
+      }),
+    [],
+  );
   const isSearchingProject = searchMode !== "threads";
   const isSearchingThreads = !isSearchingProject && threadSearchQuery.trim().length > 0;
   const isSearchActive = isSearchingProject || isSearchingThreads;
@@ -2717,22 +2726,26 @@ export default function Sidebar() {
     setActiveSearchResultIndex(0);
     setSearchMode("threads");
   }, []);
+  const closeThreadSearch = useCallback(() => {
+    clearThreadSearch();
+    setSearchOpen(false);
+  }, [clearThreadSearch]);
   const selectThreadSearchResult = useCallback(
     (thread: EnvironmentThreadShell) => {
-      clearThreadSearch();
+      closeThreadSearch();
       navigateToThread(scopeThreadRef(thread.environmentId, thread.id));
     },
-    [clearThreadSearch, navigateToThread],
+    [closeThreadSearch, navigateToThread],
   );
   const handleThreadSearchKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLInputElement>) => {
       // IME composition (Japanese/Chinese input) uses the same keys; committing
       // a candidate must not move the highlight or navigate away mid-compose.
       if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-      if (event.key === "Escape" && isSearchActive) {
+      if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        clearThreadSearch();
+        closeThreadSearch();
         return;
       }
       // File and content results own their arrow/enter keys.
@@ -2757,8 +2770,7 @@ export default function Sidebar() {
     },
     [
       activeSearchResultIndex,
-      clearThreadSearch,
-      isSearchActive,
+      closeThreadSearch,
       isSearchingProject,
       selectThreadSearchResult,
       threadSearchResults,
@@ -3583,107 +3595,43 @@ export default function Sidebar() {
     autoAnimate(node, { duration: 150, easing: "ease-out" });
   }, []);
 
-  // New thread defaults to the project you're in (active thread's project,
-  // falling back to the top project). Multi-project setups without a scoped
-  // project open the dropdown „Neue Unterhaltung in …“ next to the button.
-  const handleNewThreadClick = useCallback(
-    (event?: ReactMouseEvent) => {
-      if (workjetProjects.length > 0) {
-        if (selectedWorkjetProject === null) {
-          setProjectScopeMenuOpen(true);
-          return;
-        }
-        const target = buildAvailableProjects({
-          projects: [],
-          workjetProjects: [selectedWorkjetProject],
-          computer: sidebarComputer ?? selectedWorkjetComputer,
-        })[0];
-        if (target === undefined) {
-          toastManager.add({
-            type: "warning",
-            title: overviewText.noCheckoutTitle,
-            description: overviewText.noCheckoutDescription,
-            actionProps: {
-              children: overviewText.setUpCheckout,
-              onClick: () => void router.navigate({ to: "/settings/projects" }),
-            },
-          });
-          return;
-        }
-        if (isMobile) setOpenMobile(false);
-        void newThreadContext.handleNewThread(target);
-        return;
-      }
-      if (scopedProjectGroup !== null) {
-        if (isMobile) setOpenMobile(false);
-        void newThreadContext.handleNewThread(
-          scopeProjectRef(scopedProjectGroup.environmentId, scopedProjectGroup.id),
-        );
-        return;
-      }
-      if (sidebarFallbackProject !== null) {
-        if (isMobile) setOpenMobile(false);
-        void newThreadContext.handleNewThread(sidebarFallbackProject);
-        return;
-      }
-
-      // No project yet: the button opens the inline „Projekt anlegen“ in the
-      // project gallery instead of sitting disabled.
-      if (sidebarAvailableProjectCount === 0) {
-        if (isMobile) setOpenMobile(false);
-        openAddProjectCommandPalette();
-        return;
-      }
-
-      // One project: nothing to pick, create immediately. Shift+click creates
-      // directly in the current project even with several projects, skipping
-      // the palette picker.
-      if (
-        shouldCreateNewThreadInCurrentProject(
-          event?.shiftKey ?? false,
-          sidebarAvailableProjectCount,
-        )
-      ) {
-        if (isMobile) setOpenMobile(false);
-        void startNewThreadFromContext({
-          activeDraftThread: newThreadContext.activeDraftThread,
-          activeThread: newThreadContext.activeThread ?? undefined,
-          defaultProjectRef: newThreadContext.defaultProjectRef,
-          handleNewThread: newThreadContext.handleNewThread,
-        });
-        return;
-      }
-      setNewThreadMenuOpen(true);
-    },
-    [
-      isMobile,
-      newThreadContext,
-      openAddProjectCommandPalette,
-      setOpenMobile,
-      sidebarAvailableProjectCount,
-      sidebarFallbackProject,
-      scopedProjectGroup,
-      selectedWorkjetProject,
-      selectedWorkjetComputer,
-      sidebarComputer,
-      workjetProjects.length,
-    ],
-  );
-
-  // The button mirrors chat.new: in multi-project setups both route through
-  // the dropdown „Neue Unterhaltung in …“, and in single-project
-  // setups both create immediately. In multi-project setups the label is only
-  // the picker's shortcut: falling back to chat.newLocal would advertise the
-  // same shortcut for both the picker and direct create. In single-project
-  // setups both commands create directly, so chat.newLocal is a valid
-  // fallback. The second tooltip line (multi-project only) advertises
-  // shift+click and its keyboard twin chat.newLocal for direct create.
-  const newThreadShortcutLabel =
-    shortcutLabelForCommand(keybindings, "chat.new") ??
-    (sidebarAvailableProjectCount <= 1
-      ? shortcutLabelForCommand(keybindings, "chat.newLocal")
-      : undefined);
-  const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  // „Alle Projekte“: Projektwechsler-Eintrag und Haus-Icon der Leiste.
+  const showAllProjects = () => {
+    const instanceId = workjetProjectRegistry.presentationInstanceId;
+    if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
+    selectProjectOverviewRef(instanceId, null);
+    setProjectScopeKey(null);
+    setProjectScopeMenuOpen(false);
+    closeThreadSearch();
+    if (isMobile) setOpenMobile(false);
+    void router.navigate({ to: "/" }).catch((error) => {
+      toastManager.add({
+        type: "error",
+        title: "Übersicht konnte nicht geöffnet werden",
+        description: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
+    });
+  };
+  // Das Projekt, dessen Icon-Leiste unter dem Namen steht; null = „Alle Projekte“.
+  const navProject: { readonly title: string } | null =
+    selectedWorkjetProject ??
+    selectedLocalLogicalProject ??
+    (scopedProjectGroup ? { title: scopedProjectGroup.displayName } : null);
+  const hasNavProject = navProject !== null;
+  useEffect(() => {
+    if (!hasNavProject) closeThreadSearch();
+  }, [closeThreadSearch, hasNavProject]);
+  // Der Supervisor des Projekts; unter ihm entstehen persistente Worker (Plus).
+  const teamSupervisor =
+    selectedWorkjetProject !== null || scopedProjectGroup !== null
+      ? ([...pinnedThreads, ...activeThreads].find(
+          (thread) =>
+            thread.archivedAt === null &&
+            thread.workjetConfig.schemaVersion === 2 &&
+            thread.workjetConfig.team?.role === "supervisor",
+        ) ?? null)
+      : null;
+  const addPersistentWorker = useAddPersistentWorker(teamSupervisor);
   const t = useUiText();
   const [archivedSectionsOpen, setArchivedSectionsOpen] = useState<
     Partial<Record<string, boolean>>
@@ -3717,22 +3665,7 @@ export default function Sidebar() {
                         );
                     }}
                     text={overviewText}
-                    onSelectAll={() => {
-                      const instanceId = workjetProjectRegistry.presentationInstanceId;
-                      if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
-                      selectProjectOverviewRef(instanceId, null);
-                      setProjectScopeKey(null);
-                      setProjectScopeMenuOpen(false);
-                      if (isMobile) setOpenMobile(false);
-                      void router.navigate({ to: "/" }).catch((error) => {
-                        toastManager.add({
-                          type: "error",
-                          title: "Übersicht konnte nicht geöffnet werden",
-                          description:
-                            error instanceof Error ? error.message : "Unbekannter Fehler",
-                        });
-                      });
-                    }}
+                    onSelectAll={showAllProjects}
                     onSelect={(value) => {
                       if (selectableWorkjetProjects.length > 0) {
                         void handleWorkjetProjectSelection(value);
@@ -3780,100 +3713,51 @@ export default function Sidebar() {
                 </div>
               </div>
             ) : null}
-            {/* Ein Knopf „Neue Unterhaltung“ für das aktuelle Projekt (#579). */}
-            <div className="relative">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <SidebarMenuButton
-                      type="button"
-                      data-workjet-action="thread.new"
-                      className="text-sidebar-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                      onClick={handleNewThreadClick}
-                    />
-                  }
-                >
-                  <PlusIcon aria-hidden className="size-4 shrink-0" />
-                  <span>{overviewText.newThread}</span>
-                </TooltipTrigger>
-                <TooltipPopup side="right">
-                  {sidebarAvailableProjectCount > 1 ? (
-                    <span className="flex flex-col gap-0.5">
-                      <span>
-                        {newThreadShortcutLabel
-                          ? `${overviewText.newThread} (${newThreadShortcutLabel})`
-                          : overviewText.newThread}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {overviewText.newThreadInProject}
-                        {newThreadInProjectShortcutLabel
-                          ? ` (${newThreadInProjectShortcutLabel})`
-                          : ""}
-                      </span>
-                    </span>
-                  ) : newThreadShortcutLabel ? (
-                    `${overviewText.newThread} (${newThreadShortcutLabel})`
-                  ) : (
-                    overviewText.newThread
-                  )}
-                </TooltipPopup>
-              </Tooltip>
-              {sidebarAvailableProjectCount > 1 ? (
-                // Opened by „Neue Unterhaltung“; no trigger of its own (#629).
-                <NewThreadInMenu
-                  hideTrigger
-                  title={overviewText.newThreadIn}
-                  entries={newThreadMenuEntries}
-                  open={newThreadMenuOpen}
-                  onOpenChange={setNewThreadMenuOpen}
-                  onCreateProject={openAddProjectCommandPalette}
-                  onSelect={(project) => {
-                    setNewThreadMenuOpen(false);
-                    if (isMobile) setOpenMobile(false);
-                    void newThreadContext.handleNewThread(project);
-                  }}
-                />
-              ) : null}
-            </div>
-            {/* Navigation: Übersicht, Suche (#629). */}
-            {selectedWorkjetProject || selectedLocalLogicalProject ? (
-              <SidebarMenuButton
-                type="button"
-                data-workjet-action="project.workspace.overview"
+            {/* Icon-Leiste statt Zeilen, Haus zurück zu „Alle Projekte“ (Michael, 15.10.). */}
+            {navProject !== null ? (
+              <SidebarProjectNav
+                label={navProject.title}
+                text={overviewText}
                 disabled={isSwitchingProject}
-                isActive={routeTarget === null}
-                onClick={() =>
-                  void handleWorkjetProjectSelection(
-                    (selectedWorkjetProject ?? selectedLocalLogicalProject)!.id,
-                  )
+                onHome={showAllProjects}
+                onOverview={
+                  selectedWorkjetProject || selectedLocalLogicalProject
+                    ? () =>
+                        void handleWorkjetProjectSelection(
+                          (selectedWorkjetProject ?? selectedLocalLogicalProject)!.id,
+                        )
+                    : undefined
                 }
-              >
-                <LayoutDashboardIcon aria-hidden className="size-4 shrink-0" />
-                <span>{overviewText.overview}</span>
-              </SidebarMenuButton>
-            ) : null}
-            {scopedProjectGroup || selectedWorkjetProject ? (
-              <SidebarMenuButton
-                type="button"
-                className="text-sidebar-muted-foreground hover:text-sidebar-foreground"
-                data-workjet-action="project.settings.sidebar"
-                aria-label={`${overviewText.projectSettingsFor} ${
-                  scopedProjectGroup?.displayName ?? selectedWorkjetProject?.title ?? ""
-                }`}
-                onClick={(event) => {
-                  if (scopedProjectGroup) {
-                    void handleProjectSettings(event, scopedProjectGroup);
+                overviewActive={
+                  (selectedWorkjetProject !== null || selectedLocalLogicalProject !== null) &&
+                  routeTarget === null
+                }
+                settingsLabel={`${overviewText.projectSettingsFor} ${navProject.title}`}
+                onSettings={
+                  scopedProjectGroup || selectedWorkjetProject
+                    ? (event) => {
+                        if (scopedProjectGroup) {
+                          void handleProjectSettings(event, scopedProjectGroup);
+                          return;
+                        }
+                        setProjectScopeMenuOpen(false);
+                        if (isMobile) setOpenMobile(false);
+                        void router.navigate({ to: "/settings/projects" });
+                      }
+                    : undefined
+                }
+                searchActive={searchOpen}
+                onSearch={() => {
+                  if (searchOpen) {
+                    closeThreadSearch();
                     return;
                   }
-                  setProjectScopeMenuOpen(false);
-                  if (isMobile) setOpenMobile(false);
-                  void router.navigate({ to: "/settings/projects" });
+                  setSearchOpen(true);
+                  window.requestAnimationFrame(() => threadSearchInputRef.current?.focus());
                 }}
-              >
-                <SettingsIcon aria-hidden className="size-4 shrink-0" />
-                <span>{overviewText.projectSettings}</span>
-              </SidebarMenuButton>
+              />
             ) : null}
+            {searchOpen ? (
             <div className="relative flex items-center gap-1">
               {/* The whole row opens search, not only the text field. */}
               <div
@@ -3914,23 +3798,19 @@ export default function Sidebar() {
                   }
                   className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
                 />
-                {isSearchActive ? (
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                    aria-label={overviewText.clearSearch}
-                    onClick={() => {
-                      clearThreadSearch();
-                      threadSearchInputRef.current?.focus();
-                    }}
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                  aria-label={overviewText.clearSearch}
+                  onClick={closeThreadSearch}
+                >
+                  <XIcon className="size-3" />
+                </Button>
               </div>
             </div>
+            ) : null}
             {isSearchActive ? (
               <SidebarSearchModeSegment
                 mode={searchMode}
@@ -4268,6 +4148,18 @@ export default function Sidebar() {
                             thread,
                             pinnedThreads.includes(thread) ? "pinned" : "active",
                           ),
+                        );
+                      }
+                      // Neue Worker entstehen nur hier: ein Plus unter den persistenten
+                      // Workern (Michael, 15.10.); One-shot-Worker spawnt ein Parent.
+                      if (section === "parents" && addPersistentWorker !== null) {
+                        items.push(
+                          <li key="team-parents-add" className="list-none">
+                            <SidebarAddPersistentWorker
+                              text={overviewText}
+                              onCreate={addPersistentWorker}
+                            />
+                          </li>,
                         );
                       }
                       if (archived.length > 0) {

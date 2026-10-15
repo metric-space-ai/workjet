@@ -49,10 +49,10 @@ describe("Neue Unterhaltung in …", () => {
     expect(html).not.toContain('role="dialog"');
   });
 
-  it("is wired into the sidebar instead of the former palette picker", () => {
-    expect(sidebarSource).toContain("<NewThreadInMenu");
-    expect(sidebarSource).toContain("setNewThreadMenuOpen(true)");
+  it("is gone from the sidebar: „Neue Unterhaltung“ no longer exists (15.10.)", () => {
+    expect(sidebarSource).not.toContain("<NewThreadInMenu");
+    expect(sidebarSource).not.toContain("setNewThreadMenuOpen(true)");
     expect(sidebarSource).not.toContain('openCommandPalette({ open: "new-thread-in" })');
-    expect(sidebarSource).toContain("onNewThreadMenuRequest(");
+    expect(sidebarSource).not.toContain("onNewThreadMenuRequest(");
   });
 });

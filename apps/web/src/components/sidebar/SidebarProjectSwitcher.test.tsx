@@ -69,7 +69,6 @@ describe("Projektliste der Seitenleiste", () => {
   it("ersetzt in der Seitenleiste das alte Menü mit gekürzten Namen", () => {
     expect(sidebarSource).toContain("<SidebarProjectSwitcher");
     expect(sidebarSource).not.toContain("<MenuRadioItem");
-    expect(sidebarSource).toContain("<span>{overviewText.newThread}</span>");
-    expect(sidebarSource).not.toContain("overviewText.newThreadShort");
+    expect(sidebarSource).not.toContain("overviewText.newThread");
   });
 });

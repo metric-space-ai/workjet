@@ -40,9 +40,10 @@ describe("project places are inline", () => {
     expect(sidebarSource).toContain('"next-week": "Nächste Woche"');
   });
 
-  it("keeps the new-thread button usable without projects", () => {
-    expect(sidebarSource).not.toContain("isSidebarNewThreadDisabled(");
-    expect(sidebarSource).toContain("if (sidebarAvailableProjectCount === 0) {");
+  it("has no „Neue Unterhaltung“; new workers come from the plus (15.10.)", () => {
+    expect(sidebarSource).not.toContain('data-workjet-action="thread.new"');
+    expect(sidebarSource).not.toContain("overviewText.newThread");
+    expect(sidebarSource).toContain("<SidebarAddPersistentWorker");
   });
 
   it("lives in Einstellungen › Projekte; the old project route opens the card (#569)", () => {

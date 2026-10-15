@@ -9,6 +9,19 @@ import { SecretInput } from "../ui/secret-input";
 import { deleteCredential, listCredentials, putCredential } from "../../workjetSecretRequests";
 import { SettingsSection } from "./settingsLayout";
 
+function noRows(): readonly WorkjetCredentialRecord[] | null {
+  return null;
+}
+function emptyHidden(): ReadonlySet<string> {
+  return new Set();
+}
+function noStatus(): string | null {
+  return null;
+}
+function noEditing(): string | null {
+  return null;
+}
+
 const NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 
 /**
@@ -19,15 +32,15 @@ const NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 export function SecretsSettingsSection(props: { readonly instanceId: string | null }) {
   const t = useUiText();
   const language = useProjectOverviewLanguage();
-  const [rows, setRows] = useState<readonly WorkjetCredentialRecord[] | null>(null);
+  const [rows, setRows] = useState(noRows);
   const [failed, setFailed] = useState(false);
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [editing, setEditing] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(emptyHidden);
+  const [editing, setEditing] = useState(noEditing);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, setStatus] = useState(noStatus);
   const alive = useRef(true);
   useEffect(
     () => () => {
@@ -121,7 +134,9 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
       </div>
     </form>
   );
-  const visible = (rows ?? []).filter((row) => !hidden.has(row.name));
+  const visible = (rows ?? []).filter((row) => {
+    return !hidden.has(row.name);
+  });
   return (
     <SettingsSection title={t("Zugangsdaten", "Secrets")}>
       <div
@@ -137,9 +152,9 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
         {failed && rows === null ? (
           <p role="alert" className="text-xs text-destructive">
             {t("Zugangsdaten nicht erreichbar. ", "Secrets unavailable. ")}
-            <button type="button" className="underline" onClick={() => void refresh()}>
+            <Button type="button" size="sm" variant="outline" onClick={() => void refresh()}>
               {t("Erneut versuchen", "Try again")}
-            </button>
+            </Button>
           </p>
         ) : null}
         <ul className="flex flex-col divide-y rounded-lg border">

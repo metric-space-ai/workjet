@@ -28,6 +28,8 @@ export interface FixtureOptions {
   readonly holdBefore?: MachineEnrollmentStepKey | null;
   readonly capabilities?: Readonly<Record<string, MachineCapabilities>>;
   readonly candidates?: ReadonlyArray<MachineCandidate>;
+  /** false = „Tailscale nicht angemeldet“. */
+  readonly tailscale?: boolean;
   readonly now?: () => number;
   readonly schedule?: (fn: () => void, ms: number) => void;
 }
@@ -211,7 +213,13 @@ export function createFixtureMachineEnrollment(options: FixtureOptions = {}): {
   };
 
   const transport: MachineInstallTransport = {
-    listCandidates: async () => options.candidates ?? FIXTURE_MACHINE_CANDIDATES,
+    listCandidates: async () => {
+      const tailscale = options.tailscale ?? true;
+      const candidates = (options.candidates ?? FIXTURE_MACHINE_CANDIDATES).filter(
+        (entry) => tailscale || entry.transport !== "tailscale",
+      );
+      return { candidates, tailscale };
+    },
     install: async ({ enrollmentId }, onStep) => {
       const entry = enrollments.get(enrollmentId);
       if (!entry) return;

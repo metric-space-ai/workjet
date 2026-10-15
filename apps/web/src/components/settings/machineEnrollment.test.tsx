@@ -113,9 +113,17 @@ describe("Fehlerzeilen", () => {
       action: "user",
       actionLabel: "Benutzer prüfen",
     });
+    expect(machineEnrollmentError("password_rejected")).toMatchObject({
+      text: "Passwort falsch",
+      actionLabel: "Erneut",
+    });
+    expect(machineEnrollmentError("host_key_changed")).toMatchObject({
+      text: "Host-Schlüssel geändert",
+      actionLabel: "Details",
+    });
     expect(machineEnrollmentError("unreachable")).toMatchObject({
       text: "Rechner nicht erreichbar",
-      actionLabel: "Erneut versuchen",
+      actionLabel: "Erneut",
     });
   });
 });
@@ -127,7 +135,7 @@ describe("Quellenliste", () => {
     );
     expect(machineCandidateAddress(byName["ts-gpu1"]!)).toBe("deck@100.87.204.48");
     expect(machineCandidateAddress(byName["skf-vm"]!)).toBe("ctox@10.20.0.4:2222");
-    expect(machineCandidateAddress(byName["nas-asustor"]!)).toBe("—@100.64.0.28");
+    expect(machineCandidateAddress(byName["nas-asustor"]!)).toBe("100.64.0.28");
     expect(machineCandidateAddress(byName["MacBook Pro"]!)).toBeNull();
   });
 });

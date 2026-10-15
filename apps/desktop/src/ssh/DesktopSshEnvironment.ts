@@ -5,6 +5,7 @@ import type {
 } from "@workjet/contracts";
 import * as NetService from "@workjet/shared/Net";
 import * as SshAuth from "@workjet/ssh/auth";
+import { resolveSshTarget } from "@workjet/ssh/command";
 import { discoverSshHosts } from "@workjet/ssh/config";
 import {
   SshCommandError,
@@ -73,8 +74,33 @@ export interface DesktopSshEnvironmentLayerOptions {
   readonly remoteStateNamespace?: string;
 }
 
+/**
+ * Quellenliste „Rechner hinzufügen“: jeder Host-Eintrag aus ~/.ssh/config
+ * kommt mit Benutzer, Adresse und Port aus `ssh -G`, damit die Liste ohne
+ * Formular auskommt („Erkennen statt fragen“). Scheitert die Auflösung,
+ * bleibt der Eintrag wie gefunden.
+ */
 function discoverDesktopSshHostsEffect(input?: { readonly homeDir?: string }) {
-  return discoverSshHosts(input ?? {});
+  return discoverSshHosts(input ?? {}).pipe(
+    Effect.flatMap((hosts) =>
+      Effect.forEach(
+        hosts,
+        (host) =>
+          host.source !== "ssh-config"
+            ? Effect.succeed(host)
+            : resolveSshTarget(host.alias).pipe(
+                Effect.map((target) => ({
+                  ...host,
+                  hostname: target.hostname,
+                  username: target.username,
+                  port: target.port,
+                })),
+                Effect.orElseSucceed(() => host),
+              ),
+        { concurrency: 8 },
+      ),
+    ),
+  );
 }
 
 export function isDesktopSshPasswordPromptCancellation(

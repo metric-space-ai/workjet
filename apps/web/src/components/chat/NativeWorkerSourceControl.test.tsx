@@ -12,7 +12,32 @@ import {
   NativeWorkerSourceControl,
   type WorkerSourceConnectionStatus,
 } from "./NativeWorkerSourceControl";
-import { NativeSupervisorConnectionStatus } from "./NativeSupervisorConnectionStatus";
+import { ComposerErrorLine } from "./ComposerErrorLine";
+import { WorkerSourceConnectionPicker } from "./WorkerSourceConnectionPicker";
+
+/** Wie der Supervisor-Composer eine Preset-Zugangswahl zeigt: Zeile plus Auswahl. */
+function ChoiceLine(props: { readonly status: WorkerSourceConnectionStatus }) {
+  return (
+    <ComposerErrorLine
+      line={{
+        kind: "failed",
+        text: props.status.message,
+        action: "retry",
+        actionLabel: "",
+        details: null,
+      }}
+      onAction={null}
+      control={
+        props.status.choice ? (
+          <WorkerSourceConnectionPicker
+            choice={props.status.choice}
+            disabled={props.status.disabled}
+          />
+        ) : undefined
+      }
+    />
+  );
+}
 
 const state = vi.hoisted(() => ({
   data: { connections: [] as WorkjetConnectionSummary[] },
@@ -93,12 +118,7 @@ describe("automatic supervisor worker connection", () => {
     state.effects.forEach((effect) => effect());
     const choiceStatus = status as WorkerSourceConnectionStatus | null;
     expect(choiceStatus?.choice?.connections).toEqual([connection, replacement]);
-    const html = renderToStaticMarkup(
-      <NativeSupervisorConnectionStatus
-        message={choiceStatus?.message ?? null}
-        workerStatus={choiceStatus}
-      />,
-    );
+    const html = renderToStaticMarkup(<ChoiceLine status={choiceStatus!} />);
     expect(html.match(/data-supervisor-connection-status=/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Preset-Zugang wählen"');
     expect(html).not.toContain("Multiple authorized");
@@ -138,10 +158,8 @@ describe("automatic supervisor worker connection", () => {
       onStatusChange,
     });
     state.effects.forEach((effect) => effect());
+    // Ohne Status rendert der Composer keine Zeile.
     expect(onStatusChange).toHaveBeenCalledWith(null);
-    expect(
-      renderToStaticMarkup(<NativeSupervisorConnectionStatus message={null} workerStatus={null} />),
-    ).toBe("");
   });
 
   it("excludes foreign and expired access from the headless choice and refuses their IDs", () => {
@@ -173,9 +191,7 @@ describe("automatic supervisor worker connection", () => {
     state.effects.forEach((effect) => effect());
     const status = onStatusChange.mock.calls.at(-1)![0] as WorkerSourceConnectionStatus;
     expect(status.choice?.connections).toEqual([connection, replacement]);
-    const html = renderToStaticMarkup(
-      <NativeSupervisorConnectionStatus message={status.message} workerStatus={status} />,
-    );
+    const html = renderToStaticMarkup(<ChoiceLine status={status} />);
     expect(html).not.toContain("Foreign workers");
     expect(html).not.toContain("Expired workers");
     status.choice!.select(foreign.connectionId);

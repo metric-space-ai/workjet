@@ -5,6 +5,12 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { anchoredToastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { composerToastDescription } from "./composerErrorLineLogic";
+
+function withToastDescription(error: unknown): { readonly description?: string } {
+  const description = composerToastDescription(error);
+  return description === undefined ? {} : { description };
+}
 
 const ANCHORED_TOAST_TIMEOUT_MS = 1000;
 const onCopy = (ref: React.RefObject<HTMLButtonElement | null>) => {
@@ -33,7 +39,8 @@ const onCopyError = (ref: React.RefObject<HTMLButtonElement | null>, error: Erro
       },
       timeout: ANCHORED_TOAST_TIMEOUT_MS,
       title: "Kopieren fehlgeschlagen",
-      description: error.message,
+      // Kein Rohtext im Toast; höchstens eine deutsche Kurzzeile.
+      ...withToastDescription(error),
     });
   }
 };

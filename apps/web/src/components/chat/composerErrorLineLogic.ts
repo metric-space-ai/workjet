@@ -121,3 +121,16 @@ export function composerErrorLine(
     details: plain ? null : raw,
   };
 }
+
+/**
+ * Toasts haben keinen Aufklapper (UI-Vertrag §1): Rohtext entfällt ganz. Übrig
+ * bleibt höchstens eine deutsche Kurzzeile als Beschreibung.
+ */
+export function composerToastDescription(error: unknown): string | undefined {
+  const raw = composerRawErrorText(error);
+  if (raw === null) return undefined;
+  const kind = classifyComposerError(raw);
+  if (kind === "authentication") return COMPOSER_AUTHENTICATION_LINE;
+  if (kind === "unreachable") return COMPOSER_UNREACHABLE_LINE;
+  return isComposerPlainLine(raw) ? stripSentenceEnd(raw) : undefined;
+}

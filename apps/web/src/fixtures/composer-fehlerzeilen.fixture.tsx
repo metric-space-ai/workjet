@@ -1,8 +1,11 @@
 /** Loopback-only fixture: Composer-Fehlerzeilen vorher/nachher; keine Instanz, keine Daten. */
 import { createRoot } from "react-dom/client";
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, WifiOffIcon } from "lucide-react";
+import { connectionStatusTitle } from "@workjet/client-runtime/connection";
+import { Button } from "../components/ui/button";
+import { ComposerBannerStack } from "../components/chat/ComposerBannerStack";
+import { environmentUnavailableBannerItem } from "../components/chat/environmentUnavailableBanner";
 import { ComposerErrorLine } from "../components/chat/ComposerErrorLine";
-import { NativeSupervisorConnectionStatus } from "../components/chat/NativeSupervisorConnectionStatus";
 import {
   COMPOSER_UNREACHABLE_NOTICE_MS,
   composerErrorLine,
@@ -40,7 +43,23 @@ function Composer(props: { readonly title: string; readonly line: React.ReactNod
   );
 }
 
-/** Vorher: die alte Zeile zeigte den Rohtext der Preset-Wahl direkt über dem Eingabefeld. */
+/**
+ * Vorher (vor #768): Nachbau der entfernten NativeSupervisorConnectionStatus-Zeile,
+ * die den Rohtext der Preset-Wahl direkt über dem Eingabefeld zeigte.
+ */
+function LegacyStatusLine(props: { readonly message: string; readonly action: React.ReactNode }) {
+  return (
+    <div
+      role="status"
+      data-supervisor-connection-status="true"
+      className="mb-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground"
+    >
+      <span>{props.message}</span>
+      {props.action}
+    </div>
+  );
+}
+
 function Before() {
   const legacyAction = (label: string) => (
     <button type="button" className="underline underline-offset-2">
@@ -51,33 +70,15 @@ function Before() {
     <>
       <Composer
         title="401 beim Wählen eines Presets"
-        line={
-          <NativeSupervisorConnectionStatus
-            message={RAW_401}
-            workerStatus={null}
-            recoveryAction={legacyAction("Neu verbinden")}
-          />
-        }
+        line={<LegacyStatusLine message={RAW_401} action={legacyAction("Neu verbinden")} />}
       />
       <Composer
         title="503 beim Wählen eines Presets"
-        line={
-          <NativeSupervisorConnectionStatus
-            message={RAW_503}
-            workerStatus={null}
-            recoveryAction={legacyAction("Neu verbinden")}
-          />
-        }
+        line={<LegacyStatusLine message={RAW_503} action={legacyAction("Neu verbinden")} />}
       />
       <Composer
         title="503 nach 2 min"
-        line={
-          <NativeSupervisorConnectionStatus
-            message={RAW_503}
-            workerStatus={null}
-            recoveryAction={legacyAction("Neu verbinden")}
-          />
-        }
+        line={<LegacyStatusLine message={RAW_503} action={legacyAction("Neu verbinden")} />}
       />
     </>
   );
@@ -104,8 +105,86 @@ function After() {
   );
 }
 
+const RAW_RELAY_503 = "Relay request failed (HTTP 503)";
+
+/** Vorher (vor dem Folge-PR): der Umgebungs-Banner, wie ChatView ihn zusammensetzte. */
+function BannerBefore() {
+  return (
+    <>
+      {[RAW_RELAY_503, "HTTP 401 Unauthorized"].map((raw) => (
+        <section key={raw} className="mx-auto w-full max-w-3xl">
+          <ComposerBannerStack
+            items={[
+              {
+                id: raw,
+                variant: "warning",
+                icon: <WifiOffIcon />,
+                title: `gpu3: ${connectionStatusTitle({ phase: "reconnecting", error: raw, traceId: null })}`,
+                description: raw,
+                actions: (
+                  <>
+                    <Button size="xs">Neu verbinden</Button>
+                    <Button size="xs" variant="outline">
+                      Rechner
+                    </Button>
+                  </>
+                ),
+              },
+            ]}
+          />
+          <Composer title="" line={null} />
+        </section>
+      ))}
+    </>
+  );
+}
+
+function BannerAfter() {
+  const cases = [
+    { raw: RAW_RELAY_503, ms: 30_000, title: "503, < 2 min: still" },
+    { raw: RAW_RELAY_503, ms: COMPOSER_UNREACHABLE_NOTICE_MS, title: "503 nach 2 min" },
+    { raw: "HTTP 401 Unauthorized", ms: null, title: "401" },
+  ];
+  return (
+    <>
+      {cases.map((entry) => {
+        const line = composerErrorLine(entry.raw, {
+          fallback: "Instanz nicht erreichbar",
+          unreachableForMs: entry.ms,
+        });
+        return (
+          <section key={entry.title} className="mx-auto w-full max-w-3xl">
+            <h2 className="mb-1 text-xs text-muted-foreground">{entry.title}</h2>
+            {line ? (
+              <ComposerBannerStack
+                items={[
+                  environmentUnavailableBannerItem({
+                    environmentId: entry.title,
+                    line,
+                    reconnecting: false,
+                    onReconnect: () => {},
+                  }),
+                ]}
+              />
+            ) : null}
+            <Composer title="" line={null} />
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <main className="flex min-h-screen flex-col gap-6 bg-background p-4 text-foreground">
-    {view === "before" ? <Before /> : <After />}
+    {view === "before" ? (
+      <Before />
+    ) : view === "banner-before" ? (
+      <BannerBefore />
+    ) : view === "banner-after" ? (
+      <BannerAfter />
+    ) : (
+      <After />
+    )}
   </main>,
 );

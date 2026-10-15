@@ -28,6 +28,7 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { composerToastDescription } from "./composerErrorLineLogic";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -110,7 +111,7 @@ export const ChatHeader = memo(function ChatHeader({
           toastManager.add({
             type: "error",
             title: "Umbenennen fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Unbekannter Fehler",
+            description: composerToastDescription(error),
           });
         }
       });

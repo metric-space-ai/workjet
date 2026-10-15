@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Button } from "../ui/button";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
+import { useSpeechSupported } from "./speechAvailability";
 import {
   SETTINGS_SECTION_ICONS,
   settingsNavItems,
@@ -60,8 +61,15 @@ function useSettingsNavigation(pathname: string) {
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const developerMode = useClientSettings((settings) => settings.developerMode);
-  const items = settingsNavItems(developerMode);
-  const results = useMemo(() => searchSettings(query, { developerMode }), [developerMode, query]);
+  const speechAvailable = useSpeechSupported(selectedId);
+  const items = settingsNavItems(developerMode, { speechAvailable });
+  const results = useMemo(
+    () =>
+      searchSettings(query, { developerMode }).filter(
+        (item) => speechAvailable || item.to !== "/settings/speech",
+      ),
+    [developerMode, query, speechAvailable],
+  );
   const isSearching = query.trim().length > 0;
   const activePage = settingsPageForPath(pathname);
   const isEnabled = useCallback(

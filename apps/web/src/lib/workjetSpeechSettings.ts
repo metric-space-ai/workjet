@@ -112,9 +112,24 @@ type Language = "de" | "en";
 
 /** A load failure with a specific, actionable German and English message. */
 export class SpeechSettingsError extends Error {
-  constructor(readonly messages: Readonly<Record<Language, string>>) {
+  constructor(
+    readonly messages: Readonly<Record<Language, string>>,
+    /** Machine reason, so the page can hide, retry or name it without prose. */
+    readonly reason: SpeechFailureReason | null = null,
+  ) {
     super(messages.en);
   }
+}
+
+export type SpeechFailureReason =
+  | "core_outdated"
+  | "access_denied"
+  | "peer_unavailable"
+  | "request_timeout"
+  | "unanswered";
+
+export function speechFailureReason(error: unknown): SpeechFailureReason | null {
+  return error instanceof SpeechSettingsError ? error.reason : null;
 }
 
 const speechMessages = {
@@ -143,11 +158,15 @@ const speechMessages = {
 function speechFailure(failure: Failure, instanceId: string): SpeechSettingsError {
   const reason = failure.diagnostic?.reason;
   if (reason && reason in speechMessages)
-    return new SpeechSettingsError(speechMessages[reason as keyof typeof speechMessages]);
-  if (failure.code === "timeout") return new SpeechSettingsError(speechMessages.request_timeout);
+    return new SpeechSettingsError(
+      speechMessages[reason as keyof typeof speechMessages],
+      reason as SpeechFailureReason,
+    );
+  if (failure.code === "timeout")
+    return new SpeechSettingsError(speechMessages.request_timeout, "request_timeout");
   // Older CTOX shells only report an opaque guest failure for speech settings.
   if (failure.code === "guest_failed" && !failure.diagnostic)
-    return new SpeechSettingsError(speechMessages.unanswered);
+    return new SpeechSettingsError(speechMessages.unanswered, "unanswered");
   const de = describeWorkjetProjectControlFailure(failure, instanceId);
   return new SpeechSettingsError({ de, en: de });
 }

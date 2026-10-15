@@ -64,6 +64,13 @@ export const DEVELOPER_SETTINGS_NAV_ITEMS: ReadonlyArray<SettingsNavItem> = [
   ...DEVELOPER_SETTINGS_PAGE_PATHS.map(navItem),
 ];
 
-export function settingsNavItems(developerMode: boolean): ReadonlyArray<SettingsNavItem> {
-  return developerMode ? DEVELOPER_SETTINGS_NAV_ITEMS : SETTINGS_NAV_ITEMS;
+export function settingsNavItems(
+  developerMode: boolean,
+  options: { readonly speechAvailable?: boolean } = {},
+): ReadonlyArray<SettingsNavItem> {
+  const items = developerMode ? DEVELOPER_SETTINGS_NAV_ITEMS : SETTINGS_NAV_ITEMS;
+  // Kennt CTOX auf der Instanz keine Spracheinstellungen, fehlt der Eintrag.
+  return options.speechAvailable === false
+    ? items.filter((item) => item.to !== "/settings/speech")
+    : items;
 }

@@ -348,7 +348,7 @@ function EnrollmentRow({
 
   const meta =
     progress.status === "failed" && failure ? (
-      <span className="text-destructive" data-slot="machine-enrollment-error">
+      <span className="whitespace-normal text-destructive" data-slot="machine-enrollment-error">
         {failure.text}
       </span>
     ) : progress.status === "green" ? (
@@ -357,12 +357,28 @@ function EnrollmentRow({
       <span data-slot="machine-enrollment-step">{stepLabel}</span>
     );
 
+  const [chosen, setChosen] = useState<CapabilityChoice>({ build: true, storage: true, gpu: true });
+  const capabilitySwitches = (className: string) => (
+    <CapabilitySwitches
+      className={className}
+      capabilities={snapshot.capabilities ?? null}
+      chosen={chosen}
+      onChosenChange={(next) => {
+        setChosen(next);
+        const detected = snapshot.capabilities;
+        if (detected)
+          onCapabilitiesChange?.({
+            build: detected.build && next.build,
+            storage: detected.storage && next.storage,
+            gpu: next.gpu ? detected.gpu : null,
+          });
+      }}
+    />
+  );
   const chips =
     progress.status === "green" ? (
-      <CapabilitySwitches
-        capabilities={snapshot.capabilities ?? null}
-        {...(onCapabilitiesChange ? { onChange: onCapabilitiesChange } : {})}
-      />
+      // Breit in der Zeile, schmal (420 px) als eigene Zeile darunter.
+      capabilitySwitches("hidden sm:flex")
     ) : (
       <>
         {progress.status === "running" ? (
@@ -417,6 +433,7 @@ function EnrollmentRow({
         meta={meta}
         chips={chips}
       />
+      {progress.status === "green" ? capabilitySwitches("flex px-3 pb-2 sm:hidden") : null}
       {userEdit !== null ? (
         <form
           className="flex flex-wrap items-center gap-2 px-3 pb-2 text-muted-foreground text-xs"
@@ -477,15 +494,24 @@ function ProgressBar({ fraction, label }: { readonly fraction: number; readonly 
   );
 }
 
+interface CapabilityChoice {
+  readonly build: boolean;
+  readonly storage: boolean;
+  readonly gpu: boolean;
+}
+
 /** Erst nach der Verbindung: erkannte Fähigkeiten als Schalter zum Abwählen. */
 function CapabilitySwitches({
   capabilities,
-  onChange,
+  chosen,
+  onChosenChange,
+  className,
 }: {
   readonly capabilities: MachineCapabilities | null;
-  readonly onChange?: (capabilities: MachineCapabilities) => void;
+  readonly chosen: CapabilityChoice;
+  readonly onChosenChange: (chosen: CapabilityChoice) => void;
+  readonly className: string;
 }) {
-  const [chosen, setChosen] = useState({ build: true, storage: true, gpu: true });
   if (!capabilities) return null;
   const items = (
     [
@@ -495,20 +521,15 @@ function CapabilitySwitches({
     ] as const
   ).filter((item): item is readonly ["build" | "storage" | "gpu", string] => item[1] !== null);
   return (
-    <div className="flex flex-wrap items-center gap-3" data-slot="machine-capabilities">
+    <div
+      className={cn("flex-wrap items-center gap-x-3 gap-y-1.5", className)}
+      data-slot="machine-capabilities"
+    >
       {items.map(([key, text]) => (
         <label key={key} className="flex items-center gap-1.5 text-xs">
           <Switch
             checked={chosen[key]}
-            onCheckedChange={(checked) => {
-              const next = { ...chosen, [key]: checked };
-              setChosen(next);
-              onChange?.({
-                build: capabilities.build && next.build,
-                storage: capabilities.storage && next.storage,
-                gpu: next.gpu ? capabilities.gpu : null,
-              });
-            }}
+            onCheckedChange={(checked) => onChosenChange({ ...chosen, [key]: checked })}
           />
           {text}
         </label>

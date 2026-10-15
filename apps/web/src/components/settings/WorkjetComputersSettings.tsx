@@ -65,6 +65,8 @@ import {
   type AddComputerRequest,
   type KnownComputerFacts,
 } from "./AddComputerInline";
+import { AddMachineEnrollment } from "./AddMachineEnrollment";
+import { useMachineEnrollment } from "./useMachineEnrollment";
 import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
@@ -1488,12 +1490,20 @@ export function WorkjetComputersSettings({
     }
   };
 
+  // Ein-Klick-Beitritt (sync v4 §16.41): nur Entwicklermodus + echte Adapter.
+  const machineEnrollment = useMachineEnrollment();
   // Stabile Referenz: die tailnet-Liste lädt nur beim Öffnen und auf „Neu laden“.
   const discoverTailscalePeers = useMemo(
     () => (bridge?.discoverTailscalePeers ? () => bridge.discoverTailscalePeers() : undefined),
     [bridge],
   );
-  const addPanel = (
+  const addPanel = machineEnrollment ? (
+    <AddMachineEnrollment
+      source={machineEnrollment.source}
+      transport={machineEnrollment.transport}
+      defaultOpen={setupOnly}
+    />
+  ) : (
     <AddComputerInline
       open={addOpen}
       onOpenChange={setAddOpen}

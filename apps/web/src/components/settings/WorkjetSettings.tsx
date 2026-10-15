@@ -1412,21 +1412,28 @@ export function WorkjetSettings({
       : null;
   const lastKnownKey =
     environment === null ? null : `${environment.environmentId}:${scope.presentationInstanceId ?? ""}`;
-  if (liveTarget !== null && lastKnownKey !== null) LAST_KNOWN_PRESET_TARGETS.set(lastKnownKey, liveTarget);
+  const liveConnectionId = liveTarget?.connectionId ?? null;
+  const liveInstanceId = liveTarget?.instanceId ?? null;
+  useEffect(() => {
+    if (lastKnownKey === null || liveConnectionId === null || liveInstanceId === null) return;
+    LAST_KNOWN_PRESET_TARGETS.set(lastKnownKey, {
+      connectionId: liveConnectionId,
+      instanceId: liveInstanceId,
+    });
+  }, [lastKnownKey, liveConnectionId, liveInstanceId]);
   // Fällt die Verbindung kurz aus, bleiben die zuletzt bekannten Presets stehen.
   const target =
     liveTarget ?? (lastKnownKey === null ? null : (LAST_KNOWN_PRESET_TARGETS.get(lastKnownKey) ?? null));
   const authenticationRequired =
     scope.phase === "ready" &&
     presetConnectionNeedsAuthentication(connections.data?.connections, scope.presentationInstanceId);
-  const unavailable = target === null || environment === null;
   // Still wiederholen statt einen Zustandstext zu zeigen.
   const refreshConnections = connections.refresh;
   useEffect(() => {
-    if (liveTarget !== null || authenticationRequired || scope.phase === "blocked") return;
+    if (liveConnectionId !== null || authenticationRequired || scope.phase === "blocked") return;
     const timer = window.setInterval(refreshConnections, PRESET_SILENT_RETRY_MS);
     return () => window.clearInterval(timer);
-  }, [authenticationRequired, liveTarget, refreshConnections, scope.phase]);
+  }, [authenticationRequired, liveConnectionId, refreshConnections, scope.phase]);
   const [reconnecting, setReconnecting] = useState(false);
   const provision =
     typeof window === "undefined" ? undefined : window.desktopBridge?.ctox?.provisionDecisionHub;
@@ -1448,7 +1455,7 @@ export function WorkjetSettings({
         }
       : null;
 
-  if (unavailable || (authenticationRequired && liveTarget === null)) {
+  if (target === null || environment === null || (authenticationRequired && liveTarget === null)) {
     const noInstance = scope.phase === "blocked" && scope.blocker === "no-active-instance";
     const promptPage = defaultSection === "prompt";
     return (
@@ -1464,9 +1471,9 @@ export function WorkjetSettings({
 
   return (
     <ScopedWorkjetSettings
-      key={`${environment!.environmentId}:${target!.instanceId}:${target!.connectionId}`}
-      environment={environment!}
-      target={target!}
+      key={`${environment.environmentId}:${target.instanceId}:${target.connectionId}`}
+      environment={environment}
+      target={target}
       nativeInstanceId={scope.presentationInstanceId}
       {...(defaultSection ? { defaultSection } : {})}
     />

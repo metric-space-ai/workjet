@@ -139,8 +139,8 @@ describe("Workjet configuration settings", () => {
     ]) {
       expect(markup).not.toContain(gone);
     }
-    // Page title is „Lumas“ (#568); the empty list is a title plus one primary action.
-    expect(markup).toContain(">Lumas</h1>");
+    // Page title is „Presets“ (15.10.); the empty list is a title plus one primary action.
+    expect(markup).toContain(">Presets</h1>");
     expect(markup).toContain("Keine Worker-Presets");
     expect(markup).toContain("Preset hinzufügen");
     expect(markup).not.toContain("Connection targets");
@@ -187,22 +187,8 @@ describe("Workjet configuration settings", () => {
     expect(markup).not.toContain("Keine Lumas");
   });
 
-  it("keeps telemetry free of the Greppy runtime, which lives under Workers", () => {
-    const telemetryMarkup = renderToStaticMarkup(
-      <WorkjetSettingsView
-        draftScopeKey="test-instance"
-        configuration={DEFAULT_WORKJET_CONFIGURATION}
-        greppy={greppy}
-        gateway={gateway}
-        defaultSection="telemetry"
-        onChange={() => undefined}
-      />,
-    );
-    expect(telemetryMarkup).toContain("Claude-Code-Ereignisse");
-    expect(telemetryMarkup).toContain("Luma-Ereignisse");
-    expect(telemetryMarkup).toContain("Aufbewahrung (Tage)");
-    expect(telemetryMarkup).not.toContain(GREPPY_TITLE);
-
+  it("has no telemetry section and keeps the Greppy runtime under Workers", () => {
+    expect(WORKJET_SETTINGS_SECTIONS.map((section) => section.id)).not.toContain("telemetry");
     const capabilitiesMarkup = renderToStaticMarkup(
       <WorkjetSettingsView
         draftScopeKey="test-instance"
@@ -279,7 +265,7 @@ describe("Workjet configuration settings", () => {
   it("maps settings-search targets to their tab", () => {
     // Computers is its own page now; its anchor no longer selects a tab here.
     expect(workjetSectionFromHash("#workjet-computers")).toBeNull();
-    expect(workjetSectionFromHash("workjet-telemetry")).toBe("telemetry");
+    expect(workjetSectionFromHash("workjet-telemetry")).toBeNull();
     expect(workjetSectionFromHash("#workjet-organigram")).toBeNull();
     expect(workjetSectionFromHash("#greppy-runtime")).toBe("workers");
     expect(workjetSectionFromHash("#unknown")).toBeNull();
@@ -297,7 +283,7 @@ describe("Workjet Greppy runtime settings", () => {
     // Computers stands beside Models and Harnesses.
     expect(SETTINGS_NAV_ITEMS).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Lumas", to: "/settings/workjet" }),
+        expect.objectContaining({ label: "Presets", to: "/settings/workjet" }),
         expect.objectContaining({ label: "Rechner", to: "/settings/computers" }),
       ]),
     );

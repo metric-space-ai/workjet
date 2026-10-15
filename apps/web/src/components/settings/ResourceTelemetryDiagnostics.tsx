@@ -1160,7 +1160,7 @@ export function ResourceTelemetryDiagnostics() {
           {snapshot ? (
             <div className="grid border-t border-border/60 bg-muted/10 @[46rem]/resource-telemetry:grid-cols-3">
               <AggregateCard
-                label="Backend + Lumas"
+                label="Backend + Presets"
                 accentClass="bg-emerald-500/80"
                 aggregate={snapshot.groups.backend}
               />

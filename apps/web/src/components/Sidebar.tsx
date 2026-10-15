@@ -125,6 +125,7 @@ import {
 } from "./sidebar/SidebarProjectSearch";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
+import { instanceProjectSettingsKey } from "./settings/InstanceProjectSettings";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { PROJECT_OVERVIEW_TEXT } from "../projectOverviewText";
 import { ProjectTokenBudget } from "./ProjectTokenBudget";
@@ -1727,6 +1728,7 @@ export default function Sidebar() {
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const sidebarDeveloperMode = useClientSettings((s) => s.developerMode);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
   const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
@@ -3740,7 +3742,13 @@ export default function Sidebar() {
                         }
                         setProjectScopeMenuOpen(false);
                         if (isMobile) setOpenMobile(false);
-                        void router.navigate({ to: "/settings/projects" });
+                        // Öffnet das Projekt mit seinen Einstellungen (Einstellungen › Projekte entfällt).
+                        void router.navigate({
+                          to: "/settings/projects/$projectKey",
+                          params: {
+                            projectKey: instanceProjectSettingsKey(selectedWorkjetProject!.id),
+                          },
+                        });
                       }
                     : undefined
                 }
@@ -4346,7 +4354,12 @@ export default function Sidebar() {
                     type="button"
                     size="xs"
                     variant="outline"
-                    onClick={() => void router.navigate({ to: "/settings/projects" })}
+                    onClick={() =>
+                      void router.navigate({
+                        // Arbeitskopien leben im Entwicklermodus unter Rechner.
+                        to: sidebarDeveloperMode ? "/settings/computers" : "/",
+                      })
+                    }
                   >
                     {overviewText.setUpCheckout}
                   </Button>

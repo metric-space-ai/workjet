@@ -564,7 +564,7 @@ export function ProjectOverviewCard({
               >
                 <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
                   <UserRoundIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                  {t("Lumas", "Lumas")}
+                  {t("Presets", "Presets")}
                 </dt>
                 <dd className="order-first flex min-w-0 items-center gap-1.5">
                   <span

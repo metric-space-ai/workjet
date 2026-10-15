@@ -1,46 +1,23 @@
-import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import { TestClock } from "effect/testing";
 
-import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { getTelemetryIdentifier } from "./Identify.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
-interface RecordedBatchRequest {
-  readonly path: string;
-  readonly body: {
-    readonly batch?: ReadonlyArray<{
-      readonly event?: string;
-      readonly properties?: {
-        readonly index?: number;
-        readonly clientType?: string;
-      };
-    }>;
-  } | null;
-}
+const analyticsSource = NodeFS.readFileSync(
+  new URL("./AnalyticsService.ts", import.meta.url),
+  "utf8",
+);
 
-interface RecordedBatchBody {
-  readonly batch: ReadonlyArray<{
-    readonly event?: string;
-    readonly properties?: {
-      readonly index?: number;
-      readonly clientType?: string;
-    };
-  }>;
-}
-
-it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
-  it.effect("consent can be granted and revoked without uploading queued events", () => {
+it.layer(NodeServices.layer)("AnalyticsService", (it) => {
+  it.effect("never sends analytics, even with stored consent (owner rule 2026-10-15)", () => {
     const requests: string[] = [];
     const httpLayer = Layer.succeed(
       HttpClient.HttpClient,
@@ -54,155 +31,19 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     return Effect.gen(function* () {
       const analytics = yield* AnalyticsService.AnalyticsService;
       const settings = yield* ServerSettings.ServerSettingsService;
-      yield* analytics.record("before.consent");
       yield* settings.updateSettings({ posthogConsent: true });
-      yield* analytics.record("with.consent");
+      for (let index = 0; index < 45; index += 1) yield* analytics.record("server.started");
       yield* analytics.flush;
-      assert.equal(requests.length, 1);
-      assert.equal(requests[0], "https://us.i.posthog.com/batch/");
-      yield* analytics.record("queued.before.revocation");
-      yield* settings.updateSettings({ posthogConsent: false });
-      yield* analytics.flush;
-      yield* analytics.record("after.revocation");
-      yield* TestClock.adjust(2000);
+      yield* TestClock.adjust(5000);
+      assert.deepEqual(requests, []);
     }).pipe(
-      Effect.provide(
-        AnalyticsService.layer.pipe(
-          Layer.provideMerge(ServerSettings.layerTest()),
-          Layer.provide(
-            ServerConfig.layerTest(process.cwd(), { prefix: "workjet-offline-telemetry-" }),
-          ),
-          Layer.provide(httpLayer),
-          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
-        ),
-      ),
-      Effect.tap(() => Effect.sync(() => assert.equal(requests.length, 1))),
+      Effect.provide(Layer.mergeAll(AnalyticsService.layer, ServerSettings.layerTest(), httpLayer)),
     );
   });
 
-  for (const legacyEnabled of [undefined, true]) {
-    it.effect(`makes no HTTP requests without consent (legacy flag: ${legacyEnabled})`, () => {
-      const requests: string[] = [];
-      const httpLayer = Layer.succeed(
-        HttpClient.HttpClient,
-        HttpClient.make((request) =>
-          Effect.sync(() => {
-            requests.push(request.url);
-            return HttpClientResponse.fromWeb(request, new Response("{}"));
-          }),
-        ),
-      );
-      return Effect.gen(function* () {
-        const analytics = yield* AnalyticsService.AnalyticsService;
-        for (let index = 0; index < 45; index += 1) yield* analytics.record("server.started");
-        yield* analytics.flush;
-        yield* TestClock.adjust(2000);
-      }).pipe(
-        Effect.provide(
-          AnalyticsService.layer.pipe(
-            Layer.provide(ServerSettings.layerTest()),
-            Layer.provide(
-              ServerConfig.layerTest(process.cwd(), { prefix: "workjet-offline-telemetry-" }),
-            ),
-            Layer.provide(httpLayer),
-            Layer.provide(
-              ConfigProvider.layer(
-                ConfigProvider.fromUnknown(
-                  legacyEnabled === undefined ? {} : { WORKJET_TELEMETRY_ENABLED: legacyEnabled },
-                ),
-              ),
-            ),
-          ),
-        ),
-        Effect.tap(() => Effect.sync(() => assert.deepEqual(requests, []))),
-      );
-    });
-  }
-
-  it.effect("flush drains all buffered events across multiple batches", () =>
-    Effect.gen(function* () {
-      const capturedRequests: Array<RecordedBatchRequest> = [];
-      const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-        prefix: "workjet-telemetry-base-",
-      });
-
-      const telemetryLayer = AnalyticsService.layer.pipe(
-        Layer.provide(ServerSettings.layerTest({ posthogConsent: true })),
-        Layer.provideMerge(serverConfigLayer),
-      );
-      const configLayer = ConfigProvider.layer(
-        ConfigProvider.fromUnknown({
-          WORKJET_TELEMETRY_ENABLED: true,
-          WORKJET_POSTHOG_KEY: "phc_test_key",
-          WORKJET_POSTHOG_HOST: "http://localhost",
-          WORKJET_TELEMETRY_FLUSH_BATCH_SIZE: 20,
-        }),
-      );
-      const batchServerLayer = HttpServer.serve(
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          if (request.method !== "POST") {
-            return HttpServerResponse.empty({ status: 404 });
-          }
-
-          const payload = yield* request.json.pipe(
-            Effect.map((body) => body as RecordedBatchRequest["body"]),
-            Effect.orElseSucceed(() => null),
-          );
-
-          capturedRequests.push({ path: request.url, body: payload });
-
-          return HttpServerResponse.jsonUnsafe({});
-        }),
-      );
-      const runtimeLayer = telemetryLayer.pipe(
-        Layer.provide(configLayer),
-        Layer.provideMerge(NodeHttpServer.layerTest),
-      );
-
-      yield* Effect.gen(function* () {
-        yield* Layer.launch(batchServerLayer).pipe(Effect.forkScoped);
-        const telemetryIdentifier = yield* getTelemetryIdentifier;
-        assert.equal(telemetryIdentifier !== null, true);
-        const analytics = yield* AnalyticsService.AnalyticsService;
-
-        for (let index = 0; index < 45; index += 1) {
-          yield* analytics.record("test.flush.drain", { index });
-        }
-
-        yield* analytics.flush;
-      }).pipe(Effect.provide(runtimeLayer));
-
-      const batchRequests = capturedRequests.filter(
-        (request): request is RecordedBatchRequest & { readonly body: RecordedBatchBody } =>
-          Array.isArray(request.body?.batch),
-      );
-      assert.equal(batchRequests.length, 3);
-      assert.equal(
-        batchRequests.every(
-          (request) => request.path.endsWith("/batch/") || request.path.endsWith("/batch"),
-        ),
-        true,
-      );
-      const deliveredIndexes = batchRequests.flatMap((request) =>
-        request.body.batch
-          .filter((event) => event.event === "test.flush.drain")
-          .map((event) => event.properties?.index)
-          .filter((index): index is number => typeof index === "number"),
-      );
-
-      const sorted = deliveredIndexes.toSorted((a, b) => a - b);
-      assert.equal(sorted.length, 45);
-      assert.deepEqual(
-        sorted,
-        Array.from({ length: 45 }, (_, index) => index),
-      );
-      assert.equal(
-        batchRequests.every((request) =>
-          request.body.batch.every((event) => event.properties?.clientType === "cli-web-client"),
-        ),
-        true,
-      );
-    }),
-  );
+  it("carries no PostHog key or endpoint", () => {
+    assert.notInclude(analyticsSource, "posthog.com");
+    assert.notInclude(analyticsSource, "phc_");
+    assert.notInclude(analyticsSource, "HttpClient");
+  });
 });

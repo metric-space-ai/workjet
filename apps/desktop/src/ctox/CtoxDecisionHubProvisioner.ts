@@ -13,12 +13,14 @@ import {
   type CtoxDecisionHubProvisionInput,
   type CtoxDecisionHubProvisionResult,
 } from "@workjet/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
@@ -37,7 +39,9 @@ import {
   acquireWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
   workerSourceGrantIdentity,
+  workerSourceNeedsRenewal,
 } from "./CtoxWorkerSourceGrant.ts";
+import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
 
 const GrantResponse = Schema.Struct({
   ok: Schema.Literal(true),
@@ -56,6 +60,9 @@ const LocalSecretResponse = Schema.Struct({
 });
 const decodeLocalSecret = Schema.decodeUnknownEffect(Schema.fromJsonString(LocalSecretResponse));
 const LOCAL_MCP_ENDPOINT = "http://127.0.0.1:8788/mcp";
+// Worker-Quellen still erneuern: kurz nach dem App-Start, danach stündlich.
+const WORKER_SOURCE_RENEW_START_DELAY = Duration.seconds(30);
+const WORKER_SOURCE_RENEW_INTERVAL = Duration.minutes(60);
 const LOCAL_SECRET_TIMEOUT = Duration.seconds(10);
 const MAX_LOCAL_SECRET_OUTPUT_BYTES = 65_536;
 
@@ -352,6 +359,124 @@ const make = Effect.gen(function* () {
         ),
       ),
     ) satisfies Effect.Effect<CtoxDecisionHubDisconnectResult>;
+
+  const openEnvironmentRpc = (environmentId: string, label: string) =>
+    Effect.gen(function* () {
+      const environment = yield* resolveEnvironment(environmentId);
+      const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
+        httpBaseUrl: environment.httpBaseUrl,
+        wsBaseUrl: environment.wsBaseUrl,
+        bearerToken: environment.bearerToken,
+      }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
+      const rpc = yield* rpcFactory.connect({
+        environmentId: environmentId as PreparedConnection["environmentId"],
+        label,
+        httpBaseUrl: environment.httpBaseUrl,
+        socketUrl,
+        httpAuthorization: { _tag: "Bearer", token: environment.bearerToken },
+        target: new PrimaryConnectionTarget({
+          environmentId: environmentId as PreparedConnection["environmentId"],
+          label,
+          httpBaseUrl: environment.httpBaseUrl,
+          wsBaseUrl: environment.wsBaseUrl,
+        }),
+      });
+      yield* rpc.ready;
+      return rpc;
+    });
+
+  // Ausstellzeitpunkt je Worker-Quelle in dieser App-Sitzung (Tokens nie loggen).
+  const workerSourceIssuedAt = new Map<string, number>();
+
+  /**
+   * Stellt eine Worker-Quelle unter DERSELBEN Verbindungs-ID neu aus, damit
+   * Unterhaltungen ihre Bindung behalten, und widerruft danach das alte Token.
+   */
+  const renewWorkerSource = (
+    rpc: Effect.Success<ReturnType<typeof openEnvironmentRpc>>,
+    connection: { readonly connectionId: WorkjetConnectionId; readonly instanceId: string },
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const identity = workerSourceGrantIdentity(connection.connectionId);
+        if (identity === undefined) return;
+        const account = yield* sessions.account;
+        const grant = yield* acquireWorkjetWorkerSourceGrant(
+          account.fetch.bind(account),
+          identity.tenantId,
+        );
+        if (grant.instanceId !== connection.instanceId) return;
+        yield* rpc.client[WS_METHODS.workjetDecisionHubProvisionConnection]({
+          connectionId: connection.connectionId,
+          instanceId: grant.instanceId,
+          displayName: grant.displayName,
+          source: grant.source,
+          endpoint: grant.endpoint,
+          token: grant.token,
+        });
+        grant.commit();
+        const now = yield* Clock.currentTimeMillis;
+        workerSourceIssuedAt.set(connection.connectionId, now);
+        const previousTokenId = yield* Ref.modify(issuedGrants, (current) => [
+          current.find((candidate) => candidate.connectionId === connection.connectionId)
+            ?.tokenId ?? identity.tokenId,
+          [
+            ...current.filter((candidate) => candidate.connectionId !== connection.connectionId),
+            {
+              connectionId: connection.connectionId,
+              tenantId: identity.tenantId,
+              tokenId: grant.tokenId,
+              purpose: "worker_source" as const,
+            },
+          ],
+        ]);
+        if (previousTokenId !== grant.tokenId)
+          yield* revokeGrant({
+            tenantId: identity.tenantId,
+            tokenId: previousTokenId,
+            purpose: "worker_source",
+          });
+      }),
+    ).pipe(Effect.catchCause(() => Effect.void));
+
+  const renewWorkerSources = Effect.gen(function* () {
+    const environmentIds = new Set<string>();
+    for (const instance of yield* pool.list) {
+      const config = yield* instance.currentConfig;
+      if (Option.isNone(config)) continue;
+      const descriptor = yield* fetchRemoteEnvironmentDescriptor({
+        httpBaseUrl: config.value.httpBaseUrl.href,
+      }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient), Effect.option);
+      if (Option.isSome(descriptor)) environmentIds.add(descriptor.value.environmentId);
+    }
+    for (const environmentId of environmentIds) {
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const rpc = yield* openEnvironmentRpc(environmentId, "Worker source renewal");
+          const listed = yield* rpc.client[WS_METHODS.workjetDecisionHubListConnections]({});
+          const now = yield* Clock.currentTimeMillis;
+          for (const connection of listed.connections) {
+            if (
+              !workerSourceNeedsRenewal(
+                connection,
+                workerSourceIssuedAt.get(connection.connectionId),
+                now,
+              )
+            )
+              continue;
+            yield* renewWorkerSource(rpc, connection);
+          }
+        }),
+      ).pipe(Effect.catchCause(() => Effect.void));
+    }
+  }).pipe(Effect.catchCause(() => Effect.void));
+
+  yield* Effect.sleep(WORKER_SOURCE_RENEW_START_DELAY).pipe(
+    Effect.andThen(
+      renewWorkerSources.pipe(Effect.repeat(Schedule.spaced(WORKER_SOURCE_RENEW_INTERVAL))),
+    ),
+    Effect.forkScoped,
+  );
 
   const revokeAll = Effect.gen(function* () {
     const grants = yield* Ref.getAndSet(issuedGrants, []);

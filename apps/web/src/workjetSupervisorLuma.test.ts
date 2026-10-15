@@ -41,7 +41,7 @@ function input(port: WorkjetProjectControlPort, lumaId: string | null = "molecul
   };
 }
 
-describe("native Supervisor Luma selection", () => {
+describe("native Supervisor-Preset selection", () => {
   it("updates only this project's Luma and adopts the native receipt", async () => {
     const port = vi
       .fn<WorkjetProjectControlPort>()

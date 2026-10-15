@@ -263,7 +263,7 @@ export const LEGACY_WORKJET_MAPPING_TABLE: readonly LegacyWorkjetDecision[] = [
     source: "telemetryClaudeCodeEvents",
     destination: "telemetry.claudeCodeEvents",
     outcome: "mapped",
-    reason: "Same meaning on both sides.",
+    reason: "Always false: Workjet transmits no Claude Code events (2026-10-15).",
   },
   {
     source: "telemetrySidecarEvents",
@@ -1019,7 +1019,8 @@ export function mapLegacyWorkjetConfig(input: {
     managedSystemPrompt: composeManagedSystemPrompt(config),
     managerThreadReference: "",
     telemetry: {
-      claudeCodeEvents: config.telemetryClaudeCodeEvents,
+      // Workjet überträgt keine Claude-Code-Ereignisse (15.10.2026).
+      claudeCodeEvents: false,
       sidecarEvents: config.telemetrySidecarEvents,
       retentionDays: positiveIntegerOr(
         config.telemetryRetentionDays,

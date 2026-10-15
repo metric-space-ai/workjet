@@ -12,10 +12,10 @@ export function WorkerSourceConnectionPicker(props: {
 }) {
   return (
     <OptionSelect
-      aria-label="Luma-Zugang wählen"
+      aria-label="Preset-Zugang wählen"
       className="w-auto max-w-full sm:max-w-64"
       value=""
-      placeholder="Luma-Zugang wählen …"
+      placeholder="Preset-Zugang wählen …"
       disabled={props.disabled}
       options={props.choice.connections.map((entry) => ({
         value: entry.connectionId,

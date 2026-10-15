@@ -69,7 +69,7 @@ export const WORKJET_ROLE_NEXT_SESSION_HINT = "Gilt ab der nächsten Sitzung";
 const ROLE_LABELS = {
   standard: "Code",
   orchestrator: "Orchestrator",
-  worker: "Luma",
+  worker: "Preset",
 } as const satisfies Record<WorkjetThreadRole, string>;
 
 const ROLE_ICONS = {

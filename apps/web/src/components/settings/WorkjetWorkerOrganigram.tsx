@@ -266,7 +266,7 @@ export function WorkjetWorkerOrganigram({
       <div className="flex min-h-12 flex-wrap items-center gap-1.5 border-b border-border/60 px-2.5 py-2">
         <Button type="button" size="sm" variant="outline" onClick={() => onAddWorker(null)}>
           <PlusIcon className="size-3.5" />
-          Luma
+          Preset
         </Button>
         <Button
           type="button"
@@ -299,11 +299,11 @@ export function WorkjetWorkerOrganigram({
               onClick={() => onAddWorker(selectedWorkerId)}
             >
               <GitBranchPlusIcon className="size-3.5" />
-              Unter-Luma
+              Unter-Preset
             </Button>
             {confirmingDelete ? (
               <div className="flex items-center gap-1.5" role="group">
-                <span className="text-xs text-muted-foreground">Luma löschen?</span>
+                <span className="text-xs text-muted-foreground">Preset löschen?</span>
                 <Button
                   type="button"
                   size="sm"
@@ -390,7 +390,7 @@ export function WorkjetWorkerOrganigram({
           }
         }}
         tabIndex={0}
-        aria-label="Luma-Organigramm"
+        aria-label="Preset-Organigramm"
       >
         <svg className="pointer-events-none absolute inset-0 size-full" aria-hidden="true">
           {cleanGraph.dependencies.map((dependency, index) => {
@@ -462,7 +462,7 @@ export function WorkjetWorkerOrganigram({
               />
               <button
                 type="button"
-                aria-label={`Unter-Luma für ${worker.name}`}
+                aria-label={`Unter-Preset für ${worker.name}`}
                 className="absolute bottom-[-11px] right-2 grid size-[22px] place-items-center rounded-full border border-border bg-card text-muted-foreground hover:border-primary/60 hover:bg-primary hover:text-primary-foreground"
                 onClick={(event) => {
                   event.stopPropagation();

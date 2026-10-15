@@ -264,7 +264,7 @@ export function ConnectOnboardingSection({
             onCheckedChange={onExposeEnvironmentChange}
           />
           <OnboardingToggleRow
-            title="Luma-Aktivität senden"
+            title="Preset-Aktivität senden"
             checked={publishAgentActivity}
             disabled={isApplying}
             onCheckedChange={onPublishAgentActivityChange}

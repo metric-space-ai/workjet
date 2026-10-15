@@ -1452,7 +1452,7 @@ export function WorkjetComputersSettings({
           workerConnections.data?.connections ?? [],
           selectedInstanceId,
         );
-        if (!source) return { status: "error", message: "Lumas der Instanz nicht abrufbar." };
+        if (!source) return { status: "error", message: "Presets der Instanz nicht abrufbar." };
         const result = await enrollRemoteComputer({
           environmentId,
           targetEnvironmentId: connected,

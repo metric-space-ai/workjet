@@ -38,12 +38,12 @@ export function ProjectTeamPanel(props: {
     );
   });
   const directory = (
-    <div className="mt-3 grid gap-3 sm:grid-cols-3" aria-label="Projekt-Lumas">
+    <div className="mt-3 grid gap-3 sm:grid-cols-3" aria-label="Projekt-Presets">
       {(
         [
           ["supervisor", "Supervisor", "border-primary/50", "Noch kein Supervisor"],
-          ["specialist", "Feste Luma", "border-emerald-500/50", "Noch keine festen Lumas"],
-          ["worker", "Einmal-Luma", "border-amber-500/50", "Noch keine Einmal-Lumas"],
+          ["specialist", "Festes Preset", "border-emerald-500/50", "Noch keine festen Presets"],
+          ["worker", "Einmal-Preset", "border-amber-500/50", "Noch keine Einmal-Presets"],
         ] as const
       ).map(([role, label, accent, empty]) => {
         const group = members.filter(
@@ -162,8 +162,8 @@ export function ProjectTeamPanel(props: {
           {team.role === "supervisor"
             ? "Supervisor"
             : team.role === "specialist"
-              ? "Feste Luma"
-              : "Einmal-Luma"}
+              ? "Festes Preset"
+              : "Einmal-Preset"}
         </strong>
         {team.role === "specialist" ? <span>{team.domain}</span> : null}
         {props.compact ? null : (

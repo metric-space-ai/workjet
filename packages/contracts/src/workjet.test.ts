@@ -400,7 +400,7 @@ describe("WorkjetConfiguration", () => {
       managedSystemPrompt: "",
       managerThreadReference: "",
       telemetry: {
-        claudeCodeEvents: true,
+        claudeCodeEvents: false,
         sidecarEvents: true,
         retentionDays: 14,
       },
@@ -426,6 +426,8 @@ describe("WorkjetConfiguration", () => {
     });
 
     expect(decoded.selectedComputerId).toBeNull();
+    // Workjet überträgt keine Claude-Code-Ereignisse: gespeichertes true gilt als false.
+    expect(decoded.telemetry.claudeCodeEvents).toBe(false);
   });
 
   it("keeps reusable routes model-free and credential-free", () => {
@@ -477,6 +479,8 @@ describe("WorkjetConfiguration", () => {
       schemaVersion: 4,
       selectedComputerId: null,
       workerGraph: { positions: [], dependencies: [] },
+      // Workjet überträgt keine Claude-Code-Ereignisse: true wird false.
+      telemetry: { ...encodedInput.telemetry, claudeCodeEvents: false },
     });
   });
 

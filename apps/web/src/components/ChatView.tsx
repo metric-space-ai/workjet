@@ -5288,7 +5288,7 @@ function ChatViewContent(props: ChatViewProps) {
       ),
       title: working
         ? liveCount > 0
-          ? `${liveCount} ${liveCount === 1 ? "Luma arbeitet" : "Lumas arbeiten"} im Hintergrund`
+          ? `${liveCount} ${liveCount === 1 ? "Preset arbeitet" : "Presets arbeiten"} im Hintergrund`
           : "Hintergrundarbeit läuft"
         : "Überwacht im Hintergrund",
       actions: (
@@ -7413,7 +7413,7 @@ function ChatViewContent(props: ChatViewProps) {
                                           _tag: "failed",
                                           error: {
                                             _tag: "OrchestrationCommandInvariantError",
-                                            detail: "Keine freigegebene Luma-Verbindung.",
+                                            detail: "Keine freigegebene Preset-Verbindung.",
                                           },
                                         };
                                       const result = await setThreadWorkjetConfig({

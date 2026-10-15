@@ -81,8 +81,8 @@ export function supervisorRouteLabel(state: SupervisorRouteState | null): {
         model: `Configured · ${configured.harness} · ${configured.model}`,
         computer: configured.computer_id,
         title: supervisorActualComputation(state)
-          ? "Configured instance Luma for the next turn. The last verified execution is shown separately."
-          : "Configured instance Luma. No verified execution receipt is available.",
+          ? "Configured instance preset for the next turn. The last verified execution is shown separately."
+          : "Configured instance preset. No verified execution receipt is available.",
       }
     : {
         model: "Instance model",

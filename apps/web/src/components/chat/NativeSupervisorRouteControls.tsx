@@ -366,12 +366,7 @@ export function NativeSupervisorRouteControls(props: {
             return [
               computer.id,
               {
-                status:
-                  connection?.phase === "connected"
-                    ? "Online"
-                    : connection?.phase === "offline"
-                      ? "Offline"
-                      : "Getrennt",
+                status: connection?.phase === "connected" ? "verbunden" : "getrennt",
                 reason:
                   !profiles.some((entry) => entry.computerId === computer.id) &&
                   connection?.phase !== "connected"

@@ -47,6 +47,8 @@ export interface AddMachineEnrollmentProps {
   readonly transport: MachineInstallTransport;
   /** Startet offen (Fixture, Ersteinrichtung). */
   readonly defaultOpen?: boolean;
+  /** Schon vorhandene Rechner erscheinen nicht noch einmal in der Liste. */
+  readonly isKnown?: (candidate: MachineCandidate) => boolean;
   readonly onRename?: (enrollmentId: string, name: string) => void;
   readonly onCapabilitiesChange?: (enrollmentId: string, capabilities: MachineCapabilities) => void;
 }
@@ -55,6 +57,7 @@ export function AddMachineEnrollment({
   source,
   transport,
   defaultOpen = false,
+  isKnown,
   onRename,
   onCapabilitiesChange,
 }: AddMachineEnrollmentProps) {
@@ -66,7 +69,9 @@ export function AddMachineEnrollment({
   const candidates = useCandidates(transport, open);
 
   const enrolledIds = new Set(entries.map((entry) => entry.candidate.id));
-  const visible = (candidates.list ?? []).filter((candidate) => !enrolledIds.has(candidate.id));
+  const visible = (candidates.list ?? []).filter(
+    (candidate) => !enrolledIds.has(candidate.id) && !isKnown?.(candidate),
+  );
   const picked = visible.find((candidate) => candidate.id === selected) ?? null;
   const needsUser = picked !== null && picked.transport !== "local" && picked.user === null;
   const canStart = picked !== null && (!needsUser || userInput.trim() !== "") && !starting;

@@ -404,6 +404,14 @@ function Fixture() {
                 source={enrollment.source}
                 transport={enrollment.transport}
                 defaultOpen={query.get("enroll") === "open"}
+                isKnown={(candidate) =>
+                  configuration.computers.some((entry) => {
+                    const connection = entry.metadata?.connection;
+                    if (!connection) return false;
+                    if (connection._tag === "local") return candidate.transport === "local";
+                    return "target" in connection && connection.target.hostname === candidate.host;
+                  })
+                }
               />
             ) : (
               <AddComputerInline

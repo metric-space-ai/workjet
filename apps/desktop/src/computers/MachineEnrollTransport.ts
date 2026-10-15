@@ -132,7 +132,12 @@ export async function resolveMachineCandidates(
     );
     if (match) {
       claimed.add(match.id);
-      tailnet.push({ ...match, id: `tailscale:${shortName}`, transport: "tailscale", name: shortName });
+      tailnet.push({
+        ...match,
+        id: `tailscale:${shortName}`,
+        transport: "tailscale",
+        name: shortName,
+      });
       continue;
     }
     const resolved = await input.resolve(peer.hostname).catch(() => null);
@@ -248,10 +253,18 @@ export async function runMachineInstall(
       result = await action();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      return fail(key, message === "user_missing" ? "user_missing" : classifyTransportFailure(key, message), message);
+      return fail(
+        key,
+        message === "user_missing" ? "user_missing" : classifyTransportFailure(key, message),
+        message,
+      );
     }
     if (result.code !== 0)
-      return fail(key, classifyTransportFailure(key, result.stderr), result.stderr || result.stdout);
+      return fail(
+        key,
+        classifyTransportFailure(key, result.stderr),
+        result.stderr || result.stdout,
+      );
     onStep({ key, state: "done", at_ms: now() });
     return true;
   };
@@ -278,7 +291,9 @@ export async function runMachineInstall(
   const target = () => sshTargetArgs(candidate);
   const remotePath = `${REMOTE_DIR}/${installerName}`;
   return (
-    (await step("transport_connected", () => run("ssh", [...target(), "true"], { timeoutMs: 20_000 }))) &&
+    (await step("transport_connected", () =>
+      run("ssh", [...target(), "true"], { timeoutMs: 20_000 }),
+    )) &&
     (await step("package_copied", async () =>
       run(
         "ssh",
@@ -290,11 +305,9 @@ export async function runMachineInstall(
       ),
     )) &&
     (await step("installed", () =>
-      run(
-        "ssh",
-        [...target(), `./${remotePath} machine join --token ${shellQuote(joinToken)}`],
-        { timeoutMs: 10 * 60_000 },
-      ),
+      run("ssh", [...target(), `./${remotePath} machine join --token ${shellQuote(joinToken)}`], {
+        timeoutMs: 10 * 60_000,
+      }),
     ))
   );
 }

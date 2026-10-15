@@ -182,7 +182,11 @@ export function createFixtureMachineEnrollment(options: FixtureOptions = {}): {
         cancelled: false,
       };
       enrollments.set(id, entry);
-      return { enrollment_id: id, join_token: `fixture-token-${counter}`, installer_ref: "fixture" };
+      return {
+        enrollment_id: id,
+        join_token: `fixture-token-${counter}`,
+        installer_ref: "fixture",
+      };
     },
     cancel: async (id) => {
       const entry = enrollments.get(id);

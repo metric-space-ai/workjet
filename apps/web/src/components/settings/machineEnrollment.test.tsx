@@ -49,7 +49,11 @@ describe("Fortschritt aus steps (sync v4 §16.41)", () => {
   });
 
   it("walks the bar and names the current step", () => {
-    expect(machineEnrollmentProgress([])).toMatchObject({ index: 0, fraction: 0, status: "running" });
+    expect(machineEnrollmentProgress([])).toMatchObject({
+      index: 0,
+      fraction: 0,
+      status: "running",
+    });
     const half = machineEnrollmentProgress([
       done("token_issued"),
       done("transport_connected"),
@@ -118,7 +122,9 @@ describe("Fehlerzeilen", () => {
 
 describe("Quellenliste", () => {
   it("shows user@host and never invents a user", () => {
-    const byName = Object.fromEntries(FIXTURE_MACHINE_CANDIDATES.map((entry) => [entry.name, entry]));
+    const byName = Object.fromEntries(
+      FIXTURE_MACHINE_CANDIDATES.map((entry) => [entry.name, entry]),
+    );
     expect(machineCandidateAddress(byName["ts-gpu1"]!)).toBe("deck@100.87.204.48");
     expect(machineCandidateAddress(byName["skf-vm"]!)).toBe("ctox@10.20.0.4:2222");
     expect(machineCandidateAddress(byName["nas-asustor"]!)).toBe("—@100.64.0.28");
@@ -143,7 +149,9 @@ describe("Ein Klick gegen die Attrappe", () => {
     const last = seen.at(-1)!;
     expect(machineEnrollmentProgress(last.steps).status).toBe("green");
     expect(last.capabilities?.gpu).toBe("RTX A6000 · 48 GB");
-    expect(new Set(last.steps.map((step) => step.key))).toEqual(new Set(MACHINE_ENROLLMENT_STEP_KEYS));
+    expect(new Set(last.steps.map((step) => step.key))).toEqual(
+      new Set(MACHINE_ENROLLMENT_STEP_KEYS),
+    );
   });
 
   it("stops at the failing step with an error code", async () => {
@@ -169,7 +177,9 @@ describe("Ein Klick gegen die Attrappe", () => {
 describe("AddMachineEnrollment", () => {
   it("renders the trigger as a button and no form fields", () => {
     const { source, transport } = createFixtureMachineEnrollment();
-    const closed = renderToStaticMarkup(<AddMachineEnrollment source={source} transport={transport} />);
+    const closed = renderToStaticMarkup(
+      <AddMachineEnrollment source={source} transport={transport} />,
+    );
     expect(closed).toContain("Rechner hinzufügen");
     expect(closed).not.toContain("<input");
     const open = renderToStaticMarkup(

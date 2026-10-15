@@ -406,69 +406,69 @@ function Fixture() {
                 defaultOpen={query.get("enroll") === "open"}
               />
             ) : (
-            <AddComputerInline
-              open={addOpen}
-              onOpenChange={setAddOpen}
-              segment={segment}
-              onSegmentChange={setSegment}
-              localAvailable
-              desktopAvailable
-              sshAliases={[
-                {
-                  alias: "lan-gpu1",
-                  hostname: "192.168.1.21",
-                  username: "deck",
-                  port: 22,
-                  source: "ssh-config",
-                },
-                {
-                  alias: "lan-gpu3",
-                  hostname: "192.168.1.30",
-                  username: "metricspace",
-                  port: 22,
-                  source: "ssh-config",
-                },
-                {
-                  alias: "welsch",
-                  hostname: "welsch.ctox.dev",
-                  username: "root",
-                  port: 22,
-                  source: "ssh-config",
-                },
-                {
-                  alias: "skf-vm",
-                  hostname: "10.20.0.4",
-                  username: "ctox",
-                  port: 2222,
-                  source: "ssh-config",
-                },
-              ]}
-              knownHosts={["100.87.204.48", "100.120.16.93"]}
-              sshAliasesLoading={false}
-              onRefreshSshAliases={() => undefined}
-              rolesAvailable
-              sshKeys={[
-                { path: "/Users/michael/.ssh/id_ed25519", publicKeyFingerprint: "SHA256:7Hq2" },
-                { path: "/Users/michael/.ssh/gpu_deploy", publicKeyFingerprint: "SHA256:Lk9x" },
-                { path: "/Users/michael/.ssh/id_rsa", publicKeyFingerprint: "SHA256:aa31" },
-              ]}
-              knownComputer={(kind, hostname) =>
-                knownComputerFacts(configuration.computers, kind, hostname, local)
-              }
-              discoverTailscalePeers={discoverTailscalePeers}
-              inspectHostKey={() =>
-                delay({
-                  _tag: "ready" as const,
-                  algorithm: "ED25519",
-                  fingerprint: "SHA256:q3J8bV0m4Wc1xYzK7pLr2NfT9sHdE6uA5oGiQ+BkXvM",
-                })
-              }
-              onAdd={async () =>
-                query.get("result") === "error"
-                  ? delay({ status: "error" as const, message: "Permission denied (publickey)." })
-                  : delay({ status: "done" as const })
-              }
-            />
+              <AddComputerInline
+                open={addOpen}
+                onOpenChange={setAddOpen}
+                segment={segment}
+                onSegmentChange={setSegment}
+                localAvailable
+                desktopAvailable
+                sshAliases={[
+                  {
+                    alias: "lan-gpu1",
+                    hostname: "192.168.1.21",
+                    username: "deck",
+                    port: 22,
+                    source: "ssh-config",
+                  },
+                  {
+                    alias: "lan-gpu3",
+                    hostname: "192.168.1.30",
+                    username: "metricspace",
+                    port: 22,
+                    source: "ssh-config",
+                  },
+                  {
+                    alias: "welsch",
+                    hostname: "welsch.ctox.dev",
+                    username: "root",
+                    port: 22,
+                    source: "ssh-config",
+                  },
+                  {
+                    alias: "skf-vm",
+                    hostname: "10.20.0.4",
+                    username: "ctox",
+                    port: 2222,
+                    source: "ssh-config",
+                  },
+                ]}
+                knownHosts={["100.87.204.48", "100.120.16.93"]}
+                sshAliasesLoading={false}
+                onRefreshSshAliases={() => undefined}
+                rolesAvailable
+                sshKeys={[
+                  { path: "/Users/michael/.ssh/id_ed25519", publicKeyFingerprint: "SHA256:7Hq2" },
+                  { path: "/Users/michael/.ssh/gpu_deploy", publicKeyFingerprint: "SHA256:Lk9x" },
+                  { path: "/Users/michael/.ssh/id_rsa", publicKeyFingerprint: "SHA256:aa31" },
+                ]}
+                knownComputer={(kind, hostname) =>
+                  knownComputerFacts(configuration.computers, kind, hostname, local)
+                }
+                discoverTailscalePeers={discoverTailscalePeers}
+                inspectHostKey={() =>
+                  delay({
+                    _tag: "ready" as const,
+                    algorithm: "ED25519",
+                    fingerprint: "SHA256:q3J8bV0m4Wc1xYzK7pLr2NfT9sHdE6uA5oGiQ+BkXvM",
+                  })
+                }
+                onAdd={async () =>
+                  query.get("result") === "error"
+                    ? delay({ status: "error" as const, message: "Permission denied (publickey)." })
+                    : delay({ status: "done" as const })
+                }
+              />
             )
           }
         />

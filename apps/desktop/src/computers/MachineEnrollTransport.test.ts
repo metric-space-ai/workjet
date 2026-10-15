@@ -81,15 +81,18 @@ describe("Quellenliste", () => {
 
 describe("Fehlercodes", () => {
   it("maps raw ssh output to contract error codes", () => {
-    expect(classifyTransportFailure("transport_connected", "deck@x: Permission denied (publickey).")).toBe(
-      "auth_rejected",
-    );
-    expect(classifyTransportFailure("transport_connected", "ssh: connect to host x port 22: Operation timed out")).toBe(
-      "unreachable",
-    );
-    expect(classifyTransportFailure("package_copied", "cat: write error: No space left on device")).toBe(
-      "disk_full",
-    );
+    expect(
+      classifyTransportFailure("transport_connected", "deck@x: Permission denied (publickey)."),
+    ).toBe("auth_rejected");
+    expect(
+      classifyTransportFailure(
+        "transport_connected",
+        "ssh: connect to host x port 22: Operation timed out",
+      ),
+    ).toBe("unreachable");
+    expect(
+      classifyTransportFailure("package_copied", "cat: write error: No space left on device"),
+    ).toBe("disk_full");
     expect(classifyTransportFailure("installed", "join: token expired")).toBe("token_expired");
     expect(classifyTransportFailure("installed", "boom")).toBe("install_failed");
   });
@@ -98,9 +101,9 @@ describe("Fehlercodes", () => {
     expect(() =>
       sshTargetArgs({ ...local, transport: "tailscale", host: "100.64.0.28", user: null }),
     ).toThrow("user_missing");
-    expect(sshTargetArgs({ ...local, transport: "tailscale", sshAlias: "ts-gpu1", user: "deck" })).toContain(
-      "ts-gpu1",
-    );
+    expect(
+      sshTargetArgs({ ...local, transport: "tailscale", sshAlias: "ts-gpu1", user: "deck" }),
+    ).toContain("ts-gpu1");
   });
 });
 
@@ -111,7 +114,12 @@ describe("lokaler Installationsweg gegen Fake-Installer", () => {
     );
     const steps: MachineEnrollTransportStep[] = [];
     const ok = await runMachineInstall(
-      { candidate: local, joinToken: "tok-123", installerPath: path, localDir: NodePath.join(dir, "work") },
+      {
+        candidate: local,
+        joinToken: "tok-123",
+        installerPath: path,
+        localDir: NodePath.join(dir, "work"),
+      },
       (step) => steps.push(step),
     );
     expect(ok).toBe(true);
@@ -123,20 +131,31 @@ describe("lokaler Installationsweg gegen Fake-Installer", () => {
       "installed:running",
       "installed:done",
     ]);
-    expect((await NodeFSP.readFile(NodePath.join(dir, "work", "token"), "utf8")).trim()).toBe("tok-123");
+    expect((await NodeFSP.readFile(NodePath.join(dir, "work", "token"), "utf8")).trim()).toBe(
+      "tok-123",
+    );
   });
 
   it("ends with exactly one failed step carrying a code and the raw text", async () => {
     const { dir, path } = await fakeInstaller(`echo "No space left on device" >&2\nexit 1`);
     const steps: MachineEnrollTransportStep[] = [];
     const ok = await runMachineInstall(
-      { candidate: local, joinToken: "t", installerPath: path, localDir: NodePath.join(dir, "work") },
+      {
+        candidate: local,
+        joinToken: "t",
+        installerPath: path,
+        localDir: NodePath.join(dir, "work"),
+      },
       (step) => steps.push(step),
     );
     expect(ok).toBe(false);
     const failed = steps.filter((step) => step.state === "failed");
     expect(failed).toEqual([
-      expect.objectContaining({ key: "installed", error_code: "disk_full", detail: "No space left on device" }),
+      expect.objectContaining({
+        key: "installed",
+        error_code: "disk_full",
+        detail: "No space left on device",
+      }),
     ]);
   });
 });
@@ -146,13 +165,23 @@ describe("SSH-Installationsweg", () => {
     const calls: string[][] = [];
     const run: RunCommand = async (command, args) => {
       calls.push([command, ...args]);
-      return { code: 255, stdout: "", stderr: "deck@100.87.204.48: Permission denied (publickey)." };
+      return {
+        code: 255,
+        stdout: "",
+        stderr: "deck@100.87.204.48: Permission denied (publickey).",
+      };
     };
     const { path } = await fakeInstaller("exit 0");
     const steps: MachineEnrollTransportStep[] = [];
     const ok = await runMachineInstall(
       {
-        candidate: { ...local, transport: "ssh", sshAlias: "ts-gpu1", user: "deck", host: "100.87.204.48" },
+        candidate: {
+          ...local,
+          transport: "ssh",
+          sshAlias: "ts-gpu1",
+          user: "deck",
+          host: "100.87.204.48",
+        },
         joinToken: "t",
         installerPath: path,
         run,
@@ -162,7 +191,11 @@ describe("SSH-Installationsweg", () => {
     expect(ok).toBe(false);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toContain("BatchMode=yes");
-    expect(steps.at(-1)).toMatchObject({ key: "transport_connected", state: "failed", error_code: "auth_rejected" });
+    expect(steps.at(-1)).toMatchObject({
+      key: "transport_connected",
+      state: "failed",
+      error_code: "auth_rejected",
+    });
   });
 
   it("streams the package over ssh and runs join with the quoted token", async () => {
@@ -174,7 +207,13 @@ describe("SSH-Installationsweg", () => {
     const { path } = await fakeInstaller("exit 0");
     const ok = await runMachineInstall(
       {
-        candidate: { ...local, transport: "ssh", sshAlias: "lan-gpu3", user: null, host: "192.168.1.30" },
+        candidate: {
+          ...local,
+          transport: "ssh",
+          sshAlias: "lan-gpu3",
+          user: null,
+          host: "192.168.1.30",
+        },
         joinToken: "a'b",
         installerPath: path,
         run,
@@ -183,6 +222,8 @@ describe("SSH-Installationsweg", () => {
     );
     expect(ok).toBe(true);
     expect(calls.map((call) => call.stdin)).toEqual([false, true, false]);
-    expect(calls[2]!.args.at(-1)).toBe(`./.ctox-enroll/ctox-installer machine join --token 'a'\\''b'`);
+    expect(calls[2]!.args.at(-1)).toBe(
+      `./.ctox-enroll/ctox-installer machine join --token 'a'\\''b'`,
+    );
   });
 });

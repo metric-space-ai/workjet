@@ -24,7 +24,10 @@ export const MACHINE_ENROLLMENT_STEP_KEYS = [
 export type MachineEnrollmentStepKey = (typeof MACHINE_ENROLLMENT_STEP_KEYS)[number];
 
 /** Schritte, die der Desktop aus der Installer-Ausgabe meldet. */
-export type MachineEnrollmentTransportStepKey = "transport_connected" | "package_copied" | "installed";
+export type MachineEnrollmentTransportStepKey =
+  | "transport_connected"
+  | "package_copied"
+  | "installed";
 
 export type MachineEnrollmentStepState = "pending" | "running" | "done" | "failed";
 
@@ -79,7 +82,10 @@ export interface MachineEnrollmentSource {
     readonly transport: MachineEnrollmentTransport;
   }): Promise<MachineEnrollmentBeginResult>;
   cancel(enrollmentId: string): Promise<void>;
-  watch(enrollmentId: string, onSnapshot: (snapshot: MachineEnrollmentSnapshot) => void): () => void;
+  watch(
+    enrollmentId: string,
+    onSnapshot: (snapshot: MachineEnrollmentSnapshot) => void,
+  ): () => void;
   reportTransportStep(enrollmentId: string, step: MachineEnrollmentStep): Promise<void>;
 }
 
@@ -178,7 +184,10 @@ const ERRORS: Record<string, ErrorEntry> = {
     text: { de: "Installation fehlgeschlagen", en: "Installation failed" },
     action: "retry",
   },
-  disk_full: { text: { de: "Zu wenig Speicherplatz", en: "Not enough disk space" }, action: "retry" },
+  disk_full: {
+    text: { de: "Zu wenig Speicherplatz", en: "Not enough disk space" },
+    action: "retry",
+  },
   token_expired: { text: { de: "Freigabe abgelaufen", en: "Join token expired" }, action: "retry" },
   service_failed: {
     text: { de: "Dienst startet nicht", en: "Service does not start" },
@@ -248,7 +257,11 @@ export function machineEnrollmentStepLabel(
 export function machineEnrollmentError(
   errorCode: string | undefined,
   language: MachineEnrollmentLanguage = "de",
-): { readonly text: string; readonly action: MachineEnrollmentErrorAction; readonly actionLabel: string } {
+): {
+  readonly text: string;
+  readonly action: MachineEnrollmentErrorAction;
+  readonly actionLabel: string;
+} {
   const entry = (errorCode ? ERRORS[errorCode] : undefined) ?? FALLBACK_ERROR;
   const labels = machineEnrollmentLabels(language);
   return {

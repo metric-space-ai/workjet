@@ -19,6 +19,8 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useUiText } from "../../hooks/useUiText";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { INTEGRATIONS } from "../settings/integrationsCatalog";
+import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   ConfirmCard,
   ConnectCard,
@@ -197,19 +199,32 @@ export function PinnedRequestStack(props: {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-1 pb-2" data-pinned-requests>
       {rest.length > 0 ? (
-        <button
-          type="button"
-          aria-expanded={props.expanded}
-          aria-label={props.expanded ? t("Einklappen", "Collapse") : t("Alle anzeigen", "Show all")}
-          onClick={() => props.setExpanded(!props.expanded)}
-          className="flex items-center self-start px-1 text-muted-foreground hover:text-foreground"
-        >
-          {props.expanded ? (
-            <ChevronUpIcon className="size-3.5" />
-          ) : (
-            <ChevronDownIcon className="size-3.5" />
-          )}
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-expanded={props.expanded}
+                aria-label={
+                  props.expanded ? t("Einklappen", "Collapse") : t("Alle anzeigen", "Show all")
+                }
+                onClick={() => props.setExpanded(!props.expanded)}
+                className="self-end"
+              />
+            }
+          >
+            {props.expanded ? (
+              <ChevronUpIcon className="size-3.5" />
+            ) : (
+              <ChevronDownIcon className="size-3.5" />
+            )}
+          </TooltipTrigger>
+          <TooltipPopup side="top">
+            {props.expanded ? t("Einklappen", "Collapse") : t("Alle anzeigen", "Show all")}
+          </TooltipPopup>
+        </Tooltip>
       ) : null}
       <div className="relative">
         <RequestCard
@@ -223,12 +238,12 @@ export function PinnedRequestStack(props: {
           <>
             <div
               aria-hidden
-              className="mx-3 h-1.5 rounded-b-2xl border-x border-b border-border/50 bg-card/80"
+              className="mx-3 h-1.5 rounded-b-xl border-x border-b border-border/50 bg-card/80"
             />
             {rest.length > 1 ? (
               <div
                 aria-hidden
-                className="mx-6 h-1.5 rounded-b-2xl border-x border-b border-border/40 bg-card/60"
+                className="mx-6 h-1.5 rounded-b-xl border-x border-b border-border/40 bg-card/60"
               />
             ) : null}
           </>
@@ -256,7 +271,7 @@ function titleOf(r: SessionUiRequest, t: T, name: string): string {
   return r.kind === "credential"
     ? t(`${name} API-Schlüssel`, `${name} API key`)
     : r.kind === "confirm"
-      ? (r.message ?? t(`${name}: Aktion bestätigen`, `${name}: confirm action`))
+      ? (r.message ?? t(`${name} freigeben`, `Approve ${name}`))
       : name;
 }
 
@@ -276,23 +291,29 @@ export function RequestCard({
   const entry = entryOf(r.toolkit);
   const name = appName(r.toolkit);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const bridge = typeof window !== "undefined" ? window.desktopBridge : undefined;
 
-  // No error line on the card: a failed step leaves the card open, so the
-  // user simply tries again; the next poll reflects the instance's state.
-  const run = async (fn: () => Promise<void>) => {
+  // A failed step leaves the card open with one short line; the primary
+  // button turns into "Erneut versuchen" (UI-Vertrag §2).
+  const run = async (fn: () => Promise<void>, failure: string) => {
     setBusy(true);
+    setError(null);
     try {
       await fn();
       await onChanged();
-    } catch {
-      // Card stays open.
+    } catch (reason) {
+      console.warn("Toolhub-Anfrage fehlgeschlagen", reason);
+      setError(failure);
     } finally {
       setBusy(false);
     }
   };
   const decide = (action: "approve" | "decline") =>
-    run(async () => void (await call("ui/resolve", { id: r.id, action })));
+    run(
+      async () => void (await call("ui/resolve", { id: r.id, action })),
+      t("Nicht übernommen", "Not applied"),
+    );
 
   if (r.kind === "credential") {
     const secrets = r.fields && r.fields.length > 0 ? r.fields : [{ name: "token", secret: true }];
@@ -302,20 +323,15 @@ export function RequestCard({
         t={t}
         appName={name}
         title={titleOf(r, t, name)}
-        help={
-          r.message ??
-          t(
-            `Dein Agent braucht Zugriff auf ${name}, um weiterzumachen.`,
-            `Your agent needs access to ${name} to continue.`,
-          )
-        }
         secrets={secrets}
         params={r.params ?? []}
         busy={busy}
         status={r.status}
+        error={error}
         onSubmit={(values) =>
           void run(
             async () => void (await call("ui/resolve", { id: r.id, action: "submit", values })),
+            t("Nicht gespeichert", "Not saved"),
           )
         }
         onDecline={() => void decide("decline")}
@@ -329,14 +345,14 @@ export function RequestCard({
         t={t}
         name={titleOf(r, t, name)}
         description={
-          r.message ??
-          (entry
+          entry
             ? t(entry.description.de, entry.description.en)
-            : t(`Zugriff auf ${name} freigeben`, `Give access to ${name}`))
+            : (r.message ?? t(`Zugriff auf ${name} freigeben`, `Give access to ${name}`))
         }
         logo={entry?.logo ?? null}
         busy={busy}
         status={r.status}
+        error={error}
         onDecline={() => void decide("decline")}
         onAuthorize={() =>
           void run(async () => {
@@ -353,7 +369,7 @@ export function RequestCard({
               throw Object.assign(new Error("authorize_failed"), { status: 500 });
             await call("oauth/complete", { callback_url: result.callbackUrl });
             await call("ui/resolve", { id: r.id, action: "connected" });
-          })
+          }, t("Nicht verbunden", "Not connected"))
         }
       />
     );
@@ -363,9 +379,9 @@ export function RequestCard({
       id={r.id}
       t={t}
       title={titleOf(r, t, name)}
-      help={t("Dein Agent wartet auf deine Freigabe.", "Your agent is waiting for your approval.")}
       busy={busy}
       status={r.status}
+      error={error}
       onDecide={(a) => void decide(a)}
     />
   );

@@ -179,7 +179,8 @@ describe("WorkjetComputerEditor", () => {
       />,
     );
     expect(markup).not.toContain('role="combobox"');
-    expect(markup).toContain("Tailscale");
+    // D20: die Verbindung erkennt die App; das Formular zeigt sie nicht mehr.
+    expect(markup).not.toContain("Verbindung");
     expect(markup).toContain("Remote devbox");
     expect(markup).toContain("Speichern");
   });

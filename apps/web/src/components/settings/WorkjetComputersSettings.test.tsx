@@ -32,6 +32,7 @@ import {
   removeComputerConnection,
   toggleCurrentComputer,
   WorkjetComputersSettingsView,
+  computerCapabilityToggles,
 } from "./WorkjetComputersSettings";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
@@ -947,5 +948,77 @@ describe("Rechner-Backend (erkennen statt fragen)", () => {
     expect(knownComputerFacts([gpu3], "ssh", "192.168.1.30", null)?.facts?.cpuCores).toBe(32);
     expect(knownComputerFacts([gpu3], "ssh", "lan-gpu3", null)?.facts?.gpus).toHaveLength(1);
     expect(knownComputerFacts([gpu3], "local", null, null)).toBeNull();
+  });
+});
+
+describe("Audit D: Rechnerliste", () => {
+  const remote = {
+    ...remoteComputer,
+    metadata: metadataWith(),
+  };
+  const view = (computer: WorkjetComputer, extra: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(computer)}
+        environments={[]}
+        environmentsReady
+        connectedEnvironmentIds={[remoteEnvironmentId]}
+        harnessInspections={{}}
+        environmentId={localEnvironmentId}
+        onChange={() => undefined}
+        {...extra}
+      />,
+    );
+
+  it("D03: does not probe an inactive computer", () => {
+    const markup = view({ ...remote, metadata: metadataWith({ active: false }) });
+    expect(markup).toContain('aria-label="Inaktiv"');
+    expect(markup).not.toContain('aria-label="Prüft"');
+  });
+
+  it("D05/D54: capabilities are real switches, facts stay chips", () => {
+    const markup = view(remote, { onRolesChange: async () => undefined });
+    expect(markup).toMatch(/data-workjet-capability="build"[^>]*>[\s\S]*?role="switch"/);
+    expect(markup).not.toContain("border-dashed");
+  });
+
+  it("D04: no dash for a missing meta value", () => {
+    expect(view(remote)).not.toContain(">—<");
+  });
+
+  it("D10: uses the term Standard", () => {
+    const markup = view(remote, {
+      configuration: { ...configurationWith(remote), selectedComputerId: remote.id },
+    });
+    expect(markup).toContain("Standard");
+    expect(markup).not.toContain(">Aktuell<");
+  });
+
+  it("D16: an agentless storage computer is never offered as a build host", () => {
+    const toggles = computerCapabilityToggles(null, {
+      id: "nas",
+      displayName: "nas",
+      hostingMode: "self_hosted",
+      status: "assigned",
+      capabilities: ["storage"],
+      selfHostedColocation: false,
+      agentless: true,
+    } as never);
+    expect(toggles.map((toggle) => toggle.key)).toEqual(["storage"]);
+  });
+
+  it("D18: a failed membership is an error line with one action, not a chip", () => {
+    const markup = view(remote, {
+      membership: {
+        instanceId: "i",
+        phase: "failed",
+        pendingComputerId: null,
+        error: "x",
+        computers: [],
+      },
+      onRetryMembership: () => undefined,
+    });
+    expect(markup).toContain('data-slot="computer-membership-error"');
+    expect(markup.match(/Erneut versuchen/g)).toHaveLength(1);
   });
 });

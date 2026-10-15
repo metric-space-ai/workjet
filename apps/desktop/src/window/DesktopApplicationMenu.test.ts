@@ -185,12 +185,12 @@ describe("DesktopApplicationMenu", () => {
       yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
 
       const template = yield* Deferred.await(applicationMenuTemplate);
-      const fileMenu = template.find((item) => item.label === "File");
+      const fileMenu = template.find((item) => item.label === "Datei");
       assert.isDefined(fileMenu);
       if (!Array.isArray(fileMenu.submenu)) {
         throw new Error("Expected File menu submenu to be an array.");
       }
-      const settingsItem = fileMenu.submenu.find((item) => item.label === "Settings...");
+      const settingsItem = fileMenu.submenu.find((item) => item.label === "Einstellungen …");
       assert.isDefined(settingsItem);
       const settingsClick = settingsItem.click;
       if (typeof settingsClick !== "function") {
@@ -215,7 +215,7 @@ describe("DesktopApplicationMenu", () => {
       yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
 
       const template = yield* Deferred.await(applicationMenuTemplate);
-      const viewMenu = template.find((item) => item.label === "View");
+      const viewMenu = template.find((item) => item.label === "Darstellung");
       assert.isDefined(viewMenu);
       if (!Array.isArray(viewMenu.submenu)) {
         throw new Error("Expected View menu submenu to be an array.");
@@ -225,7 +225,7 @@ describe("DesktopApplicationMenu", () => {
         viewMenu.submenu.find((item) => item.role?.toLowerCase().includes("zoom")),
       );
 
-      const zoomIn = viewMenu.submenu.find((item) => item.label === "Zoom In");
+      const zoomIn = viewMenu.submenu.find((item) => item.label === "Vergrößern");
       assert.isDefined(zoomIn);
       assert.equal(zoomIn.accelerator, "CmdOrCtrl+=");
       if (typeof zoomIn.click !== "function") {
@@ -259,7 +259,7 @@ describe("DesktopApplicationMenu", () => {
         throw new Error("Expected Help menu submenu to be an array.");
       }
 
-      const aboutItem = helpMenu.submenu.find((item) => item.label === `About ${APP_NAME}`);
+      const aboutItem = helpMenu.submenu.find((item) => item.label === `Über ${APP_NAME}`);
       assert.isDefined(aboutItem);
       if (typeof aboutItem.click !== "function") {
         throw new Error("Expected About menu item to have a click handler.");
@@ -294,7 +294,9 @@ describe("DesktopApplicationMenu", () => {
         throw new Error("Expected Help menu submenu to be an array.");
       }
 
-      const bundleItem = helpMenu.submenu.find((item) => item.label === "Create Support Bundle...");
+      const bundleItem = helpMenu.submenu.find(
+        (item) => item.label === "Support-Paket erstellen …",
+      );
       assert.isDefined(bundleItem);
       if (typeof bundleItem.click !== "function") {
         throw new Error("Expected the support bundle menu item to have a click handler.");
@@ -302,10 +304,47 @@ describe("DesktopApplicationMenu", () => {
 
       bundleItem.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
 
-      const dialog = yield* Deferred.await(probe.dialogShown);
-      assert.include(dialog.detail ?? "", probe.bundlePath);
-      assert.include(dialog.message ?? "", "Nothing was uploaded");
+      // Kein nativer Dialog: Pfad in die Zwischenablage, Rückmeldung als Toast in der App.
       assert.strictEqual(yield* Deferred.await(probe.pathCopied), probe.bundlePath);
+      assert.strictEqual(yield* Deferred.await(selectedAction), "support-bundle-created");
+      assert.isFalse(yield* Deferred.isDone(probe.dialogShown));
+    }),
+  );
+
+  // D43: Menüleiste deutsch, genau ein „Nach Updates suchen“, Entwickler-Rollen
+  // nur im Entwicklermodus.
+  it.effect("labels the menu bar in German without developer roles outside dev mode", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const aboutPanelShown = yield* Deferred.make<true>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, aboutPanelShown);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const labels: string[] = [];
+      const roles: string[] = [];
+      const walk = (items: readonly Electron.MenuItemConstructorOptions[]) => {
+        for (const item of items) {
+          if (item.label !== undefined) labels.push(item.label);
+          if (item.role !== undefined) roles.push(item.role);
+          if (Array.isArray(item.submenu)) walk(item.submenu);
+        }
+      };
+      walk(template);
+
+      assert.deepStrictEqual(
+        template.map((item) => item.label),
+        ["Datei", "Bearbeiten", "Darstellung", "Fenster", "Hilfe"],
+      );
+      assert.strictEqual(labels.filter((label) => label === "Nach Updates suchen …").length, 1);
+      for (const role of ["reload", "forceReload", "toggleDevTools"]) {
+        assert.notInclude(roles, role);
+      }
+      for (const english of ["File", "View", "Settings...", "Zoom In", "Check for Updates..."]) {
+        assert.notInclude(labels, english);
+      }
     }),
   );
 });

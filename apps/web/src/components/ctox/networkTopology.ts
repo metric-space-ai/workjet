@@ -1,6 +1,6 @@
 import type { ComputerMetadata, CtoxWorkjetComputerProjection } from "@workjet/contracts";
 
-import { shortGpuModel } from "../settings/ComputerCapabilitiesEditor";
+import { gibOf, shortGpuModel } from "../settings/ComputerCapabilitiesEditor";
 
 export type NetworkPlatform = "macos" | "linux" | "windows" | "unknown";
 
@@ -52,22 +52,24 @@ export function networkCapabilityTags(
     native?.roles ?? { build: declared("build"), storage: declared("storage") };
   const tags: NetworkCapabilityTag[] = [];
   if (roles.build) tags.push({ kind: "build", label: "Build" });
-  if (roles.storage) tags.push({ kind: "storage", label: "Store" });
+  if (roles.storage) tags.push({ kind: "storage", label: "Speicher" });
   const facts = metadata?.facts ?? native?.detectedFacts ?? null;
   const detected = facts?.gpus[0];
   const configured = config.find((entry) => entry.kind === "gpu");
+  // Gleiche Form wie in Einstellungen › Rechner: „GPU A4500 · 20 GB“.
   if (detected) {
     const more = facts!.gpus.length - 1;
+    const bytes = detected.vramBytes ?? (detected.unifiedMemory ? facts!.ramBytes : null) ?? null;
     tags.push({
       kind: "gpu",
-      label: `GPU · ${shortGpuModel(detected.model)}${more > 0 ? ` +${more}` : ""}`,
+      label: `GPU ${shortGpuModel(detected.model)}${bytes ? ` · ${gibOf(bytes)} GB` : ""}${more > 0 ? ` +${more}` : ""}`,
       title: facts!.gpus.map((gpu) => gpu.model).join(", "),
     });
   } else if (configured && configured.kind === "gpu") {
     tags.push({
       kind: "gpu",
-      label: `GPU · ${shortGpuModel(configured.model)}`,
-      title: `${configured.model} · ${configured.vram_gib} GB`,
+      label: `GPU ${shortGpuModel(configured.model)} · ${configured.vram_gib} GB`,
+      title: configured.model,
     });
   } else if (declared("gpu")) {
     tags.push({ kind: "gpu", label: "GPU" });

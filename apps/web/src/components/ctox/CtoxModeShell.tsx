@@ -2227,10 +2227,7 @@ function ManagedAccountState({ state }: { readonly state: CtoxManagedState }) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1">
         <p className="text-xs text-destructive" role="alert">
-          {shellText(
-            "Die Instanz ist gerade nicht erreichbar.",
-            "The instance cannot be reached right now.",
-          )}
+          {shellText("Instanz nicht erreichbar", "Instance unreachable")}
         </p>
         <Button size="xs" variant="outline" disabled={refreshing} onClick={refresh}>
           {shellText("Erneut versuchen", "Try again")}
@@ -2349,7 +2346,7 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
           ) : activeInstance === undefined ? (
             <div className="space-y-3">
               <p className="text-xs text-sidebar-muted-foreground" role="status">
-                {shellText("Es ist noch keine Instanz gewählt.", "No instance is selected yet.")}
+                {shellText("Keine Instanz gewählt", "No instance selected")}
               </p>
               <ManagedAccountState state={managedState} />
             </div>
@@ -2670,24 +2667,18 @@ export function CtoxMainShell() {
 
   const loadingExpired = useLoadingExpired(discovery === "loading");
   const openSettings = () => void navigate({ to: "/settings/business-os" });
-  // Leerzustand: ein kurzer ganzer Satz und genau ein Knopf (#559).
+  // Leerzustand: Titel ≤ 4 Wörter und genau ein Knopf (#559, D51).
   const emptyState: { readonly title: string; readonly action?: ReactNode } =
     connection === "revoked"
       ? {
-          title: shellText(
-            "Der Zugriff auf diese Instanz wurde entzogen.",
-            "Access to this instance was revoked.",
-          ),
+          title: shellText("Zugriff entzogen", "Access revoked"),
           action: <Button onClick={openSettings}>{shellText("Einstellungen", "Settings")}</Button>,
         }
       : (discovery !== "loading" && discovery._tag === "failed") ||
           loadingExpired ||
           knownSelected !== undefined
         ? {
-            title: shellText(
-              "Die Instanz ist gerade nicht erreichbar.",
-              "The instance cannot be reached right now.",
-            ),
+            title: shellText("Instanz nicht erreichbar", "Instance unreachable"),
             action: (
               <Button variant="outline" onClick={refresh}>
                 {shellText("Erneut versuchen", "Try again")}
@@ -2697,10 +2688,7 @@ export function CtoxMainShell() {
         : discovery === "loading"
           ? { title: shellText("Instanzen werden geladen …", "Loading instances …") }
           : {
-              title: shellText(
-                "Es ist noch keine Instanz gewählt.",
-                "No instance is selected yet.",
-              ),
+              title: shellText("Keine Instanz gewählt", "No instance selected"),
               action: (
                 <Button onClick={openSettings}>
                   {shellText("Instanz auswählen", "Choose instance")}

@@ -35,7 +35,8 @@ function PairRouteView() {
   const navigate = useNavigate();
 
   if (!authGateState) {
-    return null;
+    // D53: nie eine leere Seite.
+    return <PairingPendingSurface />;
   }
 
   if (authGateState.status === "hosted-pairing") {

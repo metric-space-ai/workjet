@@ -27,13 +27,16 @@ export const requestToolhub = makeIpcMethod({
 
 const ToolhubAuthorizeInput = Schema.Struct({ authorizeUrl: Schema.String });
 const ToolhubAuthorizeResult = Schema.Struct({
-  _tag: Schema.Literals(["completed", "cancelled", "failed"]),
+  _tag: Schema.Literals(["captured", "cancelled", "failed"]),
+  callbackUrl: Schema.optional(Schema.String),
 });
 
 /**
- * Opens the authorize URL the INSTANCE handed out in an in-app window. The
- * provider redirects to the instance's own callback; the window closes when
- * that page reports its result. No codes or tokens pass through the app.
+ * Opens the authorize URL the INSTANCE handed out in an in-app window and
+ * captures the provider's loopback redirect (state + code), like "LLM
+ * einbinden". The caller submits it to the instance over ctox sync
+ * (`oauth/complete` -> `ctox.toolhub.oauth.complete`); the instance exchanges
+ * the code with its own PKCE verifier. No token passes through the app.
  */
 export const authorizeToolhub = makeIpcMethod({
   channel: IpcChannels.TOOLHUB_AUTHORIZE_CHANNEL,

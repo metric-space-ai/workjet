@@ -389,8 +389,9 @@ export function RequestCard({
               authorizeUrl: String(c.authorize_url ?? ""),
             });
             if (result._tag === "cancelled") return;
-            if (result._tag === "failed")
+            if (result._tag === "failed" || !result.callbackUrl)
               throw Object.assign(new Error("authorize_failed"), { status: 500 });
+            await call("oauth/complete", { callback_url: result.callbackUrl });
             await call("ui/resolve", { id: r.id, action: "connected" });
           })
         }

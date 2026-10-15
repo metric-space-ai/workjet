@@ -548,25 +548,53 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
 }
 
 const TOOLHUB_ROUTE_PATTERN =
-  /^(?:connections|connect|disconnect|catalog|credential|call|mcp\/tools|mcp\/call)$/u;
+  /^(?:connections|connect|disconnect|catalog|credential|call|mcp\/tools|mcp\/call|ui\/requests|ui\/resolve|oauth\/complete)$/u;
 const MAX_TOOLHUB_RESPONSE_BYTES = 2 * 1024 * 1024;
 
+/**
+ * Toolhub runs over ctox sync only: the guest shell's `workjetToolhubControl`
+ * writes a `ctox.toolhub.*` business command into the replicated collection
+ * and returns the outcome the instance wrote back. No HTTP route exists.
+ * Secret-carrying routes map to their own command types whose secret field
+ * the instance detaches before persisting.
+ */
 function buildGuestToolhubExpression(route: string, body: unknown): string {
-  const method = route === "connections" || route === "catalog" ? "GET" : "POST";
+  const input = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<
+    string,
+    unknown
+  >;
+  let request: Record<string, unknown>;
+  if (route === "credential") {
+    const { credential, ...rest } = input;
+    request = {
+      action: "credential.submit",
+      secret: typeof credential === "string" ? credential : "",
+      body: rest,
+    };
+  } else if (route === "ui/resolve" && input.action === "submit") {
+    request = {
+      action: "credential.submit",
+      secret: JSON.stringify(input.values ?? {}),
+      body: { ui_request_id: typeof input.id === "string" ? input.id : "" },
+    };
+  } else if (route === "oauth/complete") {
+    request = {
+      action: "oauth.complete",
+      callbackUrl: typeof input.callback_url === "string" ? input.callback_url : "",
+      body: {},
+    };
+  } else {
+    request = { action: "request", route, body: input };
+  }
   return `(async () => {
+  const control = globalThis.workjetToolhubControl;
+  if (typeof control !== "function") {
+    return { status: 0, body: { ok: false, message: "core_outdated" } };
+  }
   try {
-    const response = await fetch(${JSON.stringify(`/api/business-os/toolhub/${route}`)}, {
-      method: ${JSON.stringify(method)},
-      credentials: "same-origin",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      ${method === "POST" ? `body: ${JSON.stringify(JSON.stringify(body ?? {}))},` : ""}
-    });
-    const text = await response.text();
-    let parsed = null;
-    try { parsed = JSON.parse(text); } catch { parsed = { ok: false, message: text.slice(0, 300) }; }
-    return { status: response.status, body: parsed };
-  } catch {
-    return { status: 0, body: { ok: false, message: "network_unavailable" } };
+    return await control(${JSON.stringify(request)});
+  } catch (error) {
+    return { status: 0, body: { ok: false, message: String(error?.message || error).slice(0, 300) } };
   }
 })()`;
 }

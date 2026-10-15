@@ -361,7 +361,8 @@ export function IntegrationsSettingsPanel() {
       if (!bridge?.toolhubAuthorize) throw new RequestError(0, "unavailable");
       const result = await bridge.toolhubAuthorize({ authorizeUrl: String(r.authorize_url ?? "") });
       if (result._tag === "cancelled") return;
-      if (result._tag === "failed") throw new Error("authorize_failed");
+      if (result._tag === "failed" || !result.callbackUrl) throw new Error("authorize_failed");
+      await request("oauth/complete", { callback_url: result.callbackUrl });
       await refresh();
       await loadMcpTools(entry.slug);
     } catch (e) {

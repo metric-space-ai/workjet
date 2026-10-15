@@ -1198,10 +1198,16 @@ export interface DesktopBridge {
     readonly route: string;
     readonly body?: unknown;
   }) => Promise<{ readonly status: number; readonly body: unknown }>;
-  /** Open an instance-issued authorize URL in an in-app window. */
+  /**
+   * Open an instance-issued authorize URL in an in-app window and capture the
+   * loopback redirect; submit `callbackUrl` via toolhubRequest("oauth/complete").
+   */
   toolhubAuthorize?: (input: {
     readonly authorizeUrl: string;
-  }) => Promise<{ readonly _tag: "completed" | "cancelled" | "failed" }>;
+  }) => Promise<{
+    readonly _tag: "captured" | "cancelled" | "failed";
+    readonly callbackUrl?: string;
+  }>;
   /**
    * Drains the OS deep links the main process is holding. Draining is the
    * only way links leave the main process, so a link is delivered exactly

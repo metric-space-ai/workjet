@@ -1,13 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  AppleIcon,
-  MonitorIcon,
-  MonitorSmartphoneIcon,
-  PlusIcon,
-  ServerIcon,
-  TerminalIcon,
-} from "lucide-react";
+import { AppleIcon, MonitorIcon, MonitorSmartphoneIcon, PlusIcon, ServerIcon } from "lucide-react";
 import "./networkDiagram.css";
+import { LinuxIcon } from "./LinuxIcon";
 import {
   layoutNetwork,
   type NetworkClientNode,
@@ -18,9 +12,12 @@ import {
 
 export type { NetworkClientNode, NetworkComputerNode } from "./networkTopology";
 
+const NARROW_NETWORK_WIDTH = 520;
+
 export interface NetworkDiagramProps {
   readonly name: string;
-  readonly host: string;
+  /** Fehlt der Host, steht der Instanzname im Knoten. */
+  readonly host: string | null;
   readonly ready: boolean;
   readonly clients: readonly NetworkClientNode[];
   readonly computers: readonly NetworkComputerNode[];
@@ -33,7 +30,7 @@ export interface NetworkDiagramProps {
 
 function PlatformIcon({ platform }: { readonly platform: NetworkPlatform }) {
   if (platform === "macos") return <AppleIcon size={19} />;
-  if (platform === "linux") return <TerminalIcon size={19} />;
+  if (platform === "linux") return <LinuxIcon size={19} />;
   return <MonitorIcon size={19} />;
 }
 
@@ -104,8 +101,7 @@ export function NetworkDiagram({
             {empty ? <PlusIcon size={25} /> : <ServerIcon size={25} />}
           </span>
           <span className="network-node-copy">
-            <small className="network-node-role">{empty ? "ERSTES NETZWERK" : "INSTANZ"}</small>
-            <strong>{empty ? "Instanz hinzufügen" : host}</strong>
+            <strong>{empty ? "Instanz hinzufügen" : (host ?? name)}</strong>
           </span>
           {!empty && <Status connected={ready} />}
         </button>
@@ -152,10 +148,9 @@ export function NetworkDiagram({
             )}
           </span>
           <span className="network-node-copy">
-            {client.kind === "this-device" ? (
-              <small className="network-node-role">DIESES GERÄT</small>
-            ) : null}
-            <strong title={client.name}>{client.name}</strong>
+            <strong title={client.kind === "this-device" ? "Dieses Gerät" : client.name}>
+              {client.name}
+            </strong>
           </span>
           <Status connected={client.connected} />
         </button>
@@ -208,7 +203,8 @@ export function NetworkDiagram({
             height={layout.height}
             aria-hidden="true"
           >
-            {layout.edges.map((edge) => (
+            {/* D31: schmal keine Kanten, sie laufen sonst zwischen den Karten durch. */}
+            {(layout.width < NARROW_NETWORK_WIDTH ? [] : layout.edges).map((edge) => (
               <path
                 key={edge.id}
                 className={`network-edge ${edge.connected ? "is-live" : "network-edge-pending"} ${selected === edge.id ? "network-edge-selected" : ""}`}

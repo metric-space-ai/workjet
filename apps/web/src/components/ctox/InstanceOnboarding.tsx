@@ -124,45 +124,27 @@ export function InstanceOnboardingView({
       Erneut verbinden
     </Button>
   );
-  const manage = (
-    <Button variant="outline" size="sm" onClick={onManage}>
-      Instanzen verwalten
-    </Button>
-  );
+  // D36: ein Fehler hat genau eine Aktion; „Instanzen verwalten“ bleibt über
+  // den Instanzwähler erreichbar. Nach 10 s ersetzt der Titel die Wartezeile.
   let title: string;
   let actions: ReactNode;
-  let statusLine: string | null = null;
   if (state === "loading") {
-    title = "Instanzen werden geladen …";
-    statusLine = slow ? "Instanzen noch nicht geladen" : null;
-    actions = slow ? (
-      <>
-        {reconnect}
-        {manage}
-      </>
-    ) : null;
+    title = slow ? "Instanzen nicht geladen" : "Instanzen werden geladen …";
+    actions = slow ? reconnect : null;
   } else if (state === "connecting") {
-    title = `${selected?.displayName ?? "Instanz"} wird verbunden …`;
-    statusLine = slow ? "Noch nicht verbunden" : null;
-    actions = slow ? (
-      <>
-        {reconnect}
-        {manage}
-      </>
-    ) : null;
+    title = slow
+      ? `${selected?.displayName ?? "Instanz"} nicht verbunden`
+      : `${selected?.displayName ?? "Instanz"} wird verbunden …`;
+    actions = slow ? reconnect : null;
   } else if (state === "failed") {
     title = `${selected?.displayName ?? "Instanz"} ist nicht erreichbar`;
-    actions = (
-      <>
-        {reconnect}
-        {manage}
-      </>
-    );
+    actions = reconnect;
   } else if (state === "select") {
     title = "Instanz wählen";
     actions = null;
   } else {
-    title = "Instanz verbinden";
+    // D37: Titel und Knopf sagen dasselbe.
+    title = "Instanz hinzufügen";
     actions = (
       <Button size="sm" onClick={onManage}>
         Instanz hinzufügen
@@ -179,15 +161,10 @@ export function InstanceOnboardingView({
       <div className="flex w-full max-w-md flex-col gap-4">
         <h1
           className="break-words font-semibold text-[22px]"
-          role={state === "failed" ? "alert" : "status"}
+          role={state === "failed" || slow ? "alert" : "status"}
         >
           {title}
         </h1>
-        {statusLine !== null ? (
-          <p className="text-xs text-muted-foreground" data-workjet-onboarding-status="">
-            {statusLine}
-          </p>
-        ) : null}
         {state === "select" ? (
           <div className="flex flex-col divide-y rounded-lg border">
             {instances.map((instance) => {
@@ -208,9 +185,6 @@ export function InstanceOnboardingView({
                         <ServerIcon className="size-4 shrink-0 text-muted-foreground" />
                         <span className="truncate">{instance.displayName}</span>
                       </span>
-                    }
-                    chips={
-                      <span className="text-[11px] text-muted-foreground">{health.label}</span>
                     }
                   />
                 </button>

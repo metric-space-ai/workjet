@@ -150,19 +150,19 @@ export const classifyLocalServiceDiscoveryFailure = (error: unknown): LocalServi
 
 export const requestLocalSessionRecoveryConsent = (
   dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
-  target: Pick<LocalServiceTarget, "baseDir">,
 ) =>
   dialog
     .showMessageBox({
       type: "question",
-      title: "Reconnect Workjet Desktop",
-      message: "Restore this app's connection to its local background service?",
-      detail: `Close other Workjet installations using this profile first. Workjet will revoke this installation's previous session and preserve its old encrypted credentials before reconnecting. Your projects and running work stay in place.\n\nProfile: ${target.baseDir}`,
-      buttons: ["Cancel", "Restore connection"],
+      title: "Verbindung wiederherstellen",
+      message: "Verbindung zum lokalen Hintergrunddienst wiederherstellen?",
+      detail:
+        "Andere Workjet-Installationen vorher schließen. Projekte und Arbeit bleiben erhalten.",
+      buttons: ["Abbrechen", "Wiederherstellen"],
       defaultId: 0,
       cancelId: 0,
       noLink: true,
-      checkboxLabel: "Other Workjet installations using this profile are closed.",
+      checkboxLabel: "Andere Workjet-Installationen sind geschlossen",
       checkboxChecked: false,
     })
     .pipe(
@@ -578,7 +578,7 @@ export const make = Effect.gen(function* () {
       ),
       Effect.mapError(() => fail("inspect local key recovery for")),
     ),
-    confirmRecovery: (target) => requestLocalSessionRecoveryConsent(dialog, target),
+    confirmRecovery: () => requestLocalSessionRecoveryConsent(dialog),
     listEnrollmentSessions: (config, target, attemptId) =>
       runCli(config, ["auth", "session", "list", ...identityArgs(target), "--json"]).pipe(
         Effect.flatMap((serialized) => decodeEnrollmentSessions(serialized, attemptId)),

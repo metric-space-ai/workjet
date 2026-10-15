@@ -2,7 +2,6 @@ import type { AuthSessionState } from "@workjet/contracts";
 import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import React, { startTransition, useEffect, useRef, useState, useCallback } from "react";
 
-import { APP_DISPLAY_NAME } from "../../branding";
 import { connectPairing } from "../../connection/onboarding";
 import {
   peekPairingTokenFromUrl,
@@ -11,25 +10,15 @@ import {
 } from "../../environments/primary";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import { Button } from "../ui/button";
+import { AuthSurfaceShell, AuthSurfaceTitle } from "./AuthSurfaceShell";
 import { Input } from "../ui/input";
 import { useAtomCommand } from "../../state/use-atom-command";
 
 export function PairingPendingSurface() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10 text-foreground sm:px-6">
-      <div className="pointer-events-none absolute inset-0 opacity-80">
-        <div className="absolute inset-x-0 top-0 h-44 bg-[radial-gradient(44rem_16rem_at_top,color-mix(in_srgb,var(--color-emerald-500)_14%,transparent),transparent)]" />
-        <div className="absolute inset-y-0 left-0 w-72 bg-[radial-gradient(28rem_18rem_at_left,color-mix(in_srgb,var(--color-sky-500)_10%,transparent),transparent)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--background)_90%,var(--color-black))_0%,var(--background)_55%)]" />
-      </div>
-
-      <section className="relative w-full max-w-xl rounded-2xl border border-border/80 bg-card/90 p-6 shadow-2xl shadow-black/20 backdrop-blur-md sm:p-8">
-        <p className="text-[11px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-          {APP_DISPLAY_NAME}
-        </p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Kopplung läuft …</h1>
-      </section>
-    </div>
+    <AuthSurfaceShell>
+      <AuthSurfaceTitle>Kopplung läuft …</AuthSurfaceTitle>
+    </AuthSurfaceShell>
   );
 }
 
@@ -91,60 +80,36 @@ export function PairingRouteSurface({
   }, [submitCredential]);
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10 text-foreground sm:px-6">
-      <div className="pointer-events-none absolute inset-0 opacity-80">
-        <div className="absolute inset-x-0 top-0 h-44 bg-[radial-gradient(44rem_16rem_at_top,color-mix(in_srgb,var(--color-emerald-500)_14%,transparent),transparent)]" />
-        <div className="absolute inset-y-0 left-0 w-72 bg-[radial-gradient(28rem_18rem_at_left,color-mix(in_srgb,var(--color-sky-500)_10%,transparent),transparent)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--background)_90%,var(--color-black))_0%,var(--background)_55%)]" />
-      </div>
-
-      <section className="relative w-full max-w-xl rounded-2xl border border-border/80 bg-card/90 p-6 shadow-2xl shadow-black/20 backdrop-blur-md sm:p-8">
-        <p className="text-[11px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-          {APP_DISPLAY_NAME}
-        </p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Umgebung koppeln</h1>
-
-        <form className="mt-6 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="pairing-token">
-              Kopplungs-Token
-            </label>
-            <Input
-              id="pairing-token"
-              autoCapitalize="none"
-              autoComplete="off"
-              autoCorrect="off"
-              disabled={isSubmitting}
-              nativeInput
-              onChange={(event) => setCredential(event.currentTarget.value)}
-              placeholder="Token einfügen"
-              spellCheck={false}
-              value={credential}
-            />
-          </div>
-
-          {errorMessage ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/6 px-3 py-2 text-sm text-destructive">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={isSubmitting} size="sm" type="submit">
-              {isSubmitting ? "Wird gekoppelt …" : "Weiter"}
-            </Button>
-            <Button
-              disabled={isSubmitting}
-              onClick={() => window.location.reload()}
-              size="sm"
-              variant="outline"
-            >
-              Neu laden
-            </Button>
-          </div>
-        </form>
-      </section>
-    </div>
+    <AuthSurfaceShell>
+      <AuthSurfaceTitle>Instanz koppeln</AuthSurfaceTitle>
+      <form className="flex flex-col gap-3" onSubmit={(event) => void handleSubmit(event)}>
+        <label className="grid gap-1 text-xs text-muted-foreground" htmlFor="pairing-token">
+          Kopplungs-Token
+          <Input
+            id="pairing-token"
+            autoCapitalize="none"
+            autoComplete="off"
+            autoCorrect="off"
+            disabled={isSubmitting}
+            nativeInput
+            onChange={(event) => setCredential(event.currentTarget.value)}
+            placeholder="Token einfügen"
+            spellCheck={false}
+            value={credential}
+          />
+        </label>
+        {errorMessage ? (
+          <p role="alert" className="text-xs text-destructive">
+            {errorMessage}
+          </p>
+        ) : null}
+        <div>
+          <Button disabled={isSubmitting || credential.trim() === ""} size="sm" type="submit">
+            {isSubmitting ? "Wird gekoppelt …" : "Koppeln"}
+          </Button>
+        </div>
+      </form>
+    </AuthSurfaceShell>
   );
 }
 
@@ -191,7 +156,7 @@ export function HostedPairingRouteSurface() {
     });
     if (result._tag === "Success") {
       setStatus("paired");
-      setMessage(`${request.label || "Umgebung"} gespeichert`);
+      setMessage(`${request.label || "Instanz"} gespeichert`);
       return;
     }
 
@@ -211,53 +176,35 @@ export function HostedPairingRouteSurface() {
     void submitHostedPairingRequest();
   }, [submitHostedPairingRequest]);
 
-  const request = hostedPairingRequestRef.current;
-
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10 text-foreground sm:px-6">
-      <div className="pointer-events-none absolute inset-0 opacity-80">
-        <div className="absolute inset-x-0 top-0 h-44 bg-[radial-gradient(44rem_16rem_at_top,color-mix(in_srgb,var(--color-emerald-500)_14%,transparent),transparent)]" />
-        <div className="absolute inset-y-0 left-0 w-72 bg-[radial-gradient(28rem_18rem_at_left,color-mix(in_srgb,var(--color-sky-500)_10%,transparent),transparent)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--background)_90%,var(--color-black))_0%,var(--background)_55%)]" />
-      </div>
-
-      <section className="relative w-full max-w-xl rounded-2xl border border-border/80 bg-card/90 p-6 shadow-2xl shadow-black/20 backdrop-blur-md sm:p-8">
-        <p className="text-[11px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-          {APP_DISPLAY_NAME}
+    <AuthSurfaceShell>
+      <AuthSurfaceTitle>
+        {status === "paired"
+          ? "Instanz gekoppelt"
+          : status === "error"
+            ? "Kopplung fehlgeschlagen"
+            : "Instanz wird gekoppelt …"}
+      </AuthSurfaceTitle>
+      {status === "error" ? (
+        <p role="alert" className="text-xs text-destructive">
+          {message}
         </p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
-          {status === "paired"
-            ? "Backend gekoppelt"
-            : status === "error"
-              ? "Kopplung fehlgeschlagen"
-              : "Backend wird gekoppelt"}
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{message}</p>
-
-        {request ? (
-          <div className="mt-5 rounded-lg border border-border/70 bg-background/55 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-            Host: <span className="font-mono text-foreground/80">{request.host}</span>
-          </div>
-        ) : null}
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          {status === "pairing" ? (
-            <Button disabled size="sm">
-              Wird gekoppelt …
-            </Button>
-          ) : canRetry ? (
-            <Button size="sm" onClick={() => void submitHostedPairingRequest()}>
-              Erneut versuchen
-            </Button>
-          ) : null}
-          {status === "paired" ? (
-            <Button size="sm" variant="outline" onClick={() => (window.location.href = "/")}>
-              App öffnen
-            </Button>
-          ) : null}
+      ) : null}
+      {/* Genau eine Aktion je Zustand; kein deaktivierter Statusknopf, kein Host-Rohwert. */}
+      {status === "error" && canRetry ? (
+        <div>
+          <Button size="sm" onClick={() => void submitHostedPairingRequest()}>
+            Erneut versuchen
+          </Button>
         </div>
-      </section>
-    </div>
+      ) : status === "paired" ? (
+        <div>
+          <Button size="sm" onClick={() => (window.location.href = "/")}>
+            App öffnen
+          </Button>
+        </div>
+      ) : null}
+    </AuthSurfaceShell>
   );
 }
 

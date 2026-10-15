@@ -24,6 +24,7 @@ const DEFAULT_CTOX_DEV_BASE_URL = "https://ctox.dev";
 const DEFAULT_LOGIN_POLL_INTERVAL_MS = 1_500;
 const DEFAULT_LOGIN_TIMEOUT_MS = 5 * 60_000;
 const DESKTOP_CLIENT = "ctox-business-os-desktop";
+export const CTOX_DEV_LOGIN_WINDOW_TITLE = "Bei ctox.dev anmelden";
 
 export interface CtoxDevAuthOptions {
   readonly baseUrl?: string;
@@ -329,9 +330,13 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
         });
       yield* accountSession;
       const parent = yield* electronWindow.currentMainOrFirst;
+      // Ausnahme von „nichts außerhalb der App“ (D39): ctox.dev läuft in einer
+      // eigenen, sandboxed Partition, damit kein Konto-Token je den Renderer
+      // erreicht und die Origin-Bindung der Abschlussprüfung bleibt. Das
+      // Fenster ist ein Kindfenster der App mit festem deutschem Titel.
       const loginWindow = yield* electronWindow
         .create({
-          title: "Sign in to CTOX",
+          title: CTOX_DEV_LOGIN_WINDOW_TITLE,
           width: 1_080,
           height: 780,
           show: true,
@@ -367,6 +372,7 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
               pollFiber = undefined;
               timeoutFiber = undefined;
               loginWindow.off("closed", onClosed);
+              loginWindow.off("page-title-updated", onPageTitleUpdated);
               webContents.off("will-navigate", onWillNavigate);
               webContents.off("did-navigate", onDidNavigate);
               webContents.off("did-navigate-in-page", onDidNavigate);
@@ -402,6 +408,10 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
               );
             };
 
+            // Der Seitentitel von ctox.dev (englisch) überschreibt sonst den Fenstertitel.
+            const onPageTitleUpdated = (event: { preventDefault: () => void }): void => {
+              event.preventDefault();
+            };
             const onClosed = (): void => {
               finish({ _tag: "not_completed", reason: "closed" }, false);
             };
@@ -441,6 +451,7 @@ export const make = (options: CtoxDevAuthOptions = {}) =>
             };
 
             loginWindow.on("closed", onClosed);
+            loginWindow.on("page-title-updated", onPageTitleUpdated);
             webContents.on("will-navigate", onWillNavigate);
             webContents.on("did-navigate", onDidNavigate);
             webContents.on("did-navigate-in-page", onDidNavigate);

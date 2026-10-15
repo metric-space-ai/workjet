@@ -287,19 +287,18 @@ export class DesktopLocalServiceAttachment extends Context.Service<
 
 export const requestProfileMigrationConsent = (
   dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
-  baseDir: string,
 ) =>
   dialog
     .showMessageBox({
       type: "question",
-      title: "Move Workjet to a background service",
-      message: "Keep your existing Workjet data and continue work after closing the app.",
-      detail: `Finish active work and stop older Workjet apps and command-line runtimes using this profile. Workjet will back up the database before setting up the background service.\n\nProfile: ${baseDir}`,
-      buttons: ["Cancel", "Back up and migrate"],
+      title: "Hintergrunddienst einrichten",
+      message: "Workjet arbeitet danach auch bei geschlossener App weiter.",
+      detail: "Ältere Workjet-Versionen vorher beenden. Die Datenbank wird gesichert.",
+      buttons: ["Abbrechen", "Sichern und einrichten"],
       defaultId: 0,
       cancelId: 0,
       noLink: true,
-      checkboxLabel: "All previous Workjet runtimes using this profile are stopped.",
+      checkboxLabel: "Ältere Workjet-Versionen sind beendet",
       checkboxChecked: false,
     })
     .pipe(
@@ -369,7 +368,7 @@ export const layer = Layer.effect(
             blocked("Could not complete the first background-service installation."),
           ),
         ),
-      confirmMigration: requestProfileMigrationConsent(dialog, environment.baseDir),
+      confirmMigration: requestProfileMigrationConsent(dialog),
       migrate: (endpoint) =>
         Effect.gen(function* () {
           artifactArgs = [...artifactArgs, ...endpointArgs(endpoint)];

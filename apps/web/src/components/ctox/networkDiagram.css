@@ -55,7 +55,7 @@
   min-width: 0;
 }
 .network-instance-title h2 {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 550;
   overflow-wrap: anywhere;
 }
@@ -171,25 +171,21 @@
   white-space: nowrap;
 }
 .network-node-copy small {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.25;
   color: var(--muted-foreground);
 }
+/* D32: Ruhezustand neutral, nur die Auswahl trägt den Ring. */
 .network-master {
   padding: 14px 22px 14px 16px;
-  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
   background: var(--card);
 }
 .network-master .network-node-icon {
   color: var(--primary);
   width: 36px;
 }
-.network-master .network-node-role {
-  font-size: 8px;
-  letter-spacing: 0.09em;
-}
 .network-master .network-node-copy strong {
-  font-size: 14px;
+  font-size: 13.5px;
 }
 .network-status {
   position: absolute;
@@ -243,7 +239,7 @@
   border-radius: 4px;
   background: var(--muted);
   color: var(--foreground);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   white-space: nowrap;
 }
@@ -277,7 +273,7 @@
   margin-bottom: 22px;
 }
 .network-inspector-header h3 {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 550;
 }
 .network-inspector p {
@@ -286,33 +282,19 @@
   color: var(--muted-foreground);
 }
 .network-inspector h4 {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 11px;
   margin: 22px 0 8px;
   color: var(--muted-foreground);
 }
 .network-inspector-name {
-  font-size: 16px;
+  font-size: 13.5px;
   font-weight: 550;
   margin-bottom: 5px;
   overflow-wrap: anywhere;
 }
 .network-new-instance {
   display: flex;
-  align-items: center;
-  gap: 12px;
   margin: 20px auto 0;
-  padding: 16px 24px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  cursor: pointer;
-}
-.network-new-instance:hover {
-  color: var(--foreground);
-  border-color: var(--primary);
 }
 .network-first-actions {
   display: flex;
@@ -360,9 +342,6 @@
 @media (max-width: 600px) {
   .network-overview {
     padding: 18px 12px;
-  }
-  .network-overview-toolbar h1 {
-    font-size: 18px;
   }
   .network-instance-title > span {
     display: none;

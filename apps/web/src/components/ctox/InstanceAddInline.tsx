@@ -17,8 +17,8 @@ import { InlinePanel } from "../ui/inline-panel";
 import { Input } from "../ui/input";
 import { Row } from "../ui/row";
 import { Textarea } from "../ui/textarea";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { getCtoxManagedState, useCtoxMode } from "./CtoxModeShell";
+import { Segment } from "../ui/segment";
+import { useCtoxMode } from "./CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 import { InstanceQrScanner } from "./InstanceQrScanner";
 
@@ -39,8 +39,8 @@ export const INSTANCE_ADD_OPTIONS: ReadonlyArray<{
 ];
 
 /** Segment: die gewählte Option ist deutlich hervorgehoben. */
-export const SEGMENT_TOGGLE_CLASS =
-  "text-muted-foreground data-pressed:bg-primary/15 data-pressed:text-foreground dark:data-pressed:bg-primary/20";
+/** Weiter exportiert für bestehende Aufrufer; die Quelle ist ui/segment. */
+export { SEGMENT_TOGGLE_CLASS } from "../ui/segment";
 
 export const INSTANCE_ADD_TRIGGER_LABEL = "Instanz hinzufügen";
 
@@ -168,7 +168,6 @@ export function InstanceAddPanel({
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
   const [scanRevision, setScanRevision] = useState(0);
   const replacesInstanceId = request.replacesInstanceId;
-  const managedState = getCtoxManagedState(mode.discovery);
   const removedManaged =
     mode.discovery !== "loading" && mode.discovery._tag === "ready"
       ? mode.discovery.instances.filter(
@@ -203,7 +202,6 @@ export function InstanceAddPanel({
   const submit = () => {
     if (option === "ctox-dev") {
       mode.login();
-      setStatus({ text: "Anmeldung im Browser geöffnet.", error: false });
       return;
     }
     if (option === "link") {
@@ -244,11 +242,8 @@ export function InstanceAddPanel({
     (option === "link" && invite.trim() === "") ||
     (option === "manual" && connectionData.trim() === "") ||
     (option === "ctox-dev" && (mode.bridge === undefined || mode.refreshing));
-  const statusLine =
-    status ??
-    (option === "ctox-dev" && managedState === "ready" && mode.bridge !== undefined
-      ? { text: "Bei ctox.dev angemeldet.", error: false }
-      : null);
+  // D42: kein Dauersatz „Bei ctox.dev angemeldet.“; nur echte Rückmeldungen.
+  const statusLine = status;
 
   return (
     <InlinePanel
@@ -261,29 +256,17 @@ export function InstanceAddPanel({
         if (!open && !submitting) closeInstanceSetup();
       }}
       segment={
-        <ToggleGroup
+        <Segment
           aria-label="Art der Verbindung"
-          className="flex-wrap"
-          size="sm"
-          variant="outline"
-          value={[option]}
-          onValueChange={(value) => {
-            const next = INSTANCE_ADD_OPTIONS.find((entry) => entry.value === value[0]);
-            if (next !== undefined && !submitting) choose(next.value);
-          }}
-        >
-          {INSTANCE_ADD_OPTIONS.map((entry) => (
-            <Toggle
-              key={entry.value}
-              value={entry.value}
-              disabled={submitting}
-              data-workjet-instance-add-option={entry.value}
-              className={SEGMENT_TOGGLE_CLASS}
-            >
-              {entry.label}
-            </Toggle>
-          ))}
-        </ToggleGroup>
+          value={option}
+          disabled={submitting}
+          onValueChange={choose}
+          options={INSTANCE_ADD_OPTIONS.map((entry) => ({
+            value: entry.value,
+            label: entry.label,
+            attributes: { "data-workjet-instance-add-option": entry.value },
+          }))}
+        />
       }
       submitLabel={submitLabel}
       onSubmit={submit}
@@ -297,22 +280,7 @@ export function InstanceAddPanel({
           })}
     >
       {option === "ctox-dev" ? (
-        <>
-          <div>
-            <Button
-              size="sm"
-              variant="outline"
-              render={<a href="https://ctox.dev" target="_blank" rel="noopener noreferrer" />}
-            >
-              ctox.dev öffnen
-            </Button>
-          </div>
-          <RemovedManagedInstances
-            instances={removedManaged}
-            busy={submitting}
-            onRestore={restore}
-          />
-        </>
+        <RemovedManagedInstances instances={removedManaged} busy={submitting} onRestore={restore} />
       ) : null}
       {option === "link" ? (
         <Field>

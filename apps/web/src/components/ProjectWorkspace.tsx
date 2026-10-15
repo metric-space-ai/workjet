@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { GitPullRequestIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
@@ -61,6 +62,17 @@ function ProjectWorkspaceContent({
   useSupervisorProjectMetadata(project);
   const language = useProjectOverviewLanguage();
   const text = PROJECT_OVERVIEW_TEXT[language];
+  const navigate = useNavigate();
+  const settingsLinks = [
+    {
+      label: language === "de" ? "Projekte & Worker" : "Projects & workers",
+      onClick: () => void navigate({ to: "/settings/projects" }),
+    },
+    {
+      label: language === "de" ? "Instanz & Kanäle" : "Instance & channels",
+      onClick: () => void navigate({ to: "/settings/business-os" }),
+    },
+  ];
   const nativeInstance = project.native && project.configuration ? (ctoxInstanceId ?? null) : null;
   const sources = useProjectOverviewSources(nativeInstance, project.id);
   const tokenBudgetSource = useProjectOverviewTokenBudgetSource(project);
@@ -164,6 +176,7 @@ function ProjectWorkspaceContent({
         connectionError={sources.failed}
         onRecomputeKpis={sources.reload}
         feedPosts={sources.feedPosts}
+        settingsLinks={settingsLinks}
         connectionMessage={sources.failureText}
         actions={
           <>

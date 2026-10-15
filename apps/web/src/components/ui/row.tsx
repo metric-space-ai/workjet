@@ -224,8 +224,9 @@ function Row({
                   <Button
                     aria-label={deleteLabel}
                     size="xs"
-                    variant="ghost"
-                    className="text-muted-foreground"
+                    // Icon plus word: a secondary action, so `outline` (Vertrag §2:
+                    // `ghost` only for bare icon buttons with a tooltip).
+                    variant="outline"
                     onClick={() => {
                       // Undoable deletes run at once; the caller offers „Rückgängig“.
                       if (undoableDelete && onDelete) onDelete();

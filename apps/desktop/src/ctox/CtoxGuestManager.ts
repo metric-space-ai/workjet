@@ -262,6 +262,22 @@ export class CtoxGuestManager extends Context.Service<
     readonly registerSessionTransferEvents: (
       computerIds: readonly string[],
     ) => Effect.Effect<CtoxManagedActionResult>;
+    /**
+     * CTOX Toolhub control plane on the selected instance, executed inside the
+     * authenticated guest (same-origin session). Provider tokens never leave
+     * the instance; only connector status and tool results come back.
+     */
+    readonly requestToolhub: (
+      instanceId: string,
+      route: string,
+      body: unknown,
+    ) => Effect.Effect<{ readonly status: number; readonly body: unknown }>;
+    /**
+     * Origin of the instance's live guest (its top frame is bound to the
+     * launch origin), or `undefined` when the instance has no warm guest. The
+     * toolhub login window is bound to this origin.
+     */
+    readonly toolhubInstanceOrigin: (instanceId: string) => Effect.Effect<string | undefined>;
   }
 >()("@workjet/desktop/ctox/CtoxGuestManager") {}
 
@@ -535,6 +551,58 @@ function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRe
         stage: "execute", reason, ...(projectPhase === undefined ? {} : { phase: projectPhase }),
       } }),
     };
+  }
+})()`;
+}
+
+const TOOLHUB_ROUTE_PATTERN =
+  /^(?:connections|connect|disconnect|catalog|credential|call|mcp\/tools|mcp\/call|ui\/requests|ui\/resolve|oauth\/complete)$/u;
+const MAX_TOOLHUB_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Toolhub runs over ctox sync only: the guest shell's `workjetToolhubControl`
+ * writes a `ctox.toolhub.*` business command into the replicated collection
+ * and returns the outcome the instance wrote back. No HTTP route exists.
+ * Secret-carrying routes map to their own command types whose secret field
+ * the instance detaches before persisting.
+ */
+function buildGuestToolhubExpression(route: string, body: unknown): string {
+  const input = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<
+    string,
+    unknown
+  >;
+  let request: Record<string, unknown>;
+  if (route === "credential") {
+    const { credential, ...rest } = input;
+    request = {
+      action: "credential.submit",
+      secret: typeof credential === "string" ? credential : "",
+      body: rest,
+    };
+  } else if (route === "ui/resolve" && input.action === "submit") {
+    request = {
+      action: "credential.submit",
+      secret: JSON.stringify(input.values ?? {}),
+      body: { ui_request_id: typeof input.id === "string" ? input.id : "" },
+    };
+  } else if (route === "oauth/complete") {
+    request = {
+      action: "oauth.complete",
+      callbackUrl: typeof input.callback_url === "string" ? input.callback_url : "",
+      body: {},
+    };
+  } else {
+    request = { action: "request", route, body: input };
+  }
+  return `(async () => {
+  const control = globalThis.workjetToolhubControl;
+  if (typeof control !== "function") {
+    return { status: 0, body: { ok: false, message: "core_outdated" } };
+  }
+  try {
+    return await control(${JSON.stringify(request)});
+  } catch (error) {
+    return { status: 0, body: { ok: false, message: String(error?.message || error).slice(0, 300) } };
   }
 })()`;
 }
@@ -2479,6 +2547,58 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }),
       );
 
+    const requestToolhub = (
+      instanceId: string,
+      route: string,
+      body: unknown,
+    ): Effect.Effect<{ readonly status: number; readonly body: unknown }> =>
+      Effect.gen(function* () {
+        if (!TOOLHUB_ROUTE_PATTERN.test(route)) {
+          return { status: 400, body: { ok: false, message: "invalid_route" } };
+        }
+        const state = yield* SynchronizedRef.get(stateRef);
+        const pooled = state.pool.get(instanceId);
+        if (pooled === undefined || pooled.view.webContents.isDestroyed()) {
+          return { status: 0, body: { ok: false, message: "not_active" } };
+        }
+        const pending = yield* Effect.tryPromise({
+          try: () =>
+            pooled.view.webContents.executeJavaScript(
+              buildGuestToolhubExpression(route, body),
+              true,
+            ),
+          catch: () => undefined,
+        }).pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.timeoutOption("60 seconds"),
+        );
+        if (Option.isNone(pending)) return { status: 0, body: { ok: false, message: "timeout" } };
+        const raw = pending.value as
+          | { readonly status?: unknown; readonly body?: unknown }
+          | undefined;
+        if (typeof raw !== "object" || raw === null || typeof raw.status !== "number") {
+          return { status: 0, body: { ok: false, message: "guest_failed" } };
+        }
+        const size = Buffer.byteLength(encodeUnknownJson(raw.body ?? null), "utf8");
+        if (size > MAX_TOOLHUB_RESPONSE_BYTES) {
+          return { status: 0, body: { ok: false, message: "response_too_large" } };
+        }
+        return { status: raw.status, body: raw.body ?? null };
+      });
+
+    const toolhubInstanceOrigin = (instanceId: string): Effect.Effect<string | undefined> =>
+      Effect.gen(function* () {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const pooled = state.pool.get(instanceId);
+        if (pooled === undefined || pooled.view.webContents.isDestroyed()) return undefined;
+        try {
+          const url = new URL(pooled.view.webContents.getURL());
+          return url.protocol === "https:" || url.protocol === "http:" ? url.origin : undefined;
+        } catch {
+          return undefined;
+        }
+      });
+
     const requestSessionControl = (
       instanceId: string,
       request: CtoxWorkjetSessionControlRequest,
@@ -2634,6 +2754,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       requestProjectControl,
       requestComputerControl,
       requestSessionControl,
+      requestToolhub,
+      toolhubInstanceOrigin,
       registerSessionTransferEvents,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));

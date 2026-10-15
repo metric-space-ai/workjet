@@ -208,6 +208,15 @@ describe("canonical Web Stack tool contract", () => {
       NodeChildProcess.execFileSync(process.execPath, [generator, "--check"]),
     ).not.toThrow();
   });
+
+  it("keeps the CTOX Toolhub prompt generated from the vendored ctox skill", () => {
+    const generator = NodeURL.fileURLToPath(
+      new URL("../scripts/generate-ctox-toolhub-skill.mjs", import.meta.url),
+    );
+    expect(() =>
+      NodeChildProcess.execFileSync(process.execPath, [generator, "--check"]),
+    ).not.toThrow();
+  });
 });
 
 describe("built-in capability manifests", () => {

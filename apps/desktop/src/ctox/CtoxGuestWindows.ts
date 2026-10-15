@@ -263,6 +263,16 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
         inWindow((guests) => guests.requestSessionControl(id, request)),
       registerSessionTransferEvents: (ids) =>
         inWindow((guests) => guests.registerSessionTransferEvents(ids)),
+      requestToolhub: (id, route, body) =>
+        inWindow((guests) => guests.requestToolhub(id, route, body)).pipe(
+          Effect.map((result) =>
+            "status" in result ? result : { status: 0, body: { ok: false, message: result.code } },
+          ),
+        ),
+      toolhubInstanceOrigin: (id) =>
+        inWindow((guests) => guests.toolhubInstanceOrigin(id)).pipe(
+          Effect.map((result) => (typeof result === "string" ? result : undefined)),
+        ),
     });
   });
 

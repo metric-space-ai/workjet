@@ -3,8 +3,7 @@ import { workjetUiLanguage } from "../../workjetProjectControl";
 import { useUiText } from "../../hooks/useUiText";
 import { ArchiveX } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type BackgroundActivityProfile,
@@ -22,22 +21,13 @@ import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
   type EnvironmentIdentificationMode,
-  MAX_CODE_FONT_SIZE,
-  MAX_GLASS_OPACITY,
   MAX_INTERFACE_FONT_SIZE,
-  MAX_PROMPT_FONT_SIZE,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  MAX_TERMINAL_FONT_SIZE,
-  MIN_CODE_FONT_SIZE,
-  MIN_GLASS_OPACITY,
   MIN_INTERFACE_FONT_SIZE,
-  MIN_PROMPT_FONT_SIZE,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  MIN_TERMINAL_FONT_SIZE,
 } from "@workjet/contracts/settings";
 import { createModelSelection } from "@workjet/shared/model";
 import * as Equal from "effect/Equal";
-import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import {
   canCheckForUpdate,
@@ -57,14 +47,12 @@ import {
   configuredHostedAppUrl,
   type HostedAppChannel,
 } from "../../hostedPairing";
-import { useCustomThemes } from "../../hooks/useCustomThemes";
 import {
   readAppearanceModePreference,
   readThemeHalves,
   readThemePreference,
   useTheme,
 } from "../../hooks/useTheme";
-import { useLocalStorage } from "../../hooks/useLocalStorage";
 import {
   usePrimarySettings,
   useUpdateClientSettings,
@@ -82,7 +70,6 @@ import {
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
-import { isMacPlatform } from "../../lib/utils";
 import { primaryServerConfigAtom, primaryServerProvidersAtom } from "../../state/server";
 import { formatVersionChipLabel } from "../VersionChip";
 import { useProjects } from "../../state/entities";
@@ -92,24 +79,12 @@ import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Empty, EmptyContent, EmptyHeader, EmptyLoading, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
-import {
-  DEFAULT_CODE_FONT_STACK,
-  DEFAULT_SANS_FONT_STACK,
-  isFontFamilyAvailable,
-  isMonospaceFamily,
-  resolveDefaultFamilyLabel,
-  resolveTerminalFontPreference,
-  resolveTerminalFontSizePreference,
-  TYPOGRAPHY_ADVANCED_STORAGE_KEY,
-} from "../../appearanceFonts";
-import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
-import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
+import { clampInterfaceFontSize } from "../../appearanceFonts";
 import { Row } from "../ui/row";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ThemeLibrary } from "./ThemeSettings";
 import {
   getChangedTypographySettingLabels,
   hasChangedBackgroundActivitySettings,
@@ -120,7 +95,6 @@ import {
   SettingsPageContainer,
   SettingsRow,
   SettingsSection,
-  useSettingsSearchTargetId,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -635,319 +609,143 @@ export function useSettingsRestore(onRestored?: () => void) {
   };
 }
 
-export function AppearanceSettingsPanel() {
-  const {
-    appearanceMode,
-    refreshTheme,
-    resolvedTheme,
-    setAppearanceMode,
-    setTheme,
-    setThemeHalf,
-    theme,
-    themeHalves,
-  } = useTheme();
-  const customThemes = useCustomThemes();
-  const [isImportThemeOpen, setIsImportThemeOpen] = useState(false);
+const COLOR_SCHEME_LABELS = { light: "Hell", dark: "Dunkel", system: "System" } as const;
+type ColorSchemeChoice = keyof typeof COLOR_SCHEME_LABELS;
+
+function isColorSchemeChoice(value: unknown): value is ColorSchemeChoice {
+  return value === "light" || value === "dark" || value === "system";
+}
+
+/** Darstellung (#553): nur Hell/Dunkel/System und Schriftgröße, als Zeilen in „Allgemein“. */
+function AppearanceRows() {
+  const { appearanceMode, setAppearanceMode, setTheme } = useTheme();
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  const colorScheme: ColorSchemeChoice = isColorSchemeChoice(appearanceMode)
+    ? appearanceMode
+    : "system";
+  const fontSize = clampInterfaceFontSize(settings.fontSizeInterface);
+  return (
+    <>
+      <SettingsRow
+        {...searchableSetting("color-scheme")}
+        control={
+          <Select
+            value={colorScheme}
+            onValueChange={(value) => {
+              if (!isColorSchemeChoice(value)) return;
+              setTheme(value);
+              setAppearanceMode(value);
+            }}
+          >
+            <SelectTrigger aria-label={searchableSetting("color-scheme").title} className="w-40">
+              <SelectValue>{COLOR_SCHEME_LABELS[colorScheme]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {(Object.keys(COLOR_SCHEME_LABELS) as ColorSchemeChoice[]).map((value) => (
+                <SelectItem hideIndicator key={value} value={value}>
+                  {COLOR_SCHEME_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
+      <SettingsRow
+        {...searchableSetting("font-size")}
+        resetAction={
+          fontSize !== DEFAULT_UNIFIED_SETTINGS.fontSizeInterface ? (
+            <SettingResetButton
+              label={searchableSetting("font-size").title}
+              onClick={() =>
+                updateSettings({ fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface })
+              }
+            />
+          ) : null
+        }
+        control={
+          <Select
+            value={String(fontSize)}
+            onValueChange={(next) => {
+              const parsed = Number(next);
+              if (
+                Number.isInteger(parsed) &&
+                parsed >= MIN_INTERFACE_FONT_SIZE &&
+                parsed <= MAX_INTERFACE_FONT_SIZE
+              ) {
+                updateSettings({ fontSizeInterface: parsed });
+              }
+            }}
+          >
+            <SelectTrigger aria-label={searchableSetting("font-size").title} className="w-40">
+              <SelectValue>{fontSize} px</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {Array.from(
+                { length: MAX_INTERFACE_FONT_SIZE - MIN_INTERFACE_FONT_SIZE + 1 },
+                (_, index) => MIN_INTERFACE_FONT_SIZE + index,
+              ).map((px) => (
+                <SelectItem hideIndicator key={px} value={String(px)}>
+                  {px} px
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
+    </>
+  );
+}
+
+function EnvironmentIdentificationRow() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const environmentStageLabel = useEnvironmentStageLabel();
   const showEnvironmentIdentification =
     resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null;
-  const glassOpacityRatio =
-    (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
-  const glassOpacitySliderStyle = {
-    "--settings-slider-progress": `${glassOpacityRatio * 100}%`,
-    "--settings-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
-  } as CSSProperties;
-
   return (
-    <SettingsPageContainer>
-      <SettingsSection id="appearance" title="Darstellung">
-        <div id={searchableSetting("theme").id}>
-          <ThemeLibrary
-            appearanceMode={appearanceMode}
-            customThemes={customThemes}
-            initialAppearance={resolvedTheme}
-            refreshTheme={refreshTheme}
-            isImportOpen={isImportThemeOpen}
-            setAppearanceMode={setAppearanceMode}
-            setTheme={setTheme}
-            setThemeHalf={setThemeHalf}
-            theme={theme}
-            themeHalves={themeHalves}
-            onImportOpenChange={setIsImportThemeOpen}
-          />
-        </div>
-
+    <>
+      {showEnvironmentIdentification ? (
         <SettingsRow
-          {...searchableSetting("setting-glass-opacity")}
+          {...searchableSetting("environment-identification")}
           resetAction={
-            settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? (
+            settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
               <SettingResetButton
-                label="Glas"
+                label="Umgebungskennung"
                 onClick={() =>
-                  updateSettings({ glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity })
+                  updateSettings({
+                    environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
+                  })
                 }
               />
             ) : null
           }
           control={
-            <div className="flex w-full items-center gap-3 sm:w-52">
-              <output
-                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
-                htmlFor="glass-opacity"
-              >
-                {settings.glassOpacity}%
-              </output>
-              <input
-                aria-label="Glas"
-                className="settings-slider min-w-0 flex-1"
-                id="glass-opacity"
-                max={MAX_GLASS_OPACITY}
-                min={MIN_GLASS_OPACITY}
-                onChange={(event) => {
-                  const glassOpacity = Number(event.currentTarget.value);
-                  if (
-                    Number.isInteger(glassOpacity) &&
-                    glassOpacity >= MIN_GLASS_OPACITY &&
-                    glassOpacity <= MAX_GLASS_OPACITY
-                  ) {
-                    updateSettings({ glassOpacity });
-                  }
-                }}
-                step={5}
-                style={glassOpacitySliderStyle}
-                type="range"
-                value={settings.glassOpacity}
-              />
-            </div>
+            <Select
+              value={settings.environmentIdentificationMode}
+              onValueChange={(value) => {
+                if (value === "artwork" || value === "pill" || value === "none") {
+                  updateSettings({ environmentIdentificationMode: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Umgebungskennung">
+                <SelectValue>
+                  {ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(ENVIRONMENT_IDENTIFICATION_LABELS).map(([value, label]) => (
+                  <SelectItem hideIndicator key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
-
-        {showEnvironmentIdentification ? (
-          <SettingsRow
-            {...searchableSetting("environment-identification")}
-            resetAction={
-              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
-                <SettingResetButton
-                  label="Umgebungskennung"
-                  onClick={() =>
-                    updateSettings({
-                      environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={settings.environmentIdentificationMode}
-                onValueChange={(value) => {
-                  if (value === "artwork" || value === "pill" || value === "none") {
-                    updateSettings({ environmentIdentificationMode: value });
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-40" aria-label="Umgebungskennung">
-                  <SelectValue>
-                    {ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {Object.entries(ENVIRONMENT_IDENTIFICATION_LABELS).map(([value, label]) => (
-                    <SelectItem hideIndicator key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            }
-          />
-        ) : null}
-      </SettingsSection>
-
-      <TypographySection />
-    </SettingsPageContainer>
-  );
-}
-
-function useFontDefaultFamilies() {
-  const settings = usePrimarySettings();
-  // An unset preference shows the font it resolves to on this machine; the
-  // default stacks are the platform's own faces, so the name is probed, not
-  // hardcoded.
-  const defaults = useMemo(
-    () => ({
-      sans: resolveDefaultFamilyLabel(DEFAULT_SANS_FONT_STACK) ?? "System",
-      code: resolveDefaultFamilyLabel(DEFAULT_CODE_FONT_STACK) ?? "System-Monospace",
-    }),
-    [],
-  );
-  return {
-    sans: defaults.sans,
-    code: defaults.code,
-    // The composer inherits whatever the interface preference resolves to.
-    interfaceFamily: settings.fontFamilySans.trim() || defaults.sans,
-  };
-}
-
-function InterfaceFontRow({ preview }: { preview?: ReactNode }) {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const defaults = useFontDefaultFamilies();
-  return (
-    <FontFamilySettingsRow
-      {...searchableSetting("interface-font")}
-      defaultFamily={defaults.sans}
-      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilySans}
-      value={settings.fontFamilySans}
-      onValueChange={(fontFamilySans) => updateSettings({ fontFamilySans })}
-      onReset={() =>
-        updateSettings({
-          fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
-          fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
-        })
-      }
-      size={{
-        label: "Schriftgröße Oberfläche",
-        min: MIN_INTERFACE_FONT_SIZE,
-        max: MAX_INTERFACE_FONT_SIZE,
-        value: settings.fontSizeInterface,
-        defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
-        onChange: (fontSizeInterface) => updateSettings({ fontSizeInterface }),
-      }}
-      {...(preview !== undefined ? { preview } : {})}
-    />
-  );
-}
-
-function PromptFontRow() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const defaults = useFontDefaultFamilies();
-  return (
-    <FontFamilySettingsRow
-      {...searchableSetting("prompt-font")}
-      defaultFamily={defaults.interfaceFamily}
-      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer}
-      value={settings.fontFamilyComposer}
-      onValueChange={(fontFamilyComposer) => updateSettings({ fontFamilyComposer })}
-      onReset={() =>
-        updateSettings({
-          fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
-          fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-        })
-      }
-      size={{
-        label: "Schriftgröße Prompt",
-        min: MIN_PROMPT_FONT_SIZE,
-        max: MAX_PROMPT_FONT_SIZE,
-        value: settings.fontSizePrompt,
-        defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-        onChange: (fontSizePrompt) => updateSettings({ fontSizePrompt }),
-      }}
-      preview={<PromptFontPreview />}
-    />
-  );
-}
-
-function CodeFontRow({ title, preview }: { title?: string; preview?: ReactNode }) {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const defaults = useFontDefaultFamilies();
-  return (
-    <FontFamilySettingsRow
-      {...searchableSetting("code-font")}
-      {...(title !== undefined ? { title } : {})}
-      defaultFamily={defaults.code}
-      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyCode}
-      value={settings.fontFamilyCode}
-      onValueChange={(fontFamilyCode) => updateSettings({ fontFamilyCode })}
-      onReset={() =>
-        updateSettings({
-          fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
-          fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
-        })
-      }
-      requireMonospace
-      size={{
-        label: "Schriftgröße Code",
-        min: MIN_CODE_FONT_SIZE,
-        max: MAX_CODE_FONT_SIZE,
-        value: settings.fontSizeCode,
-        defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
-        onChange: (fontSizeCode) => updateSettings({ fontSizeCode }),
-      }}
-      preview={preview ?? <CodeFontPreview />}
-    />
-  );
-}
-
-function TerminalFontRow() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const defaults = useFontDefaultFamilies();
-  return (
-    <FontFamilySettingsRow
-      {...searchableSetting("terminal-font")}
-      defaultFamily={defaults.code}
-      defaultValue={DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal}
-      value={settings.fontFamilyTerminal}
-      onValueChange={(fontFamilyTerminal) => updateSettings({ fontFamilyTerminal })}
-      onReset={() =>
-        updateSettings({
-          fontFamilyTerminal: DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal,
-          fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
-        })
-      }
-      requireMonospace
-      size={{
-        label: "Schriftgröße Terminal",
-        min: MIN_TERMINAL_FONT_SIZE,
-        max: MAX_TERMINAL_FONT_SIZE,
-        value: settings.fontSizeTerminal,
-        defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
-        onChange: (fontSizeTerminal) => updateSettings({ fontSizeTerminal }),
-      }}
-      preview={
-        <TerminalFontPreview
-          family={resolveTerminalFontPreference({
-            advanced: true,
-            code: settings.fontFamilyCode,
-            terminal: settings.fontFamilyTerminal,
-          })}
-          size={settings.fontSizeTerminal}
-        />
-      }
-    />
-  );
-}
-
-function FontSmoothingRow() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  if (!isMacPlatform(navigator.platform)) return null;
-  return (
-    <SettingsRow
-      {...searchableSetting("font-smoothing")}
-      resetAction={
-        settings.fontSmoothing !== DEFAULT_UNIFIED_SETTINGS.fontSmoothing ? (
-          <SettingResetButton
-            label="Kantenglättung"
-            onClick={() =>
-              updateSettings({ fontSmoothing: DEFAULT_UNIFIED_SETTINGS.fontSmoothing })
-            }
-          />
-        ) : null
-      }
-      control={
-        <Switch
-          checked={settings.fontSmoothing}
-          onCheckedChange={(checked) => updateSettings({ fontSmoothing: Boolean(checked) })}
-          aria-label="Kantenglättung"
-        />
-      }
-    />
+      ) : null}
+    </>
   );
 }
 
@@ -973,299 +771,6 @@ function WordWrapRow() {
         />
       }
     />
-  );
-}
-
-function FontSettingsGroup() {
-  return (
-    <>
-      <InterfaceFontRow />
-      <PromptFontRow />
-      <CodeFontRow />
-      <TerminalFontRow />
-      <FontSmoothingRow />
-    </>
-  );
-}
-
-/**
- * The two-font view: one sans, one monospace. The prompt follows the
- * interface font and the terminal follows the monospace font, so the demos
- * under each row show every surface the choice reaches.
- */
-function SimpleFontRows() {
-  const settings = usePrimarySettings();
-  return (
-    <>
-      <InterfaceFontRow preview={<PromptFontPreview />} />
-      <CodeFontRow
-        title="Monospace-Schrift"
-        preview={
-          <>
-            <CodeFontPreview />
-            <TerminalFontPreview
-              family={resolveTerminalFontPreference({
-                advanced: false,
-                code: settings.fontFamilyCode,
-                terminal: settings.fontFamilyTerminal,
-              })}
-              size={resolveTerminalFontSizePreference({
-                advanced: false,
-                code: settings.fontSizeCode,
-                terminal: settings.fontSizeTerminal,
-              })}
-            />
-          </>
-        }
-      />
-    </>
-  );
-}
-
-// Font smoothing only renders on macOS, so a search jump to it elsewhere
-// must not flip the section - the target would never mount to be scrolled to.
-const ADVANCED_TYPOGRAPHY_TARGET_IDS: ReadonlySet<string> = new Set([
-  "prompt-font",
-  "terminal-font",
-  ...(typeof navigator !== "undefined" && isMacPlatform(navigator.platform)
-    ? ["font-smoothing"]
-    : []),
-]);
-
-/**
- * Standard sind zwei Schriften (eine für die Oberfläche, eine Monospace),
- * die jede Fläche erreichen. Die Entscheidung „Schrift je Fläche“ ist eine
- * normale Einstellungszeile (kein „Advanced“-Aufklapper); eingeschaltet
- * stehen Prompt-, Terminal- und Glättungszeilen direkt darunter. Die Wahl
- * bleibt lokal gespeichert (das Terminal liest denselben Schlüssel), und ein
- * Suchsprung zu einer dieser Zeilen schaltet sie ein, damit das Ziel existiert.
- */
-function TypographySection() {
-  const [advanced, setAdvanced] = useLocalStorage(
-    TYPOGRAPHY_ADVANCED_STORAGE_KEY,
-    false,
-    Schema.Boolean,
-  );
-  const searchTargetId = useSettingsSearchTargetId();
-  // Flip Advanced on once per search jump so the hidden target can mount and
-  // scroll; tracking the handled id lets the user turn it back off without
-  // the still-set target immediately re-expanding the section.
-  const lastExpandedTargetRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (searchTargetId === null || !ADVANCED_TYPOGRAPHY_TARGET_IDS.has(searchTargetId)) return;
-    if (lastExpandedTargetRef.current === searchTargetId) return;
-    lastExpandedTargetRef.current = searchTargetId;
-    setAdvanced(true);
-  }, [searchTargetId, setAdvanced]);
-  return (
-    <SettingsSection title="Schrift">
-      {advanced ? <FontSettingsGroup /> : <SimpleFontRows />}
-      <SettingsRow
-        title="Schrift je Fläche"
-        control={
-          <Switch
-            checked={advanced}
-            onCheckedChange={(checked) => setAdvanced(Boolean(checked))}
-            aria-label="Schrift je Fläche"
-          />
-        }
-      />
-      <WordWrapRow />
-    </SettingsSection>
-  );
-}
-
-function FontFamilySettingsRow({
-  id,
-  title,
-  defaultFamily,
-  defaultValue,
-  preview,
-  value,
-  onValueChange,
-  onReset,
-  requireMonospace = false,
-  size,
-}: {
-  id?: string;
-  title: string;
-  /** What an unset preference renders as, e.g. "Menlo". */
-  defaultFamily: string;
-  /** The persisted family value supplied by the unified settings defaults. */
-  defaultValue: string;
-  preview?: ReactNode;
-  value: string;
-  onValueChange: (value: string) => void;
-  onReset: () => void;
-  requireMonospace?: boolean;
-  size: {
-    label: string;
-    min: number;
-    max: number;
-    value: number;
-    defaultValue: number;
-    onChange: (v: number) => void;
-  };
-}) {
-  const trimmed = value.trim();
-  // The fallback input edits a draft; the preference only commits once typing
-  // pauses and the text probes as an available font (or is an explicit
-  // clear), so the current font holds and nothing reflows mid-word.
-  const [draft, setDraft] = useState(value);
-  const [draftSettled, setDraftSettled] = useState(true);
-  const commitTimerRef = useRef<number | null>(null);
-  const lastValueRef = useRef(value);
-  if (lastValueRef.current !== value) {
-    // The committed value changed externally (hydration, reset, picker
-    // selection); adopt it and drop any pending commit of a stale draft.
-    lastValueRef.current = value;
-    if (commitTimerRef.current !== null) {
-      window.clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
-    setDraft(value);
-    setDraftSettled(true);
-  }
-  useEffect(
-    () => () => {
-      if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
-    },
-    [],
-  );
-  const acceptsFamily = (candidate: string) =>
-    isFontFamilyAvailable(candidate) && (!requireMonospace || isMonospaceFamily(candidate));
-  const commitDraft = (next: string) => {
-    setDraftSettled(true);
-    // A rejected name stays in the field, flagged: the terminal would silently
-    // fall back to its default, so the row must not claim it took the value.
-    if (next.trim().length === 0 || acceptsFamily(next)) {
-      onValueChange(next);
-    }
-  };
-  const flushDraft = () => {
-    if (commitTimerRef.current === null) return;
-    window.clearTimeout(commitTimerRef.current);
-    commitTimerRef.current = null;
-    commitDraft(draft);
-  };
-  const draftTrimmed = draft.trim();
-  // Flag an unknown name only once typing pauses, and never for an empty
-  // field - that is the starting state, not a rejected entry.
-  const draftPending = draftSettled && draftTrimmed.length > 0 && draftTrimmed !== trimmed;
-  const resetToDefault = () => {
-    if (commitTimerRef.current !== null) {
-      window.clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
-    setDraft(defaultValue);
-    setDraftSettled(true);
-    onReset();
-  };
-  const resetAction =
-    value !== defaultValue || size.value !== size.defaultValue ? (
-      <SettingResetButton label={title} onClick={resetToDefault} />
-    ) : null;
-  const fontEnumeration = useFontEnumeration();
-  // Everyone starts on the plain input; focusing it is the user gesture that
-  // runs font discovery. Where the engine can enumerate, the control then
-  // upgrades to the picker - popped open when the swap happens under focus,
-  // so the interaction continues without a second click.
-  const inputFocusedRef = useRef(false);
-  const familyControl =
-    fontEnumeration.status === "granted" ? (
-      <FontFamilyPicker
-        ariaLabel={`${title}: Familie`}
-        defaultFamily={defaultFamily}
-        selectedFamily={trimmed}
-        requireMonospace={requireMonospace}
-        initialOpen={inputFocusedRef.current}
-        onSelect={onValueChange}
-      />
-    ) : (
-      <Input
-        aria-label={`${title}: Familie`}
-        aria-invalid={draftPending || undefined}
-        autoCapitalize="off"
-        autoComplete="off"
-        className="min-w-0 flex-1"
-        maxLength={200}
-        onFocus={() => {
-          inputFocusedRef.current = true;
-          discoverInstalledFonts();
-        }}
-        onBlur={() => {
-          inputFocusedRef.current = false;
-          flushDraft();
-        }}
-        onChange={(event) => {
-          const next = event.currentTarget.value;
-          setDraft(next);
-          setDraftSettled(false);
-          if (commitTimerRef.current !== null) {
-            window.clearTimeout(commitTimerRef.current);
-          }
-          commitTimerRef.current = window.setTimeout(() => {
-            commitTimerRef.current = null;
-            commitDraft(next);
-          }, 400);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") flushDraft();
-          if (event.key === "Escape") {
-            // Discard uncommitted typing without closing the settings page,
-            // which is what an unhandled Escape does.
-            event.preventDefault();
-            event.stopPropagation();
-            if (commitTimerRef.current !== null) {
-              window.clearTimeout(commitTimerRef.current);
-              commitTimerRef.current = null;
-            }
-            setDraft(value);
-            setDraftSettled(true);
-          }
-        }}
-        placeholder={defaultFamily}
-        spellCheck={false}
-        value={draft}
-      />
-    );
-  const control = (
-    <div className="flex w-full items-center gap-2 sm:w-auto">
-      <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
-      <Select
-        value={String(size.value)}
-        onValueChange={(next) => {
-          if (typeof next !== "string") return;
-          const parsed = Number(next);
-          if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
-            size.onChange(parsed);
-          }
-        }}
-      >
-        <SelectTrigger className="w-22 shrink-0" aria-label={size.label}>
-          <SelectValue>{size.value} px</SelectValue>
-        </SelectTrigger>
-        <SelectPopup align="end" alignItemWithTrigger={false}>
-          {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
-            (px) => (
-              <SelectItem hideIndicator key={px} value={String(px)}>
-                {px} px
-              </SelectItem>
-            ),
-          )}
-        </SelectPopup>
-      </Select>
-    </div>
-  );
-  return (
-    <SettingsRow
-      {...(id !== undefined ? { id } : {})}
-      title={title}
-      resetAction={resetAction}
-      control={control}
-    >
-      {preview}
-    </SettingsRow>
   );
 }
 
@@ -1371,13 +876,11 @@ function LegacyFeaturesSection() {
   );
 }
 
-export function GeneralSettingsPanel() {
-  const t = useUiText();
+/** Textmodell (#550): lebt auf „Modelle“, nicht mehr in „Allgemein“. */
+export function TextGenerationModelSection() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
-  const updateClientSettings = useUpdateClientSettings();
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
-
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;
   const textGenModel = textGenerationModelSelection.model;
@@ -1400,6 +903,90 @@ export function GeneralSettingsPanel() {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
+  return (
+    <SettingsSection title="Textmodell">
+      <SettingsRow
+        {...searchableSetting("text-generation-model")}
+        resetAction={
+          isTextGenerationModelDirty ? (
+            <SettingResetButton
+              label="Textmodell"
+              onClick={() =>
+                updateSettings({
+                  textGenerationModelSelection:
+                    DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <ProviderModelPicker
+              activeInstanceId={textGenInstanceId}
+              model={textGenModel}
+              lockedProvider={null}
+              instanceEntries={textGenerationModelInstanceEntries}
+              modelOptionsByInstance={textGenerationModelOptionsByInstance}
+              triggerVariant="outline"
+              triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+              onInstanceModelChange={(instanceId, model) => {
+                updateSettings({
+                  textGenerationModelSelection: resolveAppModelSelectionState(
+                    {
+                      ...settings,
+                      textGenerationModelSelection: createModelSelection(instanceId, model),
+                    },
+                    serverProviders,
+                  ),
+                });
+              }}
+            />
+            <TraitsPicker
+              provider={textGenProvider}
+              models={
+                // Use the exact instance's models (rather than the
+                // first-kind-match) so a custom text-gen instance like
+                // `codex_personal` gets its own model list, not the
+                // default Codex one.
+                textGenInstanceEntry?.models ?? []
+              }
+              model={textGenModel}
+              prompt=""
+              onPromptChange={() => {}}
+              modelOptions={textGenModelOptions}
+              allowPromptInjectedEffort={false}
+              triggerVariant="outline"
+              triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+              onModelOptionsChange={(nextOptions) => {
+                updateSettings({
+                  textGenerationModelSelection: resolveAppModelSelectionState(
+                    {
+                      ...settings,
+                      textGenerationModelSelection: createModelSelection(
+                        textGenInstanceId,
+                        textGenModel,
+                        nextOptions,
+                      ),
+                    },
+                    serverProviders,
+                  ),
+                });
+              }}
+            />
+          </div>
+        }
+      />
+    </SettingsSection>
+  );
+}
+
+export function GeneralSettingsPanel() {
+  const t = useUiText();
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  const updateClientSettings = useUpdateClientSettings();
+
   // Nur die drei Profile; ein gespeichertes „advanced“ zeigt das Standardprofil.
   const resolvedProfileOption = resolveBackgroundActivityProfileOption(settings);
   const backgroundActivityProfile: BackgroundActivityProfile =
@@ -1434,6 +1021,7 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+        <AppearanceRows />
         <SettingsRow
           {...searchableSetting("posthog-consent")}
           control={
@@ -1442,79 +1030,6 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) => updateSettings({ posthogConsent: checked })}
               aria-label={searchableSetting("posthog-consent").title}
             />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("text-generation-model")}
-          resetAction={
-            isTextGenerationModelDirty ? (
-              <SettingResetButton
-                label="Textmodell"
-                onClick={() =>
-                  updateSettings({
-                    textGenerationModelSelection:
-                      DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
-              <ProviderModelPicker
-                activeInstanceId={textGenInstanceId}
-                model={textGenModel}
-                lockedProvider={null}
-                instanceEntries={textGenerationModelInstanceEntries}
-                modelOptionsByInstance={textGenerationModelOptionsByInstance}
-                triggerVariant="outline"
-                triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                onInstanceModelChange={(instanceId, model) => {
-                  updateSettings({
-                    textGenerationModelSelection: resolveAppModelSelectionState(
-                      {
-                        ...settings,
-                        textGenerationModelSelection: createModelSelection(instanceId, model),
-                      },
-                      serverProviders,
-                    ),
-                  });
-                }}
-              />
-              <TraitsPicker
-                provider={textGenProvider}
-                models={
-                  // Use the exact instance's models (rather than the
-                  // first-kind-match) so a custom text-gen instance like
-                  // `codex_personal` gets its own model list, not the
-                  // default Codex one.
-                  textGenInstanceEntry?.models ?? []
-                }
-                model={textGenModel}
-                prompt=""
-                onPromptChange={() => {}}
-                modelOptions={textGenModelOptions}
-                allowPromptInjectedEffort={false}
-                triggerVariant="outline"
-                triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                onModelOptionsChange={(nextOptions) => {
-                  updateSettings({
-                    textGenerationModelSelection: resolveAppModelSelectionState(
-                      {
-                        ...settings,
-                        textGenerationModelSelection: createModelSelection(
-                          textGenInstanceId,
-                          textGenModel,
-                          nextOptions,
-                        ),
-                      },
-                      serverProviders,
-                    ),
-                  });
-                }}
-              />
-            </div>
           }
         />
 
@@ -1535,6 +1050,8 @@ export function GeneralSettingsPanel() {
       {settings.developerMode ? (
         <>
           <SettingsSection title="Entwickler">
+            <EnvironmentIdentificationRow />
+            <WordWrapRow />
             <SettingsRow
               title={t("Hintergrundaktivität", "Background activity")}
               resetAction={

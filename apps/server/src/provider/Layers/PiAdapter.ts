@@ -1,3 +1,5 @@
+import { readWorkjetManagedPrompt, workjetTeamEnvironment } from "../../mcp/WorkjetThreadTeam.ts";
+import { piManagedPromptArgs } from "../managedPromptHooks.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import { admitWorkerSourceNativeProfile } from "../../workjet/WorkerSourceNativeAdmission.ts";
@@ -250,7 +252,8 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
           );
         const managed = readMcpProviderSession(inputStart.threadId);
         const managedPrompt = (
-          managed?.compiledManagedPrompt || inputStart.workjetConfig?.managedInstructions
+          readWorkjetManagedPrompt(inputStart.threadId) ||
+          inputStart.workjetConfig?.managedInstructions
         )?.trim();
         if (managed?.activeWorkjetMcpCapabilityIds.length && !input.extensionPath)
           return yield* error("startSession", "The Pi Workjet MCP extension is unavailable.");
@@ -300,7 +303,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
             binaryPath: input.binaryPath,
             cwd: inputStart.cwd!,
             environment: {
-              ...selected.environment,
+              ...workjetTeamEnvironment(inputStart.threadId, selected.environment),
               ...(managed
                 ? {
                     WORKJET_PI_MCP_ENDPOINT: managed.endpoint,
@@ -317,12 +320,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (input: {
               selected.model,
               "--session-dir",
               sessionDirectory,
-              ...(managedPrompt
-                ? [
-                    "--append-system-prompt",
-                    `<workjet_managed_instructions>\n${managedPrompt}\n</workjet_managed_instructions>`,
-                  ]
-                : []),
+              ...piManagedPromptArgs(managedPrompt),
               ...(input.extensionPath ? ["--extension", input.extensionPath] : []),
               ...(resume ? ["--session", resume] : []),
             ],

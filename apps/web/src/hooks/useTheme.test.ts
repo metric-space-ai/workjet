@@ -86,16 +86,41 @@ describe("theme failure handling", () => {
     }
   });
 
-  it("reads the persisted Workjet Chat theme preference", async () => {
+  it("falls back to the default for a stored theme from the removed theme library (#553)", async () => {
+    for (const stored of ["workjet-chat", "solarized-dark", "custom:imported-theme"]) {
+      vi.stubGlobal("window", {
+        localStorage: createStorage({
+          getItem: () => stored,
+        }),
+      });
+      const { readThemePreference } = await import("./useTheme");
+      expect(readThemePreference()).toBe("system");
+    }
+  });
+
+  it("keeps a stored Hell/Dunkel/System preference", async () => {
+    for (const stored of ["light", "dark", "system"]) {
+      vi.stubGlobal("window", {
+        localStorage: createStorage({
+          getItem: () => stored,
+        }),
+      });
+      const { readThemePreference } = await import("./useTheme");
+      expect(readThemePreference()).toBe(stored);
+    }
+  });
+
+  it("ignores a stored per-appearance theme mix (#553)", async () => {
     vi.stubGlobal("window", {
       localStorage: createStorage({
-        getItem: () => "workjet-chat",
+        getItem: (key: string) =>
+          key === "workjet:theme-halves:v1"
+            ? JSON.stringify({ light: "workjet-chat", dark: "workjet-chat" })
+            : null,
       }),
     });
-
-    const { readThemePreference } = await import("./useTheme");
-
-    expect(readThemePreference()).toBe("workjet-chat");
+    const { readThemeHalves } = await import("./useTheme");
+    expect(readThemeHalves()).toBeNull();
   });
 
   it("uses dark for a fresh desktop profile while preserving explicit preferences", async () => {

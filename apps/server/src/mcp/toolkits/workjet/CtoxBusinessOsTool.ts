@@ -10,6 +10,7 @@ import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { HttpClient } from "effect/unstable/http";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import { ctoxTeamRole } from "../../WorkjetThreadTeam.ts";
 import { DecisionHubConnectionRegistry } from "../../../workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import { makeCtoxMcpTransport } from "../../../workjet/ctox/CtoxMcpTransport.ts";
 import { CtoxNativeRequests } from "../../../workjet/ctox/CtoxNativeRequests.ts";
@@ -41,6 +42,17 @@ export const CtoxBusinessOsTool = Tool.make(CTOX_BUSINESS_OS_TOOL_NAME, {
   .annotate(Tool.Idempotent, false)
   .annotate(Tool.OpenWorld, true)
   .annotate(McpSchema.EnabledWhen, enabledWhen);
+
+/** Thread and CTOX team role for Toolhub calls, from the trusted scope only. */
+export const toolhubIdentity = (
+  scope: Pick<
+    McpInvocationContext.McpInvocationScope,
+    "threadId" | "projectTeamRole" | "workjetRole"
+  >,
+) => ({
+  thread_id: scope.threadId as string,
+  team_role: ctoxTeamRole(scope),
+});
 
 const failureResult = (reason: string) =>
   new McpSchema.CallToolResult({
@@ -165,13 +177,20 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
             binding.connectionId,
             binding.instanceId,
           );
-          const { operation, ...arguments_ } = input.request;
+          const { operation, ...requested } = input.request;
           const name = `business_os.${operation}`;
+          // Toolhub calls carry the authenticated thread and its team role so
+          // CTOX decides card vs. needs_user (only the supervisor raises cards).
+          const arguments_ = operation.startsWith("toolhub_")
+            ? { ...requested, ...toolhubIdentity(scope) }
+            : requested;
           yield* transport.probe(target, [name]);
           const timeout =
             operation === "validate_app" || operation === "smoke_app" || operation === "e2e_app"
               ? Duration.seconds(310)
-              : Duration.seconds(10);
+              : operation === "toolhub_exec"
+                ? Duration.seconds(90)
+                : Duration.seconds(10);
           const response = yield* transport.callTool(target, name, arguments_, timeout);
           if (response.isError || response.structuredContent === undefined)
             return failureResult("ctox-operation-rejected");

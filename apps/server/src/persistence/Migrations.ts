@@ -96,6 +96,7 @@ import Migration0082 from "./Migrations/082_WorkerAutonomyDefaults.ts";
 import Migration0083 from "./Migrations/083_WorkerSupervisorDecisions.ts";
 import Migration0084 from "./Migrations/084_UsageSessionBindings.ts";
 import Migration0085 from "./Migrations/085_MeetingPreparation.ts";
+import Migration0086 from "./Migrations/086_WorkerRunLedger.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -193,6 +194,7 @@ export const migrationEntries = [
   [83, "WorkerSupervisorDecisions", Migration0083],
   [84, "UsageSessionBindings", Migration0084],
   [85, "MeetingPreparation", Migration0085],
+  [86, "WorkerRunLedger", Migration0086],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

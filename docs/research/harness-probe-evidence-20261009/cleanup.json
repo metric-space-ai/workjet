@@ -1,0 +1,13 @@
+{
+  "time": "2026-10-09T22:32:15.744029+00:00",
+  "disposable_task_directory_removed": true,
+  "private_bootstrap_and_cookie_files_removed": true,
+  "source_checkout_retained": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
+  "branch": "docs/harness-compendium-20261009",
+  "preserved_remote_commit": "806bc8b49d87c271a5362c0df90288d4205e7b35",
+  "pr": "https://github.com/metric-space-ai/workjet/pull/298",
+  "pr_state": "open draft; not merged",
+  "owned_runtime_processes": "Probe finally blocks captured terminal exit codes; no owned running server, watcher, browser or goal loop.",
+  "resource_lease": "No heavy lease acquired",
+  "native_session_records": "Tiny inactive native research sessions may remain; goals cleared."
+}

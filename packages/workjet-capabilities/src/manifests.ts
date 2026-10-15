@@ -14,6 +14,7 @@ import {
   WEB_SEARCH_TOOL_CONTRACT,
 } from "./generated/web-stack-tools.v1.ts";
 import { DECISION_HUB_SKILL_PROMPT } from "./generated/decision-hub-skill.ts";
+import { CTOX_TOOLHUB_PROMPT } from "./generated/ctox-toolhub-skill.ts";
 
 const ALL_ADAPTERS = [
   "workjet-mcp",
@@ -200,7 +201,12 @@ const BUILT_IN_MANIFEST_LITERALS = [
       description:
         "Develops apps and follows native CTOX work in the instance bound to this thread.",
     },
-    promptContribution: { instructions: CTOX_BUSINESS_OS_INSTRUCTIONS },
+    // The bound CTOX instance also hosts the Toolhub and the user cards; its
+    // role-aware contract comes from the ctox-toolhub skill (single source).
+    promptContribution: {
+      instructions: `${CTOX_BUSINESS_OS_INSTRUCTIONS}\n\n${CTOX_TOOLHUB_PROMPT.common}`,
+      teamRoleInstructions: CTOX_TOOLHUB_PROMPT.roles,
+    },
     permissionRequirements: ["network.read"],
     secretRequirements: [],
     inputSchema: Schema.toJsonSchemaDocument(WorkjetCtoxBusinessOsInput).schema,

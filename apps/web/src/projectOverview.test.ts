@@ -10,6 +10,9 @@ import {
 import {
   buildProjectGallery,
   decodeOverviewDraft,
+  findProjectWithSameName,
+  projectRepositorySuggestion,
+  repositoryWebUrlFromGitRemote,
   overviewDraft,
   projectUpdateAge,
   resolveGalleryProjectHistory,
@@ -352,5 +355,71 @@ describe("real project overview", () => {
     expect(projectUpdateAge("2026-10-02T00:00:00Z", now, "de")).toBe("vor 2 Std.");
     expect(projectUpdateAge(null, now, "en")).toBe("Not available");
     expect(projectUpdateAge("invalid", now, "en")).toBe("Not available");
+  });
+});
+
+describe("project data from folders and names", () => {
+  it("turns git remotes into browser addresses without credentials", () => {
+    expect(repositoryWebUrlFromGitRemote("git@github.com:metric-space-ai/greppy.git")).toBe(
+      "https://github.com/metric-space-ai/greppy",
+    );
+    expect(
+      repositoryWebUrlFromGitRemote("https://x-access-token:secret@github.com/mkh-welsch/app.git/"),
+    ).toBe("https://github.com/mkh-welsch/app");
+    expect(repositoryWebUrlFromGitRemote("ssh://git@gitlab.com:2222/group/sub/repo.git")).toBe(
+      "https://gitlab.com/group/sub/repo",
+    );
+    expect(repositoryWebUrlFromGitRemote("/srv/git/repo.git")).toBeNull();
+    expect(repositoryWebUrlFromGitRemote("https://github.com/only-owner")).toBeNull();
+  });
+  it("proposes the folder's origin only while the project has no repository", () => {
+    const identity = (remoteName: string) => ({
+      canonicalKey: "github.com/metric-space-ai/greppy",
+      locator: {
+        source: "git-remote" as const,
+        remoteName,
+        remoteUrl: "git@github.com:metric-space-ai/greppy.git",
+      },
+    });
+    const project = (overrides: Partial<GalleryLocalProject>, repoUrl?: string | null) => ({
+      key: "a:greppy",
+      id: "greppy",
+      title: "greppy.xyz",
+      native: true,
+      local: { ...local("greppy", "a"), workspaceRoot: "/Users/me/greppy", ...overrides },
+      configuration: {
+        id: ProjectId.make("greppy"),
+        title: "greppy.xyz",
+        ...(repoUrl === undefined ? {} : { repoUrl }),
+      },
+    });
+    expect(projectRepositorySuggestion(project({ repositoryIdentity: identity("origin") }))).toBe(
+      "https://github.com/metric-space-ai/greppy",
+    );
+    expect(
+      projectRepositorySuggestion(project({ repositoryIdentity: identity("origin") }, null)),
+    ).toBe("https://github.com/metric-space-ai/greppy");
+    expect(
+      projectRepositorySuggestion(
+        project({ repositoryIdentity: identity("origin") }, "https://github.com/other/repo"),
+      ),
+    ).toBeNull();
+    expect(
+      projectRepositorySuggestion(project({ repositoryIdentity: identity("upstream") })),
+    ).toBeNull();
+    expect(
+      projectRepositorySuggestion(
+        project({ repositoryIdentity: identity("origin"), workspaceRoot: null }),
+      ),
+    ).toBeNull();
+  });
+  it("finds an existing project by name regardless of case", () => {
+    const projects = [
+      { id: "a4e2", title: "Metric" },
+      { id: "ctox", title: "ctox.dev" },
+    ];
+    expect(findProjectWithSameName(projects, "  metric ")?.id).toBe("a4e2");
+    expect(findProjectWithSameName(projects, "METRIC-2")).toBeNull();
+    expect(findProjectWithSameName(projects, "   ")).toBeNull();
   });
 });

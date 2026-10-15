@@ -1230,7 +1230,7 @@ describe("DesktopWindow", () => {
         assert.equal(yield* Ref.get(scenario.createCalls), 1);
         const url = splash.loadURL.mock.lastCall?.[0] as string;
         const html = decodeURIComponent(url.split(",")[1] ?? "");
-        assert.include(html, "Workjet needs attention");
+        assert.include(html, "Workjet-Dienst blockiert");
         assert.include(html, "&lt;local&gt; credential &amp; open &quot;keychain&quot;");
         assert.notInclude(html, "<local>");
         assert.notInclude(html, '<div class="spinner"></div>');

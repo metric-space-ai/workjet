@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { provisioningMessageDe } from "../../workjetProvisioningMessages";
 import { ComputerProvisioningSection, preflightOutcome } from "./ComputerProvisioningSection";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -46,8 +47,9 @@ describe("ComputerProvisioningSection", () => {
         initialTarget={{ host: "100.120.16.93", username: "metricspace", port: 22 }}
       />,
     );
-    expect(markup).toContain('value="100.120.16.93"');
-    expect(markup).toContain('value="metricspace"');
+    // D13: bekanntes Ziel nur lesend, keine erneute Abfrage.
+    expect(markup).toContain("metricspace@100.120.16.93");
+    expect(markup).not.toContain("<input");
     expect(markup).toContain("Prüfen");
     expect(markup).not.toContain("Provision CTOX and Workjet");
     expect(markup).not.toContain("Install on a computer");
@@ -55,6 +57,25 @@ describe("ComputerProvisioningSection", () => {
     expect(markup).not.toContain("never proxied over HTTP");
     expect(markup).not.toContain("Passwords and SSH passphrases");
     expect(markup).not.toContain("<section");
+  });
+});
+
+describe("provisioningMessageDe (D02)", () => {
+  it("maps English desktop messages to short German lines and keeps the raw text for Details", () => {
+    expect(provisioningMessageDe("Operation queued")).toEqual({
+      text: "In der Warteschlange",
+      raw: "Operation queued",
+    });
+    expect(
+      provisioningMessageDe("The target cannot reach the official CTOX release channel.").text,
+    ).toBe("Rechner erreicht den CTOX-Release-Kanal nicht");
+    const unknown = provisioningMessageDe("spawn ENOENT /usr/bin/ssh");
+    expect(unknown.text).toBe("Einrichtung fehlgeschlagen");
+    expect(unknown.raw).toBe("spawn ENOENT /usr/bin/ssh");
+    expect(provisioningMessageDe("Prüfung fehlgeschlagen.")).toEqual({
+      text: "Prüfung fehlgeschlagen.",
+      raw: null,
+    });
   });
 });
 

@@ -239,8 +239,8 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
             { reason },
           );
           yield* electronDialog.showErrorBox(
-            "WSL backend is still unavailable",
-            `${reason}\n\nWorkjet will use the Windows backend for this launch and retry WSL the next time the app starts.`,
+            "WSL nicht verfügbar",
+            "Workjet nutzt diesmal Windows und versucht WSL beim nächsten Start.",
           );
           yield* appSettings.applyWslWindowsFallbackInMemory;
           return true;
@@ -250,8 +250,8 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
           reason,
         });
         yield* electronDialog.showErrorBox(
-          "WSL backend couldn't start",
-          `${reason}\n\nFalling back to the Windows backend so Workjet can open. Re-enable the WSL backend from Settings > Connections once the WSL distro is fixed.`,
+          "WSL startet nicht",
+          "Workjet nutzt Windows. WSL in den Einstellungen wieder einschalten.",
         );
         // Fully disable the WSL backend — both flags, matching the "Switch to
         // Windows" recovery path — so the manager's next restart re-resolves the
@@ -284,7 +284,10 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
             Effect.flatMap((shown) =>
               shown
                 ? Effect.void
-                : electronDialog.showErrorBox("Workjet service needs attention", reason),
+                : electronDialog.showErrorBox(
+                    "Workjet-Dienst blockiert",
+                    "Workjet bitte neu öffnen.",
+                  ),
             ),
           ),
       // Keep this lazy. The pool layer is initialized before startup loads

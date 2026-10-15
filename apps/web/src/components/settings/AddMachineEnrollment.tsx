@@ -10,16 +10,16 @@
  * dann als Zeile mit Balken über die acht Vertragsschritte bis grün.
  * Das Passwort dient nur der ersten Anmeldung und wird nie gespeichert.
  */
-import { MonitorIcon, NetworkIcon, RefreshCwIcon, TerminalIcon, XIcon } from "lucide-react";
+import { KeyRoundIcon, MonitorIcon, NetworkIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { WORKJET_STATUS_DOT_CLASS } from "../../workjetStatus";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Row, type RowStatus } from "../ui/row";
 import { Spinner } from "../ui/spinner";
-import { Switch } from "../ui/switch";
+import { Segment } from "../ui/segment";
+import { CapabilitySwitch } from "./CapabilitySwitch";
 import {
   machineCandidateAddress,
   machineEnrollmentError,
@@ -56,7 +56,8 @@ const SEGMENTS: ReadonlyArray<{
   readonly icon: ReactNode;
 }> = [
   { value: "local", label: labels.transports.local, icon: <MonitorIcon /> },
-  { value: "ssh", label: labels.transports.ssh, icon: <TerminalIcon /> },
+  // D23: Terminal steht für Harness; SSH bekommt den Schlüssel.
+  { value: "ssh", label: labels.transports.ssh, icon: <KeyRoundIcon /> },
   { value: "tailscale", label: labels.transports.tailscale, icon: <NetworkIcon /> },
 ];
 
@@ -236,7 +237,11 @@ export function AddMachineEnrollment({
   return (
     <div className="flex flex-col gap-3" data-slot="machine-enrollment">
       {entries.length > 0 ? (
-        <div className="divide-y rounded-lg border" data-slot="machine-enrollment-rows">
+        // D21: laufende Beitritte stehen als Zeilen wie die Rechnerliste, nicht als Karte.
+        <div
+          className="divide-y divide-border/60 border-y border-border/60"
+          data-slot="machine-enrollment-rows"
+        >
           {entries.map((entry) => (
             <EnrollmentRow
               key={entry.enrollmentId}
@@ -282,36 +287,21 @@ export function AddMachineEnrollment({
           }}
         >
           <div className="flex items-center justify-between gap-2">
-            <div
-              className="inline-flex rounded-md border p-0.5"
-              role="radiogroup"
+            <Segment
               aria-label={labels.add}
-              data-slot="machine-source-segment"
-            >
-              {SEGMENTS.map((entry) => (
-                <button
-                  key={entry.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={segment === entry.value}
-                  data-segment={entry.value}
-                  disabled={starting}
-                  className={cn(
-                    "inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-[13.5px] transition-colors disabled:opacity-64 [&_svg]:size-3.5",
-                    segment === entry.value
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                  onClick={() => {
-                    setSegmentChoice(entry.value);
-                    resetPick();
-                  }}
-                >
-                  {entry.icon}
-                  {entry.label}
-                </button>
-              ))}
-            </div>
+              value={segment}
+              disabled={starting}
+              onValueChange={(value) => {
+                setSegmentChoice(value);
+                resetPick();
+              }}
+              options={SEGMENTS.map((entry) => ({
+                value: entry.value,
+                label: entry.label,
+                icon: entry.icon,
+                attributes: { "data-segment": entry.value },
+              }))}
+            />
             <Button
               type="button"
               size="icon-xs"
@@ -357,7 +347,7 @@ export function AddMachineEnrollment({
                 <span className="text-muted-foreground">{labels.tailscaleSignedOut}</span>
                 {onOpenTailscale ? (
                   <Button type="button" size="xs" variant="outline" onClick={onOpenTailscale}>
-                    {labels.open}
+                    {labels.tailscaleSignIn}
                   </Button>
                 ) : null}
               </div>
@@ -519,21 +509,24 @@ function CandidateRow({
       )}
       onClick={onSelect}
     >
+      <MonitorIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      <span className={cn("flex min-w-0 flex-1 flex-col", known && "opacity-64")}>
+        <span className="truncate font-medium">{candidate.name}</span>
+        {candidate.transport === "local" || address ? (
+          <span className="truncate text-muted-foreground text-xs">
+            {candidate.transport === "local" ? labels.thisComputer : address}
+          </span>
+        ) : null}
+      </span>
+      {/* D06: Vorhandenes als Hinweis, kein Statuspunkt, der dem Listenstatus widerspricht. */}
       {known ? (
         <span
-          role="img"
-          aria-label={labels.thisComputer}
-          className={cn("mx-1 size-2 shrink-0 rounded-full", WORKJET_STATUS_DOT_CLASS.ok)}
-        />
-      ) : (
-        <MonitorIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      )}
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-medium">{candidate.name}</span>
-        <span className="truncate text-muted-foreground text-xs">
-          {candidate.transport === "local" ? labels.thisComputer : address}
+          className="inline-flex h-5 shrink-0 items-center rounded bg-muted px-1.5 text-[11px] text-muted-foreground"
+          data-slot="machine-source-known"
+        >
+          {labels.known}
         </span>
-      </span>
+      ) : null}
     </button>
   );
 }
@@ -578,7 +571,11 @@ function EnrollmentRow({
   const stepLabel = machineEnrollmentStepLabel(progress.key);
 
   const meta = failure ? (
-    <span className="whitespace-normal text-destructive" data-slot="machine-enrollment-error">
+    <span
+      className="whitespace-normal text-destructive"
+      data-slot="machine-enrollment-error"
+      title={progress.fault?.detail ?? undefined}
+    >
       {failure.text}
     </span>
   ) : progress.phase === "green" ? (
@@ -615,33 +612,21 @@ function EnrollmentRow({
           <ProgressBar fraction={progress.fraction} label={stepLabel} />
         ) : null}
         {failure && progress.fault ? (
-          <>
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              data-slot="machine-enrollment-action"
-              onClick={() => {
-                if (failure.action === "user" || failure.action === "password")
-                  setUserEdit({ user: entry.candidate.user ?? "", password: "" });
-                else if (failure.action === "details") setDetails((value) => !value);
-                else onRetry(entry.candidate);
-              }}
-            >
-              {failure.actionLabel}
-            </Button>
-            {progress.fault.detail && failure.action !== "details" ? (
-              <Button
-                type="button"
-                size="xs"
-                variant="outline"
-                aria-expanded={details}
-                onClick={() => setDetails((value) => !value)}
-              >
-                {labels.details}
-              </Button>
-            ) : null}
-          </>
+          // D08: genau eine Aktion; der Rohtext steht nur hinter „Details“ (Host-Schlüssel).
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            data-slot="machine-enrollment-action"
+            onClick={() => {
+              if (failure.action === "user" || failure.action === "password")
+                setUserEdit({ user: entry.candidate.user ?? "", password: "" });
+              else if (failure.action === "details") setDetails((value) => !value);
+              else onRetry(entry.candidate);
+            }}
+          >
+            {failure.actionLabel}
+          </Button>
         ) : null}
         <Button
           type="button"
@@ -705,7 +690,7 @@ function EnrollmentRow({
             />
           </label>
           <Button type="submit" size="xs" disabled={userEdit.user.trim() === ""}>
-            {labels.retry}
+            {labels.connect}
           </Button>
         </form>
       ) : null}
@@ -773,13 +758,13 @@ function CapabilitySwitches({
       data-slot="machine-capabilities"
     >
       {items.map(([key, text]) => (
-        <label key={key} className="flex items-center gap-1.5 text-xs">
-          <Switch
-            checked={chosen[key]}
-            onCheckedChange={(checked) => onChosenChange({ ...chosen, [key]: checked })}
-          />
-          {text}
-        </label>
+        <CapabilitySwitch
+          key={key}
+          capability={key}
+          label={text}
+          checked={chosen[key]}
+          onCheckedChange={(checked) => onChosenChange({ ...chosen, [key]: checked })}
+        />
       ))}
     </div>
   );

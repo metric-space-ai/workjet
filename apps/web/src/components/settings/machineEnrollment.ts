@@ -232,6 +232,10 @@ export function machineEnrollmentLabels(language: MachineEnrollmentLanguage = "d
         addSubmit: "Add",
         cancel: "Cancel",
         retry: "Retry",
+        connect: "Connect",
+        changePassword: "Change password",
+        known: "Added",
+        tailscaleSignIn: "Sign in to Tailscale",
         password: "Password",
         address: "Address",
         manual: "Manual",
@@ -254,7 +258,11 @@ export function machineEnrollmentLabels(language: MachineEnrollmentLanguage = "d
         add: "Rechner hinzufügen",
         addSubmit: "Hinzufügen",
         cancel: "Abbrechen",
-        retry: "Erneut",
+        retry: "Erneut versuchen",
+        connect: "Verbinden",
+        changePassword: "Passwort ändern",
+        known: "Vorhanden",
+        tailscaleSignIn: "Bei Tailscale anmelden",
         password: "Passwort",
         address: "Adresse",
         manual: "Manuell",
@@ -299,9 +307,11 @@ export function machineEnrollmentError(
     actionLabel:
       entry.action === "user"
         ? labels.checkUser
-        : entry.action === "details"
-          ? labels.details
-          : labels.retry,
+        : entry.action === "password"
+          ? labels.changePassword
+          : entry.action === "details"
+            ? labels.details
+            : labels.retry,
   };
 }
 

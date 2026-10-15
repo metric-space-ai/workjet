@@ -255,7 +255,11 @@ function Row({
               </Tooltip>
               <MenuPopup>
                 {menuActions.map((action) => (
-                  <MenuItem key={action.label} onClick={action.onSelect}>
+                  <MenuItem
+                    key={action.label}
+                    variant={action.destructive ? "destructive" : "default"}
+                    onClick={action.onSelect}
+                  >
                     {action.label}
                   </MenuItem>
                 ))}

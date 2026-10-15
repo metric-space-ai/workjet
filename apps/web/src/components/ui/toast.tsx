@@ -103,9 +103,16 @@ function handleToastDismissClick(
 }
 
 /** Die Beschreibung als Statuszeile; keine Aufklapper, kein Kopierknopf (UI-Vertrag §1 Toast). */
-function ToastDescriptionLine(_props: { toastDescription: unknown; toastType: unknown }) {
+function ToastDescriptionLine({
+  toastDescription,
+}: {
+  toastDescription: unknown;
+  toastType: unknown;
+}) {
   return (
     <Toast.Description
+      // D49: Toasts haben genau eine Zeile; der volle Text steht im Tooltip.
+      {...(typeof toastDescription === "string" ? { title: toastDescription } : {})}
       className={cn(
         // Eine fortlaufende Zeile: „Titel · Beschreibung“, bei Platzmangel umbrechend.
         "inline min-w-0 select-text wrap-break-word text-muted-foreground empty:hidden before:content-['_·_']",
@@ -199,7 +206,8 @@ function ToastBodyContent({
         ) : null}
         <div
           className={cn(
-            "line-clamp-6 min-h-0 min-w-0 flex-1 wrap-break-word",
+            // D49: eine Zeile (UI-Vertrag §1 Toast), Rest abgeschnitten.
+            "line-clamp-1 min-h-0 min-w-0 flex-1 wrap-break-word",
             stackedActionLayout && "pr-5",
           )}
         >

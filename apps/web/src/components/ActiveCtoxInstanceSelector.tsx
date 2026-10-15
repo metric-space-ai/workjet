@@ -267,10 +267,7 @@ export function ActiveCtoxInstanceSelector({
                   <span className="min-w-0 flex-1 truncate">
                     {ctoxInstanceDisplayTitle(instance)}
                   </span>
-                  {/* Status as a word, not only a coloured dot (#592). */}
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {ctoxInstancePickerStatus(instance)}
-                  </span>
+                  {/* D33: Status nur als Punkt mit Tooltip (überstimmt #592). */}
                   {pendingId === instance.id ? (
                     <Spinner className="size-3.5" />
                   ) : activeId === instance.id ? (

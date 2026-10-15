@@ -8,13 +8,22 @@ import type {
 import { CheckCircle2Icon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { PROVISIONING_PHASES_DE, provisioningMessageDe } from "../../workjetProvisioningMessages";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
+import { Segment } from "../ui/segment";
 import { Spinner } from "../ui/spinner";
 
 type Stage = "target" | "fingerprint" | "preflight" | "components" | "operation";
 type RetryStep = "inspect" | "preflight" | "start" | "start-backend";
+
+function eventText(event: WorkjetProvisioningSnapshot["events"][number]): {
+  readonly text: string;
+  readonly raw: string | null;
+} {
+  return provisioningMessageDe(event.message, PROVISIONING_PHASES_DE[event.phase] ?? "Einrichtung");
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error && error.message.trim()
@@ -23,7 +32,25 @@ function errorText(error: unknown): string {
 }
 
 function stageLabel(snapshot: WorkjetProvisioningSnapshot): string {
-  return snapshot.events.at(-1)?.message ?? "Wird vorbereitet";
+  const last = snapshot.events.at(-1);
+  return last ? eventText(last).text : "Wird vorbereitet";
+}
+
+const PLATFORM_DE: Readonly<Record<string, string>> = {
+  linux: "Linux",
+  macos: "macOS",
+  windows: "Windows",
+};
+
+/** Rohtext nur hinter „Details“ (D02, D13). */
+function RawDetails({ raw }: { readonly raw: string | null }) {
+  if (raw === null) return null;
+  return (
+    <details className="text-xs text-muted-foreground" data-slot="provisioning-details">
+      <summary className="cursor-pointer select-none">Details</summary>
+      <p className="mt-1 select-text break-all">{raw}</p>
+    </details>
+  );
 }
 
 /**
@@ -78,6 +105,7 @@ export function ComputerProvisioningSection({
     bridge.startProvisioningOperation !== undefined &&
     bridge.getProvisioningOperation !== undefined;
   const [kind, setKind] = useState<"local" | "ssh">(initialKind);
+  const knownTarget = fixedTargetKind && initialTarget !== undefined && initialTarget.host !== "";
   const [host, setHost] = useState(initialTarget?.host ?? "");
   const [username, setUsername] = useState(initialTarget?.username ?? "");
   const [port, setPort] = useState(String(initialTarget?.port ?? 22));
@@ -282,28 +310,27 @@ export function ComputerProvisioningSection({
       {stage === "target" ? (
         <div className="flex flex-wrap items-end gap-2">
           {!fixedTargetKind ? (
-            <div className="flex gap-1" role="radiogroup" aria-label="Ziel">
-              {(
-                [
-                  ["local", "Lokal"],
-                  ["ssh", "SSH"],
-                ] as const
-              ).map(([value, label]) => (
-                <Button
-                  key={value}
-                  type="button"
-                  size="sm"
-                  role="radio"
-                  aria-checked={kind === value}
-                  variant={kind === value ? "default" : "outline"}
-                  onClick={() => setKind(value)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
+            <Segment
+              aria-label="Ziel"
+              value={kind}
+              onValueChange={setKind}
+              options={[
+                { value: "local", label: "Lokal" },
+                { value: "ssh", label: "SSH" },
+              ]}
+            />
           ) : null}
-          {kind === "ssh" ? (
+          {kind === "ssh" && knownTarget ? (
+            // D13: bekanntes Ziel nur lesend, nicht erneut abfragen.
+            <span
+              className="min-w-0 truncate text-muted-foreground"
+              data-slot="provisioning-target"
+            >
+              {username.trim() ? `${username.trim()}@` : ""}
+              {host}
+              {port !== "22" ? `:${port}` : ""}
+            </span>
+          ) : kind === "ssh" ? (
             <>
               <label className="grid min-w-40 flex-1 gap-1 text-xs text-muted-foreground">
                 Adresse
@@ -351,18 +378,19 @@ export function ComputerProvisioningSection({
       ) : null}
 
       {stage === "fingerprint" && hostKey?._tag === "ready" ? (
-        <div className="flex flex-wrap items-center gap-2" data-slot="host-key-confirm">
-          <span className="text-muted-foreground">Host-Schlüssel</span>
-          <code className="min-w-0 select-all truncate rounded bg-muted px-1.5 py-0.5 text-xs">
-            {hostKey.algorithm} {hostKey.fingerprint}
-          </code>
-          <Button type="button" size="xs" disabled={busy} onClick={() => void runPreflight()}>
-            {busy ? <Spinner className="size-3" /> : null}
-            Bestätigen
-          </Button>
-          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={reset}>
-            Abbrechen
-          </Button>
+        <div className="space-y-1" data-slot="host-key-confirm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">Host-Schlüssel bestätigen</span>
+            <Button type="button" size="xs" variant="outline" disabled={busy} onClick={reset}>
+              Abbrechen
+            </Button>
+            <Button type="button" size="xs" disabled={busy} onClick={() => void runPreflight()}>
+              {busy ? <Spinner className="size-3" /> : null}
+              Bestätigen
+            </Button>
+          </div>
+          {/* D13: Fingerabdruck als Rohwert nur hinter „Details“. */}
+          <RawDetails raw={`${hostKey.algorithm} ${hostKey.fingerprint}`} />
         </div>
       ) : null}
 
@@ -374,20 +402,20 @@ export function ComputerProvisioningSection({
 
       {stage === "components" && preflight ? (
         <div className="space-y-2" data-slot="provisioning-components">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="rounded bg-muted px-1.5 py-0.5">
-              {preflight.platform} · {preflight.architecture}
-            </span>
-            <span className="rounded bg-muted px-1.5 py-0.5">
-              {preflight.graphicalSession ? "Desktop" : "Headless"}
-            </span>
-            {preflight.ctoxInstalledVersion !== null ? (
-              <span className="rounded bg-muted px-1.5 py-0.5">
-                CTOX {preflight.ctoxInstalledVersion}
-              </span>
-            ) : null}
-          </div>
-          {preflight.warnings.map((warning) => (
+          <p className="text-xs text-muted-foreground" data-slot="provisioning-facts">
+            {[
+              PLATFORM_DE[preflight.platform] ?? preflight.platform,
+              preflight.graphicalSession ? null : "ohne Desktop",
+              preflight.ctoxInstalledVersion !== null
+                ? `CTOX ${preflight.ctoxInstalledVersion}`
+                : null,
+            ]
+              .filter((part): part is string => part !== null)
+              .join(" · ")}
+          </p>
+          {[
+            ...new Set(preflight.warnings.map((warning) => provisioningMessageDe(warning).text)),
+          ].map((warning) => (
             <p key={warning} className="text-xs text-amber-600 dark:text-amber-400">
               {warning}
             </p>
@@ -451,7 +479,7 @@ export function ComputerProvisioningSection({
             {operation.events.map((event) => (
               <li key={event.sequence}>
                 <span className="mr-2 text-muted-foreground">{event.percent}%</span>
-                {event.message}
+                {eventText(event).text}
               </li>
             ))}
           </ol>
@@ -459,6 +487,9 @@ export function ComputerProvisioningSection({
             <p role="alert" className="text-xs text-destructive">
               Ergebnis unbekannt. Zustand auf dem Rechner prüfen.
             </p>
+          ) : null}
+          {operation.state === "failed" ? (
+            <RawDetails raw={operation.events.at(-1)?.message ?? null} />
           ) : null}
           {operation.state !== "running" && operation.state !== "queued" ? (
             <Button type="button" size="sm" variant="outline" onClick={reset}>
@@ -469,13 +500,16 @@ export function ComputerProvisioningSection({
       ) : null}
 
       {fehler ? (
-        <div className="flex flex-wrap items-center gap-2 text-xs" data-slot="provisioning-error">
-          <span role="alert" className="min-w-0 text-destructive">
-            {fehler.message}
-          </span>
-          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={retry}>
-            Erneut versuchen
-          </Button>
+        <div className="space-y-1" data-slot="provisioning-error">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span role="alert" className="min-w-0 text-destructive">
+              {provisioningMessageDe(fehler.message).text}
+            </span>
+            <Button type="button" size="xs" variant="outline" disabled={busy} onClick={retry}>
+              Erneut versuchen
+            </Button>
+          </div>
+          <RawDetails raw={provisioningMessageDe(fehler.message).raw} />
         </div>
       ) : null}
     </div>

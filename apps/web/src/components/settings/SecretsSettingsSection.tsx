@@ -15,6 +15,7 @@ import { searchableSetting } from "./settingsSearch";
 
 const NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const RETRY_MS = 10_000;
+const NO_HIDDEN: ReadonlySet<string> = new Set();
 
 /**
  * One write-only editor. It owns the typed value, so the value never sits in
@@ -85,8 +86,8 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
   const t = useUiText();
   const language = useProjectOverviewLanguage();
   const [rows, setRows] = useState<readonly WorkjetCredentialRecord[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const [readFailed, setReadFailed] = useState(false);
+  const [hidden, setHidden] = useState(NO_HIDDEN);
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const alive = useRef(true);
@@ -100,7 +101,7 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
     if (!props.instanceId) return;
     const list = await listCredentials(props.instanceId).catch(() => null);
     if (!alive.current) return;
-    setFailed(list === null);
+    setReadFailed(list === null);
     if (list !== null) setRows(list);
   }, [props.instanceId]);
   useEffect(() => {
@@ -109,10 +110,10 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
   }, [refresh]);
   // Ein Lesefehler wird still wiederholt; bis dahin steht „—“.
   useEffect(() => {
-    if (!failed) return;
+    if (!readFailed) return;
     const timer = window.setTimeout(() => void refresh(), RETRY_MS);
     return () => window.clearTimeout(timer);
-  }, [failed, refresh]);
+  }, [readFailed, refresh]);
 
   if (!props.instanceId) return null;
   const instanceId = props.instanceId;
@@ -159,7 +160,9 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
       onUndo: () => unhide(name),
     });
   };
-  const visible = (rows ?? []).filter((row) => !hidden.has(row.name));
+  const visible = (rows ?? []).filter((row) => {
+    return !hidden.has(row.name);
+  });
   const section = searchableSetting("instance-secrets");
   return (
     <SettingsSection {...section} data-workjet-secrets-settings="">

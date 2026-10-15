@@ -6,6 +6,7 @@ import {
   type WorkjetDelegationState,
   type WorkjetDeliveryDisposition,
 } from "@workjet/contracts";
+import { Button } from "../ui/button";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -288,7 +289,7 @@ describe("WorkjetMailboxActivityCard", () => {
       model: model({ kind: "task", delegationState: "review-requested" }),
     }) as InspectableElement;
     const badge = descendants(card.props.children).find(
-      (element) => textContent(element.props.children) === "review-requested",
+      (element) => textContent(element.props.children) === "Prüfung erbeten",
     );
 
     expect(badge).toBeDefined();
@@ -298,7 +299,7 @@ describe("WorkjetMailboxActivityCard", () => {
   it("omits the state badge for a plain message", () => {
     const card = WorkjetMailboxActivityCard({ model: model() }) as InspectableElement;
     const states = descendants(card.props.children).filter((element) =>
-      ["queued", "running", "completed"].includes(textContent(element.props.children)),
+      ["wartet", "läuft", "fertig"].includes(textContent(element.props.children)),
     );
 
     expect(states).toEqual([]);
@@ -310,7 +311,7 @@ describe("WorkjetMailboxActivityCard", () => {
       model: model(),
       onOpenPeerThread,
     }) as InspectableElement;
-    const link = descendants(card.props.children).find((element) => element.type === "button");
+    const link = descendants(card.props.children).find((element) => element.type === Button);
 
     expect(link).toBeDefined();
     (link?.props.onClick as () => void)();
@@ -332,8 +333,9 @@ describe("WorkjetMailboxActivityCard", () => {
     }) as InspectableElement;
     const children = descendants(card.props.children);
 
-    expect(children.some((element) => element.type === "button")).toBe(false);
-    expect(textContent(card.props.children)).toContain("thread-worker");
+    expect(children.some((element) => element.type === Button)).toBe(false);
+    expect(textContent(card.props.children)).not.toContain("thread-worker");
+    expect(textContent(card.props.children)).toContain("Worker");
     expect(textContent(card.props.children)).toContain("wartend");
   });
 });

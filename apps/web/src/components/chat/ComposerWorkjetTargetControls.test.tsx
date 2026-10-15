@@ -107,9 +107,12 @@ describe("computer dropdown entries", () => {
       ],
     });
     const text = textOf(tree);
-    // German connection words, never online/offline.
-    expect(text).toContain("verbunden");
-    expect(text).toContain("getrennt");
+    // Connection state is a dot with a German label, never online/offline text.
+    const dots = flatten(tree)
+      .map((element) => element.props["aria-label"])
+      .filter((label) => label === "verbunden" || label === "getrennt");
+    expect(dots).toContain("verbunden");
+    expect(dots).toContain("getrennt");
     expect(text).not.toContain("online");
     expect(text).not.toContain("offline");
     expect(text).toContain("gpu1-a6000");
@@ -127,7 +130,6 @@ describe("computer dropdown entries", () => {
       />,
     );
     expect(markup).toContain('aria-busy="true"');
-    expect(markup).toContain("Speichert");
     expect(markup).toContain("disabled");
   });
 
@@ -324,7 +326,9 @@ describe("the Computer control", () => {
     expect(markup).toContain("max-w-48");
     expect(markup).toContain("min-w-0");
     expect(markup).toContain("truncate");
-    expect(markup).toContain(`Computer ${"x".repeat(180)}`);
+    // Vorab gekürzt: keine leere Lücke hinter der CSS-Auslassung (Audit B #37).
+    expect(markup).toContain(`Computer ${"x".repeat(10)}…`);
+    expect(markup).not.toContain(`Computer ${"x".repeat(180)}`);
   });
 
   it("separates project availability from device pairing", () => {
@@ -509,7 +513,7 @@ describe("the manual target controls", () => {
 });
 
 describe("harness and model dropdown entries", () => {
-  it("lists harnesses with a short status and reports the choice", () => {
+  it("lists only installed harnesses and reports the choice", () => {
     const onSelectHarness = vi.fn();
     const tree = ComposerHarnessMenuItems({
       configuredInstanceIds: new Set(["claudeAgent"]),
@@ -517,18 +521,15 @@ describe("harness and model dropdown entries", () => {
       onSelectHarness,
     });
     expect(textOf(tree)).toContain("Claude Code");
-    // Fehlende Installation ist keine Sperre: „nicht installiert“, nie „gesperrt“.
-    expect(textOf(tree)).toContain("nicht installiert");
+    // Fehlende Werte fallen weg: kein „nicht installiert“, kein „gesperrt“.
+    expect(textOf(tree)).not.toContain("nicht installiert");
     expect(textOf(tree)).not.toContain("gesperrt");
-    const codex = flatten(tree).find(
-      (element) => element.props.disabled === true && textOf(element).includes("Codex CLI"),
-    );
-    expect(codex).toBeDefined();
+    expect(textOf(tree)).not.toContain("Codex CLI");
     (radioGroup(tree).props.onValueChange as (value: string) => void)("claude-code");
     expect(onSelectHarness).toHaveBeenCalledWith("claude-code");
   });
 
-  it("leads a missing harness into the setup path instead of locking it", () => {
+  it("offers one setup entry for missing harnesses instead of listing each", () => {
     const onSetupHarness = vi.fn();
     const tree = ComposerHarnessMenuItems({
       configuredInstanceIds: new Set(["claudeAgent"]),
@@ -536,14 +537,14 @@ describe("harness and model dropdown entries", () => {
       onSelectHarness: () => undefined,
       onSetupHarness,
     });
-    const entry = flatten(tree).find(
+    const entries = flatten(tree).filter(
       (element) =>
         typeof element.props.onClick === "function" &&
-        textOf(element) === "Codex CLI nicht installiert · Einrichten",
+        textOf(element).trim() === "Harness einrichten",
     );
-    expect(entry?.props.disabled).toBeUndefined();
-    (entry!.props.onClick as () => void)();
-    expect(onSetupHarness).toHaveBeenCalledExactlyOnceWith("codex-cli");
+    expect(entries).toHaveLength(1);
+    (entries[0]!.props.onClick as () => void)();
+    expect(onSetupHarness).toHaveBeenCalledTimes(1);
   });
 
   it("groups catalog models by provider and offers no typed model ID", () => {

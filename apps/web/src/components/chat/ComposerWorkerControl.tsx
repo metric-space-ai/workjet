@@ -1,6 +1,6 @@
 import type { EnvironmentId, WorkjetHarness, WorkjetWorkerProfile } from "@workjet/contracts";
 import { memo } from "react";
-import { BotIcon, SettingsIcon } from "lucide-react";
+import { UserRoundIcon } from "lucide-react";
 import { workjetUiLanguage } from "../../workjetProjectControl";
 
 import { ComposerControl, ComposerControlChevron, ComposerControlIcon } from "./ComposerControl";
@@ -102,7 +102,6 @@ export function ComposerWorkerMenuItems(
       </MenuRadioGroup>
       <MenuSeparator />
       <MenuItem onClick={props.onOpenWorkjetSettings}>
-        <SettingsIcon aria-hidden="true" />
         {workjetUiLanguage() === "en" ? "Manage worker presets" : "Worker-Presets verwalten"}
       </MenuItem>
     </>
@@ -124,7 +123,7 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
           />
         }
       >
-        <ComposerControlIcon icon={BotIcon} />
+        <ComposerControlIcon icon={UserRoundIcon} />
         <span className="min-w-0 truncate">{selected?.name ?? manualWorkerLabel()}</span>
         <ComposerControlChevron />
       </MenuTrigger>

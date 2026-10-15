@@ -87,20 +87,31 @@ describe("ThreadErrorBanner", () => {
     expect(markup).toContain("h-lh self-start");
   });
 
-  it("turns a raw adapter error into one sentence with the raw text behind Details (#586)", () => {
+  it("turns a raw adapter error into one short German line and never shows the raw text (#586)", () => {
     const raw =
       "ProviderAdapterProcessError: spawn failed for thread 8c6643ef-1234-4abc-9def-000000000000 file:///workspace/x";
     expect(threadErrorPresentation(raw)).toEqual({
-      summary: "Der Worker konnte nicht gestartet werden.",
+      summary: "Worker nicht gestartet",
       details: raw,
     });
     const markup = renderToStaticMarkup(<ThreadErrorBanner error={raw} />);
-    expect(markup).toContain("Der Worker konnte nicht gestartet werden.");
+    expect(markup).toContain("Worker nicht gestartet");
     expect(markup).not.toContain("file:///workspace");
-    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Details");
     expect(threadErrorPresentation("Turn failed")).toEqual({
-      summary: "Turn failed",
+      summary: "Schritt fehlgeschlagen",
+      details: "Turn failed",
+    });
+    expect(threadErrorPresentation("Rechner offline.")).toEqual({
+      summary: "Rechner offline",
       details: null,
     });
+  });
+
+  it("offers exactly one retry action when a retry path exists", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadErrorBanner error="Turn failed" onRetry={() => {}} onDismiss={() => {}} />,
+    );
+    expect(markup.match(/Erneut versuchen<\/button>/g)).toHaveLength(1);
   });
 });

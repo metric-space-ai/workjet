@@ -56,20 +56,12 @@ export const WORKJET_ROLE_FAILURE_TOAST = {
  * and as the compact menu's description, so the refusal always carries a
  * reason.
  */
-export const WORKJET_WORKER_ROLE_REASON = "Rolle vom Orchestrator festgelegt";
-
-/**
- * The role is compiled into the managed system prompt when a provider session
- * starts, so a thread that already has turns keeps its current session until
- * the next one begins. Saying so is cheaper than letting the user infer that
- * nothing happened.
- */
-export const WORKJET_ROLE_NEXT_SESSION_HINT = "Gilt ab der nächsten Sitzung";
+export const WORKJET_WORKER_ROLE_REASON = "Rolle vom Supervisor festgelegt";
 
 const ROLE_LABELS = {
-  standard: "Code",
-  orchestrator: "Orchestrator",
-  worker: "Preset",
+  standard: "Einzeln",
+  orchestrator: "Supervisor",
+  worker: "Worker",
 } as const satisfies Record<WorkjetThreadRole, string>;
 
 const ROLE_ICONS = {
@@ -84,8 +76,8 @@ const SELECTABLE_ROLES = [
 ] as const satisfies ReadonlyArray<WorkjetSelectableRole>;
 
 const ROLE_TOOLTIPS = {
-  standard: `Code · ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
-  orchestrator: `Orchestrator · ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
+  standard: "Einzeln",
+  orchestrator: "Supervisor",
 } as const satisfies Record<WorkjetSelectableRole, string>;
 
 /**
@@ -234,9 +226,11 @@ export function WorkjetRoleMenuContent(props: WorkjetRoleControlProps) {
           </MenuRadioItem>
         ))}
       </MenuRadioGroup>
-      <p className="max-w-72 px-2 pb-1.5 pt-1 text-muted-foreground text-xs leading-4">
-        {isWorker ? WORKJET_WORKER_ROLE_REASON : WORKJET_ROLE_NEXT_SESSION_HINT}
-      </p>
+      {isWorker ? (
+        <p className="max-w-72 px-2 pb-1.5 pt-1 text-[12px] text-muted-foreground leading-4">
+          {WORKJET_WORKER_ROLE_REASON}
+        </p>
+      ) : null}
       <MenuItem onClick={props.onOpenSettings}>Workjet-Einstellungen …</MenuItem>
     </MenuGroup>
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveThreadSyncPhase, threadSyncLabel } from "./threadSync";
+import { resolveThreadSyncPhase, THREAD_SYNC_SLOW_LINE } from "./threadSync";
 
 describe("resolveThreadSyncPhase", () => {
   it("loads when only shell data is available", () => {
@@ -41,9 +41,9 @@ describe("resolveThreadSyncPhase", () => {
   });
 });
 
-describe("threadSyncLabel", () => {
-  it("uses the same loading and syncing language as mobile", () => {
-    expect(threadSyncLabel("loading")).toBe("Loading messages...");
-    expect(threadSyncLabel("syncing")).toBe("Syncing messages...");
+describe("THREAD_SYNC_SLOW_LINE", () => {
+  it("is a short German status line", () => {
+    expect(THREAD_SYNC_SLOW_LINE).toBe("Nachrichten nicht geladen");
+    expect(THREAD_SYNC_SLOW_LINE.split(" ").length).toBeLessThanOrEqual(12);
   });
 });

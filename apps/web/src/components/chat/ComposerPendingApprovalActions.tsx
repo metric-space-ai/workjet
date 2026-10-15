@@ -1,6 +1,8 @@
 import { type ApprovalRequestId, type ProviderApprovalDecision } from "@workjet/contracts";
+import { EllipsisIcon } from "lucide-react";
 import { memo } from "react";
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 
 interface ComposerPendingApprovalActionsProps {
   requestId: ApprovalRequestId;
@@ -11,6 +13,11 @@ interface ComposerPendingApprovalActionsProps {
   ) => Promise<unknown>;
 }
 
+/**
+ * Freigabe im Composer (UI-Vertrag §2): nur `default`/`outline`, ehrliche
+ * Beschriftung („Für diese Sitzung erlauben“ sendet `acceptForSession`),
+ * das seltene Abbrechen des Zugs liegt im ⋯-Menü.
+ */
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({
   requestId,
   isResponding,
@@ -18,17 +25,29 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
 }: ComposerPendingApprovalActionsProps) {
   return (
     <>
+      <Menu>
+        <MenuTrigger
+          disabled={isResponding}
+          render={
+            <Button
+              size="icon-sm"
+              variant="outline"
+              aria-label="Weitere Aktionen"
+              title="Weitere Aktionen"
+            />
+          }
+        >
+          <EllipsisIcon aria-hidden="true" className="size-4" />
+        </MenuTrigger>
+        <MenuPopup align="end" side="top">
+          <MenuItem onClick={() => void onRespondToApproval(requestId, "cancel")}>
+            Abbrechen
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
       <Button
         size="sm"
-        variant="ghost"
-        disabled={isResponding}
-        onClick={() => void onRespondToApproval(requestId, "cancel")}
-      >
-        Zug abbrechen
-      </Button>
-      <Button
-        size="sm"
-        variant="destructive-outline"
+        variant="outline"
         disabled={isResponding}
         onClick={() => void onRespondToApproval(requestId, "decline")}
       >
@@ -40,7 +59,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
         disabled={isResponding}
         onClick={() => void onRespondToApproval(requestId, "acceptForSession")}
       >
-        Immer erlauben
+        Für diese Sitzung erlauben
       </Button>
       <Button
         size="sm"

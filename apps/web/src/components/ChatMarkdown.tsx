@@ -93,6 +93,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { composerToastDescription } from "./chat/composerErrorLineLogic";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import {
   isBrowserPreviewFile,
@@ -1122,7 +1123,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Datei nicht geöffnet",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       } catch (cause) {
@@ -1134,7 +1135,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Datei nicht geöffnet",
-            description: cause instanceof Error ? cause.message : "Fehler aufgetreten.",
+            description: composerToastDescription(cause),
           }),
         );
       }
@@ -1168,7 +1169,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Datei nicht im Browser geöffnet",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       } catch (cause) {
@@ -1180,7 +1181,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           stackedThreadToast({
             type: "error",
             title: "Datei nicht im Browser geöffnet",
-            description: cause instanceof Error ? cause.message : "Fehler aufgetreten.",
+            description: composerToastDescription(cause),
           }),
         );
       }
@@ -1193,8 +1194,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Kopieren fehlgeschlagen",
-            description: "Zwischenablage nicht verfügbar.",
+            title: "Zwischenablage nicht verfügbar",
           }),
         );
         return;
@@ -1205,7 +1205,6 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           toastManager.add({
             type: "success",
             title: `${title} kopiert`,
-            description: value,
           });
         },
         (error) => {
@@ -1217,7 +1216,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
             stackedThreadToast({
               type: "error",
               title: "Kopieren fehlgeschlagen",
-              description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+              description: composerToastDescription(error),
             }),
           );
         },

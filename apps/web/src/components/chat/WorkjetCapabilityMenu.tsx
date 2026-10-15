@@ -246,7 +246,7 @@ export function workjetCapabilityDisplayName(id: string, fallback: string): stri
 }
 
 /** Sichtbarer Name der Orchestrator-Rolle im Werkzeug-Menü. */
-export const WORKJET_ORCHESTRATOR_TOGGLE_LABEL = "Presets steuern";
+export const WORKJET_ORCHESTRATOR_TOGGLE_LABEL = "Worker steuern";
 
 export interface WorkjetCapabilityMenuProps {
   readonly compact?: boolean;

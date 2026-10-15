@@ -24,12 +24,13 @@ import {
   CpuIcon,
   FileTextIcon,
   MonitorIcon,
-  SettingsIcon,
+  PlusIcon,
   TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import type { WorkjetComputerDraft } from "../settings/WorkjetComputerEditor";
 
+import { cn } from "~/lib/utils";
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
 import { ComposerControl, ComposerControlIcon, ComposerControlChevron } from "./ComposerControl";
 import {
@@ -254,8 +255,12 @@ export function composerComputerChoices(
   readonly computer: WorkjetComputer;
   /** Why the choice is refused; the full text goes into the item's title. */
   readonly reason: string | null;
-  /** Short status shown next to the name. */
+  /** Short status (legacy text form; tests and fixtures). */
   readonly meta: string;
+  /** Verbindungszustand als Punkt; `null` = unbekannt (kein Punkt). */
+  readonly connected: boolean | null;
+  /** Kurzer Grund neben dem Namen, nur wenn die Wahl gesperrt ist. */
+  readonly note: string | null;
 }> {
   const selectable = new Set(props.selectableEnvironmentIds);
   return props.computers.map((computer) => {
@@ -288,7 +293,18 @@ export function composerComputerChoices(
           : !projectAvailable
             ? "Projekt fehlt"
             : "nicht verfügbar";
-    return { computer, reason, meta };
+    const connected = status === "verbunden" ? true : status === "getrennt" ? false : null;
+    const note =
+      reason === null
+        ? null
+        : status !== null && status !== "verbunden" && status !== "getrennt"
+          ? status
+          : !projectAvailable
+            ? "Projekt fehlt"
+            : status === "getrennt"
+              ? null
+              : "nicht verfügbar";
+    return { computer, reason, meta, connected, note };
   });
 }
 
@@ -315,7 +331,7 @@ export function ComposerComputerMenuItems(
             if (choice && choice.reason === null) props.onSelectComputer(value);
           }}
         >
-          {choices.map(({ computer, reason, meta }) => (
+          {choices.map(({ computer, reason, connected, note }) => (
             <MenuRadioItem
               key={computer.id}
               value={computer.id}
@@ -324,9 +340,20 @@ export function ComposerComputerMenuItems(
               aria-label={computer.label}
               closeOnClick
             >
-              <span className="flex min-w-0 items-baseline">
+              <span className="flex min-w-0 items-center gap-2">
+                {connected === null ? null : (
+                  <span
+                    role="img"
+                    aria-label={connected ? "verbunden" : "getrennt"}
+                    data-computer-connected={connected ? "true" : "false"}
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      connected ? "bg-success" : "bg-muted-foreground/50",
+                    )}
+                  />
+                )}
                 <span className="min-w-0 truncate">{computer.label}</span>
-                <MenuMeta>{meta}</MenuMeta>
+                {note ? <MenuMeta>{note}</MenuMeta> : null}
               </span>
             </MenuRadioItem>
           ))}
@@ -334,9 +361,13 @@ export function ComposerComputerMenuItems(
       ) : null}
       {unconfigured.map((computer) => (
         <MenuItem key={`native-${computer.id}`} disabled>
-          <span className="flex min-w-0 flex-1 items-baseline">
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span
+              role="img"
+              aria-label="getrennt"
+              className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50"
+            />
             <span className="min-w-0 truncate">{computer.displayName}</span>
-            <MenuMeta>getrennt</MenuMeta>
           </span>
         </MenuItem>
       ))}
@@ -344,13 +375,21 @@ export function ComposerComputerMenuItems(
         <>
           <MenuSeparator />
           <MenuItem disabled={props.busy} onClick={props.onAddComputer}>
-            <SettingsIcon aria-hidden="true" />
+            <PlusIcon aria-hidden="true" />
             {composerAddComputerMenuLabel()}
           </MenuItem>
         </>
       ) : null}
     </>
   );
+}
+
+/**
+ * Kürzt lange Rechnernamen vorab, damit der Chip keine leere Lücke hinter der
+ * CSS-Auslassung trägt (Audit B #37); der volle Name steht im Menü.
+ */
+export function composerComputerChipLabel(label: string): string {
+  return label.length > 20 ? `${label.slice(0, 19).trimEnd()}…` : label;
 }
 
 export function ComposerComputerControlView(props: ComposerComputerControlProps) {
@@ -363,7 +402,6 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
     <span
       className="inline-flex min-w-0 max-w-full shrink-0 items-center"
       data-composer-computer-control="true"
-      title={saving ? "Speichert…" : (props.disabledReason ?? props.mismatchNote ?? undefined)}
     >
       <Menu>
         <MenuTrigger
@@ -371,16 +409,21 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
           render={
             <ComposerControl
               type="button"
-              className="h-auto min-w-0 max-w-48 font-medium"
+              className="min-w-0 max-w-48 font-medium"
               aria-label="Rechner"
               aria-busy={saving}
+              aria-description={props.disabledReason ?? props.mismatchNote ?? undefined}
               {...(props.mismatchNote === null ? {} : { "data-computer-mismatch": "true" })}
             />
           }
         >
           <ComposerControlIcon icon={MonitorIcon} />
-          <span className="min-w-0 truncate text-left">
-            {selected?.label ?? (props.selectedComputerId !== null ? "Rechner fehlt" : "Rechner")}
+          <span className="min-w-0 truncate">
+            {selected
+              ? composerComputerChipLabel(selected.label)
+              : props.selectedComputerId !== null
+                ? "Rechner fehlt"
+                : "Rechner"}
           </span>
           {warn ? (
             <TriangleAlertIcon aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
@@ -388,6 +431,16 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
           <ComposerControlChevron />
         </MenuTrigger>
         <MenuPopup align="start" side="top" className="max-h-80 min-w-56 max-w-80">
+          {/* Sperr- bzw. Abweichungsgrund sichtbar im Menü, nicht als verstecktes title=. */}
+          {(props.disabledReason ?? props.mismatchNote) ? (
+            <div
+              role="status"
+              data-composer-computer-reason="true"
+              className="px-2 pt-1 pb-1.5 text-[12px] text-muted-foreground"
+            >
+              {props.disabledReason ?? props.mismatchNote}
+            </div>
+          ) : null}
           <ComposerComputerMenuItems {...props} busy={saving} />
         </MenuPopup>
       </Menu>
@@ -532,24 +585,16 @@ export function ComposerHarnessMenuItems(
           </MenuRadioItem>
         ))}
       </MenuRadioGroup>
-      {/* „gesperrt“ nur bei echter Policy-Sperre; fehlende Installation bietet Einrichten. */}
-      {missing.map((option) =>
-        props.onSetupHarness ? (
-          <MenuItem key={option.id} onClick={() => props.onSetupHarness?.(option.id)}>
-            <span className="flex min-w-0 items-baseline">
-              <span className="min-w-0 truncate">{option.label}</span>
-              <MenuMeta>nicht installiert · Einrichten</MenuMeta>
-            </span>
+      {/* Nur installierte Harnesses stehen zur Wahl; fehlende führt EIN Eintrag ein. */}
+      {missing.length > 0 && props.onSetupHarness ? (
+        <>
+          <MenuSeparator />
+          <MenuItem onClick={() => props.onSetupHarness?.(missing[0]!.id)}>
+            <PlusIcon aria-hidden="true" />
+            Harness einrichten
           </MenuItem>
-        ) : (
-          <MenuItem key={option.id} disabled title={props.unavailableHint}>
-            <span className="flex min-w-0 items-baseline">
-              <span className="min-w-0 truncate">{option.label}</span>
-              <MenuMeta>nicht installiert</MenuMeta>
-            </span>
-          </MenuItem>
-        ),
-      )}
+        </>
+      ) : null}
     </>
   );
 }
@@ -758,7 +803,7 @@ export function ComposerSystemPromptControlView(props: ComposerSystemPromptContr
       >
         <FileTextIcon aria-hidden="true" />
         Systemprompt
-        <MenuMeta>{isSet ? "gesetzt" : "—"}</MenuMeta>
+        {isSet ? <MenuMeta>gesetzt</MenuMeta> : null}
       </MenuItem>
     );
   }

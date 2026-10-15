@@ -337,7 +337,8 @@ import {
 } from "./chat/composerErrorLineLogic";
 import { useComposerSilentRetry } from "./chat/useComposerSilentRetry";
 import { environmentUnavailableBannerItem } from "./chat/environmentUnavailableBanner";
-import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
+import { ThreadSyncStatusLine } from "./chat/ThreadSyncStatusLine";
+import { selectProjectOverviewRef } from "../projectOverviewSelection";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -1253,8 +1254,9 @@ type LocalThreadErrorEntry = {
   readonly at: number;
 };
 
-function chatActionErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Fehler aufgetreten.";
+function chatActionErrorMessage(error: unknown): string | undefined {
+  // Eine deutsche Zeile oder keine Beschreibung; nie der Rohtext (UI-Vertrag §1 Toast).
+  return composerToastDescription(error);
 }
 
 function ChatViewContent(props: ChatViewProps) {
@@ -2251,6 +2253,11 @@ function ChatViewContent(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  const handleOpenActiveProject = useCallback(() => {
+    if (!activeProjectRef) return;
+    selectProjectOverviewRef(presentationInstanceId, activeProjectRef);
+    void navigate({ to: "/" });
+  }, [activeProjectRef, presentationInstanceId, navigate]);
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -3350,7 +3357,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Rechnerwechsel fehlgeschlagen",
-            description: error instanceof Error ? error.message : String(error),
+            description: composerToastDescription(error),
           }),
         );
       } finally {
@@ -3853,7 +3860,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Löschen fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Unerwarteter Fehler.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -4425,8 +4432,7 @@ function ChatViewContent(props: ChatViewProps) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: "Zwischenablage nicht verfügbar.",
+          title: "Zwischenablage nicht verfügbar",
         }),
       );
       return;
@@ -4437,7 +4443,6 @@ function ChatViewContent(props: ChatViewProps) {
         toastManager.add({
           type: "success",
           title: "Pfad kopiert",
-          description: relativePath,
         });
       },
       (error) => {
@@ -4445,7 +4450,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Kopieren fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       },
@@ -5097,7 +5102,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Wiederaufnahme fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -5125,7 +5130,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Aufwecken fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -5298,7 +5303,7 @@ function ChatViewContent(props: ChatViewProps) {
       ),
       title: working
         ? liveCount > 0
-          ? `${liveCount} ${liveCount === 1 ? "Preset arbeitet" : "Presets arbeiten"} im Hintergrund`
+          ? `${liveCount} ${liveCount === 1 ? "Worker arbeitet" : "Worker arbeiten"} im Hintergrund`
           : "Hintergrundarbeit läuft"
         : "Überwacht im Hintergrund",
       actions: (
@@ -5900,7 +5905,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) {
       toastManager.add({
         type: "error",
-        title: "Decision-Hub-Verbindung fehlt",
+        title: "Entscheidungszentrale nicht verbunden",
         data: { hideCopyButton: true },
       });
       return;
@@ -6046,13 +6051,13 @@ function ChatViewContent(props: ChatViewProps) {
     let titleSeed = trimmed;
     if (!titleSeed) {
       if (firstComposerImageName) {
-        titleSeed = `Image: ${firstComposerImageName}`;
+        titleSeed = `Bild: ${firstComposerImageName}`;
       } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
         titleSeed = formatElementContextLabel(composerElementContextsSnapshot[0]!);
       } else {
-        titleSeed = "New thread";
+        titleSeed = "Neue Unterhaltung";
       }
     }
     const title = truncate(titleSeed);
@@ -6218,7 +6223,7 @@ function ChatViewContent(props: ChatViewProps) {
                   toastManager.add(
                     stackedThreadToast({
                       type: "warning",
-                      title: "CTOX-Session nicht registriert",
+                      title: "Sitzung nicht registriert",
                     }),
                   );
                 }
@@ -6802,7 +6807,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Unterhaltung nicht gestartet",
-            description: error instanceof Error ? error.message : "Fehler aufgetreten.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -6863,7 +6868,7 @@ function ChatViewContent(props: ChatViewProps) {
             stackedThreadToast({
               type: "error",
               title: "Auswahl nicht gespeichert",
-              description: error instanceof Error ? error.message : String(error),
+              description: composerToastDescription(error),
             }),
           );
           return false;
@@ -7192,6 +7197,7 @@ function ChatViewContent(props: ChatViewProps) {
               ) : undefined
             }
             onNewThreadInProject={handleNewThreadInActiveProject}
+            onOpenProject={handleOpenActiveProject}
           />
         </WorkjetHeaderContent>
         <ProjectNativeSyncStatus project={activeProject ?? null} />
@@ -7266,6 +7272,7 @@ function ChatViewContent(props: ChatViewProps) {
               <ProviderStatusBanner
                 status={visibleProviderStatus}
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
+                onAction={() => void navigate({ to: "/settings/harnesses" })}
               />
             </div>
             {/* Messages Wrapper */}
@@ -7388,7 +7395,10 @@ function ChatViewContent(props: ChatViewProps) {
                     <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
                   )}
                   {threadSyncPhase && !activeEnvironmentUnavailable ? (
-                    <ThreadSyncStatusPill phase={threadSyncPhase} />
+                    <ThreadSyncStatusLine
+                      phase={threadSyncPhase}
+                      onRetry={() => void handleReconnectActiveEnvironment(environmentId)}
+                    />
                   ) : null}
                   <div
                     className="relative"
@@ -7536,6 +7546,14 @@ function ChatViewContent(props: ChatViewProps) {
                                     onDraftChange={setWorkjetSendDraft}
                                     onSubmit={onSubmitWorkjetSend}
                                     onClose={() => setWorkjetSendPanelOpen(false)}
+                                    fileSource={
+                                      activeProject?.workspaceRoot
+                                        ? {
+                                            environmentId: activeProject.environmentId,
+                                            cwd: activeProject.workspaceRoot,
+                                          }
+                                        : null
+                                    }
                                   />
                                 </div>
                               ) : null}
@@ -7699,7 +7717,7 @@ function ChatViewContent(props: ChatViewProps) {
                                       ? "Erst laufende Runde beenden"
                                       : activeThread?.workjetConfig.schemaVersion === 2 &&
                                           activeThread.workjetConfig.ctoxCrewChat !== undefined
-                                        ? "Rechner im Business OS wählen"
+                                        ? "Rechner in der Instanz wählen"
                                         : null
                                 }
                                 onWorkjetRoleChange={handleWorkjetRoleChange}

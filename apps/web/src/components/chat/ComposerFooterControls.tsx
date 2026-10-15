@@ -6,7 +6,7 @@ import type {
   WorkjetWorkerProfile,
 } from "@workjet/contracts";
 import { memo, type CSSProperties, type ReactNode } from "react";
-import { BotIcon, PencilRulerIcon } from "lucide-react";
+import { HammerIcon, PencilRulerIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
@@ -79,7 +79,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
           {props.interactionMode === "plan" ? (
             <ComposerControlIcon icon={PencilRulerIcon} className="text-current opacity-100" />
           ) : (
-            <ComposerControlIcon icon={BotIcon} opticalSize="large" />
+            <ComposerControlIcon icon={HammerIcon} />
           )}
           <span className="sr-only sm:not-sr-only">
             {props.interactionMode === "plan" ? "Planen" : "Bauen"}

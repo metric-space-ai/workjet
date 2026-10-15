@@ -13,7 +13,11 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Button } from "../ui/button";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
-import { SETTINGS_NAV_ITEMS, SETTINGS_SECTION_ICONS } from "./settingsNavigation";
+import {
+  isSettingsPathVisible,
+  SETTINGS_NAV_ITEMS,
+  SETTINGS_SECTION_ICONS,
+} from "./settingsNavigation";
 export { SETTINGS_NAV_ITEMS } from "./settingsNavigation";
 import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
@@ -39,9 +43,6 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 
-/** Pages only shown in developer mode (#552). */
-const DEVELOPER_ONLY_PATHS: ReadonlySet<SettingsPath> = new Set(["/settings/diagnostics"]);
-
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
   return <Icon className="mt-0.5 size-3.5 shrink-0 text-sidebar-muted-foreground/60" />;
@@ -62,8 +63,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const developerMode = useClientSettings().developerMode;
   const results = useMemo(
-    () =>
-      searchSettings(query).filter((item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to)),
+    () => searchSettings(query).filter((item) => isSettingsPathVisible(item.to, developerMode)),
     [developerMode, query],
   );
   const isSearching = query.trim().length > 0;
@@ -267,8 +267,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))
-              : SETTINGS_NAV_ITEMS.filter(
-                  (item) => developerMode || !DEVELOPER_ONLY_PATHS.has(item.to),
+              : SETTINGS_NAV_ITEMS.filter((item) =>
+                  isSettingsPathVisible(item.to, developerMode),
                 ).map((item, index) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);

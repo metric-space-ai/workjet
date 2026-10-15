@@ -269,6 +269,10 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
             "status" in result ? result : { status: 0, body: { ok: false, message: result.code } },
           ),
         ),
+      toolhubInstanceOrigin: (id) =>
+        inWindow((guests) => guests.toolhubInstanceOrigin(id)).pipe(
+          Effect.map((result) => (typeof result === "string" ? result : undefined)),
+        ),
     });
   });
 

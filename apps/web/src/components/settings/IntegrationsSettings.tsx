@@ -5,12 +5,17 @@
  * Zustand kommt immer von der CTOX-Instanz (über den angemeldeten Guest). Die
  * Instanz besitzt Registrierung, Rückleitung und Tokens; die App öffnet nur die
  * Anmelde-URL, die die Instanz ausgibt, oder übergibt ein Token an die Instanz.
- * Fehler werden in verständliche Sätze mit einer Aktion übersetzt; technische
- * Codes stehen nur im aufklappbaren „Details“.
+ * Keine Zustandstexte: ein fehlgeschlagener Schritt lässt die Zeile unverändert,
+ * eine nicht erreichbare Instanz wird still erneut abgefragt.
+ *
+ * Nur im Entwicklermodus, bis ctox #708 und die Übergabe Main-Prozess →
+ * Instanz stehen: ohne Entwicklermodus wird nichts gemountet, es gibt also
+ * weder Abfragen noch Desktop-IPC.
  */
 import { ArrowLeftIcon, CheckIcon, Loader2Icon, SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useClientSettings } from "../../hooks/useSettings";
 import { useUiText } from "../../hooks/useUiText";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { Input } from "../ui/input";
@@ -38,14 +43,6 @@ interface ToolEntry {
   readonly mutating: boolean;
 }
 
-/** Ein Fehler, wie ihn der Nutzer sieht: was passiert ist, was er tun kann. */
-interface Problem {
-  readonly message: string;
-  readonly action?: { readonly label: string; readonly run: () => void };
-  readonly detail: string;
-  readonly blocking?: boolean;
-}
-
 class RequestError extends Error {
   constructor(
     readonly status: number,
@@ -53,82 +50,6 @@ class RequestError extends Error {
   ) {
     super(code);
   }
-}
-
-const NETWORK_CODES = new Set([
-  "network_unavailable",
-  "peer_unavailable",
-  "sync_unavailable",
-  "unavailable",
-  "timeout",
-]);
-
-/** Übersetzt einen Instanzfehler in einen Satz ohne Fachbegriffe. */
-function describe(
-  error: unknown,
-  t: T,
-  instance: string,
-  service: string | null,
-): { message: string; kind: "offline" | "signin" | "outdated" | "expired" | "admin" | "other" } {
-  const status = error instanceof RequestError ? error.status : 0;
-  const code = error instanceof Error ? error.message : String(error);
-  if (status === 0 || NETWORK_CODES.has(code))
-    return {
-      kind: "offline",
-      message: t(
-        `${instance} ist gerade nicht erreichbar. Wir versuchen es automatisch erneut.`,
-        `${instance} can't be reached right now. We'll keep trying automatically.`,
-      ),
-    };
-  if (/credential_required|expired|invalid_grant|unauthori[sz]ed_client/i.test(code))
-    return {
-      kind: "expired",
-      message: t(
-        `Die Verbindung zu ${service ?? "dem Dienst"} ist abgelaufen. Verbinde sie neu, damit deine Agenten weiterarbeiten können.`,
-        `The connection to ${service ?? "the service"} has expired. Reconnect it so your agents can keep working.`,
-      ),
-    };
-  if (status === 401)
-    return {
-      kind: "signin",
-      message: t(
-        `Du bist bei ${instance} nicht mehr angemeldet. Melde dich erneut an.`,
-        `You're no longer signed in to ${instance}. Please sign in again.`,
-      ),
-    };
-  if (status === 403)
-    return {
-      kind: "admin",
-      message: t(
-        `Dafür brauchst du Admin-Rechte auf ${instance}. Bitte eine Person mit Admin-Zugang, die Verbindung herzustellen.`,
-        `This needs admin rights on ${instance}. Ask someone with admin access to set up the connection.`,
-      ),
-    };
-  if (status === 404)
-    return {
-      kind: "outdated",
-      message: t(
-        `${instance} unterstützt Schnittstellen noch nicht. Der Admin von ${instance} muss die Instanz aktualisieren.`,
-        `${instance} doesn't support integrations yet. The admin of ${instance} needs to update it.`,
-      ),
-    };
-  return {
-    kind: "other",
-    message: service
-      ? t(
-          `Das Verbinden mit ${service} hat nicht geklappt. Versuch es bitte noch einmal.`,
-          `Connecting to ${service} didn't work. Please try again.`,
-        )
-      : t(
-          "Etwas hat nicht geklappt. Versuch es bitte noch einmal.",
-          "Something went wrong. Please try again.",
-        ),
-  };
-}
-
-function detailOf(error: unknown): string {
-  if (error instanceof RequestError) return `HTTP ${error.status} · ${error.code}`;
-  return error instanceof Error ? error.message : String(error);
 }
 
 function Logo({ entry, size = "md" }: { entry: IntegrationEntry; size?: "md" | "lg" }) {
@@ -184,37 +105,19 @@ function Added({ t }: { t: T }) {
   );
 }
 
-function ProblemNote({ problem, t }: { problem: Problem; t: T }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div
-      role={problem.blocking ? "alert" : "status"}
-      className={`rounded-xl px-4 py-3 text-[13px] ${problem.blocking ? "border border-destructive/40 bg-destructive/10" : "bg-muted/60"}`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-foreground">{problem.message}</span>
-        {problem.action ? <Pill onClick={problem.action.run}>{problem.action.label}</Pill> : null}
-      </div>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((x) => !x)}
-        className="mt-1 text-[12px] text-muted-foreground underline-offset-2 hover:underline"
-      >
-        {open ? t("Details ausblenden", "Hide details") : t("Details", "Details")}
-      </button>
-      {open ? (
-        <code className="mt-1 block break-all text-[11.5px] text-muted-foreground">
-          {problem.detail}
-        </code>
-      ) : null}
-    </div>
-  );
-}
-
 const PREVIEW = 6;
 
+/** Nur Einträge mit Anschluss erscheinen; „Bald verfügbar“-Kacheln gibt es nicht. */
+export const CONNECTABLE_INTEGRATIONS: ReadonlyArray<IntegrationEntry> = INTEGRATIONS.filter(
+  (e) => e.connect !== null,
+);
+
 export function IntegrationsSettingsPanel() {
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  return developerMode ? <IntegrationsStore /> : null;
+}
+
+function IntegrationsStore() {
   const t = useUiText();
   const { selectedId, discovery } = useCtoxMode();
   const bridge = typeof window !== "undefined" ? window.desktopBridge : undefined;
@@ -230,9 +133,7 @@ export function IntegrationsSettingsPanel() {
   const [connections, setConnections] = useState<ReadonlyArray<Connection>>([]);
   const [accounts, setAccounts] = useState<ReadonlyArray<Account>>([]);
   const [catalog, setCatalog] = useState<Record<string, ReadonlyArray<ToolEntry>>>({});
-  const [loadProblem, setLoadProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [problems, setProblems] = useState<Record<string, Problem | undefined>>({});
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<IntegrationCategory | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -287,18 +188,12 @@ export function IntegrationsSettingsPanel() {
       setConnectionFields(
         (k.connection_fields as Record<string, ReadonlyArray<ToolhubParam>> | undefined) ?? {},
       );
-      setLoadProblem(null);
     } catch (e) {
-      const d = describe(e, t, instanceName, null);
-      setLoadProblem({
-        message: d.message,
-        detail: detailOf(e),
-        action: { label: t("Erneut versuchen", "Try again"), run: () => void refresh() },
-      });
-      if (d.kind === "offline")
+      // Nicht erreichbar: still erneut versuchen, ohne Hinweistext.
+      if (!(e instanceof RequestError) || e.status === 0)
         retryTimer.current = window.setTimeout(() => void refresh(), 15_000);
     }
-  }, [request, t, instanceName]);
+  }, [request, t]);
 
   useEffect(() => {
     if (available) void refresh();
@@ -339,34 +234,26 @@ export function IntegrationsSettingsPanel() {
     [request],
   );
 
-  const fail = (entry: IntegrationEntry, e: unknown, retry?: () => void) => {
-    const d = describe(e, t, instanceName, entry.name);
-    const action =
-      d.kind === "expired"
-        ? retry && { label: t("Neu verbinden", "Reconnect"), run: retry }
-        : d.kind === "admin" || d.kind === "outdated" || !retry
-          ? undefined
-          : { label: t("Erneut versuchen", "Try again"), run: retry };
-    setProblems((p) => ({
-      ...p,
-      [entry.slug]: { message: d.message, detail: detailOf(e), ...(action ? { action } : {}) },
-    }));
-  };
-
+  // Ein fehlgeschlagener Schritt lässt die Zeile unverändert; der Knopf bleibt
+  // da, ein erneuter Klick versucht es noch einmal.
   const connectMcp = async (entry: IntegrationEntry) => {
-    setProblems((p) => ({ ...p, [entry.slug]: undefined }));
+    if (typeof selectedId !== "string") return;
     setBusy(entry.slug);
     try {
       const r = await request("connect", { server: entry.slug });
       if (!bridge?.toolhubAuthorize) throw new RequestError(0, "unavailable");
-      const result = await bridge.toolhubAuthorize({ authorizeUrl: String(r.authorize_url ?? "") });
+      const result = await bridge.toolhubAuthorize({
+        instanceId: selectedId,
+        toolkit: entry.slug,
+        authorizeUrl: String(r.authorize_url ?? ""),
+      });
       if (result._tag === "cancelled") return;
       if (result._tag === "failed" || !result.callbackUrl) throw new Error("authorize_failed");
       await request("oauth/complete", { callback_url: result.callbackUrl });
       await refresh();
       await loadMcpTools(entry.slug);
-    } catch (e) {
-      fail(entry, e, () => void connectMcp(entry));
+    } catch {
+      // Zeile bleibt unverändert.
     } finally {
       setBusy(null);
     }
@@ -374,7 +261,6 @@ export function IntegrationsSettingsPanel() {
 
   const saveToken = async (entry: IntegrationEntry, values: Record<string, string>) => {
     setBusy(entry.slug);
-    setProblems((p) => ({ ...p, [entry.slug]: undefined }));
     try {
       const params: Record<string, string> = {};
       for (const f of connectionFields[entry.slug] ?? []) {
@@ -387,8 +273,8 @@ export function IntegrationsSettingsPanel() {
         ...(Object.keys(params).length > 0 ? { params } : {}),
       });
       await refresh();
-    } catch (e) {
-      fail(entry, e);
+    } catch {
+      // Formular bleibt offen.
     } finally {
       setBusy(null);
     }
@@ -404,8 +290,8 @@ export function IntegrationsSettingsPanel() {
           : { server: entry.slug, toolkit: entry.slug },
       );
       await refresh();
-    } catch (e) {
-      fail(entry, e, () => void remove(entry));
+    } catch {
+      // Verbindung bleibt bestehen; erneut „Trennen“ versucht es noch einmal.
     }
   };
 
@@ -421,7 +307,7 @@ export function IntegrationsSettingsPanel() {
     e.name.toLowerCase().includes(q) ||
     t(e.description.de, e.description.en).toLowerCase().includes(q);
 
-  const entry = selected ? INTEGRATIONS.find((e) => e.slug === selected) : undefined;
+  const entry = selected ? CONNECTABLE_INTEGRATIONS.find((e) => e.slug === selected) : undefined;
 
   const rowAction = (e: IntegrationEntry) => {
     if (isConnected(e)) return <Added t={t} />;
@@ -440,12 +326,6 @@ export function IntegrationsSettingsPanel() {
         >
           {t("Neu verbinden", "Reconnect")}
         </Pill>
-      );
-    if (e.connect === null)
-      return (
-        <span className="inline-flex h-8 shrink-0 items-center px-2 text-[13px] text-muted-foreground">
-          {t("Bald verfügbar", "Coming soon")}
-        </span>
       );
     return (
       <Pill
@@ -491,7 +371,6 @@ export function IntegrationsSettingsPanel() {
           busy={busy === entry.slug}
           available={available}
           tools={catalog[entry.slug] ?? []}
-          problem={problems[entry.slug] ?? null}
           instanceName={instanceName}
           connectionFields={connectionFields[entry.slug] ?? []}
           confirmRemove={confirmRemove}
@@ -509,23 +388,11 @@ export function IntegrationsSettingsPanel() {
               "Connect apps so your agents can use them.",
             )}
           </p>
-          {!available ? (
-            <ProblemNote
-              t={t}
-              problem={{
-                message: t(
-                  "Wähle zuerst eine Instanz aus. Apps werden für die ganze Instanz verbunden.",
-                  "Pick an instance first. Apps are connected for the whole instance.",
-                ),
-                detail: "toolhub bridge or selected instance missing",
-              }}
-            />
-          ) : loadProblem ? (
-            <ProblemNote t={t} problem={loadProblem} />
-          ) : null}
           {INTEGRATION_CATEGORIES.filter((c) => expanded === null || expanded === c.id).map(
             (cat) => {
-              const items = INTEGRATIONS.filter((e) => e.category === cat.id && matches(e));
+              const items = CONNECTABLE_INTEGRATIONS.filter(
+                (e) => e.category === cat.id && matches(e),
+              );
               if (items.length === 0) return null;
               const shown = expanded === cat.id || q !== "" ? items : items.slice(0, PREVIEW);
               return (
@@ -575,14 +442,11 @@ export function IntegrationsSettingsPanel() {
                       </div>
                     ))}
                   </div>
-                  {problemsFor(items, problems).map(([slug, p]) => (
-                    <ProblemNote key={slug} t={t} problem={p} />
-                  ))}
                 </section>
               );
             },
           )}
-          {INTEGRATIONS.every((e) => !matches(e)) ? (
+          {CONNECTABLE_INTEGRATIONS.every((e) => !matches(e)) ? (
             <p className="py-8 text-center text-[13px] text-muted-foreground">
               {t(`Keine App für „${query}“ gefunden.`, `No app found for “${query}”.`)}
             </p>
@@ -593,16 +457,6 @@ export function IntegrationsSettingsPanel() {
   );
 }
 
-function problemsFor(
-  items: ReadonlyArray<IntegrationEntry>,
-  problems: Record<string, Problem | undefined>,
-): Array<[string, Problem]> {
-  return items.flatMap((e) => {
-    const p = problems[e.slug];
-    return p ? [[e.slug, p] as [string, Problem]] : [];
-  });
-}
-
 function Detail(props: {
   entry: IntegrationEntry;
   t: T;
@@ -611,7 +465,6 @@ function Detail(props: {
   busy: boolean;
   available: boolean;
   tools: ReadonlyArray<ToolEntry>;
-  problem: Problem | null;
   instanceName: string;
   connectionFields: ReadonlyArray<ToolhubParam>;
   confirmRemove: boolean;
@@ -622,27 +475,21 @@ function Detail(props: {
   onRemove: () => void;
 }) {
   const { entry, t } = props;
-  const status = props.connected
-    ? t(
-        `Verbunden für ${props.instanceName}. Alle Agenten der Instanz können ${entry.name} nutzen.`,
-        `Connected for ${props.instanceName}. All agents on the instance can use ${entry.name}.`,
-      )
-    : props.expired
-      ? t("Die Verbindung ist abgelaufen.", "The connection has expired.")
-      : entry.connect === null
+  // Nur Bedienhilfe vor dem Verbinden, kein Zustandstext danach.
+  const hint =
+    props.connected || props.expired
+      ? null
+      : entry.connect === "mcp"
         ? t(
-            `${entry.name} kann noch nicht verbunden werden. Wir arbeiten daran; die App erscheint hier, sobald sie bereitsteht.`,
-            `${entry.name} can't be connected yet. We're working on it; it will be ready here once available.`,
+            `Beim Verbinden öffnet sich die Anmeldeseite von ${entry.name}. Du wählst dort, worauf deine Agenten zugreifen dürfen.`,
+            `Connecting opens the ${entry.name} sign-in page, where you choose what your agents may access.`,
           )
-        : entry.connect === "mcp"
+        : entry.connect === "token"
           ? t(
-              `Beim Verbinden öffnet sich die Anmeldeseite von ${entry.name}. Du wählst dort, worauf deine Agenten zugreifen dürfen.`,
-              `Connecting opens the ${entry.name} sign-in page, where you choose what your agents may access.`,
-            )
-          : t(
               `Füge einen Zugangsschlüssel von ${entry.name} ein. Er wird nur auf ${props.instanceName} gespeichert.`,
               `Paste an access key from ${entry.name}. It is stored only on ${props.instanceName}.`,
-            );
+            )
+          : null;
 
   return (
     <div className="flex flex-col gap-5" data-integration-detail={entry.slug}>
@@ -686,11 +533,7 @@ function Detail(props: {
           </Pill>
         ) : null}
       </div>
-      <p className="text-[13.5px]">
-        {props.connected ? <CheckIcon className="me-1 inline size-3.5 text-emerald-500" /> : null}
-        {status}
-      </p>
-      {props.problem ? <ProblemNote t={t} problem={props.problem} /> : null}
+      {hint ? <p className="text-[13.5px]">{hint}</p> : null}
       {entry.connect === "token" && !props.connected ? (
         <CredentialCard
           t={t}
@@ -707,40 +550,24 @@ function Detail(props: {
           onSubmit={props.onSaveToken}
         />
       ) : null}
-      {entry.connect !== null ? (
+      {props.tools.length > 0 ? (
         <section className="flex flex-col gap-2">
           <h3 className="text-[14px] font-medium">
             {t("Was deine Agenten damit tun können", "What your agents can do")}
           </h3>
-          {props.tools.length === 0 ? (
-            <p className="text-[13px] text-muted-foreground">
-              {entry.connect === "mcp"
-                ? t(
-                    `Die Liste kommt von ${entry.name} und erscheint nach dem Verbinden.`,
-                    `The list comes from ${entry.name} and appears after connecting.`,
-                  )
-                : t(
-                    "Die Liste wird geladen, sobald die Instanz erreichbar ist.",
-                    "The list loads once the instance is reachable.",
-                  )}
-            </p>
-          ) : (
-            <ul className="divide-y divide-border/60 rounded-xl border border-border/60">
-              {props.tools.map((x) => (
-                <li
-                  key={x.name}
-                  className="flex items-center justify-between gap-3 px-3.5 py-2 text-[13px]"
-                >
-                  <span className="min-w-0 truncate">{x.title || x.name}</span>
-                  <span className="shrink-0 text-[12px] text-muted-foreground">
-                    {x.mutating
-                      ? t("fragt vorher nach", "asks first")
-                      : t("nur lesen", "read only")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="divide-y divide-border/60 rounded-xl border border-border/60">
+            {props.tools.map((x) => (
+              <li
+                key={x.name}
+                className="flex items-center justify-between gap-3 px-3.5 py-2 text-[13px]"
+              >
+                <span className="min-w-0 truncate">{x.title || x.name}</span>
+                <span className="shrink-0 text-[12px] text-muted-foreground">
+                  {x.mutating ? t("fragt vorher nach", "asks first") : t("nur lesen", "read only")}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
     </div>

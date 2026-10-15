@@ -144,6 +144,7 @@ function Fixture() {
         expanded={expanded}
         setExpanded={setExpanded}
         t={t}
+        instance="fixture"
         call={call}
         onChanged={async () => undefined}
       />

@@ -7,11 +7,15 @@
  * or the supervisor on behalf of a worker); Workjet renders it with the shared
  * cards from `../toolhub/ToolhubCards`, so the UI is identical everywhere.
  * The list is pulled from the instance, so cards survive new messages, view
- * switches and app restarts. Several open requests stack with a count.
+ * switches and app restarts. Several open requests stack.
+ *
+ * Developer mode only until ctox #708 lands: without it nothing mounts, so
+ * there is no polling and no desktop IPC call.
  */
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useClientSettings } from "../../hooks/useSettings";
 import { useUiText } from "../../hooks/useUiText";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { INTEGRATIONS } from "../settings/integrationsCatalog";
@@ -41,7 +45,6 @@ export interface SessionUiRequest {
 }
 
 const POLL_MS = 3000;
-const SHOW_RESOLVED_SECS = 20;
 const CACHE_KEY = "workjet.toolhub.pendingRequests.v1";
 
 function entryOf(slug: string) {
@@ -52,26 +55,18 @@ export function appName(slug: string): string {
 }
 
 /**
- * Pure: which requests to pin right now. Open ones stay until resolved;
- * resolved ones linger a few seconds so the user sees "✓ Verbunden".
- * Oldest first, so the stack order is stable while new requests arrive.
+ * Pure: which requests to pin right now. Open ones stay until resolved and
+ * then disappear (no status pill). Oldest first, so the stack order is stable
+ * while new requests arrive.
  */
 export function visibleRequests(
   all: ReadonlyArray<SessionUiRequest>,
   sessionId: string | null,
-  nowSecs: number,
 ): SessionUiRequest[] {
   return all
     .filter((r) => !r.session || r.session === sessionId)
-    .filter(
-      (r) => r.status === "open" || nowSecs - (r.resolved_at ?? r.created_at) < SHOW_RESOLVED_SECS,
-    )
+    .filter((r) => r.status === "open")
     .toSorted((a, b) => a.created_at - b.created_at);
-}
-
-/** Pure: the open count shown on the stack. */
-export function openCount(list: ReadonlyArray<SessionUiRequest>): number {
-  return list.filter((r) => r.status === "open").length;
 }
 
 /** Strip anything that is not plain request metadata before caching it locally. */
@@ -118,7 +113,13 @@ function writeCache(instance: string | null, list: ReadonlyArray<SessionUiReques
   }
 }
 
+/** Pinned toolhub requests; renders (and polls) only in developer mode. */
 export function SessionRequestCards({ sessionId }: { readonly sessionId: string | null }) {
+  const developerMode = useClientSettings((settings) => settings.developerMode);
+  return developerMode ? <SessionRequestCardsLive sessionId={sessionId} /> : null;
+}
+
+function SessionRequestCardsLive({ sessionId }: { readonly sessionId: string | null }) {
   const t = useUiText();
   const { selectedId } = useCtoxMode();
   const instance = typeof selectedId === "string" ? selectedId : null;
@@ -168,10 +169,11 @@ export function SessionRequestCards({ sessionId }: { readonly sessionId: string 
 
   return (
     <PinnedRequestStack
-      requests={visibleRequests(requests, sessionId, Date.now() / 1000)}
+      requests={visibleRequests(requests, sessionId)}
       expanded={expanded}
       setExpanded={setExpanded}
       t={t}
+      instance={instance}
       call={call}
       onChanged={load}
     />
@@ -184,32 +186,24 @@ export function PinnedRequestStack(props: {
   expanded: boolean;
   setExpanded: (v: boolean) => void;
   t: T;
+  instance: string | null;
   call: (route: string, body: unknown) => Promise<Record<string, unknown>>;
   onChanged: () => Promise<void>;
 }) {
   const { requests, t } = props;
   if (requests.length === 0) return null;
-  const open = openCount(requests);
-  const head = requests.find((r) => r.status === "open") ?? requests[0]!;
-  const rest = requests.filter((r) => r !== head);
+  const head = requests[0]!;
+  const rest = requests.slice(1);
   return (
-    <div
-      className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-1 pb-2"
-      data-pinned-requests
-      data-open-count={open}
-    >
-      {open > 1 ? (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-1 pb-2" data-pinned-requests>
+      {rest.length > 0 ? (
         <button
           type="button"
+          aria-expanded={props.expanded}
+          aria-label={props.expanded ? t("Einklappen", "Collapse") : t("Alle anzeigen", "Show all")}
           onClick={() => props.setExpanded(!props.expanded)}
-          className="flex items-center gap-1.5 self-start px-1 text-[12.5px] text-muted-foreground hover:text-foreground"
+          className="flex items-center self-start px-1 text-muted-foreground hover:text-foreground"
         >
-          <span className="inline-flex size-5 items-center justify-center rounded-full bg-muted text-[11.5px] font-semibold text-foreground">
-            {open}
-          </span>
-          {props.expanded
-            ? t("Offene Freigaben einklappen", "Collapse pending requests")
-            : t(`${open} offene Freigaben – alle anzeigen`, `${open} pending requests – show all`)}
           {props.expanded ? (
             <ChevronUpIcon className="size-3.5" />
           ) : (
@@ -218,7 +212,13 @@ export function PinnedRequestStack(props: {
         </button>
       ) : null}
       <div className="relative">
-        <RequestCard request={head} t={t} call={props.call} onChanged={props.onChanged} />
+        <RequestCard
+          request={head}
+          t={t}
+          instance={props.instance}
+          call={props.call}
+          onChanged={props.onChanged}
+        />
         {!props.expanded && rest.length > 0 ? (
           <>
             <div
@@ -240,6 +240,7 @@ export function PinnedRequestStack(props: {
               key={r.id}
               request={r}
               t={t}
+              instance={props.instance}
               call={props.call}
               onChanged={props.onChanged}
             />
@@ -247,49 +248,6 @@ export function PinnedRequestStack(props: {
         : null}
     </div>
   );
-}
-
-export function humanError(
-  e: unknown,
-  t: T,
-  name: string,
-): { message: string; detail: string | null } {
-  const status = (e as { status?: number } | null)?.status;
-  const detail =
-    e instanceof Error && e.message && e.message !== "unavailable"
-      ? `${status ?? ""} ${e.message}`.trim()
-      : null;
-  if (status === 403)
-    return {
-      message: t(
-        `Nur Admins dieser Instanz können ${name} freigeben.`,
-        `Only admins of this instance can approve ${name}.`,
-      ),
-      detail,
-    };
-  if (status === undefined || status === 0)
-    return {
-      message: t(
-        "Die Instanz ist gerade nicht erreichbar. Versuch es gleich noch einmal.",
-        "The instance can't be reached right now. Try again in a moment.",
-      ),
-      detail,
-    };
-  if (status !== undefined && status >= 500)
-    return {
-      message: t(
-        `${name} antwortet gerade nicht. Versuch es gleich noch einmal.`,
-        `${name} isn't responding right now. Try again in a moment.`,
-      ),
-      detail,
-    };
-  return {
-    message: t(
-      "Das hat nicht geklappt. Prüf die Eingabe und versuch es noch einmal.",
-      "That didn't work. Check your input and try again.",
-    ),
-    detail,
-  };
 }
 
 function titleOf(r: SessionUiRequest, t: T, name: string): string {
@@ -305,28 +263,30 @@ function titleOf(r: SessionUiRequest, t: T, name: string): string {
 export function RequestCard({
   request: r,
   t,
+  instance,
   call,
   onChanged,
 }: {
   request: SessionUiRequest;
   t: T;
+  instance: string | null;
   call: (route: string, body: unknown) => Promise<Record<string, unknown>>;
   onChanged: () => Promise<void>;
 }) {
   const entry = entryOf(r.toolkit);
   const name = appName(r.toolkit);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ message: string; detail: string | null } | null>(null);
   const bridge = typeof window !== "undefined" ? window.desktopBridge : undefined;
 
+  // No error line on the card: a failed step leaves the card open, so the
+  // user simply tries again; the next poll reflects the instance's state.
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
-    setError(null);
     try {
       await fn();
       await onChanged();
-    } catch (e) {
-      setError(humanError(e, t, name));
+    } catch {
+      // Card stays open.
     } finally {
       setBusy(false);
     }
@@ -353,7 +313,6 @@ export function RequestCard({
         params={r.params ?? []}
         busy={busy}
         status={r.status}
-        error={error}
         onSubmit={(values) =>
           void run(
             async () => void (await call("ui/resolve", { id: r.id, action: "submit", values })),
@@ -378,14 +337,15 @@ export function RequestCard({
         logo={entry?.logo ?? null}
         busy={busy}
         status={r.status}
-        error={error}
         onDecline={() => void decide("decline")}
         onAuthorize={() =>
           void run(async () => {
             const c = await call("connect", { server: r.toolkit });
-            if (!bridge?.toolhubAuthorize)
+            if (!bridge?.toolhubAuthorize || !instance)
               throw Object.assign(new Error("unavailable"), { status: 0 });
             const result = await bridge.toolhubAuthorize({
+              instanceId: instance,
+              toolkit: r.toolkit,
               authorizeUrl: String(c.authorize_url ?? ""),
             });
             if (result._tag === "cancelled") return;
@@ -406,7 +366,6 @@ export function RequestCard({
       help={t("Dein Agent wartet auf deine Freigabe.", "Your agent is waiting for your approval.")}
       busy={busy}
       status={r.status}
-      error={error}
       onDecide={(a) => void decide(a)}
     />
   );

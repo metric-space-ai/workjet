@@ -36,6 +36,20 @@ export const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/usage": GaugeIcon,
 };
 
+/**
+ * Pages only shown in developer mode (#552). Schnittstellen stays here until
+ * ctox #708 and the main-process → instance OAuth handoff land.
+ */
+export const DEVELOPER_ONLY_SETTINGS_PATHS: ReadonlySet<SettingsPath> = new Set([
+  "/settings/diagnostics",
+  "/settings/integrations",
+]);
+
+/** Pure: is this settings page reachable from navigation and search? */
+export function isSettingsPathVisible(path: SettingsPath, developerMode: boolean): boolean {
+  return developerMode || !DEVELOPER_ONLY_SETTINGS_PATHS.has(path);
+}
+
 export const SETTINGS_NAV_ITEMS = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).map(
   (to) => ({
     to,

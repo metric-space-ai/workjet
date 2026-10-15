@@ -272,6 +272,12 @@ export class CtoxGuestManager extends Context.Service<
       route: string,
       body: unknown,
     ) => Effect.Effect<{ readonly status: number; readonly body: unknown }>;
+    /**
+     * Origin of the instance's live guest (its top frame is bound to the
+     * launch origin), or `undefined` when the instance has no warm guest. The
+     * toolhub login window is bound to this origin.
+     */
+    readonly toolhubInstanceOrigin: (instanceId: string) => Effect.Effect<string | undefined>;
   }
 >()("@workjet/desktop/ctox/CtoxGuestManager") {}
 
@@ -2580,6 +2586,19 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return { status: raw.status, body: raw.body ?? null };
       });
 
+    const toolhubInstanceOrigin = (instanceId: string): Effect.Effect<string | undefined> =>
+      Effect.gen(function* () {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const pooled = state.pool.get(instanceId);
+        if (pooled === undefined || pooled.view.webContents.isDestroyed()) return undefined;
+        try {
+          const url = new URL(pooled.view.webContents.getURL());
+          return url.protocol === "https:" || url.protocol === "http:" ? url.origin : undefined;
+        } catch {
+          return undefined;
+        }
+      });
+
     const requestSessionControl = (
       instanceId: string,
       request: CtoxWorkjetSessionControlRequest,
@@ -2736,6 +2755,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       requestComputerControl,
       requestSessionControl,
       requestToolhub,
+      toolhubInstanceOrigin,
       registerSessionTransferEvents,
     });
   }).pipe(Effect.withSpan("CtoxGuestManager.make"));

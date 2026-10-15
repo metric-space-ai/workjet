@@ -210,7 +210,7 @@ describe("ServerSettings Workjet catalog", () => {
 
     expect(workjet?.managedSystemPrompt).toBe("Coordinate deliberately.");
     expect(workjet?.telemetry).toEqual({
-      claudeCodeEvents: true,
+      claudeCodeEvents: false,
       sidecarEvents: false,
       retentionDays: 30,
     });

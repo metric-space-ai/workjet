@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { SlidersHorizontalIcon, Undo2Icon, XIcon } from "lucide-react";
+import { Checkbox } from "./ui/checkbox";
 
 /** Feed sources a reader can switch off; stored per project on this device. */
 export type FeedSourceKey = "disruptions" | "results" | "sessions" | "prs" | "meeting" | "setup";
@@ -187,23 +188,19 @@ export function FeedSettingsSheet(props: {
                       data-workjet-feed-source={row.key}
                     >
                       <div className="flex items-center gap-3">
-                        <input
+                        <Checkbox
                           id={`feed-source-${row.key}`}
-                          type="checkbox"
-                          className="size-4 accent-blue-500"
                           checked={props.prefs.sources[row.key]}
-                          onChange={(event) =>
+                          onCheckedChange={(value) => {
+                            const checked = value === true;
                             props.onChange(
                               {
                                 ...props.prefs,
-                                sources: {
-                                  ...props.prefs.sources,
-                                  [row.key]: event.target.checked,
-                                },
+                                sources: { ...props.prefs.sources, [row.key]: checked },
                               },
-                              `${row.name} ${event.target.checked ? (de ? "an" : "on") : de ? "aus" : "off"}`,
-                            )
-                          }
+                              `${row.name} ${checked ? (de ? "an" : "on") : de ? "aus" : "off"}`,
+                            );
+                          }}
                         />
                         <span
                           aria-hidden

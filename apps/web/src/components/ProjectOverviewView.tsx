@@ -2,11 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { SupervisorTickStatus } from "./SupervisorTickStatus";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import type { ScopedThreadRef } from "@workjet/contracts";
-import {
-  projectOverviewFormat,
-  projectOverviewSessionError,
-  type ProjectOverviewLanguage,
-} from "../projectOverviewText";
+import { projectOverviewFormat, type ProjectOverviewLanguage } from "../projectOverviewText";
 import {
   projectOverviewStatusTone,
   projectOverviewWorkerName,

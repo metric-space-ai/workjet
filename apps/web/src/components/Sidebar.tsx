@@ -244,7 +244,11 @@ function sidebarActionLabel(action: keyof typeof SIDEBAR_ACTIONS): string {
 }
 
 /** One error toast for every sidebar action: "<Action> failed", one line, no raw reason. */
-function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, _error: unknown, stacked = true) {
+function sidebarFailureToast(
+  action: keyof typeof SIDEBAR_ACTIONS,
+  _error: unknown,
+  stacked = true,
+) {
   const en = workjetUiLanguage() === "en";
   const toast = {
     type: "error" as const,

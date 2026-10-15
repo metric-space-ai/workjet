@@ -119,7 +119,7 @@ describe("Native provider account rows", () => {
     expect(rendered).not.toMatch(/>[^<]*native-api-fixture/);
     expect(rendered).not.toContain("CTOX aktualisieren");
   });
-  it("keeps provider model fields separate and shows a shared refresh failure once", () => {
+  it("keeps provider model fields separate and retries a shared refresh failure silently", () => {
     const rendered = registryHtml(
       {
         ...registry,
@@ -133,8 +133,9 @@ describe("Native provider account rows", () => {
     expect(rendered).toContain('aria-label="Modelle für zai"');
     expect(rendered).toContain("claude-opus-5-5");
     expect(rendered).toContain("glm-5.3-flash");
-    expect(rendered.match(/role="alert"/g)).toHaveLength(1);
-    expect(rendered).toContain("The instance refresh failed.");
+    // A shared read failure is retried silently: no line, the rows stay.
+    expect(rendered).not.toContain('role="alert"');
+    expect(rendered).not.toContain("The instance refresh failed.");
   });
   it("retains an unfamiliar native provider using its real public identity", () => {
     const account = { ...apiAccount, provider: "ctox_proxy" };
@@ -241,7 +242,6 @@ describe("Native provider account rows", () => {
   it("keeps previously observed accounts visible when refreshing fails", () => {
     const rendered = html(registry.accounts[0]!, false, "guest_failed");
     expect(rendered).not.toContain("1 Konten");
-    expect(rendered).not.toContain("guest_failed");
     expect(rendered).toContain("Konto 1");
     expect(rendered).not.toMatch(new RegExp(`>[^<]*${accountId.slice(0, 8)}`));
     expect(rendered).not.toContain("Konten nicht geladen");

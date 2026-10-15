@@ -222,16 +222,13 @@ describe("Provider account table", () => {
     const rendered = renderToStaticMarkup(
       <InstanceConnectionStatus
         label="Welsch"
-        failure={{
-          _tag: "failed",
-          code: "guest_failed",
-          preparation: { stage: "session", reason: "unknown" },
-        }}
+        failure={{ _tag: "failed", code: "authentication_required" }}
         busy={false}
         reconnect={() => {}}
       />,
     );
-    expect(rendered).toContain("Welsch");
+    expect(rendered).toContain("Bei der Instanz anmelden");
+    expect(rendered).not.toContain("nicht erreichbar");
     expect(rendered).toContain("Neu verbinden");
     expect(rendered).not.toContain("<details>");
     expect(rendered).not.toContain("guest_failed");

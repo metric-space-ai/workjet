@@ -42,5 +42,5 @@ function subscribe(listener: () => void) {
 }
 
 export function useProviderDraft(): ProviderDraft | null {
-  return useSyncExternalStore(subscribe, readProviderDraft, () => null);
+  return useSyncExternalStore(subscribe, readProviderDraft, readProviderDraft);
 }

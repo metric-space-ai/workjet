@@ -177,6 +177,12 @@ function ProjectWorkspaceContent({
         onRecomputeKpis={sources.reload}
         feedPosts={sources.feedPosts}
         settingsLinks={settingsLinks}
+        feedPersistence={{
+          instanceId: nativeInstance,
+          configurationId: project.configuration?.id ?? null,
+          projectTitle: project.title,
+          stored: project.configuration?.feedSettings,
+        }}
         connectionMessage={sources.failureText}
         actions={
           <>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { SupervisorTickStatus } from "./SupervisorTickStatus";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import type { ScopedThreadRef } from "@workjet/contracts";
@@ -33,6 +33,7 @@ import {
   FeedSettingsButton,
   FeedSettingsSheet,
   useFeedPreferences,
+  type FeedPersistence,
   type FeedSourceKey,
   type FeedSourceRow,
 } from "./ProjectFeedSettings";
@@ -153,6 +154,9 @@ export function ProjectOverviewView(props: {
   readonly onRecomputeKpis?: (() => void) | undefined;
   /** Shortcuts into the project's settings pages (instant save + undo live there). */
   readonly settingsLinks?: readonly { readonly label: string; readonly onClick: () => void }[];
+  /** Where feed settings are saved (CTOX instance per project, else this device). */
+  readonly feedPersistence?: FeedPersistence;
+  readonly instanceName?: string | null;
 }) {
   const { data, onOpenChat } = props;
   const { text, language } = data;
@@ -169,8 +173,37 @@ export function ProjectOverviewView(props: {
   const developerMode = useClientSettings((settings) => settings.developerMode);
   const missingKpis = data.kpis.every((kpi) => kpi.value === "—");
   const allFeed = buildFeed(data, now, props.feedPosts);
-  const { prefs, change, undo, revert } = useFeedPreferences(data.projectId);
-  const feed = allFeed.filter((item) => prefs.sources[feedSourceOf(item.kind)]);
+  const { prefs, change, undo, revert, saved } = useFeedPreferences(
+    data.projectId,
+    props.feedPersistence,
+  );
+  const windowStart = prefs.windowDays === null ? null : now - prefs.windowDays * 86_400_000;
+  const feed = allFeed.filter(
+    (item) =>
+      prefs.sources[feedSourceOf(item.kind)] &&
+      (windowStart === null || Date.parse(item.at) >= windowStart),
+  );
+  // Zustellung: desktop alert for disruptions that appear while the overview is open.
+  const seenDisruptions = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const ids = allFeed.filter((item) => item.kind === "disruption").map((item) => item.id);
+    if (seenDisruptions.current === null) {
+      seenDisruptions.current = new Set(ids);
+      return;
+    }
+    for (const id of ids) {
+      if (seenDisruptions.current.has(id)) continue;
+      seenDisruptions.current.add(id);
+      const item = allFeed.find((entry) => entry.id === id);
+      if (
+        prefs.notifyDisruptions &&
+        item &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      )
+        new Notification(item.headline ?? item.author, { body: item.body.slice(0, 180) });
+    }
+  });
   const [tab, setTab] = useState<FeedTab>(prefs.defaultTab);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [marks, toggleMark] = useFeedBookmarks();
@@ -306,6 +339,8 @@ export function ProjectOverviewView(props: {
           marks={marks}
           onToggleMark={toggleMark}
           onOpenSettings={() => setSettingsOpen(true)}
+          threadMode={prefs.replies}
+          fullBody={prefs.body === "full"}
           language={language}
           text={text}
           locale={locale}
@@ -313,7 +348,9 @@ export function ProjectOverviewView(props: {
           open={open}
           header={
             <div className="px-4 pt-3 pb-1">
-              <h1 className="break-words text-[20px] font-bold tracking-tight">{data.title}</h1>
+              <h1 className="break-words text-[20px] font-bold tracking-tight">
+                {prefs.title ?? data.title}
+              </h1>
               {data.summary !== null && (
                 <p className="mt-0.5 text-[14px] leading-5 text-muted-foreground">{data.summary}</p>
               )}
@@ -349,7 +386,16 @@ export function ProjectOverviewView(props: {
       </div>
       {settingsOpen ? (
         <FeedSettingsSheet
-          title={`Feed · ${data.title}`}
+          title={`Feed · ${prefs.title ?? data.title}`}
+          projectTitle={data.title}
+          saved={saved}
+          instanceName={props.instanceName ?? null}
+          meeting={
+            data.recurring && weekday
+              ? `${weekday} · ${data.recurring.time} (${data.recurring.timezone})`
+              : null
+          }
+          onOpenMeetingSettings={props.settingsLinks?.[0]?.onClick}
           language={language}
           rows={sourceRows}
           prefs={prefs}
@@ -959,6 +1005,8 @@ function FeedSection(props: {
   readonly marks: ReadonlySet<string>;
   readonly onToggleMark: (id: string) => void;
   readonly onOpenSettings: () => void;
+  readonly threadMode: "three" | "all";
+  readonly fullBody: boolean;
   readonly language: ProjectOverviewLanguage;
 }) {
   const { text, tab, marks } = props;
@@ -1046,7 +1094,7 @@ function FeedSection(props: {
             {groups.map((group) => {
               const id = group[0]!.id;
               const expanded = expandedThreads.has(id);
-              const shown = expanded ? group : group.slice(0, 3);
+              const shown = expanded || props.threadMode === "all" ? group : group.slice(0, 3);
               return (
                 <li key={id} className="border-b border-border pt-3">
                   <ol>
@@ -1058,6 +1106,7 @@ function FeedSection(props: {
                         locale={props.locale}
                         now={props.now}
                         replies={index === 0 ? group.length - 1 : 0}
+                        fullBody={props.fullBody}
                         threadLine={index < shown.length - 1}
                         marked={marks.has(item.id)}
                         onToggleMark={() => toggleMark(item.id)}
@@ -1068,7 +1117,7 @@ function FeedSection(props: {
                       />
                     ))}
                   </ol>
-                  {group.length > 3 ? (
+                  {group.length > 3 && props.threadMode !== "all" ? (
                     <button
                       type="button"
                       className="mb-3 ml-[4.25rem] text-[15px] text-blue-400 hover:text-blue-300"
@@ -1145,6 +1194,7 @@ function FeedCard(props: {
   readonly locale: string;
   readonly now: number;
   readonly replies: number;
+  readonly fullBody: boolean;
   readonly marked: boolean;
   readonly onToggleMark: () => void;
   readonly onOpen: (() => void) | undefined;
@@ -1152,7 +1202,7 @@ function FeedCard(props: {
   const { item, text } = props;
   const de = props.locale.startsWith("de");
   const [expanded, setExpanded] = useState(false);
-  const long = item.body.length > 280;
+  const long = !props.fullBody && item.body.length > 280;
   const initials =
     item.author
       .split(/[\s-]+/)

@@ -2,14 +2,21 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { NetworkDiagram } from "./NetworkDiagram";
+import {
+  networkCapabilityTags,
+  networkPlatform,
+  type NetworkClientNode,
+  type NetworkComputerNode,
+} from "./networkTopology";
 import type {
   CtoxInstanceAppsResult,
   CtoxManagedInstance,
   EnvironmentId,
+  WorkjetComputer,
   WorkjetDeviceBindingSummary,
 } from "@workjet/contracts";
 import { usePrimarySettings } from "../../hooks/useSettings";
-import { useEnvironments } from "../../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { createComputerMembershipStore } from "../../workjetComputerMembership";
@@ -20,7 +27,11 @@ import {
 } from "../../instanceSetup";
 import { Button } from "../ui/button";
 import { workjetHarnessDisplayLabel } from "../settings/WorkjetWorkerEditor";
-import { listBusinessOsDevices } from "../settings/businessOsDeviceControl";
+import {
+  listBusinessOsDevices,
+  workjetDeviceDisplayName,
+} from "../settings/businessOsDeviceControl";
+import { mergeComputerRows } from "../settings/WorkjetComputersSettings";
 import { canActivateCtoxInstance, useCtoxMode } from "./CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 
@@ -75,6 +86,7 @@ function InstanceNode({
   const [inspected, setInspected] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const computers = usePrimarySettings((settings) => settings.workjet.computers);
   useEffect(() => {
     let cancelled = false;
@@ -110,44 +122,46 @@ function InstanceNode({
     membership.instanceId === instance.id && membership.phase === "ready"
       ? membership.computers.filter((computer) => computer.status === "assigned")
       : null;
-  const host = assigned?.find((computer) => computer.selfHostedColocation);
-  const hostComputer = host ? computers.find((computer) => computer.id === host.id) : undefined;
-  const hostConnected =
-    hostComputer &&
+  const isConnected = (computer: WorkjetComputer | null) =>
+    computer !== null &&
     environments.some(
       (environment) =>
-        environment.environmentId === hostComputer.environmentId &&
+        environment.environmentId === computer.environmentId &&
         environment.connection.phase === "connected",
     );
-  const satelliteNodes =
-    assigned
-      ?.filter((computer) => !computer.selfHostedColocation)
-      .map((computer) => {
-        const configured = computers.find((candidate) => candidate.id === computer.id);
-        return {
-          id: computer.id,
-          name: computer.displayName,
-          connected: Boolean(
-            configured &&
-            environments.some(
-              (environment) =>
-                environment.environmentId === configured.environmentId &&
-                environment.connection.phase === "connected",
-            ),
-          ),
-        };
-      }) ?? null;
-  const inspectedComputer =
-    inspected === "master"
-      ? hostComputer
-      : computers.find(
-          (computer) =>
-            computer.id === inspected && satelliteNodes?.some((node) => node.id === computer.id),
-        );
-  const inspectedConnected =
-    inspected === "master"
-      ? hostConnected
-      : satelliteNodes?.find((computer) => computer.id === inspected)?.connected;
+  // Ein Knoten je registriertem Rechner der Instanz, auch der Rechner, auf
+  // dem die Instanz selbst läuft. Lokale Erkennung ergänzt Plattform,
+  // Fähigkeiten und Verbindung, wenn dieselbe Maschine hier eingerichtet ist.
+  const rows = assigned ? mergeComputerRows(computers, assigned).filter((row) => row.native) : [];
+  const computerNodes: NetworkComputerNode[] = rows.map(({ computer, native }) => ({
+    id: native!.id,
+    name: native!.displayName,
+    platform: networkPlatform(
+      computer?.metadata?.facts?.operatingSystem ?? native!.detectedFacts?.operatingSystem,
+    ),
+    connected: isConnected(computer),
+    tags: networkCapabilityTags(computer?.metadata, native),
+  }));
+  const clientNodes: NetworkClientNode[] = [
+    {
+      id: "this-device",
+      name:
+        computers.find((computer) => computer.environmentId === primaryEnvironmentId)?.label ??
+        "Workjet",
+      kind: "this-device",
+      connected: instance.healthSummary.dataPlaneReady,
+    },
+    // CTOX meldet für Kopplungen keine Lebendigkeit: getrennt, bis sie es tut.
+    ...(devices ?? []).map((device) => ({
+      id: `device:${device.devicePairingId}`,
+      name: workjetDeviceDisplayName(device),
+      kind: "device" as const,
+      connected: false,
+    })),
+  ];
+  const inspectedRow = rows.find((row) => row.native!.id === inspected) ?? null;
+  const inspectedClient = clientNodes.find((client) => client.id === inspected) ?? null;
+  const inspectedNode = computerNodes.find((node) => node.id === inspected) ?? null;
   return (
     <article className="network-instance" data-workjet-network-instance={instance.id}>
       <header className="network-instance-header">
@@ -185,10 +199,10 @@ function InstanceNode({
       <div className="network-instance-body">
         <NetworkDiagram
           name={ctoxInstanceDisplayTitle(instance)}
-          host={host?.displayName ?? instanceHostLabel(instance)}
+          host={instanceHostLabel(instance)}
           ready={instance.healthSummary.dataPlaneReady}
-          satellites={satelliteNodes}
-          registeredClients={devices?.length ?? null}
+          clients={clientNodes}
+          computers={computerNodes}
           selected={inspected}
           onInspect={setInspected}
           canAdd={available}
@@ -197,13 +211,7 @@ function InstanceNode({
         {inspected !== null && (
           <aside className="network-inspector" aria-label="Knotendetails">
             <header className="network-inspector-header">
-              <h3>
-                {inspected === "master"
-                  ? "Zentralrechner"
-                  : inspected === "clients"
-                    ? "Geräte"
-                    : "Rechner"}
-              </h3>
+              <h3>{inspected === "master" ? "Instanz" : inspectedClient ? "Client" : "Rechner"}</h3>
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -213,30 +221,29 @@ function InstanceNode({
                 <XIcon size={15} />
               </Button>
             </header>
-            {inspected === "clients" ? (
+            {inspected === "master" ? (
               <>
-                <div className="network-inspector-name">Desktop &amp; Mobil</div>
-                <p>{devices === null ? "—" : `${devices.length} Geräte`}</p>
+                <div className="network-inspector-name">{instanceHostLabel(instance)}</div>
+                <p>{instance.healthSummary.dataPlaneReady ? "Verbunden" : "Getrennt"}</p>
+                <p>{instanceAppsLabel(apps)}</p>
+              </>
+            ) : inspectedClient ? (
+              <>
+                <div className="network-inspector-name">{inspectedClient.name}</div>
+                <p>{inspectedClient.connected ? "Verbunden" : "Getrennt"}</p>
               </>
             ) : (
               <>
-                <div className="network-inspector-name">
-                  {inspected === "master"
-                    ? (host?.displayName ?? instanceHostLabel(instance))
-                    : satelliteNodes?.find((node) => node.id === inspected)?.name}
-                </div>
-                <p>{inspectedConnected ? "Verbunden" : "Nicht bestätigt"}</p>
-                {inspected === "master" && <p>{instanceAppsLabel(apps)}</p>}
+                <div className="network-inspector-name">{inspectedNode?.name ?? "—"}</div>
+                <p>{inspectedNode?.connected ? "Verbunden" : "Getrennt"}</p>
                 <h4>Harnesses</h4>
-                {inspectedConnected && inspectedComputer ? (
-                  <ComputerHarnesses environmentId={inspectedComputer.environmentId} />
+                {inspectedNode?.connected && inspectedRow?.computer ? (
+                  <ComputerHarnesses environmentId={inspectedRow.computer.environmentId} />
                 ) : (
                   <p>—</p>
                 )}
               </>
             )}
-            <h4>Netzwerk</h4>
-            <p>{assigned === null ? "—" : `${satelliteNodes?.length ?? 0} Rechner`}</p>
             <Button
               variant="outline"
               size="sm"
@@ -274,8 +281,8 @@ export function InstanceNetworkOverview({
           name="Erstes Netzwerk"
           host=""
           ready={false}
-          satellites={[]}
-          registeredClients={null}
+          clients={[]}
+          computers={[]}
           selected={null}
           empty
           onInspect={() => {}}

@@ -615,9 +615,13 @@ export function WorkjetComputersSettingsView({
     </Chip>
   ) : membershipUnreachable ? (
     <span className="flex items-center gap-1.5">
-      <Chip tone="error" title={membership?.error ?? undefined}>
-        Rechnerliste nicht abrufbar
-      </Chip>
+      <Chip tone="error">Rechnerliste nicht abrufbar</Chip>
+      {/* Grund sichtbar statt nur im Tooltip (verify2 #4). */}
+      {membership?.error ? (
+        <span className="text-xs text-muted-foreground" data-slot="computers-membership-reason">
+          {membership.error}
+        </span>
+      ) : null}
       {onRetryMembership ? (
         <Button size="xs" variant="outline" onClick={onRetryMembership}>
           Erneut versuchen

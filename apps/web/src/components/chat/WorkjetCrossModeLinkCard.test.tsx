@@ -161,7 +161,8 @@ describe("WorkjetCrossModeLinkCard", () => {
     const text = textContent(card);
     expect(text).toContain("Verknüpft mit");
     expect(text).toContain("ACME Q3 renewal");
-    expect(text).toContain("crm/deal/deal_4711");
+    // Rohdaten (module/kind/id) bleiben außerhalb der Diagnose weg.
+    expect(text).not.toContain("crm/deal/deal_4711");
   });
 
   it("stays display-only without the controlled action props", () => {
@@ -175,20 +176,18 @@ describe("WorkjetCrossModeLinkCard", () => {
 
   it("offers `Return to Business OS` only when the host can select the counterpart", () => {
     const withoutHost = WorkjetCrossModeLinkCard({ model: model() }) as InspectableElement;
-    expect(
-      descendants(withoutHost.props.children).some(
-        (element) => element.props["data-workjet-crossmode-open"] !== undefined,
-      ),
-    ).toBe(false);
+    const openButton = (root: InspectableElement) =>
+      descendants(root.props.children)
+        .map((element) => (element.props["render"] ?? element) as InspectableElement)
+        .find((element) => element.props?.["data-workjet-crossmode-open"] !== undefined);
+    expect(openButton(withoutHost)).toBeUndefined();
 
     const onOpenBusinessOsObject = vi.fn();
     const withHost = WorkjetCrossModeLinkCard({
       model: model(),
       onOpenBusinessOsObject,
     }) as InspectableElement;
-    const open = descendants(withHost.props.children).find(
-      (element) => element.props["data-workjet-crossmode-open"] !== undefined,
-    );
+    const open = openButton(withHost);
     expect(open).toBeDefined();
     (open?.props["onClick"] as () => void)();
     expect(onOpenBusinessOsObject).toHaveBeenCalledWith({

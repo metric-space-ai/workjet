@@ -9,7 +9,12 @@ import {
   IntegrationsSettingsPanel,
 } from "../settings/IntegrationsSettings";
 import { INTEGRATIONS } from "../settings/integrationsCatalog";
-import { canSubmitCredential } from "../toolhub/ToolhubCards";
+import {
+  canSubmitCredential,
+  ConfirmCard,
+  ConnectCard,
+  CredentialCard,
+} from "../toolhub/ToolhubCards";
 import {
   cacheable,
   SessionRequestCards,
@@ -130,5 +135,55 @@ describe("store tiles", () => {
     expect(CONNECTABLE_INTEGRATIONS).toHaveLength(
       INTEGRATIONS.filter((e) => e.connect !== null).length,
     );
+  });
+});
+
+describe("Toolhub cards (UI-Vertrag)", () => {
+  const t = (de: string) => de;
+
+  it("uses ui/button actions, no explainer line and no status pill", () => {
+    const markup = renderToStaticMarkup(
+      <CredentialCard
+        t={t}
+        appName="Zendesk"
+        title="Zendesk API-Schlüssel"
+        secrets={[{ name: "token", secret: true }]}
+        params={[]}
+        onSubmit={() => undefined}
+        onDecline={() => undefined}
+      />,
+    );
+    expect(markup).toContain('data-slot="button"');
+    expect(markup).toContain("Ablehnen");
+    expect(markup).toContain("Sicher speichern");
+    expect(markup).not.toContain("Bot");
+    expect(markup).not.toContain("Agent");
+    expect(markup).not.toContain("rounded-full border px-4");
+  });
+
+  it("shows one short error line and turns the primary into a retry", () => {
+    const markup = renderToStaticMarkup(
+      <ConnectCard
+        t={t}
+        name="Linear"
+        description="Tickets"
+        logo={null}
+        error="Nicht verbunden"
+        onAuthorize={() => undefined}
+        onDecline={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Nicht verbunden");
+    expect(markup).toContain("Erneut versuchen");
+    expect(markup).not.toContain("Autorisieren");
+  });
+
+  it("shows settled cards as a status dot only", () => {
+    const markup = renderToStaticMarkup(
+      <ConfirmCard t={t} title="Linear freigeben" status="done" onDecide={() => undefined} />,
+    );
+    expect(markup).toContain('data-toolhub-status-dot="done"');
+    expect(markup).not.toContain("Freigegeben");
+    expect(markup).not.toContain("emerald");
   });
 });

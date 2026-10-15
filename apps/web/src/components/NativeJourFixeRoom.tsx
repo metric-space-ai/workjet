@@ -20,6 +20,9 @@ const nativeJourFixeSpeechProvider = createJourFixeGatewayMicrophoneProvider({
   prepareNarration: nativeJourFixeNarrationProvider.prepareNarration,
 });
 
+/** Feste deutsche Zeile; der Rohtext bleibt in der Konsole (UI-Vertrag §2). */
+export const NATIVE_JOUR_FIXE_LOAD_FAILED = "Termin nicht geladen";
+
 export function NativeJourFixeRoom(props: {
   readonly instanceId: string;
   readonly projectId: ProjectId;
@@ -142,8 +145,9 @@ function NativeJourFixeRoomContent({
         }
       },
       (reason: unknown) => {
-        if (!cancelled)
-          setError(reason instanceof Error ? reason.message : "Termin nicht verfügbar.");
+        if (cancelled) return;
+        console.warn(NATIVE_JOUR_FIXE_LOAD_FAILED, reason);
+        setError(NATIVE_JOUR_FIXE_LOAD_FAILED);
       },
     );
     return () => {
@@ -158,6 +162,14 @@ function NativeJourFixeRoomContent({
       recovery.current = null;
     };
   }, [session]);
+  const [slowLoad, setSlowLoad] = useState(false);
+  const waitingForFirstRead = result === null && error === null;
+  useEffect(() => {
+    if (!waitingForFirstRead) return;
+    setSlowLoad(false);
+    const timer = window.setTimeout(() => setSlowLoad(true), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [waitingForFirstRead]);
   const meeting = result?.meeting ? mapJourFixeMeeting(result.meeting) : null;
   if (meeting === null)
     return (
@@ -169,21 +181,25 @@ function NativeJourFixeRoomContent({
           ← {projectTitle}
         </Button>
         <h1 className="mt-5 text-xl font-semibold">Regeltermin</h1>
-        <p className="mt-2 text-sm text-muted-foreground" role="status">
-          {error ?? (result ? "Noch kein Termin vorbereitet" : "Termin wird geladen …")}
-        </p>
-        <Button
-          className="mt-4"
-          size="sm"
-          variant="outline"
-          onClick={() =>
-            void refresh().catch((reason: unknown) =>
-              setError(reason instanceof Error ? reason.message : "Termin nicht verfügbar."),
-            )
-          }
-        >
-          Aktualisieren
-        </Button>
+        {error || result || slowLoad ? (
+          <div className="mt-2 flex items-center gap-2 text-[13.5px] text-muted-foreground">
+            <span role="status">
+              {error ?? (result ? "Kein Termin vorbereitet" : NATIVE_JOUR_FIXE_LOAD_FAILED)}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                void refresh().catch((reason: unknown) => {
+                  console.warn(NATIVE_JOUR_FIXE_LOAD_FAILED, reason);
+                  setError(NATIVE_JOUR_FIXE_LOAD_FAILED);
+                })
+              }
+            >
+              {result && !error ? "Aktualisieren" : "Erneut versuchen"}
+            </Button>
+          </div>
+        ) : null}
       </main>
     );
   async function accepted(action: () => Promise<WorkjetJourFixeReadResponse>) {

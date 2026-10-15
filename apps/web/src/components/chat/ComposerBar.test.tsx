@@ -61,7 +61,11 @@ describe("shared composer bar", () => {
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     expect(html).toContain("lucide-plus");
-    expect(html).toContain("lucide-settings");
+  });
+  it("keeps the target chips on one line in a narrow composer (Audit B #6)", () => {
+    const html = render();
+    expect(html).toContain("@container/composer-bar");
+    expect(html).toMatch(/data-composer-bar-target="true" class="[^"]*flex-nowrap/);
   });
   it("keeps a chosen Luma in the bar without competing manual controls", () => {
     const html = render(true);

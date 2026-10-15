@@ -34,9 +34,10 @@ function expectResponsiveXsControl(markup: string | undefined) {
   expect(markup).toBeDefined();
   expect(markup).toContain("h-7");
   expect(markup).toContain("gap-1");
-  expect(markup).toContain("text-sm");
+  // Schrift springt unter sm nicht mehr auf 14 px (Audit B #17).
+  expect(markup).toContain("text-xs");
   expect(markup).toContain("sm:h-6");
-  expect(markup).toContain("sm:text-xs");
+  expect(markup).not.toContain("sm:text-xs");
   expect(markup).toContain("w-7");
   expect(markup).toContain("px-0");
   expect(markup).toContain("sm:w-6");

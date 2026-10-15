@@ -112,10 +112,6 @@ function Fixture() {
           t={t}
           appName="Zendesk"
           title={t("Zendesk API-Schlüssel", "Zendesk API key")}
-          help={t(
-            "Wird nur auf Welsch gespeichert und von allen Agenten der Instanz genutzt.",
-            "Stored only on Welsch and used by all agents on the instance.",
-          )}
           secrets={[{ name: "token", secret: true }]}
           params={zendesk.params ?? []}
           onSubmit={() => undefined}

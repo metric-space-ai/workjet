@@ -5,7 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@workjet/client-runtime/state/runtime";
 import type { ChangeRequestStateLike } from "@workjet/client-runtime/state/thread-settled";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -16,6 +16,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
@@ -44,6 +45,8 @@ interface ChatHeaderProps {
   rightPanelOpen: boolean;
   approvalControl?: ReactNode;
   onNewThreadInProject: () => void;
+  /** Öffnet die Projektübersicht (Klick auf den Projektnamen im Pfad). */
+  onOpenProject: () => void;
 }
 
 /**
@@ -72,6 +75,7 @@ export const ChatHeader = memo(function ChatHeader({
   rightPanelOpen,
   approvalControl,
   onNewThreadInProject,
+  onOpenProject,
 }: ChatHeaderProps) {
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
@@ -159,7 +163,7 @@ export const ChatHeader = memo(function ChatHeader({
       )}
       onContextMenu={handleHeaderContextMenu}
     >
-      <WorkspaceBreadcrumb ariaLabel="Thread breadcrumb" className="flex-1">
+      <WorkspaceBreadcrumb ariaLabel="Pfad" className="flex-1">
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
@@ -171,8 +175,8 @@ export const ChatHeader = memo(function ChatHeader({
                   render={
                     <button
                       type="button"
-                      aria-label={`Neue Unterhaltung in ${activeProjectName}`}
-                      onClick={onNewThreadInProject}
+                      aria-label={`Projekt ${activeProjectName} öffnen`}
+                      onClick={onOpenProject}
                       className="inline-flex min-h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     />
                   }
@@ -185,7 +189,24 @@ export const ChatHeader = memo(function ChatHeader({
                   />
                   <span className="max-w-40 truncate">{activeProjectName}</span>
                 </TooltipTrigger>
-                <TooltipPopup side="top">Neue Unterhaltung in {activeProjectName}</TooltipPopup>
+                <TooltipPopup side="top">Projekt öffnen</TooltipPopup>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Neue Unterhaltung in ${activeProjectName}`}
+                      onClick={onNewThreadInProject}
+                      className="ms-0.5"
+                    />
+                  }
+                >
+                  <PlusIcon aria-hidden className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipPopup side="top">Neue Unterhaltung</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator />
@@ -220,10 +241,7 @@ export const ChatHeader = memo(function ChatHeader({
                 }
               >
                 <h2 className="min-w-0 truncate">{activeThreadTitle}</h2>
-                <ChevronDownIcon
-                  aria-hidden
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
-                />
+                <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>

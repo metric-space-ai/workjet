@@ -1,11 +1,11 @@
 /**
  * Fehler im Chat-Composer (UI-Vertrag §2): nie Rohtext, höchstens eine deutsche
- * Zeile mit genau einer Aktion. Der Rohtext bleibt hinter „Details“.
+ * Zeile mit genau einer Aktion. Der Rohtext wird nie angezeigt.
  *
  * - Abgelaufener Instanz-Zugang (401): „Anmeldung der Instanz abgelaufen · Neu verbinden“.
  * - Nicht erreichbar (503, Zeitüberschreitung, Netz): still alle 15 s wiederholen,
- *   erst nach 2 min „Instanz nicht erreichbar · Erneut“.
- * - Alles andere: die deutsche Zeile des Aufrufers · Erneut.
+ *   erst nach 2 min „Instanz nicht erreichbar · Erneut versuchen“.
+ * - Alles andere: die deutsche Zeile des Aufrufers · Erneut versuchen.
  */
 
 export const COMPOSER_SILENT_RETRY_MS = 15_000;
@@ -20,14 +20,14 @@ export interface ComposerErrorLine {
   /** Genau eine Aktion. */
   readonly action: "reconnect" | "retry";
   readonly actionLabel: string;
-  /** Rohtext, nur hinter „Details“. */
+  /** Rohtext, nur für Diagnose und Logs; nie im Chat sichtbar. */
   readonly details: string | null;
 }
 
 export const COMPOSER_AUTHENTICATION_LINE = "Anmeldung der Instanz abgelaufen";
 export const COMPOSER_UNREACHABLE_LINE = "Instanz nicht erreichbar";
 export const COMPOSER_RECONNECT_LABEL = "Neu verbinden";
-export const COMPOSER_RETRY_LABEL = "Erneut";
+export const COMPOSER_RETRY_LABEL = "Erneut versuchen";
 
 const AUTHENTICATION_PATTERN =
   /\b401\b|unauthori[sz]ed|authentication[-_ ]required|needs[-_ ]auth|signed[-_ ]out|sign in to|token (?:has )?expired|session expired|\bexpired\b|abgelaufen|anmelden|anmeldung erforderlich/i;

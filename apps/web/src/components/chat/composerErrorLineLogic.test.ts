@@ -57,7 +57,7 @@ describe("composerErrorLine: Fehler → Zeile", () => {
     expect(line?.kind).toBe("unreachable");
     expect(line?.text).toBe("Instanz nicht erreichbar");
     expect(line?.action).toBe("retry");
-    expect(line?.actionLabel).toBe("Erneut");
+    expect(line?.actionLabel).toBe("Erneut versuchen");
     expect(line?.details).toBe(raw === "Instanz nicht erreichbar" ? null : raw);
   });
 
@@ -67,7 +67,7 @@ describe("composerErrorLine: Fehler → Zeile", () => {
       kind: "failed",
       text: "Preset nicht übernommen",
       action: "retry",
-      actionLabel: "Erneut",
+      actionLabel: "Erneut versuchen",
       details: raw,
     });
   });
@@ -107,7 +107,7 @@ describe("composerErrorLine: Fehler → Zeile", () => {
       expect(line).not.toBeNull();
       expect(words(line!.text)).toBeLessThanOrEqual(12);
       expect(line!.text).not.toMatch(/\d{3}|failed|error/i);
-      expect(["Neu verbinden", "Erneut"]).toContain(line!.actionLabel);
+      expect(["Neu verbinden", "Erneut versuchen"]).toContain(line!.actionLabel);
     }
   });
 

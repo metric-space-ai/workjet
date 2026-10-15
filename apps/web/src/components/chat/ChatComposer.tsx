@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import type {
   ApprovalRequestId,
   EnvironmentId,
@@ -120,7 +121,9 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerBar } from "./ComposerBar";
-import { ComposerDictationButton } from "./ComposerDictationButton";
+import { ComposerDictationButton, DICTATION_SETTINGS_ROUTE } from "./ComposerDictationButton";
+import { ComposerErrorLine } from "./ComposerErrorLine";
+import type { ComposerErrorLine as ComposerErrorLineValue } from "./composerErrorLineLogic";
 import { ComposerAttachmentMenu } from "./ComposerAttachmentMenu";
 import {
   ComposerComputerControl,
@@ -331,9 +334,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
-      {props.isPreparingWorktree ? (
-        <span className="text-secondary-label text-xs">Worktree wird vorbereitet …</span>
-      ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
         pendingAction={props.pendingAction}
@@ -1025,6 +1025,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * threads. `null` means never edited.
    */
   const [draftManagedInstructions, setDraftManagedInstructions] = useState<string | null>(null);
+  /** Diktat-Fehler als Composer-Fehlerzeile (nie als schwebendes Popover). */
+  const [dictationError, setDictationError] = useState<ComposerErrorLineValue | null>(null);
+  const navigateFromComposer = useNavigate();
   /**
    * Apply the selected worker's EXTRAS and TASK TEXT when the draft becomes a
    * server thread or its Luma choice changes — one dispatch, because the caller drops
@@ -2846,7 +2849,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!durable) {
         toastManager.add({
           type: "warning",
-          title: "Eintrag bleibt evtl. gespeichert",
+          title: "Ablage nicht aktualisiert",
           data: { hideCopyButton: true },
         });
       }
@@ -2925,7 +2928,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         toastManager.add({
           type: "warning",
           title: "Bilder nicht wiederhergestellt",
-          description: missingImageReasons.join(" "),
         });
       }
 
@@ -2953,7 +2955,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!durable) {
         toastManager.add({
           type: "warning",
-          title: "Eintrag kommt evtl. zurück",
+          title: "Ablage nicht aktualisiert",
           data: { hideCopyButton: true },
         });
       }
@@ -3663,6 +3665,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       >
         <WorkjetComputersSettings setupOnly onCompleted={() => setIsAddComputerOpen(false)} />
       </InlineExpand>
+      {dictationError ? (
+        <ComposerErrorLine
+          line={dictationError}
+          onAction={() => void navigateFromComposer({ to: DICTATION_SETTINGS_ROUTE })}
+        />
+      ) : null}
       <div
         className={cn(
           "group rounded-[22px] p-px transition-colors duration-200",
@@ -3988,7 +3996,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             />
                           </button>
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-secondary-label">
+                          <div className="flex h-full w-full items-center justify-center px-1 text-center text-[11px] text-secondary-label">
                             {image.name}
                           </div>
                         )}
@@ -4293,6 +4301,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       onTranscript={(text) =>
                         insertComposerTextAtEnd(text, { ensureLeadingBoundary: true })
                       }
+                      onErrorLine={setDictationError}
                     />
                   }
                 />

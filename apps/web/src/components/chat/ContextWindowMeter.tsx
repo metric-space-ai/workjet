@@ -33,13 +33,13 @@ export function ContextWindowMeter(props: {
       ? `${usedPercentage} · ${formatContextWindowTokens(usage.usedTokens)}/${formatContextWindowTokens(usage.maxTokens ?? null)}`
       : formatContextWindowTokens(usage.usedTokens);
 
-  // Kein Popover: Ring und Zahl stehen inline, Details nur im Tooltip.
+  // Kein Zähler in der Leiste (Owner-Regel): nur der Ring, die Zahl im Tooltip.
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <span
-            className="inline-flex h-7 items-center gap-1.5 text-muted-foreground"
+            className="inline-flex h-7 items-center text-muted-foreground"
             data-context-window-meter="true"
             role="meter"
             aria-valuemin={0}
@@ -77,7 +77,6 @@ export function ContextWindowMeter(props: {
             />
           </svg>
         </span>
-        <span className="text-xs tabular-nums">{usageText}</span>
       </TooltipTrigger>
       <TooltipPopup side="top" className="tabular-nums">
         {showTotalProcessed

@@ -12,10 +12,7 @@ import {
 } from "@workjet/contracts";
 import { parseScopedThreadKey } from "@workjet/client-runtime/environment";
 import type { AgentPanelModel } from "@workjet/client-runtime/state/subagentRuntime";
-import {
-  emptyAgentPanelModel,
-  formatSubagentTokenCount,
-} from "@workjet/client-runtime/state/subagentRuntime";
+import { emptyAgentPanelModel } from "@workjet/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
@@ -227,8 +224,8 @@ const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
 const TIMELINE_LIST_FADE_HEADER = <div className="h-10 sm:h-12" />;
 
-// Header row shown when older turns exist beyond the loaded window. Plain
-// button, no spinner animation; the label change is the loading indicator.
+// Header row shown when older turns exist beyond the loaded window: one
+// outline button (UI-Vertrag §2), disabled while the page loads.
 function TimelineLoadEarlierHeader({
   loading,
   onLoadEarlier,
@@ -241,14 +238,17 @@ function TimelineLoadEarlierHeader({
   return (
     <div className={fade ? "pt-10 sm:pt-12" : "pt-3 sm:pt-4"}>
       <div className="mx-auto w-full max-w-3xl pb-2">
-        <button
-          type="button"
-          onClick={onLoadEarlier}
-          disabled={loading}
-          className="w-full py-1.5 text-xs text-muted-foreground/60 hover:text-foreground disabled:cursor-default"
-        >
-          {loading ? "Wird geladen …" : "Frühere laden"}
-        </button>
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={onLoadEarlier}
+            disabled={loading}
+          >
+            Frühere laden
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -1145,22 +1145,24 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           markdownCwd={ctx.markdownCwd}
         />
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-[12px] tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-0.5">
+            {displayedUserMessage.copyText && (
+              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+            )}
+            {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
+          </div>
           <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+            <TooltipTrigger
+              render={<p className="text-muted-foreground text-[12px] tabular-nums" />}
+            >
               {formatShortTimestamp(row.message.createdAt, ctx.timestampFormat)}
             </TooltipTrigger>
             <TooltipPopup>
               {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
             </TooltipPopup>
           </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -1185,7 +1187,7 @@ function RevertUserMessageButton({ messageId }: { messageId: MessageId }) {
           />
         }
       >
-        <Undo2Icon className="size-3" />
+        <Undo2Icon className="size-3.5" />
       </TooltipTrigger>
       <TooltipPopup side="top">Hierhin zurücksetzen</TooltipPopup>
     </Tooltip>
@@ -1214,7 +1216,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const messageText = row.message.text || (row.message.streaming ? "" : "(leere Antwort)");
 
   return (
     <>
@@ -1233,12 +1235,12 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+          <div className="mt-1.5 flex items-center gap-2 text-[12px] tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100 pointer-coarse:opacity-100">
             <AssistantCopyButton row={row} />
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
-                  render={<p className="text-muted-foreground text-xs tabular-nums" />}
+                  render={<p className="text-muted-foreground text-[12px] tabular-nums" />}
                 >
                   {formatShortTimestamp(row.message.updatedAt, ctx.timestampFormat)}
                 </TooltipTrigger>
@@ -1345,11 +1347,6 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
         >
           {label}
         </span>
-        {steps.length > 1 ? (
-          <span className="shrink-0 text-muted-foreground/50 tabular-nums">
-            {completedCount}/{steps.length}
-          </span>
-        ) : null}
       </button>
       {expanded ? (
         <div className="mt-0.5 space-y-px pl-6">
@@ -1357,7 +1354,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
             <div key={step.step} className="flex items-baseline gap-2 text-[12px] leading-5">
               <span
                 className={cn(
-                  "w-3 shrink-0 text-center font-mono text-[10px]",
+                  "w-3 shrink-0 text-center font-mono text-[11px]",
                   step.status === "completed"
                     ? "text-success"
                     : step.status === "inProgress"
@@ -1460,11 +1457,7 @@ const WorkGroupSection = memo(function WorkGroupSection({
     [groupedEntries],
   );
   const onlyToolEntries = nonEmptyEntries.every((entry) => workLogEntryIsToolLike(entry));
-  const groupLabel = onlyToolEntries
-    ? nonEmptyEntries.length === 1
-      ? "1 Werkzeugaufruf"
-      : `${nonEmptyEntries.length} Werkzeugaufrufe`
-    : "Arbeitsprotokoll";
+  const groupLabel = onlyToolEntries ? "Werkzeugaufrufe" : "Arbeitsprotokoll";
 
   if (nonEmptyEntries.length === 0) return null;
 
@@ -1492,13 +1485,8 @@ function WorkGroupToggleTimelineRow({
   row: Extract<TimelineRow, { kind: "work-toggle" }>;
 }) {
   const ctx = use(TimelineRowCtx);
-  const labelNoun = row.onlyToolEntries
-    ? row.hiddenCount === 1
-      ? "Werkzeugaufruf"
-      : "Werkzeugaufrufe"
-    : row.hiddenCount === 1
-      ? "Eintrag"
-      : "Einträge";
+  // Keine Zähler (Owner-Regel): die Zeile nennt nur, was sich aufklappt.
+  const labelNoun = row.onlyToolEntries ? "Werkzeugaufrufe" : "Einträge";
 
   return (
     <button
@@ -1520,9 +1508,7 @@ function WorkGroupToggleTimelineRow({
           Weniger {row.onlyToolEntries ? "Werkzeugaufrufe" : "Einträge"}
         </span>
       ) : (
-        <span className="font-medium text-foreground">
-          +{row.hiddenCount} frühere {labelNoun}
-        </span>
+        <span className="font-medium text-foreground">Frühere {labelNoun}</span>
       )}
     </button>
   );
@@ -1671,7 +1657,7 @@ function UserMessagePreviewAnnotationCard(props: {
         ) : null}
         <div
           className={cn(
-            "flex items-center gap-2 text-secondary-label text-[10px]",
+            "flex items-center gap-2 text-secondary-label text-[11px]",
             props.annotation.comment && "mt-1",
           )}
         >
@@ -2265,53 +2251,41 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
     coordinatorStatus === "cancelled" ||
     coordinatorStatus === "interrupted";
   const live = workflowGroup !== undefined ? !coordinatorSettled : running + waiting > 0;
-  // Same rule as the panel footer: providers may aggregate member usage into
-  // the coordinator, so count the coordinator only when no members exist.
-  const totalTokens = agents.reduce(
-    (sum, agent) => sum + (agent.usage?.totalTokens ?? 0),
-    spawn.workflowId && agents.length === 0 ? (workflowGroup?.workflow.usage?.totalTokens ?? 0) : 0,
-  );
-
   const livePhase = workflowGroup?.phases.find((phase) => phase.state === "running");
   const workflowName =
     workflowGroup?.workflow.workflowName ?? workflowGroup?.workflow.title ?? null;
 
-  // One steady in-flight presentation (monitoring-pill rule): waiting and
-  // stalled agents read as working; only settled states differentiate.
-  const working = running + waiting;
+  // One steady in-flight presentation: waiting and stalled agents read as
+  // working; the status shows only as the dot, never as a counter or pill.
   const dotClass = live ? "bg-info" : failed > 0 ? "bg-destructive" : "bg-success";
-  const lead = live
-    ? `Kicked off ${agentCount} subagent${agentCount === 1 ? "" : "s"}`
-    : `Ran ${agentCount} subagent${agentCount === 1 ? "" : "s"}`;
-  const status = live
+  const lead = live ? `${agentCount} Worker gestartet` : `${agentCount} Worker fertig`;
+  const statusLabel = live
     ? livePhase
-      ? `${livePhase.title} · ${livePhase.activeCount} working`
-      : working > 0
-        ? `${working} working`
-        : "working"
+      ? `${livePhase.title} läuft`
+      : "Worker arbeiten"
     : failed > 0
-      ? `${failed} failed`
-      : "✓ completed";
+      ? "Worker fehlgeschlagen"
+      : "Worker fertig";
 
   return (
     <button
       type="button"
       onClick={onOpenAgents}
-      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
+      aria-label={`${lead}, Worker öffnen`}
+      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13.5px] transition hover:bg-accent/50"
     >
-      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
+      <span
+        aria-label={statusLabel}
+        role="img"
+        title={statusLabel}
+        className={cn("size-1.5 shrink-0 rounded-full", dotClass)}
+      />
       <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate">
         <span className="font-medium">{lead}</span>
         {workflowName ? <span className="text-muted-foreground"> · {workflowName}</span> : null}
       </span>
-      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem] text-muted-foreground">
-        <span>{status}</span>
-        {totalTokens > 0 ? (
-          <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
-        ) : null}
-        <span className="text-info-foreground">{live ? "Presets öffnen ▸" : "Ansehen ▸"}</span>
-      </span>
+      <span className="ml-auto shrink-0 text-[12px] text-muted-foreground">Worker öffnen</span>
     </button>
   );
 });
@@ -2354,9 +2328,12 @@ const WorkjetMailboxRow = memo(function WorkjetMailboxRow(props: {
           reassignThreads: workjetReassignThreads,
         }
       : {};
+  const peerTitle =
+    workjetReassignThreads.find((thread) => thread.threadId === model.peerThreadId)?.title ?? null;
   return (
     <WorkjetMailboxActivityCard
       model={model}
+      peerTitle={peerTitle}
       {...(model.peerIsLocal ? { onOpenPeerThread: onOpenThread } : {})}
       {...actionProps}
     />

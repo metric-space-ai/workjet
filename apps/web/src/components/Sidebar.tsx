@@ -829,6 +829,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         })
       : null,
   );
+  // The PR chip opens the pull request view: developer mode only (#557).
+  const developerMode = useClientSettings((settings) => settings.developerMode);
   const pr = resolveThreadPr({
     threadBranch: thread.branch,
     gitStatus: gitStatus.data,
@@ -1164,7 +1166,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // A real link so cmd/ctrl+click and middle-click open the host in the
   // browser. A plain click still opens Workjet's pull request view.
   const prBadge =
-    prStatus && pr ? (
+    developerMode && prStatus && pr ? (
       <a
         href={pr.url}
         target="_blank"

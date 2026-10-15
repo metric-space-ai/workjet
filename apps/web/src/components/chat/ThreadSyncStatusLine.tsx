@@ -7,11 +7,12 @@ import {
   type ThreadSyncPhase,
 } from "../../threadSync";
 import { Button } from "../ui/button";
+import { Skeleton } from "../ui/skeleton";
 
 /**
- * Laden und Abgleichen der Nachrichten bleiben still. Dauert es länger als
- * 10 s, steht eine deutsche Statuszeile mit genau einer Aktion da
- * (UI-Vertrag §1.3: ein Laden endet immer).
+ * Laden und Abgleichen der Nachrichten zeigen ein dezentes Skelett ohne Text
+ * (D47). Dauert es länger als 10 s, steht eine deutsche Statuszeile mit genau
+ * einer Aktion da (UI-Vertrag §1.3: ein Laden endet immer).
  */
 export function ThreadSyncStatusLine(props: {
   readonly phase: ThreadSyncPhase;
@@ -28,7 +29,15 @@ export function ThreadSyncStatusLine(props: {
     return () => window.clearTimeout(timer);
   }, [props.phase, props.initiallySlow]);
 
-  if (!slow) return null;
+  if (!slow) {
+    return (
+      <Skeleton
+        aria-hidden="true"
+        data-thread-sync-skeleton="true"
+        className="mx-auto mb-2 h-1.5 w-24 rounded-full"
+      />
+    );
+  }
 
   return (
     <div

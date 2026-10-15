@@ -2928,7 +2928,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         toastManager.add({
           type: "warning",
           title: "Bilder nicht wiederhergestellt",
-          description: missingImageReasons.join(" "),
         });
       }
 

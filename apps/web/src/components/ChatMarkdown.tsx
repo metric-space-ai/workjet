@@ -1194,8 +1194,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Kopieren fehlgeschlagen",
-            description: "Zwischenablage nicht verfügbar.",
+            title: "Zwischenablage nicht verfügbar",
           }),
         );
         return;
@@ -1206,7 +1205,6 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           toastManager.add({
             type: "success",
             title: `${title} kopiert`,
-            description: value,
           });
         },
         (error) => {

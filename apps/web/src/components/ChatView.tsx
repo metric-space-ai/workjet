@@ -3357,7 +3357,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Rechnerwechsel fehlgeschlagen",
-            description: error instanceof Error ? error.message : String(error),
+            description: composerToastDescription(error),
           }),
         );
       } finally {
@@ -3860,7 +3860,7 @@ function ChatViewContent(props: ChatViewProps) {
           stackedThreadToast({
             type: "error",
             title: "Löschen fehlgeschlagen",
-            description: error instanceof Error ? error.message : "Unerwarteter Fehler.",
+            description: composerToastDescription(error),
           }),
         );
       }
@@ -4432,8 +4432,7 @@ function ChatViewContent(props: ChatViewProps) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Kopieren fehlgeschlagen",
-          description: "Zwischenablage nicht verfügbar.",
+          title: "Zwischenablage nicht verfügbar",
         }),
       );
       return;
@@ -4444,7 +4443,6 @@ function ChatViewContent(props: ChatViewProps) {
         toastManager.add({
           type: "success",
           title: "Pfad kopiert",
-          description: relativePath,
         });
       },
       (error) => {
@@ -6870,7 +6868,7 @@ function ChatViewContent(props: ChatViewProps) {
             stackedThreadToast({
               type: "error",
               title: "Auswahl nicht gespeichert",
-              description: error instanceof Error ? error.message : String(error),
+              description: composerToastDescription(error),
             }),
           );
           return false;

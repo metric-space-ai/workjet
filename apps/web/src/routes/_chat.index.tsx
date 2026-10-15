@@ -927,7 +927,7 @@ export function ProjectGallery({
                   { value: "calendar", label: t("Kalender", "Calendar") },
                   { value: "archive", label: t("Archiv", "Archive") },
                 ]}
-                onChange={(next) => {
+                onValueChange={(next) => {
                   // The archive is a list of project cards; it never shows the calendar.
                   setShowArchived(next === "archive");
                   setView(next === "calendar" ? "calendar" : "gallery");

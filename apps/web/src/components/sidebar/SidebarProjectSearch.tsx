@@ -336,7 +336,7 @@ export function SidebarProjectSearchResults(props: {
   readonly onOpened: () => void;
 }) {
   const target = useActiveProjectTarget();
-  if (target === null) return <StatusLine>Keine Unterhaltung mit Projektordner offen</StatusLine>;
+  if (target === null) return <StatusLine>Kein Worker mit Projektordner offen</StatusLine>;
   return props.mode === "files" ? (
     <FileResults
       key={`${target.environmentId}:${target.cwd}`}

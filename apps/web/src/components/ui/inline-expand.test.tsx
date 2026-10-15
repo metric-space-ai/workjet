@@ -139,3 +139,29 @@ describe("InlineExpand independent", () => {
     expect(openInlineExpandCount()).toBe(before);
   });
 });
+
+describe("InlineExpand collapse control (Audit A-06 / D01)", () => {
+  it("sits in its own row before the body instead of floating over it", () => {
+    const html = renderToStaticMarkup(
+      <InlineExpand label="Reparieren" open onOpenChange={() => undefined}>
+        <label>
+          Port
+          <input />
+        </label>
+        <button type="button">Prüfen</button>
+      </InlineExpand>,
+    );
+    const control = html.indexOf('data-slot="inline-expand-collapse"');
+    expect(control).toBeGreaterThan(-1);
+    // Before the first field: no overlap with labels or the first action.
+    expect(control).toBeLessThan(html.indexOf("Port"));
+    expect(control).toBeLessThan(html.indexOf("Prüfen"));
+    // No absolutely positioned control; an icon button with tooltip, no text-xs label.
+    const tag = html.slice(html.lastIndexOf("<button", control), html.indexOf(">", control));
+    // Only pseudo-element helpers of ui/button may be absolute, never the control itself.
+    expect(tag).not.toMatch(/[\s"]absolute[\s"]/);
+    expect(tag).not.toContain("top-1.5");
+    expect(tag).toContain('title="Zuklappen (Esc)"');
+    expect(html).not.toMatch(/<span>Zuklappen<\/span>/);
+  });
+});

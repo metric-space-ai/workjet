@@ -243,14 +243,12 @@ function sidebarActionLabel(action: keyof typeof SIDEBAR_ACTIONS): string {
   return SIDEBAR_ACTIONS[action][workjetUiLanguage() === "en" ? "en" : "de"];
 }
 
-/** One error toast for every sidebar action: "<Action> failed" plus the reason. */
-function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, error: unknown, stacked = true) {
+/** One error toast for every sidebar action: "<Action> failed", one line, no raw reason. */
+function sidebarFailureToast(action: keyof typeof SIDEBAR_ACTIONS, _error: unknown, stacked = true) {
   const en = workjetUiLanguage() === "en";
   const toast = {
     type: "error" as const,
     title: `${SIDEBAR_ACTIONS[action][en ? "en" : "de"]} ${en ? "failed" : "fehlgeschlagen"}`,
-    description:
-      error instanceof Error ? error.message : en ? "Unknown error" : "Unbekannter Fehler",
   };
   return stacked ? stackedThreadToast(toast) : toast;
 }
@@ -1306,54 +1304,54 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         : "Geweckt"}
                     </span>
                   </button>
-                ) : (
+                ) : props.projectTeam ? null : (
+                  // Team rows carry their state as the dot only; the word would squeeze
+                  // the worker name into mid-word breaks (Audit D56).
                   <span className="text-xs">
-                    {props.projectTeam
-                      ? overviewText[projectOverviewWorkerState(thread)]
-                      : variantAction === "unsettle"
-                        ? settledTimeLabel(thread)
-                        : threadTimeLabel(thread)}
+                    {variantAction === "unsettle"
+                      ? settledTimeLabel(thread)
+                      : threadTimeLabel(thread)}
                   </span>
                 )}
               </span>
               {variantAction === "unsnooze" ? (
                 !props.snoozeSupported ? null : (
-                  <button
+                  <Button
                     type="button"
+                    size="icon-xs"
+                    variant="ghost"
                     aria-label="Jetzt wecken"
+                    title={sidebarActionLabel("wake")}
                     onClick={handleUnsnoozeClick}
-                    className={cn(
-                      "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                    )}
+                    className="ml-1"
                   >
-                    <AlarmClockOffIcon aria-hidden className="mb-px size-3" />
-                    <span>{sidebarActionLabel("wake")}</span>
-                  </button>
+                    <AlarmClockOffIcon aria-hidden className="size-3.5" />
+                  </Button>
                 )
               ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
-                <button
+                <Button
                   type="button"
+                  size="icon-xs"
+                  variant="ghost"
                   aria-label="Wieder öffnen"
+                  title={sidebarActionLabel("reopen")}
                   onClick={handleUnsettleClick}
-                  className={cn(
-                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                  )}
+                  className="ml-1"
                 >
-                  <Undo2Icon aria-hidden className="mb-px size-3.5" />
-                  <span>{sidebarActionLabel("reopen")}</span>
-                </button>
+                  <Undo2Icon aria-hidden className="size-3.5" />
+                </Button>
               ) : (
-                <button
+                <Button
                   type="button"
+                  size="icon-xs"
+                  variant="ghost"
                   aria-label="Erledigen"
+                  title={sidebarActionLabel("settle")}
                   onClick={handleSettleClick}
-                  className={cn(
-                    "ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-transparent px-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                  )}
+                  className="ml-1"
                 >
-                  <CheckIcon aria-hidden className="size-3" />
-                  <span>{sidebarActionLabel("settle")}</span>
-                </button>
+                  <CheckIcon aria-hidden className="size-3.5" />
+                </Button>
               )}
             </span>
             {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}

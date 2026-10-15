@@ -285,10 +285,9 @@ export function FeedSettingsSheet(props: {
       <Segment
         aria-label={props.title}
         className="mx-5"
-        fill
         value={tab}
         options={tabs}
-        onChange={setTab}
+        onValueChange={setTab}
       />
       <div
         className="min-h-0 flex-1 overflow-y-auto px-5 py-3"

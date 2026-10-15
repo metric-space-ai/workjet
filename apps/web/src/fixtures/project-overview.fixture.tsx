@@ -3,7 +3,11 @@ import { createRoot } from "react-dom/client";
 import { ProjectOverviewView } from "../components/ProjectOverviewView";
 import { ProjectOverviewQuestion } from "../components/ProjectOverviewDecisions";
 import { ProjectExitModelCardPanel, ProjectExitModelReport } from "../components/ProjectExitModel";
-import { ApprovalRequestId, type CtoxWorkjetProjectControlRequest } from "@workjet/contracts";
+import {
+  ApprovalRequestId,
+  ThreadId,
+  type CtoxWorkjetProjectControlRequest,
+} from "@workjet/contracts";
 import { commitActiveWorkjetSelection } from "../activeWorkjetScope";
 import { buildProjectOwnerOverview } from "../projectOverviewModel";
 import {
@@ -82,6 +86,28 @@ function ExitCardShotView({ shot }: { readonly shot: ExitCardShot }) {
   );
 }
 
+/** `error=login` swaps the disruption for the CLI login error; `dupes=1` adds a second chat of the same worker with the same error. */
+function withFixtureErrors(
+  input: ReturnType<typeof overviewFixture>,
+  query: URLSearchParams,
+): ReturnType<typeof overviewFixture> {
+  const lastError = query.get("error") === "login" ? "Not logged in · Please run /login" : null;
+  let threads = input.threads.map((thread) =>
+    lastError && thread.session?.status === "error"
+      ? { ...thread, session: { ...thread.session, lastError } }
+      : thread,
+  );
+  if (query.get("dupes") === "1") {
+    const disrupted = threads.find((thread) => thread.session?.status === "error");
+    if (disrupted)
+      threads = [
+        ...threads,
+        { ...disrupted, id: ThreadId.make(`${disrupted.id}-2`), createdAt: "2026-10-11T09:00:00Z" },
+      ];
+  }
+  return { ...input, threads };
+}
+
 function OverviewFixture() {
   const query = new URLSearchParams(window.location.search);
   const shot = exitCardShot(query.get("shot"));
@@ -100,7 +126,7 @@ function OverviewFixture() {
       : null;
   const live = query.get("repo");
   if (query.get("theme") === "dark") document.documentElement.classList.add("dark");
-  const baseInput = overviewFixture(variant);
+  const baseInput = withFixtureErrors(overviewFixture(variant), query);
   const input = live
     ? {
         ...overviewFixture("empty"),

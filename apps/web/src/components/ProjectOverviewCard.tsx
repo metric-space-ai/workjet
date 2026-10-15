@@ -44,12 +44,12 @@ import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { workjetUiLanguage } from "../workjetProjectControl";
 import { useSingleInlineExpand } from "./ui/inline-expand";
 
-/** Lumas of a project on its card: who is on the team now, and how many are disrupted. */
-export type ProjectCardCrew = { readonly lumas: number; readonly disrupted: number };
+/** Workers of a project on its card: who is on the team now, and how many are disrupted. */
+export type ProjectCardCrew = { readonly workers: number; readonly disrupted: number };
 
 /**
  * Team state for the card's content area, from the project's own histories: the
- * supervisor and fixed Lumas always count, one-time Lumas while they work or are disrupted.
+ * supervisor and fixed workers always count, one-time workers while they work or are disrupted.
  * `null` without a local project (unknown, the card shows „—“).
  */
 export function projectCardCrew(
@@ -67,7 +67,7 @@ export function projectCardCrew(
       thread.deletedAt == null &&
       (isRunningProjectOneShot(thread) || disrupted(thread)),
   );
-  return { lumas: team.length, disrupted: team.filter(disrupted).length };
+  return { workers: team.length, disrupted: team.filter(disrupted).length };
 }
 
 const JOUR_FIXE_WEEKDAYS = {
@@ -75,13 +75,25 @@ const JOUR_FIXE_WEEKDAYS = {
   en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
 } as const;
 
-/** „Di · 10:00“: weekday and time of the weekly Regeltermin, else „—“. */
+/** „Di · 10:00“: weekday and time of the weekly Regeltermin; `null` without one. */
 export function projectCardJourFixeLabel(
   jourFixe: { readonly weekday: number; readonly time: string } | null | undefined,
   language: "de" | "en",
-): string {
+): string | null {
   const weekday = jourFixe ? JOUR_FIXE_WEEKDAYS[language][jourFixe.weekday - 1] : undefined;
-  return jourFixe && weekday ? `${weekday} · ${jourFixe.time}` : "—";
+  return jourFixe && weekday ? `${weekday} · ${jourFixe.time}` : null;
+}
+
+/** One or two letters for the calm placeholder of a card without content. */
+export function projectCardMonogram(title: string): string {
+  const words = title
+    .trim()
+    .split(/[\s_-]+/u)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word));
+  return words
+    .slice(0, 2)
+    .map((word) => (word.match(/[\p{L}\p{N}]/u)?.[0] ?? "").toLocaleUpperCase())
+    .join("");
 }
 
 /**
@@ -296,6 +308,66 @@ export function ProjectOverviewCard({
       setArchivePending(false);
     }
   };
+  // KPI slots with data only: a value without data drops out with its label, and a
+  // card without any value has no KPI strip at all.
+  const kpiSlots = (["first", "second", "third"] as const).flatMap((position, index) => {
+    if (project.native && knownKpis) {
+      // Leer und gerade im Editor: nur die erste Kachel, aufgeklappt.
+      if (kpisEmpty ? index > 0 || editingKpi !== 0 : !knownKpis.items[index]) return [];
+      return [
+        <ProjectKpiTile
+          key={position}
+          projectId={project.id}
+          index={index}
+          kpis={knownKpis}
+          expanded={editingKpi === index}
+          onExpandedChange={(open) => setEditingKpi(open ? index : null)}
+          onSave={onSaveKpis}
+          onRefresh={onRefreshKpis}
+        />,
+      ];
+    }
+    // Native KPIs unbekannt (nie gelesen, Lesen gescheitert, kein gespeicherter
+    // Stand): nur ein selbst gesetzter Wert der Kachel bleibt.
+    if (project.native && !overview.slots[index]) return [];
+    const slot = slots[index] ?? null;
+    if (slot === null) return [];
+    if (slot.kind === "updated" && activityAt === null) return [];
+    if (slot.kind === "text" && (slot.value.trim() === "" || slot.value.trim() === "—")) return [];
+    return [
+      <div
+        key={position}
+        className="flex min-h-12 min-w-0 flex-col gap-0.5"
+        data-workjet-project-card-slot={index + 1}
+      >
+        <dt
+          title={slot.label}
+          className="min-w-0 break-words text-[11px] leading-4 text-muted-foreground line-clamp-2"
+        >
+          {slot.label}
+        </dt>
+        <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+          {slot.kind === "link" ? (
+            <Button
+              size="xs"
+              variant="outline"
+              render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
+            >
+              {t("Link öffnen", "Open link")}
+            </Button>
+          ) : slot.kind === "updated" ? (
+            <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
+              {activityAt === null ? null : projectUpdateAge(activityAt)}
+            </time>
+          ) : slot.kind === "metric" ? (
+            `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+          ) : (
+            slot.value
+          )}
+        </dd>
+      </div>,
+    ];
+  });
   // The whole card opens the project; its own controls keep their actions, a drag
   // (pointer moved) or a click inside an open editor never opens it.
   const openFromCard = (event: ReactMouseEvent<HTMLElement>) => {
@@ -538,66 +610,85 @@ export function ProjectOverviewCard({
           )}
         </div>
       ) : (
-        // Ohne Vorschau keine leere Fläche: nächster Regeltermin und Team als Chips.
+        // Ohne Vorschau keine leere Fläche: nächster Regeltermin und Worker, soweit
+        // bekannt. Ohne jeden Wert bleibt die Fläche ruhig mit dem Projekt-Monogramm.
         <>
-          <div
-            className="flex min-h-20 min-w-0 flex-1 flex-col justify-center gap-2 px-3 py-3"
-            data-workjet-project-card-content=""
-          >
-            <dl className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-              <div className="flex min-w-0 flex-col gap-0.5" data-workjet-project-card-jour-fixe="">
-                <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-                  <CalendarClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                  {t("Regeltermin", "Regular meeting")}
-                </dt>
-                <dd
-                  className={`order-first truncate text-[22px] leading-7 font-semibold tracking-tight tabular-nums ${
-                    jourFixe === null ? "text-muted-foreground" : ""
-                  }`}
-                >
-                  {jourFixeLabel}
-                </dd>
-              </div>
-              <div
-                className="flex min-w-0 flex-col gap-0.5"
-                data-workjet-project-card-lumas={crew?.lumas ?? ""}
-              >
-                <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-                  <UserRoundIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                  {t("Lumas", "Lumas")}
-                </dt>
-                <dd className="order-first flex min-w-0 items-center gap-1.5">
-                  <span
-                    className={`text-[22px] leading-7 font-semibold tracking-tight tabular-nums ${
-                      crew == null ? "text-muted-foreground" : ""
-                    }`}
-                  >
-                    {crew == null ? "—" : crew.lumas}
-                  </span>
-                  {crew != null && crew.disrupted > 0 ? (
-                    <span
-                      className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-destructive/40 px-1.5 text-[11px] text-destructive tabular-nums"
-                      data-workjet-project-card-disrupted={crew.disrupted}
+          {jourFixeLabel !== null || crew != null || canRate ? (
+            <div
+              className="flex min-h-20 min-w-0 flex-1 flex-col justify-center gap-2 px-3 py-3"
+              data-workjet-project-card-content=""
+            >
+              {jourFixeLabel !== null || crew != null ? (
+                <dl className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                  {jourFixeLabel !== null ? (
+                    <div
+                      className="flex min-w-0 flex-col gap-0.5"
+                      data-workjet-project-card-jour-fixe=""
                     >
-                      <span aria-hidden="true" className="size-1.5 rounded-full bg-destructive" />
-                      {`${crew.disrupted} ${t("gestört", "disrupted")}`}
-                    </span>
+                      <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                        <CalendarClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                        {t("Regeltermin", "Regular meeting")}
+                      </dt>
+                      <dd className="order-first truncate text-[22px] leading-7 font-semibold tracking-tight tabular-nums">
+                        {jourFixeLabel}
+                      </dd>
+                    </div>
                   ) : null}
-                </dd>
-              </div>
-            </dl>
-            {canRate && (
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => setEditing("exit")}
-                className="self-start"
-                data-workjet-action={`project.exit_model.rate:${project.key}`}
+                  {crew != null ? (
+                    <div
+                      className="flex min-w-0 flex-col gap-0.5"
+                      data-workjet-project-card-workers={crew.workers}
+                    >
+                      <dt className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                        <UserRoundIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                        Worker
+                      </dt>
+                      <dd className="order-first flex min-w-0 items-center gap-1.5">
+                        <span className="text-[22px] leading-7 font-semibold tracking-tight tabular-nums">
+                          {crew.workers}
+                        </span>
+                        {crew.disrupted > 0 ? (
+                          <span
+                            className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-destructive/40 px-1.5 text-[11px] text-destructive tabular-nums"
+                            data-workjet-project-card-disrupted={crew.disrupted}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="size-1.5 rounded-full bg-destructive"
+                            />
+                            {`${crew.disrupted} ${t("gestört", "disrupted")}`}
+                          </span>
+                        ) : null}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : null}
+              {canRate && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setEditing("exit")}
+                  className="self-start"
+                  data-workjet-action={`project.exit_model.rate:${project.key}`}
+                >
+                  {t("Bewerten", "Rate")}
+                </Button>
+              )}
+            </div>
+          ) : exitValued ? null : (
+            <div
+              className="flex min-h-20 flex-1 items-center justify-center"
+              data-workjet-project-card-monogram=""
+            >
+              <span
+                aria-hidden="true"
+                className="flex size-12 items-center justify-center rounded-lg bg-muted/60 text-[22px] font-semibold text-muted-foreground/70"
               >
-                {t("Bewerten", "Rate")}
-              </Button>
-            )}
-          </div>
+                {projectCardMonogram(project.title)}
+              </span>
+            </div>
+          )}
           {exitValued ? (
             <div className="relative h-20" data-workjet-project-stamp-row="">
               <ProjectExitModelSummary
@@ -620,8 +711,8 @@ export function ProjectOverviewCard({
       ) : null}
       {/* mt-auto: the KPI strip sits at the card's foot, so cards of one row stay
           flush (head, KPI strip, actions) with or without a preview image. */}
-      <div className="relative mt-auto border-t border-border px-3 py-3">
-        {kpisEmpty && onSaveKpis && editingKpi === null ? (
+      {kpisEmpty && onSaveKpis && editingKpi === null ? (
+        <div className="relative mt-auto border-t border-border px-3 py-3">
           <div className="flex h-12 items-center" data-workjet-project-card-slots="">
             <Button
               size="sm"
@@ -633,89 +724,17 @@ export function ProjectOverviewCard({
               {t("Kennzahlen festlegen", "Define metrics")}
             </Button>
           </div>
-        ) : (
+        </div>
+      ) : kpiSlots.length > 0 ? (
+        <div className="relative mt-auto border-t border-border px-3 py-3">
           <dl
             className="relative grid min-w-0 grid-cols-3 gap-2"
             data-workjet-project-card-slots=""
           >
-            {(["first", "second", "third"] as const).map((position, index) => {
-              if (project.native && knownKpis) {
-                // Leer und gerade im Editor: nur die erste Kachel, aufgeklappt.
-                if (kpisEmpty && index > 0) return null;
-                return (
-                  <ProjectKpiTile
-                    key={position}
-                    projectId={project.id}
-                    index={index}
-                    kpis={knownKpis}
-                    expanded={editingKpi === index}
-                    onExpandedChange={(open) => setEditingKpi(open ? index : null)}
-                    onSave={onSaveKpis}
-                    onRefresh={onRefreshKpis}
-                  />
-                );
-              }
-              // Native KPIs unbekannt (nie gelesen oder Lesen gescheitert, kein
-              // gespeicherter Stand): ein selbst gesetzter Wert der Kachel bleibt,
-              // sonst „—“ ohne Unterzeile in gleicher Zeilenhöhe.
-              if (project.native && !overview.slots[index])
-                return (
-                  <div
-                    key={position}
-                    className="flex h-12 min-w-0 flex-col gap-0.5"
-                    data-workjet-project-card-slot={index + 1}
-                    data-workjet-kpi-unknown=""
-                  >
-                    <dt className="sr-only">{`KPI ${index + 1}`}</dt>
-                    <dd className="text-[22px] leading-7 font-semibold tracking-tight text-muted-foreground">
-                      —
-                    </dd>
-                  </div>
-                );
-              const slot = slots[index] ?? null;
-              return (
-                <div
-                  key={position}
-                  className="flex min-h-12 min-w-0 flex-col gap-0.5"
-                  data-workjet-project-card-slot={index + 1}
-                >
-                  <dt
-                    title={slot?.label}
-                    className={
-                      slot
-                        ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
-                        : "sr-only"
-                    }
-                  >
-                    {slot?.label ?? `KPI ${index + 1}`}
-                  </dt>
-                  <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
-                    {slot === null ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : slot.kind === "link" ? (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
-                      >
-                        {t("Link öffnen", "Open link")}
-                      </Button>
-                    ) : slot.kind === "updated" ? (
-                      <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
-                        {activityAt === null ? "—" : projectUpdateAge(activityAt)}
-                      </time>
-                    ) : slot.kind === "metric" ? (
-                      `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
-                    ) : (
-                      slot.value
-                    )}
-                  </dd>
-                </div>
-              );
-            })}
+            {kpiSlots}
           </dl>
-        )}
-      </div>
+        </div>
+      ) : null}
       {archiveError && (
         <p role="alert" className="px-3 py-2 text-xs text-destructive">
           {archiveError}

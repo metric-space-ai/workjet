@@ -146,11 +146,11 @@ const galleryProjects: GalleryProject[] = [
 ];
 
 /** WP-K2: Teamstand je Kachel ohne Vorschau (synthetisch). */
-const fixtureCrew: Record<string, { lumas: number; disrupted: number }> = {
-  "instance:lernwerk": { lumas: 3, disrupted: 1 },
-  "local:workjet": { lumas: 2, disrupted: 0 },
-  "instance:nordlicht": { lumas: 1, disrupted: 0 },
-  "instance:hafen": { lumas: 4, disrupted: 2 },
+const fixtureCrew: Record<string, { workers: number; disrupted: number }> = {
+  "instance:lernwerk": { workers: 3, disrupted: 1 },
+  "local:workjet": { workers: 2, disrupted: 0 },
+  "instance:nordlicht": { workers: 1, disrupted: 0 },
+  "instance:hafen": { workers: 4, disrupted: 2 },
 };
 
 /** WP-K1: KPI-Datensätze der Kachel-Ansicht (synthetisch). */

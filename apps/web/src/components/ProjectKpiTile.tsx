@@ -135,17 +135,17 @@ export function ProjectKpiTile({
         ? text.ready
         : metric?.detail || "—";
   const shown = metric && !dirty ? metric.value : "—";
-  const value = (
-    <dd
-      className={`order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere] ${
-        shown === "—" ? "text-muted-foreground" : ""
-      }`}
-      data-workjet-kpi-status={metric?.status ?? "unconfigured"}
-      title={metric?.message ?? undefined}
-    >
-      {shown}
-    </dd>
-  );
+  // Without a value the tile keeps only its sentence as label; no „—“ placeholder.
+  const value =
+    shown === "—" ? null : (
+      <dd
+        className="order-first min-w-0 break-words pe-4 text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]"
+        data-workjet-kpi-status={metric?.status ?? "unconfigured"}
+        title={metric?.message ?? undefined}
+      >
+        {shown}
+      </dd>
+    );
   return (
     <div
       className={`flex min-w-0 flex-col gap-0.5 rounded-md motion-safe:transition-colors motion-safe:duration-200 ${
@@ -160,11 +160,13 @@ export function ProjectKpiTile({
         }
       }}
     >
-      <div className="relative flex h-11.5 min-w-0 flex-col gap-0.5 pe-4">
-        {/* One label line and a fixed slot height (48 px incl. the editor gap): the KPI
-            strip has the same height on every card, so a gallery row stays flush. */}
+      <div className="relative flex min-h-11.5 min-w-0 flex-col gap-0.5">
+        {/* The label uses the full column width and up to two lines instead of an
+            ellipsis; only the value keeps room for the chevron. */}
         <dt
-          className="min-h-4 min-w-0 break-words text-[11px] leading-4 text-muted-foreground line-clamp-1"
+          className={`min-h-4 min-w-0 break-words text-[11px] leading-4 text-muted-foreground line-clamp-2 ${
+            value === null ? "pe-4" : ""
+          }`}
           title={label || undefined}
         >
           {label}

@@ -55,9 +55,10 @@ describe("KPI tile on the project card", () => {
       for (const state of ["nicht berechnet", "not calculated", "nicht festgelegt", "not set"])
         expect(markup).not.toContain(state);
     }
-    // Defined but not calculated: "—" and the KPI's own sentence as its label.
+    // Defined but not calculated: only the KPI's own sentence (two lines), no „—“.
     expect(tile(1, false)).toMatch(/>Revenue this month<\/dt>/);
-    expect(tile(1, false)).toMatch(/>—<\/dd>/);
+    expect(tile(1, false)).toContain("line-clamp-2");
+    expect(tile(1, false)).not.toMatch(/>—<\/dd>/);
   });
 
   it("collapsed: a toggle with aria-expanded=false and an inert editor", () => {

@@ -5,6 +5,7 @@ import {
   ProjectOverviewCard,
   projectCardCrew,
   projectCardJourFixeLabel,
+  projectCardMonogram,
 } from "./ProjectOverviewCard";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { GalleryProject } from "../projectOverview";
@@ -52,7 +53,8 @@ describe("compact project gallery", () => {
     expect(markup).toContain("<img");
     expect(markup).not.toContain("<iframe");
     expect(markup).toContain("2026-10-07");
-    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+    // Native KPIs never read: no placeholder slots.
+    expect(markup).not.toContain("data-workjet-project-card-slot=");
   });
   it("opens the project from the title and preview, and the website only via its own link", () => {
     const markup = renderToStaticMarkup(
@@ -77,10 +79,11 @@ describe("compact project gallery", () => {
     expect(markup).not.toContain("Hide preview");
     expect(markup).not.toContain("If the website blocks");
     expect(markup).not.toContain("Nicht eingerichtet");
-    // KPIs not read yet: "—" without invented labels, never suggestion names.
+    // KPIs not read yet: no placeholder values, no invented labels, no KPI strip.
     expect(markup).not.toContain("Nutzer");
-    expect(markup.match(/data-workjet-kpi-unknown=""/g)).toHaveLength(3);
-    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+    expect(markup).not.toContain("data-workjet-kpi-unknown");
+    expect(markup).not.toContain("data-workjet-project-card-slots");
+    expect(markup).not.toMatch(/>—</);
   });
   it("drops the preview area for a domain without a saved preview", () => {
     const markup = renderToStaticMarkup(
@@ -92,7 +95,8 @@ describe("compact project gallery", () => {
     expect(markup).toContain('aria-label="example.org öffnen"');
     expect(markup).not.toContain("<img");
     expect(markup).not.toContain("<iframe");
-    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+    expect(markup).not.toContain("data-workjet-project-card-slot=");
+    expect(markup).toContain("data-workjet-project-card-monogram");
   });
   it("retains archived values and exposes its actions through the compact menu", () => {
     const markup = renderToStaticMarkup(
@@ -291,7 +295,9 @@ describe("project card: last known state instead of state text", () => {
       />,
     );
     for (const text of stateTexts) expect(markup).not.toContain(text);
-    expect(markup.match(/data-workjet-kpi-unknown=""/g)).toHaveLength(3);
+    // Unknown values drop out entirely: no „—“ and no empty KPI strip.
+    expect(markup).not.toContain("data-workjet-project-card-slots");
+    expect(markup).not.toMatch(/>—</);
     expect(markup).not.toContain("Kennzahlen festlegen");
   });
 
@@ -419,38 +425,62 @@ describe("whole card opens the project (WP-K2)", () => {
             jourFixe: { weekday: 3, time: "09:30", timezone: "Europe/Berlin" },
           },
         }}
-        crew={{ lumas: 3, disrupted: 1 }}
+        crew={{ workers: 3, disrupted: 1 }}
         onOpen={() => {}}
       />,
     );
     expect(markup).not.toContain("data-workjet-project-preview");
     expect(markup).toContain("data-workjet-project-card-content");
     expect(markup).toContain("Mi · 09:30");
-    expect(markup).toContain('data-workjet-project-card-lumas="3"');
+    expect(markup).toContain('data-workjet-project-card-workers="3"');
+    expect(markup).toMatch(/>Worker<\/dt>/);
+    expect(markup).not.toContain("Lumas");
     expect(markup).toContain("1 gestört");
   });
 
-  it("shows „—“ for an unknown Regeltermin and team, never a sentence", () => {
+  it("drops unknown values with their labels and shows only a calm monogram when nothing is known", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard
-        project={{ key: "instance:x", id: "x", title: "X", local: null, native: true }}
+        project={{ key: "instance:x", id: "x", title: "Kontor Nord", local: null, native: true }}
         onOpen={() => {}}
       />,
     );
-    expect(markup).toContain("data-workjet-project-card-content");
-    expect(markup).toMatch(/data-workjet-project-card-jour-fixe=""[\s\S]*?>—<\/dd>/);
-    expect(markup).toMatch(/data-workjet-project-card-lumas=""[\s\S]*?>—<\/span>/);
-    expect(markup).not.toContain("gestört");
+    expect(markup).not.toContain("data-workjet-project-card-content");
+    expect(markup).not.toContain("Regeltermin");
+    expect(markup).not.toContain("Worker");
+    expect(markup).not.toMatch(/>—</);
+    expect(markup).not.toContain("data-workjet-project-card-slots");
+    expect(markup).toMatch(/data-workjet-project-card-monogram=""[\s\S]*?aria-hidden="true"[^>]*>KN</);
+  });
+
+  it("keeps a known value and drops only the unknown one", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard
+        project={{ key: "instance:x", id: "x", title: "X", local: null, native: true }}
+        crew={{ workers: 0, disrupted: 0 }}
+        onOpen={() => {}}
+      />,
+    );
+    expect(markup).toContain('data-workjet-project-card-workers="0"');
+    expect(markup).not.toContain("data-workjet-project-card-jour-fixe");
+    expect(markup).not.toContain("data-workjet-project-card-monogram");
+  });
+
+  it("builds the monogram from up to two words", () => {
+    expect(projectCardMonogram("Kontor")).toBe("K");
+    expect(projectCardMonogram("hafen plan")).toBe("HP");
+    expect(projectCardMonogram("greppy.xyz")).toBe("G");
+    expect(projectCardMonogram("  ")).toBe("");
   });
 
   it("labels the weekly meeting by weekday and time", () => {
     expect(projectCardJourFixeLabel({ weekday: 1, time: "09:00" }, "de")).toBe("Mo · 09:00");
     expect(projectCardJourFixeLabel({ weekday: 7, time: "18:15" }, "en")).toBe("Sun · 18:15");
-    expect(projectCardJourFixeLabel(null, "de")).toBe("—");
-    expect(projectCardJourFixeLabel({ weekday: 9, time: "09:00" }, "de")).toBe("—");
+    expect(projectCardJourFixeLabel(null, "de")).toBeNull();
+    expect(projectCardJourFixeLabel({ weekday: 9, time: "09:00" }, "de")).toBeNull();
   });
 
-  it("counts the project's team and its disrupted Lumas from its own histories", () => {
+  it("counts the project's workers and the disrupted ones from its own histories", () => {
     const local = {
       id: ProjectId.make("p"),
       title: "P",
@@ -477,13 +507,14 @@ describe("whole card opens the project (WP-K2)", () => {
       }) as unknown as EnvironmentThreadShell;
     const threads = [
       thread("supervisor", "supervisor", "ready"),
-      thread("busy", "worker", "running"),
+      // Running with a fresh sign of life; without one it counts as stuck (disrupted).
+      thread("busy", "worker", "running", { updatedAt: new Date().toISOString() }),
       thread("broken", "worker", "error"),
       thread("done", "worker", "ready"),
       thread("other", "worker", "running", { projectId: "q" }),
       thread("archived", "worker", "running", { archivedAt: "2026-10-01T00:00:00.000Z" }),
     ];
-    expect(projectCardCrew(local, threads)).toEqual({ lumas: 3, disrupted: 1 });
+    expect(projectCardCrew(local, threads)).toEqual({ workers: 3, disrupted: 1 });
     expect(projectCardCrew(null, threads)).toBeNull();
   });
 });

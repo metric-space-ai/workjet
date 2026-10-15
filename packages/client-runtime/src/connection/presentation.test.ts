@@ -120,19 +120,20 @@ describe("connection presentation", () => {
   });
 
   it("gives offline status precedence in global messaging", () => {
-    expect(connectionPhaseMessage("connected", TARGET.label, "offline")).toBe("You are offline");
+    expect(connectionPhaseMessage("connected", TARGET.label, "offline")).toBe("Du bist offline");
   });
 
-  it("combines reconnect progress with the latest failure", () => {
+  it("shows reconnect progress in short German without the raw failure", () => {
     const connection = {
       phase: "reconnecting",
       error: "Relay request timed out.",
       traceId: "trace-retry",
     } as const;
-    expect(connectionStatusText(connection)).toBe(
-      "Failed to connect. Reconnecting... Reason: Relay request timed out.",
+    expect(connectionStatusText(connection)).toBe("Verbindet erneut …");
+    expect(connectionStatusTitle(connection)).toBe("Verbindet erneut …");
+    expect(connectionStatusText({ phase: "error", error: "Access denied.", traceId: null })).toBe(
+      "Verbindung fehlgeschlagen",
     );
-    expect(connectionStatusTitle(connection)).toBe("Failed to connect. Reconnecting...");
   });
 
   it("presents the supervisor's offline state without consulting shell state", () => {

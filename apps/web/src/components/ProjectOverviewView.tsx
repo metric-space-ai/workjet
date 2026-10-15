@@ -4,9 +4,13 @@ import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { projectOverviewFormat, type ProjectOverviewLanguage } from "../projectOverviewText";
 import {
+  projectOverviewAttentionRank,
+  projectOverviewSideSections,
   projectOverviewStatusTone,
   projectOverviewWorkerName,
   projectOverviewWorkerState,
+  sortByAttention,
+  type ProjectOverviewSideSection,
   type ProjectOverviewStatus,
   type ProjectOwnerOverview,
 } from "../projectOverviewModel";
@@ -233,13 +237,16 @@ export function ProjectOverviewView(props: {
     allFeed.filter((item) => feedSourceOf(item.kind) === key).length;
   // One row per worker and state: several chats of the same worker in the same state are one entry.
   const liveSeen = new Set<string>();
-  const live = [...data.supervisors, ...data.parents, ...data.workers].flatMap((thread) => {
-    const state = projectOverviewWorkerState(thread);
-    const key = `${projectOverviewWorkerName(thread.title, data.title).name}\u0000${state}`;
-    if (state === "waiting" || liveSeen.has(key)) return [];
-    liveSeen.add(key);
-    return [{ thread, state }];
-  });
+  const live = sortByAttention(
+    [...data.supervisors, ...data.parents, ...data.workers].flatMap((thread) => {
+      const state = projectOverviewWorkerState(thread, now);
+      const key = `${projectOverviewWorkerName(thread.title, data.title).name}\u0000${state}`;
+      if (state === "waiting" || liveSeen.has(key)) return [];
+      liveSeen.add(key);
+      return [{ thread, state }];
+    }),
+    (row) => projectOverviewAttentionRank(row.state),
+  );
   const de = language === "de";
   const card = "rounded-2xl bg-muted/50 px-4 py-3";
   // One entry per goal text; several owners of the same goal sit under it.
@@ -251,6 +258,163 @@ export function ProjectOverviewView(props: {
     if (group) group.goals.push(goal);
     else goalGroups.push({ title: goal.title, goals: [goal] });
   }
+  // Goals that need the owner (disrupted, stuck) lead the list.
+  const sortedGoalGroups = sortByAttention(goalGroups, (group) =>
+    Math.min(...group.goals.map((goal) => projectOverviewAttentionRank(goal.status))),
+  );
+  const weekdayShort = data.recurring
+    ? new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" })
+        .format(new Date(Date.UTC(2026, 0, 4 + data.recurring.weekday)))
+        .replace(/\.$/u, "")
+    : null;
+  const localTimeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const canJoin = props.onOpenJourFixe !== undefined && !joinLocked;
+  const sideSection: Record<ProjectOverviewSideSection, ReactNode> = {
+    live: (
+      <section key="live" className={card} data-workjet-overview-section="live">
+        <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.liveTitle}</h3>
+        <ul className="divide-y divide-border/60">
+          {live.map(({ thread, state }) => (
+            <li key={thread.id}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 py-2 text-left text-[14px] hover:text-foreground"
+                onClick={() => open(thread)}
+                data-workjet-overview-live={state}
+              >
+                <span
+                  aria-hidden
+                  className={
+                    "size-2 shrink-0 rounded-full " +
+                    (state === "running"
+                      ? "bg-emerald-400"
+                      : state === "disrupted" || state === "stuck"
+                        ? "bg-red-400"
+                        : "bg-amber-400")
+                  }
+                />
+                <span className="min-w-0 flex-1 break-words font-semibold">
+                  {localizedWorkerName(
+                    projectOverviewWorkerName(thread.title, data.title).name,
+                    language,
+                  )}
+                </span>
+                <span
+                  className={
+                    "text-[13px] " +
+                    (state === "disrupted" || state === "stuck"
+                      ? "text-red-400"
+                      : "text-muted-foreground")
+                  }
+                >
+                  {text[state]}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ),
+    goals: (
+      <section key="goals" className={card} data-workjet-overview-section="goals">
+        <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.goals}</h3>
+        <ul className="space-y-2 text-[13px]">
+          {sortedGoalGroups.map((group) => (
+            <li key={group.title} className="min-w-0" data-workjet-overview-goal="">
+              <p className="line-clamp-2 break-words font-semibold text-foreground">
+                {group.title}
+              </p>
+              {group.goals.map((goal) => (
+                <p
+                  key={goal.id}
+                  className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground"
+                >
+                  {goal.thread ? (
+                    <button
+                      type="button"
+                      className="hover:text-foreground"
+                      onClick={() => open(goal.thread!)}
+                    >
+                      {goal.owner}
+                    </button>
+                  ) : (
+                    <span>{goal.owner}</span>
+                  )}
+                  <StatusChip status={goal.status} label={goal.state} />
+                </p>
+              ))}
+            </li>
+          ))}
+        </ul>
+      </section>
+    ),
+    kpis: (
+      <section key="kpis" className={card} data-workjet-overview-section="kpis">
+        <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.metrics}</h3>
+        {missingKpis ? (
+          <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
+            <RefreshCwIcon aria-hidden className="size-3.5" />
+            {text.recompute}
+          </Button>
+        ) : (
+          <dl
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[14px]"
+            data-workjet-overview-kpis=""
+          >
+            {data.kpis
+              .filter((kpi) => kpi.value !== "—")
+              .map((kpi) => (
+                <div key={kpi.id} className="contents" data-workjet-overview-kpi={kpi.id}>
+                  <dt className="min-w-0 break-words text-muted-foreground">
+                    {kpi.label}
+                    {kpi.note !== null && (
+                      <span className="block text-[12px] text-amber-400">{kpi.note}</span>
+                    )}
+                  </dt>
+                  <dd className="text-right font-bold tabular-nums">{kpi.value}</dd>
+                </div>
+              ))}
+          </dl>
+        )}
+      </section>
+    ),
+    meeting: (
+      <section
+        key="meeting"
+        className={card + " flex flex-wrap items-center gap-x-3 gap-y-2"}
+        data-workjet-overview-section="meeting"
+      >
+        {data.recurring && weekdayShort !== null ? (
+          <p className="min-w-0 flex-1 text-[14px]">
+            <span className="font-bold text-foreground">{text.nextMeeting}</span>
+            {" · "}
+            <span className="font-semibold tabular-nums">
+              {weekdayShort} {data.recurring.time}
+            </span>
+            {data.recurring.timezone !== localTimeZone ? (
+              <span className="text-muted-foreground"> · {data.recurring.timezone}</span>
+            ) : null}
+          </p>
+        ) : null}
+        {canJoin ? (
+          <Button
+            size="sm"
+            className="rounded-full"
+            onClick={props.onOpenJourFixe}
+            data-workjet-action="project.jour-fixe.open"
+          >
+            {text.join}
+          </Button>
+        ) : null}
+      </section>
+    ),
+  };
+  const sideOrder = projectOverviewSideSections({
+    live: live.length > 0,
+    goals: sortedGoalGroups.length > 0,
+    kpis: !(missingKpis && !props.onRecomputeKpis),
+    meeting: data.recurring !== null || canJoin,
+  });
   const workerNames = [...data.parents, ...data.workers].map((thread) =>
     localizedWorkerName(projectOverviewWorkerName(thread.title, data.title).name, language),
   );
@@ -398,127 +562,7 @@ export function ProjectOverviewView(props: {
         className="flex w-full max-w-[600px] shrink-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 lg:my-3 lg:mr-3 lg:w-[320px] lg:self-start lg:overflow-y-auto"
         data-workjet-overview-column="side"
       >
-        <h2 className="px-1 text-[20px] font-bold tracking-tight">{text.sideTitle}</h2>
-        {live.length === 0 ? null : (
-          <section className={card} data-workjet-overview-section="live">
-            <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.liveTitle}</h3>
-            <ul className="divide-y divide-border/60">
-              {live.map(({ thread, state }) => (
-                <li key={thread.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 py-2 text-left text-[14px] hover:text-foreground"
-                    onClick={() => open(thread)}
-                  >
-                    <span
-                      aria-hidden
-                      className={
-                        "size-2 shrink-0 rounded-full " +
-                        (state === "running"
-                          ? "bg-emerald-400"
-                          : state === "disrupted"
-                            ? "bg-red-400"
-                            : "bg-amber-400")
-                      }
-                    />
-                    <span className="min-w-0 flex-1 break-words font-semibold">
-                      {localizedWorkerName(
-                        projectOverviewWorkerName(thread.title, data.title).name,
-                        language,
-                      )}
-                    </span>
-                    <span className="text-[13px] text-muted-foreground">{text[state]}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        <section className={card} data-workjet-overview-section="meeting">
-          <h3 className="text-[15px] font-bold text-foreground">{text.nextMeeting}</h3>
-          {data.recurring && weekday !== null ? (
-            <p className="mt-1 text-[14px] font-semibold">
-              {weekday} · {data.recurring.time}
-              <span className="mt-0.5 block text-[13px] font-normal text-muted-foreground">
-                {data.recurring.timezone}
-              </span>
-            </p>
-          ) : (
-            <p className="mt-1 text-[14px] text-muted-foreground">{text.noNextMeeting}</p>
-          )}
-          <Button
-            size="sm"
-            className="mt-2.5 rounded-full"
-            onClick={props.onOpenJourFixe}
-            disabled={!props.onOpenJourFixe || joinLocked}
-            data-workjet-action="project.jour-fixe.open"
-          >
-            {joinLocked && data.recurring ? data.recurring.time : text.join}
-          </Button>
-        </section>
-        {missingKpis && !props.onRecomputeKpis ? null : (
-          <section className={card} data-workjet-overview-section="kpis">
-            <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.metrics}</h3>
-            {missingKpis ? (
-              <Button size="xs" variant="outline" onClick={props.onRecomputeKpis}>
-                <RefreshCwIcon aria-hidden className="size-3.5" />
-                {text.recompute}
-              </Button>
-            ) : (
-              <dl
-                className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 text-[14px]"
-                data-workjet-overview-kpis=""
-              >
-                {data.kpis
-                  .filter((kpi) => kpi.value !== "—")
-                  .map((kpi) => (
-                    <div key={kpi.id} className="contents" data-workjet-overview-kpi={kpi.id}>
-                      <dt className="min-w-0 break-words text-muted-foreground">
-                        {kpi.label}
-                        {kpi.note !== null && (
-                          <span className="block text-[12px] text-amber-400">{kpi.note}</span>
-                        )}
-                      </dt>
-                      <dd className="text-right font-bold tabular-nums">{kpi.value}</dd>
-                    </div>
-                  ))}
-              </dl>
-            )}
-          </section>
-        )}
-        {goalGroups.length === 0 ? null : (
-          <section className={card} data-workjet-overview-section="goals">
-            <h3 className="mb-2 text-[15px] font-bold text-foreground">{text.goals}</h3>
-            <ul className="space-y-2 text-[13px]">
-              {goalGroups.map((group) => (
-                <li key={group.title} className="min-w-0" data-workjet-overview-goal="">
-                  <p className="line-clamp-2 break-words font-semibold text-foreground">
-                    {group.title}
-                  </p>
-                  {group.goals.map((goal) => (
-                    <p
-                      key={goal.id}
-                      className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-muted-foreground"
-                    >
-                      {goal.thread ? (
-                        <button
-                          type="button"
-                          className="hover:text-foreground"
-                          onClick={() => open(goal.thread!)}
-                        >
-                          {goal.owner}
-                        </button>
-                      ) : (
-                        <span>{goal.owner}</span>
-                      )}
-                      <StatusChip status={goal.status} label={goal.state} />
-                    </p>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        {sideOrder.map((section) => sideSection[section])}
         <section className={card} data-workjet-overview-section="settings">
           <h3 className="mb-1 text-[15px] font-bold text-foreground">
             {de ? "Projekt & Einstellungen" : "Project & settings"}

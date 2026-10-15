@@ -1,6 +1,8 @@
 import type { DesktopSshPasswordPromptRequest } from "@workjet/contracts";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { claimedSshPassword } from "../settings/sshPasswordOnce";
+
 import { KeyRoundIcon, TriangleAlertIcon } from "lucide-react";
 
 import { InlineNoticePortal, InlineNoticeRow, useEscapeToCancel } from "../InlineNoticeSlot";
@@ -44,6 +46,13 @@ export function SshPasswordPromptNotice() {
     }
 
     return bridge.onSshPasswordPrompt((request) => {
+      // „Rechner hinzufügen“ mit Passwort: die Anfrage gehört dem laufenden
+      // Beitritt und wird ohne Eingabezeile beantwortet (null = abbrechen).
+      const claimed = claimedSshPassword(request);
+      if (claimed !== undefined) {
+        void bridge.resolveSshPasswordPrompt(request.requestId, claimed);
+        return;
+      }
       setQueue((currentQueue) => [...currentQueue, request]);
     });
   }, []);

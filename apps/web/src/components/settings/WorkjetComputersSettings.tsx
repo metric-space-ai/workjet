@@ -7,7 +7,6 @@ import type {
   ComputerControlResult,
   ComputerFacts,
   ComputerMetadata,
-  ComputerSshKeyInfo,
   DesktopBridge,
   EnvironmentId,
   CtoxWorkjetComputerProjection,
@@ -45,7 +44,6 @@ import { InlineExpand } from "../ui/inline-expand";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useAutomaticWorktreeStorage, WorktreeStorageInline } from "./WorkjetSettings";
 import { Row, type RowDeleteOption, type RowMenuAction, type RowStatus } from "../ui/row";
-import { Spinner } from "../ui/spinner";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
 import type { OperationalComputerEnrollment } from "../../computerCapabilityEnrollment";
@@ -59,7 +57,6 @@ import {
 import { toastManager } from "../ui/toast";
 import { useComputerConnections } from "./ConnectionsSettings";
 import {
-  AddComputerInline,
   type AddComputerKind,
   type AddComputerOutcome,
   type AddComputerRequest,
@@ -67,6 +64,8 @@ import {
 } from "./AddComputerInline";
 import { AddMachineEnrollment } from "./AddMachineEnrollment";
 import { useMachineEnrollment } from "./useMachineEnrollment";
+import type { MachineCandidate } from "./machineEnrollment";
+import type { AddComputerPhase } from "./legacyMachineEnrollment";
 import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
@@ -339,6 +338,96 @@ function gpuChip(key: string, model: string, gib: number | null, unified: boolea
   );
 }
 
+export interface ComputerRoleChoice {
+  readonly build: boolean;
+  readonly storage: boolean;
+  readonly gpu: boolean;
+}
+
+export interface ComputerCapabilityToggle {
+  readonly key: keyof ComputerRoleChoice;
+  readonly label: string;
+  readonly title?: string;
+  readonly on: boolean;
+}
+
+/**
+ * Gemeldete Fähigkeiten einer Zeile als Schalter (Owner: „wieso kann ich
+ * keine GPU auswählen?“). Build und Speicher gibt es für entfernte Rechner,
+ * die GPU, sobald sie erkannt oder in der Instanz gemeldet ist. „Lokal“ hat
+ * keine Build-/Speicher-Endpunkte; dort bleibt nur die GPU.
+ */
+export function computerCapabilityToggles(
+  metadata: ComputerMetadata | null | undefined,
+  native: CtoxWorkjetComputerProjection | null,
+): ReadonlyArray<ComputerCapabilityToggle> {
+  const remote = metadata?.connection ? metadata.connection._tag !== "local" : !!native?.agentless;
+  const nativeHas = (kind: string) => native?.capabilities.includes(kind) ?? false;
+  const roles = metadata?.roles ?? { build: nativeHas("build"), storage: nativeHas("storage") };
+  const toggles: ComputerCapabilityToggle[] = [];
+  if (remote || roles.build || nativeHas("build"))
+    toggles.push({ key: "build", label: "Build", on: roles.build || nativeHas("build") });
+  if (remote || roles.storage || nativeHas("storage"))
+    toggles.push({ key: "storage", label: "Speicher", on: roles.storage || nativeHas("storage") });
+  const facts = metadata?.facts ?? null;
+  const detected = facts?.gpus[0] ?? null;
+  const saved = native?.capabilityConfig?.find((entry) => entry.kind === "gpu");
+  if (detected || nativeHas("gpu")) {
+    const model = detected?.model ?? (saved && saved.kind === "gpu" ? saved.model : null);
+    const bytes = detected
+      ? (detected.vramBytes ?? (detected.unifiedMemory ? (facts?.ramBytes ?? null) : null))
+      : null;
+    const gib = bytes ? gibOf(bytes) : saved && saved.kind === "gpu" ? saved.vram_gib : null;
+    toggles.push({
+      key: "gpu",
+      label: `GPU${model ? ` ${shortGpuModel(model)}` : ""}${gib ? ` · ${gib} GB` : ""}`,
+      ...(model ? { title: model } : {}),
+      on: nativeHas("gpu"),
+    });
+  }
+  return toggles;
+}
+
+export function computerRoleChoice(
+  toggles: ReadonlyArray<ComputerCapabilityToggle>,
+): ComputerRoleChoice {
+  const on = (key: keyof ComputerRoleChoice) =>
+    toggles.find((toggle) => toggle.key === key)?.on ?? false;
+  return { build: on("build"), storage: on("storage"), gpu: on("gpu") };
+}
+
+/** Schalter-Chips: Klick schaltet an/aus und speichert sofort. */
+function CapabilityToggles({
+  toggles,
+  disabled,
+  onToggle,
+}: {
+  readonly toggles: ReadonlyArray<ComputerCapabilityToggle>;
+  readonly disabled: boolean;
+  readonly onToggle: (key: keyof ComputerRoleChoice, on: boolean) => void;
+}) {
+  return toggles.map((toggle) => (
+    <button
+      key={toggle.key}
+      type="button"
+      aria-pressed={toggle.on}
+      disabled={disabled}
+      title={toggle.title}
+      data-workjet-capability={toggle.key}
+      data-on={toggle.on ? "true" : "false"}
+      className={cn(
+        "inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded border px-1.5 text-[11px] leading-none whitespace-nowrap transition-colors disabled:cursor-default disabled:opacity-64",
+        toggle.on
+          ? "border-primary/60 bg-primary/15 text-foreground"
+          : "border-dashed border-border text-muted-foreground hover:text-foreground",
+      )}
+      onClick={() => onToggle(toggle.key, !toggle.on)}
+    >
+      {toggle.label}
+    </button>
+  ));
+}
+
 /**
  * Chips einer Zeile: Rollen (Build, Speicher), erkannte GPU mit Speicher und
  * die CPU-Zahl. Die Kapazität ist abgeleitet (ein Build, alle CPUs) und nur
@@ -348,6 +437,7 @@ export function computerFactChips(
   metadata: ComputerMetadata | null | undefined,
   native: CtoxWorkjetComputerProjection | null,
   capacity: ComputerCapacity | null = null,
+  options: { readonly toggles?: boolean } = {},
 ): ReactNode[] {
   const facts = metadata?.facts ?? null;
   const roles = metadata
@@ -358,6 +448,28 @@ export function computerFactChips(
       };
   const cpus = capacity?.workersPerBuild ?? facts?.cpuCores ?? null;
   const chips: ReactNode[] = [];
+  if (options.toggles) {
+    // Build, Speicher und GPU stehen als Schalter-Chips (CapabilityToggles) davor.
+    const more = facts?.gpus.slice(1) ?? [];
+    if (more.length)
+      chips.push(
+        <Chip key="gpu-more" title={more.map((entry) => entry.model).join(", ")}>
+          +{more.length}
+        </Chip>,
+      );
+    if (facts)
+      chips.push(
+        <Chip
+          key="cpu"
+          tone="outline"
+          data-workjet-cpu={String(facts.cpuCores)}
+          title={`${gibOf(facts.ramBytes)} GB RAM`}
+        >
+          {facts.cpuCores} CPUs
+        </Chip>,
+      );
+    return chips;
+  }
   if (roles.build)
     chips.push(
       <Chip
@@ -409,12 +521,6 @@ export function computerFactChips(
         ),
       );
   }
-  if (metadata?.status === "unreachable")
-    chips.push(
-      <Chip key="unreachable" tone="error" title={metadata.error ?? undefined}>
-        nicht erreichbar
-      </Chip>,
-    );
   return chips;
 }
 
@@ -455,6 +561,7 @@ export function WorkjetComputersSettingsView({
   renderRepair,
   renderEdit,
   onRetryMembership,
+  onRolesChange,
 }: {
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
@@ -490,8 +597,18 @@ export function WorkjetComputersSettingsView({
   readonly renderRepair?: (row: ComputerMachineRow, close: () => void) => ReactNode;
   readonly renderEdit?: (row: ComputerMachineRow, close: () => void) => ReactNode;
   readonly onRetryMembership?: (() => void) | undefined;
+  /** Build/Speicher/GPU je Zeile umschalten; speichert sofort. */
+  readonly onRolesChange?:
+    | ((row: ComputerMachineRow, roles: ComputerRoleChoice) => Promise<void>)
+    | undefined;
 }) {
   const [expansion, setExpansion] = useState<Expansion | null>(null);
+  // Sofort sichtbar umgeschaltet, bis die Instanz den neuen Stand meldet.
+  const [roleOverrides, setRoleOverrides] = useState<Readonly<Record<string, ComputerRoleChoice>>>(
+    {},
+  );
+  const [savingRoles, setSavingRoles] = useState(emptyIdSet);
+  const [removeAsk, setRemoveAsk] = useState<string | null>(null);
   const [removing, setRemoving] = useState(emptyIdSet);
   const [notices, setNotices] = useState<
     Readonly<Record<string, ComputerRemoveOutcome & { readonly label: string }>>
@@ -609,20 +726,11 @@ export function WorkjetComputersSettingsView({
     );
   };
 
-  const headerStatus = membershipChecking ? (
-    <Chip tone="busy" data-slot="computers-membership-checking">
-      <Spinner className="size-2.5" />
-      prüft…
-    </Chip>
-  ) : membershipUnreachable ? (
+  // Die Prüfung der Instanz zeigt kein „prüft…“; die Zeilen behalten ihren Stand.
+  void membershipChecking;
+  const headerStatus = membershipUnreachable ? (
     <span className="flex items-center gap-1.5">
       <Chip tone="error">Rechnerliste nicht abrufbar</Chip>
-      {/* Grund sichtbar statt nur im Tooltip (verify2 #4). */}
-      {membership?.error ? (
-        <span className="text-xs text-muted-foreground" data-slot="computers-membership-reason">
-          {membership.error}
-        </span>
-      ) : null}
       {onRetryMembership ? (
         <Button size="xs" variant="outline" onClick={onRetryMembership}>
           Erneut versuchen
@@ -649,25 +757,53 @@ export function WorkjetComputersSettingsView({
           let status: RowStatus = "off";
           let statusLabel = "Getrennt";
           let meta: ReactNode = null;
-          const chips: ReactNode[] = computerFactChips(
-            metadata,
-            native,
-            computer ? (capacities?.[computer.id] ?? null) : null,
-          );
-          if (computer && checkingComputerIds?.has(computer.id))
-            chips.push(
-              <Chip key="detecting" tone="busy" data-slot="computer-detecting">
-                <Spinner className="size-2.5" />
-                erkennt…
-              </Chip>,
-            );
-          if (removing.has(row.key))
-            chips.push(
-              <Chip key="removing" tone="busy" data-slot="computer-removing">
-                <Spinner className="size-2.5" />
-                entfernt…
-              </Chip>,
-            );
+          const toggles = onRolesChange
+            ? computerCapabilityToggles(metadata, native).map((toggle) => ({
+                ...toggle,
+                on: roleOverrides[row.key]?.[toggle.key] ?? toggle.on,
+              }))
+            : [];
+          const chips: ReactNode[] = [
+            ...(toggles.length && onRolesChange
+              ? [
+                  <CapabilityToggles
+                    key="capabilities"
+                    toggles={toggles}
+                    disabled={savingRoles.has(row.key) || !active}
+                    onToggle={(key, on) => {
+                      const next = { ...computerRoleChoice(toggles), [key]: on };
+                      setRoleOverrides((current) => ({ ...current, [row.key]: next }));
+                      setSavingRoles((current) => new Set(current).add(row.key));
+                      void onRolesChange(row, next)
+                        .catch(() =>
+                          // Nicht gespeichert: der Chip springt still zurück.
+                          setRoleOverrides((current) => {
+                            const { [row.key]: _dropped, ...rest } = current;
+                            return rest;
+                          }),
+                        )
+                        .finally(() =>
+                          setSavingRoles((current) => {
+                            const rest = new Set(current);
+                            rest.delete(row.key);
+                            return rest;
+                          }),
+                        );
+                    }}
+                  />,
+                ]
+              : []),
+            ...computerFactChips(
+              metadata,
+              native,
+              computer ? (capacities?.[computer.id] ?? null) : null,
+              { toggles: !!onRolesChange },
+            ),
+          ];
+          const busyRow =
+            (computer !== null && checkingComputerIds?.has(computer.id) === true) ||
+            removing.has(row.key) ||
+            savingRoles.has(row.key);
           if (computer) {
             const { connecting, disconnected, inspection, snapshot } = stateFor(computer);
             const target = environments.find(
@@ -675,14 +811,30 @@ export function WorkjetComputersSettingsView({
             );
             const checking =
               !environmentsReady || computer.environmentId === pendingConnectionEnvironmentId;
-            status = checking || connecting ? "busy" : disconnected ? "off" : "ok";
-            statusLabel = checking
-              ? "Prüft"
-              : connecting
-                ? "Verbindet"
-                : disconnected
-                  ? "Getrennt"
-                  : "Verbunden";
+            // Kein „prüft…“/„verbindet…“ als Text mehr: der Punkt trägt den Zustand.
+            const unreachable = metadata?.status === "unreachable";
+            const toolsFailed = !disconnected && !connecting && !snapshot && !!inspection?.error;
+            const probing = !disconnected && !connecting && !snapshot && !inspection?.error;
+            status =
+              checking || connecting || busyRow || probing
+                ? "busy"
+                : unreachable || toolsFailed
+                  ? "error"
+                  : disconnected
+                    ? "off"
+                    : "ok";
+            statusLabel =
+              checking || busyRow || probing
+                ? "Prüft"
+                : connecting
+                  ? "Verbindet"
+                  : unreachable
+                    ? "Nicht erreichbar"
+                    : toolsFailed
+                      ? "Werkzeuge nicht prüfbar"
+                      : disconnected
+                        ? "Getrennt"
+                        : "Verbunden";
             meta =
               computer.environmentId === environmentId
                 ? "Dieser Rechner"
@@ -732,18 +884,6 @@ export function WorkjetComputersSettingsView({
                     +{tools.length - 3}
                   </Chip>,
                 );
-            } else if (!disconnected && !connecting && inspection?.error) {
-              chips.push(
-                <Chip key="tool-error" tone="error" title={inspection.error}>
-                  Werkzeuge ?
-                </Chip>,
-              );
-            } else if (!disconnected) {
-              chips.push(
-                <Chip key="tool-check" tone="busy" data-slot="computer-tools-checking">
-                  {connecting ? "verbindet…" : "prüft…"}
-                </Chip>,
-              );
             }
             if (configuration.selectedComputerId === computer.id)
               chips.push(
@@ -810,6 +950,12 @@ export function WorkjetComputersSettingsView({
               ]
             : [];
 
+          if (deleteOptions.length)
+            menuActions.push({
+              label: "Entfernen",
+              destructive: true,
+              onSelect: () => setRemoveAsk(row.key),
+            });
           const expanded = expansion?.key === row.key ? expansion.kind : null;
           return (
             <Fragment key={row.key}>
@@ -841,13 +987,6 @@ export function WorkjetComputersSettingsView({
                         onActiveChange: (checked: boolean) => onActiveChange(row, checked),
                       }
                     : {})}
-                  {...(deleteOptions.length
-                    ? {
-                        deleteOptions,
-                        deleteLabel: `${label} entfernen`,
-                        deleteConfirmTitle: "Entfernen?",
-                      }
-                    : {})}
                   menuActions={menuActions}
                   menuLabel={`Weitere Aktionen für ${label}`}
                   {...(computer && renderEdit
@@ -858,6 +997,33 @@ export function WorkjetComputersSettingsView({
                     : {})}
                 />
               </div>
+              {removeAsk === row.key && deleteOptions.length ? (
+                <div
+                  className="flex flex-wrap items-center justify-end gap-1.5 px-3 pb-2"
+                  data-slot="computer-remove-confirm"
+                  role="group"
+                  aria-label={`${label} entfernen`}
+                >
+                  <span className="text-xs text-muted-foreground">Entfernen?</span>
+                  {deleteOptions.map((option) => (
+                    <Button
+                      key={option.label}
+                      size="xs"
+                      variant="destructive"
+                      disabled={option.disabled}
+                      onClick={() => {
+                        setRemoveAsk(null);
+                        option.onSelect();
+                      }}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                  <Button size="xs" variant="outline" onClick={() => setRemoveAsk(null)}>
+                    Abbrechen
+                  </Button>
+                </div>
+              ) : null}
               {noticeLine(row.key, false)}
               {renderRepair ? (
                 <InlineExpand
@@ -1027,6 +1193,37 @@ export async function removeComputerRow(input: {
 }
 
 /** Die Verbindung, über die das Backend den Rechner erkennt. */
+/** Schmaler Desktop-Kanal (preload `workjetComputerKeys`) für den Schlüsseleintrag. */
+interface ComputerKeysBridge {
+  readonly install: (target: {
+    alias: string;
+    hostname: string;
+    username: string | null;
+    port: number | null;
+  }) => Promise<{ readonly ok: boolean; readonly message: string }>;
+}
+function computerKeysBridge(): ComputerKeysBridge | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as { workjetComputerKeys?: ComputerKeysBridge }).workjetComputerKeys;
+}
+
+/** Steht der Eintrag der Quellenliste schon als Rechner in der Liste? */
+export function isKnownComputer(
+  computers: ReadonlyArray<WorkjetComputer>,
+  candidate: MachineCandidate,
+  localEnvironmentId: EnvironmentId | null,
+): boolean {
+  return computers.some((entry) => {
+    if (candidate.transport === "local") return entry.environmentId === localEnvironmentId;
+    const connection = entry.metadata?.connection;
+    if (!connection || connection._tag === "local") return false;
+    return (
+      connection.target.hostname === candidate.host ||
+      (candidate.sshAlias !== null && connection.target.alias === candidate.sshAlias)
+    );
+  });
+}
+
 export function computerConnectionFor(request: AddComputerRequest): ComputerConnection {
   if (request.kind === "local" || !request.target) return { _tag: "local" };
   const port = request.target.port;
@@ -1129,7 +1326,8 @@ export function WorkjetComputersSettings({
     },
     [],
   );
-  const [addOpen, setAddOpen] = useState(() => {
+  // „Rechner hinzufügen“ von anderswo (z. B. Netzdiagramm): Panel offen starten.
+  const [addOpen] = useState(() => {
     try {
       if (window.sessionStorage.getItem("workjet-computer-create") !== null) {
         window.sessionStorage.removeItem("workjet-computer-create");
@@ -1140,9 +1338,8 @@ export function WorkjetComputersSettings({
     }
     return false;
   });
-  const [segment, setSegment] = useState<AddComputerKind>("ssh");
   const connections = useComputerConnections({
-    discoverSshHosts: (addOpen || setupOnly) && segment === "ssh",
+    discoverSshHosts: addOpen || setupOnly,
   });
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
   // Rechner-Backend (Desktop): Erkennung, Rollen, aktiv, Entfernen.
@@ -1189,23 +1386,6 @@ export function WorkjetComputersSettings({
       current = false;
     };
   }, [control, settingsComputersKey]);
-  const [sshKeys, setSshKeys] = useState<ReadonlyArray<ComputerSshKeyInfo> | null>(null);
-  const sshKeysWanted = (addOpen || setupOnly) && segment !== "local";
-  useEffect(() => {
-    if (!sshKeysWanted || sshKeys !== null || !bridge?.listComputerSshKeys) return;
-    let current = true;
-    void bridge.listComputerSshKeys().then(
-      (keys) => {
-        if (current) setSshKeys(keys);
-      },
-      () => {
-        if (current) setSshKeys([]);
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [sshKeysWanted, sshKeys, bridge]);
 
   // Connect → harness probe → computer record. The add pipeline awaits it.
   const [pending, setPending] = useState<{
@@ -1323,20 +1503,15 @@ export function WorkjetComputersSettings({
   );
 
   const rolesAvailable = !!selectedInstanceId && activeMembership?.phase === "ready";
-  const rolesStatus = !selectedInstanceId
-    ? "Keine Instanz gewählt"
-    : activeMembership?.phase === "failed"
-      ? "Rechnerliste nicht abrufbar"
-      : activeMembership?.phase === "ready"
-        ? null
-        : "Instanz prüft…";
 
   const addComputer = async (
     request: AddComputerRequest,
     progress?: (step: string) => void,
-  ): Promise<AddComputerOutcome> => {
-    // 1. Verbinden.
+    phase?: AddComputerPhase,
+  ): Promise<AddComputerOutcome & { readonly environmentId?: EnvironmentId }> => {
+    // 1. Verbinden (SSH: ensureEnvironment kopiert und startet den Workjet-Dienst).
     let connected: EnvironmentId;
+    phase?.("transport_connected", "running");
     if (request.kind === "local") {
       if (environmentId === null || !localAvailable)
         return { status: "error", message: "Dieser Rechner ist nicht verbunden." };
@@ -1347,7 +1522,10 @@ export function WorkjetComputersSettings({
       if (!result.ok) return { status: "error", message: result.message ?? "Abgebrochen." };
       connected = result.environmentId;
     }
+    phase?.("transport_connected", "done");
+    phase?.("package_copied", "done");
     // 2. Werkzeuge prüfen und den Rechner anlegen (oder den bekannten nehmen).
+    phase?.("installed", "running");
     let computer: WorkjetComputer;
     try {
       computer = await waitForComputer(connected, request.kind);
@@ -1357,7 +1535,9 @@ export function WorkjetComputersSettings({
         message: failure instanceof Error ? failure.message : "Werkzeuge nicht prüfbar.",
       };
     }
+    phase?.("installed", "done");
     // 3. Erkennen (CPU, RAM, GPU, Platte, Werkzeuge) und die Haken speichern.
+    phase?.("service_started", "running");
     let facts: ComputerFacts | null = null;
     if (control) {
       progress?.("Erkennt Rechner…");
@@ -1387,7 +1567,20 @@ export function WorkjetComputersSettings({
         return { status: "error", message: "Erkennung fehlgeschlagen." };
       }
     }
-    // 4. In der gewählten Instanz eintragen, mit den Haken.
+    phase?.("service_started", "done");
+    phase?.("device_bound", "running");
+    const enrolled = await enrollInInstance(request, connected, computer, facts);
+    if (enrolled.status !== "error") phase?.("device_bound", "done");
+    return enrolled.status === "error" ? enrolled : { ...enrolled, environmentId: connected };
+  };
+
+  /** Schritt 4: in der gewählten Instanz eintragen, mit Build/Speicher/GPU. */
+  const enrollInInstance = async (
+    request: AddComputerRequest,
+    connected: EnvironmentId,
+    computer: WorkjetComputer,
+    facts: ComputerFacts | null,
+  ): Promise<AddComputerOutcome> => {
     if (!selectedInstanceId) return { status: "done" };
     const snapshot = membershipStore.getSnapshot();
     const wantsRoles = request.roles.build || request.roles.storage;
@@ -1490,49 +1683,82 @@ export function WorkjetComputersSettings({
     }
   };
 
-  // Ein-Klick-Beitritt (sync v4 §16.41): nur Entwicklermodus + echte Adapter.
-  const machineEnrollment = useMachineEnrollment();
-  // Stabile Referenz: die tailnet-Liste lädt nur beim Öffnen und auf „Neu laden“.
-  const discoverTailscalePeers = useMemo(
-    () => (bridge?.discoverTailscalePeers ? () => bridge.discoverTailscalePeers() : undefined),
-    [bridge],
-  );
-  const addPanel = machineEnrollment ? (
+  /** Build/Speicher/GPU einer Zeile sofort speichern (derselbe Weg wie beim Hinzufügen). */
+  const saveRoles = async (row: ComputerMachineRow, roles: ComputerRoleChoice) => {
+    const computer = row.computer;
+    if (!computer) throw new Error("Rechner fehlt.");
+    const metadata = computer.metadata ?? null;
+    const connection = metadata?.connection ?? null;
+    const target = connection && connection._tag !== "local" ? connection.target : null;
+    const kind: AddComputerKind =
+      connection?._tag ?? (computer.presentationKind === "local" ? "local" : "ssh");
+    let hostKey: AddComputerRequest["hostKey"] = null;
+    if (target && (roles.build || roles.storage) && bridge?.inspectProvisioningHostKey) {
+      // Erkennen statt fragen: der Host-Schlüssel des schon verbundenen Rechners.
+      const inspected = await bridge.inspectProvisioningHostKey({
+        _tag: "ssh",
+        ssh: {
+          alias: target.alias,
+          hostname: target.hostname,
+          username: target.username,
+          port: target.port ?? 22,
+        },
+      });
+      if (inspected._tag !== "ready") throw new Error("Host-Schlüssel nicht lesbar.");
+      hostKey = { algorithm: inspected.algorithm, fingerprint: inspected.fingerprint };
+    }
+    if (control && kind !== "local")
+      await runControl({
+        _tag: "setRoles",
+        id: computer.id,
+        roles: { build: roles.build, storage: roles.storage },
+      });
+    const outcome = await enrollInInstance(
+      {
+        kind,
+        target,
+        label: computer.label,
+        roles,
+        hostKey,
+        identityFile: metadata?.identityFiles[0] ?? null,
+        gpuDecided: true,
+      },
+      computer.environmentId,
+      computer,
+      metadata?.facts ?? null,
+    );
+    if (outcome.status === "error") throw new Error(outcome.message);
+  };
+
+  // Ein-Klick-Beitritt (sync v4 §16.41) über den heutigen Installationsweg.
+  const localComputer =
+    environmentId === null
+      ? null
+      : (configuration.computers.find((entry) => entry.environmentId === environmentId) ?? null);
+  const machineEnrollment = useMachineEnrollment({
+    listSshHosts: () =>
+      bridge?.discoverSshHosts
+        ? bridge.discoverSshHosts()
+        : Promise.resolve(connections.sshAliases),
+    discoverTailscalePeers: bridge?.discoverTailscalePeers
+      ? () => bridge.discoverTailscalePeers()
+      : undefined,
+    localName: localAvailable ? (localComputer?.label ?? "Dieser Rechner") : null,
+    installKey: computerKeysBridge()?.install,
+    add: (request, phase) => addComputer(request, undefined, phase),
+    isOnline: (target) =>
+      environments.some(
+        (entry) => entry.environmentId === target && entry.connection.phase === "connected",
+      ),
+  });
+  const addPanel = (
     <AddMachineEnrollment
       source={machineEnrollment.source}
       transport={machineEnrollment.transport}
-      defaultOpen={setupOnly}
-    />
-  ) : (
-    <AddComputerInline
-      open={addOpen}
-      onOpenChange={setAddOpen}
-      alwaysOpen={setupOnly}
-      segment={segment}
-      onSegmentChange={setSegment}
-      localAvailable={localAvailable}
-      desktopAvailable={connections.desktopAvailable}
-      sshAliases={connections.sshAliases}
-      knownHosts={connections.knownHosts}
-      sshAliasesLoading={connections.sshAliasesLoading}
-      onRefreshSshAliases={connections.refreshSshAliases}
-      connectionError={connections.catalogError ?? connections.sshAliasesError}
-      catalogRecoveryAvailable={connections.catalogRecoveryAvailable}
-      onRecoverCatalog={() => void connections.recoverCatalog()}
-      rolesAvailable={rolesAvailable}
-      rolesStatus={rolesStatus}
-      {...(discoverTailscalePeers ? { discoverTailscalePeers } : {})}
-      {...(bridge?.inspectProvisioningHostKey
-        ? { inspectHostKey: (target) => bridge.inspectProvisioningHostKey!(target) }
-        : {})}
-      sshKeys={sshKeys ?? []}
-      sshKeysLoading={sshKeysWanted && sshKeys === null && !!bridge?.listComputerSshKeys}
-      knownComputer={(kind, hostname) =>
-        knownComputerFacts(configuration.computers, kind, hostname, environmentId)
-      }
-      onAdd={addComputer}
-      onDone={() => {
-        toastManager.add({ type: "success", title: "Rechner hinzugefügt" });
+      defaultOpen={setupOnly || addOpen}
+      onOpenTailscale={() => void bridge?.openExternal?.("https://login.tailscale.com/start")}
+      isKnown={(candidate) => isKnownComputer(configuration.computers, candidate, environmentId)}
+      onGreen={() => {
         if (setupOnly) onCompleted?.();
       }}
     />
@@ -1707,6 +1933,7 @@ export function WorkjetComputersSettings({
               }
             : undefined
         }
+        onRolesChange={saveRoles}
         onRetryMembership={
           selectedInstanceId
             ? () => void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox)

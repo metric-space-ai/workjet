@@ -91,15 +91,26 @@ export interface MachineEnrollmentSource {
   reportTransportStep(enrollmentId: string, step: MachineEnrollmentStep): Promise<void>;
 }
 
+export interface MachineSources {
+  readonly candidates: ReadonlyArray<MachineCandidate>;
+  /** false = Tailscale nicht installiert oder nicht angemeldet. */
+  readonly tailscale: boolean;
+}
+
 /** Desktopseite: Quellen auflösen und den Installationsweg fahren. */
 export interface MachineInstallTransport {
-  listCandidates(): Promise<ReadonlyArray<MachineCandidate>>;
+  listCandidates(): Promise<MachineSources>;
   install(
     input: {
       readonly enrollmentId: string;
       readonly candidate: MachineCandidate;
       readonly joinToken: string;
       readonly installerRef: string;
+      /**
+       * Einmal-Passwort: nur für die erste Anmeldung (Schlüssel eintragen),
+       * nie gespeichert, nie geloggt, nie in Details.
+       */
+      readonly password?: string;
     },
     onStep: (step: MachineEnrollmentStep & { key: MachineEnrollmentTransportStepKey }) => void,
   ): Promise<void>;
@@ -111,6 +122,7 @@ export async function startMachineEnrollment(
   transport: MachineInstallTransport,
   candidate: MachineCandidate,
   label: string,
+  password?: string,
 ): Promise<string> {
   const begun = await source.begin({ label, transport: candidate.transport });
   void transport
@@ -120,6 +132,7 @@ export async function startMachineEnrollment(
         candidate,
         joinToken: begun.join_token,
         installerRef: begun.installer_ref,
+        ...(password ? { password } : {}),
       },
       (step) => void source.reportTransportStep(begun.enrollment_id, step),
     )
@@ -160,7 +173,7 @@ const STEP_LABELS: Record<MachineEnrollmentLanguage, Record<MachineEnrollmentSte
   },
 };
 
-export type MachineEnrollmentErrorAction = "retry" | "user";
+export type MachineEnrollmentErrorAction = "retry" | "user" | "password" | "details";
 
 interface ErrorEntry {
   readonly text: Record<MachineEnrollmentLanguage, string>;
@@ -173,13 +186,17 @@ const ERRORS: Record<string, ErrorEntry> = {
     action: "user",
   },
   user_missing: { text: { de: "Benutzer fehlt", en: "User missing" }, action: "user" },
+  password_rejected: {
+    text: { de: "Passwort falsch", en: "Wrong password" },
+    action: "password",
+  },
   unreachable: {
     text: { de: "Rechner nicht erreichbar", en: "Computer unreachable" },
     action: "retry",
   },
   host_key_changed: {
     text: { de: "Host-Schlüssel geändert", en: "Host key changed" },
-    action: "retry",
+    action: "details",
   },
   copy_failed: { text: { de: "Kopieren fehlgeschlagen", en: "Copy failed" }, action: "retry" },
   install_failed: {
@@ -215,6 +232,11 @@ export function machineEnrollmentLabels(language: MachineEnrollmentLanguage = "d
         addSubmit: "Add",
         cancel: "Cancel",
         retry: "Retry",
+        password: "Password",
+        address: "Address",
+        manual: "Manual",
+        tailscaleSignedOut: "Tailscale not signed in",
+        open: "Open",
         checkUser: "Check user",
         enterUser: "Enter user",
         user: "User",
@@ -232,7 +254,12 @@ export function machineEnrollmentLabels(language: MachineEnrollmentLanguage = "d
         add: "Rechner hinzufügen",
         addSubmit: "Hinzufügen",
         cancel: "Abbrechen",
-        retry: "Erneut versuchen",
+        retry: "Erneut",
+        password: "Passwort",
+        address: "Adresse",
+        manual: "Manuell",
+        tailscaleSignedOut: "Tailscale nicht angemeldet",
+        open: "Öffnen",
         checkUser: "Benutzer prüfen",
         enterUser: "Benutzer eintragen",
         user: "Benutzer",
@@ -269,7 +296,12 @@ export function machineEnrollmentError(
   return {
     text: entry.text[language],
     action: entry.action,
-    actionLabel: entry.action === "user" ? labels.checkUser : labels.retry,
+    actionLabel:
+      entry.action === "user"
+        ? labels.checkUser
+        : entry.action === "details"
+          ? labels.details
+          : labels.retry,
   };
 }
 
@@ -332,5 +364,19 @@ export function machineCandidateAddress(candidate: MachineCandidate): string | n
   if (candidate.transport === "local") return null;
   const host = candidate.host ?? candidate.name;
   const port = candidate.port && candidate.port !== 22 ? `:${candidate.port}` : "";
-  return `${candidate.user ?? "—"}@${host}${port}`;
+  return candidate.user ? `${candidate.user}@${host}${port}` : `${host}${port}`;
+}
+
+/** „Adresse“ der Zeile „Manuell“: IP oder Hostname, optional :Port. */
+export function parseManualAddress(
+  value: string,
+): { readonly host: string; readonly port: number | null } | null {
+  const trimmed = value.trim();
+  if (!trimmed || /\s/u.test(trimmed)) return null;
+  const match = /^(?:\[([^\]]+)\]|([^:]+))(?::(\d{1,5}))?$/u.exec(trimmed);
+  if (!match) return null;
+  const host = match[1] ?? match[2] ?? "";
+  const port = match[3] ? Number.parseInt(match[3], 10) : null;
+  if (!host || (port !== null && (port < 1 || port > 65535))) return null;
+  return { host, port };
 }

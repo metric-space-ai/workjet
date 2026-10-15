@@ -1,14 +1,17 @@
 /**
  * Andockpunkt für den Ein-Klick-Beitritt (ctox sync v4 §16.41).
  *
- * Bis die Instanzseite steht (ctox sync v4: `ctox.machine.enroll.begin/cancel`,
- * Collection `machine_enrollments`, Phase 11 mit useCtoxDoc/useCtoxCommand)
- * und der Desktop seinen Installationsweg über IPC anbietet, gibt es keine
- * echte Quelle: der Hook liefert null, die Rechner-Seite bleibt beim
- * bisherigen Panel. Sichtbar wird der neue Weg nur im Entwicklermodus UND mit
- * beiden Adaptern; nichts Halbfertiges erreicht Nutzer.
+ * Heute: Adapter über den vorhandenen Installationsweg der Rechner-Seite
+ * (legacyMachineEnrollment). Freitag (V4-Kern): hier die Quelle gegen
+ * `useCtoxCommand('ctox.machine.enroll.begin' | '.cancel')` und
+ * `useCtoxDoc('machine_enrollments/<id>')` tauschen; die UI bleibt gleich.
  */
-import { useClientSettings } from "../../hooks/useSettings";
+import { useMemo, useRef } from "react";
+
+import {
+  createLegacyMachineEnrollment,
+  type LegacyEnrollmentDeps,
+} from "./legacyMachineEnrollment";
 import type { MachineEnrollmentSource, MachineInstallTransport } from "./machineEnrollment";
 
 export interface MachineEnrollmentAdapters {
@@ -16,13 +19,31 @@ export interface MachineEnrollmentAdapters {
   readonly transport: MachineInstallTransport;
 }
 
-/** Fr: hier `useCtoxDoc`/`useCtoxCommand` und `desktopBridge.machineEnroll*` einsetzen. */
-function useMachineEnrollmentAdaptersOrNull(): MachineEnrollmentAdapters | null {
-  return null;
-}
-
-export function useMachineEnrollment(): MachineEnrollmentAdapters | null {
-  const developerMode = useClientSettings((settings) => settings.developerMode);
-  const adapters = useMachineEnrollmentAdaptersOrNull();
-  return developerMode && adapters ? adapters : null;
+/**
+ * Die Adapter bleiben über Renderings stabil; die Abhängigkeiten werden über
+ * eine Referenz immer aktuell gelesen (laufende Beitritte überleben Re-Render).
+ */
+export function useMachineEnrollment(deps: LegacyEnrollmentDeps): MachineEnrollmentAdapters {
+  const latest = useRef(deps);
+  latest.current = deps;
+  return useMemo(
+    () =>
+      createLegacyMachineEnrollment({
+        listSshHosts: () => latest.current.listSshHosts(),
+        discoverTailscalePeers: () =>
+          latest.current.discoverTailscalePeers
+            ? latest.current.discoverTailscalePeers()
+            : Promise.resolve({ status: "unavailable" as const, peers: [] }),
+        get localName() {
+          return latest.current.localName;
+        },
+        installKey: (target) =>
+          latest.current.installKey
+            ? latest.current.installKey(target)
+            : Promise.resolve({ ok: false, message: "Schlüsseleintrag nicht verfügbar." }),
+        add: (request, phase) => latest.current.add(request, phase),
+        isOnline: (environmentId) => latest.current.isOnline(environmentId),
+      }),
+    [],
+  );
 }

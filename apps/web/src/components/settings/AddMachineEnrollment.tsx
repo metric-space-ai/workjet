@@ -3,15 +3,17 @@
 /**
  * Rechner hinzufügen mit einem Klick (Owner 15.10.; ctox sync v4 §16.41).
  *
- * Eine Liste der Quellen (dieser Rechner, SSH-Hosts aus ~/.ssh/config,
- * tailnet-Geräte). Klick auf einen Eintrag + „Hinzufügen“ startet sofort; der
- * Rechner steht dann als Zeile mit Balken über die acht Vertragsschritte bis
- * grün. Kein Formular: Adresse, Benutzer, Port und Schlüssel löst der Desktop
- * auf. Fähigkeiten erscheinen erst nach der Verbindung, als Schalter.
+ * Oben drei Arten als Segment: Lokal, SSH, Tailscale. Darunter, was zu der
+ * Art gehört: dieser Rechner; die Hosts aus ~/.ssh/config; die tailnet-Geräte.
+ * Unter SSH und Tailscale steht immer „Manuell“ (Adresse, Benutzer, Passwort).
+ * Klick auf einen Eintrag + „Hinzufügen“ startet sofort; der Rechner steht
+ * dann als Zeile mit Balken über die acht Vertragsschritte bis grün.
+ * Das Passwort dient nur der ersten Anmeldung und wird nie gespeichert.
  */
-import { MonitorIcon, RefreshCwIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { MonitorIcon, NetworkIcon, RefreshCwIcon, TerminalIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { WORKJET_STATUS_DOT_CLASS } from "../../workjetStatus";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -24,13 +26,16 @@ import {
   machineEnrollmentLabels,
   machineEnrollmentProgress,
   machineEnrollmentStepLabel,
+  parseManualAddress,
   startMachineEnrollment,
   type MachineCandidate,
   type MachineCapabilities,
   type MachineEnrollmentProgress,
   type MachineEnrollmentSnapshot,
   type MachineEnrollmentSource,
+  type MachineEnrollmentTransport,
   type MachineInstallTransport,
+  type MachineSources,
 } from "./machineEnrollment";
 
 const labels = machineEnrollmentLabels("de");
@@ -41,6 +46,19 @@ const ROW_DOT: Record<MachineEnrollmentProgress["phase"], RowStatus> = {
 };
 const CANDIDATE_TIMEOUT_MS = 10_000;
 const CANDIDATE_RETRY_MS = 15_000;
+const GREEN_HANDOVER_MS = 2_500;
+const MANUAL = "manual";
+const NEVER_KNOWN = () => false;
+
+const SEGMENTS: ReadonlyArray<{
+  readonly value: MachineEnrollmentTransport;
+  readonly label: string;
+  readonly icon: ReactNode;
+}> = [
+  { value: "local", label: labels.transports.local, icon: <MonitorIcon /> },
+  { value: "ssh", label: labels.transports.ssh, icon: <TerminalIcon /> },
+  { value: "tailscale", label: labels.transports.tailscale, icon: <NetworkIcon /> },
+];
 
 interface EnrollmentEntry {
   readonly enrollmentId: string;
@@ -53,52 +71,117 @@ export interface AddMachineEnrollmentProps {
   readonly transport: MachineInstallTransport;
   /** Startet offen (Fixture, Ersteinrichtung). */
   readonly defaultOpen?: boolean;
-  /** Schon vorhandene Rechner erscheinen nicht noch einmal in der Liste. */
+  /** Vorgewähltes Segment (Fixture); sonst das erste mit Einträgen, sonst SSH. */
+  readonly defaultSegment?: MachineEnrollmentTransport;
+  /** Grün: der Rechner steht nun in der Rechnerliste; die Fortschrittszeile geht. */
+  readonly onGreen?: () => void;
+  /** Schon vorhandene Rechner: Zeile mit grünem Punkt, nicht anklickbar. */
   readonly isKnown?: (candidate: MachineCandidate) => boolean;
+  /** „Tailscale nicht angemeldet · Öffnen“. */
+  readonly onOpenTailscale?: () => void;
   readonly onRename?: (enrollmentId: string, name: string) => void;
   readonly onCapabilitiesChange?: (enrollmentId: string, capabilities: MachineCapabilities) => void;
+}
+
+/** Felder einer Zeile ohne bekannten Benutzer bzw. der Zeile „Manuell“. */
+interface Credentials {
+  readonly address: string;
+  readonly user: string;
+  readonly password: string;
+}
+const NO_CREDENTIALS: Credentials = { address: "", user: "", password: "" };
+
+export function preselectSegment(
+  sources: MachineSources | null,
+  isKnown: (candidate: MachineCandidate) => boolean,
+): MachineEnrollmentTransport {
+  const has = (kind: MachineEnrollmentTransport) =>
+    sources?.candidates.some((entry) => entry.transport === kind && !isKnown(entry)) ?? false;
+  if (has("ssh")) return "ssh";
+  if (has("tailscale")) return "tailscale";
+  if (has("local")) return "local";
+  return "ssh";
 }
 
 export function AddMachineEnrollment({
   source,
   transport,
   defaultOpen = false,
-  isKnown,
+  defaultSegment,
+  isKnown = NEVER_KNOWN,
+  onGreen,
+  onOpenTailscale,
   onRename,
   onCapabilitiesChange,
 }: AddMachineEnrollmentProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [entries, setEntries] = useState<ReadonlyArray<EnrollmentEntry>>([]);
+  const [segmentChoice, setSegmentChoice] = useState<MachineEnrollmentTransport | null>(
+    defaultSegment ?? null,
+  );
   const [pickedId, setPickedId] = useState<string | null>(null);
-  const [userInput, setUserInput] = useState("");
+  const [credentials, setCredentials] = useState<Credentials>(NO_CREDENTIALS);
   const [starting, setStarting] = useState(false);
-  const candidates = useCandidates(transport, open);
+  const sources = useCandidates(transport, open);
+  const segment = segmentChoice ?? preselectSegment(sources.value, isKnown);
 
   const enrolledIds = new Set(entries.map((entry) => entry.candidate.id));
-  const visible = (candidates.list ?? []).filter(
-    (candidate) => !enrolledIds.has(candidate.id) && !isKnown?.(candidate),
+  const visible = (sources.value?.candidates ?? []).filter(
+    (candidate) => candidate.transport === segment && !enrolledIds.has(candidate.id),
   );
-  const picked = visible.find((candidate) => candidate.id === pickedId) ?? null;
+  const picked =
+    pickedId === MANUAL ? null : (visible.find((candidate) => candidate.id === pickedId) ?? null);
+  const manual = pickedId === MANUAL && segment !== "local";
+  const manualAddress = manual ? parseManualAddress(credentials.address) : null;
   const needsUser = picked !== null && picked.transport !== "local" && picked.user === null;
-  const canStart = picked !== null && (!needsUser || userInput.trim() !== "") && !starting;
+  const canStart =
+    !starting &&
+    (manual
+      ? manualAddress !== null && credentials.user.trim() !== ""
+      : picked !== null && (!needsUser || credentials.user.trim() !== ""));
 
   const start = useCallback(
-    async (candidate: MachineCandidate, name: string) => {
-      const enrollmentId = await startMachineEnrollment(source, transport, candidate, name);
+    async (candidate: MachineCandidate, name: string, password?: string) => {
+      const enrollmentId = await startMachineEnrollment(
+        source,
+        transport,
+        candidate,
+        name,
+        password,
+      );
       return { enrollmentId, candidate, name } satisfies EnrollmentEntry;
     },
     [source, transport],
   );
 
+  const resetPick = () => {
+    setPickedId(null);
+    setCredentials(NO_CREDENTIALS);
+  };
+
   const add = async () => {
-    if (!picked || !canStart) return;
-    const candidate = needsUser ? { ...picked, user: userInput.trim() } : picked;
+    if (!canStart) return;
+    let candidate: MachineCandidate;
+    if (manual && manualAddress) {
+      candidate = {
+        id: `manual:${segment}:${manualAddress.host}`,
+        transport: segment,
+        name: manualAddress.host,
+        user: credentials.user.trim(),
+        host: manualAddress.host,
+        port: manualAddress.port,
+        sshAlias: null,
+      };
+    } else if (picked) {
+      candidate = needsUser ? { ...picked, user: credentials.user.trim() } : picked;
+    } else return;
+    // Das Passwort geht nur an diesen einen Start und wird hier sofort verworfen.
+    const password = credentials.password || undefined;
+    resetPick();
     setStarting(true);
     try {
-      const entry = await start(candidate, candidate.name);
+      const entry = await start(candidate, candidate.name, password);
       setEntries((current) => [...current, entry]);
-      setPickedId(null);
-      setUserInput("");
       setOpen(false);
     } finally {
       setStarting(false);
@@ -106,9 +189,9 @@ export function AddMachineEnrollment({
   };
 
   // „Erneut“ = neues begin (Token einmalig); die Zeile bleibt an ihrem Platz.
-  const retry = async (entry: EnrollmentEntry, candidate: MachineCandidate) => {
+  const retry = async (entry: EnrollmentEntry, candidate: MachineCandidate, password?: string) => {
     void source.cancel(entry.enrollmentId);
-    const next = await start(candidate, entry.name);
+    const next = await start(candidate, entry.name, password);
     setEntries((current) =>
       current.map((existing) => (existing.enrollmentId === entry.enrollmentId ? next : existing)),
     );
@@ -121,6 +204,35 @@ export function AddMachineEnrollment({
     );
   };
 
+  const credentialFields = (withAddress: boolean) => (
+    <div
+      className="grid grid-cols-1 gap-2 px-2 pb-1 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]"
+      data-slot={withAddress ? "machine-source-manual-fields" : "machine-source-user"}
+    >
+      {withAddress ? (
+        <CredentialField
+          label={labels.address}
+          value={credentials.address}
+          placeholder={segment === "tailscale" ? "gpu4 / 100.x.x.x" : "192.168.1.10:22"}
+          autoFocus
+          onChange={(address) => setCredentials((current) => ({ ...current, address }))}
+        />
+      ) : null}
+      <CredentialField
+        label={labels.user}
+        value={credentials.user}
+        autoFocus={!withAddress}
+        onChange={(user) => setCredentials((current) => ({ ...current, user }))}
+      />
+      <CredentialField
+        label={labels.password}
+        value={credentials.password}
+        secret
+        onChange={(password) => setCredentials((current) => ({ ...current, password }))}
+      />
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-3" data-slot="machine-enrollment">
       {entries.length > 0 ? (
@@ -130,7 +242,16 @@ export function AddMachineEnrollment({
               key={entry.enrollmentId}
               entry={entry}
               source={source}
-              onRetry={(candidate) => void retry(entry, candidate)}
+              onRetry={(candidate, password) => void retry(entry, candidate, password)}
+              onGreen={() => {
+                // Kurz grün stehen lassen, dann übernimmt die Zeile der Rechnerliste.
+                globalThis.setTimeout(() => {
+                  setEntries((current) =>
+                    current.filter((existing) => existing.enrollmentId !== entry.enrollmentId),
+                  );
+                }, GREEN_HANDOVER_MS);
+                onGreen?.();
+              }}
               onAbort={() => abort(entry)}
               onRename={(name) => {
                 setEntries((current) =>
@@ -160,65 +281,112 @@ export function AddMachineEnrollment({
             void add();
           }}
         >
-          <div className="flex items-center justify-between gap-2 px-1">
-            <span className="font-medium text-[13.5px]">{labels.add}</span>
+          <div className="flex items-center justify-between gap-2">
+            <div
+              className="inline-flex rounded-md border p-0.5"
+              role="radiogroup"
+              aria-label={labels.add}
+              data-slot="machine-source-segment"
+            >
+              {SEGMENTS.map((entry) => (
+                <button
+                  key={entry.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={segment === entry.value}
+                  data-segment={entry.value}
+                  disabled={starting}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-[13.5px] transition-colors disabled:opacity-64 [&_svg]:size-3.5",
+                    segment === entry.value
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => {
+                    setSegmentChoice(entry.value);
+                    resetPick();
+                  }}
+                >
+                  {entry.icon}
+                  {entry.label}
+                </button>
+              ))}
+            </div>
             <Button
               type="button"
               size="icon-xs"
               variant="ghost"
               aria-label={labels.reload}
               title={labels.reload}
-              disabled={candidates.loading}
-              onClick={candidates.reload}
+              disabled={sources.loading}
+              onClick={sources.reload}
             >
               <RefreshCwIcon />
             </Button>
           </div>
           <div className="flex flex-col" role="listbox" aria-label={labels.add}>
-            {visible.map((candidate) => (
-              <CandidateRow
-                key={candidate.id}
-                candidate={candidate}
-                selected={candidate.id === pickedId}
-                disabled={starting}
-                onSelect={() => {
-                  setPickedId(candidate.id === pickedId ? null : candidate.id);
-                  setUserInput("");
-                }}
-              />
-            ))}
-            {candidates.loading && visible.length === 0 ? (
+            {visible.map((candidate) => {
+              const known = isKnown(candidate);
+              const selected = candidate.id === pickedId;
+              return (
+                <div key={candidate.id} className="flex flex-col">
+                  <CandidateRow
+                    candidate={candidate}
+                    selected={selected}
+                    known={known}
+                    disabled={starting || known}
+                    onSelect={() => {
+                      setCredentials(NO_CREDENTIALS);
+                      setPickedId(selected ? null : candidate.id);
+                    }}
+                  />
+                  {selected && needsUser ? credentialFields(false) : null}
+                </div>
+              );
+            })}
+            {sources.loading && visible.length === 0 ? (
               <div className="flex items-center gap-2 px-2 py-2 text-muted-foreground text-xs">
                 <Spinner className="size-3" />
               </div>
             ) : null}
-            {!candidates.loading && visible.length === 0 ? (
-              <div className="flex items-center gap-2 px-2 py-2 text-[13.5px]" role="status">
-                <span className="text-muted-foreground">{labels.sourcesEmpty}</span>
-                <Button type="button" size="xs" variant="outline" onClick={candidates.reload}>
-                  {labels.retry}
-                </Button>
+            {segment === "tailscale" && sources.value && !sources.value.tailscale ? (
+              <div
+                className="flex items-center gap-2 px-2 py-1.5 text-[13.5px]"
+                data-slot="machine-source-tailscale-off"
+              >
+                <span className="text-muted-foreground">{labels.tailscaleSignedOut}</span>
+                {onOpenTailscale ? (
+                  <Button type="button" size="xs" variant="outline" onClick={onOpenTailscale}>
+                    {labels.open}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {segment !== "local" ? (
+              <div className="flex flex-col">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={manual}
+                  disabled={starting}
+                  data-slot="machine-source"
+                  data-candidate={MANUAL}
+                  className={cn(
+                    "flex min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-[13.5px] transition-colors disabled:opacity-64",
+                    manual ? "bg-primary/15 ring-1 ring-primary/60" : "hover:bg-accent/40",
+                  )}
+                  onClick={() => {
+                    setCredentials(NO_CREDENTIALS);
+                    setPickedId(manual ? null : MANUAL);
+                  }}
+                >
+                  <span className="size-4 shrink-0" aria-hidden />
+                  <span className="font-medium">{labels.manual}</span>
+                </button>
+                {manual ? credentialFields(true) : null}
               </div>
             ) : null}
           </div>
-          {needsUser ? (
-            <label
-              className="flex items-center gap-2 px-2 text-muted-foreground text-xs"
-              data-slot="machine-source-user"
-            >
-              {labels.user}
-              <Input
-                nativeInput
-                size="sm"
-                autoFocus
-                spellCheck={false}
-                autoComplete="off"
-                className="max-w-56"
-                value={userInput}
-                onChange={(event) => setUserInput(event.target.value)}
-              />
-            </label>
-          ) : null}
           <div className="flex items-center justify-end gap-2 px-1 pt-1">
             <Button
               type="button"
@@ -226,7 +394,7 @@ export function AddMachineEnrollment({
               variant="outline"
               onClick={() => {
                 setOpen(false);
-                setPickedId(null);
+                resetPick();
               }}
             >
               {labels.cancel}
@@ -253,9 +421,42 @@ export function AddMachineEnrollment({
   );
 }
 
+function CredentialField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  secret = false,
+  autoFocus = false,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly secret?: boolean;
+  readonly autoFocus?: boolean;
+}) {
+  return (
+    <label className="grid gap-1 text-muted-foreground text-xs">
+      {label}
+      <Input
+        nativeInput
+        size="sm"
+        type={secret ? "password" : "text"}
+        autoFocus={autoFocus}
+        spellCheck={false}
+        autoComplete={secret ? "new-password" : "off"}
+        value={value}
+        {...(placeholder ? { placeholder } : {})}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
 /** Lädt die Quellen beim Öffnen; was ausfällt, wird still wiederholt. */
 function useCandidates(transport: MachineInstallTransport, open: boolean) {
-  const [list, setList] = useState<ReadonlyArray<MachineCandidate> | null>(null);
+  const [value, setValue] = useState<MachineSources | null>(null);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -267,15 +468,15 @@ function useCandidates(transport: MachineInstallTransport, open: boolean) {
     }, CANDIDATE_TIMEOUT_MS);
     let retry: ReturnType<typeof setTimeout> | undefined;
     void transport.listCandidates().then(
-      (value) => {
+      (next) => {
         if (!current) return;
-        setList(value);
+        setValue(next);
         setLoading(false);
       },
       () => {
         if (!current) return;
         setLoading(false);
-        retry = globalThis.setTimeout(() => setRevision((value) => value + 1), CANDIDATE_RETRY_MS);
+        retry = globalThis.setTimeout(() => setRevision((count) => count + 1), CANDIDATE_RETRY_MS);
       },
     );
     return () => {
@@ -284,17 +485,19 @@ function useCandidates(transport: MachineInstallTransport, open: boolean) {
       if (retry) globalThis.clearTimeout(retry);
     };
   }, [transport, open, revision]);
-  return { list, loading, reload: () => setRevision((value) => value + 1) };
+  return { value, loading, reload: () => setRevision((count) => count + 1) };
 }
 
 function CandidateRow({
   candidate,
   selected,
+  known,
   disabled,
   onSelect,
 }: {
   readonly candidate: MachineCandidate;
   readonly selected: boolean;
+  readonly known: boolean;
   readonly disabled: boolean;
   readonly onSelect: () => void;
 }) {
@@ -304,24 +507,32 @@ function CandidateRow({
       type="button"
       role="option"
       aria-selected={selected}
+      aria-disabled={known}
       disabled={disabled}
       data-slot="machine-source"
       data-candidate={candidate.id}
+      data-known={known ? "true" : "false"}
       className={cn(
-        "flex min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-[13.5px] transition-colors disabled:opacity-64",
-        selected ? "bg-primary/15 ring-1 ring-primary/60" : "hover:bg-accent/40",
+        "flex min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-[13.5px] transition-colors",
+        known ? "cursor-default" : "disabled:opacity-64",
+        selected ? "bg-primary/15 ring-1 ring-primary/60" : !known && "hover:bg-accent/40",
       )}
       onClick={onSelect}
     >
-      <MonitorIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      {known ? (
+        <span
+          role="img"
+          aria-label={labels.thisComputer}
+          className={cn("mx-1 size-2 shrink-0 rounded-full", WORKJET_STATUS_DOT_CLASS.ok)}
+        />
+      ) : (
+        <MonitorIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      )}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium">{candidate.name}</span>
         <span className="truncate text-muted-foreground text-xs">
           {candidate.transport === "local" ? labels.thisComputer : address}
         </span>
-      </span>
-      <span className="shrink-0 rounded border px-1.5 py-px text-[11px] text-muted-foreground">
-        {labels.transports[candidate.transport]}
       </span>
     </button>
   );
@@ -337,21 +548,31 @@ function EnrollmentRow({
   entry,
   source,
   onRetry,
+  onGreen,
   onAbort,
   onRename,
   onCapabilitiesChange,
 }: {
   readonly entry: EnrollmentEntry;
   readonly source: MachineEnrollmentSource;
-  readonly onRetry: (candidate: MachineCandidate) => void;
+  readonly onRetry: (candidate: MachineCandidate, password?: string) => void;
+  readonly onGreen: () => void;
   readonly onAbort: () => void;
   readonly onRename: (name: string) => void;
   readonly onCapabilitiesChange?: (capabilities: MachineCapabilities) => void;
 }) {
   const snapshot = useEnrollmentSnapshot(source, entry.enrollmentId);
   const progress = machineEnrollmentProgress(snapshot.steps);
+  const green = progress.phase === "green";
+  const greenSeen = useRef(false);
+  useEffect(() => {
+    if (!green || greenSeen.current) return;
+    greenSeen.current = true;
+    onGreen();
+  }, [green, onGreen]);
   const [details, setDetails] = useState(false);
-  const [userEdit, setUserEdit] = useState<string | null>(null);
+  // Inline-Felder bei „Benutzer prüfen“ / „Passwort falsch“; das Passwort lebt nur hier.
+  const [userEdit, setUserEdit] = useState<{ user: string; password: string } | null>(null);
   const failure = progress.fault ? machineEnrollmentError(progress.fault.error_code) : null;
   const dot = ROW_DOT[progress.phase];
   const stepLabel = machineEnrollmentStepLabel(progress.key);
@@ -401,13 +622,15 @@ function EnrollmentRow({
               variant="outline"
               data-slot="machine-enrollment-action"
               onClick={() => {
-                if (failure.action === "user") setUserEdit(entry.candidate.user ?? "");
+                if (failure.action === "user" || failure.action === "password")
+                  setUserEdit({ user: entry.candidate.user ?? "", password: "" });
+                else if (failure.action === "details") setDetails((value) => !value);
                 else onRetry(entry.candidate);
               }}
             >
               {failure.actionLabel}
             </Button>
-            {progress.fault.detail ? (
+            {progress.fault.detail && failure.action !== "details" ? (
               <Button
                 type="button"
                 size="xs"
@@ -445,28 +668,43 @@ function EnrollmentRow({
       {progress.phase === "green" ? capabilitySwitches("flex px-3 pb-2 sm:hidden") : null}
       {userEdit !== null ? (
         <form
-          className="flex flex-wrap items-center gap-2 px-3 pb-2 text-muted-foreground text-xs"
+          className="flex flex-wrap items-end gap-2 px-3 pb-2 text-muted-foreground text-xs"
           data-slot="machine-enrollment-user"
           onSubmit={(event) => {
             event.preventDefault();
-            const user = userEdit.trim();
+            const user = userEdit.user.trim();
             if (!user) return;
+            const password = userEdit.password || undefined;
             setUserEdit(null);
-            onRetry({ ...entry.candidate, user });
+            onRetry({ ...entry.candidate, user }, password);
           }}
         >
-          {labels.user}
-          <Input
-            nativeInput
-            size="sm"
-            autoFocus
-            spellCheck={false}
-            autoComplete="off"
-            className="max-w-56"
-            value={userEdit}
-            onChange={(event) => setUserEdit(event.target.value)}
-          />
-          <Button type="submit" size="xs" disabled={userEdit.trim() === ""}>
+          <label className="grid gap-1">
+            {labels.user}
+            <Input
+              nativeInput
+              size="sm"
+              autoFocus
+              spellCheck={false}
+              autoComplete="off"
+              className="w-44"
+              value={userEdit.user}
+              onChange={(event) => setUserEdit({ ...userEdit, user: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-1">
+            {labels.password}
+            <Input
+              nativeInput
+              size="sm"
+              type="password"
+              autoComplete="new-password"
+              className="w-44"
+              value={userEdit.password}
+              onChange={(event) => setUserEdit({ ...userEdit, password: event.target.value })}
+            />
+          </label>
+          <Button type="submit" size="xs" disabled={userEdit.user.trim() === ""}>
             {labels.retry}
           </Button>
         </form>

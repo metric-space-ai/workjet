@@ -24,6 +24,8 @@ export interface NewThreadMenuEntry {
 export function buildNewThreadMenuEntries(
   projects: readonly AvailableProject[],
   fallback: AvailableProject | null,
+  /** Rechnername zur Unterscheidung gleichnamiger Projekte. */
+  environmentLabel?: (environmentId: AvailableProject["environmentId"]) => string | null,
 ): NewThreadMenuEntry[] {
   const source = projects.length > 0 ? projects : fallback === null ? [] : [fallback];
   const seen = new Set<string>();
@@ -38,7 +40,10 @@ export function buildNewThreadMenuEntries(
     unique.map(({ key, project }) => ({
       id: key,
       title: project.title,
-      metaCandidates: [projectFolderName(project.path)],
+      metaCandidates: [
+        projectFolderName(project.path),
+        environmentLabel?.(project.environmentId) ?? null,
+      ],
     })),
   );
   return unique

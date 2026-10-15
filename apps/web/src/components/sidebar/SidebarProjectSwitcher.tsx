@@ -181,7 +181,7 @@ export function ProjectSwitcherList(props: {
     <ul
       ref={props.listRef}
       aria-label={props.label}
-      className="flex max-h-[min(60vh,28rem)] flex-col gap-px overflow-y-auto"
+      className="flex max-h-[min(70vh,36rem)] flex-col gap-px overflow-y-auto"
       onKeyDown={props.onKeyDown}
       data-project-switcher-list=""
     >
@@ -229,7 +229,7 @@ function SwitcherRow(props: {
       data-workjet-action={props.action}
       onClick={props.onClick}
       className={cn(
-        "flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-left text-[13.5px] text-popover-foreground outline-none hover:bg-accent focus-visible:bg-accent",
+        "flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1 text-left text-[13.5px] text-popover-foreground outline-none hover:bg-accent focus-visible:bg-accent",
         props.selected && "font-medium",
       )}
     >

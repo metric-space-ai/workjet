@@ -28,6 +28,14 @@ describe("buildProjectSwitcherEntries", () => {
     expect(entries.map((entry) => entry.meta)).toEqual(["welsch", "thesen"]);
   });
 
+  it("überspringt Merkmale, die sich nur in der Schreibweise unterscheiden", () => {
+    const entries = buildProjectSwitcherEntries([
+      { id: "a", title: "metric", metaCandidates: ["metric", "MacBook"] },
+      { id: "b", title: "Metric", metaCandidates: ["Metric", "gpu3"] },
+    ]);
+    expect(entries.map((entry) => entry.meta)).toEqual(["MacBook", "gpu3"]);
+  });
+
   it("macht auch ohne Merkmale jede Zeile eindeutig", () => {
     const entries = buildProjectSwitcherEntries([
       { id: "a", title: "metric" },

@@ -1749,10 +1749,6 @@ export default function Sidebar() {
     workjetProjectRegistry.selectedProjectId,
     workjetProjects,
   ]);
-  const newThreadMenuEntries = useMemo(
-    () => buildNewThreadMenuEntries(availableProjects, sidebarFallbackProject),
-    [availableProjects, sidebarFallbackProject],
-  );
   const sidebarAvailableProjectCount =
     availableProjects.length > 0
       ? availableProjects.length
@@ -1873,6 +1869,15 @@ export default function Sidebar() {
         environments.map((environment) => [environment.environmentId, environment.label] as const),
       ),
     [environments],
+  );
+  const newThreadMenuEntries = useMemo(
+    () =>
+      buildNewThreadMenuEntries(
+        availableProjects,
+        sidebarFallbackProject,
+        (environmentId) => environmentLabelById.get(environmentId) ?? null,
+      ),
+    [availableProjects, environmentLabelById, sidebarFallbackProject],
   );
   const orderedProjects = useMemo(
     () =>

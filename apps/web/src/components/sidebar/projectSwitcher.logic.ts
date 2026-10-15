@@ -60,7 +60,9 @@ export function buildProjectSwitcherEntries(
     for (let index = 0; index < depth; index += 1) {
       const column = candidates.map((values) => values[index] ?? null);
       const present = column.filter((value): value is string => value !== null);
-      if (present.length === column.length && new Set(present).size === present.length) {
+      // Groß-/Kleinschreibung trennt nicht: „metric“/„Metric“ als Ordner hilft nicht.
+      const keys = new Set(present.map(nameKey));
+      if (present.length === column.length && keys.size === present.length) {
         chosen = column;
         break;
       }
@@ -69,7 +71,11 @@ export function buildProjectSwitcherEntries(
       const meta =
         chosen?.[position] ??
         candidates[position]?.find(
-          (value) => !candidates.some((other, at) => at !== position && other.includes(value)),
+          (value) =>
+            !candidates.some(
+              (other, at) =>
+                at !== position && other.some((item) => nameKey(item) === nameKey(value)),
+            ),
         ) ??
         candidates[position]?.[0] ??
         null;

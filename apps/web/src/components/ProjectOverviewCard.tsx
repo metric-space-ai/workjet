@@ -416,7 +416,7 @@ export function ProjectOverviewCard({
   };
   return (
     <article
-      className="flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="relative flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       data-workjet-project-card={project.key}
       tabIndex={0}
       aria-label={openProjectLabel}
@@ -740,7 +740,7 @@ export function ProjectOverviewCard({
       {/* mt-auto: the KPI strip sits at the card's foot, so cards of one row stay
           flush (head, KPI strip, actions) with or without a preview image. */}
       {kpisEmpty && onSaveKpis && editingKpi === null ? (
-        <div className="relative mt-auto border-t border-border px-3 py-3">
+        <div className="mt-auto border-t border-border px-3 py-3">
           <div className="flex h-12 items-center" data-workjet-project-card-slots="">
             <Button
               size="sm"
@@ -754,9 +754,10 @@ export function ProjectOverviewCard({
           </div>
         </div>
       ) : kpiSlots.length > 0 ? (
-        <div className="relative mt-auto border-t border-border px-3 py-3">
+        // Not positioned: an open KPI editor overlays the whole card (Audit A-30).
+        <div className="mt-auto border-t border-border px-3 py-3">
           <dl
-            className="relative grid min-w-0 grid-cols-3 gap-2"
+            className="grid min-w-0 grid-cols-3 gap-2"
             data-workjet-project-card-slots=""
           >
             {kpiSlots}

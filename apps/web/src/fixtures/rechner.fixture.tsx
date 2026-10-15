@@ -18,6 +18,8 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { AddComputerInline, type AddComputerKind } from "../components/settings/AddComputerInline";
+import { AddMachineEnrollment } from "../components/settings/AddMachineEnrollment";
+import { createFixtureMachineEnrollment } from "../components/settings/machineEnrollmentFixture";
 import { ComputerProvisioningSection } from "../components/settings/ComputerProvisioningSection";
 import {
   knownComputerFacts,
@@ -237,6 +239,28 @@ const snapshot = (harnesses: ReadonlyArray<string>) => ({
   })),
 });
 
+// ?enroll: Ein-Klick-Beitritt (sync v4 §16.41) gegen die Attrappe.
+// ?hold=<schritt> hält vor einem Schritt an; skf-vm scheitert an der Anmeldung.
+const enrollment =
+  query.get("enroll") !== null
+    ? createFixtureMachineEnrollment({
+        stepMs: Number(query.get("stepMs") ?? 700),
+        holdBefore: (query.get("hold") as never) ?? null,
+        failures: {
+          "skf-vm": {
+            key: "transport_connected",
+            error_code: "auth_rejected",
+            detail: "ctox@10.20.0.4: Permission denied (publickey,password).",
+          },
+        },
+        capabilities: {
+          "ts-gpu1": { build: true, storage: true, gpu: "RTX A6000 · 48 GB" },
+          "lan-gpu3": { build: true, storage: false, gpu: "RTX A4500 · 20 GB" },
+          gpu4: { build: true, storage: true, gpu: "RTX 4090 · 24 GB" },
+        },
+      })
+    : null;
+
 function Fixture() {
   const [configuration, setConfiguration] = useState(initial);
   const [addOpen, setAddOpen] = useState(query.get("add") !== null);
@@ -375,6 +399,13 @@ function Fixture() {
             />
           )}
           addPanel={
+            enrollment ? (
+              <AddMachineEnrollment
+                source={enrollment.source}
+                transport={enrollment.transport}
+                defaultOpen={query.get("enroll") === "open"}
+              />
+            ) : (
             <AddComputerInline
               open={addOpen}
               onOpenChange={setAddOpen}
@@ -438,6 +469,7 @@ function Fixture() {
                   : delay({ status: "done" as const })
               }
             />
+            )
           }
         />
       </div>

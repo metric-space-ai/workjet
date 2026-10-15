@@ -4,16 +4,13 @@
  */
 import {
   MACHINE_ENROLLMENT_STEP_KEYS,
+  type MachineCandidate,
+  type MachineCapabilities,
+  type MachineEnrollmentSnapshot,
+  type MachineEnrollmentSource,
   type MachineEnrollmentStep,
   type MachineEnrollmentStepKey,
-} from "@workjet/contracts";
-
-import type {
-  MachineCandidate,
-  MachineCapabilities,
-  MachineEnrollmentSnapshot,
-  MachineEnrollmentSource,
-  MachineInstallTransport,
+  type MachineInstallTransport,
 } from "./machineEnrollment";
 
 export interface FixtureFailure {

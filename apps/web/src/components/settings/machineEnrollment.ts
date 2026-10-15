@@ -8,14 +8,42 @@
  *     `ctox machine join --token` startet und die Transport-Schritte meldet.
  * Nach `green` läuft nichts mehr über SSH; Laufzeit ist CTOX Sync.
  */
-import {
-  MACHINE_ENROLLMENT_STEP_KEYS,
-  type MachineEnrollmentBeginResult,
-  type MachineEnrollmentStep,
-  type MachineEnrollmentStepKey,
-  type MachineEnrollmentTransport,
-  type MachineEnrollmentTransportStepKey,
-} from "@workjet/contracts";
+// Vertragstypen §16.41. Bewusst hier statt in @workjet/contracts: die echten
+// Typen liefert ctox sync v4 (Phase 11) mit useCtoxDoc/useCtoxCommand.
+export const MACHINE_ENROLLMENT_STEP_KEYS = [
+  "token_issued",
+  "transport_connected",
+  "package_copied",
+  "installed",
+  "service_started",
+  "device_bound",
+  "peer_connected",
+  "green",
+] as const;
+
+export type MachineEnrollmentStepKey = (typeof MACHINE_ENROLLMENT_STEP_KEYS)[number];
+
+/** Schritte, die der Desktop aus der Installer-Ausgabe meldet. */
+export type MachineEnrollmentTransportStepKey = "transport_connected" | "package_copied" | "installed";
+
+export type MachineEnrollmentStepState = "pending" | "running" | "done" | "failed";
+
+export type MachineEnrollmentTransport = "local" | "ssh" | "tailscale";
+
+export interface MachineEnrollmentStep {
+  readonly key: MachineEnrollmentStepKey;
+  readonly state: MachineEnrollmentStepState;
+  readonly at_ms: number;
+  readonly detail?: string;
+  readonly error_code?: string;
+}
+
+/** Antwort auf `ctox.machine.enroll.begin`. Token einmalig, 15 min, instanzgebunden. */
+export interface MachineEnrollmentBeginResult {
+  readonly enrollment_id: string;
+  readonly join_token: string;
+  readonly installer_ref: string;
+}
 
 /** Ein Eintrag der Quellenliste: dieser Rechner, ein SSH-Host oder ein tailnet-Gerät. */
 export interface MachineCandidate {

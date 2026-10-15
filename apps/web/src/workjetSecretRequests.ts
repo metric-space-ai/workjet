@@ -78,16 +78,10 @@ export function secretRequestText(language: "de" | "en") {
   return {
     heading: de ? "Zugangsdaten angefragt" : "Credential requested",
     field: de ? "Wert" : "Value",
-    placeholder: de ? "Wert eingeben" : "Enter value",
-    store: de ? "Sicher speichern" : "Store securely",
+    store: de ? "Speichern" : "Save",
     decline: de ? "Ablehnen" : "Decline",
-    replace: de ? "Ersetzen" : "Replace",
-    stored: (ref: string) => (de ? `Gespeichert als ${ref}` : `Stored as ${ref}`),
-    declined: de ? "Abgelehnt" : "Declined",
-    hint: de
-      ? "Der Wert geht direkt in den verschlüsselten CTOX-Speicher. Er erscheint nicht im Chat, und der Agent sieht nur den Verweis."
-      : "The value goes straight into the encrypted CTOX store. It never appears in the chat, and the agent only sees the reference.",
-    failed: de ? "Nicht gespeichert. Erneut versuchen" : "Not stored. Try again",
+    failed: de ? "Nicht gespeichert" : "Not saved",
+    declineFailed: de ? "Nicht abgelehnt" : "Not declined",
   };
 }
 

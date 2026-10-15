@@ -1,20 +1,85 @@
-import { KeyRoundIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkjetCredentialRecord } from "@workjet/contracts";
 import { useUiText } from "../../hooks/useUiText";
 import { useProjectOverviewLanguage } from "../../hooks/useProjectOverviewLanguage";
 import { scheduleUndoableDelete } from "../../lib/undoableDelete";
 import { Button } from "../ui/button";
+import { InlineExpand } from "../ui/inline-expand";
+import { Row } from "../ui/row";
 import { SecretInput } from "../ui/secret-input";
+import { toastManager } from "../ui/toast";
 import { deleteCredential, listCredentials, putCredential } from "../../workjetSecretRequests";
 import { SettingsSection } from "./settingsLayout";
+import { searchableSetting } from "./settingsSearch";
 
 const NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
+const RETRY_MS = 10_000;
 
 /**
- * Write-only secrets of the selected CTOX instance. Values go straight into
- * the encrypted CTOX secret store and are never read back. Every change is
- * instant; removing runs after the shared undo window (no confirmation).
+ * One write-only editor. It owns the typed value, so the value never sits in
+ * the parent, in props of a kept element, or in a shared field. The value is
+ * cleared before the request is awaited and dies with the editor.
+ */
+function CredentialEditor(props: {
+  readonly fixedName?: string;
+  readonly language: "de" | "en";
+  readonly onStore: (name: string, value: string) => Promise<boolean>;
+}) {
+  const t = useUiText();
+  const [name, setName] = useState(props.fixedName ?? "");
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const target = props.fixedName ?? name;
+  const ready = NAME_PATTERN.test(target) && value.length > 0 && !busy;
+  return (
+    <form
+      className="flex flex-col gap-2 px-3 pb-2 sm:flex-row sm:items-center"
+      autoComplete="off"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!ready) return;
+        const submitted = value;
+        setValue("");
+        setBusy(true);
+        void props.onStore(target, submitted).finally(() => setBusy(false));
+      }}
+    >
+      {props.fixedName === undefined ? (
+        <input
+          aria-label={t("Schlüssel", "Key")}
+          className="min-w-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs sm:w-56"
+          value={name}
+          spellCheck={false}
+          autoComplete="off"
+          autoCapitalize="characters"
+          placeholder="API_KEY"
+          maxLength={64}
+          onChange={(event) => setName(event.target.value.toUpperCase())}
+        />
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <SecretInput
+          label={t(`Wert für ${target || "Schlüssel"}`, `Value for ${target || "key"}`)}
+          value={value}
+          onChange={setValue}
+          disabled={busy}
+          placeholder={t("Wert", "Value")}
+          maxLength={8192}
+          language={props.language}
+        />
+      </span>
+      <Button type="submit" size="sm" disabled={!ready} className="self-start sm:self-auto">
+        {t("Speichern", "Save")}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * Write-only credentials of the selected CTOX instance: names and whether a
+ * value is set, never a value. Saving is instant; removing uses the shared
+ * undo window.
  */
 export function SecretsSettingsSection(props: { readonly instanceId: string | null }) {
   const t = useUiText();
@@ -24,10 +89,6 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
   const alive = useRef(true);
   useEffect(
     () => () => {
@@ -43,33 +104,42 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
     if (list !== null) setRows(list);
   }, [props.instanceId]);
   useEffect(() => {
+    setRows(null);
     void refresh();
   }, [refresh]);
+  // Ein Lesefehler wird still wiederholt; bis dahin steht „—“.
+  useEffect(() => {
+    if (!failed) return;
+    const timer = window.setTimeout(() => void refresh(), RETRY_MS);
+    return () => window.clearTimeout(timer);
+  }, [failed, refresh]);
 
   if (!props.instanceId) return null;
   const instanceId = props.instanceId;
 
-  const store = async (name: string) => {
-    if (!value || busy) return;
-    const submitted = value;
-    setValue("");
-    setBusy(true);
-    const ok = await putCredential(instanceId, name, submitted).catch(() => false);
-    if (!alive.current) return;
-    setBusy(false);
-    setStatus(
-      ok
-        ? t(`${name} gespeichert`, `${name} saved`)
-        : t("Nicht gespeichert. Erneut versuchen", "Not saved. Try again"),
-    );
-    if (ok) {
-      setEditing(null);
-      setAdding(false);
-      setNewName("");
-      void refresh();
+  const store = async (name: string, value: string): Promise<boolean> => {
+    const ok = await putCredential(instanceId, name, value).catch(() => false);
+    if (!alive.current) return ok;
+    if (!ok) {
+      toastManager.add({
+        type: "error",
+        title: t(`${name} nicht gespeichert`, `${name} not saved`),
+      });
+      return false;
     }
+    setEditing(null);
+    setAdding(false);
+    void refresh();
+    return true;
   };
+  const unhide = (name: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      next.delete(name);
+      return next;
+    });
   const remove = (name: string) => {
+    setEditing(null);
     setHidden((prev) => new Set(prev).add(name));
     scheduleUndoableDelete({
       title: t(`${name} entfernt`, `${name} removed`),
@@ -77,149 +147,79 @@ export function SecretsSettingsSection(props: { readonly instanceId: string | nu
       run: async () => {
         const ok = await deleteCredential(instanceId, name).catch(() => false);
         if (!alive.current) return;
-        if (!ok)
-          setStatus(
-            t(`${name} nicht entfernt. Erneut versuchen`, `${name} not removed. Try again`),
-          );
-        setHidden((prev) => {
-          const next = new Set(prev);
-          next.delete(name);
-          return next;
-        });
+        if (!ok) {
+          toastManager.add({
+            type: "error",
+            title: t(`${name} nicht entfernt`, `${name} not removed`),
+          });
+        }
+        unhide(name);
         void refresh();
       },
-      onUndo: () =>
-        setHidden((prev) => {
-          const next = new Set(prev);
-          next.delete(name);
-          return next;
-        }),
+      onUndo: () => unhide(name),
     });
   };
-  const editor = (name: string) => (
-    <form
-      className="flex flex-col gap-2 pt-2"
-      autoComplete="off"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void store(name);
-      }}
-    >
-      <SecretInput
-        label={t(`Wert für ${name}`, `Value for ${name}`)}
-        value={value}
-        onChange={setValue}
-        disabled={busy}
-        placeholder={t("Wert eingeben", "Enter value")}
-        maxLength={8192}
-        language={language}
-      />
-      <div>
-        <Button type="submit" size="sm" disabled={busy || value.length === 0}>
-          {t("Sicher speichern", "Store securely")}
-        </Button>
-      </div>
-    </form>
-  );
   const visible = (rows ?? []).filter((row) => !hidden.has(row.name));
+  const section = searchableSetting("instance-secrets");
   return (
-    <SettingsSection title={t("Zugangsdaten", "Secrets")}>
-      <div
-        className="flex flex-col gap-3 px-3 py-3 text-sm sm:px-4"
-        data-workjet-secrets-settings=""
-      >
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Werte liegen verschlüsselt im CTOX-Speicher dieser Instanz. Workjet und Agents lesen sie nie zurück, Agents nutzen sie nur über den Verweis.",
-            "Values are stored encrypted in this instance's CTOX store. Workjet and agents never read them back; agents use them only by reference.",
-          )}
-        </p>
-        {failed && rows === null ? (
-          <p role="alert" className="text-xs text-destructive">
-            {t("Zugangsdaten nicht erreichbar. ", "Secrets unavailable. ")}
-            <button type="button" className="underline" onClick={() => void refresh()}>
-              {t("Erneut versuchen", "Try again")}
-            </button>
-          </p>
-        ) : null}
-        <ul className="flex flex-col divide-y rounded-lg border">
+    <SettingsSection {...section} data-workjet-secrets-settings="">
+      {rows === null ? (
+        <p className="px-3 py-2 text-[13.5px] text-muted-foreground sm:px-4">—</p>
+      ) : visible.length === 0 ? null : (
+        <ul aria-label={section.title} className="divide-y divide-border/60">
           {visible.map((row) => (
-            <li
-              key={row.name}
-              className="flex flex-col px-3 py-2"
-              data-workjet-secret-row={row.name}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <KeyRoundIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="font-mono text-xs">{row.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {row.isSet ? t("Gesetzt", "Set") : t("Nicht gesetzt", "Not set")}
-                </span>
-                <span className="ms-auto flex gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    aria-expanded={editing === row.name}
-                    onClick={() => {
-                      setValue("");
-                      setEditing(editing === row.name ? null : row.name);
-                    }}
-                  >
-                    {row.isSet ? t("Ersetzen", "Replace") : t("Setzen", "Set")}
-                  </Button>
-                  {row.isSet ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => remove(row.name)}
-                    >
-                      <Trash2Icon aria-hidden />
-                      {t("Entfernen", "Remove")}
-                    </Button>
-                  ) : null}
-                </span>
-              </div>
-              {row.description ? (
-                <p className="text-xs text-muted-foreground">{row.description}</p>
-              ) : null}
-              {editing === row.name ? editor(row.name) : null}
+            <li key={row.name} data-workjet-secret-row={row.name}>
+              <Row
+                name={<span className="font-mono text-xs">{row.name}</span>}
+                {...(row.description ? { meta: row.description } : {})}
+                status={row.isSet ? "ok" : "off"}
+                statusLabel={row.isSet ? t("Gesetzt", "Set") : t("Nicht gesetzt", "Not set")}
+                expanded={editing === row.name}
+                onToggleExpanded={() => {
+                  setAdding(false);
+                  setEditing(editing === row.name ? null : row.name);
+                }}
+                {...(row.isSet ? { onDelete: () => remove(row.name), undoableDelete: true } : {})}
+                deleteLabel={t("Entfernen", "Remove")}
+              />
+              <InlineExpand
+                label={row.name}
+                open={editing === row.name}
+                onOpenChange={(open) => setEditing(open ? row.name : null)}
+              >
+                <CredentialEditor
+                  key={row.name}
+                  fixedName={row.name}
+                  language={language}
+                  onStore={store}
+                />
+              </InlineExpand>
             </li>
           ))}
         </ul>
-        {adding ? (
-          <div className="flex flex-col gap-2 rounded-lg border p-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span>{t("Schlüssel", "Key")}</span>
-              <input
-                className="rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
-                value={newName}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder="CUSTOM_KEY"
-                onChange={(event) => setNewName(event.target.value.toUpperCase())}
-              />
-            </label>
-            {NAME_PATTERN.test(newName) ? editor(newName) : null}
-          </div>
-        ) : (
+      )}
+      <div className="px-3 pt-1 pb-1 sm:px-4">
+        <InlineExpand
+          label={t("Zugangsdaten hinzufügen", "Add credential")}
+          open={adding}
+          onOpenChange={setAdding}
+        >
+          <CredentialEditor language={language} onStore={store} />
+        </InlineExpand>
+        {adding ? null : (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="self-start"
-            onClick={() => setAdding(true)}
+            onClick={() => {
+              setEditing(null);
+              setAdding(true);
+            }}
           >
             <PlusIcon aria-hidden />
-            {t("Zugangsdaten hinzufügen", "Add secret")}
+            {t("Hinzufügen", "Add")}
           </Button>
         )}
-        {status ? (
-          <p role="status" className="text-xs text-muted-foreground">
-            {status}
-          </p>
-        ) : null}
       </div>
     </SettingsSection>
   );

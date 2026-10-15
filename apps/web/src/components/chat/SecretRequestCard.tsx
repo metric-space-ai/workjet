@@ -1,16 +1,15 @@
 import { KeyRoundIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { WorkjetSecretRequestRecord } from "@workjet/contracts";
+import { useEffect, useState } from "react";
+import { WORKJET_SECRET_VALUE_MAX, type WorkjetSecretRequestRecord } from "@workjet/contracts";
 import { Button } from "../ui/button";
 import { SecretInput } from "../ui/secret-input";
+import { toastManager } from "../ui/toast";
 import {
   declineSecretRequest,
   fulfillSecretRequest,
   listSecretRequests,
   secretRequestText,
 } from "../../workjetSecretRequests";
-
-type Settled = { readonly kind: "stored"; readonly ref: string } | { readonly kind: "declined" };
 
 /** One agent request for a credential, answered with a masked field. */
 export function SecretRequestCard(props: {
@@ -23,99 +22,70 @@ export function SecretRequestCard(props: {
   // The value lives only in this component's memory and is cleared on submit.
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [settled, setSettled] = useState<Settled | null>(null);
-  const [replacing, setReplacing] = useState(false);
   const { request } = props;
+  const settle = (ok: boolean, title: string) => {
+    setBusy(false);
+    if (ok) props.onSettled?.(request.requestId);
+    else toastManager.add({ type: "error", title });
+  };
   const store = async () => {
     if (!value || busy) return;
     const submitted = value;
     setValue("");
     setBusy(true);
-    setFailed(false);
     const outcome = await fulfillSecretRequest(props.instanceId, request.requestId, submitted);
-    setBusy(false);
-    if (outcome.ok) {
-      setSettled({ kind: "stored", ref: outcome.ref ?? `${request.scope}/${request.name}` });
-      setReplacing(false);
-      props.onSettled?.(request.requestId);
-    } else setFailed(true);
+    settle(outcome.ok, t.failed);
   };
   const decline = async () => {
     setBusy(true);
     const outcome = await declineSecretRequest(props.instanceId, request.requestId);
-    setBusy(false);
-    if (outcome.ok) {
-      setSettled({ kind: "declined" });
-      props.onSettled?.(request.requestId);
-    } else setFailed(true);
+    settle(outcome.ok, t.declineFailed);
   };
-  const showForm = settled === null || replacing;
   return (
     <section
-      className="mb-3 flex flex-col gap-2 rounded-lg border bg-card/40 p-3 text-sm"
+      className="mb-3 flex flex-col gap-2 rounded-lg border bg-card/40 px-3 py-2 text-[13.5px]"
       aria-label={`${t.heading}: ${request.label}`}
       data-workjet-secret-request={request.requestId}
     >
-      <p className="flex items-center gap-2 font-medium">
+      <p className="flex min-w-0 items-center gap-2 font-medium">
         <KeyRoundIcon className="size-4 shrink-0" aria-hidden />
-        <span>{request.label}</span>
+        <span className="truncate">{request.label}</span>
       </p>
       {request.reason ? <p className="text-xs text-muted-foreground">{request.reason}</p> : null}
-      {showForm ? (
-        <form
-          className="flex flex-col gap-2"
-          autoComplete="off"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void store();
-          }}
-        >
+      <form
+        className="flex flex-col gap-2 sm:flex-row sm:items-center"
+        autoComplete="off"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void store();
+        }}
+      >
+        <span className="min-w-0 flex-1">
           <SecretInput
             label={`${t.field}: ${request.label}`}
             value={value}
             onChange={setValue}
             disabled={busy}
-            placeholder={t.placeholder}
-            maxLength={8192}
+            placeholder={t.field}
+            maxLength={WORKJET_SECRET_VALUE_MAX}
             language={props.language}
           />
-          <p className="text-xs text-muted-foreground">{t.hint}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" disabled={busy || value.length === 0}>
-              {t.store}
-            </Button>
-            {settled === null ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void decline()}
-              >
-                {t.decline}
-              </Button>
-            ) : null}
-          </div>
-          {failed ? (
-            <p role="alert" className="text-xs text-destructive">
-              {t.failed}
-            </p>
-          ) : null}
-        </form>
-      ) : (
-        <div
-          className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-          role="status"
-        >
-          <span>{settled.kind === "stored" ? t.stored(settled.ref) : t.declined}</span>
-          {settled.kind === "stored" ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => setReplacing(true)}>
-              {t.replace}
-            </Button>
-          ) : null}
-        </div>
-      )}
+        </span>
+        <span className="flex gap-2">
+          <Button type="submit" size="sm" disabled={busy || value.length === 0}>
+            {t.store}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void decline()}
+          >
+            {t.decline}
+          </Button>
+        </span>
+      </form>
     </section>
   );
 }
@@ -129,8 +99,8 @@ export function SecretRequestCards(props: {
   readonly language: "de" | "en";
 }) {
   const [requests, setRequests] = useState<readonly WorkjetSecretRequestRecord[]>([]);
-  const settledIds = useRef(new Set<string>());
-  const [shown, setShown] = useState<readonly WorkjetSecretRequestRecord[]>([]);
+  // Answered requests leave at once, before the next poll confirms it.
+  const [settled, setSettled] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
     const instanceId = props.instanceId;
     if (!instanceId) return;
@@ -140,7 +110,9 @@ export function SecretRequestCards(props: {
       if (!alive || list === null) return;
       setRequests(
         list.filter(
-          (r) => r.threadKey === null || !props.threadKey || r.threadKey === props.threadKey,
+          (r) =>
+            r.status === "pending" &&
+            (r.threadKey === null || !props.threadKey || r.threadKey === props.threadKey),
         ),
       );
     };
@@ -151,14 +123,7 @@ export function SecretRequestCards(props: {
       clearInterval(timer);
     };
   }, [props.instanceId, props.threadKey]);
-  useEffect(() => {
-    // Keep settled cards visible (with their reference) after they leave the pending list.
-    setShown((prev) => {
-      const kept = prev.filter((r) => settledIds.current.has(r.requestId));
-      const fresh = requests.filter((r) => !kept.some((k) => k.requestId === r.requestId));
-      return [...kept, ...fresh];
-    });
-  }, [requests]);
+  const shown = requests.filter((r) => !settled.has(r.requestId));
   if (!props.instanceId || shown.length === 0) return null;
   return (
     <>
@@ -168,7 +133,7 @@ export function SecretRequestCards(props: {
           instanceId={props.instanceId!}
           request={request}
           language={props.language}
-          onSettled={(id) => settledIds.current.add(id)}
+          onSettled={(id) => setSettled((prev) => new Set(prev).add(id))}
         />
       ))}
     </>

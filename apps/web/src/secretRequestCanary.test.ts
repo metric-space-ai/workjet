@@ -101,16 +101,49 @@ describe("secret request canary", () => {
     expect(logs.join("\n")).not.toContain(CANARY);
   });
 
-  it("rejects responses that try to carry a value back", () => {
+  it("never carries a value back in a response", () => {
     const decode = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse);
-    const decoded = decode({
+    // The desktop bridge decodes with onExcessProperty "error"; the default
+    // strips or rejects. Either way the value must not come back.
+    const back = (input: object, options?: { onExcessProperty: "error" }) => {
+      try {
+        return JSON.stringify(decode(input, options));
+      } catch {
+        return "rejected";
+      }
+    };
+    const fulfilled = {
       action: "secret.request.fulfill",
       requestId: "sreq_abc",
       status: "stored",
       ref: "[secret-ref:mail/cto1_password]",
-      value: CANARY,
-    });
-    expect(JSON.stringify(decoded)).not.toContain(CANARY);
+    };
+    const listed = {
+      action: "secret.list",
+      secrets: [{ name: "API_KEY", description: null, isSet: true, updatedAt: null }],
+    };
+    for (const clean of [fulfilled, listed]) {
+      expect(back(clean)).not.toBe("rejected");
+      const tampered =
+        "secrets" in clean
+          ? { ...clean, secrets: [{ ...clean.secrets[0], value: CANARY }] }
+          : { ...clean, value: CANARY };
+      expect(back(tampered)).not.toContain(CANARY);
+      expect(back(tampered, { onExcessProperty: "error" })).toBe("rejected");
+    }
+  });
+
+  it("masks the field and keeps values out of toasts", () => {
+    expect(inputSource).toMatch(/autoComplete="new-password"/);
+    expect(inputSource).toMatch(/spellCheck=\{false\}/);
+    expect(inputSource).toMatch(/type=\{visible \? "text" : "password"\}/);
+    for (const source of [cardSource, settingsSource]) {
+      for (const call of source.match(/toastManager\.add\([^)]*\)/gu) ?? []) {
+        expect(call).not.toMatch(/value|submitted/u);
+      }
+      // The value is cleared before the request is awaited.
+      expect(source).toMatch(/const submitted = value;\s+setValue\(""\);/u);
+    }
   });
 
   it("keeps the card and helpers free of storage and draft writers", () => {

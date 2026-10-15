@@ -14,13 +14,7 @@ import {
   type ProjectOverviewStatus,
   type ProjectOwnerOverview,
 } from "../projectOverviewModel";
-import {
-  ArrowUpRightIcon,
-  BookmarkIcon,
-  GitPullRequestIcon,
-  MessageSquareIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { BookmarkIcon, GitPullRequestIcon, MessageSquareIcon, RefreshCwIcon } from "lucide-react";
 import {
   ctoxPostContent,
   disruptionContent,
@@ -174,7 +168,6 @@ export function ProjectOverviewView(props: {
   readonly connectionError?: boolean;
   /** Why the overview data is missing (core outdated, timeout …); diagnostics only, never shown. */
   readonly connectionMessage?: string | null;
-  readonly actions?: ReactNode;
   readonly feedPosts?: readonly CtoxProjectFeedPost[];
   readonly onRecomputeKpis?: (() => void) | undefined;
   /** Shortcuts into the project's settings pages (instant save + undo live there). */
@@ -563,40 +556,6 @@ export function ProjectOverviewView(props: {
         data-workjet-overview-column="side"
       >
         {sideOrder.map((section) => sideSection[section])}
-        <section className={card} data-workjet-overview-section="settings">
-          <h3 className="mb-1 text-[15px] font-bold text-foreground">
-            {de ? "Projekt & Einstellungen" : "Project & settings"}
-          </h3>
-          <div className="flex flex-col items-start">
-            {(props.settingsLinks ?? []).map((link) => (
-              <button
-                key={link.label}
-                type="button"
-                onClick={link.onClick}
-                className="py-1.5 text-[14px] font-semibold text-foreground hover:text-blue-400"
-              >
-                {link.label}
-              </button>
-            ))}
-            {data.links.map((link) => (
-              <a
-                key={link.url}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 py-1.5 text-[14px] font-semibold text-foreground hover:text-blue-400"
-              >
-                {link.label}
-                <ArrowUpRightIcon className="size-3.5" aria-hidden="true" />
-              </a>
-            ))}
-          </div>
-          {props.actions ? (
-            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
-              {props.actions}
-            </div>
-          ) : null}
-        </section>
       </aside>
     </main>
   );

@@ -45,13 +45,15 @@ describe("project places are inline", () => {
     expect(sidebarSource).toContain("if (sidebarAvailableProjectCount === 0) {");
   });
 
-  it("lives in Einstellungen › Projekte › <Projekt>", () => {
+  it("lives in Einstellungen › Projekte; the old project route opens the card (#569)", () => {
     expect(settingsProjectsSource).toContain('createFileRoute("/settings/projects")');
     expect(settingsProjectsSource).toContain("ProjectsSettingsList");
     expect(settingsProjectSource).toContain('createFileRoute("/settings/projects/$projectKey")');
     expect(sidebarSource).toContain('to: "/settings/projects/$projectKey"');
-    // Section titles are localized (t("DE", "EN")) and hidden when embedded.
-    expect(projectSettingsPanelSource).toContain('"Regeltermin, Budget und Supervisor"');
+    expect(settingsProjectSource).toContain("ProjectCardRedirect");
+    // Regeltermin, Budget und Supervisor bearbeitet nur die Projektkarte (#569).
+    expect(projectSettingsPanelSource).not.toContain('"Regeltermin, Budget und Supervisor"');
+    expect(projectSettingsPanelSource).not.toContain("<ProjectOverviewEditor");
     expect(projectSettingsPanelSource).toMatch(/"Skripte"/);
     expect(projectSettingsPanelSource).toContain("<ProjectFaviconPicker");
     expect(projectSettingsPanelSource).toContain("<InlineRemovalConfirm");

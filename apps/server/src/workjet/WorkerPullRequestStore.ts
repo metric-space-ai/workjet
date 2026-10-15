@@ -6,6 +6,7 @@ import type {
   WorkjetWorkerPullRequest,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -94,6 +95,9 @@ export const make = Effect.gen(function* () {
             bound.prUrl !== receipt.prUrl
           )
             return false;
+          // Keep the worker's first verified delivery separate from later parent repairs.
+          yield* sql`UPDATE workjet_worker_runs SET result_commit = COALESCE(result_commit, ${bound.headOid})
+            WHERE run_id = ${receipt.threadId}`;
           // A terminal run cannot reopen or move to another outcome.
           if (bound.state !== "open")
             return bound.state === receipt.state && bound.headOid === receipt.headOid;
@@ -106,13 +110,18 @@ export const make = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.observe")));
   const markExecutionStopped = (threadId: ThreadId) =>
-    sql`
-      UPDATE workjet_worker_pull_requests SET execution_stopped = 1
-      WHERE thread_id = ${threadId}
-    `.pipe(
-      Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.markExecutionStopped")),
-      Effect.asVoid,
-    );
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const at = DateTime.formatIso(yield* DateTime.now);
+          yield* sql`UPDATE workjet_worker_pull_requests SET execution_stopped = 1 WHERE thread_id = ${threadId}`;
+          yield* sql`UPDATE workjet_worker_runs SET terminal_at = COALESCE(terminal_at, ${at})
+        WHERE run_id = ${threadId} AND EXISTS (
+          SELECT 1 FROM workjet_worker_pull_requests WHERE thread_id = ${threadId} AND execution_stopped = 1
+        )`;
+        }),
+      )
+      .pipe(Effect.mapError(toPersistenceSqlError("WorkerPullRequestStore.markExecutionStopped")));
   const listStopped = (afterThreadId: string) =>
     sql<WorkerPullRequestReceipt>`
       SELECT thread_id AS "threadId", worktree_path AS "worktreePath",

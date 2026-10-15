@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { useClientSettings } from "../../hooks/useSettings";
-import { isSettingsPathVisible } from "../settings/settingsNavigation";
+import { settingsNavItems } from "../settings/settingsNavigation";
+import { searchSettings } from "../settings/settingsSearch";
 import {
   CONNECTABLE_INTEGRATIONS,
   IntegrationsSettingsPanel,
@@ -36,9 +37,16 @@ afterEach(() => {
 
 describe("Schnittstellen without developer mode", () => {
   it("offers no entry in settings navigation or search", () => {
-    expect(isSettingsPathVisible("/settings/integrations", false)).toBe(false);
-    expect(isSettingsPathVisible("/settings/integrations", true)).toBe(true);
-    expect(isSettingsPathVisible("/settings/general", false)).toBe(true);
+    const navPaths = (developer: boolean) => settingsNavItems(developer).map((item) => item.to);
+    const searchHits = (developer: boolean) =>
+      searchSettings("Schnittstellen", { developerMode: developer }).filter(
+        (item) => item.to === "/settings/integrations",
+      );
+    expect(navPaths(false)).not.toContain("/settings/integrations");
+    expect(navPaths(true)).toContain("/settings/integrations");
+    expect(navPaths(false)).toContain("/settings/general");
+    expect(searchHits(false)).toHaveLength(0);
+    expect(searchHits(true)).not.toHaveLength(0);
   });
 
   it("mounts neither the store nor the pinned request cards", () => {

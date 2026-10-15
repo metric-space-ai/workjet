@@ -10,7 +10,12 @@ import {
   requestSpeechSettings,
   speechCheckAudio,
   speechErrorText,
+  speechFailureReason,
 } from "../../lib/workjetSpeechSettings";
+import { useNavigate } from "@tanstack/react-router";
+import { markSpeechSupport, speechReadFailureView } from "./speechAvailability";
+
+const SPEECH_RETRY_MS = 5_000;
 
 const controlClass = "h-8 min-w-0 rounded-md border border-border bg-background px-2 text-sm";
 const remedies: Readonly<Record<string, string>> = {
@@ -63,6 +68,10 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const [error, setError] = useState<string>();
   const [recording, setRecording] = useState<string>();
   const [transcript, setTranscript] = useState<string>();
+  // Lesefehler werden still wiederholt; „Zugriff verweigert“ ist die einzige Zeile.
+  const [readDenied, setReadDenied] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const navigate = useNavigate();
   const controller = useRef<AbortController | undefined>(undefined);
   const audio = useRef<HTMLAudioElement>(null);
   const url = useRef<string | undefined>(undefined);
@@ -96,7 +105,21 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
       }
       return result;
     } catch (failure) {
-      if (!active.signal.aborted) setError(speechErrorText(failure, uiLanguage()));
+      if (active.signal.aborted) return;
+      if (input.action !== "speech.settings.read") {
+        setError(speechErrorText(failure, uiLanguage()));
+        return;
+      }
+      const view = speechReadFailureView(speechFailureReason(failure));
+      if (view === "hide") {
+        // The instance's CTOX has no speech settings: the page disappears.
+        markSpeechSupport(instanceId, false);
+        void navigate({ to: "/settings/general", replace: true });
+      } else if (view === "denied") {
+        setReadDenied(true);
+      } else {
+        window.setTimeout(() => setReadAttempt((attempt) => attempt + 1), SPEECH_RETRY_MS);
+      }
     } finally {
       if (controller.current === active && !active.signal.aborted) setBusy(undefined);
     }
@@ -104,7 +127,9 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
 
   useEffect(() => {
     void run({ action: "speech.settings.read" }).then((result) => {
-      if (result?.status.mistral_credential_present) void run({ action: "speech.settings.voices" });
+      if (result === undefined) return;
+      markSpeechSupport(instanceId, true);
+      if (result.status.mistral_credential_present) void run({ action: "speech.settings.voices" });
     });
     return () => {
       controller.current?.abort();
@@ -112,7 +137,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
       if (url.current) URL.revokeObjectURL(url.current);
     };
     // This component is remounted when its instance changes.
-  }, [instanceId]);
+  }, [instanceId, readAttempt]);
 
   useEffect(() => {
     if (audio.current && settings) {
@@ -132,7 +157,6 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   const sttPending = busy === "speech.settings.check.transcription";
   const disabled = busy !== undefined || !config;
   const unloadedLabel = busy === "speech.settings.read" ? "Lädt …" : "Nicht geladen";
-  const loadingSlow = useLoadingSlow(busy === "speech.settings.read");
   return (
     <SettingsSection
       title="Sprachausgabe"
@@ -156,40 +180,24 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
         </p>
       )}
       {!config ? (
-        <div
-          role={error ? "alert" : "status"}
-          className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground"
-          data-workjet-speech-unloaded=""
-        >
-          <span>
-            {busy === "speech.settings.read"
-              ? loadingSlow
-                ? "Laden dauert länger"
-                : "Lädt …"
-              : (error ?? "Spracheinstellungen der Instanz nicht geladen")}
-          </span>
-          {busy === "speech.settings.read" && !loadingSlow ? null : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void run({ action: "speech.settings.read" })}
-            >
-              Erneut laden
-            </Button>
-          )}
-        </div>
-      ) : null}
-      {config && loadingSlow ? (
-        <div role="status" className="flex items-center gap-3 px-4 text-sm text-muted-foreground">
-          <span>Laden dauert länger</span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void run({ action: "speech.settings.read" })}
+        readDenied ? (
+          <p className="px-4 text-sm text-muted-foreground" data-workjet-speech-denied="">
+            Keine Berechtigung für Spracheinstellungen
+          </p>
+        ) : (
+          <div
+            className="divide-y divide-border rounded-lg border border-border"
+            data-workjet-speech-unloaded=""
           >
-            Erneut versuchen
-          </Button>
-        </div>
+            {["Mistral API", "Stimme", "Sprechtempo", "Transkription"].map((title) => (
+              <SettingsRow
+                key={title}
+                title={title}
+                control={<span className="text-sm text-muted-foreground">—</span>}
+              />
+            ))}
+          </div>
+        )
       ) : null}
       {config ? (
         <div className="divide-y divide-border rounded-lg border border-border">
@@ -473,18 +481,4 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
       ) : null}
     </SettingsSection>
   );
-}
-
-/** Ein Laden endet immer: nach 10 s meldet die Seite „Laden dauert länger“. */
-function useLoadingSlow(loading: boolean): boolean {
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!loading) {
-      setSlow(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setSlow(true), 10_000);
-    return () => window.clearTimeout(timer);
-  }, [loading]);
-  return slow;
 }

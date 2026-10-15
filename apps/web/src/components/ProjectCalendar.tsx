@@ -1,4 +1,3 @@
-import { workjetUiLanguage } from "../workjetProjectControl";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Checkbox } from "./ui/checkbox";
 import { OptionSelect } from "./ui/option-select";
@@ -33,6 +32,8 @@ import { useClientSettings } from "../hooks/useSettings";
 import { useProjectOverviewLanguage } from "../hooks/useProjectOverviewLanguage";
 import { Button } from "./ui/button";
 import { InlineExpand } from "./ui/inline-expand";
+import { CALENDAR_TEXT, calendarText, type CalendarText } from "../calendar/calendarText";
+import { useCalendarLoad } from "../calendar/calendarLoad";
 
 export type CalendarView = "day" | "week" | "month" | "year";
 
@@ -45,11 +46,13 @@ export type AccountCalendarState = {
 };
 
 /** Only exceptions earn a visible line; routine sync state stays in the tooltip. */
-export function accountCalendarProblem(calendar: AccountCalendarState): string | null {
-  if (calendar.status === "unavailable") return calText("Abgleich fehlgeschlagen", "Sync failed");
-  if (calendar.status === "unsupported") return calText("Nicht unterstützt", "Not supported");
-  if (calendar.status === "ready" && calendar.truncated)
-    return calText("Teilweise abgeglichen", "Partially synced");
+export function accountCalendarProblem(
+  calendar: AccountCalendarState,
+  text: CalendarText = CALENDAR_TEXT.de,
+): string | null {
+  if (calendar.status === "unavailable") return text.syncFailed;
+  if (calendar.status === "unsupported") return text.unsupported;
+  if (calendar.status === "ready" && calendar.truncated) return text.syncedPartially;
   return null;
 }
 
@@ -58,11 +61,12 @@ export function accountCalendarStatusTitle(
   timeFormat: CalendarTimeFormat = "locale",
   locale: string = "de-DE",
 ): string {
-  if (calendar.status === "loading") return calText("Wird abgeglichen …", "Syncing …");
-  if (calendar.status !== "ready") return accountCalendarProblem(calendar) ?? "";
+  const text = calendarText(locale);
+  if (calendar.status === "loading") return text.syncing;
+  if (calendar.status !== "ready") return accountCalendarProblem(calendar, text) ?? "";
   return calendar.syncedAtMs === null
-    ? calText("Abgeglichen", "Synced")
-    : `${calText("Abgeglichen", "Synced")} ${formatClockTime(calendar.syncedAtMs, timeFormat, undefined, locale)}`;
+    ? text.synced
+    : text.syncedAt(formatClockTime(calendar.syncedAtMs, timeFormat, undefined, locale));
 }
 
 type CalendarProject = GalleryProject & {
@@ -92,43 +96,24 @@ const SESSION_CALENDAR_ID = "project-sessions";
 const MEETING_MINUTES = 60;
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-const VIEWS: readonly { readonly value: CalendarView; readonly label: string }[] = [
-  { value: "day", label: "Tag" },
-  { value: "week", label: "Woche" },
-  { value: "month", label: "Monat" },
-  { value: "year", label: "Jahr" },
-];
+const VIEWS: readonly CalendarView[] = ["day", "week", "month", "year"];
 const WEEKDAY_OFFSETS = Array.from({ length: 7 }, (_, index) => index);
+const NO_SESSIONS: readonly CtoxWorkjetSessionProjection[] = [];
+const NO_ACCOUNT_EVENTS: readonly WorkjetCalendarEvent[] = [];
+const NO_ACCOUNT_CALENDARS: readonly AccountCalendarState[] = [];
 
 type CalendarFormat = {
   readonly locale: string;
   readonly timeFormat: CalendarTimeFormat;
   readonly weekStart: WeekStart;
+  readonly text: CalendarText;
 };
 const CalendarFormatContext = createContext<CalendarFormat>({
   locale: "de-DE",
   timeFormat: "locale",
   weekStart: "monday",
+  text: CALENDAR_TEXT.de,
 });
-
-/** Calendar week label per UI language; new languages add an entry. */
-const VIEW_LABEL_EN: Record<string, string> = {
-  day: "Day",
-  week: "Week",
-  month: "Month",
-  year: "Year",
-};
-
-function calText(de: string, en: string): string {
-  return workjetUiLanguage() === "en" ? en : de;
-}
-
-const WEEK_NUMBER_LABEL: Record<string, string> = { de: "KW", en: "Week" };
-
-function weekNumberLabel(locale: string, week: number): string {
-  const language = locale.split("-")[0] ?? "de";
-  return `${WEEK_NUMBER_LABEL[language] ?? WEEK_NUMBER_LABEL.en} ${week}`;
-}
 
 function visibleRange(
   view: CalendarView,
@@ -165,7 +150,7 @@ function shiftAnchor(view: CalendarView, anchor: DateKey, direction: 1 | -1): Da
 }
 
 function rangeTitle(view: CalendarView, anchor: DateKey, format: CalendarFormat): string {
-  const { locale, weekStart } = format;
+  const { locale, weekStart, text } = format;
   switch (view) {
     case "day":
       return formatDateKey(
@@ -182,7 +167,7 @@ function rangeTitle(view: CalendarView, anchor: DateKey, format: CalendarFormat)
       const from = startOfWeek(anchor, weekStart);
       const to = addDays(from, 6);
       // KW follows ISO 8601 and is read from the Monday of the shown week.
-      return `${formatDateKeyRange(from, to, locale)} · ${weekNumberLabel(locale, isoWeekNumber(startOfWeek(anchor)))}`;
+      return `${formatDateKeyRange(from, to, locale)} · ${text.weekNumber} ${isoWeekNumber(startOfWeek(anchor))}`;
     }
     case "month":
       return formatDateKey(anchor, { month: "long", year: "numeric" }, locale);
@@ -223,6 +208,7 @@ export function buildSessionEvents(
   projects: readonly CalendarProject[],
   sessions: readonly CtoxWorkjetSessionProjection[],
   displayZone: string,
+  text: CalendarText = CALENDAR_TEXT.de,
 ): readonly CalendarEvent[] {
   const byId = new Map(projects.map((project) => [project.id, project]));
   return sessions.flatMap((session): CalendarEvent[] => {
@@ -235,7 +221,7 @@ export function buildSessionEvents(
       {
         id: `session:${session.id}`,
         calendarId: SESSION_CALENDAR_ID,
-        title: `${project.title} · ${calText("Sitzung", "Session")} (${session.runStatus})`,
+        title: `${project.title} · ${text.session} (${text.sessionStatus[session.runStatus]})`,
         startMs: session.createdAtMs,
         endMs: session.createdAtMs,
         point: true,
@@ -311,9 +297,9 @@ function EventButton({
   readonly event: CalendarEvent;
   readonly placement: "block" | "chip";
 }) {
-  const { timeFormat, locale } = useContext(CalendarFormatContext);
+  const { timeFormat, locale, text } = useContext(CalendarFormatContext);
   const formatTime = (ms: number) => formatClockTime(ms, timeFormat, undefined, locale);
-  const label = `${event.title}, ${event.allDay ? calText("ganztägig", "all day") : formatTime(event.startMs)}`;
+  const label = `${event.title}, ${event.allDay ? text.allDay : formatTime(event.startMs)}`;
   if (placement === "chip") {
     return (
       <button
@@ -433,7 +419,7 @@ function TimeGrid({
   readonly today: DateKey;
   readonly nowMinutes: number;
 }) {
-  const { timeFormat, locale } = useContext(CalendarFormatContext);
+  const { timeFormat, locale, text } = useContext(CalendarFormatContext);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // Open the grid at 07:00 so mornings are visible without scrolling.
@@ -467,11 +453,9 @@ function TimeGrid({
         <div
           className="grid border-b border-border py-1 text-xs"
           style={{ gridTemplateColumns: columns }}
-          aria-label={calText("Ganztägige Termine", "All-day events")}
+          aria-label={text.allDayEvents}
         >
-          <span className="px-1 text-right text-muted-foreground">
-            {calText("ganztägig", "all day")}
-          </span>
+          <span className="px-1 text-right text-muted-foreground">{text.allDay}</span>
           {days.map((date) => (
             <div
               key={date}
@@ -540,7 +524,7 @@ function MonthGrid({
   readonly today: DateKey;
   readonly onOpenDay: (date: DateKey) => void;
 }) {
-  const { weekStart, locale } = useContext(CalendarFormatContext);
+  const { weekStart, locale, text } = useContext(CalendarFormatContext);
   return (
     <div className="overflow-hidden rounded-md border border-border">
       <div className="grid grid-cols-7 border-b border-border text-xs text-muted-foreground">
@@ -592,7 +576,7 @@ function MonthGrid({
                   onClick={() => onOpenDay(date)}
                   className="px-1 text-left text-xs text-muted-foreground hover:text-foreground"
                 >
-                  {dayEvents.length - 3} weitere
+                  {text.more(dayEvents.length - 3)}
                 </button>
               ) : null}
             </div>
@@ -607,11 +591,11 @@ export function ProjectCalendar({
   projects,
   initialDate,
   initialView = "week",
-  sessions = [],
+  sessions = NO_SESSIONS,
   sessionsStatus,
   onRefreshSessions,
-  accountEvents = [],
-  accountCalendars = [],
+  accountEvents = NO_ACCOUNT_EVENTS,
+  accountCalendars = NO_ACCOUNT_CALENDARS,
   accountsUnavailable = false,
   accountsLoading = false,
   accountsTruncated = false,
@@ -650,9 +634,10 @@ export function ProjectCalendar({
     calendarLocale(uiLanguage, typeof navigator === "undefined" ? undefined : navigator.language);
   const timeFormat = timeFormatOverride ?? settingsTimeFormat;
   const weekStart = resolveWeekStart(weekStartOverride ?? settingsWeekStart, locale);
+  const text = calendarText(locale);
   const format = useMemo(
-    () => ({ locale, timeFormat, weekStart }),
-    [locale, timeFormat, weekStart],
+    () => ({ locale, timeFormat, weekStart, text }),
+    [locale, timeFormat, weekStart, text],
   );
   const displayZone = useMemo(() => localTimeZone(), []);
   const [now, setNow] = useState(() => Date.now());
@@ -682,7 +667,7 @@ export function ProjectCalendar({
   const allEvents = useMemo(
     () => [
       ...buildEvents(projects, windowFrom, windowTo, displayZone),
-      ...buildSessionEvents(projects, sessions, displayZone).filter(
+      ...buildSessionEvents(projects, sessions, displayZone, text).filter(
         (event) => event.date >= windowFrom && event.date <= windowTo,
       ),
       ...buildAccountEvents(
@@ -694,7 +679,7 @@ export function ProjectCalendar({
         projects,
       ),
     ],
-    [projects, sessions, accountEvents, windowFrom, windowTo, displayZone],
+    [projects, sessions, accountEvents, windowFrom, windowTo, displayZone, text],
   );
   const visibleEvents = useMemo(
     () =>
@@ -711,6 +696,22 @@ export function ProjectCalendar({
     [visibleEvents],
   );
 
+  // A load always ends (UI-Vertrag §1): whatever has not answered within
+  // CALENDAR_LOAD_TIMEOUT_MS, or has failed, becomes one "Nicht geladen" line
+  // with a retry button instead of an endless loading state.
+  const load = useCalendarLoad(
+    sessionsStatus === "loading" ||
+      accountsLoading ||
+      accountCalendars.some((calendar) => calendar.status === "loading"),
+    sessionsStatus === "unavailable" || accountsUnavailable,
+  );
+  const canRefresh = onRefreshSessions !== undefined || onRefreshAccounts !== undefined;
+  const refresh = () => {
+    load.retry();
+    onRefreshSessions?.();
+    onRefreshAccounts?.();
+  };
+
   const unscheduled = projects.filter((project) => project.configuration?.jourFixe == null);
   const columnDays =
     view === "week" ? WEEKDAY_OFFSETS.map((index) => addDays(range.from, index)) : [anchor];
@@ -718,20 +719,20 @@ export function ProjectCalendar({
   return (
     <CalendarFormatContext.Provider value={format}>
       <section
-        aria-label={calText("Projektkalender", "Project calendar")}
+        aria-label={text.calendar}
         data-workjet-project-calendar=""
         className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]"
       >
         <aside className="order-2 space-y-6 lg:order-1">
           <label className="block text-sm">
-            {calText("Projekt", "Project")}
+            {text.project}
             <OptionSelect
-              aria-label={calText("Kalenderprojekt", "Calendar project")}
+              aria-label={text.projectSelect}
               className="mt-1"
               size="default"
               value={projectKey}
               options={[
-                { value: "all", label: calText("Alle Projekte", "All projects") },
+                { value: "all", label: text.allProjects },
                 ...projects.map((project) => ({ value: project.key, label: project.title })),
               ]}
               onValueChange={setProjectKey}
@@ -744,8 +745,8 @@ export function ProjectCalendar({
             eventDates={eventDates}
             onSelect={setAnchor}
           />
-          <section aria-label={calText("Kalender", "Calendars")}>
-            <h2 className="mb-2 text-sm font-medium">{calText("Kalender", "Calendars")}</h2>
+          <section aria-label={text.calendars}>
+            <h2 className="mb-2 text-sm font-medium">{text.calendars}</h2>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <Checkbox
                 checked={!hiddenCalendars.has(PROJECT_CALENDAR_ID)}
@@ -759,9 +760,7 @@ export function ProjectCalendar({
                 }}
               />
               <span className="size-2.5 shrink-0 rounded-full bg-primary" aria-hidden />
-              <span className="min-w-0 break-words">
-                {calText("Regeltermine", "Regular meetings")}
-              </span>
+              <span className="min-w-0 break-words">{text.regularMeetings}</span>
             </label>
             <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
               <Checkbox
@@ -775,28 +774,18 @@ export function ProjectCalendar({
                   })
                 }
               />
-              {calText("Projektsitzungen", "Project sessions")}
+              {text.projectSessions}
             </label>
-            {sessionsStatus === "unavailable" && (
-              <p role="status" className="mt-2 text-xs text-muted-foreground">
-                {calText(
-                  "Sitzungen nicht erreichbar · Anzeige evtl. veraltet",
-                  "Sessions unreachable · may be out of date",
-                )}
-              </p>
-            )}
             {accountCalendars.length > 0 && (
-              <h3 className="mt-4 text-sm font-medium">
-                {calText("Verbundene Konten", "Connected accounts")}
+              <h3
+                className="mt-4 text-sm font-medium"
+                title={accountsTruncated ? text.accountsTruncated : undefined}
+              >
+                {text.connectedAccounts}
               </h3>
             )}
-            {accountsUnavailable && (
-              <p role="status" className="mt-2 text-xs text-muted-foreground">
-                {calText("Kontokalender nicht erreichbar.", "Account calendars unreachable.")}
-              </p>
-            )}
             {accountCalendars.map((calendar) => {
-              const problem = accountCalendarProblem(calendar);
+              const problem = accountCalendarProblem(calendar, text);
               return (
                 <div key={calendar.id} className="mt-2 text-sm">
                   <label
@@ -824,36 +813,30 @@ export function ProjectCalendar({
                 </div>
               );
             })}
-            {accountsTruncated && (
-              <p role="status" className="mt-2 text-xs text-muted-foreground">
-                {calText("Kontenliste unvollständig.", "Account list incomplete.")}
+            {load.state === "failed" && (
+              <p
+                role="status"
+                className="mt-3 text-xs text-muted-foreground"
+                data-workjet-calendar-load="failed"
+              >
+                {text.notLoaded}
               </p>
             )}
-            {(onRefreshSessions || onRefreshAccounts) && (
+            {canRefresh && (
               <Button
                 size="sm"
                 variant="outline"
                 className="mt-2"
-                disabled={sessionsStatus === "loading" || accountsLoading}
-                onClick={() => {
-                  onRefreshSessions?.();
-                  onRefreshAccounts?.();
-                }}
+                disabled={load.state === "loading"}
+                onClick={refresh}
               >
-                {calText("Aktualisieren", "Refresh")}
+                {load.state === "failed" ? text.retry : text.refresh}
               </Button>
             )}
           </section>
           {unscheduled.length > 0 && (
-            <section
-              aria-label={calText(
-                "Projekte ohne Regeltermin",
-                "Projects without a regular meeting",
-              )}
-            >
-              <h2 className="text-sm font-medium">
-                {calText("Ohne Regeltermin", "Without regular meeting")}
-              </h2>
+            <section aria-label={text.withoutRegularMeetingLabel}>
+              <h2 className="text-sm font-medium">{text.withoutRegularMeeting}</h2>
               {/* Real buttons, not caption-like text (#595): each opens the project to set its meeting. */}
               <div className="mt-2 flex flex-wrap gap-1">
                 {unscheduled.map((project) => (
@@ -863,10 +846,7 @@ export function ProjectCalendar({
                     variant="outline"
                     onClick={project.onOpen}
                     data-workjet-action={`project.open.calendar:${project.key}`}
-                    aria-label={calText(
-                      `${project.title}: Termin festlegen`,
-                      `${project.title}: set meeting`,
-                    )}
+                    aria-label={text.setMeeting(project.title)}
                   >
                     {project.title}
                     <ArrowUpRightIcon className="size-3" />
@@ -882,7 +862,7 @@ export function ProjectCalendar({
           <div className="sticky top-2 z-20">
             <InlineExpand
               hideCollapseControl
-              label={calText("Termindetails", "Event details")}
+              label={text.eventDetails}
               open={selectedEvent !== null}
               onOpenChange={(open) => {
                 if (!open) setSelectedEvent(null);
@@ -890,14 +870,14 @@ export function ProjectCalendar({
             >
               {selectedEvent !== null && (
                 <section
-                  aria-label={calText("Termindetails", "Event details")}
+                  aria-label={text.eventDetails}
                   className="mb-4 rounded-md border border-border bg-background p-4 shadow-sm"
                   data-workjet-calendar-event-details=""
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="font-semibold">{selectedEvent.title}</h2>
                     <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
-                      {calText("Schließen", "Close")}
+                      {text.close}
                     </Button>
                   </div>
                   <p className="mt-2 text-sm">
@@ -910,21 +890,19 @@ export function ProjectCalendar({
                   {selectedEvent.notes && (
                     <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
                   )}
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {calText("Kontotermin · nur lesen", "Account event · read-only")}
-                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">{text.accountEventReadOnly}</p>
                 </section>
               )}
             </InlineExpand>
           </div>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
-              {calText("Heute", "Today")}
+              {text.today}
             </Button>
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={calText("Zurück", "Previous")}
+              aria-label={text.previous}
               onClick={() => setAnchor((previous) => shiftAnchor(view, previous, -1))}
             >
               <ChevronLeftIcon />
@@ -932,7 +910,7 @@ export function ProjectCalendar({
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={calText("Weiter", "Next")}
+              aria-label={text.next}
               onClick={() => setAnchor((previous) => shiftAnchor(view, previous, 1))}
             >
               <ChevronRightIcon />
@@ -942,18 +920,18 @@ export function ProjectCalendar({
             </h2>
             <div
               role="group"
-              aria-label={calText("Kalenderansicht", "Calendar view")}
+              aria-label={text.viewGroup}
               className="inline-flex gap-1 rounded-md border border-border p-1"
             >
               {VIEWS.map((option) => (
                 <Button
-                  key={option.value}
+                  key={option}
                   size="sm"
-                  variant={view === option.value ? "secondary" : "ghost"}
-                  aria-pressed={view === option.value}
-                  onClick={() => setView(option.value)}
+                  variant={view === option ? "secondary" : "ghost"}
+                  aria-pressed={view === option}
+                  onClick={() => setView(option)}
                 >
-                  {calText(option.label, VIEW_LABEL_EN[option.value] ?? option.label)}
+                  {text.views[option]}
                 </Button>
               ))}
             </div>

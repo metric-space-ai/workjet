@@ -85,6 +85,7 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
       diffAvailable={false}
       filesAvailable={false}
       pullRequestAvailable={false}
+      codingToolsVisible
       agentsAvailable={false}
     >
       <div>content</div>
@@ -92,7 +93,11 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
   );
 }
 
-function renderEmptyLauncher(browserEnabled = true, browserAvailable = true) {
+function renderEmptyLauncher(
+  browserEnabled = true,
+  browserAvailable = true,
+  codingToolsVisible = true,
+) {
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
@@ -121,6 +126,7 @@ function renderEmptyLauncher(browserEnabled = true, browserAvailable = true) {
       diffAvailable
       filesAvailable
       pullRequestAvailable
+      codingToolsVisible={codingToolsVisible}
       agentsAvailable
     >
       <div>content</div>
@@ -177,5 +183,14 @@ describe("RightPanelTabs surface launcher", () => {
     expect(html).not.toContain("Terminal");
     expect(html).not.toContain("Agents");
     expect(html).not.toContain("Follow subagents and workflows");
+  });
+
+  it("offers no diff or pull request without developer mode (#557)", () => {
+    const html = renderEmptyLauncher(true, true, false);
+
+    expect(html).toContain("Dateien");
+    expect(html).not.toContain("Änderungen");
+    expect(html).not.toContain("Pull Request");
+    expect(html).not.toContain("Terminal");
   });
 });

@@ -1,3 +1,152 @@
+import { WorkerRunLedger, type WorkerRunIdentity } from "./WorkerRunLedger.ts";
+import { WorkerRunPool, make as makeWorkerRunPool } from "./WorkerRunPool.ts";
+import { layer as workerRunDrawLayer } from "./WorkerRunDraw.ts";
+import * as NodeSqliteClient from "../persistence/NodeSqliteClient.ts";
+import { ProviderGatewayService } from "../providerGateway/ProviderGatewayService.ts";
+import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
+import type { WorkjetConfiguration } from "@workjet/contracts";
+it.effect("uses the committed pool draw before the queued team delegation", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const profile = { ...remoteProfile, computerId: localComputer.id };
+    let drawCommitted = false;
+    let queued: WorkerRunIdentity | undefined;
+    const service = yield* harness.service.pipe(
+      Effect.provide(
+        serverSettingsLayerTest({
+          workjet: { computers: [localComputer], workerProfiles: [profile] },
+        }),
+      ),
+      Effect.provideService(WorkerRunPool, {
+        list: () => Effect.die("selection owns the snapshot"),
+        select: () =>
+          Effect.sync(() => {
+            expect(harness.commands).toHaveLength(0);
+            drawCommitted = true;
+            return {
+              key: "fixture-draw",
+              provider: "codex",
+              profile,
+              instanceId: inheritedModel.instanceId,
+              draw: {
+                briefSha256: "a".repeat(64),
+                healthSnapshotSha256: "b".repeat(64),
+                observedAt: "2026-10-13T09:00:00.000Z",
+                strategy: "uniform",
+                candidates: [{ candidate: "fixture-draw", probability: 1 }],
+                randomValue: 0.5,
+                selected: "fixture-draw",
+              } as const,
+            };
+          }),
+      }),
+      Effect.provideService(WorkerRunLedger, {
+        queue: (identity) =>
+          Effect.sync(() => {
+            expect(drawCommitted).toBe(true);
+            expect(harness.commands).toHaveLength(0);
+            queued = identity;
+          }),
+        observe: () => Effect.void,
+        list: () => Effect.succeed([]),
+        get: () => Effect.succeed(Option.none()),
+      }),
+    );
+    const result = yield* service.dispatch(invocation, {
+      task: "Pool assignment",
+      pool: "worker",
+      taskType: "backend",
+      difficulty: "hard",
+    });
+    expect(queued?.selection).toBe("pool");
+    expect(queued?.worker.harness).toBe(profile.harness);
+    expect(result.modelSelection.model).toBe(profile.modelId);
+    expect(harness.commands.map((command) => command.type)).toEqual(["thread.create"]);
+    expect(harness.dispatchOptions[0]?.workerDelegation?.delegation.state).toBe("queued");
+  }),
+);
+
+it.effect("persists the queued assignment before creating its worker thread", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const queued: WorkerRunIdentity[] = [];
+    const service = yield* harness.service.pipe(
+      Effect.provideService(WorkerRunLedger, {
+        queue: (identity) =>
+          Effect.sync(() => {
+            expect(harness.commands).toHaveLength(0);
+            queued.push(identity);
+          }),
+        observe: () => Effect.void,
+        list: () => Effect.succeed([]),
+        get: () => Effect.succeed(Option.none()),
+      }),
+    );
+    const result = yield* service.dispatch(invocation, {
+      task: "Check the assigned backend change.",
+      taskType: "tests",
+      difficulty: "hard",
+    });
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.runId).toBe(result.workerThreadId);
+    expect(queued[0]?.parent.threadId).toBe(invocation.threadId);
+    expect(queued[0]?.parent.sessionId).toBe(invocation.providerSessionId);
+    expect(queued[0]?.taskType).toBe("tests");
+    expect(queued[0]?.difficulty).toBe("hard");
+    expect(queued[0]?.selection).toBe("manual");
+    expect(queued[0]?.briefSha256).toMatch(/^[a-f0-9]{64}$/);
+  }),
+);
+
+// NativeSupervisorWorkerDispatchLive and SupervisorMeetingPreparation start an explicitly
+// named local profile. That start must not depend on the pool's fresh gateway evidence.
+it.effect("starts an explicitly named local profile without fresh pool evidence", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const profile = { ...remoteProfile, computerId: localComputer.id };
+    const workjet = { computers: [localComputer], workerProfiles: [profile] };
+    // The real pool, fed with stale gateway health and no live harness snapshot.
+    const pool = yield* makeWorkerRunPool.pipe(
+      Effect.provideService(ProviderGatewayService, {
+        catalog: () => Effect.succeed({ schemaVersion: 1, accounts: [], pools: [], routes: [] }),
+        health: () => Effect.succeed({ schemaVersion: 1, observedAtMs: null, accounts: [] }),
+        modelChecks: () => Effect.succeed({ schemaVersion: 1, checks: [], pending: [] }),
+        accountModels: () => Effect.die("no enabled account"),
+      } as unknown as ProviderGatewayService["Service"]),
+      Effect.provideService(ProviderRegistry, {
+        refresh: () => Effect.succeed([]),
+      } as unknown as ProviderRegistry["Service"]),
+      Effect.provide(workerRunDrawLayer.pipe(Layer.provide(NodeSqliteClient.layerMemory()))),
+    );
+    const evidence = yield* pool.list(
+      { llmRoutes: [], ...workjet } as unknown as WorkjetConfiguration,
+      environmentId,
+    );
+    expect(evidence.workers).toEqual([]);
+    const queued: WorkerRunIdentity[] = [];
+    const service = yield* harness.service.pipe(
+      Effect.provide(serverSettingsLayerTest({ workjet })),
+      Effect.provideService(WorkerRunPool, pool),
+      Effect.provideService(WorkerRunLedger, {
+        queue: (identity) => Effect.sync(() => void queued.push(identity)),
+        observe: () => Effect.void,
+        list: () => Effect.succeed([]),
+        get: () => Effect.succeed(Option.none()),
+      }),
+    );
+    const result = yield* service.dispatch(invocation, {
+      task: "Prepare the meeting brief.",
+      workerProfileId: profile.id,
+    });
+    expect(result.computerId).toBe(localComputer.id);
+    expect(result.modelSelection).toEqual(inheritedModel);
+    expect(harness.commands.map((command) => command.type)).toEqual(["thread.create"]);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.selection).toBe("manual");
+    expect(queued[0]?.worker.harness).toBe(profile.harness);
+  }),
+);
+
 for (const requestedHarness of [
   "claude-code",
   "grok-cli",
@@ -264,6 +413,7 @@ import {
   type WorkjetComputer,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";

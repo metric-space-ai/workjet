@@ -1,6 +1,13 @@
 import { workjetUiLanguage } from "../workjetProjectControl";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, ChevronDownIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  PlusIcon,
+  SearchIcon,
+  SettingsIcon,
+  UnplugIcon,
+} from "lucide-react";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { useEffect, useMemo, useState } from "react";
 
@@ -18,6 +25,7 @@ import { ctoxInstanceDisplayTitle } from "./ctox/ctoxInstanceDisplayTitle";
 import { dedupeCtoxInstances } from "./settings/InstancesTable";
 import { useActiveWorkjetScope } from "../activeWorkjetScope";
 import { cn } from "../lib/utils";
+import { scheduleUndoableDelete } from "../lib/undoableDelete";
 
 type InstanceDiscovery = "loading" | CtoxDiscoveryResult;
 
@@ -81,9 +89,9 @@ function pickerDot(instance: CtoxManagedInstance): RowStatus {
 }
 
 /**
- * Instanz-Dropdown im Kopf (drei Orte): eine reine Auswahl. Eine Zeile je
- * Instanz, darunter „Instanz hinzufügen“ und „Instanzen verwalten“; beide
- * führen nach Einstellungen › Instanzen. Kein Popover mit Inhalt.
+ * Instanz-Menü im Kopf: der einzige Ort für die Liste aller Instanzen (#556).
+ * Eine Zeile je Instanz mit „Trennen“ (sofort, Rückgängig im Toast), darunter
+ * „Instanz hinzufügen“ und „Instanz-Einstellungen“ (die gewählte Instanz).
  */
 export function ActiveCtoxInstanceSelector({
   placement = "sidebar",
@@ -92,7 +100,9 @@ export function ActiveCtoxInstanceSelector({
   readonly placement?: "header" | "sidebar" | "settings";
 } = {}) {
   const navigate = useNavigate();
-  const { discovery, selectedId, select, refresh } = useCtoxMode();
+  const { discovery, selectedId, select, refresh, setInstanceState } = useCtoxMode();
+  // „Trennen“ wirkt sofort und lässt sich im Toast rückgängig machen (#556, #687).
+  const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(() => new Set());
   const { selectionRevision } = useActiveWorkjetScope();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -105,7 +115,27 @@ export function ActiveCtoxInstanceSelector({
   const activeId = resolveActiveCtoxInstanceId(instances, selectedId);
   const active = instances.find((instance) => instance.id === activeId);
   const searchable = instances.length > INSTANCE_PICKER_SEARCH_THRESHOLD;
-  const visible = searchable ? filterCtoxInstances(instances, search) : instances;
+  const visible = (searchable ? filterCtoxInstances(instances, search) : instances).filter(
+    (instance) => !hiddenIds.has(instance.id),
+  );
+  const disconnect = (instance: CtoxManagedInstance) => {
+    const show = () =>
+      setHiddenIds((current) => {
+        const next = new Set(current);
+        next.delete(instance.id);
+        return next;
+      });
+    setHiddenIds((current) => new Set(current).add(instance.id));
+    scheduleUndoableDelete({
+      title: pickerText("Getrennt", "Disconnected"),
+      undoLabel: pickerText("Rückgängig", "Undo"),
+      run: async () => {
+        const result = await setInstanceState(instance, "removed");
+        if (!result.ok) show();
+      },
+      onUndo: show,
+    });
+  };
   const loading = discovery === "loading";
   const failed = discovery !== "loading" && discovery._tag === "failed";
 
@@ -221,34 +251,49 @@ export function ActiveCtoxInstanceSelector({
             </MenuItem>
           ) : (
             visible.map((instance) => (
-              <MenuItem
-                key={instance.id}
-                closeOnClick={false}
-                disabled={!canActivateCtoxInstance(instance) || pendingId !== null}
-                data-workjet-instance-option={instance.id}
-                data-selected={activeId === instance.id ? "" : undefined}
-                onClick={() => void chooseInstance(instance)}
-              >
-                <RowStatusDot
-                  status={pickerDot(instance)}
-                  label={ctoxInstancePickerStatus(instance)}
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  {ctoxInstanceDisplayTitle(instance)}
-                </span>
-                {/* Status as a word, not only a coloured dot (#592). */}
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {ctoxInstancePickerStatus(instance)}
-                </span>
-                {pendingId === instance.id ? (
-                  <Spinner className="size-3.5" />
-                ) : activeId === instance.id ? (
-                  <CheckIcon
-                    className="size-4 text-foreground"
-                    aria-label={pickerText("Ausgewählt", "Selected")}
+              <div key={instance.id} className="flex min-w-0 items-center gap-0.5">
+                <MenuItem
+                  closeOnClick={false}
+                  className="min-w-0 flex-1"
+                  disabled={!canActivateCtoxInstance(instance) || pendingId !== null}
+                  data-workjet-instance-option={instance.id}
+                  data-selected={activeId === instance.id ? "" : undefined}
+                  onClick={() => void chooseInstance(instance)}
+                >
+                  <RowStatusDot
+                    status={pickerDot(instance)}
+                    label={ctoxInstancePickerStatus(instance)}
                   />
+                  <span className="min-w-0 flex-1 truncate">
+                    {ctoxInstanceDisplayTitle(instance)}
+                  </span>
+                  {/* Status as a word, not only a coloured dot (#592). */}
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {ctoxInstancePickerStatus(instance)}
+                  </span>
+                  {pendingId === instance.id ? (
+                    <Spinner className="size-3.5" />
+                  ) : activeId === instance.id ? (
+                    <CheckIcon
+                      className="size-4 text-foreground"
+                      aria-label={pickerText("Ausgewählt", "Selected")}
+                    />
+                  ) : null}
+                </MenuItem>
+                {instance.source !== "local_daemon" && activeId !== instance.id ? (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="shrink-0 text-muted-foreground"
+                    aria-label={pickerText("Trennen", "Disconnect")}
+                    title={pickerText("Trennen", "Disconnect")}
+                    data-workjet-action={`instance.disconnect:${instance.id}`}
+                    onClick={() => disconnect(instance)}
+                  >
+                    <UnplugIcon className="size-3.5" />
+                  </Button>
                 ) : null}
-              </MenuItem>
+              </div>
             ))
           )}
           {error ? (
@@ -273,7 +318,7 @@ export function ActiveCtoxInstanceSelector({
             }}
           >
             <SettingsIcon />
-            {pickerText("Instanzen verwalten", "Manage instances")}
+            {pickerText("Instanz-Einstellungen", "Instance settings")}
           </MenuItem>
         </MenuPopup>
       </Menu>

@@ -1,0 +1,19 @@
+{
+  "name": "claude-profile-auth",
+  "time": "2026-10-09T21:51:56.586162+00:00",
+  "command": [
+    "env",
+    "CLAUDE_CONFIG_DIR=/Users/michaelwelsch/.t3/userdata/harness-homes/claude",
+    "claude",
+    "auth",
+    "status"
+  ],
+  "cwd": ".",
+  "timeout_seconds": 30,
+  "pid": 24909,
+  "exit_code": 1,
+  "stdout": "{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\",\n  \"apiProvider\": \"firstParty\",\n  \"analyticsDisabled\": false,\n  \"projectsDirectory\": \"/Users/michaelwelsch/.t3/userdata/harness-homes/claude/projects\",\n  \"configDirectory\": \"/Users/michaelwelsch/.t3/userdata/harness-homes/claude\"\n}\n",
+  "stderr": "",
+  "elapsed_seconds": 0.148,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

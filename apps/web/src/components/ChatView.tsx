@@ -170,6 +170,11 @@ import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
+  isCodingRightPanelKind,
+  isCodingToolCommand,
+  visibleDeveloperRightPanelState,
+} from "../developerModeVisibility";
+import {
   AlarmClockIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
@@ -719,6 +724,9 @@ interface PersistentThreadTerminalDrawerProps {
   keybindings: ResolvedKeybindingsConfig;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
 }
+
+// Turn diff cards open the diff panel; without developer mode there is none (#557).
+const NO_TURN_DIFF_SUMMARIES = new Map<MessageId, TurnDiffSummary>();
 
 const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
   threadRef,
@@ -1544,13 +1552,15 @@ function ChatViewContent(props: ChatViewProps) {
     [draftThreadsByThreadKey],
   );
   const [mountedTerminalThreadKeys, setMountedTerminalThreadKeys] = useState<string[]>([]);
+  // PR, diff, terminal and branch strip are coding tools: developer mode only (#557).
+  const developerMode = useClientSettings((settings) => settings.developerMode);
   const mountedTerminalThreadRefs = useMemo(
     () =>
-      mountedTerminalThreadKeys.flatMap((mountedThreadKey) => {
+      (developerMode ? mountedTerminalThreadKeys : []).flatMap((mountedThreadKey) => {
         const mountedThreadRef = parseScopedThreadKey(mountedThreadKey);
         return mountedThreadRef ? [{ key: mountedThreadKey, threadRef: mountedThreadRef }] : [];
       }),
-    [mountedTerminalThreadKeys],
+    [developerMode, mountedTerminalThreadKeys],
   );
 
   const fallbackDraftProjectRef = draftThread
@@ -2107,8 +2117,12 @@ function ChatViewContent(props: ChatViewProps) {
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
   const rightPanelState = useMemo(
-    () => visibleWorkjetRightPanelState(storedRightPanelState, browserSurfaceEnabled),
-    [storedRightPanelState, browserSurfaceEnabled],
+    () =>
+      visibleDeveloperRightPanelState(
+        visibleWorkjetRightPanelState(storedRightPanelState, browserSurfaceEnabled),
+        developerMode,
+      ),
+    [storedRightPanelState, browserSurfaceEnabled, developerMode],
   );
   const activeRightPanelSurface = rightPanelState.isOpen
     ? (rightPanelState.surfaces.find((surface) => surface.id === rightPanelState.activeSurfaceId) ??
@@ -4274,6 +4288,7 @@ function ChatViewContent(props: ChatViewProps) {
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef || (surface.kind === "preview" && !browserSurfaceEnabled)) return;
+      if (!developerMode && isCodingRightPanelKind(surface.kind)) return;
       useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
       if (surface.kind === "preview" && surface.resourceId) {
         setActivePreviewTab(activeThreadRef, surface.resourceId);
@@ -4285,7 +4300,7 @@ function ChatViewContent(props: ChatViewProps) {
         onDiffPanelOpen?.();
       }
     },
-    [activeThreadRef, browserSurfaceEnabled, diffOpen, onDiffPanelOpen],
+    [activeThreadRef, browserSurfaceEnabled, developerMode, diffOpen, onDiffPanelOpen],
   );
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
@@ -5543,6 +5558,7 @@ function ChatViewContent(props: ChatViewProps) {
         context: shortcutContext,
       });
       if (!command) return;
+      if (!developerMode && isCodingToolCommand(command)) return;
 
       if (command === "terminal.toggle") {
         event.preventDefault();
@@ -5646,6 +5662,7 @@ function ChatViewContent(props: ChatViewProps) {
     closeTerminal,
     closePanelTerminal,
     createNewTerminal,
+    developerMode,
     setTerminalOpen,
     runProjectScript,
     splitTerminal,
@@ -6939,10 +6956,12 @@ function ChatViewContent(props: ChatViewProps) {
   // The terminal consumes vertical space below the chat column. Keeping the tall draft hero
   // centered in the remaining area makes its headline collide with the cross-mode status above.
   // In that split layout the composer behaves like the normal bottom-docked composer instead.
-  const shouldCenterDraftComposer = isDraftHeroState && !terminalUiState.terminalOpen;
+  const shouldCenterDraftComposer =
+    isDraftHeroState && !(developerMode && terminalUiState.terminalOpen);
 
   const panelToggleControls = (
     <PanelLayoutControls
+      showTerminalControl={developerMode}
       terminalAvailable={activeProject !== null}
       terminalOpen={terminalUiState.terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
@@ -6978,7 +6997,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   // PR auschecken ist Inhalt der rechten Leiste (inline), kein Dialog.
   const pullRequestCheckoutPanel =
-    pullRequestDialogState && activeThread ? (
+    developerMode && pullRequestDialogState && activeThread ? (
       <PullRequestThreadPanel
         key={pullRequestDialogState.key}
         open
@@ -7264,7 +7283,9 @@ function ChatViewContent(props: ChatViewProps) {
                       ? activeThread.session.activeTurnId
                       : null
                   }
-                  turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                  turnDiffSummaryByAssistantMessageId={
+                    developerMode ? turnDiffSummaryByAssistantMessageId : NO_TURN_DIFF_SUMMARIES
+                  }
                   activeThreadEnvironmentId={activeThread.environmentId}
                   routeThreadKey={routeThreadKey}
                   onOpenTurnDiff={onOpenTurnDiff}
@@ -7520,7 +7541,7 @@ function ChatViewContent(props: ChatViewProps) {
                               <ChatComposer
                                 composerRef={composerRef}
                                 workspaceExtraControls={
-                                  showComposerContextStrip ? (
+                                  developerMode && showComposerContextStrip ? (
                                     <div className="pointer-events-auto">
                                       <BranchToolbar
                                         environmentId={activeThread.environmentId}
@@ -7543,7 +7564,9 @@ function ChatViewContent(props: ChatViewProps) {
                                         envLocked={envLocked}
                                         onComposerFocusRequest={scheduleComposerFocus}
                                         {...(canCheckoutPullRequestIntoThread
-                                          ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                                          ? {
+                                              onCheckoutPullRequestRequest: openPullRequestDialog,
+                                            }
                                           : {})}
                                         {...(hasMultipleEnvironments
                                           ? { onEnvironmentChange }
@@ -7757,6 +7780,7 @@ function ChatViewContent(props: ChatViewProps) {
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
+          codingToolsVisible={developerMode}
           agentsAvailable
           pullRequestStatuses={pullRequestTabStatuses}
           liveAgentCount={agentPanelModel.liveCount}
@@ -7796,6 +7820,7 @@ function ChatViewContent(props: ChatViewProps) {
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
             pullRequestAvailable={pullRequestSurfaceAvailable}
+            codingToolsVisible={developerMode}
             agentsAvailable
             pullRequestStatuses={pullRequestTabStatuses}
             liveAgentCount={agentPanelModel.liveCount}

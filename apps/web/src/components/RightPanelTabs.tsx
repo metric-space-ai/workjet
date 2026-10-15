@@ -70,6 +70,8 @@ interface RightPanelTabsProps {
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  /** Diff and pull request entries exist only in developer mode (#557). */
+  codingToolsVisible: boolean;
   agentsAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
@@ -159,6 +161,7 @@ function RightPanelEmptyState(props: {
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  codingToolsVisible: boolean;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
@@ -202,7 +205,11 @@ function RightPanelEmptyState(props: {
         badgeCount: 0,
       },
     ] as const
-  ).filter((action) => action.shortcut !== "B" || props.browserEnabled);
+  ).filter(
+    (action) =>
+      (action.shortcut !== "B" || props.browserEnabled) &&
+      (props.codingToolsVisible || (action.shortcut !== "D" && action.shortcut !== "P")),
+  );
 
   type SurfaceAction = (typeof actions)[number];
 
@@ -669,22 +676,26 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <Files />
                     Dateien
                   </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.diffAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.diff}
-                    onClick={props.onAddDiff}
-                  >
-                    <FileDiff />
-                    Änderungen
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.pullRequestAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.pullRequest}
-                    onClick={props.onAddPullRequest}
-                  >
-                    <GitPullRequest />
-                    Pull Request
-                  </SurfaceMenuItem>
+                  {props.codingToolsVisible ? (
+                    <>
+                      <SurfaceMenuItem
+                        available={props.diffAvailable}
+                        disabledReason={SURFACE_DISABLED_REASONS.diff}
+                        onClick={props.onAddDiff}
+                      >
+                        <FileDiff />
+                        Änderungen
+                      </SurfaceMenuItem>
+                      <SurfaceMenuItem
+                        available={props.pullRequestAvailable}
+                        disabledReason={SURFACE_DISABLED_REASONS.pullRequest}
+                        onClick={props.onAddPullRequest}
+                      >
+                        <GitPullRequest />
+                        Pull Request
+                      </SurfaceMenuItem>
+                    </>
+                  ) : null}
                 </MenuPopup>
               </Menu>
             ) : null}
@@ -704,6 +715,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
+            codingToolsVisible={props.codingToolsVisible}
           />
         ) : (
           props.children

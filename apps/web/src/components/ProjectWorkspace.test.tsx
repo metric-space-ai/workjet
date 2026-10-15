@@ -253,8 +253,10 @@ describe("owner project overview", () => {
     expect(data.kpis.every((kpi) => !("explanation" in kpi))).toBe(true);
     const html = markup([supervisor, specialist]);
     expect(html).not.toContain("Latency");
-    // Missing values: one sentence, no dash tiles (feed redesign).
-    expect(html).toContain("Kennzahlen sind noch nicht berechnet.");
+    // Missing values: no status sentence, no dash tiles; without a recompute action the
+    // section is absent (WP-F1).
+    expect(html).not.toContain("Kennzahlen sind noch nicht berechnet.");
+    expect(html).not.toContain('data-workjet-overview-section="kpis"');
     expect(html).not.toContain(">—<");
     expect(html).not.toMatch(/noch nicht verfügbar|not yet available/iu);
   });
@@ -352,9 +354,11 @@ describe("owner project overview", () => {
   it("shows the feed first, then live, meeting, KPIs and goals, and translates all overview navigation in both languages", () => {
     for (const language of ["de", "en"] as const) {
       const html = markup([supervisor], language);
-      const positions = ["feed", "live", "kpis"].map((section) =>
-        html.indexOf('data-workjet-overview-section="' + section + '"'),
-      );
+      // Empty side sections (nothing live, no KPIs) are absent; those present keep the order.
+      expect(html).toContain('data-workjet-overview-section="feed"');
+      const positions = ["feed", "live", "meeting", "kpis"]
+        .map((section) => html.indexOf('data-workjet-overview-section="' + section + '"'))
+        .filter((position) => position >= 0);
       expect(positions).toEqual([...positions].sort((a, b) => a - b));
       expect(html).not.toContain('data-workjet-overview-section="decisions"');
       expect(html).toContain('lang="' + language + '"');

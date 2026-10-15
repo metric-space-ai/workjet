@@ -1,11 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { AppearanceSettingsPanel } from "../components/settings/SettingsPanels";
-
-function SettingsAppearanceRoute() {
-  return <AppearanceSettingsPanel />;
-}
-
+/** Darstellung ist eine Zeile in „Allgemein“ (#553); alte Links landen dort. */
 export const Route = createFileRoute("/settings/appearance")({
-  component: SettingsAppearanceRoute,
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/general", hash: "color-scheme", replace: true });
+  },
 });

@@ -1,0 +1,12 @@
+{
+  "checked_at": "2026-10-09T22:29:09.465479+00:00",
+  "python_syntax_files": 24,
+  "json_receipts": 51,
+  "local_markdown_links": 31,
+  "missing_links": [],
+  "known_credentials_in_delivery": false,
+  "cross_harness_pass": true,
+  "pi_default_restored": true,
+  "javascript_syntax": "workjet_bridge.mjs: node --check passed",
+  "scope": "Lightweight documentation/probe checks; no repository-wide app tests or browser acceptance."
+}

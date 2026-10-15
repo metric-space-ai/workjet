@@ -16,7 +16,7 @@ import { useCtoxMode } from "../components/ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "../components/settings/settingsInstanceContext";
 import { Button } from "../components/ui/button";
 import { useUiText } from "../hooks/useUiText";
-import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
+import { SettingsCompactNav, SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import { useClientSettings } from "../hooks/useSettings";
 import { closeOpenInlineExpand } from "~/components/ui/inline-expand";
 import { collapseExpandedSettingsRow } from "~/components/settings/settingsEscape";
@@ -136,7 +136,7 @@ function SettingsContentLayout() {
         data-workjet-settings-sheet=""
         className="fixed inset-2 z-50 flex min-h-0 overflow-hidden rounded-xl border border-border bg-popover text-foreground shadow-2xl sm:inset-6 lg:inset-x-16 lg:inset-y-8"
       >
-        <aside className="flex w-44 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground sm:w-60">
+        <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground sm:flex">
           <SettingsSidebarNav pathname={location.pathname} />
         </aside>
         <Button
@@ -146,12 +146,15 @@ function SettingsContentLayout() {
           aria-label={t("Einstellungen schließen", "Close settings")}
           data-workjet-action="settings.close"
           onClick={navigateBackWithinApp}
-          className="absolute top-2 right-2 z-10 size-10"
+          className="absolute top-1 right-1 z-10 size-10 sm:top-2 sm:right-2"
         >
           <XIcon className="size-5" />
         </Button>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-popover text-foreground">
-          <div className="flex h-14 shrink-0 items-center px-3 pe-14 sm:px-5 sm:pe-14">
+          <div className="sm:hidden">
+            <SettingsCompactNav pathname={location.pathname} />
+          </div>
+          <div className="hidden h-14 shrink-0 items-center px-3 pe-14 sm:flex sm:px-5 sm:pe-14">
             <div className="flex w-full min-w-0 items-center gap-2">
               <SettingsBreadcrumb
                 pathname={location.pathname}
@@ -199,7 +202,7 @@ export const Route = createFileRoute("/settings")({
     }
 
     if (location.pathname === "/settings") {
-      throw redirect({ to: "/settings/business-os", replace: true });
+      throw redirect({ to: "/settings/general", replace: true });
     }
   },
   component: SettingsRouteLayout,

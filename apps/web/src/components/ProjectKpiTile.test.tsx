@@ -46,10 +46,18 @@ const tile = (index: number, expanded: boolean, editable = true) =>
   );
 
 describe("KPI tile on the project card", () => {
-  it("labels slots with the resolved label or an honest state, never 'KPI n'", () => {
+  it("labels slots with the resolved label, else the KPI's sentence, never a state text", () => {
     expect(projectKpiTileLabel(kpis, "p1", 0)).toBe("Active users");
-    expect(["nicht berechnet", "not calculated"]).toContain(projectKpiTileLabel(kpis, "p1", 1));
-    expect(["nicht festgelegt", "not set"]).toContain(projectKpiTileLabel(kpis, "p1", 2));
+    expect(projectKpiTileLabel(kpis, "p1", 1)).toBe("Revenue this month");
+    expect(projectKpiTileLabel(kpis, "p1", 2)).toBe("");
+    for (const index of [0, 1, 2]) {
+      const markup = tile(index, false);
+      for (const state of ["nicht berechnet", "not calculated", "nicht festgelegt", "not set"])
+        expect(markup).not.toContain(state);
+    }
+    // Defined but not calculated: "—" and the KPI's own sentence as its label.
+    expect(tile(1, false)).toMatch(/>Revenue this month<\/dt>/);
+    expect(tile(1, false)).toMatch(/>—<\/dd>/);
   });
 
   it("collapsed: a toggle with aria-expanded=false and an inert editor", () => {

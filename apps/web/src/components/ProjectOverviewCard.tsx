@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ProjectExitModelCardPanel, ProjectExitModelSummary } from "./ProjectExitModel";
+import { exitModelPresentation } from "../projectExitModel";
+import { useLastKnownProjectCard } from "../projectCardCache";
 import {
   ProjectCardConfigEditor,
   type ProjectCardConfigurationValues,
@@ -14,11 +16,7 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
-import {
-  projectKpiPresentation,
-  type PromptedProjectKpis,
-  type SaveProjectKpiPrompts,
-} from "../projectKpis";
+import { type PromptedProjectKpis, type SaveProjectKpiPrompts } from "../projectKpis";
 import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectInitProgress } from "./ProjectInitProgress";
@@ -38,7 +36,6 @@ export function ProjectOverviewCard({
   statistics,
   onConfigure,
   kpis,
-  kpisUnavailable = false,
   ctoxInstanceId = null,
   reorderHandle,
   tokenBudget,
@@ -53,7 +50,10 @@ export function ProjectOverviewCard({
   readonly tokenBudget?: ReactNode;
   readonly ctoxInstanceId?: string | null;
   readonly kpis?: PromptedProjectKpis | undefined;
-  /** The KPI read failed or timed out; show the fallback slots instead of a skeleton. */
+  /**
+   * The KPI read failed or timed out. The card shows the last known values (local
+   * cache) or "—" either way, so this flag no longer changes what is rendered.
+   */
   readonly kpisUnavailable?: boolean | undefined;
   readonly reorderHandle?: ReactNode;
   readonly onOpen: () => void;
@@ -104,6 +104,16 @@ export function ProjectOverviewCard({
     overview.slots[2] ?? defaultSlots[2],
   ];
   const scopedKpis = kpis?.project_id === project.id ? kpis : undefined;
+  // Drei Zustände je Kachel: unbekannt (`undefined`), leer, vorhanden. Unbekannt
+  // zeigt den letzten bekannten Stand dieser Instanz, sonst „—“; nie einen Satz.
+  const liveExitModel =
+    project.configuration === undefined ? undefined : (project.configuration.exitModel ?? null);
+  const known = useLastKnownProjectCard(project.native ? ctoxInstanceId : null, project.id, {
+    kpis: project.native ? scopedKpis : undefined,
+    exitModel: project.native ? liveExitModel : undefined,
+  });
+  const knownKpis = known.kpis?.project_id === project.id ? known.kpis : undefined;
+  const exitModel = known.exitModel;
   const websiteHost =
     website
       ?.replace(/^https?:\/\//, "")
@@ -112,6 +122,18 @@ export function ProjectOverviewCard({
   const titleIsWebsite =
     websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
+  const hasPreview = !archived && cachedPreview != null && failedCachedWebsite !== website;
+  const exitValued = exitModelPresentation(exitModel ?? null, project.id).value !== "—";
+  // „Bewerten“ nur mit Startweg (Rückseite → project.exit_model.refresh) und nur bei
+  // einem gelesenen Stand ohne Wert; bei unbekanntem Stand steht nichts.
+  const canRate =
+    project.native &&
+    !archived &&
+    ctoxInstanceId !== null &&
+    exitModel !== undefined &&
+    !exitValued &&
+    exitModel?.status !== "researching";
+  const kpisEmpty = project.native && knownKpis !== undefined && knownKpis.items.length === 0;
   // Die Rückseite ersetzt nur die Vorschaufläche; Spalte und Breite der Karte bleiben.
   const refreshKpis = async () => {
     if (!onRefreshKpis || refreshPending) return;
@@ -173,10 +195,19 @@ export function ProjectOverviewCard({
   };
   return (
     <article
-      className="min-w-0 overflow-hidden rounded-lg border border-border bg-card"
+      className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card"
       data-workjet-project-card={project.key}
     >
       <div className="flex min-w-0 items-center gap-2 px-3 py-2">
+        {/* Lokale Projekte tragen ihr Favicon im Kopf statt einer Vorschaufläche. */}
+        {!hasPreview && project.local?.workspaceRoot ? (
+          <ProjectFavicon
+            environmentId={project.local.environmentId}
+            cwd={project.local.workspaceRoot}
+            faviconPath={project.local.faviconPath}
+            className="size-5 shrink-0"
+          />
+        ) : null}
         <div className="min-w-0 flex-1">
           <h2
             className="break-words text-[13.5px] leading-5 font-medium"
@@ -287,7 +318,7 @@ export function ProjectOverviewCard({
               key={project.key}
               projectId={project.id}
               instanceId={project.native ? ctoxInstanceId : null}
-              assessment={project.configuration?.exitModel ?? null}
+              assessment={exitModel ?? null}
             />
           ) : (
             saveCardConfiguration && (
@@ -304,7 +335,7 @@ export function ProjectOverviewCard({
             )
           )}
         </div>
-      ) : (
+      ) : hasPreview && cachedPreview ? (
         <div
           className="relative aspect-video overflow-hidden bg-muted/40"
           data-workjet-project-preview=""
@@ -318,56 +349,66 @@ export function ProjectOverviewCard({
             data-workjet-action={`project.open.gallery-preview:${project.key}`}
             className="absolute inset-0 z-0 cursor-pointer"
           />
-          {!archived && cachedPreview && failedCachedWebsite !== website ? (
-            <img
-              src={cachedPreview.image}
-              alt={
-                cachedPreview.kind === "logo"
-                  ? t(`Logo von ${project.title}`, `${project.title} logo`)
-                  : t(
-                      `Gespeicherte Vorschau von ${project.title}`,
-                      `Saved preview of ${project.title}`,
-                    )
-              }
-              title={`${t("Gespeicherte Vorschau", "Saved preview")} · ${cachedPreview.capturedOn}`}
-              loading="lazy"
-              decoding="async"
-              onError={() => setFailedCachedWebsite(website ?? null)}
-              className={
-                cachedPreview.kind === "logo"
-                  ? "pointer-events-none size-full object-contain p-12"
-                  : "pointer-events-none size-full object-cover object-top"
-              }
-            />
-          ) : (
-            <div
-              role="img"
-              aria-label={t(`Logo von ${project.title}`, `${project.title} logo`)}
-              className="pointer-events-none flex size-full items-center justify-center"
-              data-workjet-project-logo=""
-            >
-              {project.local?.workspaceRoot ? (
-                <ProjectFavicon
-                  environmentId={project.local.environmentId}
-                  cwd={project.local.workspaceRoot}
-                  faviconPath={project.local.faviconPath}
-                  className="size-16"
-                />
-              ) : (
-                <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-[22px] font-semibold tracking-tight text-foreground/70">
-                  {project.title.slice(0, 2).toUpperCase()}
-                </span>
-              )}
-            </div>
-          )}
+          <img
+            src={cachedPreview.image}
+            alt={
+              cachedPreview.kind === "logo"
+                ? t(`Logo von ${project.title}`, `${project.title} logo`)
+                : t(
+                    `Gespeicherte Vorschau von ${project.title}`,
+                    `Saved preview of ${project.title}`,
+                  )
+            }
+            title={`${t("Gespeicherte Vorschau", "Saved preview")} · ${cachedPreview.capturedOn}`}
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailedCachedWebsite(website ?? null)}
+            className={
+              cachedPreview.kind === "logo"
+                ? "pointer-events-none size-full object-contain p-12"
+                : "pointer-events-none size-full object-cover object-top"
+            }
+          />
           <ProjectExitModelSummary
             projectId={project.id}
-            assessment={project.configuration?.exitModel ?? null}
+            assessment={exitModel ?? null}
+            onEdit={archived ? undefined : () => setEditing("exit")}
+            editLabel={t("Exit-Bewertung bearbeiten", "Edit exit valuation")}
+          />
+          {canRate && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setEditing("exit")}
+              className="absolute bottom-2 left-2 z-10"
+              data-workjet-action={`project.exit_model.rate:${project.key}`}
+            >
+              {t("Bewerten", "Rate")}
+            </Button>
+          )}
+        </div>
+      ) : exitValued ? (
+        // Ohne Vorschaubild keine leere Fläche: nur der Wertstempel bekommt Platz.
+        <div className="relative h-20" data-workjet-project-stamp-row="">
+          <ProjectExitModelSummary
+            projectId={project.id}
+            assessment={exitModel ?? null}
             onEdit={archived ? undefined : () => setEditing("exit")}
             editLabel={t("Exit-Bewertung bearbeiten", "Edit exit valuation")}
           />
         </div>
-      )}
+      ) : canRate ? (
+        <div className="px-3 pb-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setEditing("exit")}
+            data-workjet-action={`project.exit_model.rate:${project.key}`}
+          >
+            {t("Bewerten", "Rate")}
+          </Button>
+        </div>
+      ) : null}
       {project.native ? (
         <ProjectInitProgress
           instanceId={ctoxInstanceId}
@@ -376,9 +417,11 @@ export function ProjectOverviewCard({
           exitStatus={project.configuration?.exitModel?.status ?? null}
         />
       ) : null}
-      <div className="relative border-t border-border px-3 py-3">
+      {/* mt-auto: the KPI strip sits at the card's foot, so cards of one row stay
+          flush (head, KPI strip, actions) with or without a preview image. */}
+      <div className="relative mt-auto border-t border-border px-3 py-3">
         {/* Tapping the KPI strip edits the card inline; the menu keeps only rare actions (#561). */}
-        {configureCard && !(project.native && scopedKpis) && (
+        {configureCard && !(project.native && knownKpis) && (
           <button
             type="button"
             onClick={configureCard}
@@ -387,109 +430,104 @@ export function ProjectOverviewCard({
             className="absolute inset-0 z-0 cursor-pointer hover:bg-accent/40"
           />
         )}
-        <dl
-          className={
-            configureCard && !(project.native && scopedKpis)
-              ? "pointer-events-none relative grid min-w-0 grid-cols-3 gap-2 [&_a]:pointer-events-auto"
-              : "relative grid min-w-0 grid-cols-3 gap-2"
-          }
-          data-workjet-project-card-slots=""
-        >
-          {(["first", "second", "third"] as const).map((position, index) => {
-            if (project.native && scopedKpis)
-              return (
-                <ProjectKpiTile
-                  key={position}
-                  projectId={project.id}
-                  index={index}
-                  kpis={scopedKpis}
-                  expanded={editingKpi === index}
-                  onExpandedChange={(open) => setEditingKpi(open ? index : null)}
-                  onSave={onSaveKpis}
-                  onRefresh={onRefreshKpis}
-                />
-              );
-            const slot = slots[index] ?? null;
-            const metric = scopedKpis
-              ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)
-              : null;
-            // Native KPIs still loading, or configured but without a resolved label yet:
-            // show a skeleton instead of a placeholder that flips to the real name (#470).
-            if (
-              project.native &&
-              kpis === undefined &&
-              !kpisUnavailable &&
-              !overview.slots[index] &&
-              !suggestedSlots
-            )
+        {kpisEmpty && onSaveKpis && editingKpi === null ? (
+          <div className="flex h-12 items-center" data-workjet-project-card-slots="">
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => setEditingKpi(0)}
+              data-workjet-action={`project.kpis.define:${project.key}`}
+            >
+              {t("Kennzahlen festlegen", "Define metrics")}
+            </Button>
+          </div>
+        ) : (
+          <dl
+            className={
+              configureCard && !(project.native && knownKpis)
+                ? "pointer-events-none relative grid min-w-0 grid-cols-3 gap-2 [&_a]:pointer-events-auto"
+                : "relative grid min-w-0 grid-cols-3 gap-2"
+            }
+            data-workjet-project-card-slots=""
+          >
+            {(["first", "second", "third"] as const).map((position, index) => {
+              if (project.native && knownKpis) {
+                // Leer und gerade im Editor: nur die erste Kachel, aufgeklappt.
+                if (kpisEmpty && index > 0) return null;
+                return (
+                  <ProjectKpiTile
+                    key={position}
+                    projectId={project.id}
+                    index={index}
+                    kpis={knownKpis}
+                    expanded={editingKpi === index}
+                    onExpandedChange={(open) => setEditingKpi(open ? index : null)}
+                    onSave={onSaveKpis}
+                    onRefresh={onRefreshKpis}
+                  />
+                );
+              }
+              // Native KPIs unbekannt (nie gelesen oder Lesen gescheitert, kein
+              // gespeicherter Stand): ein selbst gesetzter Wert der Kachel bleibt,
+              // sonst „—“ ohne Unterzeile in gleicher Zeilenhöhe.
+              if (project.native && !overview.slots[index])
+                return (
+                  <div
+                    key={position}
+                    className="flex h-12 min-w-0 flex-col gap-0.5"
+                    data-workjet-project-card-slot={index + 1}
+                    data-workjet-kpi-unknown=""
+                  >
+                    <dt className="sr-only">{`KPI ${index + 1}`}</dt>
+                    <dd className="text-[22px] leading-7 font-semibold tracking-tight text-muted-foreground">
+                      —
+                    </dd>
+                  </div>
+                );
+              const slot = slots[index] ?? null;
               return (
                 <div
                   key={position}
-                  className="flex min-w-0 flex-col gap-1"
+                  className="flex min-h-12 min-w-0 flex-col gap-0.5"
                   data-workjet-project-card-slot={index + 1}
-                  data-workjet-kpi-loading=""
-                  aria-busy="true"
                 >
-                  <span className="h-7 w-14 animate-pulse rounded bg-muted" />
-                  <span className="h-3 w-20 animate-pulse rounded bg-muted" />
+                  <dt
+                    title={slot?.label}
+                    className={
+                      slot
+                        ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
+                        : "sr-only"
+                    }
+                  >
+                    {slot?.label ?? `KPI ${index + 1}`}
+                  </dt>
+                  <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+                    {slot === null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : slot.kind === "link" ? (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
+                      >
+                        {t("Link öffnen", "Open link")}
+                      </Button>
+                    ) : slot.kind === "updated" ? (
+                      <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
+                        {activityAt === null ? "—" : projectUpdateAge(activityAt)}
+                      </time>
+                    ) : slot.kind === "metric" ? (
+                      `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+                    ) : (
+                      slot.value
+                    )}
+                  </dd>
                 </div>
               );
-            return (
-              <div
-                key={position}
-                className="flex min-w-0 flex-col gap-0.5"
-                data-workjet-project-card-slot={index + 1}
-              >
-                <dt
-                  title={metric?.label ?? slot?.label}
-                  className={
-                    slot
-                      ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
-                      : "sr-only"
-                  }
-                >
-                  {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
-                </dt>
-                <dd className="order-first min-w-0 break-words text-[22px] leading-7 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
-                  {metric ? (
-                    <span
-                      title={metric.message ?? metric.detail}
-                      data-workjet-kpi-status={metric.status}
-                    >
-                      {metric.value}
-                    </span>
-                  ) : slot === null ? (
-                    <span
-                      className="text-muted-foreground"
-                      aria-label={t(
-                        `KPI ${index + 1} nicht eingerichtet`,
-                        `KPI ${index + 1} not set up`,
-                      )}
-                    >
-                      —
-                    </span>
-                  ) : slot.kind === "link" ? (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      render={<a href={slot.url} target="_blank" rel="noreferrer noopener" />}
-                    >
-                      {t("Link öffnen", "Open link")}
-                    </Button>
-                  ) : slot.kind === "updated" ? (
-                    <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
-                      {activityAt === null ? "—" : projectUpdateAge(activityAt)}
-                    </time>
-                  ) : slot.kind === "metric" ? (
-                    `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
-                  ) : (
-                    slot.value
-                  )}
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
+            })}
+          </dl>
+        )}
       </div>
       {archiveError && (
         <p role="alert" className="px-3 py-2 text-xs text-destructive">

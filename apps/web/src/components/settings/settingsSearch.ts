@@ -1,18 +1,26 @@
-export type SettingsPath =
-  | "/settings/business-os"
+/**
+ * Einstellungen in acht Seiten (#568). Im Entwicklermodus kommen fünf Seiten
+ * dazu. Jede frühere Seite ist einer dieser Seiten zugeordnet; Unterseiten
+ * (System-Prompts, Verbrauch) tragen ihre Elternseite in der Navigation.
+ */
+export type SettingsPagePath =
   | "/settings/general"
-  | "/settings/prompts"
-  | "/settings/appearance"
-  | "/settings/models"
-  | "/settings/speech"
+  | "/settings/business-os"
   | "/settings/computers"
+  | "/settings/models"
   | "/settings/workjet"
   | "/settings/projects"
-  | "/settings/source-control"
-  | "/settings/integrations"
-  | "/settings/diagnostics"
+  | "/settings/speech"
   | "/settings/archived"
-  | "/settings/usage";
+  | "/settings/diagnostics"
+  | "/settings/harnesses"
+  | "/settings/integrations"
+  | "/settings/source-control"
+  | "/settings/keybindings";
+
+export type SettingsSubpagePath = "/settings/prompts" | "/settings/usage";
+
+export type SettingsPath = SettingsPagePath | SettingsSubpagePath;
 
 export interface SettingsSearchItem {
   readonly id: string;
@@ -20,178 +28,120 @@ export interface SettingsSearchItem {
   readonly to: SettingsPath;
   readonly targetId?: string;
   readonly searchAliases?: ReadonlyArray<string>;
+  /** Nur im Entwicklermodus sichtbar: ohne ihn auch kein Suchtreffer (#550). */
+  readonly developerOnly?: boolean;
 }
 
-/**
- * Section labels in sidebar order. The sidebar nav and the search-result
- * subtitles both render from this record, so each label exists once.
- */
+/** Die acht Seiten in Navigationsreihenfolge. */
+export const SETTINGS_PAGE_PATHS: readonly SettingsPagePath[] = [
+  "/settings/general",
+  "/settings/business-os",
+  "/settings/computers",
+  "/settings/models",
+  "/settings/workjet",
+  "/settings/projects",
+  "/settings/speech",
+  "/settings/archived",
+];
+
+/** Zusätzliche Seiten im Entwicklermodus, in Navigationsreihenfolge. */
+export const DEVELOPER_SETTINGS_PAGE_PATHS: readonly SettingsPagePath[] = [
+  "/settings/diagnostics",
+  "/settings/harnesses",
+  // Schnittstellen bleibt Entwicklerseite, bis ctox #708 und die OAuth-Übergabe Main-Prozess → Instanz landen.
+  "/settings/integrations",
+  "/settings/source-control",
+  "/settings/keybindings",
+];
+
+const DEVELOPER_PAGES = new Set<SettingsPath>([
+  ...DEVELOPER_SETTINGS_PAGE_PATHS,
+  "/settings/prompts",
+]);
+
+export function isDeveloperSettingsPath(path: SettingsPath): boolean {
+  return DEVELOPER_PAGES.has(path);
+}
+
+/** Seiten-Bezeichnungen; Navigation, Suche und Brotkrumen lesen von hier. */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/business-os": "Instanzen",
   "/settings/general": "Allgemein",
-  "/settings/appearance": "Darstellung",
-  "/settings/models": "Modelle",
-  "/settings/speech": "Sprachausgabe",
+  "/settings/business-os": "Instanz",
   "/settings/computers": "Rechner",
-  // Worker composition sits beside the pages it references (Models,
-  // Computers); Source Control follows the workflow pages. Coding agents
-  // (formerly the Harnesses page) live on Rechner since #554.
-  "/settings/workjet": "Worker-Presets",
-  "/settings/prompts": "System-Prompts",
+  "/settings/models": "Modelle",
+  "/settings/workjet": "Lumas",
   "/settings/projects": "Projekte",
-  "/settings/source-control": "Versionsverwaltung",
-  "/settings/integrations": "Schnittstellen",
+  "/settings/speech": "Sprachausgabe",
+  "/settings/archived": "Archiv",
   "/settings/diagnostics": "Diagnose",
-  // Names its content: the start page "Archiv" holds projects, this one conversations (#602).
-  "/settings/archived": "Chat-Archiv",
+  "/settings/harnesses": "Harnesses",
+  "/settings/integrations": "Schnittstellen",
+  "/settings/source-control": "Versionsverwaltung",
+  "/settings/keybindings": "Tastenkürzel",
+  "/settings/prompts": "System-Prompts",
   "/settings/usage": "Verbrauch",
 };
 
+/** Unterseiten zeigen in der Navigation ihre Elternseite als aktiv. */
+export const SETTINGS_SUBPAGE_PARENTS: Readonly<Record<SettingsSubpagePath, SettingsPagePath>> = {
+  "/settings/prompts": "/settings/workjet",
+  "/settings/usage": "/settings/models",
+};
+
+/** The nav page a pathname belongs to (a subpage resolves to its parent). */
+export function settingsPageForPath(pathname: string): SettingsPagePath | null {
+  const normalized = pathname.replace(/\/+$/, "");
+  if (normalized in SETTINGS_SUBPAGE_PARENTS) {
+    return SETTINGS_SUBPAGE_PARENTS[normalized as SettingsSubpagePath];
+  }
+  const all = [...SETTINGS_PAGE_PATHS, ...DEVELOPER_SETTINGS_PAGE_PATHS];
+  return all.find((path) => normalized === path || normalized.startsWith(`${path}/`)) ?? null;
+}
+
 const SETTINGS_SECTION_SEARCH_ALIASES: Partial<Record<SettingsPath, readonly string[]>> = {
-  "/settings/business-os": ["Instances"],
-  "/settings/general": ["General"],
-  "/settings/appearance": ["Appearance"],
-  "/settings/models": ["Models"],
-  "/settings/speech": ["Speech", "Diktat"],
+  "/settings/general": ["General", "Darstellung", "Appearance"],
+  "/settings/business-os": ["Instance", "Instances", "Instanzen", "CTOX"],
   "/settings/computers": ["Computers"],
-  "/settings/source-control": ["Source Control"],
-  "/settings/integrations": ["Integrations", "Connectors", "Adapter", "Toolhub", "Apps"],
+  "/settings/models": ["Models"],
+  "/settings/workjet": ["Worker", "Worker-Presets", "Agents"],
+  "/settings/projects": ["Projects"],
+  "/settings/speech": ["Speech", "Diktat"],
+  "/settings/archived": ["Archive", "Archived conversations", "Unterhaltungen"],
   "/settings/diagnostics": ["Diagnostics"],
-  "/settings/archived": ["Archiv", "Archive", "Archived conversations", "Unterhaltungen"],
+  "/settings/harnesses": ["Coding-Agenten", "Coding agents", "CLI"],
+  "/settings/integrations": ["Integrations", "Connectors", "Adapter", "Toolhub", "Apps"],
+  "/settings/source-control": ["Source Control", "Git"],
+  "/settings/keybindings": ["Keybindings", "Shortcuts"],
+  "/settings/prompts": ["Prompts"],
   "/settings/usage": ["Usage", "Kosten", "Tokens"],
 };
 
 /**
  * Every searchable setting, in result order. This catalog is the single
  * source of truth for anchor ids and visible titles: panels render both via
- * `searchableSetting`, so a retitle (or, later, a translation pass) happens
- * here once instead of separately in the panel and the index.
+ * `searchableSetting`, so a retitle happens here once instead of separately
+ * in the panel and the index. Labels without an own anchor land on their
+ * section (`targetId`) or on the page top.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  // ----- Allgemein -----
+  {
+    id: "color-scheme",
+    title: "Farbschema",
+    to: "/settings/general",
+    searchAliases: ["Hell", "Dunkel", "System", "Theme", "Thema", "Darstellung"],
+  },
+  {
+    id: "font-size",
+    title: "Schriftgröße",
+    to: "/settings/general",
+    searchAliases: ["Schrift", "Font"],
+  },
   {
     id: "posthog-consent",
     title: "Nutzungsdaten senden",
     to: "/settings/general",
-    searchAliases: ["telemetry", "privacy", "consent", "us.i.posthog.com"],
-  },
-  {
-    id: "color-scheme",
-    title: "Farbschema",
-    to: "/settings/appearance",
-    // The scheme tiles sit at the top of the Appearance section.
-    targetId: "appearance",
-  },
-  {
-    id: "theme",
-    title: "Themen",
-    to: "/settings/appearance",
-    // Theme cards live directly under the scheme tiles; the section is the
-    // stable scroll destination for both.
-    targetId: "appearance",
-  },
-  {
-    // Prefixed because the slider control already owns the `glass-opacity` id.
-    id: "setting-glass-opacity",
-    title: "Glas",
-    to: "/settings/appearance",
-  },
-  {
-    id: "environment-identification",
-    title: "Umgebungskennung",
-    to: "/settings/appearance",
-    // The setting is stage-dependent, so its parent section is the stable destination.
-    targetId: "appearance",
-  },
-  {
-    id: "interface-font",
-    title: "Oberflächenschrift",
-    to: "/settings/appearance",
-  },
-  {
-    id: "prompt-font",
-    title: "Prompt-Schrift",
-    to: "/settings/appearance",
-  },
-  {
-    id: "code-font",
-    title: "Code-Schrift",
-    to: "/settings/appearance",
-  },
-  {
-    id: "terminal-font",
-    title: "Terminal-Schrift",
-    to: "/settings/appearance",
-  },
-  {
-    id: "font-smoothing",
-    title: "Kantenglättung",
-    to: "/settings/appearance",
-  },
-  {
-    id: "word-wrap",
-    title: "Zeilenumbruch",
-    to: "/settings/appearance",
-  },
-  {
-    id: "project-grouping",
-    title: "Projekte gruppieren",
-    to: "/settings/general",
-  },
-  {
-    id: "auto-settle-inactive-threads",
-    title: "Inaktive ablegen",
-    to: "/settings/general",
-  },
-  {
-    id: "auto-settle-merged-threads",
-    title: "Zusammengeführte ablegen",
-    to: "/settings/general",
-  },
-  {
-    id: "time-format",
-    title: "Zeitformat",
-    to: "/settings/general",
-  },
-  {
-    id: "calendar-week-start",
-    title: "Wochenbeginn",
-    to: "/settings/general",
-  },
-  {
-    id: "hide-whitespace-changes",
-    title: "Leerraum ausblenden",
-    to: "/settings/general",
-  },
-  {
-    id: "provider-update-checks",
-    title: "Update-Prüfung",
-    to: "/settings/general",
-  },
-  {
-    id: "new-threads",
-    title: "Neue Unterhaltungen",
-    to: "/settings/general",
-  },
-  {
-    id: "start-from-origin",
-    title: "Von origin starten",
-    to: "/settings/general",
-    targetId: "new-threads",
-  },
-  {
-    id: "add-project-starts-in",
-    title: "Projektordner",
-    to: "/settings/computers",
-  },
-  {
-    id: "text-generation-model",
-    title: "Textmodell",
-    to: "/settings/general",
-  },
-  {
-    id: "diagnostics",
-    title: "Diagnose",
-    to: "/settings/general",
+    searchAliases: ["telemetry", "privacy", "consent"],
   },
   {
     id: "developer-mode",
@@ -200,97 +150,212 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchAliases: ["developer", "entwickler"],
   },
   {
+    id: "environment-identification",
+    title: "Umgebungskennung",
+    to: "/settings/general",
+    developerOnly: true,
+  },
+  {
+    id: "word-wrap",
+    title: "Zeilenumbruch",
+    to: "/settings/general",
+    developerOnly: true,
+  },
+  {
+    id: "auto-settle-inactive-threads",
+    title: "Inaktive ablegen",
+    to: "/settings/general",
+    developerOnly: true,
+  },
+  {
+    id: "auto-settle-merged-threads",
+    title: "Zusammengeführte ablegen",
+    to: "/settings/general",
+    developerOnly: true,
+  },
+  {
+    id: "hide-whitespace-changes",
+    title: "Leerraum ausblenden",
+    to: "/settings/general",
+    developerOnly: true,
+  },
+  {
+    id: "provider-update-checks",
+    title: "Update-Prüfung",
+    to: "/settings/general",
+    developerOnly: true,
+  },
+  {
+    id: "new-threads",
+    title: "Neue Unterhaltungen",
+    to: "/settings/general",
+    developerOnly: true,
+  },
+  {
+    id: "start-from-origin",
+    title: "Von origin starten",
+    to: "/settings/general",
+    targetId: "new-threads",
+    developerOnly: true,
+  },
+  {
     id: "legacy-plan-mode",
     title: "Plan-Modus",
     to: "/settings/general",
+    developerOnly: true,
   },
   {
     id: "legacy-token-streaming",
     title: "Token-Streaming",
     to: "/settings/general",
+    developerOnly: true,
   },
+  // ----- Instanz -----
   {
-    id: "harnesses",
-    title: "Coding-Agenten",
-    to: "/settings/computers",
-    searchAliases: ["Harnesses", "Coding agents", "CLI"],
+    id: "instance-devices",
+    title: "Gekoppelte Geräte",
+    to: "/settings/business-os",
+    searchAliases: ["Geräte", "Workjet-Apps", "Trennen", "Koppeln"],
   },
-  {
-    id: "import-sessions",
-    title: "Sitzungen importieren",
-    to: "/settings/computers",
-    searchAliases: ["import", "history", "histories"],
-  },
-  {
-    id: "source-control",
-    title: "Versionsverwaltung",
-    to: "/settings/source-control",
-  },
-  {
-    id: "workjet-workers",
-    // Match the page title to keep one result, while preserving old search vocabulary.
-    title: "Worker-Presets",
-    searchAliases: ["worker", "workers", "presets", "lumas", "agent", "agents"],
-    to: "/settings/workjet",
-  },
+  // ----- Rechner -----
   {
     id: "workjet-computers",
     title: "Rechner",
-    searchAliases: ["computers", "computer"],
-    // Computers is a top-level settings page of its own.
+    searchAliases: ["computers", "computer", "Rechner hinzufügen"],
     to: "/settings/computers",
   },
   {
+    id: "add-project-starts-in",
+    title: "Projektordner",
+    to: "/settings/computers",
+  },
+  // ----- Modelle -----
+  {
     id: "workjet-provider-accounts",
     title: "LLM-Anbieter",
-    // LLM accounts live on the Models page. Harnesses are CLI runtimes and
-    // have their own page — the two were merged once and became impossible to
-    // find, because "Providers" read as one thing and held two.
     to: "/settings/models",
+    searchAliases: ["Konten", "Anbieter", "Gateway"],
   },
   {
     id: "workjet-provider-pools",
     title: "Gateway-Pools",
-    // Directly under the account list, on the same Models page.
     to: "/settings/models",
   },
   {
     id: "workjet-llm-routes",
     title: "LLM-Routen",
-    // Routes live on the Models page, beside the accounts they reference.
     to: "/settings/models",
+    searchAliases: ["Modell-Routing"],
+  },
+  {
+    id: "text-generation-model",
+    title: "Textmodell",
+    to: "/settings/models",
+  },
+  {
+    id: "usage",
+    title: "Verbrauch",
+    to: "/settings/usage",
+    searchAliases: ["Usage", "Kosten", "Tokens"],
+  },
+  // ----- Lumas -----
+  {
+    id: "workjet-workers",
+    title: "Lumas",
+    searchAliases: ["worker", "workers", "presets", "agent", "agents", "Denkstufe", "Werkzeuge"],
+    to: "/settings/workjet",
   },
   {
     id: "workjet-prompt",
     title: "System-Prompts",
     to: "/settings/prompts",
+    developerOnly: true,
   },
   {
     id: "workjet-telemetry",
     title: "Protokoll",
     to: "/settings/workjet",
+    developerOnly: true,
   },
   {
     id: "workjet-execution",
     title: "Ausführung",
     to: "/settings/workjet",
+    developerOnly: true,
   },
   {
     id: "automatic-worktree-storage",
     title: "Arbeitskopien-Speicher",
     to: "/settings/workjet",
     targetId: "workjet-execution",
+    developerOnly: true,
   },
   {
     id: "greppy-runtime",
     title: "Code-Suche",
     to: "/settings/workjet",
     searchAliases: ["greppy", "greppy-laufzeit"],
+    developerOnly: true,
   },
+  // ----- Projekte -----
+  {
+    id: "project-model",
+    title: "Projekt-Modell",
+    to: "/settings/projects",
+    searchAliases: ["Modell", "Arbeitsbereich"],
+  },
+  {
+    id: "project-working-copies",
+    title: "Arbeitskopien",
+    to: "/settings/projects",
+    searchAliases: ["Arbeitskopie", "Worktree"],
+  },
+  // ----- Sprachausgabe -----
+  {
+    id: "speech-voice",
+    title: "Stimme",
+    to: "/settings/speech",
+    searchAliases: ["Sprechtempo", "Vorlesen", "Stimmtest"],
+  },
+  {
+    id: "speech-transcription",
+    title: "Transkription",
+    to: "/settings/speech",
+    searchAliases: ["Mistral", "Diktat"],
+  },
+  // ----- Archiv -----
   {
     id: "archive",
     title: "Archivierte Unterhaltungen",
     to: "/settings/archived",
+  },
+  // ----- Entwicklermodus -----
+  {
+    id: "harnesses",
+    title: "Coding-Agenten",
+    to: "/settings/harnesses",
+    searchAliases: ["Harnesses", "Coding agents", "CLI"],
+    developerOnly: true,
+  },
+  {
+    id: "import-sessions",
+    title: "Sitzungen importieren",
+    to: "/settings/harnesses",
+    searchAliases: ["import", "history", "histories"],
+    developerOnly: true,
+  },
+  {
+    id: "source-control",
+    title: "Versionsverwaltung",
+    to: "/settings/source-control",
+    developerOnly: true,
+  },
+  {
+    id: "source-control-writing-model",
+    title: "Eigenes Modell",
+    to: "/settings/source-control",
+    targetId: "source-control",
+    developerOnly: true,
   },
 ] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
@@ -316,7 +381,7 @@ export function searchableSetting(id: SettingsSearchItemId): {
 function normalizeSearchText(value: string): string {
   return value
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .toLocaleLowerCase()
     .replace(/\s+/g, " ")
     .trim();
@@ -324,8 +389,8 @@ function normalizeSearchText(value: string): string {
 
 /**
  * The settings pages themselves as synthetic search items, so typing a
- * sidebar label ("Computers", "Diagnostics") finds the page even when no
- * individual setting carries that title.
+ * navigation label finds the page even when no individual setting carries
+ * that title.
  */
 const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
   Object.entries(SETTINGS_SECTION_LABELS) as ReadonlyArray<[SettingsPath, string]>
@@ -334,27 +399,36 @@ const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
   title: label,
   to: path,
   searchAliases: SETTINGS_SECTION_SEARCH_ALIASES[path] ?? [],
+  ...(isDeveloperSettingsPath(path) ? { developerOnly: true } : {}),
 }));
+
+function isVisible(item: SettingsSearchItem, developerMode: boolean): boolean {
+  return developerMode || (item.developerOnly !== true && !isDeveloperSettingsPath(item.to));
+}
 
 export function searchSettings(
   query: string,
-  items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+  options: {
+    readonly developerMode?: boolean;
+    readonly items?: ReadonlyArray<SettingsSearchItem>;
+  } = {},
 ): ReadonlyArray<SettingsSearchItem> {
+  const developerMode = options.developerMode ?? false;
+  const items = options.items ?? SETTINGS_SEARCH_ITEMS;
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
-
-  const matches = items.filter((item) =>
+  const matchesQuery = (item: SettingsSearchItem) =>
     [item.title, ...(item.searchAliases ?? [])].some((label) =>
       normalizeSearchText(label).includes(normalizedQuery),
-    ),
-  );
+    );
+
+  const matches = items.filter((item) => isVisible(item, developerMode) && matchesQuery(item));
   // Page results lead, minus pages an equally titled item already represents
-  // (e.g. the "Computers" catalog entry that lands on /settings/computers).
+  // (e.g. the "Rechner" catalog entry that lands on /settings/computers).
   const pageMatches = SETTINGS_PAGE_SEARCH_ITEMS.filter(
     (page) =>
-      [page.title, ...(page.searchAliases ?? [])].some((label) =>
-        normalizeSearchText(label).includes(normalizedQuery),
-      ) &&
+      isVisible(page, developerMode) &&
+      matchesQuery(page) &&
       !matches.some(
         (item) =>
           item.to === page.to &&

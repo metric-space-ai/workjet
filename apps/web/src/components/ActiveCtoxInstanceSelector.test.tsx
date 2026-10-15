@@ -102,6 +102,9 @@ describe("instance dropdown", () => {
     expect(selectorSource).not.toContain("showNetwork");
     expect(selectorSource).not.toContain("PopoverPopup");
     expect(selectorSource).toContain("Instanz hinzufügen");
-    expect(selectorSource).toContain("Instanzen verwalten");
+    expect(selectorSource).toContain("Instanz-Einstellungen");
+    // Instances live only here (#556): disconnecting is offered per row.
+    expect(selectorSource).toContain('pickerText("Trennen", "Disconnect")');
+    expect(selectorSource).toContain("scheduleUndoableDelete");
   });
 });

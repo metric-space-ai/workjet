@@ -52,6 +52,9 @@ export default defineConfig({
       "apps/mobile/ios/**",
       "apps/web/public/mockServiceWorker.js",
       "apps/web/public/vendor/excalidraw/**",
+      // Exact controller-owned App API stub; see ctox/stub/PROVENANCE.md.
+      "apps/web/src/ctox/stub/index.d.ts",
+      "apps/web/src/ctox/stub/ctox-app-api-stub.mjs",
       "apps/web/src/lib/vendor/qrcodegen.ts",
       "apps/mobile/uniwind-types.d.ts",
       "*.icon/**",
@@ -99,6 +102,9 @@ export default defineConfig({
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",
       "apps/web/public/vendor/excalidraw/**",
+      // Exact controller-owned App API stub; see ctox/stub/PROVENANCE.md.
+      "apps/web/src/ctox/stub/index.d.ts",
+      "apps/web/src/ctox/stub/ctox-app-api-stub.mjs",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
     jsPlugins: ["./oxlint-plugin-workjet/index.ts"],

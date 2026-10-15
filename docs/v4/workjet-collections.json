@@ -1,0 +1,347 @@
+{
+  "proposal": "workjet-v4-slice-a",
+  "app_id": "workjet",
+  "app_api_ver": "4.0",
+  "status": "proposed_for_controller_registry",
+  "authority": "CTOX Core; scope and actor authorization remain Core-owned",
+  "partition": "One Shell App API per authenticated instance/user; never a cross-instance shared collection",
+  "collections": {
+    "workjet_projects": {
+      "primary_key": "id",
+      "schema_version": 1,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "status": {
+            "enum": ["active", "archived"]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": ["string", "null"],
+            "maxLength": 4096
+          },
+          "repoUrl": {
+            "type": ["string", "null"]
+          },
+          "publicUrl": {
+            "type": ["string", "null"]
+          },
+          "supervisorLumaId": {
+            "type": ["string", "null"],
+            "maxLength": 160
+          },
+          "info": {
+            "type": ["object", "null"]
+          },
+          "jourFixe": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "weekday": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 7
+                  },
+                  "time": {
+                    "type": "string",
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                },
+                "required": ["weekday", "time", "timezone"]
+              }
+            ]
+          },
+          "feedSettings": {
+            "type": ["object", "null"]
+          },
+          "exitModel": {
+            "type": ["object", "null"]
+          },
+          "workingCopies": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "computerId": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "path": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "status": {
+                  "enum": ["active", "detached"]
+                }
+              },
+              "required": ["id", "computerId", "path", "status"]
+            }
+          }
+        },
+        "required": ["id", "status", "title", "workingCopies"]
+      },
+      "indexes": [["status", "id"]],
+      "notes": [
+        "Existing CtoxWorkjetProjectProjection fields remain unchanged; status is the archive discriminator. No local row cap.",
+        "info, feedSettings and exitModel reuse the full existing packages/contracts shapes; registry must adopt their full nested schema before activation.",
+        "No ownership/visibility decision in the client selector: Core provides only the authorized scope."
+      ]
+    },
+    "workjet_project_kpis": {
+      "primary_key": "id",
+      "schema_version": 1,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "project_id": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "prompt": {
+                  "type": "object",
+                  "properties": {
+                    "kpi_id": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "prompt": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": ["kpi_id", "prompt", "revision"]
+                },
+                "result": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "enum": ["resolving", "ready", "stale", "missing_source", "failed"]
+                    },
+                    "reason_code": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "snapshot": {
+                      "type": "object",
+                      "properties": {
+                        "project_id": {
+                          "type": "string",
+                          "maxLength": 160
+                        },
+                        "kpi_id": {
+                          "type": "string",
+                          "maxLength": 128
+                        },
+                        "prompt_revision": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "label": {
+                          "type": "string",
+                          "maxLength": 14
+                        },
+                        "value": {
+                          "type": "number"
+                        },
+                        "display_value": {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        "unit": {
+                          "type": "string",
+                          "maxLength": 16
+                        },
+                        "sources": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 8,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source_key": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "kind": {
+                                "enum": ["native_metric", "github_metric", "connected_metric"]
+                              },
+                              "project_id": {
+                                "type": "string",
+                                "maxLength": 160
+                              },
+                              "connection_id": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "metric_key": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "snapshot_revision": {
+                                "type": "string",
+                                "maxLength": 256
+                              },
+                              "evidence_ref": {
+                                "type": "string",
+                                "maxLength": 256
+                              },
+                              "observed_at_ms": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "value": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "source_key",
+                              "kind",
+                              "project_id",
+                              "connection_id",
+                              "metric_key",
+                              "snapshot_revision",
+                              "evidence_ref",
+                              "observed_at_ms",
+                              "value"
+                            ]
+                          }
+                        },
+                        "freshness": {
+                          "type": "object",
+                          "properties": {
+                            "calculated_at_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "refresh_at_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "fresh_until_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": ["calculated_at_ms", "refresh_at_ms", "fresh_until_ms"]
+                        },
+                        "computation": {
+                          "type": "object",
+                          "properties": {
+                            "recipe_id": {
+                              "type": "string",
+                              "maxLength": 128
+                            },
+                            "revision": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "operation": {
+                              "enum": ["identity", "sum", "average", "percentage"]
+                            },
+                            "input_keys": {
+                              "type": "array",
+                              "minItems": 1,
+                              "maxItems": 8,
+                              "items": {
+                                "type": "string",
+                                "maxLength": 128
+                              }
+                            },
+                            "window_start_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "window_end_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "recipe_id",
+                            "revision",
+                            "operation",
+                            "input_keys",
+                            "window_start_ms",
+                            "window_end_ms"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "project_id",
+                        "kpi_id",
+                        "prompt_revision",
+                        "label",
+                        "value",
+                        "display_value",
+                        "unit",
+                        "sources",
+                        "freshness",
+                        "computation"
+                      ]
+                    }
+                  },
+                  "required": ["status"]
+                }
+              },
+              "required": ["prompt", "result"]
+            }
+          }
+        },
+        "required": ["id", "project_id", "revision", "items"]
+      },
+      "indexes": [["project_id"]],
+      "invariants": [
+        "id == project_id (one aggregate document per project)",
+        "snapshot.project_id == project_id; snapshot.kpi_id == prompt.kpi_id; snapshot.prompt_revision == prompt.revision",
+        "All source.project_id match the snapshot; ready/stale requires snapshot; other statuses forbid snapshot.",
+        "No client-computed KPI values. Missing local document yields the existing empty/unconfigured projection, not a stored value."
+      ]
+    }
+  }
+}

@@ -34,7 +34,6 @@ import {
   configureWorkjetProject,
   describeWorkjetProjectControlFailure,
   readWorkjetGalleryOrder,
-  readWorkjetProjectKpis,
   refreshWorkjetProjectKpis,
   saveWorkjetProjectKpis,
   saveWorkjetGalleryOrder,
@@ -46,7 +45,8 @@ import {
   orderGalleryProjects,
 } from "../projectGalleryOrder";
 import type { ProjectKpiPromptInput, PromptedProjectKpis } from "../projectKpis";
-import { mergeProjectKpiRead, readGalleryProjectKpis } from "../projectKpiProjection";
+import { mergeProjectKpiRead } from "../projectKpiProjection";
+import { useWorkjetProjectKpis } from "../ctox/useWorkjetProjectKpis";
 import { SortableProjectTile } from "../components/SortableProjectTile";
 import {
   closestCenter,
@@ -654,13 +654,6 @@ function IndexDraftLanding() {
   return <NoProjectsHero />;
 }
 
-/** Stille Wiederholung fehlgeschlagener Kennzahlen: 15 s, dann 60 s, danach alle 5 min. */
-export function galleryKpiRetryDelayMs(completedFailureRounds: number): number {
-  if (completedFailureRounds <= 0) return 15_000;
-  if (completedFailureRounds === 1) return 60_000;
-  return 5 * 60_000;
-}
-
 /**
  * Die ruhige Zeile nur, wenn die Karten wirklich der letzte gespeicherte Stand sind.
  * Ein noch laufender Read und ein einzelner Zeitüberschreitungs-Read zeigen nichts:
@@ -809,109 +802,32 @@ export function ProjectGallery({
     };
   }, [instanceId]);
 
-  const readKpis = useCallback(
-    async (projectId: string) => {
-      const scope = kpiScope.current;
-      if (
-        instanceId === null ||
-        !scope.active ||
-        scope.instanceId !== instanceId ||
-        !nativeProjectIds.split("\n").includes(projectId)
-      )
-        return null;
-      let result: Awaited<ReturnType<typeof readWorkjetProjectKpis>>;
-      try {
-        result = await readWorkjetProjectKpis(instanceId, ProjectId.make(projectId));
-      } catch {
-        if (scope.active && kpiScope.current === scope) markKpiFailure(projectId, true);
-        return null;
-      }
-      if (
-        !scope.active ||
-        kpiScope.current !== scope ||
-        result._tag !== "completed" ||
-        !("kpis" in result.response)
-      ) {
-        if (scope.active && kpiScope.current === scope) markKpiFailure(projectId, true);
-        return null;
-      }
-      const kpis = result.response.kpis;
-      markKpiFailure(projectId, false);
-      setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
-      return kpis;
-    },
-    [instanceId, markKpiFailure, nativeProjectIds],
-  );
-
+  const localKpis = useWorkjetProjectKpis(instanceId, nativeProjectIds);
+  const readKpis = localKpis.readKpis;
   useEffect(() => {
-    if (instanceId === null) return;
     const scope = { instanceId, active: true };
     kpiScope.current = scope;
-    const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
-    let stopped = false;
-    let running = false;
-    let failedRounds = 0;
-    let retryWhenVisible = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
-    const clearTimer = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      timer = undefined;
-    };
-    const failedIds = () => projectIds.filter((id) => kpiFailuresRef.current.has(id));
-    const schedule = () => {
-      clearTimer();
-      if (stopped || !scope.active) return;
-      const delay = galleryKpiRetryDelayMs(failedRounds);
-      failedRounds += 1;
-      timer = setTimeout(() => {
-        timer = undefined;
-        if (stopped || !scope.active) return;
-        if (hidden()) {
-          retryWhenVisible = true;
-          return;
-        }
-        void run(true);
-      }, delay);
-    };
-    const run = async (isRetry: boolean) => {
-      if (stopped || !scope.active || running) return;
-      if (isRetry && hidden()) {
-        retryWhenVisible = true;
-        return;
-      }
-      const ids = isRetry ? failedIds() : projectIds;
-      if (ids.length === 0) return;
-      running = true;
-      retryWhenVisible = false;
-      try {
-        await readGalleryProjectKpis(ids, readKpis, () => scope.active && !stopped);
-      } finally {
-        running = false;
-      }
-      if (stopped || !scope.active) return;
-      if (failedIds().length === 0) {
-        failedRounds = 0;
-        return;
-      }
-      schedule();
-    };
-    const onVisibility = () => {
-      if (hidden() || stopped || !scope.active || !retryWhenVisible || running) return;
-      retryWhenVisible = false;
-      void run(true);
-    };
-    if (typeof document !== "undefined")
-      document.addEventListener("visibilitychange", onVisibility);
-    void run(false);
     return () => {
-      stopped = true;
       scope.active = false;
-      clearTimer();
-      if (typeof document !== "undefined")
-        document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [instanceId, nativeProjectIds, readKpis]);
+  }, [instanceId]);
+  useEffect(() => {
+    if (instanceId === null) return;
+    setKpiProjection((previous) => {
+      const retained = previous.instanceId === instanceId ? previous.records : {};
+      let next: typeof previous = {
+        instanceId,
+        records: Object.fromEntries(
+          Object.entries(retained).filter(([id]) => id in localKpis.records),
+        ),
+      };
+      for (const [id, kpis] of Object.entries(localKpis.records))
+        next = mergeProjectKpiRead(next, instanceId, id, kpis);
+      return next;
+    });
+    for (const id of nativeProjectIds.split("\n").filter(Boolean))
+      markKpiFailure(id, !localKpis.available);
+  }, [instanceId, localKpis.records, localKpis.available, nativeProjectIds, markKpiFailure]);
 
   // Inline KPI edit and recalculation on the card write straight into the projection.
   const saveKpis = useCallback(

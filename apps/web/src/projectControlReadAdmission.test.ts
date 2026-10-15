@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { CommandId, ProjectId, type CtoxWorkjetProjectControlResult } from "@workjet/contracts";
-import { commitActiveWorkjetSelection, readActiveWorkjetScope } from "./activeWorkjetScope";
 import { readGalleryProjectKpis } from "./projectKpiProjection";
 import {
   readWorkjetProjectKpis,
@@ -11,10 +10,12 @@ import {
 const completed = {
   _tag: "completed",
   response: {
-    action: "project.list",
-    projects: [],
-    count: 0,
-    truncated: false,
+    action: "project.feed.read",
+    commandId: CommandId.make("read"),
+    projectId: ProjectId.make("a"),
+    contract: "ctox.workjet.project_feed.v1",
+    posts: [],
+    next_before_ms: null,
   },
 } as const;
 afterEach(() => vi.useRealTimers());
@@ -38,12 +39,22 @@ describe("project control in-flight reads", () => {
       .mockResolvedValue(completed);
     const first = requestWorkjetProjectControl(
       "own",
-      { action: "project.list", includeConfiguration: true },
+      {
+        action: "project.feed.read",
+        commandId: CommandId.make("read"),
+        projectId: ProjectId.make("a"),
+        limit: 30,
+      },
       port,
     );
     const second = requestWorkjetProjectControl(
       "own",
-      { includeConfiguration: true, action: "project.list" },
+      {
+        limit: 30,
+        projectId: ProjectId.make("a"),
+        commandId: CommandId.make("read"),
+        action: "project.feed.read",
+      },
       port,
     );
     expect(second).toBe(first);
@@ -52,7 +63,12 @@ describe("project control in-flight reads", () => {
     await first;
     await requestWorkjetProjectControl(
       "own",
-      { action: "project.list", includeConfiguration: true },
+      {
+        action: "project.feed.read",
+        commandId: CommandId.make("read"),
+        projectId: ProjectId.make("a"),
+        limit: 30,
+      },
       port,
     );
     expect(port).toHaveBeenCalledTimes(2);
@@ -62,7 +78,12 @@ describe("project control in-flight reads", () => {
     const pending = deferred<CtoxWorkjetProjectControlResult>();
     const port = vi.fn<WorkjetProjectControlPort>().mockReturnValue(pending.promise);
     const other = vi.fn<WorkjetProjectControlPort>().mockReturnValue(pending.promise);
-    const request = { action: "project.list" } as const;
+    const request = {
+      action: "project.feed.read",
+      commandId: CommandId.make("read"),
+      projectId: ProjectId.make("a"),
+      limit: 30,
+    } as const;
     const write = {
       action: "project.kpis.configure",
       projectId: ProjectId.make("a"),
@@ -74,7 +95,7 @@ describe("project control in-flight reads", () => {
     const reads = [
       requestWorkjetProjectControl("own", request, port),
       requestWorkjetProjectControl("other", request, port),
-      requestWorkjetProjectControl("own", { ...request, includeConfiguration: true }, port),
+      requestWorkjetProjectControl("own", { ...request, projectId: ProjectId.make("b") }, port),
       requestWorkjetProjectControl("own", request, other),
       requestWorkjetProjectControl("own", write, port),
       requestWorkjetProjectControl("own", write, port),
@@ -92,99 +113,66 @@ describe("project control in-flight reads", () => {
       .mockReturnValueOnce(pending.promise)
       .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
       .mockResolvedValue(completed);
-    const first = requestWorkjetProjectControl("own", { action: "project.list" }, port);
-    const second = requestWorkjetProjectControl("own", { action: "project.list" }, port);
+    const first = requestWorkjetProjectControl(
+      "own",
+      {
+        action: "project.feed.read",
+        commandId: CommandId.make("read"),
+        projectId: ProjectId.make("a"),
+        limit: 30,
+      },
+      port,
+    );
+    const second = requestWorkjetProjectControl(
+      "own",
+      {
+        action: "project.feed.read",
+        commandId: CommandId.make("read"),
+        projectId: ProjectId.make("a"),
+        limit: 30,
+      },
+      port,
+    );
     const joined = Promise.allSettled([first, second]);
     pending.reject(new Error("transport closed"));
     expect((await joined).every((entry) => entry.status === "rejected")).toBe(true);
-    await requestWorkjetProjectControl("own", { action: "project.list" }, port);
-    expect(await requestWorkjetProjectControl("own", { action: "project.list" }, port)).toEqual(
-      completed,
+    await requestWorkjetProjectControl(
+      "own",
+      {
+        action: "project.feed.read",
+        commandId: CommandId.make("read"),
+        projectId: ProjectId.make("a"),
+        limit: 30,
+      },
+      port,
     );
+    expect(
+      await requestWorkjetProjectControl(
+        "own",
+        {
+          action: "project.feed.read",
+          commandId: CommandId.make("read"),
+          projectId: ProjectId.make("a"),
+          limit: 30,
+        },
+        port,
+      ),
+    ).toEqual(completed);
     expect(port).toHaveBeenCalledTimes(3);
   });
 });
 
-describe("shared overview KPI admission", () => {
-  it("merges two gallery rounds and the project overview, caps reads at one, and admits project.list immediately", async () => {
-    vi.useFakeTimers();
-    let active = 0;
-    let maximum = 0;
-    const port = vi
-      .fn<WorkjetProjectControlPort>()
-      .mockImplementation(async (_instance, request) => {
-        if (request.action === "project.list") return completed;
-        if (request.action !== "project.kpis.read") throw new Error("unexpected action");
-        maximum = Math.max(maximum, ++active);
-        await new Promise<void>((resolve) => setTimeout(resolve, 10_000));
-        active--;
-        return {
-          _tag: "completed",
-          response: {
-            ...request,
-            contract: "ctox.workjet.project_kpis.v1",
-            kpis: { project_id: request.projectId, revision: 0, items: [] },
-          },
-        };
-      });
+describe("local overview KPI admission", () => {
+  it("does not queue or dispatch gallery and overview reads while the V4 client is absent", async () => {
+    const port = vi.fn<WorkjetProjectControlPort>();
     const projects = Array.from({ length: 12 }, (_, index) => `project-${index}`);
     const read = (id: string) => readWorkjetProjectKpis("own", ProjectId.make(id), port);
-    const rounds = [
+    await Promise.all([
       readGalleryProjectKpis(projects, read, () => true),
       readGalleryProjectKpis(projects, read, () => true),
-    ];
-    const overview = read(projects[0]!);
-    expect(port).toHaveBeenCalledOnce();
-    expect(await requestWorkjetProjectControl("own", { action: "project.list" }, port)).toEqual(
-      completed,
-    );
-    await vi.runAllTimersAsync();
-    await Promise.all([...rounds, overview]);
-    expect(maximum).toBe(1);
-    expect(
-      port.mock.calls.filter(([, request]) => request.action === "project.kpis.read"),
-    ).toHaveLength(12);
-    expect(active).toBe(0);
-  });
-
-  it("preserves actual command correlation and rejects a mismatched receipt", async () => {
-    const pending = deferred<CtoxWorkjetProjectControlResult>();
-    const port = vi.fn<WorkjetProjectControlPort>().mockReturnValue(pending.promise);
-    const first = readWorkjetProjectKpis("own", ProjectId.make("a"), port);
-    const joined = readWorkjetProjectKpis("own", ProjectId.make("a"), port);
-    expect(joined).toBe(first);
-    const request = port.mock.calls[0]![1];
-    if (request.action !== "project.kpis.read") throw new Error("missing read");
-    pending.resolve({
-      _tag: "completed",
-      response: {
-        ...request,
-        commandId: CommandId.make("foreign"),
-        contract: "ctox.workjet.project_kpis.v1",
-        kpis: { project_id: request.projectId, revision: 0, items: [] },
-      },
-    });
-    expect(await first).toEqual({ _tag: "failed", code: "guest_failed" });
-    expect(await joined).toEqual({ _tag: "failed", code: "guest_failed" });
-  });
-
-  it("drops queued reads from an old selection and keeps another instance independent", async () => {
-    const original = readActiveWorkjetScope().selectedInstanceId;
-    const pending = deferred<CtoxWorkjetProjectControlResult>();
-    const port = vi.fn<WorkjetProjectControlPort>().mockReturnValue(pending.promise);
-    const reads = ["a", "b", "c"].map((id) =>
-      readWorkjetProjectKpis("own", ProjectId.make(id), port),
-    );
-    const other = readWorkjetProjectKpis("other", ProjectId.make("d"), port);
-    expect(port).toHaveBeenCalledTimes(2);
-    try {
-      commitActiveWorkjetSelection("new-selection");
-      pending.resolve({ _tag: "failed", code: "timeout" });
-      expect(await reads[2]).toEqual({ _tag: "failed", code: "not_active" });
-      await Promise.all([...reads, other]);
-      expect(port).toHaveBeenCalledTimes(2);
-    } finally {
-      commitActiveWorkjetSelection(original);
-    }
+      read(projects[0]!),
+    ]);
+    expect(port).not.toHaveBeenCalled();
+    expect(await read("a")).toEqual({ _tag: "failed", code: "not_active" });
   });
 });

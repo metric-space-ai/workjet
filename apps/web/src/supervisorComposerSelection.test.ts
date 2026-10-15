@@ -19,6 +19,22 @@ import {
 } from "./supervisorComposerSelection";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
 
+// Isolate route persistence from the local App API read adapter.
+vi.mock("./workjetProjectControl", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./workjetProjectControl")>();
+  return {
+    ...actual,
+    listWorkjetProjects: (id: string, fixture: WorkjetProjectControlPort | undefined) => {
+      if (!fixture) throw new Error("missing_local_projection_fixture");
+      return fixture(id, {
+        action: "project.list",
+        includeConfiguration: true,
+        includeSupervisorLuma: true,
+      });
+    },
+  };
+});
+
 const scope = {
   instanceId: "instance",
   projectId: ProjectId.make("project"),

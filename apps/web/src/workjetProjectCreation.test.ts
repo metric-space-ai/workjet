@@ -2,6 +2,27 @@ import { CommandId, ProjectId } from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { runWorkjetProjectCreation, workjetLogicalProjectId } from "./workjetProjectCreation";
 
+// Creation orchestration consumes a local projection. Keep this unit's injected
+// fixtures at the read boundary; the V4 adapter itself is covered in ctoxClient.test.
+vi.mock("./workjetProjectControl", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./workjetProjectControl")>();
+  return {
+    ...actual,
+    listWorkjetProjects: async (
+      id: string,
+      fixture: Parameters<typeof actual.listWorkjetProjects>[1],
+    ) => {
+      if (!id.trim()) return { _tag: "failed", code: "not_active" } as const;
+      if (!fixture) throw new Error("missing_local_projection_fixture");
+      return fixture(id, {
+        action: "project.list",
+        includeConfiguration: true,
+        includeSupervisorLuma: true,
+      });
+    },
+  };
+});
+
 const instanceId = "managed:welsch";
 const projectId = ProjectId.make("11111111-1111-4111-8111-111111111111");
 const commandId = CommandId.make("22222222-2222-4222-8222-222222222222");
@@ -42,8 +63,7 @@ describe("runWorkjetProjectCreation", () => {
       await expect(
         runWorkjetProjectCreation({ presentationInstanceId: instanceId, request }, { port }),
       ).resolves.toEqual({ _tag: "failed", code });
-      // Only an older shell's unsupported or guest failure retries the legacy list.
-      expect(port).toHaveBeenCalledTimes(code === "unsupported" ? 3 : 1);
+      expect(port).toHaveBeenCalledTimes(1);
       expect(port).toHaveBeenNthCalledWith(1, instanceId, {
         action: "project.list",
         includeConfiguration: true,
@@ -197,15 +217,11 @@ describe("runWorkjetProjectCreation", () => {
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });
 
-  it("creates with the stable id when an older shell lacks the Luma projection", async () => {
+  it("creates with the stable id when the local projection is temporarily unavailable", async () => {
     const phases: string[] = [];
     const port = vi
       .fn()
       .mockResolvedValueOnce({ _tag: "failed", code: "guest_failed" })
-      .mockResolvedValueOnce({
-        _tag: "completed",
-        response: { action: "project.list", projects: [], count: 0, truncated: false },
-      })
       .mockResolvedValueOnce({
         _tag: "completed",
         response: { action: "project.create", project },
@@ -222,11 +238,7 @@ describe("runWorkjetProjectCreation", () => {
       includeConfiguration: true,
       includeSupervisorLuma: true,
     });
-    expect(port).toHaveBeenNthCalledWith(2, instanceId, {
-      action: "project.list",
-      includeConfiguration: true,
-    });
-    expect(port).toHaveBeenNthCalledWith(3, instanceId, request);
+    expect(port).toHaveBeenNthCalledWith(2, instanceId, request);
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });
 

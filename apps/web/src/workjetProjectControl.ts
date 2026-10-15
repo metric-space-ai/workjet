@@ -11,6 +11,8 @@ import type {
 import { projectControlReadKey } from "@workjet/shared/projectControlRead";
 import { readActiveWorkjetScope } from "./activeWorkjetScope";
 import { newCommandId } from "./lib/utils";
+import { getCtoxClient } from "./ctox/ctoxClient";
+import { readLocalWorkjetProjects, readLocalWorkjetKpis } from "./ctox/workjetCollections";
 
 export type WorkjetProjectControlPort = NonNullable<DesktopCtoxBridge["requestProjectControl"]>;
 export type WorkjetProjectPoolPort = NonNullable<DesktopCtoxBridge["ensurePooled"]>;
@@ -181,26 +183,37 @@ const pendingReads = new WeakMap<
 export function requestWorkjetProjectControl(
   instanceId: string,
   request: CtoxWorkjetProjectControlRequest,
-  port: WorkjetProjectControlPort | undefined = activeDesktopProjectControl(),
-  ensurePooled: WorkjetProjectPoolPort | undefined = activeDesktopProjectPool(),
+  port?: WorkjetProjectControlPort,
+  ensurePooled?: WorkjetProjectPoolPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
+  if (request.action === "project.list") return listWorkjetProjects(instanceId);
+  if (request.action === "project.kpis.read")
+    return readWorkjetProjectKpis(instanceId, request.projectId).then((result) =>
+      result._tag === "completed" && result.response.action === "project.kpis.read"
+        ? { ...result, response: { ...result.response, commandId: request.commandId } }
+        : result,
+    );
+  const legacyPort = port ?? activeDesktopProjectControl();
+  const legacyPool = ensurePooled ?? activeDesktopProjectPool();
   const readKey = projectControlReadKey(request);
-  if (!port || readKey === null)
-    return executeWorkjetProjectControl(instanceId, request, port, ensurePooled);
+  if (!legacyPort || readKey === null)
+    return executeWorkjetProjectControl(instanceId, request, legacyPort, legacyPool);
   const key = JSON.stringify([instanceId, readActiveWorkjetScope().selectionRevision, readKey]);
-  let reads = pendingReads.get(port);
-  if (!reads) pendingReads.set(port, (reads = new Map()));
+  let reads = pendingReads.get(legacyPort);
+  if (!reads) pendingReads.set(legacyPort, (reads = new Map()));
   const existing = reads.get(key);
-  if (existing && existing.pool === ensurePooled) return existing.promise;
+  if (existing && existing.pool === legacyPool) return existing.promise;
   const currentReads = reads;
   const entry: {
     readonly pool: WorkjetProjectPoolPort | undefined;
     readonly promise: Promise<CtoxWorkjetProjectControlResult>;
   } = {
-    pool: ensurePooled,
-    promise: executeWorkjetProjectControl(instanceId, request, port, ensurePooled).finally(() => {
-      if (currentReads.get(key) === entry) currentReads.delete(key);
-    }),
+    pool: legacyPool,
+    promise: executeWorkjetProjectControl(instanceId, request, legacyPort, legacyPool).finally(
+      () => {
+        if (currentReads.get(key) === entry) currentReads.delete(key);
+      },
+    ),
   };
   reads.set(key, entry);
   return entry.promise;
@@ -208,39 +221,15 @@ export function requestWorkjetProjectControl(
 
 export async function listWorkjetProjects(
   instanceId: string,
-  port?: WorkjetProjectControlPort,
+  _port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
-  let configured = await requestWorkjetProjectControl(
-    instanceId,
-    { action: "project.list", includeConfiguration: true, includeSupervisorLuma: true },
-    port,
-  );
-  // Negotiate the Luma projection separately so older configured shells keep
-  // their metadata. Neither fallback changes guest or authority.
-  if (
-    configured._tag === "failed" &&
-    configured.discovery === undefined &&
-    configured.diagnostic === undefined &&
-    configured.preparation === undefined &&
-    (configured.code === "unsupported" || configured.code === "guest_failed")
-  ) {
-    configured = await requestWorkjetProjectControl(
-      instanceId,
-      { action: "project.list", includeConfiguration: true },
-      port,
-    );
-  }
-  // Pre-configuration shells retain their legacy projection.
-  if (
-    configured._tag === "failed" &&
-    configured.discovery === undefined &&
-    configured.diagnostic === undefined &&
-    configured.preparation === undefined &&
-    (configured.code === "unsupported" || configured.code === "guest_failed")
-  ) {
-    return requestWorkjetProjectControl(instanceId, { action: "project.list" }, port);
-  }
-  return configured;
+  const api = getCtoxClient(instanceId);
+  if (api === null) return { _tag: "failed", code: "not_active" };
+  const projects = readLocalWorkjetProjects(api);
+  return {
+    _tag: "completed",
+    response: { action: "project.list", projects, count: projects.length, truncated: false },
+  };
 }
 
 export function createWorkjetProject(
@@ -259,67 +248,29 @@ export function configureWorkjetProject(
   return requestWorkjetProjectControl(instanceId, request, port);
 }
 
-interface ProjectKpiReadQueue {
-  active: number;
-  readonly waiting: Array<() => void>;
-  readonly pending: Map<string, Promise<CtoxWorkjetProjectControlResult>>;
-}
-const kpiReadQueues = new WeakMap<WorkjetProjectControlPort, Map<string, ProjectKpiReadQueue>>();
-
-/** One KPI read per instance across gallery rounds and project overviews.
- * Each shared read owns one real command ID; native receipts are never rewritten. */
-export function readWorkjetProjectKpis(
+/** Read the selected instance's local projection; never dispatch a read command. */
+export async function readWorkjetProjectKpis(
   instanceId: string,
   projectId: ProjectId,
-  port: WorkjetProjectControlPort | undefined = activeDesktopProjectControl(),
+  _port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
-  if (!port) return Promise.resolve({ _tag: "failed", code: "not_active" });
-  const revision = readActiveWorkjetScope().selectionRevision;
-  const key = instanceId;
-  const projectKey = JSON.stringify([projectId, revision]);
-  let queues = kpiReadQueues.get(port);
-  if (!queues) kpiReadQueues.set(port, (queues = new Map()));
-  let queue = queues.get(key);
-  if (!queue) queues.set(key, (queue = { active: 0, waiting: [], pending: new Map() }));
-  const existing = queue.pending.get(projectKey);
-  if (existing) return existing;
-  const currentQueue = queue;
-  const currentQueues = queues;
-  const reading = (async (): Promise<CtoxWorkjetProjectControlResult> => {
-    if (currentQueue.active >= 1)
-      await new Promise<void>((resolve) => currentQueue.waiting.push(resolve));
-    else currentQueue.active++;
-    try {
-      if (readActiveWorkjetScope().selectionRevision !== revision)
-        return { _tag: "failed", code: "not_active" };
-      const commandId = newCommandId();
-      const result = await requestWorkjetProjectControl(
-        instanceId,
-        { action: "project.kpis.read", commandId, projectId },
-        port,
-      );
-      if (readActiveWorkjetScope().selectionRevision !== revision)
-        return { _tag: "failed", code: "not_active" };
-      if (
-        result._tag === "completed" &&
-        (result.response.action !== "project.kpis.read" ||
-          result.response.commandId !== commandId ||
-          result.response.projectId !== projectId ||
-          result.response.kpis.project_id !== projectId)
-      )
-        return { _tag: "failed", code: "guest_failed" };
-      return result;
-    } finally {
-      const next = currentQueue.waiting.shift();
-      if (next) next();
-      else currentQueue.active--;
-    }
-  })().finally(() => {
-    currentQueue.pending.delete(projectKey);
-    if (currentQueue.pending.size === 0) currentQueues.delete(key);
-  });
-  currentQueue.pending.set(projectKey, reading);
-  return reading;
+  const api = getCtoxClient(instanceId);
+  if (api === null) return { _tag: "failed", code: "not_active" };
+  const kpis = readLocalWorkjetKpis(api, projectId) ?? {
+    project_id: projectId,
+    revision: 0,
+    items: [],
+  };
+  return {
+    _tag: "completed",
+    response: {
+      action: "project.kpis.read",
+      commandId: newCommandId(),
+      projectId,
+      contract: "ctox.workjet.project_kpis.v1",
+      kpis,
+    },
+  };
 }
 
 /** Apply only the correlated native revision; never calculate or persist caller values. */

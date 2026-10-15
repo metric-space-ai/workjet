@@ -1,3 +1,4 @@
+import { CommandId } from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -14,7 +15,13 @@ describe("project instance failure display", () => {
     async (code) => {
       const failure = { _tag: "failed", code } as const;
       const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
-      await expect(listWorkjetProjects("managed:fixture", request)).resolves.toEqual(failure);
+      await expect(
+        requestWorkjetProjectControl(
+          "managed:fixture",
+          { action: "project.gallery.order.read", commandId: CommandId.make("read") },
+          request,
+        ),
+      ).resolves.toEqual(failure);
       expect(request).toHaveBeenCalledOnce();
       expect(describeWorkjetProjectControlFailure(failure, null, "de")).toBe(
         code === "instance_disabled" ? "Instanz deaktiviert." : "Instanz entfernt.",
@@ -73,96 +80,14 @@ describe("project instance failure display", () => {
   });
 });
 
-describe("listWorkjetProjects", () => {
-  const result = {
-    _tag: "completed",
-    response: { action: "project.list", projects: [], count: 0, truncated: false },
-  } as const;
-
-  it("requests configuration from the selected instance", async () => {
-    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
-    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
-    expect(request).toHaveBeenCalledExactlyOnceWith("managed:selected", {
-      action: "project.list",
-      includeConfiguration: true,
-      includeSupervisorLuma: true,
+describe("local project reads", () => {
+  it("does not fall back to a guest when no V4 client is mounted", async () => {
+    const request = vi.fn<WorkjetProjectControlPort>();
+    expect(await listWorkjetProjects("unmounted", request)).toEqual({
+      _tag: "failed",
+      code: "not_active",
     });
-  });
-
-  it.each(["unsupported", "guest_failed"] as const)(
-    "falls back to the same guest's configured projection for %s",
-    async (code) => {
-      const request = vi
-        .fn<WorkjetProjectControlPort>()
-        .mockResolvedValueOnce({ _tag: "failed", code })
-        .mockResolvedValueOnce(result);
-      await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
-      expect(request).toHaveBeenCalledTimes(2);
-      expect(request).toHaveBeenNthCalledWith(2, "managed:selected", {
-        action: "project.list",
-        includeConfiguration: true,
-      });
-    },
-  );
-
-  it("keeps a bounded legacy fallback for shells without either additive flag", async () => {
-    const request = vi
-      .fn<WorkjetProjectControlPort>()
-      .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
-      .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
-      .mockResolvedValueOnce(result);
-    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
-    expect(request).toHaveBeenCalledTimes(3);
-    expect(request).toHaveBeenNthCalledWith(3, "managed:selected", { action: "project.list" });
-  });
-
-  it("does not repeat a failed account discovery as a legacy project query", async () => {
-    const result = {
-      _tag: "failed",
-      code: "guest_failed",
-      discovery: { code: "network_error" },
-    } as const;
-    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
-    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
-    expect(request).toHaveBeenCalledOnce();
-  });
-
-  it("preserves authentication failure without retrying a denied request", async () => {
-    const result = { _tag: "failed", code: "authentication_required" } as const;
-    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
-    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
-    expect(request).toHaveBeenCalledOnce();
-  });
-});
-
-describe("classified project list failures", () => {
-  it("preserves preparation facts and avoids legacy retries for a failed guest", async () => {
-    const failure = {
-      _tag: "failed",
-      code: "guest_failed",
-      preparation: { stage: "session", reason: "exception" },
-    } as const;
-    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
-    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
-    expect(request).toHaveBeenCalledOnce();
-    expect(describeWorkjetProjectControlFailure(failure, null, "de")).toContain(
-      "Sitzung vorbereiten",
-    );
-    expect(describeWorkjetProjectControlFailure(failure, null, "en")).toContain(
-      "Sitzung vorbereiten",
-    );
-    expect(describeWorkjetProjectControlFailure(failure, null, "en")).not.toContain("guest_failed");
-  });
-
-  it("does not repeat a known peer failure as two legacy queries", async () => {
-    const failure = {
-      _tag: "failed",
-      code: "guest_failed",
-      diagnostic: { stage: "execute", reason: "peer_unavailable" },
-    } as const;
-    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(failure);
-    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(failure);
-    expect(request).toHaveBeenCalledOnce();
+    expect(request).not.toHaveBeenCalled();
   });
 });
 
@@ -173,7 +98,12 @@ describe("requestWorkjetProjectControl", () => {
       .mockResolvedValueOnce({ _tag: "failed", code: "not_active" })
       .mockResolvedValueOnce({
         _tag: "completed",
-        response: { action: "project.list", projects: [], count: 0, truncated: false },
+        response: {
+          action: "project.gallery.order.read",
+          commandId: CommandId.make("read"),
+          contract: "ctox.workjet.project_gallery_order.v1",
+          order: { revision: 0, projectIds: [] },
+        },
       });
     const ensurePooled = vi.fn<WorkjetProjectPoolPort>().mockResolvedValue({
       _tag: "ready",
@@ -183,18 +113,29 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "managed:welsch",
-        { action: "project.list" },
+        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
         request,
         ensurePooled,
       ),
     ).resolves.toEqual({
       _tag: "completed",
-      response: { action: "project.list", projects: [], count: 0, truncated: false },
+      response: {
+        action: "project.gallery.order.read",
+        commandId: CommandId.make("read"),
+        contract: "ctox.workjet.project_gallery_order.v1",
+        order: { revision: 0, projectIds: [] },
+      },
     });
     expect(ensurePooled).toHaveBeenCalledExactlyOnceWith("managed:welsch");
     expect(request).toHaveBeenCalledTimes(2);
-    expect(request).toHaveBeenNthCalledWith(1, "managed:welsch", { action: "project.list" });
-    expect(request).toHaveBeenNthCalledWith(2, "managed:welsch", { action: "project.list" });
+    expect(request).toHaveBeenNthCalledWith(1, "managed:welsch", {
+      action: "project.gallery.order.read",
+      commandId: CommandId.make("read"),
+    });
+    expect(request).toHaveBeenNthCalledWith(2, "managed:welsch", {
+      action: "project.gallery.order.read",
+      commandId: CommandId.make("read"),
+    });
   });
 
   it("preserves a failed launch without sending another project request", async () => {
@@ -209,7 +150,7 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "local:workstation",
-        { action: "project.list" },
+        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
         request,
         ensurePooled,
       ),
@@ -229,7 +170,7 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "managed:selected",
-        { action: "project.list" },
+        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
         request,
         ensurePooled,
       ),
@@ -249,7 +190,7 @@ describe("requestWorkjetProjectControl", () => {
     await expect(
       requestWorkjetProjectControl(
         "managed:welsch",
-        { action: "project.list" },
+        { action: "project.gallery.order.read", commandId: CommandId.make("read") },
         request,
         ensurePooled,
       ),

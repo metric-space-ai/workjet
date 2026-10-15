@@ -24,7 +24,11 @@ import {
   type GalleryProject,
   type GalleryProjectStatistics,
 } from "../projectOverview";
-import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
+import {
+  ProjectOverviewCard,
+  projectCardCrew,
+  type ProjectCardCrew,
+} from "../components/ProjectOverviewCard";
 import type { ProjectCardConfigurationValues } from "../components/ProjectOverviewEditor";
 import { ProjectTokenBudget } from "../components/ProjectTokenBudget";
 import { ConnectedProjectCalendar } from "../components/ConnectedProjectCalendar";
@@ -522,6 +526,7 @@ function IndexDraftLanding() {
         projects={galleryProjects.map((project) => ({
           ...project,
           statistics: resolveGalleryProjectStatistics(project, threads, bootstrapped),
+          crew: bootstrapped ? projectCardCrew(project.local, threads) : null,
 
           canArchive: environments.some(
             (environment) =>
@@ -716,6 +721,8 @@ export function ProjectGallery({
       | undefined;
     readonly canArchive: boolean;
     readonly statistics: GalleryProjectStatistics;
+    /** Team state for cards without a preview (WP-K2); missing = unknown. */
+    readonly crew?: ProjectCardCrew | null | undefined;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
   /** Ersetzt „Projekt anlegen“. `null` lässt die Zeile weg (Tests, Einbettung). */
@@ -1145,6 +1152,7 @@ export function ProjectGallery({
                           onSaveConfiguration={project.onSaveConfiguration}
                           canArchive={project.canArchive}
                           statistics={project.statistics}
+                          crew={project.crew}
                           kpis={
                             kpiProjection.instanceId === instanceId
                               ? kpiProjection.records[project.id]

@@ -1,4 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import { ProjectExitModelCardPanel, ProjectExitModelSummary } from "./ProjectExitModel";
 import { exitModelPresentation } from "../projectExitModel";
 import { useLastKnownProjectCard } from "../projectCardCache";
@@ -7,8 +16,11 @@ import {
   type ProjectCardConfigurationValues,
 } from "./ProjectOverviewEditor";
 import type { ProjectOverview } from "@workjet/contracts";
-import { EllipsisIcon } from "lucide-react";
-import { resolveCachedProjectPreview } from "../cachedProjectPreview";
+import { CalendarClockIcon, EllipsisIcon, UserRoundIcon } from "lucide-react";
+import {
+  resolveProjectPreview,
+  type ProjectPreviewRepositoryIdentity,
+} from "../cachedProjectPreview";
 import {
   type GalleryProject,
   projectUpdateAge,
@@ -16,6 +28,11 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
+import {
+  isRunningProjectOneShot,
+  projectOverviewStatusTone,
+  projectOverviewWorkerState,
+} from "../projectOverviewModel";
 import { type PromptedProjectKpis, type SaveProjectKpiPrompts } from "../projectKpis";
 import { ProjectKpiTile } from "./ProjectKpiTile";
 import { ProjectFavicon } from "./ProjectFavicon";
@@ -26,6 +43,65 @@ import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { workjetUiLanguage } from "../workjetProjectControl";
 import { useSingleInlineExpand } from "./ui/inline-expand";
+
+/** Lumas of a project on its card: who is on the team now, and how many are disrupted. */
+export type ProjectCardCrew = { readonly lumas: number; readonly disrupted: number };
+
+/**
+ * Team state for the card's content area, from the project's own histories: the
+ * supervisor and fixed Lumas always count, one-time Lumas while they work or are disrupted.
+ * `null` without a local project (unknown, the card shows „—“).
+ */
+export function projectCardCrew(
+  local: GalleryProject["local"],
+  threads: readonly EnvironmentThreadShell[],
+): ProjectCardCrew | null {
+  if (local === null) return null;
+  const disrupted = (thread: EnvironmentThreadShell) =>
+    projectOverviewStatusTone(projectOverviewWorkerState(thread)) === "red";
+  const team = threads.filter(
+    (thread) =>
+      thread.environmentId === local.environmentId &&
+      thread.projectId === local.id &&
+      thread.archivedAt === null &&
+      thread.deletedAt == null &&
+      (isRunningProjectOneShot(thread) || disrupted(thread)),
+  );
+  return { lumas: team.length, disrupted: team.filter(disrupted).length };
+}
+
+const JOUR_FIXE_WEEKDAYS = {
+  de: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+} as const;
+
+/** „Di · 10:00“: weekday and time of the weekly Regeltermin, else „—“. */
+export function projectCardJourFixeLabel(
+  jourFixe: { readonly weekday: number; readonly time: string } | null | undefined,
+  language: "de" | "en",
+): string {
+  const weekday = jourFixe ? JOUR_FIXE_WEEKDAYS[language][jourFixe.weekday - 1] : undefined;
+  return jourFixe && weekday ? `${weekday} · ${jourFixe.time}` : "—";
+}
+
+/**
+ * Elements inside the card that keep their own action: a click there never opens the
+ * project (menu, „Bewerten“, „Kennzahlen festlegen“, KPI editor, drag handle, links).
+ */
+const CARD_OWN_ACTION_SELECTOR = [
+  "button",
+  "a[href]",
+  "input",
+  "textarea",
+  "select",
+  "label",
+  "[role='menu']",
+  "[role='menuitem']",
+  "[data-workjet-project-card-backface]",
+  "[data-workjet-kpi-tile-expanded]",
+].join(",");
+/** A pointer that moved further than this between press and release dragged, not clicked. */
+const CARD_CLICK_SLOP_PX = 6;
 
 export function ProjectOverviewCard({
   project,
@@ -41,7 +117,10 @@ export function ProjectOverviewCard({
   tokenBudget,
   onSaveKpis,
   onRefreshKpis,
+  crew,
 }: {
+  /** Team state shown when the card has no preview (`null`/missing: unknown). */
+  readonly crew?: ProjectCardCrew | null | undefined;
   /** Saves the card's KPI sentences inline (project.kpis.configure). */
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
   /** Recalculates the card's KPIs now (project.kpis.refresh, #502). */
@@ -70,7 +149,8 @@ export function ProjectOverviewCard({
   const en = workjetUiLanguage() === "en";
   const t = (de: string, english: string) => (en ? english : de);
   const [editing, setEditing] = useState<"exit" | "configure" | null>(null);
-  const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
+  const [failedPreviewImage, setFailedPreviewImage] = useState<string | null>(null);
+  const pressedAt = useRef<{ readonly x: number; readonly y: number } | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [editingKpi, setEditingKpi] = useState<number | null>(null);
@@ -80,9 +160,18 @@ export function ProjectOverviewCard({
     title: project.title,
   });
   const overview = resolveGalleryProjectOverview(project);
+  const configuration = project.configuration ?? null;
   const website = overview.websiteUrl;
-  const cachedPreview = resolveCachedProjectPreview(website);
   const repository = overview.repositoryUrl;
+  // Website snapshot first, else the repository's GitHub social preview (WP-K2).
+  const localRepository = (
+    project.local as { readonly repositoryIdentity?: ProjectPreviewRepositoryIdentity | null } | null
+  )?.repositoryIdentity;
+  const preview = resolveProjectPreview({
+    websiteUrl: website,
+    repositoryUrl: repository,
+    repositoryIdentity: localRepository,
+  });
   const suggestedSlots = suggestedProjectKpis(project.title);
   const defaultSlots: ProjectOverview["slots"] = suggestedSlots ?? [
     {
@@ -122,7 +211,11 @@ export function ProjectOverviewCard({
   const titleIsWebsite =
     websiteHost != null && project.title.trim().toLowerCase() === websiteHost.toLowerCase();
   const archived = overview.archived === true;
-  const hasPreview = !archived && cachedPreview != null && failedCachedWebsite !== website;
+  const shownPreview =
+    !archived && preview !== null && failedPreviewImage !== preview.image ? preview : null;
+  const hasPreview = shownPreview !== null;
+  const jourFixe = configuration?.jourFixe ?? overview.tokenBudget?.jourFixe ?? null;
+  const jourFixeLabel = projectCardJourFixeLabel(jourFixe, en ? "en" : "de");
   const exitValued = exitModelPresentation(exitModel ?? null, project.id).value !== "—";
   // „Bewerten“ nur mit Startweg (Rückseite → project.exit_model.refresh) und nur bei
   // einem gelesenen Stand ohne Wert; bei unbekanntem Stand steht nichts.
@@ -157,7 +250,6 @@ export function ProjectOverviewCard({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [editing]);
-  const configuration = project.configuration ?? null;
   const saveCardConfiguration =
     (onSaveConfiguration ?? onSave)
       ? async (values: ProjectCardConfigurationValues): Promise<boolean> => {
@@ -193,10 +285,40 @@ export function ProjectOverviewCard({
       setArchivePending(false);
     }
   };
+  // The whole card opens the project; its own controls keep their actions, a drag
+  // (pointer moved) or a click inside an open editor never opens it.
+  const openFromCard = (event: ReactMouseEvent<HTMLElement>) => {
+    const pressed = pressedAt.current;
+    pressedAt.current = null;
+    if (event.defaultPrevented || event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element) || !event.currentTarget.contains(target)) return;
+    if (target.closest(CARD_OWN_ACTION_SELECTOR)) return;
+    if (
+      pressed !== null &&
+      Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > CARD_CLICK_SLOP_PX
+    )
+      return;
+    onOpen();
+  };
+  const rememberPress = (event: ReactPointerEvent<HTMLElement>) => {
+    pressedAt.current = { x: event.clientX, y: event.clientY };
+  };
+  const openFromKeyboard = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onOpen();
+  };
   return (
     <article
-      className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card"
+      className="flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       data-workjet-project-card={project.key}
+      tabIndex={0}
+      aria-label={openProjectLabel}
+      onPointerDown={rememberPress}
+      onClick={openFromCard}
+      onKeyDown={openFromKeyboard}
     >
       <div className="flex min-w-0 items-center gap-2 px-3 py-2">
         {/* Lokale Projekte tragen ihr Favicon im Kopf statt einer Vorschaufläche. */}
@@ -264,6 +386,14 @@ export function ProjectOverviewCard({
                   {refreshPending
                     ? t("Wird berechnet …", "Calculating …")
                     : t("KPIs neu berechnen", "Recalculate KPIs")}
+                </MenuItem>
+              )}
+              {configureCard && (
+                <MenuItem
+                  onClick={configureCard}
+                  data-workjet-action={`project.configure.gallery:${project.key}`}
+                >
+                  {t("Konfigurieren", "Configure")}
                 </MenuItem>
               )}
               {repository && (
@@ -335,10 +465,10 @@ export function ProjectOverviewCard({
             )
           )}
         </div>
-      ) : hasPreview && cachedPreview ? (
+      ) : shownPreview ? (
         <div
           className="relative aspect-video overflow-hidden bg-muted/40"
-          data-workjet-project-preview=""
+          data-workjet-project-preview={shownPreview.kind}
         >
           {/* The whole preview opens the project; buttons on top keep their own actions. */}
           <button
@@ -350,23 +480,32 @@ export function ProjectOverviewCard({
             className="absolute inset-0 z-0 cursor-pointer"
           />
           <img
-            src={cachedPreview.image}
+            src={shownPreview.image}
             alt={
-              cachedPreview.kind === "logo"
+              shownPreview.kind === "logo"
                 ? t(`Logo von ${project.title}`, `${project.title} logo`)
-                : t(
-                    `Gespeicherte Vorschau von ${project.title}`,
-                    `Saved preview of ${project.title}`,
-                  )
+                : shownPreview.kind === "github"
+                  ? t(`GitHub-Vorschau von ${project.title}`, `GitHub preview of ${project.title}`)
+                  : t(
+                      `Gespeicherte Vorschau von ${project.title}`,
+                      `Saved preview of ${project.title}`,
+                    )
             }
-            title={`${t("Gespeicherte Vorschau", "Saved preview")} · ${cachedPreview.capturedOn}`}
+            title={
+              shownPreview.capturedOn === null
+                ? undefined
+                : `${t("Gespeicherte Vorschau", "Saved preview")} · ${shownPreview.capturedOn}`
+            }
             loading="lazy"
             decoding="async"
-            onError={() => setFailedCachedWebsite(website ?? null)}
+            referrerPolicy="no-referrer"
+            onError={() => setFailedPreviewImage(shownPreview.image)}
             className={
-              cachedPreview.kind === "logo"
+              shownPreview.kind === "logo"
                 ? "pointer-events-none size-full object-contain p-12"
-                : "pointer-events-none size-full object-cover object-top"
+                : shownPreview.kind === "github"
+                  ? "pointer-events-none size-full object-cover object-center"
+                  : "pointer-events-none size-full object-cover object-top"
             }
           />
           <ProjectExitModelSummary
@@ -387,28 +526,71 @@ export function ProjectOverviewCard({
             </Button>
           )}
         </div>
-      ) : exitValued ? (
-        // Ohne Vorschaubild keine leere Fläche: nur der Wertstempel bekommt Platz.
-        <div className="relative h-20" data-workjet-project-stamp-row="">
-          <ProjectExitModelSummary
-            projectId={project.id}
-            assessment={exitModel ?? null}
-            onEdit={archived ? undefined : () => setEditing("exit")}
-            editLabel={t("Exit-Bewertung bearbeiten", "Edit exit valuation")}
-          />
-        </div>
-      ) : canRate ? (
-        <div className="px-3 pb-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setEditing("exit")}
-            data-workjet-action={`project.exit_model.rate:${project.key}`}
+      ) : (
+        // Ohne Vorschau keine leere Fläche: nächster Regeltermin und Team als Chips.
+        <>
+          <div
+            className="flex min-w-0 flex-wrap items-center gap-1.5 px-3 pb-2"
+            data-workjet-project-card-content=""
           >
-            {t("Bewerten", "Rate")}
-          </Button>
-        </div>
-      ) : null}
+            <dl className="contents">
+              <div
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-[11px] tabular-nums"
+                data-workjet-project-card-jour-fixe=""
+              >
+                <dt className="sr-only">{t("Regeltermin", "Regular meeting")}</dt>
+                <CalendarClockIcon
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <dd>{jourFixeLabel}</dd>
+              </div>
+              <div
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-[11px] tabular-nums"
+                data-workjet-project-card-lumas={crew?.lumas ?? ""}
+              >
+                <dt className="sr-only">{t("Lumas", "Lumas")}</dt>
+                <UserRoundIcon
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <dd>{crew == null ? "—" : crew.lumas}</dd>
+              </div>
+              {crew != null && crew.disrupted > 0 ? (
+                <div
+                  className="inline-flex h-6 items-center gap-1 rounded-full border border-destructive/40 px-2 text-[11px] text-destructive tabular-nums"
+                  data-workjet-project-card-disrupted={crew.disrupted}
+                >
+                  <dt className="sr-only">{t("Gestört", "Disrupted")}</dt>
+                  <span aria-hidden="true" className="size-1.5 rounded-full bg-destructive" />
+                  <dd>{`${crew.disrupted} ${t("gestört", "disrupted")}`}</dd>
+                </div>
+              ) : null}
+            </dl>
+            {canRate && (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setEditing("exit")}
+                className="ms-auto"
+                data-workjet-action={`project.exit_model.rate:${project.key}`}
+              >
+                {t("Bewerten", "Rate")}
+              </Button>
+            )}
+          </div>
+          {exitValued ? (
+            <div className="relative h-20" data-workjet-project-stamp-row="">
+              <ProjectExitModelSummary
+                projectId={project.id}
+                assessment={exitModel ?? null}
+                onEdit={archived ? undefined : () => setEditing("exit")}
+                editLabel={t("Exit-Bewertung bearbeiten", "Edit exit valuation")}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
       {project.native ? (
         <ProjectInitProgress
           instanceId={ctoxInstanceId}
@@ -420,16 +602,6 @@ export function ProjectOverviewCard({
       {/* mt-auto: the KPI strip sits at the card's foot, so cards of one row stay
           flush (head, KPI strip, actions) with or without a preview image. */}
       <div className="relative mt-auto border-t border-border px-3 py-3">
-        {/* Tapping the KPI strip edits the card inline; the menu keeps only rare actions (#561). */}
-        {configureCard && !(project.native && knownKpis) && (
-          <button
-            type="button"
-            onClick={configureCard}
-            aria-label={t(`${project.title} konfigurieren`, `Configure ${project.title}`)}
-            data-workjet-action={`project.configure.gallery:${project.key}`}
-            className="absolute inset-0 z-0 cursor-pointer hover:bg-accent/40"
-          />
-        )}
         {kpisEmpty && onSaveKpis && editingKpi === null ? (
           <div className="flex h-12 items-center" data-workjet-project-card-slots="">
             <Button
@@ -444,11 +616,7 @@ export function ProjectOverviewCard({
           </div>
         ) : (
           <dl
-            className={
-              configureCard && !(project.native && knownKpis)
-                ? "pointer-events-none relative grid min-w-0 grid-cols-3 gap-2 [&_a]:pointer-events-auto"
-                : "relative grid min-w-0 grid-cols-3 gap-2"
-            }
+            className="relative grid min-w-0 grid-cols-3 gap-2"
             data-workjet-project-card-slots=""
           >
             {(["first", "second", "third"] as const).map((position, index) => {

@@ -287,8 +287,9 @@ const stampContrast = () => {
       await page.locator("[data-workjet-project-card-backface]").waitFor({ state: "detached" });
       compare(await page.evaluate(measure), "escape");
 
-      // Projekt konfigurieren inline
-      await card
+      // Projekt konfigurieren inline (seit WP-K2 im ⋯-Menü: die ganze Kachel öffnet das Projekt)
+      await card.locator('button[aria-label="Aktionen für molecularity"]').click();
+      await page
         .locator('[data-workjet-action="project.configure.gallery:instance:molecularity"]')
         .click();
       await page.locator('[data-workjet-project-card-backface="configure"]').waitFor();

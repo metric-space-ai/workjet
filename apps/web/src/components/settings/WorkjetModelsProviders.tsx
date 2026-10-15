@@ -1144,7 +1144,7 @@ function DraftAccountRow({
           ) : null}
         </div>
       ) : null}
-      {instanceFailure !== null && state.instanceGrok ? (
+      {instanceFailure !== null && state.instanceGrok && draft.mode === "subscription" ? (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-2 px-3 pb-2 pl-9 text-xs text-destructive"

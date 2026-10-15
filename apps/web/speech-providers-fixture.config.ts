@@ -16,10 +16,17 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
     dedupe: ["react", "react-dom"],
-    alias: {
-      // Kein Router in der Fixture: Link/useNavigate sind Attrappen.
-      "@tanstack/react-router": NodePath.join(root, "src/fixtures/router-shim.tsx"),
-    },
+    alias: [
+      // Kein Router in der Fixture: Link/useNavigate sind Attrappen, der Rest ist echt.
+      {
+        find: /^@tanstack\/react-router$/,
+        replacement: NodePath.join(root, "src/fixtures/router-shim.tsx"),
+      },
+      {
+        find: /^fixture-real-router$/,
+        replacement: NodePath.join(root, "node_modules/@tanstack/react-router/dist/esm/index.js"),
+      },
+    ],
   },
   server: { host: "127.0.0.1", port: 5771, strictPort: true },
 });
